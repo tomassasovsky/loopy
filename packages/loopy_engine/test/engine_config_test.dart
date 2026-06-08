@@ -13,6 +13,7 @@ void main() {
       expect(config.bufferFrames, 0);
       expect(config.channels, 0);
       expect(config.passthrough, isFalse);
+      expect(config.mergeToMono, isFalse);
     });
   });
 
@@ -24,6 +25,8 @@ void main() {
         channels: 2,
         passthrough: true,
         maxLoopFrames: 480000,
+        mergeToMono: true,
+        useLoopbackCapture: true,
       );
       final ptr = calloc<le_config>();
       try {
@@ -33,6 +36,8 @@ void main() {
         expect(ptr.ref.channels, 2);
         expect(ptr.ref.passthrough, 1);
         expect(ptr.ref.max_loop_frames, 480000);
+        expect(ptr.ref.merge_to_mono, 1);
+        expect(ptr.ref.use_loopback_capture, 1);
       } finally {
         calloc.free(ptr);
       }

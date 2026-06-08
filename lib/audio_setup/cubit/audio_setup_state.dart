@@ -20,8 +20,10 @@ class AudioSetupState extends Equatable {
     this.sampleRate = 48000,
     this.bufferFrames = 128,
     this.monitorInput = true,
+    this.mergeToMono = true,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
+    this.loopback = const LoopbackInfo.none(),
     this.errorMessage,
   });
 
@@ -34,11 +36,18 @@ class AudioSetupState extends Equatable {
   /// Whether captured input is monitored to the output.
   final bool monitorInput;
 
+  /// Whether input channels are averaged to mono and fed to both outputs.
+  final bool mergeToMono;
+
   /// High-level lifecycle status.
   final AudioSetupStatus status;
 
   /// Live engine/device status from the repository.
   final EngineStatus engineStatus;
+
+  /// The detected cable-free loopback path (if any) used to auto-measure
+  /// latency without a physical cable.
+  final LoopbackInfo loopback;
 
   /// A human-readable error when [status] is [AudioSetupStatus.error].
   final String? errorMessage;
@@ -54,16 +63,20 @@ class AudioSetupState extends Equatable {
     int? sampleRate,
     int? bufferFrames,
     bool? monitorInput,
+    bool? mergeToMono,
     AudioSetupStatus? status,
     EngineStatus? engineStatus,
+    LoopbackInfo? loopback,
     String? errorMessage,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
       bufferFrames: bufferFrames ?? this.bufferFrames,
       monitorInput: monitorInput ?? this.monitorInput,
+      mergeToMono: mergeToMono ?? this.mergeToMono,
       status: status ?? this.status,
       engineStatus: engineStatus ?? this.engineStatus,
+      loopback: loopback ?? this.loopback,
       errorMessage: errorMessage ?? this.errorMessage,
     );
   }
@@ -73,8 +86,10 @@ class AudioSetupState extends Equatable {
     sampleRate,
     bufferFrames,
     monitorInput,
+    mergeToMono,
     status,
     engineStatus,
+    loopback,
     errorMessage,
   ];
 }

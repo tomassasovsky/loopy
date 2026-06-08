@@ -3,7 +3,13 @@
 library;
 
 export 'package:loopy_engine/loopy_engine.dart'
-    show EngineConfig, EngineResult, LatencyState, TrackState;
+    show
+        EngineConfig,
+        EngineResult,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind,
+        TrackState;
 
 export 'src/looper_repository.dart';
 export 'src/models/engine_status.dart';

@@ -35,6 +35,24 @@ class LoopyEngineBindings {
   late final _le_version =
       _le_versionPtr.asFunction<ffi.Pointer<ffi.Char> Function()>();
 
+  /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
+  /// driver / WASAPI) by enumerating capture devices. Fills *out and returns LE_OK,
+  /// or LE_ERR_INVALID for a null argument / enumeration failure.
+  int le_detect_loopback(
+    ffi.Pointer<le_loopback_info> out,
+  ) {
+    return _le_detect_loopback(
+      out,
+    );
+  }
+
+  late final _le_detect_loopbackPtr = _lookup<
+          ffi
+          .NativeFunction<ffi.Int32 Function(ffi.Pointer<le_loopback_info>)>>(
+      'le_detect_loopback');
+  late final _le_detect_loopback = _le_detect_loopbackPtr
+      .asFunction<int Function(ffi.Pointer<le_loopback_info>)>();
+
   /// Allocates an engine. Returns NULL on allocation failure.
   ffi.Pointer<le_engine> le_engine_create() {
     return _le_engine_create();
@@ -357,6 +375,50 @@ enum le_track_state {
       };
 }
 
+/// Classification of a cable-free loopback path used to auto-measure latency.
+/// All of these capture the *digital* round-trip (output → OS mixer → capture);
+/// they exclude DAC/ADC converter latency, so they under-report the true analog
+/// round-trip. A physical loopback cable remains the only true analog measure.
+enum le_loopback_kind {
+  LE_LOOPBACK_NONE(0),
+
+  /// Windows WASAPI output loopback (built-in)
+  LE_LOOPBACK_WASAPI(1),
+
+  /// PulseAudio "Monitor of ..." source (Linux)
+  LE_LOOPBACK_MONITOR(2),
+
+  /// named virtual driver (BlackHole, VB-Cable, ...)
+  LE_LOOPBACK_VIRTUAL(3);
+
+  final int value;
+  const le_loopback_kind(this.value);
+
+  static le_loopback_kind fromValue(int value) => switch (value) {
+        0 => LE_LOOPBACK_NONE,
+        1 => LE_LOOPBACK_WASAPI,
+        2 => LE_LOOPBACK_MONITOR,
+        3 => LE_LOOPBACK_VIRTUAL,
+        _ => throw ArgumentError('Unknown value for le_loopback_kind: $value'),
+      };
+}
+
+/// Result of loopback detection. `device_name` is the capture device to open for
+/// an auto-measurement (empty for WASAPI's built-in loopback, which the duplex
+/// engine does not auto-route).
+final class le_loopback_info extends ffi.Struct {
+  /// 0/1
+  @ffi.Int32()
+  external int available;
+
+  /// le_loopback_kind
+  @ffi.Int32()
+  external int kind;
+
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> device_name;
+}
+
 /// Command codes posted into the engine's SPSC ring.
 enum le_command_code {
   LE_CMD_NONE(0),
@@ -419,6 +481,14 @@ final class le_config extends ffi.Struct {
   /// per-track buffer cap; 0 => default (8 min @ sr)
   @ffi.Int32()
   external int max_loop_frames;
+
+  /// 1 = average input channels and feed all outputs
+  @ffi.Int32()
+  external int merge_to_mono;
+
+  /// 1 = capture from a detected loopback device
+  @ffi.Int32()
+  external int use_loopback_capture;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by

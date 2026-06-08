@@ -6,6 +6,7 @@ import 'package:loopy_engine/src/audio_engine.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
+import 'package:loopy_engine/src/loopback_info.dart';
 
 /// Opens the bundled native engine library for the current platform.
 ///
@@ -95,6 +96,19 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     _bindings.le_engine_get_snapshot(_engine, _snapshotPtr);
     return EngineSnapshot.fromNative(_snapshotPtr.ref);
+  }
+
+  @override
+  LoopbackInfo detectLoopback() {
+    final ptr = calloc<le_loopback_info>();
+    try {
+      // Returns LE_OK on success; on failure it still zero-fills the struct
+      // (available == 0), so mapping the result is safe either way.
+      _bindings.le_detect_loopback(ptr);
+      return LoopbackInfo.fromNative(ptr);
+    } finally {
+      calloc.free(ptr);
+    }
   }
 
   @override

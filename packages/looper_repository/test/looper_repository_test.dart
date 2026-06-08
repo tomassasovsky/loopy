@@ -134,6 +134,19 @@ void main() {
       final repo = buildRepo();
       expect(repo.engineVersion, 'fake-engine');
     });
+
+    test('detectLoopback forwards the engine result', () {
+      engine.loopback = const LoopbackInfo(
+        available: true,
+        kind: LoopbackKind.monitor,
+        deviceName: 'Monitor of Built-in',
+      );
+      final repo = buildRepo();
+      final info = repo.detectLoopback();
+      expect(info.available, isTrue);
+      expect(info.kind, LoopbackKind.monitor);
+      expect(engine.calls, contains('detectLoopback'));
+    });
   });
 
   group('dispose', () {

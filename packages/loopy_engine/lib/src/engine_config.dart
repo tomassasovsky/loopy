@@ -16,6 +16,8 @@ class EngineConfig {
     this.channels = 0,
     this.passthrough = false,
     this.maxLoopFrames = 0,
+    this.mergeToMono = false,
+    this.useLoopbackCapture = false,
   });
 
   /// Requested sample rate in Hz, or `0` for the device default.
@@ -37,6 +39,16 @@ class EngineConfig {
   /// (about two minutes at the device sample rate).
   final int maxLoopFrames;
 
+  /// Whether captured input channels are averaged to mono and fed to every
+  /// output channel. Useful for a mono source (e.g. a single mic on input 1)
+  /// so it is heard on both sides instead of one.
+  final bool mergeToMono;
+
+  /// Whether the engine should capture from a detected loopback device (so
+  /// latency can be measured without a physical cable). No effect when no
+  /// loopback is detected.
+  final bool useLoopbackCapture;
+
   /// Writes this configuration into a native [le_config] struct in [ptr].
   void writeTo(Pointer<le_config> ptr) {
     ptr.ref
@@ -44,7 +56,9 @@ class EngineConfig {
       ..buffer_frames = bufferFrames
       ..channels = channels
       ..passthrough = passthrough ? 1 : 0
-      ..max_loop_frames = maxLoopFrames;
+      ..max_loop_frames = maxLoopFrames
+      ..merge_to_mono = mergeToMono ? 1 : 0
+      ..use_loopback_capture = useLoopbackCapture ? 1 : 0;
   }
 
   @override
@@ -56,7 +70,9 @@ class EngineConfig {
           bufferFrames == other.bufferFrames &&
           channels == other.channels &&
           passthrough == other.passthrough &&
-          maxLoopFrames == other.maxLoopFrames;
+          maxLoopFrames == other.maxLoopFrames &&
+          mergeToMono == other.mergeToMono &&
+          useLoopbackCapture == other.useLoopbackCapture;
 
   @override
   int get hashCode => Object.hash(
@@ -65,11 +81,14 @@ class EngineConfig {
     channels,
     passthrough,
     maxLoopFrames,
+    mergeToMono,
+    useLoopbackCapture,
   );
 
   @override
   String toString() =>
       'EngineConfig(sampleRate: $sampleRate, '
       'bufferFrames: $bufferFrames, channels: $channels, '
-      'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames)';
+      'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames, '
+      'mergeToMono: $mergeToMono, useLoopbackCapture: $useLoopbackCapture)';
 }

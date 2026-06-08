@@ -23,6 +23,7 @@ void main() {
     when(() => repository.startEngine(any())).thenReturn(EngineResult.ok);
     when(repository.stopEngine).thenReturn(EngineResult.ok);
     when(repository.measureLatency).thenReturn(EngineResult.ok);
+    when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
   });
 
   tearDown(() => stateController.close());
@@ -35,6 +36,7 @@ void main() {
     expect(cubit.state.sampleRate, 48000);
     expect(cubit.state.bufferFrames, 128);
     expect(cubit.state.monitorInput, isTrue);
+    expect(cubit.state.mergeToMono, isTrue);
     expect(cubit.state.status, AudioSetupStatus.stopped);
   });
 
@@ -44,7 +46,8 @@ void main() {
     act: (cubit) => cubit
       ..setSampleRate(96000)
       ..setBufferFrames(64)
-      ..setMonitorInput(monitorInput: false),
+      ..setMonitorInput(monitorInput: false)
+      ..setMergeToMono(mergeToMono: false),
     expect: () => [
       isA<AudioSetupState>().having((s) => s.sampleRate, 'sampleRate', 96000),
       isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
@@ -53,6 +56,7 @@ void main() {
         'monitorInput',
         false,
       ),
+      isA<AudioSetupState>().having((s) => s.mergeToMono, 'mergeToMono', false),
     ],
   );
 
@@ -74,6 +78,7 @@ void main() {
           bufferFrames: 128,
           channels: 2,
           passthrough: true,
+          mergeToMono: true,
         ),
       ),
     ).called(1),
@@ -121,4 +126,50 @@ void main() {
           .having((s) => s.status, 'status', AudioSetupStatus.running),
     ],
   );
+
+  group('loopback auto-measure', () {
+    const routable = LoopbackInfo(
+      available: true,
+      kind: LoopbackKind.virtualDevice,
+      deviceName: 'BlackHole 2ch',
+    );
+
+    test('detects a loopback on construction and exposes it', () {
+      when(repository.detectLoopback).thenReturn(routable);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.loopback, routable);
+    });
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'start enables loopback capture and auto-measures latency',
+      build: () {
+        when(repository.detectLoopback).thenReturn(routable);
+        return buildCubit();
+      },
+      act: (cubit) => cubit.start(),
+      verify: (_) {
+        verify(
+          () => repository.startEngine(
+            const EngineConfig(
+              sampleRate: 48000,
+              bufferFrames: 128,
+              channels: 2,
+              passthrough: true,
+              mergeToMono: true,
+              useLoopbackCapture: true,
+            ),
+          ),
+        ).called(1);
+        verify(repository.measureLatency).called(1);
+      },
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'start does not auto-measure when no loopback is detected',
+      build: buildCubit,
+      act: (cubit) => cubit.start(),
+      verify: (_) => verifyNever(repository.measureLatency),
+    );
+  });
 }
