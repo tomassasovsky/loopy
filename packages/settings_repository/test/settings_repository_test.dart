@@ -103,4 +103,27 @@ void main() {
       },
     );
   });
+
+  group('ui mode', () {
+    test('round-trips a saved mode name', () async {
+      await repository.saveUiMode('bigPicture');
+      expect(await repository.loadUiMode(), 'bigPicture');
+    });
+
+    test('tolerates and clears a legacy int value', () async {
+      // An earlier build stored the mode as an int under the same key.
+      await store.setInt('ui_mode', 1);
+      expect(await repository.loadUiMode(), isNull);
+      // The stale key is dropped so it does not keep failing.
+      expect(store.values.containsKey('ui_mode'), isFalse);
+    });
+  });
+
+  group('track names', () {
+    test('round-trips a saved name', () async {
+      await repository.saveTrackName(2, 'VOX');
+      expect(await repository.loadTrackName(2), 'VOX');
+      expect(await repository.loadTrackName(0), isNull);
+    });
+  });
 }
