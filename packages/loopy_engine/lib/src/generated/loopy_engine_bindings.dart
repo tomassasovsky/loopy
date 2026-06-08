@@ -301,6 +301,23 @@ class LoopyEngineBindings {
   late final _le_engine_undo = _le_engine_undoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  int le_engine_redo(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_redo(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_redoPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_redo');
+  late final _le_engine_redo = _le_engine_redoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   int le_engine_set_track_volume(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -654,9 +671,13 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int length_frames;
 
-  /// 0 or 1 (one-level undo)
+  /// available undo steps (overdub layers)
   @ffi.Int32()
   external int undo_depth;
+
+  /// available redo steps
+  @ffi.Int32()
+  external int redo_depth;
 
   /// 0..1
   @ffi.Float()

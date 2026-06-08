@@ -15,6 +15,7 @@ class Track extends Equatable {
     this.rms = 0,
     this.peak = 0,
     this.undoDepth = 0,
+    this.redoDepth = 0,
   });
 
   /// Track channel index (always 0 in the single-track phase).
@@ -41,8 +42,11 @@ class Track extends Equatable {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
-  /// Available undo levels (`0` or `1`).
+  /// Available undo steps (overdub layers).
   final int undoDepth;
+
+  /// Available redo steps.
+  final int redoDepth;
 
   /// Whether the track holds recorded audio.
   bool get hasContent => state != TrackState.empty && lengthFrames > 0;
@@ -53,6 +57,9 @@ class Track extends Equatable {
 
   /// Whether an overdub layer can be undone.
   bool get canUndo => undoDepth > 0;
+
+  /// Whether an undone overdub layer can be redone.
+  bool get canRedo => redoDepth > 0;
 
   @override
   List<Object?> get props => [
@@ -65,5 +72,6 @@ class Track extends Equatable {
     rms,
     peak,
     undoDepth,
+    redoDepth,
   ];
 }

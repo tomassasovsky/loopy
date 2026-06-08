@@ -139,4 +139,24 @@ void main() {
     );
     expect(undoButton.enabled, isFalse);
   });
+
+  testWidgets('redo enables and dispatches when a track has redo history', (
+    tester,
+  ) async {
+    seed(
+      const LooperState(
+        tracks: [Track(state: TrackState.playing, redoDepth: 1)],
+      ),
+    );
+    await pumpView(tester);
+
+    final redoButton = tester.widget<OutlinedButton>(
+      find.byKey(const Key('looper_redo_button_0')),
+    );
+    expect(redoButton.enabled, isTrue);
+
+    await tester.tap(find.byKey(const Key('looper_redo_button_0')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
+  });
 }

@@ -110,7 +110,8 @@ typedef struct le_track_snapshot {
   float volume;          /* 0..1 */
   int32_t muted;         /* 0/1 */
   int32_t length_frames; /* frames captured (== master once finalized) */
-  int32_t undo_depth;    /* 0 or 1 (one-level undo) */
+  int32_t undo_depth;    /* available undo steps (overdub layers) */
+  int32_t redo_depth;    /* available redo steps */
   float rms;             /* 0..1 */
   float peak;            /* 0..1 */
 } le_track_snapshot;
@@ -211,6 +212,7 @@ LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_play(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
 LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,

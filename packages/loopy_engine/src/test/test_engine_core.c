@@ -226,13 +226,70 @@ static void test_looper_overdub_and_undo(void) {
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
 
-  /* Undo swaps back to the pre-overdub buffer at the next loop boundary. */
+  /* Undo immediately swaps back to the pre-overdub content (1.0). */
   CHECK(le_engine_undo(e, 0) == LE_OK);
-  process_const(e, 0.0f, LOOP_N, out); /* boundary crossed at end of this loop */
-  process_const(e, 0.0f, LOOP_N, out); /* now playing pre-overdub */
+  process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 1);
+
+  /* Redo brings the overdub back (1.5). */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].redo_depth == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_multilevel_undo(void) {
+  printf("test_looper_multilevel_undo\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Base loop of 1.0. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  /* Two overdubs of +0.5 -> 1.5 then 2.0. */
+  for (int layer = 0; layer < 2; ++layer) {
+    le_engine_record(e, 0); /* start overdub */
+    process_const(e, 0.5f, LOOP_N, out);
+    le_engine_record(e, 0); /* stop overdub */
+    drain(e);
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 2);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+
+  /* Undo twice: 2.0 -> 1.5 -> 1.0. */
+  le_engine_undo(e, 0);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  le_engine_undo(e, 0);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 2);
+
+  /* A fresh overdub from here invalidates redo. */
+  le_engine_record(e, 0);
+  process_const(e, 0.25f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].redo_depth == 0);
+  CHECK(s.tracks[0].undo_depth == 1);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.25f) < 1e-6f);
 
   le_engine_destroy(e);
 }
@@ -545,6 +602,7 @@ int main(void) {
   test_loop_clock();
   test_looper_record_then_play();
   test_looper_overdub_and_undo();
+  test_looper_multilevel_undo();
   test_looper_volume_and_mute();
   test_looper_clear();
   test_looper_requires_configure();

@@ -29,6 +29,7 @@ class FakeAudioEngine implements AudioEngine {
   int playCalls = 0;
   int clearCalls = 0;
   int undoCalls = 0;
+  int redoCalls = 0;
 
   /// Last looper parameter values seen.
   double? lastVolume;
@@ -97,6 +98,12 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult undo({int channel = 0}) {
     undoCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult redo({int channel = 0}) {
+    redoCalls++;
     return EngineResult.ok;
   }
 

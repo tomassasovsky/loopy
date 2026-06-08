@@ -38,6 +38,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperUndoPressed>(
       (event, _) => _repository.undo(channel: event.channel),
     );
+    on<LooperRedoPressed>(
+      (event, _) => _repository.redo(channel: event.channel),
+    );
     on<LooperVolumeChanged>(
       (event, _) => _repository.setVolume(event.volume, channel: event.channel),
     );
