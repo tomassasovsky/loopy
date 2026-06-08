@@ -26,6 +26,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         ),
       );
     });
+
+    // Detect a cable-free loopback path so latency can be auto-measured.
+    final loopback = _repository.detectLoopback();
+    if (loopback.available) emit(state.copyWith(loopback: loopback));
   }
 
   final LooperRepository _repository;
@@ -43,6 +47,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setMonitorInput({required bool monitorInput}) =>
       emit(state.copyWith(monitorInput: monitorInput));
 
+  /// Toggles merging input channels to mono (applied on the next start).
+  void setMergeToMono({required bool mergeToMono}) =>
+      emit(state.copyWith(mergeToMono: mergeToMono));
+
   /// Opens the audio device with the current options.
   void start() {
     final result = _repository.startEngine(
@@ -51,10 +59,15 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         bufferFrames: state.bufferFrames,
         channels: 2,
         passthrough: state.monitorInput,
+        mergeToMono: state.mergeToMono,
+        useLoopbackCapture: state.loopback.isAutoRoutable,
       ),
     );
     if (result.isOk) {
       emit(state.copyWith(status: AudioSetupStatus.running));
+      // With a routable loopback the capture carries our output, so we can
+      // measure round-trip latency automatically (a digital-path estimate).
+      if (state.loopback.isAutoRoutable) _repository.measureLatency();
     } else {
       emit(
         state.copyWith(

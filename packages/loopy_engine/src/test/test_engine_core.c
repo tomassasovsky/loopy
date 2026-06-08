@@ -285,6 +285,38 @@ static void test_looper_requires_configure(void) {
   le_engine_destroy(e);
 }
 
+static void test_classify_capture_device(void) {
+  printf("test_classify_capture_device\n");
+  /* PulseAudio monitor sources. */
+  CHECK(le_classify_capture_device("Monitor of Built-in Audio") ==
+        LE_LOOPBACK_MONITOR);
+  CHECK(le_classify_capture_device("monitor of scarlett") ==
+        LE_LOOPBACK_MONITOR);
+  /* Virtual drivers (case-insensitive substring). */
+  CHECK(le_classify_capture_device("BlackHole 2ch") == LE_LOOPBACK_VIRTUAL);
+  CHECK(le_classify_capture_device("CABLE Output (VB-Audio)") ==
+        LE_LOOPBACK_VIRTUAL);
+  CHECK(le_classify_capture_device("VoiceMeeter Output") ==
+        LE_LOOPBACK_VIRTUAL);
+  CHECK(le_classify_capture_device("Loopback Audio") == LE_LOOPBACK_VIRTUAL);
+  /* Ordinary inputs are not loopbacks. */
+  CHECK(le_classify_capture_device("Scarlett 2i2 USB") == LE_LOOPBACK_NONE);
+  CHECK(le_classify_capture_device("Built-in Microphone") == LE_LOOPBACK_NONE);
+  CHECK(le_classify_capture_device(NULL) == LE_LOOPBACK_NONE);
+  CHECK(le_classify_capture_device("") == LE_LOOPBACK_NONE);
+}
+
+static void test_detect_loopback_runs(void) {
+  printf("test_detect_loopback_runs\n");
+  /* Enumeration result is environment-dependent; assert it runs safely and
+   * fills a consistent struct rather than asserting a specific device. */
+  le_loopback_info info;
+  CHECK(le_detect_loopback(&info) == LE_OK);
+  CHECK(info.available == 0 || info.available == 1);
+  if (!info.available) CHECK(info.kind == LE_LOOPBACK_NONE);
+  CHECK(le_detect_loopback(NULL) == LE_ERR_INVALID);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_ring_init_rejects_bad_capacity();
@@ -299,6 +331,8 @@ int main(void) {
   test_looper_volume_and_mute();
   test_looper_clear();
   test_looper_requires_configure();
+  test_classify_capture_device();
+  test_detect_loopback_runs();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

@@ -51,6 +51,26 @@ typedef enum le_track_state {
   LE_TRACK_STOPPED = 4,      /* buffer retained, playback halted */
 } le_track_state;
 
+/* Classification of a cable-free loopback path used to auto-measure latency.
+ * All of these capture the *digital* round-trip (output → OS mixer → capture);
+ * they exclude DAC/ADC converter latency, so they under-report the true analog
+ * round-trip. A physical loopback cable remains the only true analog measure. */
+typedef enum le_loopback_kind {
+  LE_LOOPBACK_NONE = 0,
+  LE_LOOPBACK_WASAPI = 1,   /* Windows WASAPI output loopback (built-in) */
+  LE_LOOPBACK_MONITOR = 2,  /* PulseAudio "Monitor of ..." source (Linux) */
+  LE_LOOPBACK_VIRTUAL = 3,  /* named virtual driver (BlackHole, VB-Cable, ...) */
+} le_loopback_kind;
+
+/* Result of loopback detection. `device_name` is the capture device to open for
+ * an auto-measurement (empty for WASAPI's built-in loopback, which the duplex
+ * engine does not auto-route). */
+typedef struct le_loopback_info {
+  int32_t available; /* 0/1 */
+  int32_t kind;      /* le_loopback_kind */
+  char device_name[256];
+} le_loopback_info;
+
 /* Command codes posted into the engine's SPSC ring. */
 typedef enum le_command_code {
   LE_CMD_NONE = 0,
@@ -72,6 +92,8 @@ typedef struct le_config {
   int32_t channels;
   int32_t passthrough;     /* 1 = copy captured input straight to the output */
   int32_t max_loop_frames; /* per-track buffer cap; 0 => default (8 min @ sr) */
+  int32_t merge_to_mono;   /* 1 = average input channels and feed all outputs */
+  int32_t use_loopback_capture; /* 1 = capture from a detected loopback device */
 } le_config;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -109,6 +131,11 @@ typedef struct le_engine le_engine;
 
 /* Returns the miniaudio + engine version string (never NULL). */
 LE_EXPORT const char* le_version(void);
+
+/* Detects a cable-free loopback capture path (PulseAudio monitor / virtual
+ * driver / WASAPI) by enumerating capture devices. Fills *out and returns LE_OK,
+ * or LE_ERR_INVALID for a null argument / enumeration failure. */
+LE_EXPORT int32_t le_detect_loopback(le_loopback_info* out);
 
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);

@@ -95,6 +95,9 @@ class LooperRepository {
   /// Closes the audio device.
   EngineResult stopEngine() => _engine.stop();
 
+  /// Detects a cable-free loopback capture path for auto-measuring latency.
+  LoopbackInfo detectLoopback() => _engine.detectLoopback();
+
   /// Triggers a loopback round-trip latency measurement.
   EngineResult measureLatency() => _engine.measureLatency();
 

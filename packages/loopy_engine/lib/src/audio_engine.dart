@@ -1,5 +1,6 @@
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
+import 'package:loopy_engine/src/loopback_info.dart';
 
 /// Result of an [AudioEngine] lifecycle call.
 ///
@@ -74,10 +75,16 @@ abstract interface class AudioEngine {
   /// Reads the current lock-free [EngineSnapshot] published by the engine.
   EngineSnapshot snapshot();
 
+  /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
+  /// driver / WASAPI) for auto-measuring latency. The result captures the
+  /// digital round-trip only (see [LoopbackInfo]).
+  LoopbackInfo detectLoopback();
+
   /// Triggers a single loopback round-trip latency measurement. The result is
   /// surfaced asynchronously via [snapshot]'s latency fields.
   ///
-  /// Requires a physical output→input loopback path.
+  /// Requires a loopback path: a physical cable, or a detected loopback device
+  /// when the engine was started with [EngineConfig.useLoopbackCapture].
   EngineResult measureLatency();
 
   /// Advances the track: start recording, finalize the master loop, or toggle

@@ -12,6 +12,7 @@
  * audio thread while PLAYING/STOPPED — so the audio thread only performs an O(1)
  * buffer-index swap to undo, never a copy.
  */
+#include <ctype.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -25,7 +26,16 @@
 
 #define LE_RING_CAPACITY 256u
 #define LE_MAX_CHANNELS 2
-#define LE_LATENCY_THRESHOLD 0.3f /* loopback detection level (0..1) */
+/* Loopback latency harness. The echo returns only mildly attenuated (~0.9 from
+ * a full-scale pulse on a typical interface), so we emit a quiet calibration
+ * tone rather than full scale to spare the user's monitors, and detect with a
+ * threshold comfortably below the echo yet well above the noise floor. */
+#define LE_LATENCY_PULSE_AMP 0.3f /* calibration pulse amplitude (0..1) */
+#define LE_LATENCY_THRESHOLD 0.05f /* loopback detection level (0..1) */
+#define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
+#define LE_LATENCY_DEAD_DIV 400    /* dead-time   = sample_rate / this (~2.5ms) */
+#define LE_LATENCY_RETRY_DIV 10    /* per-attempt = sample_rate / this (~100ms) */
+#define LE_LATENCY_ATTEMPTS 5      /* re-emit this many pulses before timing out */
 
 struct le_engine {
   ma_device device;
@@ -44,6 +54,7 @@ struct le_engine {
   _Atomic uint32_t a_out_rms_bits;
   _Atomic int32_t a_latency_state;
   _Atomic uint64_t a_latency_ms_bits;
+  _Atomic int32_t a_monitor; /* live input-monitoring flag (see passthrough) */
 
   /* Looper, published. */
   _Atomic int32_t a_master_len;
@@ -76,12 +87,19 @@ struct le_engine {
 
   /* Latency harness (audio-thread-local + published state). */
   int lat_active;
-  int lat_emitted;
-  int32_t lat_emit_remaining; /* frames left to broadcast the pulse */
-  uint64_t lat_frames_since_emit;
+  int32_t lat_emit_remaining;     /* frames left to broadcast the pulse */
+  uint64_t lat_frames_since_emit; /* counted from the current pulse's start */
+  int32_t lat_attempts_remaining; /* pulses left before declaring a timeout */
 
   char device_name[256];
   int passthrough; /* input monitoring */
+  int mono_input;  /* average input channels and feed every output channel */
+
+  /* Explicit context + capture device id, only used when capturing from a
+   * detected loopback device (use_loopback_capture). */
+  ma_context context;
+  int context_initialised;
+  ma_device_id capture_id;
 };
 
 /* ---- float/double <-> atomic-bits helpers ---- */
@@ -175,14 +193,22 @@ static void handle_clear(le_engine* e) {
 
 static void apply_command(le_engine* e, const le_command* cmd) {
   switch (cmd->code) {
-    case LE_CMD_MEASURE_LATENCY:
+    case LE_CMD_MEASURE_LATENCY: {
+      const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
       e->lat_active = 1;
-      e->lat_emitted = 0;
-      /* Emit for 10 ms so the pulse survives D/A → cable → A/D. */
-      e->lat_emit_remaining = (e->sample_rate > 0 ? e->sample_rate : 48000) / 100;
+      /* Emit for ~10 ms so the pulse survives D/A → cable → A/D. */
+      e->lat_emit_remaining = sr / LE_LATENCY_PULSE_DIV;
       e->lat_frames_since_emit = 0;
+      e->lat_attempts_remaining = LE_LATENCY_ATTEMPTS;
       store_i32(&e->a_latency_state, LE_LATENCY_MEASURING);
+      /* A loopback measurement requires a physical out->in cable, which forms a
+       * feedback loop with input monitoring (out -> cable -> in -> monitor ->
+       * out). With loop gain > 1 that runs away to clipping and can overload the
+       * interface. Disable monitoring for the rest of the session; it is
+       * restored on the next start(). */
+      store_i32(&e->a_monitor, 0);
       break;
+    }
     case LE_CMD_RECORD:
       handle_record(e);
       break;
@@ -227,7 +253,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
-  const uint64_t timeout_frames = (uint64_t)sr;
   const float vol = load_f32(&e->a_track_vol_bits);
   const int muted = load_i32(&e->a_track_muted);
 
@@ -239,31 +264,51 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
   for (uint32_t f = 0; f < frames; ++f) {
     float frame_mag = 0.0f;
+    float mono = 0.0f;
     for (int c = 0; c < ch; ++c) {
       const float s = in ? in[f * ch + c] : 0.0f;
       const float a = fabsf(s);
       if (a > frame_mag) frame_mag = a;
       in_sumsq += s * s;
+      mono += s;
     }
+    mono /= (float)ch; /* clip-safe average fold-down */
     if (frame_mag > in_peak) in_peak = frame_mag;
 
-    /* Latency harness takes over the output entirely while measuring. */
+    /* Latency harness takes over the output entirely while measuring.
+     *
+     * Each attempt broadcasts a quiet ~10 ms pulse, then silence, and listens
+     * for the echo. lat_frames_since_emit counts from the current pulse's first
+     * frame. A short dead-time suppresses direct output bleed before we start
+     * checking input; thereafter we check every frame (the echo can arrive while
+     * a small-buffer pulse is still emitting). If an attempt's window elapses
+     * with no echo, we re-emit — a single dropped period at device startup costs
+     * one retry instead of a full timeout. After LE_LATENCY_ATTEMPTS misses we
+     * report a timeout. The retry interval (~100 ms) is far longer than any real
+     * round-trip, so an echo is never mis-attributed to the wrong pulse. */
     if (e->lat_active) {
       float broadcast = 0.0f;
-      if (!e->lat_emitted) {
-        broadcast = 1.0f;
-        e->lat_emitted = 1;
-        e->lat_frames_since_emit = 0;
-      } else {
-        e->lat_frames_since_emit++;
-        if (frame_mag >= LE_LATENCY_THRESHOLD) {
-          const double ms =
-              (double)e->lat_frames_since_emit * 1000.0 / (double)sr;
-          atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
-                                memory_order_relaxed);
-          store_i32(&e->a_latency_state, LE_LATENCY_DONE);
-          e->lat_active = 0;
-        } else if (e->lat_frames_since_emit > timeout_frames) {
+      if (e->lat_emit_remaining > 0) {
+        broadcast = LE_LATENCY_PULSE_AMP;
+        e->lat_emit_remaining--;
+      }
+      e->lat_frames_since_emit++;
+
+      const uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
+      const uint64_t attempt_frames = (uint64_t)(sr / LE_LATENCY_RETRY_DIV);
+      if (e->lat_frames_since_emit > dead_frames &&
+          frame_mag >= LE_LATENCY_THRESHOLD) {
+        const double ms = (double)e->lat_frames_since_emit * 1000.0 / (double)sr;
+        atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
+                              memory_order_relaxed);
+        store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+        e->lat_active = 0;
+      } else if (e->lat_frames_since_emit >= attempt_frames) {
+        if (e->lat_attempts_remaining > 1) {
+          e->lat_attempts_remaining--;
+          e->lat_emit_remaining = sr / LE_LATENCY_PULSE_DIV;
+          e->lat_frames_since_emit = 0;
+        } else {
           store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
           e->lat_active = 0;
         }
@@ -280,10 +325,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     const int live = load_i32(&e->a_live_index);
     float* loop = e->track_buf[live];
     const int32_t pos = e->clock.position;
-    const int monitor_on = e->passthrough && state != LE_TRACK_OVERDUBBING;
+    const int monitor_on =
+        load_i32(&e->a_monitor) && state != LE_TRACK_OVERDUBBING;
 
     for (int c = 0; c < ch; ++c) {
-      const float insample = in ? in[f * ch + c] : 0.0f;
+      const float insample =
+          e->mono_input ? mono : (in ? in[f * ch + c] : 0.0f);
       float loopsample = 0.0f;
 
       if (state == LE_TRACK_RECORDING) {
@@ -391,6 +438,94 @@ const char* le_version(void) {
   return "loopy_engine 0.2.0 (miniaudio " MA_VERSION_STRING ")";
 }
 
+/* ---- loopback detection ---- */
+
+static int contains_ci(const char* haystack, const char* needle) {
+  if (haystack == NULL || needle == NULL) return 0;
+  const size_t nlen = strlen(needle);
+  if (nlen == 0) return 1;
+  for (const char* h = haystack; *h != '\0'; ++h) {
+    size_t i = 0;
+    while (i < nlen && h[i] != '\0' &&
+           tolower((unsigned char)h[i]) == tolower((unsigned char)needle[i])) {
+      ++i;
+    }
+    if (i == nlen) return 1;
+  }
+  return 0;
+}
+
+le_loopback_kind le_classify_capture_device(const char* name) {
+  if (name == NULL) return LE_LOOPBACK_NONE;
+  if (contains_ci(name, "monitor of")) return LE_LOOPBACK_MONITOR;
+  static const char* const virtual_names[] = {
+      "blackhole", "soundflower", "loopback audio", "loopback",
+      "vb-audio",  "vb-cable",    "cable output",   "voicemeeter",
+  };
+  for (size_t i = 0; i < sizeof(virtual_names) / sizeof(virtual_names[0]); ++i) {
+    if (contains_ci(name, virtual_names[i])) return LE_LOOPBACK_VIRTUAL;
+  }
+  return LE_LOOPBACK_NONE;
+}
+
+/* Enumerates capture devices on `ctx`, returning the first loopback candidate.
+ * Fills *out (always); when found and out_id != NULL, copies the device id. */
+static void find_loopback(ma_context* ctx, le_loopback_info* out,
+                          ma_device_id* out_id) {
+  out->available = 0;
+  out->kind = LE_LOOPBACK_NONE;
+  out->device_name[0] = '\0';
+
+  ma_device_info* playback = NULL;
+  ma_uint32 playback_count = 0;
+  ma_device_info* capture = NULL;
+  ma_uint32 capture_count = 0;
+  if (ma_context_get_devices(ctx, &playback, &playback_count, &capture,
+                             &capture_count) != MA_SUCCESS) {
+    return;
+  }
+
+  for (ma_uint32 i = 0; i < capture_count; ++i) {
+    const le_loopback_kind kind = le_classify_capture_device(capture[i].name);
+    if (kind != LE_LOOPBACK_NONE) {
+      out->available = 1;
+      out->kind = kind;
+      strncpy(out->device_name, capture[i].name, sizeof(out->device_name) - 1);
+      out->device_name[sizeof(out->device_name) - 1] = '\0';
+      if (out_id != NULL) *out_id = capture[i].id;
+      return;
+    }
+  }
+
+  /* No named capture loopback; fall back to WASAPI's built-in output loopback
+   * (Windows). Reported, but not auto-routed through the duplex path. */
+  if (ma_context_is_loopback_supported(ctx)) {
+    out->available = 1;
+    out->kind = LE_LOOPBACK_WASAPI;
+  }
+}
+
+int32_t le_detect_loopback(le_loopback_info* out) {
+  if (out == NULL) return LE_ERR_INVALID;
+  ma_context ctx;
+  if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) {
+    out->available = 0;
+    out->kind = LE_LOOPBACK_NONE;
+    out->device_name[0] = '\0';
+    return LE_ERR_INVALID;
+  }
+  find_loopback(&ctx, out, NULL);
+  ma_context_uninit(&ctx);
+  return LE_OK;
+}
+
+static void le_uninit_context(le_engine* engine) {
+  if (engine->context_initialised) {
+    ma_context_uninit(&engine->context);
+    engine->context_initialised = 0;
+  }
+}
+
 le_engine* le_engine_create(void) {
   le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
   if (engine == NULL) return NULL;
@@ -406,6 +541,7 @@ void le_engine_destroy(le_engine* engine) {
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
   }
+  le_uninit_context(engine);
   free(engine->track_buf[0]);
   free(engine->track_buf[1]);
   free(engine);
@@ -420,6 +556,8 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   int channels = config->channels > 0 ? config->channels : 2;
   if (channels > LE_MAX_CHANNELS) channels = LE_MAX_CHANNELS;
   engine->passthrough = config->passthrough ? 1 : 0;
+  engine->mono_input = config->merge_to_mono ? 1 : 0;
+  store_i32(&engine->a_monitor, engine->passthrough);
 
   ma_device_config cfg = ma_device_config_init(ma_device_type_duplex);
   cfg.capture.format = ma_format_f32;
@@ -434,7 +572,27 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   cfg.dataCallback = data_callback;
   cfg.pUserData = engine;
 
-  if (ma_device_init(NULL, &cfg, &engine->device) != MA_SUCCESS) {
+  /* When requested, capture from a detected loopback device so latency can be
+   * measured without a physical cable. Requires an explicit context (for both
+   * enumeration and the matching device id). Playback stays on the default. */
+  ma_context* pContext = NULL;
+  if (config->use_loopback_capture) {
+    if (ma_context_init(NULL, 0, NULL, &engine->context) == MA_SUCCESS) {
+      engine->context_initialised = 1;
+      pContext = &engine->context;
+      le_loopback_info info;
+      find_loopback(&engine->context, &info, &engine->capture_id);
+      if (info.available && info.device_name[0] != '\0') {
+        cfg.capture.pDeviceID = &engine->capture_id;
+      }
+    }
+  }
+
+  if (ma_device_init(pContext, &cfg, &engine->device) != MA_SUCCESS) {
+    if (engine->context_initialised) {
+      ma_context_uninit(&engine->context);
+      engine->context_initialised = 0;
+    }
     return LE_ERR_DEVICE;
   }
   engine->device_initialised = 1;
@@ -444,13 +602,15 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
       LE_OK) {
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
+    le_uninit_context(engine);
     return LE_ERR_INVALID;
   }
   store_i32(&engine->a_buffer_frames,
             (int32_t)engine->device.playback.internalPeriodSizeInFrames);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
-  engine->lat_emitted = 0;
+  engine->lat_emit_remaining = 0;
+  engine->lat_attempts_remaining = 0;
 
   strncpy(engine->device_name, engine->device.playback.name,
           sizeof(engine->device_name) - 1);
@@ -459,6 +619,7 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
+    le_uninit_context(engine);
     return LE_ERR_DEVICE;
   }
   atomic_store_explicit(&engine->a_running, 1, memory_order_release);
@@ -472,6 +633,7 @@ int32_t le_engine_stop(le_engine* engine) {
   }
   ma_device_uninit(&engine->device);
   engine->device_initialised = 0;
+  le_uninit_context(engine);
   engine->device_name[0] = '\0';
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
   return LE_OK;

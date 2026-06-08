@@ -20,12 +20,14 @@ structs:
   include:
     - 'le_config'
     - 'le_snapshot'
+    - 'le_loopback_info'
 enums:
   include:
     - 'le_result'
     - 'le_latency_state'
     - 'le_track_state'
     - 'le_command_code'
+    - 'le_loopback_kind'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file

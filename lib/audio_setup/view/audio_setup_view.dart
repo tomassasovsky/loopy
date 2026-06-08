@@ -50,6 +50,17 @@ class AudioSetupView extends StatelessWidget {
                   ? null
                   : (v) => cubit.setMonitorInput(monitorInput: v),
             ),
+            SwitchListTile(
+              key: const Key('audioSetup_mergeToMono_switch'),
+              title: const Text('Merge to mono'),
+              subtitle: const Text(
+                'Average inputs and feed both outputs (for a mono source)',
+              ),
+              value: state.mergeToMono,
+              onChanged: isRunning
+                  ? null
+                  : (v) => cubit.setMergeToMono(mergeToMono: v),
+            ),
             const SizedBox(height: 16),
             FilledButton.icon(
               key: const Key('audioSetup_startStop_button'),
@@ -73,10 +84,32 @@ class AudioSetupView extends StatelessWidget {
               icon: const Icon(Icons.timer_outlined),
               label: const Text('Measure round-trip latency'),
             ),
+            if (state.loopback.available)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  _loopbackNote(state.loopback),
+                  key: const Key('audioSetup_loopback_note'),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  String _loopbackNote(LoopbackInfo loopback) {
+    final where = loopback.deviceName.isNotEmpty
+        ? ' (${loopback.deviceName})'
+        : '';
+    if (loopback.isAutoRoutable) {
+      return 'Loopback detected$where — latency is auto-measured on start as a '
+          'digital-path estimate (excludes converter latency). Use a physical '
+          'loopback cable for the true analog figure.';
+    }
+    return 'A ${loopback.kind.name} loopback is available$where but cannot be '
+        'auto-routed; use a physical loopback cable to measure latency.';
   }
 }
 
