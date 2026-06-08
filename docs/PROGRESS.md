@@ -119,6 +119,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **auto-rounded up** to whole base loops on stop (buffer zeroed on the control
   thread so a rounded-up tail is silent). Per-track `multiple` in the snapshot;
   `×N` chip in the UI.
+- **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
+  `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
+  exports mixdown / per-track stems. Native `le_engine_export_track` /
+  `import_track` / `commit_session` move loop PCM in and out (control-thread copy
+  into EMPTY tracks; a ring command flips them to PLAYING at their multiple, so
+  the audio thread's RT contract is preserved). `SessionCubit` + a session menu
+  in the looper app bar drive it; the engine is shared (looper owns dispose).
+  Load refuses a sample-rate mismatch (no resampling) or a newer manifest
+  version.
 
 ---
 
@@ -164,8 +173,9 @@ hardware or a second display, or is Phase 4 scope.
 - `midi_client` — real USB-MIDI binding (abstraction + wiring ready; needs a
   pedal). Plug a `ControllerSource` into the already-wired `ControllerRepository`.
 - Secondary-window **visualizer** (`desktop_multi_window`) — needs a 2nd display.
-- **Phase 4:** sessions save/load + WAV export, Raspberry Pi GPIO backend,
-  device hot-plug handling, theming/accessibility/golden tests.
+- **Phase 4:** sessions save/load + WAV export ✅ (done — see Done); remaining:
+  Raspberry Pi GPIO backend, device hot-plug handling, theming/accessibility/
+  golden tests.
 
 ### On-hardware validations still open
 - Phase-1 **latency gate** (≤10 ms round-trip) — needs a class-compliant
@@ -175,6 +185,7 @@ hardware or a second display, or is Phase 4 scope.
 ---
 
 ## Test counts (last green)
-native (all C tests, 33 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples) ·
-plugin 27 · controller 14 · looper_repository 14 · settings 3 · local_storage 1
-· app 45. macOS app builds end-to-end.
+native (all C tests, 34 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples + 1
+session roundtrip) · plugin 27 · controller 14 · looper_repository 14 ·
+settings 3 · local_storage 1 · session_repository 17 · app 53. macOS app builds
+end-to-end.
