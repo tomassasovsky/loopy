@@ -126,6 +126,61 @@ void main() {
     await tester.tap(find.byKey(const Key('looper_countIn_button')));
     await tester.pump();
     verify(() => bloc.add(const LooperCountInToggled())).called(1);
+
+    await tester.tap(find.byKey(const Key('looper_syncTempo_button')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperSyncTempoToggled())).called(1);
+  });
+
+  testWidgets('tempo bar shows the synced bar count when a loop exists', (
+    tester,
+  ) async {
+    seed(
+      const LooperState(
+        transport: TransportState(
+          isRunning: true,
+          masterLengthFrames: 96000,
+          loopBars: 2,
+        ),
+        tracks: [Track()],
+      ),
+    );
+    await pumpView(tester);
+
+    expect(find.byKey(const Key('looper_bars_text')), findsOneWidget);
+    expect(find.text('2 bars'), findsOneWidget);
+  });
+
+  testWidgets('quantize menu dispatches the selected mode', (tester) async {
+    seed(
+      const LooperState(
+        transport: TransportState(isRunning: true),
+        tracks: [Track()],
+      ),
+    );
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('looper_quantize_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Quantize: beat'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => bloc.add(const LooperQuantizeChanged(QuantizeMode.beat)),
+    ).called(1);
+  });
+
+  testWidgets('an armed track shows the armed chip', (tester) async {
+    seed(
+      const LooperState(
+        transport: TransportState(isRunning: true, armedChannel: 0),
+        tracks: [Track(state: TrackState.playing, armed: true)],
+      ),
+    );
+    await pumpView(tester);
+
+    expect(find.byKey(const Key('looper_armed_chip_0')), findsOneWidget);
+    expect(find.text('armed'), findsOneWidget);
   });
 
   testWidgets('undo is disabled without an undo layer', (tester) async {

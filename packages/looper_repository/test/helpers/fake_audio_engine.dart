@@ -119,6 +119,8 @@ class FakeAudioEngine implements AudioEngine {
   double? lastTempo;
   bool? lastMetronome;
   bool? lastCountIn;
+  bool? lastSyncTempo;
+  QuantizeMode? lastQuantize;
 
   @override
   EngineResult setTempo(double bpm) {
@@ -144,6 +146,20 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult tapTempo() {
     calls.add('tapTempo');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setSyncTempo({required bool on}) {
+    lastSyncTempo = on;
+    calls.add('setSyncTempo');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setQuantize(QuantizeMode mode) {
+    lastQuantize = mode;
+    calls.add('setQuantize');
     return EngineResult.ok;
   }
 

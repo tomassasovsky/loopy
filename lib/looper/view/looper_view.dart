@@ -110,11 +110,49 @@ class _TempoBar extends StatelessWidget {
           key: const Key('looper_bpm_text'),
           style: theme.textTheme.titleMedium,
         ),
+        if (transport.syncLoopToTempo && transport.loopBars > 0) ...[
+          const SizedBox(width: 8),
+          Text(
+            '${transport.loopBars} ${transport.loopBars == 1 ? 'bar' : 'bars'}',
+            key: const Key('looper_bars_text'),
+            style: theme.textTheme.labelMedium,
+          ),
+        ],
         if (transport.countingIn) ...[
           const SizedBox(width: 8),
           Text('count-in…', style: theme.textTheme.labelMedium),
         ],
         const Spacer(),
+        IconButton(
+          key: const Key('looper_syncTempo_button'),
+          tooltip: transport.syncLoopToTempo
+              ? 'Sync loop to tempo on'
+              : 'Sync loop to tempo off',
+          isSelected: transport.syncLoopToTempo,
+          icon: const Icon(Icons.sync),
+          onPressed: () => bloc.add(const LooperSyncTempoToggled()),
+        ),
+        PopupMenuButton<QuantizeMode>(
+          key: const Key('looper_quantize_button'),
+          tooltip: 'Quantize start: ${transport.quantizeMode.name}',
+          initialValue: transport.quantizeMode,
+          icon: const Icon(Icons.grid_4x4),
+          onSelected: (mode) => bloc.add(LooperQuantizeChanged(mode)),
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: QuantizeMode.off,
+              child: Text('Quantize: off'),
+            ),
+            PopupMenuItem(
+              value: QuantizeMode.beat,
+              child: Text('Quantize: beat'),
+            ),
+            PopupMenuItem(
+              value: QuantizeMode.bar,
+              child: Text('Quantize: bar'),
+            ),
+          ],
+        ),
         OutlinedButton.icon(
           key: const Key('looper_tap_button'),
           onPressed: () => bloc.add(const LooperTapTempo()),
@@ -200,6 +238,14 @@ class _TrackStrip extends StatelessWidget {
               children: [
                 Text('Track ${ch + 1}', style: theme.textTheme.titleSmall),
                 const Spacer(),
+                if (track.armed) ...[
+                  Chip(
+                    key: Key('looper_armed_chip_$ch'),
+                    avatar: const Icon(Icons.hourglass_top, size: 16),
+                    label: const Text('armed'),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Chip(
                   key: Key('looper_trackState_chip_$ch'),
                   label: Text(track.state.name),

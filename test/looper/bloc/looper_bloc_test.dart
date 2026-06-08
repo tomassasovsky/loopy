@@ -29,6 +29,8 @@ void main() {
   late LooperRepository repository;
   late StreamController<LooperState> stateController;
 
+  setUpAll(() => registerFallbackValue(QuantizeMode.bar));
+
   setUp(() {
     repository = _MockLooperRepository();
     stateController = StreamController<LooperState>.broadcast();
@@ -70,6 +72,10 @@ void main() {
       () => repository.setCountIn(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(repository.tapTempo).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setSyncTempo(on: any(named: 'on')),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.setQuantize(any())).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => stateController.close());
@@ -169,6 +175,21 @@ void main() {
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperTapTempo()),
     verify: (_) => verify(repository.tapTempo).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperSyncTempoToggled disables loop-to-tempo sync from the default on',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperSyncTempoToggled()),
+    verify: (_) => verify(() => repository.setSyncTempo(on: false)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperQuantizeChanged forwards the mode to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperQuantizeChanged(QuantizeMode.beat)),
+    verify: (_) =>
+        verify(() => repository.setQuantize(QuantizeMode.beat)).called(1),
   );
 
   group('controller wiring', () {

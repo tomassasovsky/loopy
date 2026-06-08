@@ -112,6 +112,10 @@ struct le_engine {
   _Atomic int32_t a_count_in_enabled;
   _Atomic int32_t a_counting_in;
   _Atomic int32_t a_current_beat;
+  _Atomic int32_t a_loop_bars;     /* whole bars in the loop; 0 if none */
+  _Atomic int32_t a_sync_tempo;    /* snap tempo+grid to the loop (default 1) */
+  _Atomic int32_t a_quantize;      /* le_quantize_mode (default BAR) */
+  _Atomic int32_t a_armed_channel; /* track armed for a quantized start, or -1 */
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
   /* Tracks. */
@@ -142,6 +146,8 @@ struct le_engine {
   float click_freq;
   int32_t count_in_remaining; /* frames left in a count-in */
   int32_t count_in_channel;
+  int32_t loop_total_beats; /* beats spanning the loop (bars * beats/bar) */
+  int32_t metro_prev_beat;  /* last loop-driven beat index that clicked, or -1 */
 
   /* Latency harness (audio-thread-local + published state). */
   int lat_active;
@@ -226,6 +232,14 @@ static void trigger_click(le_engine* e, int downbeat) {
   e->click_freq = downbeat ? LE_CLICK_FREQ_DOWNBEAT : LE_CLICK_FREQ_BEAT;
 }
 
+/* The beat index (0-based) the loop is on at `pos`, given a loop of `len`
+ * frames divided into `total_beats` beats. Distributes any remainder evenly so
+ * the grid divides the loop exactly even when len % total_beats != 0. */
+static int32_t beat_at(int32_t pos, int32_t len, int32_t total_beats) {
+  if (len <= 0 || total_beats <= 0) return 0;
+  return (int32_t)(((int64_t)pos * (int64_t)total_beats) / (int64_t)len);
+}
+
 static void handle_tap(le_engine* e) {
   const uint64_t now = e->frame_clock;
   if (e->has_tap) {
@@ -244,12 +258,39 @@ static void handle_tap(le_engine* e) {
 
 /* ---- command handlers (audio thread) ---- */
 
+/* Establishes the loop<->tempo relationship for a freshly defined master loop.
+ * With sync on: round the recorded length to the nearest whole bar at the
+ * current tempo, then derive the beat grid back from the loop so it divides the
+ * loop exactly, and snap the displayed tempo to match. With sync off: leave the
+ * tempo untouched and the loop free-form (no bars, free-running metronome). */
+static void sync_tempo_to_loop(le_engine* e, int32_t len) {
+  e->metro_prev_beat = -1; /* re-arm the loop-driven metronome at pos 0 */
+  if (!load_i32(&e->a_sync_tempo)) {
+    e->loop_total_beats = 0;
+    store_i32(&e->a_loop_bars, 0);
+    return;
+  }
+  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  const int32_t fpbar = frames_per_beat(e) * LE_BEATS_PER_BAR;
+  int32_t bars = (len + fpbar / 2) / fpbar; /* round to nearest whole bar */
+  if (bars < 1) bars = 1;
+  const int32_t total_beats = bars * LE_BEATS_PER_BAR;
+  /* framesPerBeat = len / total_beats; tempo = 60 * sr / framesPerBeat. */
+  float bpm = 60.0f * (float)sr * (float)total_beats / (float)len;
+  if (bpm < LE_TEMPO_MIN) bpm = LE_TEMPO_MIN;
+  if (bpm > LE_TEMPO_MAX) bpm = LE_TEMPO_MAX;
+  store_f32(&e->a_tempo_bpm_bits, bpm);
+  store_i32(&e->a_loop_bars, bars);
+  e->loop_total_beats = total_beats;
+}
+
 static void finalize_master(le_engine* e, le_track* t) {
   const int32_t len = t->record_pos > 0 ? t->record_pos : 1;
   le_loop_clock_set_length(&e->clock, len);
   store_i32(&e->a_master_len, len);
   store_i32(&t->a_len, len);
   store_i32(&t->a_state, LE_TRACK_PLAYING);
+  sync_tempo_to_loop(e, len);
 }
 
 static int valid_channel(le_engine* e, int32_t ch) {
@@ -278,12 +319,11 @@ static void close_active_capture(le_engine* e, int32_t except_ch) {
   }
 }
 
-static void handle_record(le_engine* e, int32_t ch) {
-  if (!valid_channel(e, ch)) return;
-  /* Ignore record presses while a count-in is committing to a track. */
-  if (e->count_in_remaining > 0) return;
-  /* Enforce one-capturer-at-a-time: pressing record on a new track finalizes
-   * whatever is currently capturing (chained hand-off). */
+/* Acts on a record/overdub press immediately: finalizes any other capture
+ * (one-capturer hand-off), then advances this track's state machine. Called
+ * directly when quantize is off / no loop exists, and from le_engine_process
+ * when a pending quantized arm reaches its grid boundary. */
+static void handle_record_now(le_engine* e, int32_t ch) {
   close_active_capture(e, ch);
   le_track* t = &e->tracks[ch];
   switch (load_i32(&t->a_state)) {
@@ -324,8 +364,35 @@ static void handle_record(le_engine* e, int32_t ch) {
   }
 }
 
+static void handle_record(le_engine* e, int32_t ch) {
+  if (!valid_channel(e, ch)) return;
+  /* Ignore record presses while a count-in is committing to a track. */
+  if (e->count_in_remaining > 0) return;
+
+  /* A second press on the armed track cancels the pending quantized start. */
+  if (load_i32(&e->a_armed_channel) == ch) {
+    store_i32(&e->a_armed_channel, -1);
+    return;
+  }
+  /* When a loop exists and quantize is on, a press that *starts* a capture
+   * (a new track or an overdub) arms instead of acting now; the capture begins
+   * at the next grid boundary (applied in le_engine_process). Presses that stop
+   * an in-progress capture act immediately. */
+  if (e->clock.length > 0 && load_i32(&e->a_quantize) != LE_QUANTIZE_OFF) {
+    const int32_t st = load_i32(&e->tracks[ch].a_state);
+    if (st == LE_TRACK_EMPTY || st == LE_TRACK_PLAYING ||
+        st == LE_TRACK_STOPPED) {
+      store_i32(&e->a_armed_channel, ch);
+      return;
+    }
+  }
+  handle_record_now(e, ch);
+}
+
 static void handle_stop(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
+  /* A stop press clears any pending quantized arm on this track. */
+  if (load_i32(&e->a_armed_channel) == ch) store_i32(&e->a_armed_channel, -1);
   le_track* t = &e->tracks[ch];
   const int32_t st = load_i32(&t->a_state);
   if (st == LE_TRACK_RECORDING) {
@@ -350,6 +417,7 @@ static void handle_play(le_engine* e, int32_t ch) {
 
 static void handle_clear(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
+  if (load_i32(&e->a_armed_channel) == ch) store_i32(&e->a_armed_channel, -1);
   le_track* t = &e->tracks[ch];
   t->record_pos = 0;
   store_i32(&t->a_state, LE_TRACK_EMPTY);
@@ -366,6 +434,9 @@ static void handle_clear(le_engine* e, int32_t ch) {
   le_loop_clock_reset(&e->clock);
   store_i32(&e->a_master_len, 0);
   store_i32(&e->a_master_pos, 0);
+  store_i32(&e->a_loop_bars, 0);
+  e->loop_total_beats = 0;
+  e->metro_prev_beat = -1;
 }
 
 static void apply_command(le_engine* e, const le_command* cmd) {
@@ -432,6 +503,18 @@ static void apply_command(le_engine* e, const le_command* cmd) {
     case LE_CMD_SET_RECORD_OFFSET:
       store_i32(&e->a_record_offset, cmd->arg_i > 0 ? cmd->arg_i : 0);
       break;
+    case LE_CMD_SET_SYNC_TEMPO:
+      store_i32(&e->a_sync_tempo, cmd->arg_f != 0.0f ? 1 : 0);
+      break;
+    case LE_CMD_SET_QUANTIZE: {
+      int32_t m = cmd->arg_i;
+      if (m < LE_QUANTIZE_OFF) m = LE_QUANTIZE_OFF;
+      if (m > LE_QUANTIZE_BAR) m = LE_QUANTIZE_BAR;
+      store_i32(&e->a_quantize, m);
+      /* Disabling quantize drops any pending arm (it would never fire). */
+      if (m == LE_QUANTIZE_OFF) store_i32(&e->a_armed_channel, -1);
+      break;
+    }
     default:
       break;
   }
@@ -538,18 +621,52 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     const int monitor_on = load_i32(&e->a_monitor);
     const int32_t pos = e->clock.position;
 
-    /* Metronome + count-in. Beat phase free-runs; a click is emitted at each
-     * beat start when the metronome is on or a count-in is in progress. */
+    /* Metronome + count-in. Once a loop exists and sync is on, the beat grid is
+     * locked to the loop: derive the beat from the master position so clicks
+     * divide the loop exactly. Otherwise (no loop yet, e.g. a count-in, or sync
+     * off) the beat phase free-runs at the current tempo. */
     const int counting = e->count_in_remaining > 0;
-    if (e->metro_frame == 0) {
-      store_i32(&e->a_current_beat, e->metro_beat);
-      if (load_i32(&e->a_metronome_on) || counting) {
-        trigger_click(e, e->metro_beat == 0);
+    const int loop_synced =
+        e->clock.length > 0 && e->loop_total_beats > 0 &&
+        load_i32(&e->a_sync_tempo);
+    int beat_boundary = 0; /* a beat started this frame */
+    int bar_boundary = 0;  /* that beat is also a downbeat */
+    if (loop_synced) {
+      const int32_t beat = beat_at(pos, e->clock.length, e->loop_total_beats);
+      if (beat != e->metro_prev_beat) {
+        e->metro_prev_beat = beat;
+        beat_boundary = 1;
+        bar_boundary = (beat % LE_BEATS_PER_BAR) == 0;
+        store_i32(&e->a_current_beat, beat % LE_BEATS_PER_BAR);
+        if (load_i32(&e->a_metronome_on)) trigger_click(e, bar_boundary);
+      }
+    } else {
+      if (e->metro_frame == 0) {
+        beat_boundary = 1;
+        bar_boundary = e->metro_beat == 0;
+        store_i32(&e->a_current_beat, e->metro_beat);
+        if (load_i32(&e->a_metronome_on) || counting) {
+          trigger_click(e, e->metro_beat == 0);
+        }
+      }
+      if (++e->metro_frame >= frames_per_beat(e)) {
+        e->metro_frame = 0;
+        e->metro_beat = (e->metro_beat + 1) % LE_BEATS_PER_BAR;
       }
     }
-    if (++e->metro_frame >= frames_per_beat(e)) {
-      e->metro_frame = 0;
-      e->metro_beat = (e->metro_beat + 1) % LE_BEATS_PER_BAR;
+
+    /* Quantize-start: a press while a loop exists arms a track (a_armed_channel);
+     * begin its capture when the next grid boundary of the active resolution is
+     * reached. Only meaningful with a loop, so the count-in path never arms. */
+    const int32_t armed_ch = load_i32(&e->a_armed_channel);
+    if (armed_ch >= 0) {
+      const int32_t q = load_i32(&e->a_quantize);
+      const int fire = (q == LE_QUANTIZE_BAR && bar_boundary) ||
+                       (q == LE_QUANTIZE_BEAT && beat_boundary);
+      if (fire) {
+        store_i32(&e->a_armed_channel, -1);
+        handle_record_now(e, armed_ch);
+      }
     }
     float click = 0.0f;
     if (e->click_remaining > 0) {
@@ -713,9 +830,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->metro_beat = 0;
   engine->click_remaining = 0;
   engine->count_in_remaining = 0;
+  engine->loop_total_beats = 0;
+  engine->metro_prev_beat = -1;
   store_i32(&engine->a_counting_in, 0);
   store_i32(&engine->a_current_beat, 0);
-  store_i32(&engine->a_record_offset, 0); /* re-measured per session */
+  store_i32(&engine->a_loop_bars, 0);
+  store_i32(&engine->a_armed_channel, -1); /* transient: no pending arm */
+  store_i32(&engine->a_record_offset, 0);  /* re-measured per session */
 
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_channels, channels);
@@ -819,6 +940,11 @@ le_engine* le_engine_create(void) {
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   store_f32(&engine->a_tempo_bpm_bits, 120.0f);
+  /* Loop<->tempo sync and quantize are persistent settings (like tempo/
+   * metronome): seeded here, not reset by configure() on each start. */
+  store_i32(&engine->a_sync_tempo, 1);
+  store_i32(&engine->a_quantize, LE_QUANTIZE_BAR);
+  store_i32(&engine->a_armed_channel, -1);
   return engine;
 }
 
@@ -948,6 +1074,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->count_in_enabled = load_i32(&engine->a_count_in_enabled);
   out->counting_in = load_i32(&engine->a_counting_in);
   out->current_beat = load_i32(&engine->a_current_beat);
+  out->loop_bars = load_i32(&engine->a_loop_bars);
+  out->sync_loop_to_tempo = load_i32(&engine->a_sync_tempo);
+  out->quantize_mode = load_i32(&engine->a_quantize);
+  out->armed_channel = load_i32(&engine->a_armed_channel);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
@@ -1062,11 +1192,17 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   /* Starting an overdub? Snapshot the pre-overdub content on this (control)
    * thread and push it onto the undo stack; a new action clears redo history.
-   * The audio thread treats the live buffer as read-only at this point. */
+   * The audio thread treats the live buffer as read-only at this point. With
+   * quantize, the press merely arms — but the buffer stays read-only until the
+   * boundary fires, so taking the snapshot now is still correct. We skip it only
+   * when this press *cancels* an existing arm (a_armed_channel == channel), so
+   * cancelling does not push a spurious undo layer. */
   le_track* t = &engine->tracks[channel];
   const int32_t st = load_i32(&t->a_state);
   const int32_t len = load_i32(&engine->a_master_len);
-  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
+  const int cancelling = load_i32(&engine->a_armed_channel) == channel;
+  if (!cancelling && (st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
+      len > 0) {
     t->redo_count = 0;
     const int slot = track_acquire_slot(engine, t);
     if (slot >= 0) {
@@ -1160,6 +1296,12 @@ int32_t le_engine_set_count_in(le_engine* engine, int32_t on) {
 }
 int32_t le_engine_tap_tempo(le_engine* engine) {
   return le_push(engine, LE_CMD_TAP_TEMPO, 0, 0.0f);
+}
+int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on) {
+  return le_push(engine, LE_CMD_SET_SYNC_TEMPO, 0, on ? 1.0f : 0.0f);
+}
+int32_t le_engine_set_quantize(le_engine* engine, int32_t mode) {
+  return le_push(engine, LE_CMD_SET_QUANTIZE, mode, 0.0f);
 }
 int32_t le_engine_set_record_offset(le_engine* engine, int32_t frames) {
   return le_push(engine, LE_CMD_SET_RECORD_OFFSET, frames, 0.0f);

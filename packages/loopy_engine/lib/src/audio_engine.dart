@@ -125,6 +125,16 @@ abstract interface class AudioEngine {
   /// Registers a tap; two taps set the tempo from their interval.
   EngineResult tapTempo();
 
+  /// Enables or disables snapping the tempo and metronome grid to the loop.
+  /// When on (the default), finalizing the defining loop rounds it to whole
+  /// bars, snaps the tempo to fit, and drives the metronome from the loop.
+  EngineResult setSyncTempo({required bool on});
+
+  /// Sets the quantize-start resolution. When not [QuantizeMode.off] and a loop
+  /// exists, a record/overdub press arms and the capture begins at the next
+  /// grid boundary; a second press on the armed track cancels the arm.
+  EngineResult setQuantize(QuantizeMode mode);
+
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
 

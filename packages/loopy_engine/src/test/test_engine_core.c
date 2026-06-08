@@ -163,6 +163,9 @@ static void process_const(le_engine* e, float value, int frames, float* out) {
 static le_engine* make_configured_engine(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1000);
+  /* These DSP tests exercise the immediate (un-quantized) looper path; quantize
+   * defaults to BAR, so disable it here. Quantize-start has its own tests. */
+  le_engine_set_quantize(e, LE_QUANTIZE_OFF);
   return e;
 }
 
@@ -559,6 +562,238 @@ static void test_count_in_delays_recording(void) {
   le_engine_destroy(e);
 }
 
+/* ---- loop <-> tempo sync ---- */
+
+/* Records a `len`-frame silent defining loop on track 0 and finalizes it. */
+static void record_defining_loop(le_engine* e, int len) {
+  le_engine_record(e, 0);
+  advance(e, len);
+  le_engine_record(e, 0); /* queue finalize */
+  drain(e);               /* apply it */
+}
+
+static void test_loop_syncs_tempo(void) {
+  printf("test_loop_syncs_tempo\n");
+  /* sr 1000, 120 bpm -> 500 frames/beat, 2000 frames/bar. A 4000-frame loop is
+   * exactly 2 bars, so the tempo stays 120 and the snapshot reports 2 bars. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 20000);
+  le_snapshot s;
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.sync_loop_to_tempo == 1); /* default on */
+
+  le_engine_set_tempo(e, 120.0f);
+  advance(e, 1);
+  record_defining_loop(e, 4000);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.5f);
+
+  le_engine_destroy(e);
+}
+
+static void test_loop_tempo_rounds_to_bar(void) {
+  printf("test_loop_tempo_rounds_to_bar\n");
+  /* sr 1000, 120 bpm -> 2000 frames/bar. An 1800-frame loop is 0.9 bars, which
+   * rounds to 1 bar; the grid is then derived back from the loop (4 beats over
+   * 1800 frames -> 450 frames/beat -> ~133.33 bpm). The loop length is NOT
+   * altered — only the tempo snaps to fit it. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 20000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  advance(e, 1);
+  record_defining_loop(e, 1800);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 1800);
+  CHECK(s.loop_bars == 1);
+  CHECK(fabsf(s.tempo_bpm - 133.333f) < 0.2f);
+
+  le_engine_destroy(e);
+}
+
+static void test_loop_drives_metronome_grid(void) {
+  printf("test_loop_drives_metronome_grid\n");
+  /* With a 2-bar loop (8 beats over 4000 frames, a beat every 500 frames), the
+   * beat grid is locked to the loop position rather than free-running: the
+   * published beat advances 0,1,2,3 then wraps to 0 at the bar boundary. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 20000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  le_engine_set_metronome(e, 1);
+  advance(e, 1);
+  record_defining_loop(e, 4000);
+
+  advance(e, 1); /* pos 0 -> downbeat */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+  CHECK(s.current_beat == 0);
+
+  advance(e, 600); /* cross 500 -> beat 1 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
+  advance(e, 500); /* cross 1000 -> beat 2 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 2);
+  advance(e, 500); /* cross 1500 -> beat 3 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 3);
+  advance(e, 500); /* cross 2000 -> bar boundary, beat 4 % 4 == 0 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_sync_off_keeps_free_form(void) {
+  printf("test_sync_off_keeps_free_form\n");
+  /* With sync disabled the loop keeps its recorded length, no bars are derived,
+   * and the tempo is left exactly as the user set it. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 20000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  le_engine_set_tempo(e, 137.0f);
+  advance(e, 1);
+  record_defining_loop(e, 1800);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.sync_loop_to_tempo == 0);
+  CHECK(s.master_length_frames == 1800); /* not rounded */
+  CHECK(s.loop_bars == 0);               /* no bar relationship */
+  CHECK(fabsf(s.tempo_bpm - 137.0f) < 0.5f); /* tempo untouched */
+
+  le_engine_destroy(e);
+}
+
+/* ---- quantize-start ---- */
+
+/* sr 1000, 120 bpm: a 4000-frame defining loop is 2 bars (a beat every 500
+ * frames, a bar every 2000). Returns an engine playing that loop, with the
+ * given quantize mode applied. */
+static le_engine* make_quantized_loop_engine(int mode) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 20000);
+  le_engine_set_quantize(e, mode);
+  le_engine_set_tempo(e, 120.0f);
+  advance(e, 1); /* apply the quantize + tempo commands */
+  record_defining_loop(e, 4000);
+  return e;
+}
+
+static void test_quantize_default_is_bar(void) {
+  printf("test_quantize_default_is_bar\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 1000, 1, 20000);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize_mode == LE_QUANTIZE_BAR);
+  CHECK(s.armed_channel == -1);
+  le_engine_destroy(e);
+}
+
+static void test_quantize_bar_arms_overdub(void) {
+  printf("test_quantize_bar_arms_overdub\n");
+  le_engine* e = make_quantized_loop_engine(LE_QUANTIZE_BAR);
+  le_snapshot s;
+
+  advance(e, 600); /* move off the loop top (past beat 1 at 500) */
+
+  /* Pressing record arms the overdub instead of starting it now. */
+  le_engine_record(e, 0);
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* not overdubbing yet */
+  CHECK(s.tracks[0].undo_depth == 1);           /* snapshot taken at the press */
+
+  /* Crossing intermediate beats (1000, 1500) must NOT start it. */
+  advance(e, 1300); /* pos ~1901, still before the bar line at 2000 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* Crossing the bar boundary at 2000 begins the overdub. */
+  advance(e, 200); /* pos ~2101 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == -1);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  le_engine_destroy(e);
+}
+
+static void test_quantize_beat_arms_to_next_beat(void) {
+  printf("test_quantize_beat_arms_to_next_beat\n");
+  le_engine* e = make_quantized_loop_engine(LE_QUANTIZE_BEAT);
+  le_snapshot s;
+
+  advance(e, 600); /* pos 600, between beats 1 (500) and 2 (1000) */
+  le_engine_record(e, 0);
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  advance(e, 300); /* pos ~901, still before beat 2 at 1000 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  advance(e, 200); /* cross 1000 -> begin overdub at the next beat */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == -1);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  le_engine_destroy(e);
+}
+
+static void test_quantize_off_is_immediate(void) {
+  printf("test_quantize_off_is_immediate\n");
+  le_engine* e = make_quantized_loop_engine(LE_QUANTIZE_OFF);
+  le_snapshot s;
+
+  advance(e, 600);
+  le_engine_record(e, 0); /* no arming: overdub starts now */
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == -1);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  le_engine_destroy(e);
+}
+
+static void test_quantize_arm_cancelled_by_second_press(void) {
+  printf("test_quantize_arm_cancelled_by_second_press\n");
+  le_engine* e = make_quantized_loop_engine(LE_QUANTIZE_BAR);
+  le_snapshot s;
+
+  advance(e, 600);
+  le_engine_record(e, 0); /* arm */
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == 0);
+
+  le_engine_record(e, 0); /* second press cancels the pending arm */
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.armed_channel == -1);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* Crossing the bar boundary now does nothing — there is no pending arm. */
+  advance(e, 2000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  le_engine_destroy(e);
+}
+
 static void test_classify_capture_device(void) {
   printf("test_classify_capture_device\n");
   /* PulseAudio monitor sources. */
@@ -613,6 +848,15 @@ int main(void) {
   test_metronome_click();
   test_tap_tempo();
   test_count_in_delays_recording();
+  test_loop_syncs_tempo();
+  test_loop_tempo_rounds_to_bar();
+  test_loop_drives_metronome_grid();
+  test_sync_off_keeps_free_form();
+  test_quantize_default_is_bar();
+  test_quantize_bar_arms_overdub();
+  test_quantize_beat_arms_to_next_beat();
+  test_quantize_off_is_immediate();
+  test_quantize_arm_cancelled_by_second_press();
   test_classify_capture_device();
   test_detect_loopback_runs();
 
