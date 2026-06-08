@@ -229,8 +229,35 @@ static int valid_channel(le_engine* e, int32_t ch) {
   return ch >= 0 && ch < e->track_count;
 }
 
+/* There is a single input stream, so only one track may capture at a time.
+ * Closes any track (other than `except_ch`) that is currently RECORDING or
+ * OVERDUBBING, finalizing the master loop if the closed track was the defining
+ * recording. Called before starting a new capture. */
+static void close_active_capture(le_engine* e, int32_t except_ch) {
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    if (t == except_ch) continue;
+    le_track* tr = &e->tracks[t];
+    const int32_t st = load_i32(&tr->a_state);
+    if (st == LE_TRACK_RECORDING) {
+      if (e->clock.length == 0) {
+        finalize_master(e, tr); /* defines the master loop, -> PLAYING */
+      } else {
+        store_i32(&tr->a_len, e->clock.length);
+        store_i32(&tr->a_state, LE_TRACK_PLAYING);
+      }
+    } else if (st == LE_TRACK_OVERDUBBING) {
+      store_i32(&tr->a_state, LE_TRACK_PLAYING);
+    }
+  }
+}
+
 static void handle_record(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
+  /* Ignore record presses while a count-in is committing to a track. */
+  if (e->count_in_remaining > 0) return;
+  /* Enforce one-capturer-at-a-time: pressing record on a new track finalizes
+   * whatever is currently capturing (chained hand-off). */
+  close_active_capture(e, ch);
   le_track* t = &e->tracks[ch];
   switch (load_i32(&t->a_state)) {
     case LE_TRACK_EMPTY:
