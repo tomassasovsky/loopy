@@ -85,6 +85,11 @@ void main() {
           ..measured_latency_ms = 7.5
           ..master_length_frames = 96000
           ..master_position_frames = 1200
+          ..tempo_bpm = 128
+          ..metronome_on = 1
+          ..count_in_enabled = 1
+          ..counting_in = 1
+          ..current_beat = 2
           ..track_count = 2;
 
         const tracks = [
@@ -107,6 +112,11 @@ void main() {
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
+        expect(snapshot.tempoBpm, closeTo(128, 1e-3));
+        expect(snapshot.metronomeOn, isTrue);
+        expect(snapshot.countInEnabled, isTrue);
+        expect(snapshot.countingIn, isTrue);
+        expect(snapshot.currentBeat, 2);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.
         expect(snapshot.trackState, TrackState.playing);

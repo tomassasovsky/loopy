@@ -90,3 +90,33 @@ final class LooperStopAllPressed extends LooperEvent {
   /// Creates a [LooperStopAllPressed].
   const LooperStopAllPressed();
 }
+
+/// The tempo was changed to [bpm].
+final class LooperTempoChanged extends LooperEvent {
+  /// Creates a [LooperTempoChanged].
+  const LooperTempoChanged(this.bpm);
+
+  /// New tempo in beats per minute.
+  final double bpm;
+
+  @override
+  List<Object?> get props => [bpm];
+}
+
+/// The metronome was toggled.
+final class LooperMetronomeToggled extends LooperEvent {
+  /// Creates a [LooperMetronomeToggled].
+  const LooperMetronomeToggled();
+}
+
+/// The count-in was toggled.
+final class LooperCountInToggled extends LooperEvent {
+  /// Creates a [LooperCountInToggled].
+  const LooperCountInToggled();
+}
+
+/// A tempo tap was registered.
+final class LooperTapTempo extends LooperEvent {
+  /// Creates a [LooperTapTempo].
+  const LooperTapTempo();
+}

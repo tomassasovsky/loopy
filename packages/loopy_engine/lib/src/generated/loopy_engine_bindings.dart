@@ -338,6 +338,73 @@ class LoopyEngineBindings {
               ffi.Int32)>>('le_engine_set_track_mute');
   late final _le_engine_set_track_mute = _le_engine_set_track_mutePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// ---- tempo / metronome ----
+  int le_engine_set_tempo(
+    ffi.Pointer<le_engine> engine,
+    double bpm,
+  ) {
+    return _le_engine_set_tempo(
+      engine,
+      bpm,
+    );
+  }
+
+  late final _le_engine_set_tempoPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Float)>>('le_engine_set_tempo');
+  late final _le_engine_set_tempo = _le_engine_set_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  int le_engine_set_metronome(
+    ffi.Pointer<le_engine> engine,
+    int on$,
+  ) {
+    return _le_engine_set_metronome(
+      engine,
+      on$,
+    );
+  }
+
+  late final _le_engine_set_metronomePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_metronome');
+  late final _le_engine_set_metronome = _le_engine_set_metronomePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  int le_engine_set_count_in(
+    ffi.Pointer<le_engine> engine,
+    int on$,
+  ) {
+    return _le_engine_set_count_in(
+      engine,
+      on$,
+    );
+  }
+
+  late final _le_engine_set_count_inPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_count_in');
+  late final _le_engine_set_count_in = _le_engine_set_count_inPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Registers a tap; two taps set the tempo from their interval.
+  int le_engine_tap_tempo(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_tap_tempo(
+      engine,
+    );
+  }
+
+  late final _le_engine_tap_tempoPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+          'le_engine_tap_tempo');
+  late final _le_engine_tap_tempo = _le_engine_tap_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -485,7 +552,17 @@ enum le_command_code {
   LE_CMD_SET_VOLUME(7),
 
   /// arg_f = 0 (unmute) or 1 (mute)
-  LE_CMD_SET_MUTE(8);
+  LE_CMD_SET_MUTE(8),
+
+  /// arg_f = bpm (clamped 30..300)
+  LE_CMD_SET_TEMPO(9),
+
+  /// arg_f = 0/1
+  LE_CMD_SET_METRONOME(10),
+
+  /// arg_f = 0/1
+  LE_CMD_SET_COUNT_IN(11),
+  LE_CMD_TAP_TEMPO(12);
 
   final int value;
   const le_command_code(this.value);
@@ -500,6 +577,10 @@ enum le_command_code {
         6 => LE_CMD_UNDO,
         7 => LE_CMD_SET_VOLUME,
         8 => LE_CMD_SET_MUTE,
+        9 => LE_CMD_SET_TEMPO,
+        10 => LE_CMD_SET_METRONOME,
+        11 => LE_CMD_SET_COUNT_IN,
+        12 => LE_CMD_TAP_TEMPO,
         _ => throw ArgumentError('Unknown value for le_command_code: $value'),
       };
 }
@@ -616,6 +697,26 @@ final class le_snapshot extends ffi.Struct {
   /// current loop playhead
   @ffi.Int32()
   external int master_position_frames;
+
+  /// Tempo / metronome.
+  @ffi.Float()
+  external double tempo_bpm;
+
+  /// 0/1
+  @ffi.Int32()
+  external int metronome_on;
+
+  /// 0/1
+  @ffi.Int32()
+  external int count_in_enabled;
+
+  /// 0/1: a count-in is currently in progress
+  @ffi.Int32()
+  external int counting_in;
+
+  /// 0..3 within the bar
+  @ffi.Int32()
+  external int current_beat;
 
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()

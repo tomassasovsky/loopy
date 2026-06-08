@@ -332,6 +332,116 @@ static void test_looper_multitrack(void) {
   le_engine_destroy(e);
 }
 
+/* ---- tempo / metronome ---- */
+
+/* Processes `total` frames of silence in <=64-frame chunks. */
+static void advance(le_engine* e, int total) {
+  float in[64] = {0};
+  float out[64];
+  while (total > 0) {
+    const int n = total > 64 ? 64 : total;
+    le_engine_process(e, out, in, (uint32_t)n);
+    total -= n;
+  }
+}
+
+static le_engine* make_engine_sr(int sr) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1000);
+  return e;
+}
+
+static void test_tempo_set_and_clamp(void) {
+  printf("test_tempo_set_and_clamp\n");
+  le_engine* e = make_engine_sr(48000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 90.0f) < 0.5f);
+
+  le_engine_set_tempo(e, 10.0f); /* clamps to 30 */
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 30.0f) < 0.5f);
+
+  le_engine_set_tempo(e, 1000.0f); /* clamps to 300 */
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 300.0f) < 0.5f);
+
+  le_engine_destroy(e);
+}
+
+static void test_metronome_click(void) {
+  printf("test_metronome_click\n");
+  float out[64];
+
+  /* Metronome off: the first beat passes but no click is emitted. */
+  le_engine* off = make_engine_sr(48000);
+  process_const(off, 0.0f, 64, out);
+  float max_off = 0.0f;
+  for (int i = 0; i < 64; ++i) {
+    if (fabsf(out[i]) > max_off) max_off = fabsf(out[i]);
+  }
+  CHECK(max_off < 1e-6f);
+  le_engine_destroy(off);
+
+  /* Metronome on from the start: a click fires on the first beat (frame 0). */
+  le_engine* on = make_engine_sr(48000);
+  le_engine_set_metronome(on, 1);
+  process_const(on, 0.0f, 64, out);
+  float max_on = 0.0f;
+  for (int i = 0; i < 64; ++i) {
+    if (fabsf(out[i]) > max_on) max_on = fabsf(out[i]);
+  }
+  CHECK(max_on > 0.05f);
+  le_engine_destroy(on);
+}
+
+static void test_tap_tempo(void) {
+  printf("test_tap_tempo\n");
+  le_engine* e = make_engine_sr(100);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 200.0f);
+  advance(e, 1);
+
+  /* Two taps 50 frames apart at 100 Hz == 0.5 s == 120 bpm. */
+  le_engine_tap_tempo(e);
+  advance(e, 50);
+  le_engine_tap_tempo(e);
+  advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 2.0f);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_delays_recording(void) {
+  printf("test_count_in_delays_recording\n");
+  le_engine* e = make_engine_sr(100); /* 120 bpm -> 50 fpb -> 200-frame count-in */
+  le_snapshot s;
+
+  le_engine_set_count_in(e, 1);
+  advance(e, 1);
+
+  le_engine_record(e, 0);
+  advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY); /* not recording yet */
+
+  advance(e, 250); /* outlast the 200-frame count-in */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
 static void test_classify_capture_device(void) {
   printf("test_classify_capture_device\n");
   /* PulseAudio monitor sources. */
@@ -379,6 +489,10 @@ int main(void) {
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();
+  test_tempo_set_and_clamp();
+  test_metronome_click();
+  test_tap_tempo();
+  test_count_in_delays_recording();
   test_classify_capture_device();
   test_detect_loopback_runs();
 

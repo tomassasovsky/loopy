@@ -152,6 +152,11 @@ class EngineSnapshot {
     required this.measuredLatencyMs,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
+    this.tempoBpm = 120,
+    this.metronomeOn = false,
+    this.countInEnabled = false,
+    this.countingIn = false,
+    this.currentBeat = 0,
     this.tracks = const [],
   });
 
@@ -170,6 +175,11 @@ class EngineSnapshot {
       measuredLatencyMs = -1,
       masterLengthFrames = 0,
       masterPositionFrames = 0,
+      tempoBpm = 120,
+      metronomeOn = false,
+      countInEnabled = false,
+      countingIn = false,
+      currentBeat = 0,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -194,6 +204,11 @@ class EngineSnapshot {
     measuredLatencyMs: native.measured_latency_ms,
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
+    tempoBpm: native.tempo_bpm,
+    metronomeOn: native.metronome_on != 0,
+    countInEnabled: native.count_in_enabled != 0,
+    countingIn: native.counting_in != 0,
+    currentBeat: native.current_beat,
     tracks: tracks,
   );
 
@@ -236,6 +251,21 @@ class EngineSnapshot {
 
   /// Current master loop playhead in frames.
   final int masterPositionFrames;
+
+  /// Current tempo in beats per minute.
+  final double tempoBpm;
+
+  /// Whether the metronome click is enabled.
+  final bool metronomeOn;
+
+  /// Whether a count-in precedes the first recording.
+  final bool countInEnabled;
+
+  /// Whether a count-in is currently in progress.
+  final bool countingIn;
+
+  /// The current beat within the bar (`0..3`).
+  final int currentBeat;
 
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
@@ -285,10 +315,15 @@ class EngineSnapshot {
           measuredLatencyMs == other.measuredLatencyMs &&
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
+          tempoBpm == other.tempoBpm &&
+          metronomeOn == other.metronomeOn &&
+          countInEnabled == other.countInEnabled &&
+          countingIn == other.countingIn &&
+          currentBeat == other.currentBeat &&
           _listEquals(tracks, other.tracks);
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     isRunning,
     sampleRate,
     bufferFrames,
@@ -302,8 +337,13 @@ class EngineSnapshot {
     measuredLatencyMs,
     masterLengthFrames,
     masterPositionFrames,
-    Object.hashAll(tracks),
-  );
+    tempoBpm,
+    metronomeOn,
+    countInEnabled,
+    countingIn,
+    currentBeat,
+    ...tracks,
+  ]);
 
   @override
   String toString() =>

@@ -82,6 +82,10 @@ typedef enum le_command_code {
   LE_CMD_UNDO = 6,      /* remove the last overdub layer */
   LE_CMD_SET_VOLUME = 7,/* arg_f = 0..1 */
   LE_CMD_SET_MUTE = 8,  /* arg_f = 0 (unmute) or 1 (mute) */
+  LE_CMD_SET_TEMPO = 9,      /* arg_f = bpm (clamped 30..300) */
+  LE_CMD_SET_METRONOME = 10, /* arg_f = 0/1 */
+  LE_CMD_SET_COUNT_IN = 11,  /* arg_f = 0/1 */
+  LE_CMD_TAP_TEMPO = 12,
 } le_command_code;
 
 /* Requested device configuration. Any field set to 0 uses the device default
@@ -129,6 +133,13 @@ typedef struct le_snapshot {
   /* Looper transport. */
   int32_t master_length_frames;   /* 0 until the first recording is finalized */
   int32_t master_position_frames; /* current loop playhead */
+
+  /* Tempo / metronome. */
+  float tempo_bpm;
+  int32_t metronome_on;     /* 0/1 */
+  int32_t count_in_enabled; /* 0/1 */
+  int32_t counting_in;      /* 0/1: a count-in is currently in progress */
+  int32_t current_beat;     /* 0..3 within the bar */
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -198,6 +209,13 @@ LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
 LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
                                            int32_t muted);
+
+/* ---- tempo / metronome ---- */
+LE_EXPORT int32_t le_engine_set_tempo(le_engine* engine, float bpm);
+LE_EXPORT int32_t le_engine_set_metronome(le_engine* engine, int32_t on);
+LE_EXPORT int32_t le_engine_set_count_in(le_engine* engine, int32_t on);
+/* Registers a tap; two taps set the tempo from their interval. */
+LE_EXPORT int32_t le_engine_tap_tempo(le_engine* engine);
 
 #ifdef __cplusplus
 }
