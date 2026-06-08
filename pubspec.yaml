@@ -16,6 +16,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  looper_repository:
+    path: packages/looper_repository
   loopy_engine:
     path: packages/loopy_engine
 

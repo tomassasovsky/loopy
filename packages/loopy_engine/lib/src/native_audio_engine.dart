@@ -7,17 +7,24 @@ import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 
-/// The shared-library file name produced by the FFI plugin per platform.
-String _defaultLibraryName() {
-  if (Platform.isMacOS || Platform.isIOS) {
-    return 'loopy_engine.framework/loopy_engine';
-  }
-  if (Platform.isWindows) return 'loopy_engine.dll';
-  return 'libloopy_engine.so';
-}
-
 /// Opens the bundled native engine library for the current platform.
-DynamicLibrary _openLibrary() => DynamicLibrary.open(_defaultLibraryName());
+///
+/// On Apple platforms the engine is compiled directly into the application
+/// binary (Swift Package Manager static-links the plugin into the Runner; the
+/// CocoaPods fallback embeds it as a framework). In both cases its exported
+/// symbols live in the process's global namespace, so [DynamicLibrary.process]
+/// resolves them — there is no standalone library file to open. This relies on
+/// the `LE_EXPORT` symbols being marked `visibility("default")` + `used` so the
+/// linker keeps them. See macos/loopy_engine/Package.swift.
+///
+/// On Linux/Windows the engine is a separate shared library opened by name.
+DynamicLibrary _openLibrary() {
+  if (Platform.isMacOS || Platform.isIOS) {
+    return DynamicLibrary.process();
+  }
+  if (Platform.isWindows) return DynamicLibrary.open('loopy_engine.dll');
+  return DynamicLibrary.open('libloopy_engine.so');
+}
 
 /// Production [AudioEngine] that drives the native miniaudio engine over FFI.
 ///
