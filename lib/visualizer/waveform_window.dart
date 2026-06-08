@@ -19,16 +19,32 @@ void runWaveformWindow(int windowId) {
   DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
     if (call.method == 'waveform' && call.arguments is Map) {
       final args = call.arguments as Map;
-      final samples = args['samples'];
       final progress = args['progress'];
       frame.value = (
-        samples: samples is Float32List ? samples : Float32List(0),
+        // The plugin re-serializes across engines, which can turn the
+        // Float32List into a plain List<double>, so accept any numeric list.
+        samples: _toFloat32List(args['samples']),
         progress: progress is num ? progress.toDouble() : 0.0,
       );
     }
     return null;
   });
   runApp(WaveformWindowApp(frame: frame));
+}
+
+/// Coerces a method-channel payload (a [Float32List], or a `List` of numbers
+/// after the plugin re-serializes across engines) into a [Float32List].
+Float32List _toFloat32List(Object? raw) {
+  if (raw is Float32List) return raw;
+  if (raw is List) {
+    final out = Float32List(raw.length);
+    for (var i = 0; i < raw.length; i++) {
+      final v = raw[i];
+      out[i] = v is num ? v.toDouble() : 0.0;
+    }
+    return out;
+  }
+  return Float32List(0);
 }
 
 /// The root widget of the waveform window: a full-screen [WaveformView] driven

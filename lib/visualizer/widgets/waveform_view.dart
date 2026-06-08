@@ -63,6 +63,12 @@ class WaveformPainter extends CustomPainter {
     if (size.width <= 0 || size.height <= 0) return;
     final midY = size.height / 2;
 
+    // A faint baseline so the surface reads as "ready" even with no audio.
+    canvas.drawRect(
+      Rect.fromLTWH(0, midY - 0.5, size.width, 1),
+      Paint()..color = color.withValues(alpha: 0.18),
+    );
+
     if (samples.isNotEmpty) {
       final dx = size.width / samples.length;
       final barWidth = dx < 1.5 ? dx : dx * 0.7;
