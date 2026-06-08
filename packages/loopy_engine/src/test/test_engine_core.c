@@ -332,6 +332,31 @@ static void test_looper_multitrack(void) {
   le_engine_destroy(e);
 }
 
+static void test_record_is_exclusive(void) {
+  printf("test_record_is_exclusive\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Start recording track 0 (defining); do not stop it. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.master_length_frames == 0); /* not finalized yet */
+
+  /* Pressing record on track 1 finalizes track 0 (defines the master) and
+   * starts track 1 — only one track captures at a time. */
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
 /* ---- tempo / metronome ---- */
 
 /* Processes `total` frames of silence in <=64-frame chunks. */
@@ -489,6 +514,7 @@ int main(void) {
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();
+  test_record_is_exclusive();
   test_tempo_set_and_clamp();
   test_metronome_click();
   test_tap_tempo();
