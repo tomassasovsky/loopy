@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../helpers/helpers.dart';
@@ -13,10 +14,23 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _MockUiModeCubit extends MockCubit<UiMode> implements UiModeCubit {}
+
 void main() {
   late LooperBloc bloc;
+  late UiModeCubit uiMode;
 
-  setUp(() => bloc = _MockLooperBloc());
+  setUpAll(() => registerFallbackValue(UiMode.desktop));
+
+  setUp(() {
+    bloc = _MockLooperBloc();
+    uiMode = _MockUiModeCubit();
+    whenListen(
+      uiMode,
+      const Stream<UiMode>.empty(),
+      initialState: UiMode.desktop,
+    );
+  });
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
@@ -27,8 +41,11 @@ void main() {
     return tester.pumpApp(
       RepositoryProvider<LooperRepository>.value(
         value: _MockLooperRepository(),
-        child: BlocProvider<LooperBloc>.value(
-          value: bloc,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<UiModeCubit>.value(value: uiMode),
+          ],
           child: const LooperView(),
         ),
       ),
@@ -100,6 +117,19 @@ void main() {
     await tester.pump();
 
     verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
+  });
+
+  testWidgets('big picture button switches to big-picture mode', (
+    tester,
+  ) async {
+    when(() => uiMode.setMode(any())).thenAnswer((_) async {});
+    seed(const LooperState(tracks: [Track()]));
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('looper_bigPicture_button')));
+    await tester.pump();
+
+    verify(() => uiMode.setMode(UiMode.bigPicture)).called(1);
   });
 
   testWidgets('tempo bar shows BPM and dispatches tap/metronome', (

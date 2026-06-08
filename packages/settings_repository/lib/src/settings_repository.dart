@@ -29,4 +29,12 @@ class SettingsRepository {
     required int bufferFrames,
     required int frames,
   }) => _store.setInt(_latencyKey(device, sampleRate, bufferFrames), frames);
+
+  static const String _uiModeKey = 'ui_mode';
+
+  /// Loads the saved UI-mode index, or `null` if none has been stored.
+  Future<int?> loadUiMode() => _store.getInt(_uiModeKey);
+
+  /// Saves the UI-mode index.
+  Future<void> saveUiMode(int index) => _store.setInt(_uiModeKey, index);
 }
