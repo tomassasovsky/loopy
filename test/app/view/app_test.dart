@@ -33,7 +33,7 @@ class _RecordingWindowService implements WaveformWindowService {
   }
 
   @override
-  void pushWaveform(Float32List samples) => pushCalls++;
+  void pushWaveform(Float32List samples, double progress) => pushCalls++;
 }
 
 void main() {

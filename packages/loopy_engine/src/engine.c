@@ -101,9 +101,11 @@ struct le_engine {
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;
-  /* Output visualization ring (float bits) + write head (= oldest sample). */
-  _Atomic uint32_t a_viz[LE_VIZ_POINTS];
-  _Atomic int32_t a_viz_head;
+  /* Loop-indexed visualization (float bits): one peak per loop bucket, spanning
+   * exactly one master loop and refreshed as the playhead sweeps. a_loop_viz is
+   * the mixed output; a_track_viz is each track's own contribution. */
+  _Atomic uint32_t a_loop_viz[LE_VIZ_POINTS];
+  _Atomic uint32_t a_track_viz[LE_MAX_TRACKS][LE_VIZ_POINTS];
   _Atomic int32_t a_latency_state;
   _Atomic uint64_t a_latency_ms_bits;
   _Atomic int32_t a_monitor; /* input monitoring on/off (latency disables it) */
@@ -141,10 +143,11 @@ struct le_engine {
   le_loop_clock clock;
   uint64_t loop_iteration; /* free-running count of base-loop wraps */
 
-  /* Visualization decimator (audio-thread-local). */
-  float viz_accum;    /* running max |output| over the current window */
-  int32_t viz_count;  /* frames accumulated into the current window */
-  int32_t viz_decim;  /* frames per published viz point */
+  /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
+   * current loop bucket and publish when the playhead crosses into the next. */
+  int32_t loop_viz_bucket;
+  float loop_viz_accum;
+  float track_viz_accum[LE_MAX_TRACKS];
 
   /* Audio-thread-local tempo / metronome state. */
   uint64_t frame_clock;     /* running frame counter (tap timing) */
@@ -484,6 +487,14 @@ static void handle_clear(le_engine* e, int32_t ch) {
   store_i32(&e->a_loop_bars, 0);
   e->loop_total_beats = 0;
   e->metro_prev_beat = -1;
+  /* Clear the loop waveform so a re-record starts from silence. */
+  e->loop_viz_bucket = -1;
+  for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+    store_f32(&e->a_loop_viz[i], 0.0f);
+    for (int t = 0; t < e->track_count; ++t) {
+      store_f32(&e->a_track_viz[t][i], 0.0f);
+    }
+  }
 }
 
 static void apply_command(le_engine* e, const le_command* cmd) {
@@ -765,6 +776,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     }
 
     float frame_out_peak = 0.0f; /* max |output| this frame, for the viz tap */
+    float frame_trk_peak[LE_MAX_TRACKS] = {0}; /* per-track, this frame */
     for (int c = 0; c < ch; ++c) {
       const float insample =
           e->mono_input ? mono : (in ? in[f * ch + c] : 0.0f);
@@ -803,6 +815,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         }
         const float la = fabsf(loopsample);
         if (la > trk_peak[t]) trk_peak[t] = la;
+        if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
         trk_sumsq[t] += loopsample * loopsample;
       }
 
@@ -814,15 +827,33 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       if (sa > frame_out_peak) frame_out_peak = sa;
     }
 
-    /* Visualization tap: accumulate the per-frame output peak, publish one
-     * decimated point per window into the ring (RT-safe: atomics only). */
-    if (frame_out_peak > e->viz_accum) e->viz_accum = frame_out_peak;
-    if (++e->viz_count >= e->viz_decim) {
-      const int32_t head = load_i32(&e->a_viz_head);
-      store_f32(&e->a_viz[head], e->viz_accum);
-      store_i32(&e->a_viz_head, (head + 1) % LE_VIZ_POINTS);
-      e->viz_accum = 0.0f;
-      e->viz_count = 0;
+    /* Loop visualization tap: bucket the output (and per-track) peaks by loop
+     * position. When the playhead crosses into a new bucket, publish the peaks
+     * accumulated for the bucket it left, then start the new one — so each
+     * bucket holds the most recent pass over that slice of the loop. RT-safe
+     * (atomics only). Only meaningful once a master loop exists. */
+    if (e->clock.length > 0) {
+      int32_t bucket =
+          (int32_t)((int64_t)pos * LE_VIZ_POINTS / e->clock.length);
+      if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
+      if (bucket != e->loop_viz_bucket) {
+        const int32_t prev = e->loop_viz_bucket;
+        if (prev >= 0 && prev < LE_VIZ_POINTS) {
+          store_f32(&e->a_loop_viz[prev], e->loop_viz_accum);
+          for (int t = 0; t < tc; ++t) {
+            store_f32(&e->a_track_viz[t][prev], e->track_viz_accum[t]);
+          }
+        }
+        e->loop_viz_bucket = bucket;
+        e->loop_viz_accum = 0.0f;
+        for (int t = 0; t < tc; ++t) e->track_viz_accum[t] = 0.0f;
+      }
+      if (frame_out_peak > e->loop_viz_accum) e->loop_viz_accum = frame_out_peak;
+      for (int t = 0; t < tc; ++t) {
+        if (frame_trk_peak[t] > e->track_viz_accum[t]) {
+          e->track_viz_accum[t] = frame_trk_peak[t];
+        }
+      }
     }
 
     /* Advance the record heads, then the master transport. New tracks grow
@@ -916,13 +947,18 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
 
-  /* Visualization tap: ~5 ms per point (512 points ≈ 2.5 s of scrollback). */
-  engine->viz_decim = sample_rate / 200;
-  if (engine->viz_decim < 1) engine->viz_decim = 1;
-  engine->viz_accum = 0.0f;
-  engine->viz_count = 0;
-  store_i32(&engine->a_viz_head, 0);
-  for (int i = 0; i < LE_VIZ_POINTS; ++i) store_f32(&engine->a_viz[i], 0.0f);
+  /* Loop visualization: clear the master + per-track loop rings. */
+  engine->loop_viz_bucket = -1;
+  engine->loop_viz_accum = 0.0f;
+  for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+    store_f32(&engine->a_loop_viz[i], 0.0f);
+  }
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    engine->track_viz_accum[t] = 0.0f;
+    for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+      store_f32(&engine->a_track_viz[t][i], 0.0f);
+    }
+  }
 
   /* Reset per-session tempo timing (tempo/metronome/count-in *settings*
    * persist across start/stop; only the running state is cleared). */
@@ -1228,13 +1264,22 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
 int32_t le_engine_read_visual(le_engine* engine, float* out,
                               int32_t max_points) {
   if (engine == NULL || out == NULL || max_points <= 0) return 0;
-  const int32_t n =
-      max_points < LE_VIZ_POINTS ? max_points : LE_VIZ_POINTS;
-  /* Copy oldest-first: a_viz_head is the next slot to be written, i.e. the
-   * oldest sample in the ring. A point updated concurrently is benign here. */
-  const int32_t head = load_i32(&engine->a_viz_head);
+  const int32_t n = max_points < LE_VIZ_POINTS ? max_points : LE_VIZ_POINTS;
+  /* Loop-indexed, bucket 0 = loop start. A bucket updated concurrently is
+   * benign for a waveform. */
   for (int32_t i = 0; i < n; ++i) {
-    out[i] = load_f32(&engine->a_viz[(head + i) % LE_VIZ_POINTS]);
+    out[i] = load_f32(&engine->a_loop_viz[i]);
+  }
+  return n;
+}
+
+int32_t le_engine_read_track_visual(le_engine* engine, int32_t channel,
+                                    float* out, int32_t max_points) {
+  if (engine == NULL || out == NULL || max_points <= 0) return 0;
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  const int32_t n = max_points < LE_VIZ_POINTS ? max_points : LE_VIZ_POINTS;
+  for (int32_t i = 0; i < n; ++i) {
+    out[i] = load_f32(&engine->a_track_viz[channel][i]);
   }
   return n;
 }

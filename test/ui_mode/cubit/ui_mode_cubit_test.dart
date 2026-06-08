@@ -21,13 +21,13 @@ void main() {
       act: (cubit) => cubit.toggle(),
       expect: () => [UiMode.bigPicture],
       verify: (_) async {
-        expect(await settings.loadUiMode(), UiMode.bigPicture.index);
+        expect(await settings.loadUiMode(), UiMode.bigPicture.name);
       },
     );
 
     blocTest<UiModeCubit, UiMode>(
       'load restores the persisted mode',
-      setUp: () => settings.saveUiMode(UiMode.bigPicture.index),
+      setUp: () => settings.saveUiMode(UiMode.bigPicture.name),
       build: () => UiModeCubit(settings: settings),
       act: (cubit) => cubit.load(),
       expect: () => [UiMode.bigPicture],
@@ -46,7 +46,7 @@ void main() {
       act: (cubit) => cubit.setMode(UiMode.desktop),
       expect: () => <UiMode>[],
       verify: (_) async {
-        expect(await settings.loadUiMode(), UiMode.desktop.index);
+        expect(await settings.loadUiMode(), UiMode.desktop.name);
       },
     );
   });

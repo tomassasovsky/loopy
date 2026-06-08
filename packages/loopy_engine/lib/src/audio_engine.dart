@@ -140,9 +140,15 @@ abstract interface class AudioEngine {
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
 
-  /// Reads the latest output visualization waveform: decimated peaks of the
-  /// mixed output, oldest first, each in `0..1`. Empty before the engine runs.
+  /// Reads the loop waveform: peaks of the mixed output indexed by position
+  /// across one master loop (index 0 = loop start), each in `0..1`. Pair with
+  /// [EngineSnapshot.masterPositionFrames]/[EngineSnapshot.masterLengthFrames]
+  /// for the playhead. Empty until a loop exists.
   Float32List readVisual();
+
+  /// Like [readVisual] but for a single track's own contribution, for
+  /// per-track waveform thumbnails.
+  Float32List readTrackVisual(int channel);
 
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();

@@ -214,11 +214,19 @@ LE_EXPORT void le_engine_get_snapshot(le_engine* engine, le_snapshot* out);
 LE_EXPORT void le_engine_get_track(le_engine* engine, int32_t channel,
                                    le_track_snapshot* out);
 
-/* Copies up to `max_points` decimated output-peak samples (a scrolling waveform
- * of the mixed output, oldest first, each in 0..1) into `out`; returns the
- * number written. Lock-free read of the audio thread's visualization ring. */
+/* Copies up to `max_points` of the loop waveform — peaks of the mixed output
+ * indexed by position across exactly one master loop (bucket 0 = loop start),
+ * each in 0..1 — into `out`; returns the number written. Pair with the
+ * snapshot's master_position/master_length for the playhead. Lock-free read of
+ * the audio thread's loop-visualization buffer; empty until a loop exists. */
 LE_EXPORT int32_t le_engine_read_visual(le_engine* engine, float* out,
                                         int32_t max_points);
+
+/* Like le_engine_read_visual but for a single track's own contribution
+ * (channel 0..track_count-1), for per-track waveform thumbnails. */
+LE_EXPORT int32_t le_engine_read_track_visual(le_engine* engine,
+                                              int32_t channel, float* out,
+                                              int32_t max_points);
 
 /* Name of the active duplex/playback device, or "" if not running. The returned
  * pointer is owned by the engine and valid until the next start/stop. */

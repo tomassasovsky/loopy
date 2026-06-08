@@ -17,9 +17,9 @@ abstract interface class WaveformWindowService {
   /// Closes the waveform window (idempotent).
   Future<void> close();
 
-  /// Sends a waveform frame (decimated peaks) to the open window; no-op if
-  /// closed.
-  void pushWaveform(Float32List samples);
+  /// Sends a waveform frame (loop peaks + playhead [progress] in `0..1`) to the
+  /// open window; no-op if closed.
+  void pushWaveform(Float32List samples, double progress);
 }
 
 /// Opens a real second OS window via `desktop_multi_window` and streams
@@ -51,11 +51,16 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   }
 
   @override
-  void pushWaveform(Float32List samples) {
+  void pushWaveform(Float32List samples, double progress) {
     final id = _windowId;
     if (id == null) return;
     // Fire-and-forget; the next frame supersedes any dropped one.
-    unawaited(DesktopMultiWindow.invokeMethod(id, 'waveform', samples));
+    unawaited(
+      DesktopMultiWindow.invokeMethod(id, 'waveform', {
+        'samples': samples,
+        'progress': progress,
+      }),
+    );
   }
 }
 
@@ -71,5 +76,5 @@ class NoopWaveformWindowService implements WaveformWindowService {
   Future<void> close() async {}
 
   @override
-  void pushWaveform(Float32List samples) {}
+  void pushWaveform(Float32List samples, double progress) {}
 }

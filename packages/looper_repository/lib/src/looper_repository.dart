@@ -168,9 +168,13 @@ class LooperRepository {
   /// Registers a tempo tap.
   EngineResult tapTempo() => _engine.tapTempo();
 
-  /// Reads the latest output waveform (decimated peaks, oldest first, `0..1`)
-  /// for the visualizer.
+  /// Reads the loop waveform (peaks indexed by loop position, `0..1`) of the
+  /// mixed output for the visualizer.
   Float32List readWaveform() => _engine.readVisual();
+
+  /// Reads track [channel]'s loop waveform for a per-track thumbnail.
+  Float32List readTrackWaveform(int channel) =>
+      _engine.readTrackVisual(channel);
 
   /// Enables or disables snapping the tempo and metronome grid to the loop.
   EngineResult setSyncTempo({required bool on}) => _engine.setSyncTempo(on: on);

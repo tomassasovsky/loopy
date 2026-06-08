@@ -146,5 +146,8 @@ class FakeAudioEngine implements AudioEngine {
   Float32List readVisual() => Float32List(0);
 
   @override
+  Float32List readTrackVisual(int channel) => Float32List(0);
+
+  @override
   void dispose() => disposeCalls++;
 }

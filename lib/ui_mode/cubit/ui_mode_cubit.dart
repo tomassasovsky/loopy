@@ -21,16 +21,19 @@ class UiModeCubit extends Cubit<UiMode> {
 
   /// Restores the persisted mode, if any.
   Future<void> load() async {
-    final index = await _settings.loadUiMode();
-    if (index != null && index >= 0 && index < UiMode.values.length) {
-      emit(UiMode.values[index]);
+    final name = await _settings.loadUiMode();
+    for (final mode in UiMode.values) {
+      if (mode.name == name) {
+        emit(mode);
+        return;
+      }
     }
   }
 
   /// Sets and persists the mode.
   Future<void> setMode(UiMode mode) async {
     if (mode != state) emit(mode);
-    await _settings.saveUiMode(mode.index);
+    await _settings.saveUiMode(mode.name);
   }
 
   /// Toggles between desktop and big-picture.

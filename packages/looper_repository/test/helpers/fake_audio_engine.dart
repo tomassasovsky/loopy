@@ -185,4 +185,10 @@ class FakeAudioEngine implements AudioEngine {
     calls.add('readVisual');
     return visual;
   }
+
+  @override
+  Float32List readTrackVisual(int channel) {
+    calls.add('readTrackVisual');
+    return visual;
+  }
 }
