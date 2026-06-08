@@ -1,0 +1,21 @@
+name: controller_repository
+description: >-
+  Hardware-agnostic controller abstraction for Loopy: maps raw MIDI/GPIO inputs
+  to looper actions through a remappable mapping, with MIDI-learn capture.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  equatable: ^2.0.7
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.5
+  very_good_analysis: ^10.2.0
