@@ -119,6 +119,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **auto-rounded up** to whole base loops on stop (buffer zeroed on the control
   thread so a rounded-up tail is silent). Per-track `multiple` in the snapshot;
   `×N` chip in the UI.
+- **Theming + Big Picture mode** (Phase 4 slice): two Material 3 themes via a
+  `LooperTheme` `ThemeExtension` (dark-neutral **Desktop**, neon-on-black **Big
+  Picture**); `UiModeCubit` persists the mode. Big Picture is a full-screen
+  Chewie-style colored loop-tile grid plus a **second OS window** (via
+  `desktop_multi_window`) showing the live output waveform. The waveform is fed
+  by a new RT-safe native **output viz tap** (`le_engine_read_visual`: a 512-pt
+  decimated peak ring) → `AudioEngine.readVisual` → the main window streams
+  frames to the second window at ~30 fps over the plugin channel. (Two-window
+  runtime is build-verified only; needs an on-machine run to confirm visually.)
 
 ---
 
@@ -175,6 +184,8 @@ hardware or a second display, or is Phase 4 scope.
 ---
 
 ## Test counts (last green)
-native (all C tests, 33 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples) ·
-plugin 27 · controller 14 · looper_repository 14 · settings 3 · local_storage 1
-· app 45. macOS app builds end-to-end.
+native (all C tests, 35 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples + 1
+viz tap) · plugin 27 · controller 14 · looper_repository 14 · settings 3 ·
+local_storage 1 · app 66 (theming/big-picture/multi-window). macOS app builds
+end-to-end. (Theming work is on branch `feat/big-picture-theming`; the sessions
+slice — native 34, session_repository 17, app 53 — is on `feat/session-repository`.)
