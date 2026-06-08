@@ -20,6 +20,22 @@ void main() {
     expect(find.byKey(const Key('waveform_view_paint')), findsOneWidget);
   });
 
+  testWidgets('WaveformWindowApp renders the pushed waveform', (tester) async {
+    final samples = ValueNotifier<Float32List>(
+      Float32List.fromList([0, 1, 0]),
+    );
+    addTearDown(samples.dispose);
+
+    await tester.pumpWidget(WaveformWindowApp(samples: samples));
+    await tester.pump();
+
+    expect(find.byType(WaveformView), findsOneWidget);
+
+    samples.value = Float32List.fromList([1, 0, 1, 0]);
+    await tester.pump();
+    expect(find.byType(WaveformView), findsOneWidget);
+  });
+
   group('WaveformPainter.shouldRepaint', () {
     final samples = Float32List.fromList([0, 1]);
     const cyan = Color(0xFF00E5FF);
