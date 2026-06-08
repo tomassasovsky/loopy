@@ -16,6 +16,7 @@ class Track extends Equatable {
     this.peak = 0,
     this.undoDepth = 0,
     this.redoDepth = 0,
+    this.armed = false,
   });
 
   /// Track channel index (always 0 in the single-track phase).
@@ -48,6 +49,10 @@ class Track extends Equatable {
   /// Available redo steps.
   final int redoDepth;
 
+  /// Whether this track is armed for a quantized start, waiting for the next
+  /// grid boundary to begin capturing.
+  final bool armed;
+
   /// Whether the track holds recorded audio.
   bool get hasContent => state != TrackState.empty && lengthFrames > 0;
 
@@ -73,5 +78,6 @@ class Track extends Equatable {
     peak,
     undoDepth,
     redoDepth,
+    armed,
   ];
 }

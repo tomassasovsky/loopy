@@ -126,3 +126,21 @@ final class LooperTapTempo extends LooperEvent {
   /// Creates a [LooperTapTempo].
   const LooperTapTempo();
 }
+
+/// The loop-to-tempo sync was toggled.
+final class LooperSyncTempoToggled extends LooperEvent {
+  /// Creates a [LooperSyncTempoToggled].
+  const LooperSyncTempoToggled();
+}
+
+/// The quantize-start resolution was changed to [mode].
+final class LooperQuantizeChanged extends LooperEvent {
+  /// Creates a [LooperQuantizeChanged].
+  const LooperQuantizeChanged(this.mode);
+
+  /// The new quantize-start resolution.
+  final QuantizeMode mode;
+
+  @override
+  List<Object?> get props => [mode];
+}

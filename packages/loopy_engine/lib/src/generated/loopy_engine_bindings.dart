@@ -423,6 +423,46 @@ class LoopyEngineBindings {
   late final _le_engine_tap_tempo = _le_engine_tap_tempoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
+  /// Enables/disables snapping the tempo and metronome grid to the loop. When on
+  /// (the default), finalizing the defining loop rounds it to whole bars, snaps
+  /// the displayed tempo, and drives the metronome from the loop position.
+  int le_engine_set_sync_tempo(
+    ffi.Pointer<le_engine> engine,
+    int on$,
+  ) {
+    return _le_engine_set_sync_tempo(
+      engine,
+      on$,
+    );
+  }
+
+  late final _le_engine_set_sync_tempoPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_sync_tempo');
+  late final _le_engine_set_sync_tempo = _le_engine_set_sync_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets the quantize-start resolution (le_quantize_mode). When not OFF and a loop
+  /// exists, a record/overdub press arms and the capture begins at the next grid
+  /// boundary; a second press on the armed track cancels the pending arm.
+  int le_engine_set_quantize(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_set_quantize(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_set_quantizePtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_quantize');
+  late final _le_engine_set_quantize = _le_engine_set_quantizePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the record-offset latency compensation in frames (clamped >= 0).
   int le_engine_set_record_offset(
     ffi.Pointer<le_engine> engine,
@@ -600,7 +640,13 @@ enum le_command_code {
   LE_CMD_TAP_TEMPO(12),
 
   /// arg_i = round-trip latency in frames
-  LE_CMD_SET_RECORD_OFFSET(13);
+  LE_CMD_SET_RECORD_OFFSET(13),
+
+  /// arg_f = 0/1: snap tempo+grid to the loop
+  LE_CMD_SET_SYNC_TEMPO(14),
+
+  /// arg_i = le_quantize_mode
+  LE_CMD_SET_QUANTIZE(15);
 
   final int value;
   const le_command_code(this.value);
@@ -620,6 +666,8 @@ enum le_command_code {
         11 => LE_CMD_SET_COUNT_IN,
         12 => LE_CMD_TAP_TEMPO,
         13 => LE_CMD_SET_RECORD_OFFSET,
+        14 => LE_CMD_SET_SYNC_TEMPO,
+        15 => LE_CMD_SET_QUANTIZE,
         _ => throw ArgumentError('Unknown value for le_command_code: $value'),
       };
 }
@@ -760,6 +808,23 @@ final class le_snapshot extends ffi.Struct {
   /// 0..3 within the bar
   @ffi.Int32()
   external int current_beat;
+
+  /// whole bars in the master loop; 0 if none
+  @ffi.Int32()
+  external int loop_bars;
+
+  /// 0/1 (default 1)
+  @ffi.Int32()
+  external int sync_loop_to_tempo;
+
+  /// Quantize-start. quantize_mode is the active resolution (le_quantize_mode);
+  /// armed_channel is the track waiting for the next grid boundary to begin
+  /// capturing, or -1 when nothing is armed.
+  @ffi.Int32()
+  external int quantize_mode;
+
+  @ffi.Int32()
+  external int armed_channel;
 
   /// Record-offset latency compensation (frames). Recorded/overdubbed input is
   /// written this many frames earlier in the loop so it aligns with what the

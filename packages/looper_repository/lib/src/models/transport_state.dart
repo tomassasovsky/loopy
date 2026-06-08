@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:loopy_engine/loopy_engine.dart';
 
 /// The master loop transport plus tempo/metronome state.
 class TransportState extends Equatable {
@@ -12,6 +13,10 @@ class TransportState extends Equatable {
     this.countInEnabled = false,
     this.countingIn = false,
     this.currentBeat = 0,
+    this.loopBars = 0,
+    this.syncLoopToTempo = true,
+    this.quantizeMode = QuantizeMode.bar,
+    this.armedChannel = -1,
   });
 
   /// Whether the audio device is open and processing.
@@ -38,6 +43,19 @@ class TransportState extends Equatable {
   /// Current beat within the bar (`0..3`).
   final int currentBeat;
 
+  /// Whole bars spanning the master loop; `0` until a loop is defined (or while
+  /// [syncLoopToTempo] is off, when the loop keeps its free-form length).
+  final int loopBars;
+
+  /// Whether the tempo and metronome grid are snapped to the loop (default on).
+  final bool syncLoopToTempo;
+
+  /// Quantize-start resolution for record/overdub presses (default bar).
+  final QuantizeMode quantizeMode;
+
+  /// The track armed for a quantized start, or `-1` when nothing is armed.
+  final int armedChannel;
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
@@ -55,5 +73,9 @@ class TransportState extends Equatable {
     countInEnabled,
     countingIn,
     currentBeat,
+    loopBars,
+    syncLoopToTempo,
+    quantizeMode,
+    armedChannel,
   ];
 }

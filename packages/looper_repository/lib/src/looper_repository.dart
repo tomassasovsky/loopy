@@ -76,6 +76,10 @@ class LooperRepository {
       countInEnabled: s.countInEnabled,
       countingIn: s.countingIn,
       currentBeat: s.currentBeat,
+      loopBars: s.loopBars,
+      syncLoopToTempo: s.syncLoopToTempo,
+      quantizeMode: s.quantizeMode,
+      armedChannel: s.armedChannel,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -90,6 +94,7 @@ class LooperRepository {
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
           redoDepth: s.tracks[i].redoDepth,
+          armed: s.armedChannel == i,
         ),
     ],
     status: EngineStatus(
@@ -160,6 +165,12 @@ class LooperRepository {
 
   /// Registers a tempo tap.
   EngineResult tapTempo() => _engine.tapTempo();
+
+  /// Enables or disables snapping the tempo and metronome grid to the loop.
+  EngineResult setSyncTempo({required bool on}) => _engine.setSyncTempo(on: on);
+
+  /// Sets the quantize-start resolution for record/overdub presses.
+  EngineResult setQuantize(QuantizeMode mode) => _engine.setQuantize(mode);
 
   /// Sets the record-offset latency compensation in frames.
   EngineResult setRecordOffset(int frames) => _engine.setRecordOffset(frames);

@@ -20,6 +20,16 @@ void main() {
     });
   });
 
+  group('QuantizeMode.fromCode', () {
+    test('maps each known code and falls back to bar', () {
+      expect(QuantizeMode.fromCode(0), QuantizeMode.off);
+      expect(QuantizeMode.fromCode(1), QuantizeMode.beat);
+      expect(QuantizeMode.fromCode(2), QuantizeMode.bar);
+      expect(QuantizeMode.fromCode(99), QuantizeMode.bar);
+      expect(QuantizeMode.bar.code, 2);
+    });
+  });
+
   group('EngineSnapshot.initial', () {
     test('represents a never-started engine', () {
       const snapshot = EngineSnapshot.initial();
@@ -92,6 +102,10 @@ void main() {
           ..count_in_enabled = 1
           ..counting_in = 1
           ..current_beat = 2
+          ..loop_bars = 2
+          ..sync_loop_to_tempo = 1
+          ..quantize_mode = 1
+          ..armed_channel = 0
           ..record_offset_frames = 480
           ..track_count = 2;
 
@@ -120,6 +134,10 @@ void main() {
         expect(snapshot.countInEnabled, isTrue);
         expect(snapshot.countingIn, isTrue);
         expect(snapshot.currentBeat, 2);
+        expect(snapshot.loopBars, 2);
+        expect(snapshot.syncLoopToTempo, isTrue);
+        expect(snapshot.quantizeMode, QuantizeMode.beat);
+        expect(snapshot.armedChannel, 0);
         expect(snapshot.recordOffsetFrames, 480);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.

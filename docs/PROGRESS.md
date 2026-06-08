@@ -98,6 +98,19 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   finalizes the current one and starts the new from the loop top.
 - **Multi-level undo/redo** per track (control-thread buffer pool; undo = overdub
   layers, clear = remove track).
+- **Loop ↔ tempo sync** (#2): finalizing the defining loop rounds it to whole
+  bars at the current tempo, derives the beat grid back from the loop (so it
+  divides exactly), and snaps the displayed tempo to fit. The metronome is
+  driven from the master position once a loop exists (free-runs at the tapped
+  tempo before that, for count-in). Toggle "sync loop to tempo" (default on);
+  off = free-form length, untouched tempo. `loop_bars` + sync flag in the
+  snapshot, surfaced in the tempo bar (bar count + sync toggle).
+- **Quantize-start** (#3): `quantize` off / beat / bar (default bar). While a
+  loop exists, a record/overdub press **arms** the track and the capture begins
+  at the next grid boundary (applied in `process` via the #2 master-position
+  beat detection); a second press cancels the arm. Stops act immediately.
+  `quantize_mode` + `armed_channel` in the snapshot; tempo-bar quantize selector
+  + per-track "armed" chip in the UI.
 
 ---
 
@@ -110,33 +123,26 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   track. Immediate swap (tiny click on undo accepted).
 - **#4 loop multiples** — **auto-round on stop** (record freely; round track
   length up to the nearest whole multiple of the base loop).
+- **#2 loop ↔ tempo** — round the defining loop to whole bars and derive the
+  beat grid (and displayed tempo) from the loop; metronome locks to loop
+  position. Sync is a persistent toggle, default on; off keeps the free-form
+  length and tempo. Bars/grid are computed once at finalize (toggling sync on
+  after a free-form loop does not retro-snap it).
+- **#3 quantize-start** — default **bar**; off/beat/bar. A press while a loop
+  exists arms; capture starts at the next grid boundary; second press cancels.
+  Only *starts* are quantized (stops are immediate). The undo snapshot is still
+  taken on the control thread at press time; a cancelled arm leaves a harmless
+  duplicate undo layer (never an RT-unsafe copy on the audio thread).
 
 ---
 
-## Roadmap (path forward) — remaining sync work, in order
+## Roadmap (path forward) — remaining sync work
 
-All three are real-time engine changes touching the master clock / position
-model. Do them one at a time with deterministic native tests.
+The last remaining sync item is a real-time engine change touching the master
+clock / position model. (#2 loop ↔ tempo and #3 quantize-start are done — see
+Done / Locked decisions.)
 
-### #2 Loop ↔ tempo  (NEXT)
-Make the metronome and the loop agree.
-- Loop carries a `bars` count. On finalizing the defining loop, snap
-  `bars = max(1, round(recordedFrames / framesPerBar))` at the current tempo,
-  then **derive the beat grid from the loop**: `framesPerBeat = masterLen /
-  (bars * BEATS_PER_BAR)`, so the metronome divides the loop exactly and the
-  displayed tempo snaps to fit.
-- Drive metronome clicks from the **master position** (locked to the loop) once
-  a loop exists; free-run at the tapped tempo before that (for count-in).
-- Toggle "sync loop to tempo" (default on); off = today's free-form behaviour.
-- Expose `bars` / synced tempo in the snapshot; show in the UI.
-
-### #3 Quantize-start  (AFTER #2)
-- Setting `quantize`: off / beat / bar (default bar).
-- A record/overdub press while a loop exists **arms** and the capture begins at
-  the next grid boundary (engine pending-arm applied in `process` at the
-  beat/bar boundary). Surface an "armed" state in the snapshot/UI.
-
-### #4 Loop multiples  (AFTER #3)
+### #4 Loop multiples  (NEXT)
 - Per-track length that can be an integer multiple of the base loop.
 - Introduce a **free-running global position**; each track plays at
   `globalPos % trackLen`. Master UI still wraps at the base length.
@@ -160,5 +166,6 @@ Make the metronome and the loop agree.
 ---
 
 ## Test counts (last green)
-native (all C tests) · plugin 26 · controller 14 · looper_repository 12 ·
-settings 3 · local_storage 1 · app 39. macOS app builds end-to-end.
+native (all C tests, 31 fns incl. 4 loop↔tempo + 5 quantize) · plugin 27 ·
+controller 14 · looper_repository 13 · settings 3 · local_storage 1 · app 44.
+macOS app builds end-to-end.
