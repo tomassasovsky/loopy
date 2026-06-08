@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:loopy_engine/loopy_engine.dart';
 
 /// A controllable in-memory [AudioEngine] for repository tests.
@@ -174,4 +176,13 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   void dispose() => calls.add('dispose');
+
+  /// Waveform returned by [readVisual] (mutate in tests).
+  Float32List visual = Float32List(0);
+
+  @override
+  Float32List readVisual() {
+    calls.add('readVisual');
+    return visual;
+  }
 }

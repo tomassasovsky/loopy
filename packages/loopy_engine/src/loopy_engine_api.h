@@ -114,6 +114,11 @@ typedef struct le_config {
 /* Maximum number of simultaneous looper tracks. */
 #define LE_MAX_TRACKS 4
 
+/* Number of points in the output visualization ring (le_engine_read_visual).
+ * Each point is the peak |output| over one decimation window (~5 ms), so the
+ * full ring is ~2.5 s of scrolling output waveform. */
+#define LE_VIZ_POINTS 512
+
 /* Per-track state published in le_snapshot.tracks. */
 typedef struct le_track_snapshot {
   int32_t state;         /* le_track_state */
@@ -208,6 +213,12 @@ LE_EXPORT void le_engine_get_snapshot(le_engine* engine, le_snapshot* out);
  * empty track. No-op if either pointer is NULL. */
 LE_EXPORT void le_engine_get_track(le_engine* engine, int32_t channel,
                                    le_track_snapshot* out);
+
+/* Copies up to `max_points` decimated output-peak samples (a scrolling waveform
+ * of the mixed output, oldest first, each in 0..1) into `out`; returns the
+ * number written. Lock-free read of the audio thread's visualization ring. */
+LE_EXPORT int32_t le_engine_read_visual(le_engine* engine, float* out,
+                                        int32_t max_points);
 
 /* Name of the active duplex/playback device, or "" if not running. The returned
  * pointer is owned by the engine and valid until the next start/stop. */

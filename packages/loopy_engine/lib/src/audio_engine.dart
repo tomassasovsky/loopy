@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
@@ -137,6 +139,10 @@ abstract interface class AudioEngine {
 
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
+
+  /// Reads the latest output visualization waveform: decimated peaks of the
+  /// mixed output, oldest first, each in `0..1`. Empty before the engine runs.
+  Float32List readVisual();
 
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();

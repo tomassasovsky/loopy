@@ -154,6 +154,28 @@ class LoopyEngineBindings {
       void Function(
           ffi.Pointer<le_engine>, int, ffi.Pointer<le_track_snapshot>)>();
 
+  /// Copies up to `max_points` decimated output-peak samples (a scrolling waveform
+  /// of the mixed output, oldest first, each in 0..1) into `out`; returns the
+  /// number written. Lock-free read of the audio thread's visualization ring.
+  int le_engine_read_visual(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Float> out,
+    int max_points,
+  ) {
+    return _le_engine_read_visual(
+      engine,
+      out,
+      max_points,
+    );
+  }
+
+  late final _le_engine_read_visualPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Float>,
+              ffi.Int32)>>('le_engine_read_visual');
+  late final _le_engine_read_visual = _le_engine_read_visualPtr.asFunction<
+      int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Float>, int)>();
+
   /// Name of the active duplex/playback device, or "" if not running. The returned
   /// pointer is owned by the engine and valid until the next start/stop.
   ffi.Pointer<ffi.Char> le_engine_device_name(
@@ -847,3 +869,5 @@ final class le_snapshot extends ffi.Struct {
 final class le_engine extends ffi.Opaque {}
 
 const int LE_MAX_TRACKS = 4;
+
+const int LE_VIZ_POINTS = 512;
