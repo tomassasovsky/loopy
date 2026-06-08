@@ -1,0 +1,33 @@
+# ffigen configuration for the loopy_engine FFI plugin.
+# Regenerate with: dart run ffigen --config ffigen.yaml
+# (requires libclang; on macOS it ships with Xcode / Command Line Tools).
+name: LoopyEngineBindings
+description: |
+  Generated low-level FFI bindings for the loopy_engine native audio engine.
+  Do not edit by hand — see lib/src/audio_engine.dart for the typed Dart API.
+output: 'lib/src/generated/loopy_engine_bindings.dart'
+headers:
+  entry-points:
+    - 'src/loopy_engine_api.h'
+  include-directives:
+    - 'src/loopy_engine_api.h'
+compiler-opts:
+  - '-Isrc'
+functions:
+  include:
+    - 'le_.*'
+structs:
+  include:
+    - 'le_config'
+    - 'le_snapshot'
+enums:
+  include:
+    - 'le_result'
+    - 'le_latency_state'
+    - 'le_command_code'
+preamble: |
+  // ignore_for_file: type=lint, doc_directive_unknown
+  // coverage:ignore-file
+comments:
+  style: any
+  length: full

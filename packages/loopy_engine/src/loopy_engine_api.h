@@ -1,0 +1,118 @@
+/*
+ * loopy_engine_api.h — the C ABI exposed to Dart via FFI.
+ *
+ * This is the single header consumed by ffigen. Everything here is POD or an
+ * opaque handle; no C++; no callbacks into Dart. The audio callback that backs
+ * this API performs no allocation, locking, or I/O (see engine.c).
+ *
+ * Phase 1 surface: device lifecycle, duplex passthrough, level metering,
+ * a loopback round-trip latency harness, and the command-ring foundation that
+ * later phases use to drive the looper.
+ */
+#ifndef LOOPY_ENGINE_API_H
+#define LOOPY_ENGINE_API_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if defined(_WIN32)
+#define LE_EXPORT __declspec(dllexport)
+#else
+#define LE_EXPORT __attribute__((visibility("default"))) __attribute__((used))
+#endif
+
+/* Result codes returned by lifecycle calls. */
+typedef enum le_result {
+  LE_OK = 0,
+  LE_ERR_INVALID = -1,       /* null handle or bad argument */
+  LE_ERR_ALREADY_RUNNING = -2,
+  LE_ERR_NOT_RUNNING = -3,
+  LE_ERR_DEVICE = -4,        /* miniaudio failed to init/start the device */
+} le_result;
+
+/* Latency-harness phase, mirrored in le_snapshot.latency_state. */
+typedef enum le_latency_state {
+  LE_LATENCY_IDLE = 0,
+  LE_LATENCY_MEASURING = 1, /* impulse emitted, waiting for it to return */
+  LE_LATENCY_DONE = 2,      /* measured_latency_ms is valid */
+  LE_LATENCY_TIMEOUT = 3,   /* no loopback detected within the window */
+} le_latency_state;
+
+/* Command codes posted into the engine's SPSC ring. Phase 1 only needs the
+ * latency trigger; later phases extend this set (record/overdub/stop/...). */
+typedef enum le_command_code {
+  LE_CMD_NONE = 0,
+  LE_CMD_MEASURE_LATENCY = 1,
+} le_command_code;
+
+/* Requested device configuration. Any field set to 0 uses the device default
+ * (channels is additionally clamped to a maximum of 2). */
+typedef struct le_config {
+  int32_t sample_rate;
+  int32_t buffer_frames;
+  int32_t channels;
+  int32_t passthrough; /* 1 = copy captured input straight to the output */
+} le_config;
+
+/* Lock-free snapshot of engine state, published by the audio thread and read by
+ * Dart on a render-rate timer. Fields are individually atomic; readers may see
+ * a one-frame-stale mix across fields, which is fine for metering/UI. */
+typedef struct le_snapshot {
+  int32_t running;            /* 0/1 */
+  int32_t sample_rate;
+  int32_t buffer_frames;
+  int32_t channels;
+  uint64_t frames_processed;  /* total frames seen by the callback */
+  uint32_t xrun_count;        /* reserved; xrun detection lands in Phase 2 (0) */
+  float input_rms;            /* 0..1 */
+  float input_peak;           /* 0..1 */
+  float output_rms;           /* 0..1 */
+  int32_t latency_state;      /* le_latency_state */
+  double measured_latency_ms; /* valid when latency_state == LE_LATENCY_DONE */
+} le_snapshot;
+
+/* Opaque engine handle. */
+typedef struct le_engine le_engine;
+
+/* Returns the miniaudio + engine version string (never NULL). */
+LE_EXPORT const char* le_version(void);
+
+/* Allocates an engine. Returns NULL on allocation failure. */
+LE_EXPORT le_engine* le_engine_create(void);
+
+/* Stops (if running) and frees the engine. Safe to call with NULL. */
+LE_EXPORT void le_engine_destroy(le_engine* engine);
+
+/* Opens the default duplex device with `config` and starts the audio callback.
+ * Returns LE_OK or an le_result error. */
+LE_EXPORT int32_t le_engine_start(le_engine* engine, const le_config* config);
+
+/* Stops and closes the device. Returns LE_OK or an le_result error. */
+LE_EXPORT int32_t le_engine_stop(le_engine* engine);
+
+/* Copies the current state snapshot into *out. No-op if either pointer is NULL.
+ */
+LE_EXPORT void le_engine_get_snapshot(le_engine* engine, le_snapshot* out);
+
+/* Name of the active duplex/playback device, or "" if not running. The returned
+ * pointer is owned by the engine and valid until the next start/stop. */
+LE_EXPORT const char* le_engine_device_name(le_engine* engine);
+
+/* Posts a command into the engine's SPSC ring (drained by the audio thread).
+ * Returns LE_OK, LE_ERR_NOT_RUNNING, or LE_ERR_INVALID (ring full / bad args).
+ */
+LE_EXPORT int32_t le_engine_post_command(le_engine* engine, int32_t code,
+                                         int32_t arg_i, float arg_f);
+
+/* Convenience: triggers a single loopback latency measurement. Equivalent to
+ * posting LE_CMD_MEASURE_LATENCY. Requires an output->input loopback path. */
+LE_EXPORT int32_t le_engine_measure_latency(le_engine* engine);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LOOPY_ENGINE_API_H */
