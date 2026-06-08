@@ -22,6 +22,8 @@ dependencies:
     path: packages/looper_repository
   loopy_engine:
     path: packages/loopy_engine
+  settings_repository:
+    path: packages/settings_repository
 
 dev_dependencies:
   bloc_lint: ^0.4.1

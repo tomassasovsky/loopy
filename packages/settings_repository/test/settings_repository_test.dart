@@ -1,0 +1,87 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+class _InMemoryStore implements KeyValueStore {
+  final Map<String, int> values = {};
+
+  @override
+  Future<int?> getInt(String key) async => values[key];
+
+  @override
+  Future<void> setInt(String key, int value) async => values[key] = value;
+
+  @override
+  Future<void> remove(String key) async => values.remove(key);
+}
+
+void main() {
+  late _InMemoryStore store;
+  late SettingsRepository repository;
+
+  setUp(() {
+    store = _InMemoryStore();
+    repository = SettingsRepository(store: store);
+  });
+
+  group('latency offset', () {
+    test('returns null when nothing is stored', () async {
+      final value = await repository.loadLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: 128,
+      );
+      expect(value, isNull);
+    });
+
+    test('round-trips a saved value for a device profile', () async {
+      await repository.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: 128,
+        frames: 480,
+      );
+
+      expect(
+        await repository.loadLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+        480,
+      );
+    });
+
+    test(
+      'keys are distinct per device, sample rate, and buffer size',
+      () async {
+        await repository.saveLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          frames: 480,
+        );
+
+        // Same device, different buffer size -> independent value.
+        expect(
+          await repository.loadLatencyOffsetFrames(
+            device: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 256,
+          ),
+          isNull,
+        );
+        // Different device -> independent value.
+        expect(
+          await repository.loadLatencyOffsetFrames(
+            device: 'BlackHole',
+            sampleRate: 48000,
+            bufferFrames: 128,
+          ),
+          isNull,
+        );
+
+        expect(store.values, hasLength(1));
+      },
+    );
+  });
+}

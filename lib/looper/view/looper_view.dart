@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// The multi-track looper view: a Chewie-2-style grid of channel strips with
 /// transport controls, level meters, volume, and the master loop position.
@@ -39,6 +40,7 @@ class LooperView extends StatelessWidget {
               MaterialPageRoute<void>(
                 builder: (_) => AudioSetupPage(
                   repository: context.read<LooperRepository>(),
+                  settings: context.read<SettingsRepository>(),
                 ),
               ),
             ),
