@@ -121,6 +121,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.19.1"
+  controller_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/controller_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   convert:
     dependency: transitive
     description:

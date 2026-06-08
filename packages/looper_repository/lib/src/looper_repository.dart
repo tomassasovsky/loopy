@@ -72,16 +72,20 @@ class LooperRepository {
       masterLengthFrames: s.masterLengthFrames,
       masterPositionFrames: s.masterPositionFrames,
     ),
-    track: Track(
-      state: s.trackState,
-      volume: s.trackVolume,
-      muted: s.trackMuted,
-      lengthFrames: s.trackLengthFrames,
-      playheadFrames: s.masterPositionFrames,
-      rms: s.trackRms,
-      peak: s.trackPeak,
-      undoDepth: s.trackUndoDepth,
-    ),
+    tracks: [
+      for (var i = 0; i < s.tracks.length; i++)
+        Track(
+          channel: i,
+          state: s.tracks[i].state,
+          volume: s.tracks[i].volume,
+          muted: s.tracks[i].muted,
+          lengthFrames: s.tracks[i].lengthFrames,
+          playheadFrames: s.masterPositionFrames,
+          rms: s.tracks[i].rms,
+          peak: s.tracks[i].peak,
+          undoDepth: s.tracks[i].undoDepth,
+        ),
+    ],
     status: EngineStatus(
       deviceName: _engine.deviceName,
       sampleRate: s.sampleRate,
@@ -110,27 +114,29 @@ class LooperRepository {
   /// Triggers a loopback round-trip latency measurement.
   EngineResult measureLatency() => _engine.measureLatency();
 
-  /// Advances the track: record / finalize loop / toggle overdub.
-  EngineResult record() => _engine.record();
+  /// Advances track [channel]: record / finalize loop / toggle overdub.
+  EngineResult record({int channel = 0}) => _engine.record(channel: channel);
 
-  /// Halts track playback (retaining the buffer).
-  EngineResult stopTrack() => _engine.stopTrack();
+  /// Halts track [channel]'s playback (retaining the buffer).
+  EngineResult stopTrack({int channel = 0}) =>
+      _engine.stopTrack(channel: channel);
 
-  /// Resumes playback of a stopped track.
-  EngineResult play() => _engine.play();
+  /// Resumes playback of track [channel].
+  EngineResult play({int channel = 0}) => _engine.play(channel: channel);
 
-  /// Erases the track and resets the master loop.
-  EngineResult clear() => _engine.clear();
+  /// Erases track [channel] (resets the master if all tracks empty).
+  EngineResult clear({int channel = 0}) => _engine.clear(channel: channel);
 
-  /// Removes the last overdub layer.
-  EngineResult undo() => _engine.undo();
+  /// Removes the last overdub layer on track [channel].
+  EngineResult undo({int channel = 0}) => _engine.undo(channel: channel);
 
-  /// Sets track playback gain (`0..1`).
-  EngineResult setVolume(double volume) => _engine.setTrackVolume(volume);
+  /// Sets track [channel]'s playback gain (`0..1`).
+  EngineResult setVolume(double volume, {int channel = 0}) =>
+      _engine.setTrackVolume(volume, channel: channel);
 
-  /// Mutes or unmutes the track.
-  EngineResult setMute({required bool muted}) =>
-      _engine.setTrackMute(muted: muted);
+  /// Mutes or unmutes track [channel].
+  EngineResult setMute({required bool muted, int channel = 0}) =>
+      _engine.setTrackMute(muted: muted, channel: channel);
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {

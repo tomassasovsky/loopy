@@ -35,36 +35,43 @@ void main() {
     );
   }
 
-  testWidgets('shows the empty track state and the stopped banner', (
+  testWidgets('renders a strip per track and the stopped banner', (
     tester,
   ) async {
-    seed(const LooperState());
+    seed(
+      const LooperState(
+        tracks: [Track(), Track(channel: 1)],
+      ),
+    );
     await pumpView(tester);
 
-    expect(find.widgetWithText(Chip, 'empty'), findsOneWidget);
+    expect(find.byKey(const Key('looper_track_0')), findsOneWidget);
+    expect(find.byKey(const Key('looper_track_1')), findsOneWidget);
     expect(
       find.byKey(const Key('looper_engineStopped_banner')),
       findsOneWidget,
     );
   });
 
-  testWidgets('tapping record dispatches LooperRecordPressed', (tester) async {
-    seed(const LooperState());
-    await pumpView(tester);
-
-    await tester.tap(find.byKey(const Key('looper_record_button')));
-    await tester.pump();
-
-    verify(() => bloc.add(const LooperRecordPressed())).called(1);
-  });
-
-  testWidgets('reflects a playing state, hides the banner, enables stop', (
+  testWidgets('tapping record on a track dispatches with its channel', (
     tester,
   ) async {
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('looper_record_button_1')));
+    await tester.pump();
+
+    verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
+  });
+
+  testWidgets('reflects a playing track and enables stop', (tester) async {
     seed(
       const LooperState(
         transport: TransportState(isRunning: true, masterLengthFrames: 48000),
-        track: Track(state: TrackState.playing, lengthFrames: 48000),
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 48000),
+        ],
       ),
     );
     await pumpView(tester);
@@ -76,21 +83,33 @@ void main() {
     );
 
     final stopButton = tester.widget<OutlinedButton>(
-      find.byKey(const Key('looper_stop_button')),
+      find.byKey(const Key('looper_stop_button_0')),
     );
     expect(stopButton.enabled, isTrue);
 
-    await tester.tap(find.byKey(const Key('looper_stop_button')));
+    await tester.tap(find.byKey(const Key('looper_stop_button_0')));
     await tester.pump();
-    verify(() => bloc.add(const LooperStopPressed())).called(1);
+    verify(() => bloc.add(const LooperStopPressed(0))).called(1);
+  });
+
+  testWidgets('play all dispatches LooperPlayAllPressed', (tester) async {
+    seed(const LooperState(tracks: [Track()]));
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('looper_playAll_button')));
+    await tester.pump();
+
+    verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
   });
 
   testWidgets('undo is disabled without an undo layer', (tester) async {
-    seed(const LooperState(track: Track(state: TrackState.playing)));
+    seed(
+      const LooperState(tracks: [Track(state: TrackState.playing)]),
+    );
     await pumpView(tester);
 
     final undoButton = tester.widget<OutlinedButton>(
-      find.byKey(const Key('looper_undo_button')),
+      find.byKey(const Key('looper_undo_button_0')),
     );
     expect(undoButton.enabled, isFalse);
   });

@@ -1,3 +1,4 @@
+import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -14,8 +15,10 @@ class LooperPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (context) =>
-          LooperBloc(repository: context.read<LooperRepository>()),
+      create: (context) => LooperBloc(
+        repository: context.read<LooperRepository>(),
+        controller: context.read<ControllerRepository>(),
+      ),
       child: const LooperView(),
     );
   }

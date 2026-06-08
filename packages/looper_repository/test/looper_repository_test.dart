@@ -69,6 +69,50 @@ void main() {
       expect(state.status.isConnected, isTrue);
     });
 
+    test('projects multiple tracks with their channel indices', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        channels: 2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 48000,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+          ),
+          TrackSnapshot(
+            state: TrackState.overdubbing,
+            volume: 0.5,
+            muted: true,
+            lengthFrames: 48000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+          ),
+        ],
+      );
+      final state = buildRepo().state;
+      expect(state.tracks, hasLength(2));
+      expect(state.tracks[0].channel, 0);
+      expect(state.tracks[1].channel, 1);
+      expect(state.tracks[1].state, TrackState.overdubbing);
+      expect(state.tracks[1].muted, isTrue);
+      expect(state.hasContent, isTrue);
+    });
+
     test('initial snapshot projects an empty looper', () {
       final repo = buildRepo();
       final state = repo.state;
