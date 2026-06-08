@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// The multi-track looper view: a Chewie-2-style grid of channel strips with
@@ -31,6 +32,13 @@ class LooperView extends StatelessWidget {
             tooltip: 'Stop all',
             icon: const Icon(Icons.stop_circle_outlined),
             onPressed: () => bloc.add(const LooperStopAllPressed()),
+          ),
+          IconButton(
+            key: const Key('looper_bigPicture_button'),
+            tooltip: 'Big picture',
+            icon: const Icon(Icons.open_in_full),
+            onPressed: () =>
+                context.read<UiModeCubit>().setMode(UiMode.bigPicture),
           ),
           IconButton(
             key: const Key('looper_openSetup_button'),
