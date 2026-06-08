@@ -122,24 +122,6 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTempo(double bpm) => EngineResult.ok;
-
-  @override
-  EngineResult setMetronome({required bool on}) => EngineResult.ok;
-
-  @override
-  EngineResult setCountIn({required bool enabled}) => EngineResult.ok;
-
-  @override
-  EngineResult tapTempo() => EngineResult.ok;
-
-  @override
-  EngineResult setSyncTempo({required bool on}) => EngineResult.ok;
-
-  @override
-  EngineResult setQuantize(QuantizeMode mode) => EngineResult.ok;
-
-  @override
   EngineResult setRecordOffset(int frames) => EngineResult.ok;
 
   @override

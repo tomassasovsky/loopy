@@ -185,50 +185,6 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTempo(double bpm) {
-    _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_set_tempo(_engine, bpm));
-  }
-
-  @override
-  EngineResult setMetronome({required bool on}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_metronome(_engine, on ? 1 : 0),
-    );
-  }
-
-  @override
-  EngineResult setCountIn({required bool enabled}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_count_in(_engine, enabled ? 1 : 0),
-    );
-  }
-
-  @override
-  EngineResult tapTempo() {
-    _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_tap_tempo(_engine));
-  }
-
-  @override
-  EngineResult setSyncTempo({required bool on}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_sync_tempo(_engine, on ? 1 : 0),
-    );
-  }
-
-  @override
-  EngineResult setQuantize(QuantizeMode mode) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_quantize(_engine, mode.code),
-    );
-  }
-
-  @override
   EngineResult setRecordOffset(int frames) {
     _checkAlive();
     return EngineResult.fromCode(

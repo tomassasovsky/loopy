@@ -115,28 +115,6 @@ abstract interface class AudioEngine {
   /// Mutes or unmutes track [channel].
   EngineResult setTrackMute({required bool muted, int channel = 0});
 
-  /// Sets the tempo in beats per minute (clamped to `30..300`).
-  EngineResult setTempo(double bpm);
-
-  /// Enables or disables the metronome click.
-  EngineResult setMetronome({required bool on});
-
-  /// Enables or disables a one-bar count-in before the first recording.
-  EngineResult setCountIn({required bool enabled});
-
-  /// Registers a tap; two taps set the tempo from their interval.
-  EngineResult tapTempo();
-
-  /// Enables or disables snapping the tempo and metronome grid to the loop.
-  /// When on (the default), finalizing the defining loop rounds it to whole
-  /// bars, snaps the tempo to fit, and drives the metronome from the loop.
-  EngineResult setSyncTempo({required bool on});
-
-  /// Sets the quantize-start resolution. When not [QuantizeMode.off] and a loop
-  /// exists, a record/overdub press arms and the capture begins at the next
-  /// grid boundary; a second press on the armed track cancels the arm.
-  EngineResult setQuantize(QuantizeMode mode);
-
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
 

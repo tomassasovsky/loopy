@@ -118,53 +118,6 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  double? lastTempo;
-  bool? lastMetronome;
-  bool? lastCountIn;
-  bool? lastSyncTempo;
-  QuantizeMode? lastQuantize;
-
-  @override
-  EngineResult setTempo(double bpm) {
-    lastTempo = bpm;
-    calls.add('setTempo');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setMetronome({required bool on}) {
-    lastMetronome = on;
-    calls.add('setMetronome');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setCountIn({required bool enabled}) {
-    lastCountIn = enabled;
-    calls.add('setCountIn');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult tapTempo() {
-    calls.add('tapTempo');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setSyncTempo({required bool on}) {
-    lastSyncTempo = on;
-    calls.add('setSyncTempo');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setQuantize(QuantizeMode mode) {
-    lastQuantize = mode;
-    calls.add('setQuantize');
-    return EngineResult.ok;
-  }
-
   int? lastRecordOffset;
 
   @override

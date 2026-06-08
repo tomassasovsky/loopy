@@ -9,6 +9,8 @@ import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 
+const _thumbFrame = Duration(milliseconds: 50); // ~20 fps
+
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
 /// of tall colored track columns, each showing its own loop-waveform thumbnail
 /// and editable name. Tapping a column selects it (white highlight) and toggles
@@ -23,7 +25,6 @@ class BigPictureView extends StatefulWidget {
 }
 
 class _BigPictureViewState extends State<BigPictureView> {
-  static const _thumbFrame = Duration(milliseconds: 50); // ~20 fps
   Timer? _poll;
   List<Float32List> _waveforms = const [];
 
@@ -114,22 +115,13 @@ class _BigHeader extends StatelessWidget {
     return Row(
       children: [
         Text(
-          '${transport.tempoBpm.round()}',
-          style: theme.textTheme.displaySmall?.copyWith(
+          'LOOPY',
+          style: theme.textTheme.titleLarge?.copyWith(
             color: looper.waveformColor,
             fontWeight: FontWeight.bold,
+            letterSpacing: 3,
           ),
         ),
-        const SizedBox(width: 6),
-        Text('BPM', style: theme.textTheme.titleMedium),
-        if (transport.syncLoopToTempo && transport.loopBars > 0) ...[
-          const SizedBox(width: 16),
-          Text(
-            '${transport.loopBars} bars',
-            key: const Key('bigpicture_bars_text'),
-            style: theme.textTheme.titleMedium,
-          ),
-        ],
         const SizedBox(width: 24),
         Expanded(
           child: LinearProgressIndicator(
@@ -174,7 +166,7 @@ class _TrackColumn extends StatelessWidget {
     final bloc = context.read<LooperBloc>();
     final borderColor = selected
         ? Colors.white
-        : (track.isCapturing || track.armed ? accent : looper.tileBorder);
+        : (track.isCapturing ? accent : looper.tileBorder);
 
     return GestureDetector(
       key: Key('bigpicture_tile_${track.channel}'),
@@ -212,15 +204,7 @@ class _TrackColumn extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                if (track.armed)
-                  Text(
-                    'ARMED',
-                    key: Key('bigpicture_armed_${track.channel}'),
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: looper.armedColor,
-                    ),
-                  )
-                else if (track.isMultiple)
+                if (track.isMultiple)
                   Text(
                     '×${track.multiple}',
                     style: theme.textTheme.labelMedium?.copyWith(color: accent),
@@ -228,17 +212,11 @@ class _TrackColumn extends StatelessWidget {
               ],
             ),
             Expanded(
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: SizedBox(
-                  width: 80,
-                  child: FractionallySizedBox(
-                    heightFactor: (track.peak * 10).clamp(0.0, 1.0),
-                    child: Container(
-                      color: recording ? looper.recordColor : accent,
-                    ),
-                  ),
-                ),
+              child: _PeakBar(
+                channel: track.channel,
+                color: accent,
+                recordingColor: looper.recordColor,
+                recording: recording,
               ),
             ),
             const SizedBox(height: 10),
@@ -289,5 +267,65 @@ class _TrackColumn extends StatelessWidget {
       ),
     );
     if (result != null) await cubit.rename(track.channel, result);
+  }
+}
+
+class _PeakBar extends StatefulWidget {
+  const _PeakBar({
+    required this.channel,
+    required this.color,
+    required this.recordingColor,
+    required this.recording,
+  });
+
+  final int channel;
+  final Color color;
+  final Color recordingColor;
+  final bool recording;
+
+  @override
+  State<_PeakBar> createState() => _PeakBarState();
+}
+
+class _PeakBarState extends State<_PeakBar> {
+  Timer? _timer;
+  double _peak = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(_thumbFrame, (_) => _poll());
+    _poll();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _poll() {
+    if (!mounted) return;
+    final tracks = context.read<LooperBloc>().state.tracks;
+    if (widget.channel >= tracks.length) return;
+    final next = tracks[widget.channel].peak;
+    if (next == _peak) return;
+    setState(() => _peak = next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SizedBox(
+        width: 80,
+        child: FractionallySizedBox(
+          heightFactor: (_peak * 10).clamp(0.0, 1.0),
+          child: Container(
+            color: widget.recording ? widget.recordingColor : widget.color,
+          ),
+        ),
+      ),
+    );
   }
 }

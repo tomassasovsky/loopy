@@ -52,10 +52,6 @@ class ControllerMapping extends Equatable {
           trigger: MappingTrigger(kind: kind, id: 83),
           action: LooperAction.clear,
         ),
-        MappingEntry(
-          trigger: MappingTrigger(kind: kind, id: 84),
-          action: LooperAction.tapTempo,
-        ),
       ],
     );
   }

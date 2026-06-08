@@ -83,9 +83,8 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Phase 2:** single-track looper (record → master length → overdub → mix →
   vol/mute → clear), `looper_repository` + `LooperBloc` + channel-strip view,
   `audio_setup`.
-- **Phase 3 core:** N-track engine (LE_MAX_TRACKS=4) + grid UI; metronome +
-  count-in + tap-tempo; `controller_repository` (MIDI-learn-ready) wired into
-  the bloc.
+- **Phase 3 core:** N-track engine (LE_MAX_TRACKS=4) + grid UI;
+  `controller_repository` (MIDI-learn-ready) wired into the bloc.
 - **Loopback latency auto-detect** (PulseAudio monitor / WASAPI / virtual
   driver) + cable-free auto-measure (digital-path estimate; cable for true
   analog).
@@ -98,19 +97,13 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   finalizes the current one and starts the new from the loop top.
 - **Multi-level undo/redo** per track (control-thread buffer pool; undo = overdub
   layers, clear = remove track).
-- **Loop ↔ tempo sync** (#2): finalizing the defining loop rounds it to whole
-  bars at the current tempo, derives the beat grid back from the loop (so it
-  divides exactly), and snaps the displayed tempo to fit. The metronome is
-  driven from the master position once a loop exists (free-runs at the tapped
-  tempo before that, for count-in). Toggle "sync loop to tempo" (default on);
-  off = free-form length, untouched tempo. `loop_bars` + sync flag in the
-  snapshot, surfaced in the tempo bar (bar count + sync toggle).
-- **Quantize-start** (#3): `quantize` off / beat / bar (default bar). While a
-  loop exists, a record/overdub press **arms** the track and the capture begins
-  at the next grid boundary (applied in `process` via the #2 master-position
-  beat detection); a second press cancels the arm. Stops act immediately.
-  `quantize_mode` + `armed_channel` in the snapshot; tempo-bar quantize selector
-  + per-track "armed" chip in the UI.
+- **Fully free mode** (no tempo): all BPM/metronome/click/count-in/tap-tempo,
+  loop↔tempo sync (#2), and quantize-start (#3) logic was **removed** from the
+  native engine, FFI, repository, bloc, and UI. The looper has **one master loop
+  length**, set by the first finalized recording; there is no beat grid, no
+  click, and no quantization — captures start and stop immediately. Per-track
+  loop multiples (#4, below) are retained, as is latency compensation, the loop
+  waveform visualizer, Big Picture / two-window mode, and theming.
 - **Loop multiples** (#4): a non-defining track can span an integer multiple of
   the base loop. A free-running `loop_iteration` counts base-loop wraps; each
   track plays `((iteration − start_iter) % multiple)·baseLen + position`, so the
@@ -147,31 +140,26 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   Free-running `loop_iteration`; track reads its `(iter-start_iter) % k` segment.
   New-track first pass always begins at the loop top (phase-locked multiples);
   per-track multi-loop phase is relative to each track's own start.
-- **#2 loop ↔ tempo** — round the defining loop to whole bars and derive the
-  beat grid (and displayed tempo) from the loop; metronome locks to loop
-  position. Sync is a persistent toggle, default on; off keeps the free-form
-  length and tempo. Bars/grid are computed once at finalize (toggling sync on
-  after a free-form loop does not retro-snap it).
-- **#3 quantize-start** — default **bar**; off/beat/bar. A press while a loop
-  exists arms; capture starts at the next grid boundary; second press cancels.
-  Only *starts* are quantized (stops are immediate). The undo snapshot is still
-  taken on the control thread at press time; a cancelled arm leaves a harmless
-  duplicate undo layer (never an RT-unsafe copy on the audio thread).
+- **Fully free mode (no tempo)** — the looper is tempo-free: one master loop
+  length set by the first recording, no metronome/click/count-in/tap-tempo, no
+  loop↔tempo sync, no quantization. Captures start/stop immediately. BPM logic
+  was deleted (not hidden) from engine → FFI → repo → bloc → UI. Loop multiples
+  (#4), latency compensation, the waveform visualizer, Big Picture / two-window,
+  and theming are retained. (Supersedes the earlier #2 loop↔tempo and #3
+  quantize-start decisions, which were removed.)
 
 ---
 
 ## Roadmap (path forward)
 
-**The sync roadmap (#2–#4) is complete** — loop ↔ tempo, quantize-start, and
-loop multiples all landed (see Done / Locked decisions). What remains needs
-hardware or a second display, or is Phase 4 scope.
+**The looper is now fully free (tempo-free).** Loop multiples (#4) remain; the
+tempo features (#2 loop↔tempo, #3 quantize-start) were removed. What remains
+needs hardware or a second display, or is Phase 4 scope.
 
 ### Possible next steps (no hard dependency)
 - **Per-track multi-loop phase alignment** — multi-loop tracks currently phase
   relative to their own start iteration; an absolute-parity option would align
   all k-loop tracks to the same base-loop downbeat.
-- **Quantized stop / per-track loop-length display in bars** — small UX wins on
-  top of #2–#4.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding (abstraction + wiring ready; needs a
@@ -188,9 +176,6 @@ hardware or a second display, or is Phase 4 scope.
 ---
 
 ## Test counts (last green)
-native (all C tests, 35 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples + 1
-loop-viz) · plugin 27 · controller 14 · looper_repository 14 · settings 3 ·
-local_storage 1 · app 73 (theming/big-picture/multi-window/waveform). macOS app
-builds end-to-end. (Theming work is on branch `feat/big-picture-theming`; the
-sessions slice — native 34, session_repository 17, app 53 — is on
-`feat/session-repository`.)
+native (all C tests, 21 fns: 2 loop-multiples + 1 loop-viz, tempo tests removed
+in the free-mode strip) · plugin 26 · controller 14 · looper_repository 12 ·
+settings 6 · app 62. `flutter analyze` clean; macOS app builds end-to-end.

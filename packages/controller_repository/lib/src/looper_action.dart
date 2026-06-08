@@ -22,21 +22,16 @@ enum LooperAction {
   playAll,
 
   /// Stop all tracks.
-  stopAll,
-
-  /// Tap to set the tempo.
-  tapTempo;
+  stopAll;
 
   /// Whether this action targets a specific channel (vs a global transport
-  /// action like [playAll] or [tapTempo]).
+  /// action like [playAll]).
   bool get isChannelScoped => switch (this) {
     LooperAction.recordOverdub ||
     LooperAction.stop ||
     LooperAction.play ||
     LooperAction.clear ||
     LooperAction.undo => true,
-    LooperAction.playAll ||
-    LooperAction.stopAll ||
-    LooperAction.tapTempo => false,
+    LooperAction.playAll || LooperAction.stopAll => false,
   };
 }
