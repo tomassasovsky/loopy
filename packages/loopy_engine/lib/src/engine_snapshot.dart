@@ -69,6 +69,7 @@ class TrackSnapshot {
     required this.undoDepth,
     required this.rms,
     required this.peak,
+    this.redoDepth = 0,
   });
 
   /// An empty track.
@@ -78,6 +79,7 @@ class TrackSnapshot {
       muted = false,
       lengthFrames = 0,
       undoDepth = 0,
+      redoDepth = 0,
       rms = 0,
       peak = 0;
 
@@ -88,6 +90,7 @@ class TrackSnapshot {
     muted: native.muted != 0,
     lengthFrames: native.length_frames,
     undoDepth: native.undo_depth,
+    redoDepth: native.redo_depth,
     rms: native.rms,
     peak: native.peak,
   );
@@ -104,8 +107,11 @@ class TrackSnapshot {
   /// Captured length in frames (equals master once finalized).
   final int lengthFrames;
 
-  /// Available undo levels (`0` or `1`).
+  /// Available undo steps (overdub layers).
   final int undoDepth;
+
+  /// Available redo steps.
+  final int redoDepth;
 
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
@@ -123,12 +129,21 @@ class TrackSnapshot {
           muted == other.muted &&
           lengthFrames == other.lengthFrames &&
           undoDepth == other.undoDepth &&
+          redoDepth == other.redoDepth &&
           rms == other.rms &&
           peak == other.peak;
 
   @override
-  int get hashCode =>
-      Object.hash(state, volume, muted, lengthFrames, undoDepth, rms, peak);
+  int get hashCode => Object.hash(
+    state,
+    volume,
+    muted,
+    lengthFrames,
+    undoDepth,
+    redoDepth,
+    rms,
+    peak,
+  );
 }
 
 /// An immutable, lock-free snapshot of the native audio engine's state.

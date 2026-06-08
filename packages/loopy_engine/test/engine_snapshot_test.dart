@@ -41,6 +41,7 @@ void main() {
           ..muted = 1
           ..length_frames = 96000
           ..undo_depth = 1
+          ..redo_depth = 2
           ..rms = 0.4
           ..peak = 0.6;
 
@@ -50,6 +51,7 @@ void main() {
         expect(track.muted, isTrue);
         expect(track.lengthFrames, 96000);
         expect(track.undoDepth, 1);
+        expect(track.redoDepth, 2);
         expect(track.rms, closeTo(0.4, 1e-6));
         expect(track.peak, closeTo(0.6, 1e-6));
       } finally {

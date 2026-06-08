@@ -101,8 +101,11 @@ abstract interface class AudioEngine {
   /// Erases track [channel] (and resets the master loop if all tracks empty).
   EngineResult clear({int channel = 0});
 
-  /// Removes the last overdub layer on track [channel] (one level).
+  /// Removes the most recent overdub layer on track [channel] (multi-level).
   EngineResult undo({int channel = 0});
+
+  /// Re-applies the most recently undone overdub layer on track [channel].
+  EngineResult redo({int channel = 0});
 
   /// Sets track [channel]'s playback gain, clamped to `0..1`.
   EngineResult setTrackVolume(double volume, {int channel = 0});

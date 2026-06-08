@@ -89,6 +89,7 @@ class LooperRepository {
           rms: s.tracks[i].rms,
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
+          redoDepth: s.tracks[i].redoDepth,
         ),
     ],
     status: EngineStatus(
@@ -133,8 +134,11 @@ class LooperRepository {
   /// Erases track [channel] (resets the master if all tracks empty).
   EngineResult clear({int channel = 0}) => _engine.clear(channel: channel);
 
-  /// Removes the last overdub layer on track [channel].
+  /// Removes the most recent overdub layer on track [channel].
   EngineResult undo({int channel = 0}) => _engine.undo(channel: channel);
+
+  /// Re-applies the most recently undone overdub layer on track [channel].
+  EngineResult redo({int channel = 0}) => _engine.redo(channel: channel);
 
   /// Sets track [channel]'s playback gain (`0..1`).
   EngineResult setVolume(double volume, {int channel = 0}) =>

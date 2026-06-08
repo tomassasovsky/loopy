@@ -61,6 +61,12 @@ final class LooperUndoPressed extends LooperChannelEvent {
   const LooperUndoPressed(super.channel);
 }
 
+/// The redo control was pressed on [channel].
+final class LooperRedoPressed extends LooperChannelEvent {
+  /// Creates a [LooperRedoPressed].
+  const LooperRedoPressed(super.channel);
+}
+
 /// The mute control was toggled on [channel].
 final class LooperMuteToggled extends LooperChannelEvent {
   /// Creates a [LooperMuteToggled].

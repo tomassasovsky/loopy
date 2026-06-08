@@ -160,6 +160,12 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult redo({int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_redo(_engine, channel));
+  }
+
+  @override
   EngineResult setTrackVolume(double volume, {int channel = 0}) {
     _checkAlive();
     return EngineResult.fromCode(

@@ -51,6 +51,9 @@ void main() {
       () => repository.undo(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.redo(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setVolume(any(), channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
     when(
@@ -98,6 +101,13 @@ void main() {
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperStopPressed(1)),
     verify: (_) => verify(() => repository.stopTrack(channel: 1)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperRedoPressed forwards to repository.redo with the channel',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperRedoPressed(2)),
+    verify: (_) => verify(() => repository.redo(channel: 2)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(

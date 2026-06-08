@@ -94,6 +94,13 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult redo({int channel = 0}) {
+    lastChannel = channel;
+    calls.add('redo');
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult setTrackVolume(double volume, {int channel = 0}) {
     lastVolume = volume;
     lastChannel = channel;

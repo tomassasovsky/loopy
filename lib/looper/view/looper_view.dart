@@ -246,6 +246,14 @@ class _TrackStrip extends StatelessWidget {
                   label: const Text('Undo'),
                 ),
                 OutlinedButton.icon(
+                  key: Key('looper_redo_button_$ch'),
+                  onPressed: track.canRedo
+                      ? () => bloc.add(LooperRedoPressed(ch))
+                      : null,
+                  icon: const Icon(Icons.redo),
+                  label: const Text('Redo'),
+                ),
+                OutlinedButton.icon(
                   key: Key('looper_clear_button_$ch'),
                   onPressed: track.hasContent
                       ? () => bloc.add(LooperClearPressed(ch))

@@ -51,19 +51,36 @@
 #define LE_TEMPO_MAX 300.0f
 #define LE_TWO_PI 6.28318530717958647692f
 
-/* One looper track: two interleaved buffers (live + undo snapshot). */
+/* Per-track buffer pool size: one live buffer plus up to LE_UNDO_SLOTS-1 undo/
+ * redo snapshots. Buffers are allocated lazily, so memory grows only as deep as
+ * the user actually overdubs. */
+#define LE_UNDO_SLOTS 8
+
+/* One looper track.
+ *
+ * The audio thread only reads pool[a_live] (and writes into it while recording/
+ * overdubbing). All undo/redo bookkeeping — the pool, the stacks, and a_live
+ * (whose sole writer is the control thread) — lives on the control thread, so
+ * undo/redo never races the audio callback. */
 typedef struct le_track {
-  float* buf[2];
+  float* pool[LE_UNDO_SLOTS]; /* lazily allocated loop buffers */
+  _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
+
+  /* Control-thread-owned undo/redo stacks of pool indices. */
+  int32_t undo_stack[LE_UNDO_SLOTS];
+  int undo_count;
+  int32_t redo_stack[LE_UNDO_SLOTS];
+  int redo_count;
+
   _Atomic int32_t a_state;
   _Atomic uint32_t a_vol_bits;
   _Atomic int32_t a_muted;
   _Atomic int32_t a_len;
-  _Atomic int32_t a_undo_depth;
+  _Atomic int32_t a_undo_depth; /* published undo_count */
+  _Atomic int32_t a_redo_depth; /* published redo_count */
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
-  _Atomic int32_t a_live_index;
   int32_t record_pos; /* audio-thread-local: defining-track record head */
-  int pending_undo;   /* audio-thread-local: apply buffer swap at next boundary */
 } le_track;
 
 struct le_engine {
@@ -335,11 +352,10 @@ static void handle_clear(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
   le_track* t = &e->tracks[ch];
   t->record_pos = 0;
-  t->pending_undo = 0;
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   store_i32(&t->a_len, 0);
-  store_i32(&t->a_undo_depth, 0);
-  store_i32(&t->a_live_index, 0);
+  /* Undo/redo stacks and a_live are reset by le_engine_clear on the control
+   * thread; the audio thread only resets the state/transport here. */
 
   /* If every track is now empty, reset the master so a new loop can be defined.
    * Buffers are not zeroed here (RT-unsafe); a re-record overwrites a full loop
@@ -382,12 +398,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
     case LE_CMD_CLEAR:
       handle_clear(e, cmd->arg_i);
       break;
-    case LE_CMD_UNDO:
-      if (valid_channel(e, cmd->arg_i) &&
-          load_i32(&e->tracks[cmd->arg_i].a_undo_depth) > 0) {
-        e->tracks[cmd->arg_i].pending_undo = 1;
-      }
-      break;
+    /* Undo/redo are handled on the control thread (le_engine_undo/redo), not
+     * via the command ring. */
     case LE_CMD_SET_VOLUME: {
       if (!valid_channel(e, cmd->arg_i)) break;
       float v = cmd->arg_f;
@@ -515,7 +527,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     int mut[LE_MAX_TRACKS];
     for (int t = 0; t < tc; ++t) {
       st[t] = load_i32(&e->tracks[t].a_state);
-      buf[t] = e->tracks[t].buf[load_i32(&e->tracks[t].a_live_index)];
+      buf[t] = e->tracks[t].pool[load_i32(&e->tracks[t].a_live)];
       vol[t] = load_f32(&e->tracks[t].a_vol_bits);
       mut[t] = load_i32(&e->tracks[t].a_muted);
     }
@@ -620,11 +632,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
             store_i32(&tr->a_len, e->clock.length);
             store_i32(&tr->a_state, LE_TRACK_PLAYING);
           }
-          if (tr->pending_undo) {
-            store_i32(&tr->a_live_index, load_i32(&tr->a_live_index) ^ 1);
-            store_i32(&tr->a_undo_depth, 0);
-            tr->pending_undo = 0;
-          }
         }
       }
     }
@@ -670,21 +677,26 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->track_count = LE_MAX_TRACKS;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
-    for (int i = 0; i < 2; ++i) {
-      free(tr->buf[i]);
-      tr->buf[i] = (float*)calloc(samples, sizeof(float));
-      if (tr->buf[i] == NULL) return LE_ERR_INVALID;
+    /* Free any buffers from a previous configuration; allocate only the base
+     * (live) buffer now — undo snapshots are allocated lazily on demand. */
+    for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+      free(tr->pool[i]);
+      tr->pool[i] = NULL;
     }
+    tr->pool[0] = (float*)calloc(samples, sizeof(float));
+    if (tr->pool[0] == NULL) return LE_ERR_INVALID;
+    tr->undo_count = 0;
+    tr->redo_count = 0;
+    store_i32(&tr->a_live, 0);
     store_i32(&tr->a_state, LE_TRACK_EMPTY);
     store_f32(&tr->a_vol_bits, 1.0f);
     store_i32(&tr->a_muted, 0);
     store_i32(&tr->a_len, 0);
     store_i32(&tr->a_undo_depth, 0);
-    store_i32(&tr->a_live_index, 0);
+    store_i32(&tr->a_redo_depth, 0);
     store_f32(&tr->a_rms_bits, 0.0f);
     store_f32(&tr->a_peak_bits, 0.0f);
     tr->record_pos = 0;
-    tr->pending_undo = 0;
   }
 
   engine->sample_rate = sample_rate;
@@ -818,8 +830,9 @@ void le_engine_destroy(le_engine* engine) {
   }
   le_uninit_context(engine);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
-    free(engine->tracks[t].buf[0]);
-    free(engine->tracks[t].buf[1]);
+    for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+      free(engine->tracks[t].pool[i]);
+    }
   }
   free(engine);
 }
@@ -945,6 +958,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->tracks[t].muted = load_i32(&tr->a_muted);
     out->tracks[t].length_frames = load_i32(&tr->a_len);
     out->tracks[t].undo_depth = load_i32(&tr->a_undo_depth);
+    out->tracks[t].redo_depth = load_i32(&tr->a_redo_depth);
     out->tracks[t].rms = load_f32(&tr->a_rms_bits);
     out->tracks[t].peak = load_f32(&tr->a_peak_bits);
   }
@@ -959,6 +973,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->muted = 0;
     out->length_frames = 0;
     out->undo_depth = 0;
+    out->redo_depth = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
     return;
@@ -969,6 +984,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
   out->muted = load_i32(&tr->a_muted);
   out->length_frames = load_i32(&tr->a_len);
   out->undo_depth = load_i32(&tr->a_undo_depth);
+  out->redo_depth = load_i32(&tr->a_redo_depth);
   out->rms = load_f32(&tr->a_rms_bits);
   out->peak = load_f32(&tr->a_peak_bits);
 }
@@ -1004,22 +1020,63 @@ static int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i,
   return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
 }
 
+/* Returns a pool slot that is neither live nor referenced by either stack,
+ * allocating its buffer lazily. If the pool is full, evicts the oldest undo
+ * entry and reuses its slot. Returns -1 only on allocation failure. */
+static int track_acquire_slot(le_engine* e, le_track* t) {
+  const int live = load_i32(&t->a_live);
+  for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+    if (i == live) continue;
+    int used = 0;
+    for (int k = 0; k < t->undo_count && !used; ++k) {
+      if (t->undo_stack[k] == i) used = 1;
+    }
+    for (int k = 0; k < t->redo_count && !used; ++k) {
+      if (t->redo_stack[k] == i) used = 1;
+    }
+    if (used) continue;
+    if (t->pool[i] == NULL) {
+      const size_t samples = (size_t)e->max_loop_frames * (size_t)e->channels;
+      t->pool[i] = (float*)calloc(samples, sizeof(float));
+      if (t->pool[i] == NULL) return -1;
+    }
+    return i;
+  }
+  /* Pool full: evict the oldest undo entry (bottom of the stack). */
+  if (t->undo_count > 0) {
+    const int slot = t->undo_stack[0];
+    for (int k = 1; k < t->undo_count; ++k) {
+      t->undo_stack[k - 1] = t->undo_stack[k];
+    }
+    t->undo_count--;
+    return slot;
+  }
+  return -1;
+}
+
 int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  /* Starting an overdub? Snapshot the pre-overdub loop on this (control) thread
-   * while the audio thread treats the live buffer as read-only. */
+  /* Starting an overdub? Snapshot the pre-overdub content on this (control)
+   * thread and push it onto the undo stack; a new action clears redo history.
+   * The audio thread treats the live buffer as read-only at this point. */
   le_track* t = &engine->tracks[channel];
   const int32_t st = load_i32(&t->a_state);
   const int32_t len = load_i32(&engine->a_master_len);
   if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
-    const int live = load_i32(&t->a_live_index);
-    const size_t n = (size_t)len * (size_t)engine->channels;
-    memcpy(t->buf[live ^ 1], t->buf[live], n * sizeof(float));
-    store_i32(&t->a_undo_depth, 1);
+    t->redo_count = 0;
+    const int slot = track_acquire_slot(engine, t);
+    if (slot >= 0) {
+      const int live = load_i32(&t->a_live);
+      const size_t n = (size_t)len * (size_t)engine->channels;
+      memcpy(t->pool[slot], t->pool[live], n * sizeof(float));
+      t->undo_stack[t->undo_count++] = slot;
+      store_i32(&t->a_undo_depth, t->undo_count);
+    }
+    store_i32(&t->a_redo_depth, 0);
   }
   return le_push(engine, LE_CMD_RECORD, channel, 0.0f);
 }
@@ -1031,10 +1088,57 @@ int32_t le_engine_play(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_PLAY, channel, 0.0f);
 }
 int32_t le_engine_clear(le_engine* engine, int32_t channel) {
+  if (engine != NULL && channel >= 0 && channel < engine->track_count) {
+    le_track* t = &engine->tracks[channel];
+    t->undo_count = 0;
+    t->redo_count = 0;
+    store_i32(&t->a_undo_depth, 0);
+    store_i32(&t->a_redo_depth, 0);
+  }
   return le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
 }
+
+/* Undo/redo run entirely on the control thread: they swap the track's live pool
+ * index (atomic; the audio thread's only window into the buffers). Allowed only
+ * when the track is not capturing, so the audio thread sees a stable a_live. */
 int32_t le_engine_undo(le_engine* engine, int32_t channel) {
-  return le_push(engine, LE_CMD_UNDO, channel, 0.0f);
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = load_i32(&t->a_state);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
+    return LE_ERR_INVALID;
+  }
+  if (t->undo_count == 0) return LE_ERR_INVALID;
+  const int32_t prev = t->undo_stack[--t->undo_count];
+  t->redo_stack[t->redo_count++] = load_i32(&t->a_live);
+  store_i32(&t->a_live, prev);
+  store_i32(&t->a_undo_depth, t->undo_count);
+  store_i32(&t->a_redo_depth, t->redo_count);
+  return LE_OK;
+}
+
+int32_t le_engine_redo(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = load_i32(&t->a_state);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
+    return LE_ERR_INVALID;
+  }
+  if (t->redo_count == 0) return LE_ERR_INVALID;
+  const int32_t next = t->redo_stack[--t->redo_count];
+  t->undo_stack[t->undo_count++] = load_i32(&t->a_live);
+  store_i32(&t->a_live, next);
+  store_i32(&t->a_undo_depth, t->undo_count);
+  store_i32(&t->a_redo_depth, t->redo_count);
+  return LE_OK;
 }
 int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                    float volume) {
