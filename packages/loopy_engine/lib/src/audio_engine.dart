@@ -110,6 +110,18 @@ abstract interface class AudioEngine {
   /// Mutes or unmutes track [channel].
   EngineResult setTrackMute({required bool muted, int channel = 0});
 
+  /// Sets the tempo in beats per minute (clamped to `30..300`).
+  EngineResult setTempo(double bpm);
+
+  /// Enables or disables the metronome click.
+  EngineResult setMetronome({required bool on});
+
+  /// Enables or disables a one-bar count-in before the first recording.
+  EngineResult setCountIn({required bool enabled});
+
+  /// Registers a tap; two taps set the tempo from their interval.
+  EngineResult tapTempo();
+
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();
 }

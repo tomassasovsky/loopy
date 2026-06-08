@@ -205,6 +205,27 @@ void main() {
       expect(repo.engineVersion, 'fake-engine');
     });
 
+    test('tempo commands forward to the engine', () {
+      buildRepo()
+        ..setTempo(140)
+        ..setMetronome(on: true)
+        ..setCountIn(enabled: true)
+        ..tapTempo();
+
+      expect(
+        engine.calls,
+        containsAllInOrder(<String>[
+          'setTempo',
+          'setMetronome',
+          'setCountIn',
+          'tapTempo',
+        ]),
+      );
+      expect(engine.lastTempo, 140);
+      expect(engine.lastMetronome, isTrue);
+      expect(engine.lastCountIn, isTrue);
+    });
+
     test('detectLoopback forwards the engine result', () {
       engine.loopback = const LoopbackInfo(
         available: true,

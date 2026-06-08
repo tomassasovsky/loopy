@@ -109,6 +109,37 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  double? lastTempo;
+  bool? lastMetronome;
+  bool? lastCountIn;
+
+  @override
+  EngineResult setTempo(double bpm) {
+    lastTempo = bpm;
+    calls.add('setTempo');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMetronome({required bool on}) {
+    lastMetronome = on;
+    calls.add('setMetronome');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setCountIn({required bool enabled}) {
+    lastCountIn = enabled;
+    calls.add('setCountIn');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult tapTempo() {
+    calls.add('tapTempo');
+    return EngineResult.ok;
+  }
+
   @override
   void dispose() => calls.add('dispose');
 }

@@ -41,6 +41,16 @@
 #define LE_LATENCY_RETRY_DIV 10    /* per-attempt = sample_rate / this (~100ms) */
 #define LE_LATENCY_ATTEMPTS 5      /* re-emit this many pulses before timing out */
 
+/* Metronome / tempo. */
+#define LE_BEATS_PER_BAR 4
+#define LE_CLICK_AMP 0.25f
+#define LE_CLICK_MS 30
+#define LE_CLICK_FREQ_BEAT 1000.0f
+#define LE_CLICK_FREQ_DOWNBEAT 1500.0f
+#define LE_TEMPO_MIN 30.0f
+#define LE_TEMPO_MAX 300.0f
+#define LE_TWO_PI 6.28318530717958647692f
+
 /* One looper track: two interleaved buffers (live + undo snapshot). */
 typedef struct le_track {
   float* buf[2];
@@ -79,6 +89,13 @@ struct le_engine {
   _Atomic int32_t a_master_len;
   _Atomic int32_t a_master_pos;
 
+  /* Tempo / metronome (published). */
+  _Atomic uint32_t a_tempo_bpm_bits;
+  _Atomic int32_t a_metronome_on;
+  _Atomic int32_t a_count_in_enabled;
+  _Atomic int32_t a_counting_in;
+  _Atomic int32_t a_current_beat;
+
   /* Tracks. */
   le_track tracks[LE_MAX_TRACKS];
   int32_t track_count;
@@ -94,6 +111,19 @@ struct le_engine {
 
   /* Audio-thread-local transport. */
   le_loop_clock clock;
+
+  /* Audio-thread-local tempo / metronome state. */
+  uint64_t frame_clock;     /* running frame counter (tap timing) */
+  uint64_t last_tap_frame;
+  int has_tap;
+  int32_t metro_frame;      /* frames since the last beat */
+  int32_t metro_beat;       /* 0..LE_BEATS_PER_BAR-1 */
+  int32_t click_remaining;  /* frames left in the current click */
+  int32_t click_len;
+  float click_phase;
+  float click_freq;
+  int32_t count_in_remaining; /* frames left in a count-in */
+  int32_t count_in_channel;
 
   /* Latency harness (audio-thread-local + published state). */
   int lat_active;
@@ -147,6 +177,44 @@ static void store_i32(_Atomic int32_t* slot, int32_t v) {
   atomic_store_explicit(slot, v, memory_order_relaxed);
 }
 
+/* ---- tempo helpers (audio thread) ---- */
+
+static float load_bpm(le_engine* e) {
+  const float bpm = load_f32(&e->a_tempo_bpm_bits);
+  return bpm > 0.0f ? bpm : 120.0f;
+}
+
+static int32_t frames_per_beat(le_engine* e) {
+  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  const int32_t fpb = (int32_t)((float)sr * 60.0f / load_bpm(e));
+  return fpb > 0 ? fpb : 1;
+}
+
+static void trigger_click(le_engine* e, int downbeat) {
+  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  e->click_len = sr * LE_CLICK_MS / 1000;
+  if (e->click_len < 1) e->click_len = 1;
+  e->click_remaining = e->click_len;
+  e->click_phase = 0.0f;
+  e->click_freq = downbeat ? LE_CLICK_FREQ_DOWNBEAT : LE_CLICK_FREQ_BEAT;
+}
+
+static void handle_tap(le_engine* e) {
+  const uint64_t now = e->frame_clock;
+  if (e->has_tap) {
+    const uint64_t interval = now - e->last_tap_frame;
+    const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+    if (interval > 0) {
+      const double bpm = 60.0 * (double)sr / (double)interval;
+      if (bpm >= (double)LE_TEMPO_MIN && bpm <= (double)LE_TEMPO_MAX) {
+        store_f32(&e->a_tempo_bpm_bits, (float)bpm);
+      }
+    }
+  }
+  e->last_tap_frame = now;
+  e->has_tap = 1;
+}
+
 /* ---- command handlers (audio thread) ---- */
 
 static void finalize_master(le_engine* e, le_track* t) {
@@ -170,10 +238,21 @@ static void handle_record(le_engine* e, int32_t ch) {
        * the new track records by overwriting one master loop. Both are
        * RECORDING, distinguished by clock.length. */
       if (e->clock.length == 0) {
-        t->record_pos = 0;
-        le_loop_clock_reset(&e->clock);
+        if (load_i32(&e->a_count_in_enabled) && e->count_in_remaining == 0) {
+          /* Defining recording with count-in: click one bar, then RECORDING. */
+          e->count_in_remaining = frames_per_beat(e) * LE_BEATS_PER_BAR;
+          e->count_in_channel = ch;
+          e->metro_frame = 0;
+          e->metro_beat = 0;
+          store_i32(&e->a_counting_in, 1);
+        } else {
+          t->record_pos = 0;
+          le_loop_clock_reset(&e->clock);
+          store_i32(&t->a_state, LE_TRACK_RECORDING);
+        }
+      } else {
+        store_i32(&t->a_state, LE_TRACK_RECORDING);
       }
-      store_i32(&t->a_state, LE_TRACK_RECORDING);
       break;
     case LE_TRACK_RECORDING:
       if (e->clock.length == 0) finalize_master(e, t);
@@ -285,6 +364,22 @@ static void apply_command(le_engine* e, const le_command* cmd) {
         store_i32(&e->tracks[cmd->arg_i].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
       }
       break;
+    case LE_CMD_SET_TEMPO: {
+      float bpm = cmd->arg_f;
+      if (bpm < LE_TEMPO_MIN) bpm = LE_TEMPO_MIN;
+      if (bpm > LE_TEMPO_MAX) bpm = LE_TEMPO_MAX;
+      store_f32(&e->a_tempo_bpm_bits, bpm);
+      break;
+    }
+    case LE_CMD_SET_METRONOME:
+      store_i32(&e->a_metronome_on, cmd->arg_f != 0.0f ? 1 : 0);
+      break;
+    case LE_CMD_SET_COUNT_IN:
+      store_i32(&e->a_count_in_enabled, cmd->arg_f != 0.0f ? 1 : 0);
+      break;
+    case LE_CMD_TAP_TEMPO:
+      handle_tap(e);
+      break;
     default:
       break;
   }
@@ -311,6 +406,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float trk_peak[LE_MAX_TRACKS] = {0};
 
   for (uint32_t f = 0; f < frames; ++f) {
+    e->frame_clock++;
     float frame_mag = 0.0f;
     float mono = 0.0f;
     for (int c = 0; c < ch; ++c) {
@@ -385,6 +481,40 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     const int monitor_on = load_i32(&e->a_monitor) && !any_overdub;
     const int32_t pos = e->clock.position;
 
+    /* Metronome + count-in. Beat phase free-runs; a click is emitted at each
+     * beat start when the metronome is on or a count-in is in progress. */
+    const int counting = e->count_in_remaining > 0;
+    if (e->metro_frame == 0) {
+      store_i32(&e->a_current_beat, e->metro_beat);
+      if (load_i32(&e->a_metronome_on) || counting) {
+        trigger_click(e, e->metro_beat == 0);
+      }
+    }
+    if (++e->metro_frame >= frames_per_beat(e)) {
+      e->metro_frame = 0;
+      e->metro_beat = (e->metro_beat + 1) % LE_BEATS_PER_BAR;
+    }
+    float click = 0.0f;
+    if (e->click_remaining > 0) {
+      const float env = (float)e->click_remaining / (float)e->click_len;
+      click = LE_CLICK_AMP * env * sinf(e->click_phase);
+      e->click_phase += LE_TWO_PI * e->click_freq / (float)sr;
+      if (e->click_phase > LE_TWO_PI) e->click_phase -= LE_TWO_PI;
+      e->click_remaining--;
+    }
+    if (counting) {
+      if (--e->count_in_remaining <= 0) {
+        e->count_in_remaining = 0;
+        store_i32(&e->a_counting_in, 0);
+        le_track* ct = &e->tracks[e->count_in_channel];
+        ct->record_pos = 0;
+        le_loop_clock_reset(&e->clock);
+        store_i32(&ct->a_state, LE_TRACK_RECORDING);
+        e->metro_frame = 0;
+        e->metro_beat = 0;
+      }
+    }
+
     for (int c = 0; c < ch; ++c) {
       const float insample =
           e->mono_input ? mono : (in ? in[f * ch + c] : 0.0f);
@@ -418,7 +548,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
 
       const float monitor = monitor_on ? insample : 0.0f;
-      const float sample = monitor + mix;
+      const float sample = monitor + mix + click;
       out[f * ch + c] = sample;
       out_sumsq += sample * sample;
     }
@@ -512,6 +642,18 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->channels = channels;
   engine->max_loop_frames = max_loop_frames;
   le_loop_clock_reset(&engine->clock);
+
+  /* Reset per-session tempo timing (tempo/metronome/count-in *settings*
+   * persist across start/stop; only the running state is cleared). */
+  engine->frame_clock = 0;
+  engine->last_tap_frame = 0;
+  engine->has_tap = 0;
+  engine->metro_frame = 0;
+  engine->metro_beat = 0;
+  engine->click_remaining = 0;
+  engine->count_in_remaining = 0;
+  store_i32(&engine->a_counting_in, 0);
+  store_i32(&engine->a_current_beat, 0);
 
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_channels, channels);
@@ -614,6 +756,7 @@ le_engine* le_engine_create(void) {
   if (engine == NULL) return NULL;
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  store_f32(&engine->a_tempo_bpm_bits, 120.0f);
   return engine;
 }
 
@@ -737,6 +880,11 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       atomic_load_explicit(&engine->a_latency_ms_bits, memory_order_relaxed));
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
+  out->tempo_bpm = load_bpm(engine);
+  out->metronome_on = load_i32(&engine->a_metronome_on);
+  out->count_in_enabled = load_i32(&engine->a_count_in_enabled);
+  out->counting_in = load_i32(&engine->a_counting_in);
+  out->current_beat = load_i32(&engine->a_current_beat);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -844,4 +992,17 @@ int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
 int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
                                  int32_t muted) {
   return le_push(engine, LE_CMD_SET_MUTE, channel, muted ? 1.0f : 0.0f);
+}
+
+int32_t le_engine_set_tempo(le_engine* engine, float bpm) {
+  return le_push(engine, LE_CMD_SET_TEMPO, 0, bpm);
+}
+int32_t le_engine_set_metronome(le_engine* engine, int32_t on) {
+  return le_push(engine, LE_CMD_SET_METRONOME, 0, on ? 1.0f : 0.0f);
+}
+int32_t le_engine_set_count_in(le_engine* engine, int32_t on) {
+  return le_push(engine, LE_CMD_SET_COUNT_IN, 0, on ? 1.0f : 0.0f);
+}
+int32_t le_engine_tap_tempo(le_engine* engine) {
+  return le_push(engine, LE_CMD_TAP_TEMPO, 0, 0.0f);
 }

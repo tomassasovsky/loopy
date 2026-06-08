@@ -102,6 +102,32 @@ void main() {
     verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
   });
 
+  testWidgets('tempo bar shows BPM and dispatches tap/metronome', (
+    tester,
+  ) async {
+    seed(
+      const LooperState(
+        transport: TransportState(isRunning: true, tempoBpm: 128),
+        tracks: [Track()],
+      ),
+    );
+    await pumpView(tester);
+
+    expect(find.text('128 BPM'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('looper_tap_button')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperTapTempo())).called(1);
+
+    await tester.tap(find.byKey(const Key('looper_metronome_button')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperMetronomeToggled())).called(1);
+
+    await tester.tap(find.byKey(const Key('looper_countIn_button')));
+    await tester.pump();
+    verify(() => bloc.add(const LooperCountInToggled())).called(1);
+  });
+
   testWidgets('undo is disabled without an undo layer', (tester) async {
     seed(
       const LooperState(tracks: [Track(state: TrackState.playing)]),

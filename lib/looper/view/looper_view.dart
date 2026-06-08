@@ -51,6 +51,8 @@ class LooperView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _MasterLoopBar(transport: state.transport),
+            const SizedBox(height: 8),
+            _TempoBar(transport: state.transport),
             const SizedBox(height: 12),
             if (!state.transport.isRunning) const _EngineStoppedBanner(),
             Expanded(
@@ -84,6 +86,53 @@ class _MasterLoopBar extends StatelessWidget {
           key: const Key('looper_masterLoop_progress'),
           value: transport.hasLoop ? transport.progress : 0,
           minHeight: 8,
+        ),
+      ],
+    );
+  }
+}
+
+class _TempoBar extends StatelessWidget {
+  const _TempoBar({required this.transport});
+
+  final TransportState transport;
+
+  @override
+  Widget build(BuildContext context) {
+    final bloc = context.read<LooperBloc>();
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Text(
+          '${transport.tempoBpm.round()} BPM',
+          key: const Key('looper_bpm_text'),
+          style: theme.textTheme.titleMedium,
+        ),
+        if (transport.countingIn) ...[
+          const SizedBox(width: 8),
+          Text('count-in…', style: theme.textTheme.labelMedium),
+        ],
+        const Spacer(),
+        OutlinedButton.icon(
+          key: const Key('looper_tap_button'),
+          onPressed: () => bloc.add(const LooperTapTempo()),
+          icon: const Icon(Icons.touch_app),
+          label: const Text('Tap'),
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          key: const Key('looper_metronome_button'),
+          tooltip: transport.metronomeOn ? 'Metronome on' : 'Metronome off',
+          isSelected: transport.metronomeOn,
+          icon: const Icon(Icons.av_timer),
+          onPressed: () => bloc.add(const LooperMetronomeToggled()),
+        ),
+        IconButton(
+          key: const Key('looper_countIn_button'),
+          tooltip: transport.countInEnabled ? 'Count-in on' : 'Count-in off',
+          isSelected: transport.countInEnabled,
+          icon: const Icon(Icons.timer_3),
+          onPressed: () => bloc.add(const LooperCountInToggled()),
         ),
       ],
     );

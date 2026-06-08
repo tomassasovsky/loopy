@@ -59,6 +59,14 @@ void main() {
         channel: any(named: 'channel'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(() => repository.setTempo(any())).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMetronome(on: any(named: 'on')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setCountIn(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(repository.tapTempo).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => stateController.close());
@@ -104,8 +112,7 @@ void main() {
     'LooperMuteToggled mutes from the current (unmuted) state',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperMuteToggled(0)),
-    verify: (_) =>
-        verify(() => repository.setMute(muted: true)).called(1),
+    verify: (_) => verify(() => repository.setMute(muted: true)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -124,6 +131,34 @@ void main() {
       verify(() => repository.play(channel: 1)).called(1);
       verifyNever(() => repository.play(channel: 2));
     },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTempoChanged forwards the new tempo',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTempoChanged(140)),
+    verify: (_) => verify(() => repository.setTempo(140)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperMetronomeToggled enables the metronome from off',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperMetronomeToggled()),
+    verify: (_) => verify(() => repository.setMetronome(on: true)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperCountInToggled enables count-in from off',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperCountInToggled()),
+    verify: (_) => verify(() => repository.setCountIn(enabled: true)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTapTempo forwards to repository.tapTempo',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTapTempo()),
+    verify: (_) => verify(repository.tapTempo).called(1),
   );
 
   group('controller wiring', () {
@@ -147,6 +182,18 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       verify(() => repository.record()).called(1);
+    });
+
+    test('a mapped tap-tempo press drives the repository', () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      // Default mapping: CC 84 -> tapTempo.
+      source.press(ControllerSourceKind.midiCc, 84);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(repository.tapTempo).called(1);
     });
   });
 }

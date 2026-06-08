@@ -71,6 +71,11 @@ class LooperRepository {
       isRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
       masterPositionFrames: s.masterPositionFrames,
+      tempoBpm: s.tempoBpm,
+      metronomeOn: s.metronomeOn,
+      countInEnabled: s.countInEnabled,
+      countingIn: s.countingIn,
+      currentBeat: s.currentBeat,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -137,6 +142,19 @@ class LooperRepository {
   /// Mutes or unmutes track [channel].
   EngineResult setMute({required bool muted, int channel = 0}) =>
       _engine.setTrackMute(muted: muted, channel: channel);
+
+  /// Sets the tempo in beats per minute.
+  EngineResult setTempo(double bpm) => _engine.setTempo(bpm);
+
+  /// Enables or disables the metronome click.
+  EngineResult setMetronome({required bool on}) => _engine.setMetronome(on: on);
+
+  /// Enables or disables the one-bar count-in.
+  EngineResult setCountIn({required bool enabled}) =>
+      _engine.setCountIn(enabled: enabled);
+
+  /// Registers a tempo tap.
+  EngineResult tapTempo() => _engine.tapTempo();
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
