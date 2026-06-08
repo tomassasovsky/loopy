@@ -121,13 +121,17 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `×N` chip in the UI.
 - **Theming + Big Picture mode** (Phase 4 slice): two Material 3 themes via a
   `LooperTheme` `ThemeExtension` (dark-neutral **Desktop**, neon-on-black **Big
-  Picture**); `UiModeCubit` persists the mode. Big Picture is a full-screen
-  Chewie-style colored loop-tile grid plus a **second OS window** (via
-  `desktop_multi_window`) showing the live output waveform. The waveform is fed
-  by a new RT-safe native **output viz tap** (`le_engine_read_visual`: a 512-pt
-  decimated peak ring) → `AudioEngine.readVisual` → the main window streams
-  frames to the second window at ~30 fps over the plugin channel. (Two-window
-  runtime is build-verified only; needs an on-machine run to confirm visually.)
+  Picture**); `UiModeCubit` persists the mode (as a string). Big Picture is a
+  Chewie-Monsta-style row of tall colored track columns (per-track number,
+  loop-waveform thumbnail, editable persisted name via `BigPictureCubit`,
+  selection highlight, per-track accent / red recording) **plus a second OS
+  window** (`desktop_multi_window`) showing the whole-loop output waveform with
+  a white playhead bar. Fed by a new RT-safe native **loop-indexed viz tap**
+  (`le_engine_read_visual` + `read_track_visual`: peak per loop bucket, master
+  + per-track, refreshed as the playhead sweeps). `KeyValueStore` now stores
+  string/bool/double. (Two-window runtime is build-verified only; needs an
+  on-machine run to confirm visually.) Upstream SPM fix for
+  `desktop_multi_window`: MixinNetwork/flutter-plugins#482.
 
 ---
 
@@ -185,7 +189,8 @@ hardware or a second display, or is Phase 4 scope.
 
 ## Test counts (last green)
 native (all C tests, 35 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples + 1
-viz tap) · plugin 27 · controller 14 · looper_repository 14 · settings 3 ·
-local_storage 1 · app 66 (theming/big-picture/multi-window). macOS app builds
-end-to-end. (Theming work is on branch `feat/big-picture-theming`; the sessions
-slice — native 34, session_repository 17, app 53 — is on `feat/session-repository`.)
+loop-viz) · plugin 27 · controller 14 · looper_repository 14 · settings 3 ·
+local_storage 1 · app 73 (theming/big-picture/multi-window/waveform). macOS app
+builds end-to-end. (Theming work is on branch `feat/big-picture-theming`; the
+sessions slice — native 34, session_repository 17, app 53 — is on
+`feat/session-repository`.)
