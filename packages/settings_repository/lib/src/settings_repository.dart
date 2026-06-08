@@ -33,7 +33,18 @@ class SettingsRepository {
   static const String _uiModeKey = 'ui_mode';
 
   /// Loads the saved UI-mode name, or `null` if none has been stored.
-  Future<String?> loadUiMode() => _store.getString(_uiModeKey);
+  ///
+  /// Tolerates a legacy value of a different type (an earlier build stored the
+  /// mode as an int): the stale key is dropped and `null` is returned rather
+  /// than throwing a type-cast error from the store.
+  Future<String?> loadUiMode() async {
+    try {
+      return await _store.getString(_uiModeKey);
+    } on Object {
+      await _store.remove(_uiModeKey);
+      return null;
+    }
+  }
 
   /// Saves the UI-mode [name].
   Future<void> saveUiMode(String name) => _store.setString(_uiModeKey, name);
