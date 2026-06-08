@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
@@ -166,6 +167,10 @@ class LooperRepository {
 
   /// Registers a tempo tap.
   EngineResult tapTempo() => _engine.tapTempo();
+
+  /// Reads the latest output waveform (decimated peaks, oldest first, `0..1`)
+  /// for the visualizer.
+  Float32List readWaveform() => _engine.readVisual();
 
   /// Enables or disables snapping the tempo and metronome grid to the loop.
   EngineResult setSyncTempo({required bool on}) => _engine.setSyncTempo(on: on);

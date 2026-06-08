@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:loopy_engine/src/audio_engine.dart';
@@ -49,12 +50,14 @@ class NativeAudioEngine implements AudioEngine {
     }
     _snapshotPtr = calloc<le_snapshot>();
     _trackPtr = calloc<le_track_snapshot>();
+    _vizPtr = calloc<Float>(LE_VIZ_POINTS);
   }
 
   final LoopyEngineBindings _bindings;
   late final Pointer<le_engine> _engine;
   late final Pointer<le_snapshot> _snapshotPtr;
   late final Pointer<le_track_snapshot> _trackPtr;
+  late final Pointer<Float> _vizPtr;
   bool _disposed = false;
 
   void _checkAlive() {
@@ -234,12 +237,21 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  Float32List readVisual() {
+    _checkAlive();
+    final n = _bindings.le_engine_read_visual(_engine, _vizPtr, LE_VIZ_POINTS);
+    if (n <= 0) return Float32List(0);
+    return Float32List.fromList(_vizPtr.asTypedList(n));
+  }
+
+  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
     _bindings.le_engine_destroy(_engine);
     calloc
       ..free(_snapshotPtr)
-      ..free(_trackPtr);
+      ..free(_trackPtr)
+      ..free(_vizPtr);
   }
 }

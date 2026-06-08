@@ -537,6 +537,44 @@ static void test_loop_multiple_rounds_up_partial(void) {
   le_engine_destroy(e);
 }
 
+/* ---- output visualization tap ---- */
+
+static void test_visualization_tap(void) {
+  printf("test_visualization_tap\n");
+  le_engine* e = make_configured_engine(); /* sr 48000, viz_decim 240 */
+  float out[64];
+  float viz[LE_VIZ_POINTS];
+
+  /* Silent before any audio. */
+  int32_t n = le_engine_read_visual(e, viz, LE_VIZ_POINTS);
+  CHECK(n == LE_VIZ_POINTS);
+  float maxv = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    if (viz[i] > maxv) maxv = viz[i];
+  }
+  CHECK(maxv < 1e-6f);
+
+  /* Record a short 1.0 loop, then play it for several decimation windows. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, 64, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+  for (int i = 0; i < 12; ++i) process_const(e, 0.0f, 64, out); /* 768 frames */
+
+  n = le_engine_read_visual(e, viz, LE_VIZ_POINTS);
+  maxv = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    if (viz[i] > maxv) maxv = viz[i];
+  }
+  CHECK(maxv > 0.9f); /* the ~1.0 output was captured into the ring */
+
+  /* A null/zero request is safe. */
+  CHECK(le_engine_read_visual(e, viz, 0) == 0);
+  CHECK(le_engine_read_visual(NULL, viz, LE_VIZ_POINTS) == 0);
+
+  le_engine_destroy(e);
+}
+
 /* ---- tempo / metronome ---- */
 
 /* Processes `total` frames of silence in <=64-frame chunks. */
@@ -931,6 +969,7 @@ int main(void) {
   test_record_is_exclusive();
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();
+  test_visualization_tap();
   test_tempo_set_and_clamp();
   test_metronome_click();
   test_tap_tempo();
