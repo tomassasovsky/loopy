@@ -7,7 +7,7 @@ void main() {
       expect(LooperAction.recordOverdub.isChannelScoped, isTrue);
       expect(LooperAction.undo.isChannelScoped, isTrue);
       expect(LooperAction.playAll.isChannelScoped, isFalse);
-      expect(LooperAction.tapTempo.isChannelScoped, isFalse);
+      expect(LooperAction.stopAll.isChannelScoped, isFalse);
     });
   });
 

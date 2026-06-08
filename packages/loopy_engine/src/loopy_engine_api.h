@@ -51,14 +51,6 @@ typedef enum le_track_state {
   LE_TRACK_STOPPED = 4,      /* buffer retained, playback halted */
 } le_track_state;
 
-/* Quantize-start mode: when a loop exists, a record/overdub press is held until
- * the next grid boundary of this resolution before the capture begins. */
-typedef enum le_quantize_mode {
-  LE_QUANTIZE_OFF = 0,  /* capture starts immediately */
-  LE_QUANTIZE_BEAT = 1, /* arm until the next beat */
-  LE_QUANTIZE_BAR = 2,  /* arm until the next bar (default) */
-} le_quantize_mode;
-
 /* Classification of a cable-free loopback path used to auto-measure latency.
  * All of these capture the *digital* round-trip (output → OS mixer → capture);
  * they exclude DAC/ADC converter latency, so they under-report the true analog
@@ -90,13 +82,7 @@ typedef enum le_command_code {
   LE_CMD_UNDO = 6,      /* remove the last overdub layer */
   LE_CMD_SET_VOLUME = 7,/* arg_f = 0..1 */
   LE_CMD_SET_MUTE = 8,  /* arg_f = 0 (unmute) or 1 (mute) */
-  LE_CMD_SET_TEMPO = 9,      /* arg_f = bpm (clamped 30..300) */
-  LE_CMD_SET_METRONOME = 10, /* arg_f = 0/1 */
-  LE_CMD_SET_COUNT_IN = 11,  /* arg_f = 0/1 */
-  LE_CMD_TAP_TEMPO = 12,
   LE_CMD_SET_RECORD_OFFSET = 13, /* arg_i = round-trip latency in frames */
-  LE_CMD_SET_SYNC_TEMPO = 14,    /* arg_f = 0/1: snap tempo+grid to the loop */
-  LE_CMD_SET_QUANTIZE = 15,      /* arg_i = le_quantize_mode */
 } le_command_code;
 
 /* Requested device configuration. Any field set to 0 uses the device default
@@ -114,9 +100,8 @@ typedef struct le_config {
 /* Maximum number of simultaneous looper tracks. */
 #define LE_MAX_TRACKS 4
 
-/* Number of points in the output visualization ring (le_engine_read_visual).
- * Each point is the peak |output| over one decimation window (~5 ms), so the
- * full ring is ~2.5 s of scrolling output waveform. */
+/* Number of points in the loop visualization buffer (le_engine_read_visual):
+ * one peak per loop position, spanning exactly one master loop. */
 #define LE_VIZ_POINTS 512
 
 /* Per-track state published in le_snapshot.tracks. */
@@ -148,27 +133,10 @@ typedef struct le_snapshot {
   int32_t latency_state;      /* le_latency_state */
   double measured_latency_ms; /* valid when latency_state == LE_LATENCY_DONE */
 
-  /* Looper transport. */
+  /* Looper transport (free mode: the first finalized recording sets the one
+   * master loop length; everything else plays/overdubs against it). */
   int32_t master_length_frames;   /* 0 until the first recording is finalized */
   int32_t master_position_frames; /* current loop playhead */
-
-  /* Tempo / metronome. */
-  float tempo_bpm;
-  int32_t metronome_on;     /* 0/1 */
-  int32_t count_in_enabled; /* 0/1 */
-  int32_t counting_in;      /* 0/1: a count-in is currently in progress */
-  int32_t current_beat;     /* 0..3 within the bar */
-  /* Loop <-> tempo sync. When sync_loop_to_tempo is on, finalizing the defining
-   * loop rounds it to a whole number of bars, snaps tempo_bpm to fit, and the
-   * metronome divides the loop exactly. loop_bars is 0 until a loop is defined
-   * (or when sync is off — the loop then keeps its free-form length). */
-  int32_t loop_bars;          /* whole bars in the master loop; 0 if none */
-  int32_t sync_loop_to_tempo; /* 0/1 (default 1) */
-  /* Quantize-start. quantize_mode is the active resolution (le_quantize_mode);
-   * armed_channel is the track waiting for the next grid boundary to begin
-   * capturing, or -1 when nothing is armed. */
-  int32_t quantize_mode;
-  int32_t armed_channel;
 
   /* Record-offset latency compensation (frames). Recorded/overdubbed input is
    * written this many frames earlier in the loop so it aligns with what the
@@ -258,21 +226,6 @@ LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
 LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
                                            int32_t muted);
-
-/* ---- tempo / metronome ---- */
-LE_EXPORT int32_t le_engine_set_tempo(le_engine* engine, float bpm);
-LE_EXPORT int32_t le_engine_set_metronome(le_engine* engine, int32_t on);
-LE_EXPORT int32_t le_engine_set_count_in(le_engine* engine, int32_t on);
-/* Registers a tap; two taps set the tempo from their interval. */
-LE_EXPORT int32_t le_engine_tap_tempo(le_engine* engine);
-/* Enables/disables snapping the tempo and metronome grid to the loop. When on
- * (the default), finalizing the defining loop rounds it to whole bars, snaps
- * the displayed tempo, and drives the metronome from the loop position. */
-LE_EXPORT int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on);
-/* Sets the quantize-start resolution (le_quantize_mode). When not OFF and a loop
- * exists, a record/overdub press arms and the capture begins at the next grid
- * boundary; a second press on the armed track cancels the pending arm. */
-LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t mode);
 
 /* Sets the record-offset latency compensation in frames (clamped >= 0). */
 LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,

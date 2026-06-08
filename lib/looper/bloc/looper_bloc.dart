@@ -60,21 +60,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _repository.stopTrack(channel: track.channel);
       }
     });
-    on<LooperTempoChanged>((event, _) => _repository.setTempo(event.bpm));
-    on<LooperMetronomeToggled>(
-      (_, _) => _repository.setMetronome(on: !state.transport.metronomeOn),
-    );
-    on<LooperCountInToggled>(
-      (_, _) =>
-          _repository.setCountIn(enabled: !state.transport.countInEnabled),
-    );
-    on<LooperTapTempo>((_, _) => _repository.tapTempo());
-    on<LooperSyncTempoToggled>(
-      (_, _) => _repository.setSyncTempo(on: !state.transport.syncLoopToTempo),
-    );
-    on<LooperQuantizeChanged>(
-      (event, _) => _repository.setQuantize(event.mode),
-    );
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
@@ -107,8 +92,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         add(const LooperPlayAllPressed());
       case LooperAction.stopAll:
         add(const LooperStopAllPressed());
-      case LooperAction.tapTempo:
-        add(const LooperTapTempo());
     }
   }
 

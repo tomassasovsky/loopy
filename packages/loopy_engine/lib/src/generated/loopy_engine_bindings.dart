@@ -408,113 +408,6 @@ class LoopyEngineBindings {
   late final _le_engine_set_track_mute = _le_engine_set_track_mutePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// ---- tempo / metronome ----
-  int le_engine_set_tempo(
-    ffi.Pointer<le_engine> engine,
-    double bpm,
-  ) {
-    return _le_engine_set_tempo(
-      engine,
-      bpm,
-    );
-  }
-
-  late final _le_engine_set_tempoPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Float)>>('le_engine_set_tempo');
-  late final _le_engine_set_tempo = _le_engine_set_tempoPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
-
-  int le_engine_set_metronome(
-    ffi.Pointer<le_engine> engine,
-    int on$,
-  ) {
-    return _le_engine_set_metronome(
-      engine,
-      on$,
-    );
-  }
-
-  late final _le_engine_set_metronomePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_metronome');
-  late final _le_engine_set_metronome = _le_engine_set_metronomePtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
-  int le_engine_set_count_in(
-    ffi.Pointer<le_engine> engine,
-    int on$,
-  ) {
-    return _le_engine_set_count_in(
-      engine,
-      on$,
-    );
-  }
-
-  late final _le_engine_set_count_inPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_count_in');
-  late final _le_engine_set_count_in = _le_engine_set_count_inPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
-  /// Registers a tap; two taps set the tempo from their interval.
-  int le_engine_tap_tempo(
-    ffi.Pointer<le_engine> engine,
-  ) {
-    return _le_engine_tap_tempo(
-      engine,
-    );
-  }
-
-  late final _le_engine_tap_tempoPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_tap_tempo');
-  late final _le_engine_tap_tempo = _le_engine_tap_tempoPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>)>();
-
-  /// Enables/disables snapping the tempo and metronome grid to the loop. When on
-  /// (the default), finalizing the defining loop rounds it to whole bars, snaps
-  /// the displayed tempo, and drives the metronome from the loop position.
-  int le_engine_set_sync_tempo(
-    ffi.Pointer<le_engine> engine,
-    int on$,
-  ) {
-    return _le_engine_set_sync_tempo(
-      engine,
-      on$,
-    );
-  }
-
-  late final _le_engine_set_sync_tempoPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_sync_tempo');
-  late final _le_engine_set_sync_tempo = _le_engine_set_sync_tempoPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
-  /// Sets the quantize-start resolution (le_quantize_mode). When not OFF and a loop
-  /// exists, a record/overdub press arms and the capture begins at the next grid
-  /// boundary; a second press on the armed track cancels the pending arm.
-  int le_engine_set_quantize(
-    ffi.Pointer<le_engine> engine,
-    int mode,
-  ) {
-    return _le_engine_set_quantize(
-      engine,
-      mode,
-    );
-  }
-
-  late final _le_engine_set_quantizePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_quantize');
-  late final _le_engine_set_quantize = _le_engine_set_quantizePtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
-
   /// Sets the record-offset latency compensation in frames (clamped >= 0).
   int le_engine_set_record_offset(
     ffi.Pointer<le_engine> engine,
@@ -681,24 +574,8 @@ enum le_command_code {
   /// arg_f = 0 (unmute) or 1 (mute)
   LE_CMD_SET_MUTE(8),
 
-  /// arg_f = bpm (clamped 30..300)
-  LE_CMD_SET_TEMPO(9),
-
-  /// arg_f = 0/1
-  LE_CMD_SET_METRONOME(10),
-
-  /// arg_f = 0/1
-  LE_CMD_SET_COUNT_IN(11),
-  LE_CMD_TAP_TEMPO(12),
-
   /// arg_i = round-trip latency in frames
-  LE_CMD_SET_RECORD_OFFSET(13),
-
-  /// arg_f = 0/1: snap tempo+grid to the loop
-  LE_CMD_SET_SYNC_TEMPO(14),
-
-  /// arg_i = le_quantize_mode
-  LE_CMD_SET_QUANTIZE(15);
+  LE_CMD_SET_RECORD_OFFSET(13);
 
   final int value;
   const le_command_code(this.value);
@@ -713,13 +590,7 @@ enum le_command_code {
         6 => LE_CMD_UNDO,
         7 => LE_CMD_SET_VOLUME,
         8 => LE_CMD_SET_MUTE,
-        9 => LE_CMD_SET_TEMPO,
-        10 => LE_CMD_SET_METRONOME,
-        11 => LE_CMD_SET_COUNT_IN,
-        12 => LE_CMD_TAP_TEMPO,
         13 => LE_CMD_SET_RECORD_OFFSET,
-        14 => LE_CMD_SET_SYNC_TEMPO,
-        15 => LE_CMD_SET_QUANTIZE,
         _ => throw ArgumentError('Unknown value for le_command_code: $value'),
       };
 }
@@ -844,43 +715,6 @@ final class le_snapshot extends ffi.Struct {
   /// current loop playhead
   @ffi.Int32()
   external int master_position_frames;
-
-  /// Tempo / metronome.
-  @ffi.Float()
-  external double tempo_bpm;
-
-  /// 0/1
-  @ffi.Int32()
-  external int metronome_on;
-
-  /// 0/1
-  @ffi.Int32()
-  external int count_in_enabled;
-
-  /// 0/1: a count-in is currently in progress
-  @ffi.Int32()
-  external int counting_in;
-
-  /// 0..3 within the bar
-  @ffi.Int32()
-  external int current_beat;
-
-  /// whole bars in the master loop; 0 if none
-  @ffi.Int32()
-  external int loop_bars;
-
-  /// 0/1 (default 1)
-  @ffi.Int32()
-  external int sync_loop_to_tempo;
-
-  /// Quantize-start. quantize_mode is the active resolution (le_quantize_mode);
-  /// armed_channel is the track waiting for the next grid boundary to begin
-  /// capturing, or -1 when nothing is armed.
-  @ffi.Int32()
-  external int quantize_mode;
-
-  @ffi.Int32()
-  external int armed_channel;
 
   /// Record-offset latency compensation (frames). Recorded/overdubbed input is
   /// written this many frames earlier in the loop so it aligns with what the

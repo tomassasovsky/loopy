@@ -16,7 +16,6 @@ class Track extends Equatable {
     this.peak = 0,
     this.undoDepth = 0,
     this.redoDepth = 0,
-    this.armed = false,
     this.multiple = 1,
   });
 
@@ -50,10 +49,6 @@ class Track extends Equatable {
   /// Available redo steps.
   final int redoDepth;
 
-  /// Whether this track is armed for a quantized start, waiting for the next
-  /// grid boundary to begin capturing.
-  final bool armed;
-
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
 
@@ -85,7 +80,6 @@ class Track extends Equatable {
     peak,
     undoDepth,
     redoDepth,
-    armed,
     multiple,
   ];
 }

@@ -20,7 +20,6 @@ const _playingSnapshot = EngineSnapshot(
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
   masterPositionFrames: 24000,
-  loopBars: 2,
   tracks: [
     TrackSnapshot(
       state: TrackState.playing,
@@ -58,8 +57,6 @@ void main() {
       expect(state.transport.masterLengthFrames, 96000);
       expect(state.transport.masterPositionFrames, 24000);
       expect(state.transport.progress, closeTo(0.25, 1e-6));
-      expect(state.transport.loopBars, 2);
-      expect(state.transport.syncLoopToTempo, isTrue);
       expect(state.track.state, TrackState.playing);
       expect(state.track.volume, closeTo(0.8, 1e-6));
       expect(state.track.muted, isFalse);
@@ -114,50 +111,6 @@ void main() {
       expect(state.tracks[1].state, TrackState.overdubbing);
       expect(state.tracks[1].muted, isTrue);
       expect(state.hasContent, isTrue);
-    });
-
-    test('marks the armed track and exposes quantize on the transport', () {
-      engine.nextSnapshot = const EngineSnapshot(
-        isRunning: true,
-        sampleRate: 48000,
-        bufferFrames: 128,
-        channels: 2,
-        framesProcessed: 0,
-        xrunCount: 0,
-        inputRms: 0,
-        inputPeak: 0,
-        outputRms: 0,
-        latencyState: LatencyState.idle,
-        measuredLatencyMs: -1,
-        masterLengthFrames: 48000,
-        quantizeMode: QuantizeMode.beat,
-        armedChannel: 1,
-        tracks: [
-          TrackSnapshot(
-            state: TrackState.playing,
-            volume: 1,
-            muted: false,
-            lengthFrames: 48000,
-            undoDepth: 0,
-            rms: 0,
-            peak: 0,
-          ),
-          TrackSnapshot(
-            state: TrackState.playing,
-            volume: 1,
-            muted: false,
-            lengthFrames: 48000,
-            undoDepth: 0,
-            rms: 0,
-            peak: 0,
-          ),
-        ],
-      );
-      final state = buildRepo().state;
-      expect(state.transport.quantizeMode, QuantizeMode.beat);
-      expect(state.transport.armedChannel, 1);
-      expect(state.tracks[0].armed, isFalse);
-      expect(state.tracks[1].armed, isTrue);
     });
 
     test('projects a track loop multiple', () {
@@ -283,33 +236,6 @@ void main() {
     test('engineVersion is forwarded', () {
       final repo = buildRepo();
       expect(repo.engineVersion, 'fake-engine');
-    });
-
-    test('tempo commands forward to the engine', () {
-      buildRepo()
-        ..setTempo(140)
-        ..setMetronome(on: true)
-        ..setCountIn(enabled: true)
-        ..tapTempo()
-        ..setSyncTempo(on: false)
-        ..setQuantize(QuantizeMode.beat);
-
-      expect(
-        engine.calls,
-        containsAllInOrder(<String>[
-          'setTempo',
-          'setMetronome',
-          'setCountIn',
-          'tapTempo',
-          'setSyncTempo',
-          'setQuantize',
-        ]),
-      );
-      expect(engine.lastTempo, 140);
-      expect(engine.lastMetronome, isTrue);
-      expect(engine.lastCountIn, isTrue);
-      expect(engine.lastSyncTempo, isFalse);
-      expect(engine.lastQuantize, QuantizeMode.beat);
     });
 
     test('setRecordOffset forwards to the engine', () {

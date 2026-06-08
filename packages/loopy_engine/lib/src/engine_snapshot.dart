@@ -27,32 +27,6 @@ enum LatencyState {
   };
 }
 
-/// Quantize-start resolution: when a loop exists, a record/overdub press is held
-/// until the next grid boundary of this resolution before capture begins.
-///
-/// Mirrors the native `le_quantize_mode` enum.
-enum QuantizeMode {
-  /// Capture starts immediately.
-  off,
-
-  /// Arm until the next beat.
-  beat,
-
-  /// Arm until the next bar (the default).
-  bar;
-
-  /// Maps a native `le_quantize_mode` integer to a [QuantizeMode].
-  static QuantizeMode fromCode(int code) => switch (code) {
-    0 => QuantizeMode.off,
-    1 => QuantizeMode.beat,
-    2 => QuantizeMode.bar,
-    _ => QuantizeMode.bar,
-  };
-
-  /// The native `le_quantize_mode` integer for this mode.
-  int get code => index;
-}
-
 /// The per-track looper state machine.
 ///
 /// Mirrors the native `le_track_state` enum.
@@ -201,15 +175,6 @@ class EngineSnapshot {
     required this.measuredLatencyMs,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
-    this.tempoBpm = 120,
-    this.metronomeOn = false,
-    this.countInEnabled = false,
-    this.countingIn = false,
-    this.currentBeat = 0,
-    this.loopBars = 0,
-    this.syncLoopToTempo = true,
-    this.quantizeMode = QuantizeMode.bar,
-    this.armedChannel = -1,
     this.recordOffsetFrames = 0,
     this.tracks = const [],
   });
@@ -229,15 +194,6 @@ class EngineSnapshot {
       measuredLatencyMs = -1,
       masterLengthFrames = 0,
       masterPositionFrames = 0,
-      tempoBpm = 120,
-      metronomeOn = false,
-      countInEnabled = false,
-      countingIn = false,
-      currentBeat = 0,
-      loopBars = 0,
-      syncLoopToTempo = true,
-      quantizeMode = QuantizeMode.bar,
-      armedChannel = -1,
       recordOffsetFrames = 0,
       tracks = const [];
 
@@ -263,15 +219,6 @@ class EngineSnapshot {
     measuredLatencyMs: native.measured_latency_ms,
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
-    tempoBpm: native.tempo_bpm,
-    metronomeOn: native.metronome_on != 0,
-    countInEnabled: native.count_in_enabled != 0,
-    countingIn: native.counting_in != 0,
-    currentBeat: native.current_beat,
-    loopBars: native.loop_bars,
-    syncLoopToTempo: native.sync_loop_to_tempo != 0,
-    quantizeMode: QuantizeMode.fromCode(native.quantize_mode),
-    armedChannel: native.armed_channel,
     recordOffsetFrames: native.record_offset_frames,
     tracks: tracks,
   );
@@ -315,38 +262,6 @@ class EngineSnapshot {
 
   /// Current master loop playhead in frames.
   final int masterPositionFrames;
-
-  /// Current tempo in beats per minute.
-  final double tempoBpm;
-
-  /// Whether the metronome click is enabled.
-  final bool metronomeOn;
-
-  /// Whether a count-in precedes the first recording.
-  final bool countInEnabled;
-
-  /// Whether a count-in is currently in progress.
-  final bool countingIn;
-
-  /// The current beat within the bar (`0..3`).
-  final int currentBeat;
-
-  /// Whole bars spanning the master loop; `0` until a loop is defined (or while
-  /// [syncLoopToTempo] is off, when the loop keeps its free-form length).
-  final int loopBars;
-
-  /// Whether the tempo and metronome grid are snapped to the loop. When on
-  /// (the default), finalizing the defining loop rounds it to whole bars and
-  /// snaps [tempoBpm] to fit; the metronome then divides the loop exactly.
-  final bool syncLoopToTempo;
-
-  /// Quantize-start resolution applied to record/overdub presses while a loop
-  /// exists. Defaults to [QuantizeMode.bar].
-  final QuantizeMode quantizeMode;
-
-  /// The track armed for a quantized start (waiting for the next grid
-  /// boundary), or `-1` when nothing is armed.
-  final int armedChannel;
 
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
@@ -399,15 +314,6 @@ class EngineSnapshot {
           measuredLatencyMs == other.measuredLatencyMs &&
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
-          tempoBpm == other.tempoBpm &&
-          metronomeOn == other.metronomeOn &&
-          countInEnabled == other.countInEnabled &&
-          countingIn == other.countingIn &&
-          currentBeat == other.currentBeat &&
-          loopBars == other.loopBars &&
-          syncLoopToTempo == other.syncLoopToTempo &&
-          quantizeMode == other.quantizeMode &&
-          armedChannel == other.armedChannel &&
           recordOffsetFrames == other.recordOffsetFrames &&
           _listEquals(tracks, other.tracks);
 
@@ -426,15 +332,6 @@ class EngineSnapshot {
     measuredLatencyMs,
     masterLengthFrames,
     masterPositionFrames,
-    tempoBpm,
-    metronomeOn,
-    countInEnabled,
-    countingIn,
-    currentBeat,
-    loopBars,
-    syncLoopToTempo,
-    quantizeMode,
-    armedChannel,
     recordOffsetFrames,
     ...tracks,
   ]);

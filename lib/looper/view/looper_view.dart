@@ -61,8 +61,6 @@ class LooperView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _MasterLoopBar(transport: state.transport),
-            const SizedBox(height: 8),
-            _TempoBar(transport: state.transport),
             const SizedBox(height: 12),
             if (!state.transport.isRunning) const _EngineStoppedBanner(),
             Expanded(
@@ -96,91 +94,6 @@ class _MasterLoopBar extends StatelessWidget {
           key: const Key('looper_masterLoop_progress'),
           value: transport.hasLoop ? transport.progress : 0,
           minHeight: 8,
-        ),
-      ],
-    );
-  }
-}
-
-class _TempoBar extends StatelessWidget {
-  const _TempoBar({required this.transport});
-
-  final TransportState transport;
-
-  @override
-  Widget build(BuildContext context) {
-    final bloc = context.read<LooperBloc>();
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Text(
-          '${transport.tempoBpm.round()} BPM',
-          key: const Key('looper_bpm_text'),
-          style: theme.textTheme.titleMedium,
-        ),
-        if (transport.syncLoopToTempo && transport.loopBars > 0) ...[
-          const SizedBox(width: 8),
-          Text(
-            '${transport.loopBars} ${transport.loopBars == 1 ? 'bar' : 'bars'}',
-            key: const Key('looper_bars_text'),
-            style: theme.textTheme.labelMedium,
-          ),
-        ],
-        if (transport.countingIn) ...[
-          const SizedBox(width: 8),
-          Text('count-in…', style: theme.textTheme.labelMedium),
-        ],
-        const Spacer(),
-        IconButton(
-          key: const Key('looper_syncTempo_button'),
-          tooltip: transport.syncLoopToTempo
-              ? 'Sync loop to tempo on'
-              : 'Sync loop to tempo off',
-          isSelected: transport.syncLoopToTempo,
-          icon: const Icon(Icons.sync),
-          onPressed: () => bloc.add(const LooperSyncTempoToggled()),
-        ),
-        PopupMenuButton<QuantizeMode>(
-          key: const Key('looper_quantize_button'),
-          tooltip: 'Quantize start: ${transport.quantizeMode.name}',
-          initialValue: transport.quantizeMode,
-          icon: const Icon(Icons.grid_4x4),
-          onSelected: (mode) => bloc.add(LooperQuantizeChanged(mode)),
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: QuantizeMode.off,
-              child: Text('Quantize: off'),
-            ),
-            PopupMenuItem(
-              value: QuantizeMode.beat,
-              child: Text('Quantize: beat'),
-            ),
-            PopupMenuItem(
-              value: QuantizeMode.bar,
-              child: Text('Quantize: bar'),
-            ),
-          ],
-        ),
-        OutlinedButton.icon(
-          key: const Key('looper_tap_button'),
-          onPressed: () => bloc.add(const LooperTapTempo()),
-          icon: const Icon(Icons.touch_app),
-          label: const Text('Tap'),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          key: const Key('looper_metronome_button'),
-          tooltip: transport.metronomeOn ? 'Metronome on' : 'Metronome off',
-          isSelected: transport.metronomeOn,
-          icon: const Icon(Icons.av_timer),
-          onPressed: () => bloc.add(const LooperMetronomeToggled()),
-        ),
-        IconButton(
-          key: const Key('looper_countIn_button'),
-          tooltip: transport.countInEnabled ? 'Count-in on' : 'Count-in off',
-          isSelected: transport.countInEnabled,
-          icon: const Icon(Icons.timer_3),
-          onPressed: () => bloc.add(const LooperCountInToggled()),
         ),
       ],
     );
@@ -246,14 +159,6 @@ class _TrackStrip extends StatelessWidget {
               children: [
                 Text('Track ${ch + 1}', style: theme.textTheme.titleSmall),
                 const Spacer(),
-                if (track.armed) ...[
-                  Chip(
-                    key: Key('looper_armed_chip_$ch'),
-                    avatar: const Icon(Icons.hourglass_top, size: 16),
-                    label: const Text('armed'),
-                  ),
-                  const SizedBox(width: 8),
-                ],
                 if (track.isMultiple) ...[
                   Chip(
                     key: Key('looper_multiple_chip_$ch'),

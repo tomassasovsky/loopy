@@ -72,15 +72,6 @@ class LooperRepository {
       isRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
       masterPositionFrames: s.masterPositionFrames,
-      tempoBpm: s.tempoBpm,
-      metronomeOn: s.metronomeOn,
-      countInEnabled: s.countInEnabled,
-      countingIn: s.countingIn,
-      currentBeat: s.currentBeat,
-      loopBars: s.loopBars,
-      syncLoopToTempo: s.syncLoopToTempo,
-      quantizeMode: s.quantizeMode,
-      armedChannel: s.armedChannel,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -95,7 +86,6 @@ class LooperRepository {
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
           redoDepth: s.tracks[i].redoDepth,
-          armed: s.armedChannel == i,
           multiple: s.tracks[i].multiple,
         ),
     ],
@@ -155,19 +145,6 @@ class LooperRepository {
   EngineResult setMute({required bool muted, int channel = 0}) =>
       _engine.setTrackMute(muted: muted, channel: channel);
 
-  /// Sets the tempo in beats per minute.
-  EngineResult setTempo(double bpm) => _engine.setTempo(bpm);
-
-  /// Enables or disables the metronome click.
-  EngineResult setMetronome({required bool on}) => _engine.setMetronome(on: on);
-
-  /// Enables or disables the one-bar count-in.
-  EngineResult setCountIn({required bool enabled}) =>
-      _engine.setCountIn(enabled: enabled);
-
-  /// Registers a tempo tap.
-  EngineResult tapTempo() => _engine.tapTempo();
-
   /// Reads the loop waveform (peaks indexed by loop position, `0..1`) of the
   /// mixed output for the visualizer.
   Float32List readWaveform() => _engine.readVisual();
@@ -175,12 +152,6 @@ class LooperRepository {
   /// Reads track [channel]'s loop waveform for a per-track thumbnail.
   Float32List readTrackWaveform(int channel) =>
       _engine.readTrackVisual(channel);
-
-  /// Enables or disables snapping the tempo and metronome grid to the loop.
-  EngineResult setSyncTempo({required bool on}) => _engine.setSyncTempo(on: on);
-
-  /// Sets the quantize-start resolution for record/overdub presses.
-  EngineResult setQuantize(QuantizeMode mode) => _engine.setQuantize(mode);
 
   /// Sets the record-offset latency compensation in frames.
   EngineResult setRecordOffset(int frames) => _engine.setRecordOffset(frames);
