@@ -97,6 +97,52 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult record() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_record(_engine));
+  }
+
+  @override
+  EngineResult stopTrack() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_stop_track(_engine));
+  }
+
+  @override
+  EngineResult play() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_play(_engine));
+  }
+
+  @override
+  EngineResult clear() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_clear(_engine));
+  }
+
+  @override
+  EngineResult undo() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_undo(_engine));
+  }
+
+  @override
+  EngineResult setTrackVolume(double volume) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_volume(_engine, volume),
+    );
+  }
+
+  @override
+  EngineResult setTrackMute({required bool muted}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_mute(_engine, muted ? 1 : 0),
+    );
+  }
+
+  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;

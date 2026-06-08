@@ -15,6 +15,7 @@ class EngineConfig {
     this.bufferFrames = 0,
     this.channels = 0,
     this.passthrough = false,
+    this.maxLoopFrames = 0,
   });
 
   /// Requested sample rate in Hz, or `0` for the device default.
@@ -32,13 +33,18 @@ class EngineConfig {
   /// Whether captured input should be copied straight to the output.
   final bool passthrough;
 
+  /// Per-track loop buffer cap in frames, or `0` for the engine default
+  /// (about two minutes at the device sample rate).
+  final int maxLoopFrames;
+
   /// Writes this configuration into a native [le_config] struct in [ptr].
   void writeTo(Pointer<le_config> ptr) {
     ptr.ref
       ..sample_rate = sampleRate
       ..buffer_frames = bufferFrames
       ..channels = channels
-      ..passthrough = passthrough ? 1 : 0;
+      ..passthrough = passthrough ? 1 : 0
+      ..max_loop_frames = maxLoopFrames;
   }
 
   @override
@@ -49,15 +55,21 @@ class EngineConfig {
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
           channels == other.channels &&
-          passthrough == other.passthrough;
+          passthrough == other.passthrough &&
+          maxLoopFrames == other.maxLoopFrames;
 
   @override
-  int get hashCode =>
-      Object.hash(sampleRate, bufferFrames, channels, passthrough);
+  int get hashCode => Object.hash(
+    sampleRate,
+    bufferFrames,
+    channels,
+    passthrough,
+    maxLoopFrames,
+  );
 
   @override
   String toString() =>
       'EngineConfig(sampleRate: $sampleRate, '
       'bufferFrames: $bufferFrames, channels: $channels, '
-      'passthrough: $passthrough)';
+      'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames)';
 }

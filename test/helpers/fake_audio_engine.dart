@@ -24,6 +24,15 @@ class FakeAudioEngine implements AudioEngine {
   int stopCalls = 0;
   int measureLatencyCalls = 0;
   int disposeCalls = 0;
+  int recordCalls = 0;
+  int stopTrackCalls = 0;
+  int playCalls = 0;
+  int clearCalls = 0;
+  int undoCalls = 0;
+
+  /// Last looper parameter values seen.
+  double? lastVolume;
+  bool? lastMuted;
 
   @override
   String get version => 'fake-engine 0.0.0';
@@ -52,6 +61,48 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult measureLatency() {
     measureLatencyCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult record() {
+    recordCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult stopTrack() {
+    stopTrackCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult play() {
+    playCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult clear() {
+    clearCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult undo() {
+    undoCalls++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackVolume(double volume) {
+    lastVolume = volume;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackMute({required bool muted}) {
+    lastMuted = muted;
     return EngineResult.ok;
   }
 

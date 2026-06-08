@@ -23,6 +23,7 @@ void main() {
         bufferFrames: 64,
         channels: 2,
         passthrough: true,
+        maxLoopFrames: 480000,
       );
       final ptr = calloc<le_config>();
       try {
@@ -31,6 +32,7 @@ void main() {
         expect(ptr.ref.buffer_frames, 64);
         expect(ptr.ref.channels, 2);
         expect(ptr.ref.passthrough, 1);
+        expect(ptr.ref.max_loop_frames, 480000);
       } finally {
         calloc.free(ptr);
       }

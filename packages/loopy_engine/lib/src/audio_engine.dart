@@ -80,6 +80,29 @@ abstract interface class AudioEngine {
   /// Requires a physical output→input loopback path.
   EngineResult measureLatency();
 
+  /// Advances the track: start recording, finalize the master loop, or toggle
+  /// overdub depending on the current track state. When it begins an overdub it
+  /// also captures the one-level undo snapshot.
+  EngineResult record();
+
+  /// Halts track playback, retaining the loop buffer.
+  EngineResult stopTrack();
+
+  /// Resumes playback of a stopped track.
+  EngineResult play();
+
+  /// Erases the track and resets the master loop.
+  EngineResult clear();
+
+  /// Removes the last overdub layer (one level).
+  EngineResult undo();
+
+  /// Sets track playback gain, clamped to `0..1`.
+  EngineResult setTrackVolume(double volume);
+
+  /// Mutes or unmutes the track.
+  EngineResult setTrackMute({required bool muted});
+
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();
 }

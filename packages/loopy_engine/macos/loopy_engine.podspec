@@ -15,9 +15,11 @@ A hand-written miniaudio-based looping engine exposed to Dart over FFI.
   s.author           = { 'Loopy' => 'dev@loopy.dev' }
   s.source           = { :path => '.' }
 
-  # Compile the C engine + the miniaudio implementation TU.
-  s.source_files     = '../src/*.{c,h}', '../src/miniaudio/miniaudio.h'
-  s.public_header_files = '../src/loopy_engine_api.h'
+  # CocoaPods does not support source_files outside the podspec directory, so
+  # the shared C engine lives under ../src and is pulled in via forwarder
+  # translation units in Classes/ that relatively #include it. The real headers
+  # are found through HEADER_SEARCH_PATHS below.
+  s.source_files     = 'Classes/**/*'
 
   s.dependency 'FlutterMacOS'
   s.platform = :osx, '10.14'
@@ -25,6 +27,14 @@ A hand-written miniaudio-based looping engine exposed to Dart over FFI.
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    # Build as a dynamic library so the produced framework binary is a loadable
+    # Mach-O dylib. Flutter/CocoaPods default plugin frameworks to static
+    # (MACH_O_TYPE=staticlib); that works for normal plugins (reached via the
+    # registrant) but breaks FFI plugins, whose symbols are only resolved at
+    # runtime via DynamicLibrary.open('loopy_engine.framework/loopy_engine').
+    # A static framework's binary is an ar archive that dlopen cannot load, and
+    # its symbols get dead-stripped since nothing references them at link time.
+    'MACH_O_TYPE' => 'mh_dylib',
     'GCC_C_LANGUAGE_STANDARD' => 'gnu11',
     'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../src" "$(PODS_TARGET_SRCROOT)/../src/miniaudio"',
   }

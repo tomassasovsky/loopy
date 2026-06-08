@@ -24,6 +24,7 @@ enums:
   include:
     - 'le_result'
     - 'le_latency_state'
+    - 'le_track_state'
     - 'le_command_code'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
