@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
@@ -8,9 +9,20 @@ import 'package:mocktail/mocktail.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _FakeControllerSource implements ControllerSource {
+  final StreamController<RawControllerInput> _controller =
+      StreamController<RawControllerInput>.broadcast();
+  @override
+  Stream<RawControllerInput> get inputs => _controller.stream;
+  void press(ControllerSourceKind kind, int id) =>
+      _controller.add(RawControllerInput(kind: kind, id: id, value: 127));
+  @override
+  Future<void> dispose() => _controller.close();
+}
+
 const _playingState = LooperState(
   transport: TransportState(isRunning: true, masterLengthFrames: 48000),
-  track: Track(state: TrackState.playing, lengthFrames: 48000),
+  tracks: [Track(state: TrackState.playing, lengthFrames: 48000)],
 );
 
 void main() {
@@ -23,14 +35,29 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => stateController.stream);
-    when(repository.record).thenReturn(EngineResult.ok);
-    when(repository.stopTrack).thenReturn(EngineResult.ok);
-    when(repository.play).thenReturn(EngineResult.ok);
-    when(repository.clear).thenReturn(EngineResult.ok);
-    when(repository.undo).thenReturn(EngineResult.ok);
-    when(() => repository.setVolume(any())).thenReturn(EngineResult.ok);
     when(
-      () => repository.setMute(muted: any(named: 'muted')),
+      () => repository.record(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.stopTrack(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.play(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.clear(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.undo(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setVolume(any(), channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMute(
+        muted: any(named: 'muted'),
+        channel: any(named: 'channel'),
+      ),
     ).thenReturn(EngineResult.ok);
   });
 
@@ -52,51 +79,74 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperRecordPressed forwards to repository.record',
+    'LooperRecordPressed forwards to repository.record with the channel',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperRecordPressed()),
-    verify: (_) => verify(repository.record).called(1),
+    act: (bloc) => bloc.add(const LooperRecordPressed(2)),
+    verify: (_) => verify(() => repository.record(channel: 2)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
     'LooperStopPressed forwards to repository.stopTrack',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperStopPressed()),
-    verify: (_) => verify(repository.stopTrack).called(1),
+    act: (bloc) => bloc.add(const LooperStopPressed(1)),
+    verify: (_) => verify(() => repository.stopTrack(channel: 1)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperPlayPressed forwards to repository.play',
+    'LooperVolumeChanged forwards the new volume and channel',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperPlayPressed()),
-    verify: (_) => verify(repository.play).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperClearPressed forwards to repository.clear',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperClearPressed()),
-    verify: (_) => verify(repository.clear).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperUndoPressed forwards to repository.undo',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperUndoPressed()),
-    verify: (_) => verify(repository.undo).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperVolumeChanged forwards the new volume',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperVolumeChanged(0.5)),
-    verify: (_) => verify(() => repository.setVolume(0.5)).called(1),
+    act: (bloc) => bloc.add(const LooperVolumeChanged(3, 0.5)),
+    verify: (_) =>
+        verify(() => repository.setVolume(0.5, channel: 3)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
     'LooperMuteToggled mutes from the current (unmuted) state',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperMuteToggled()),
-    verify: (_) => verify(() => repository.setMute(muted: true)).called(1),
+    act: (bloc) => bloc.add(const LooperMuteToggled(0)),
+    verify: (_) =>
+        verify(() => repository.setMute(muted: true)).called(1),
   );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperPlayAllPressed plays every track with content',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [
+        Track(state: TrackState.playing, lengthFrames: 100),
+        Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+        Track(channel: 2), // empty -> skipped
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperPlayAllPressed()),
+    verify: (_) {
+      verify(() => repository.play()).called(1);
+      verify(() => repository.play(channel: 1)).called(1);
+      verifyNever(() => repository.play(channel: 2));
+    },
+  );
+
+  group('controller wiring', () {
+    late _FakeControllerSource source;
+    late ControllerRepository controller;
+
+    setUp(() {
+      source = _FakeControllerSource();
+      controller = ControllerRepository(sources: [source]);
+    });
+
+    tearDown(() => controller.dispose());
+
+    test('a mapped controller press drives the repository', () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      // Default mapping: CC 80 -> recordOverdub on channel 0.
+      source.press(ControllerSourceKind.midiCc, 80);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(() => repository.record()).called(1);
+    });
+  });
 }

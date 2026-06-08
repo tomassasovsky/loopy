@@ -20,50 +20,73 @@ final class LooperStateUpdated extends LooperEvent {
   List<Object?> get props => [state];
 }
 
-/// The record/overdub control was pressed.
-final class LooperRecordPressed extends LooperEvent {
+/// Base for events targeting a single track [channel].
+sealed class LooperChannelEvent extends LooperEvent {
+  const LooperChannelEvent(this.channel);
+
+  /// The target track channel.
+  final int channel;
+
+  @override
+  List<Object?> get props => [channel];
+}
+
+/// The record/overdub control was pressed on [channel].
+final class LooperRecordPressed extends LooperChannelEvent {
   /// Creates a [LooperRecordPressed].
-  const LooperRecordPressed();
+  const LooperRecordPressed(super.channel);
 }
 
-/// The stop control was pressed.
-final class LooperStopPressed extends LooperEvent {
+/// The stop control was pressed on [channel].
+final class LooperStopPressed extends LooperChannelEvent {
   /// Creates a [LooperStopPressed].
-  const LooperStopPressed();
+  const LooperStopPressed(super.channel);
 }
 
-/// The play control was pressed.
-final class LooperPlayPressed extends LooperEvent {
+/// The play control was pressed on [channel].
+final class LooperPlayPressed extends LooperChannelEvent {
   /// Creates a [LooperPlayPressed].
-  const LooperPlayPressed();
+  const LooperPlayPressed(super.channel);
 }
 
-/// The clear control was pressed.
-final class LooperClearPressed extends LooperEvent {
+/// The clear control was pressed on [channel].
+final class LooperClearPressed extends LooperChannelEvent {
   /// Creates a [LooperClearPressed].
-  const LooperClearPressed();
+  const LooperClearPressed(super.channel);
 }
 
-/// The undo control was pressed.
-final class LooperUndoPressed extends LooperEvent {
+/// The undo control was pressed on [channel].
+final class LooperUndoPressed extends LooperChannelEvent {
   /// Creates a [LooperUndoPressed].
-  const LooperUndoPressed();
+  const LooperUndoPressed(super.channel);
 }
 
-/// The track volume slider changed.
-final class LooperVolumeChanged extends LooperEvent {
+/// The mute control was toggled on [channel].
+final class LooperMuteToggled extends LooperChannelEvent {
+  /// Creates a [LooperMuteToggled].
+  const LooperMuteToggled(super.channel);
+}
+
+/// The track volume slider changed on [channel].
+final class LooperVolumeChanged extends LooperChannelEvent {
   /// Creates a [LooperVolumeChanged].
-  const LooperVolumeChanged(this.volume);
+  const LooperVolumeChanged(super.channel, this.volume);
 
   /// New gain in `0..1`.
   final double volume;
 
   @override
-  List<Object?> get props => [volume];
+  List<Object?> get props => [channel, volume];
 }
 
-/// The mute control was toggled.
-final class LooperMuteToggled extends LooperEvent {
-  /// Creates a [LooperMuteToggled].
-  const LooperMuteToggled();
+/// Play every track that has content.
+final class LooperPlayAllPressed extends LooperEvent {
+  /// Creates a [LooperPlayAllPressed].
+  const LooperPlayAllPressed();
+}
+
+/// Stop every track.
+final class LooperStopAllPressed extends LooperEvent {
+  /// Creates a [LooperStopAllPressed].
+  const LooperStopAllPressed();
 }

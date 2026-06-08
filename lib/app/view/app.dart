@@ -1,3 +1,4 @@
+import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -6,19 +7,29 @@ import 'package:loopy/looper/looper.dart';
 
 /// The root application widget.
 class App extends StatelessWidget {
-  /// Creates an [App] driven by [repository].
+  /// Creates an [App] driven by the injected repositories.
   ///
-  /// The repository (which owns the audio engine) is injected so tests can
-  /// supply one backed by a fake engine instead of the native device.
-  const App({required this.repository, super.key});
+  /// The repositories are injected so tests can supply ones backed by fakes
+  /// instead of the native device / hardware controllers.
+  const App({
+    required this.repository,
+    required this.controllerRepository,
+    super.key,
+  });
 
-  /// The shared looper repository, provided to the widget tree.
+  /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
+
+  /// The shared controller repository (MIDI/GPIO → looper actions).
+  final ControllerRepository controllerRepository;
 
   @override
   Widget build(BuildContext context) {
-    return RepositoryProvider.value(
-      value: repository,
+    return MultiRepositoryProvider(
+      providers: [
+        RepositoryProvider.value(value: repository),
+        RepositoryProvider.value(value: controllerRepository),
+      ],
       child: MaterialApp(
         theme: ThemeData(
           appBarTheme: AppBarTheme(

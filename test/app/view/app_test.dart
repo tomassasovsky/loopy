@@ -1,3 +1,4 @@
+import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
@@ -12,9 +13,16 @@ void main() {
         engine: FakeAudioEngine(),
         ticker: const Stream<void>.empty(),
       );
+      final controllerRepository = ControllerRepository(sources: const []);
       addTearDown(repository.dispose);
+      addTearDown(controllerRepository.dispose);
 
-      await tester.pumpWidget(App(repository: repository));
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+        ),
+      );
       await tester.pump();
 
       expect(find.byType(LooperPage), findsOneWidget);
