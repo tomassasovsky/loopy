@@ -122,6 +122,9 @@ abstract interface class AudioEngine {
   /// Registers a tap; two taps set the tempo from their interval.
   EngineResult tapTempo();
 
+  /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
+  EngineResult setRecordOffset(int frames);
+
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();
 }

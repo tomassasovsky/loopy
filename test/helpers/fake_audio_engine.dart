@@ -125,5 +125,8 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult tapTempo() => EngineResult.ok;
 
   @override
+  EngineResult setRecordOffset(int frames) => EngineResult.ok;
+
+  @override
   void dispose() => disposeCalls++;
 }

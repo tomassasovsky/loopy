@@ -405,6 +405,24 @@ class LoopyEngineBindings {
           'le_engine_tap_tempo');
   late final _le_engine_tap_tempo = _le_engine_tap_tempoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// Sets the record-offset latency compensation in frames (clamped >= 0).
+  int le_engine_set_record_offset(
+    ffi.Pointer<le_engine> engine,
+    int frames,
+  ) {
+    return _le_engine_set_record_offset(
+      engine,
+      frames,
+    );
+  }
+
+  late final _le_engine_set_record_offsetPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>,
+              ffi.Int32)>>('le_engine_set_record_offset');
+  late final _le_engine_set_record_offset = _le_engine_set_record_offsetPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -562,7 +580,10 @@ enum le_command_code {
 
   /// arg_f = 0/1
   LE_CMD_SET_COUNT_IN(11),
-  LE_CMD_TAP_TEMPO(12);
+  LE_CMD_TAP_TEMPO(12),
+
+  /// arg_i = round-trip latency in frames
+  LE_CMD_SET_RECORD_OFFSET(13);
 
   final int value;
   const le_command_code(this.value);
@@ -581,6 +602,7 @@ enum le_command_code {
         10 => LE_CMD_SET_METRONOME,
         11 => LE_CMD_SET_COUNT_IN,
         12 => LE_CMD_TAP_TEMPO,
+        13 => LE_CMD_SET_RECORD_OFFSET,
         _ => throw ArgumentError('Unknown value for le_command_code: $value'),
       };
 }
@@ -717,6 +739,12 @@ final class le_snapshot extends ffi.Struct {
   /// 0..3 within the bar
   @ffi.Int32()
   external int current_beat;
+
+  /// Record-offset latency compensation (frames). Recorded/overdubbed input is
+  /// written this many frames earlier in the loop so it aligns with what the
+  /// player heard. Auto-set by a latency measurement; manually overridable.
+  @ffi.Int32()
+  external int record_offset_frames;
 
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()

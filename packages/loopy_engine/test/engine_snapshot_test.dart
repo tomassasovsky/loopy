@@ -90,6 +90,7 @@ void main() {
           ..count_in_enabled = 1
           ..counting_in = 1
           ..current_beat = 2
+          ..record_offset_frames = 480
           ..track_count = 2;
 
         const tracks = [
@@ -117,6 +118,7 @@ void main() {
         expect(snapshot.countInEnabled, isTrue);
         expect(snapshot.countingIn, isTrue);
         expect(snapshot.currentBeat, 2);
+        expect(snapshot.recordOffsetFrames, 480);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.
         expect(snapshot.trackState, TrackState.playing);

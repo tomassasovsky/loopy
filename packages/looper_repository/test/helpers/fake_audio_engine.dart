@@ -140,6 +140,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  int? lastRecordOffset;
+
+  @override
+  EngineResult setRecordOffset(int frames) {
+    lastRecordOffset = frames;
+    calls.add('setRecordOffset');
+    return EngineResult.ok;
+  }
+
   @override
   void dispose() => calls.add('dispose');
 }

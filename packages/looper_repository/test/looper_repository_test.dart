@@ -226,6 +226,12 @@ void main() {
       expect(engine.lastCountIn, isTrue);
     });
 
+    test('setRecordOffset forwards to the engine', () {
+      buildRepo().setRecordOffset(480);
+      expect(engine.calls, contains('setRecordOffset'));
+      expect(engine.lastRecordOffset, 480);
+    });
+
     test('detectLoopback forwards the engine result', () {
       engine.loopback = const LoopbackInfo(
         available: true,
