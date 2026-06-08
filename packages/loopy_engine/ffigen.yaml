@@ -20,6 +20,7 @@ structs:
   include:
     - 'le_config'
     - 'le_snapshot'
+    - 'le_track_snapshot'
     - 'le_loopback_info'
 enums:
   include:

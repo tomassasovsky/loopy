@@ -31,8 +31,44 @@ void main() {
     });
   });
 
+  group('TrackSnapshot.fromNative', () {
+    test('projects every native track field', () {
+      final ptr = calloc<le_track_snapshot>();
+      try {
+        ptr.ref
+          ..state = 3
+          ..volume = 0.75
+          ..muted = 1
+          ..length_frames = 96000
+          ..undo_depth = 1
+          ..rms = 0.4
+          ..peak = 0.6;
+
+        final track = TrackSnapshot.fromNative(ptr.ref);
+        expect(track.state, TrackState.playing);
+        expect(track.volume, closeTo(0.75, 1e-6));
+        expect(track.muted, isTrue);
+        expect(track.lengthFrames, 96000);
+        expect(track.undoDepth, 1);
+        expect(track.rms, closeTo(0.4, 1e-6));
+        expect(track.peak, closeTo(0.6, 1e-6));
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('maps every TrackState code', () {
+      expect(TrackState.fromCode(0), TrackState.empty);
+      expect(TrackState.fromCode(1), TrackState.recording);
+      expect(TrackState.fromCode(2), TrackState.overdubbing);
+      expect(TrackState.fromCode(3), TrackState.playing);
+      expect(TrackState.fromCode(4), TrackState.stopped);
+      expect(TrackState.fromCode(99), TrackState.empty);
+    });
+  });
+
   group('EngineSnapshot.fromNative', () {
-    test('projects every native field', () {
+    test('projects scalar fields and the supplied tracks', () {
       final ptr = calloc<le_snapshot>();
       try {
         ptr.ref
@@ -49,55 +85,47 @@ void main() {
           ..measured_latency_ms = 7.5
           ..master_length_frames = 96000
           ..master_position_frames = 1200
-          ..track_state = 3
-          ..track_volume = 0.75
-          ..track_muted = 1
-          ..track_length_frames = 96000
-          ..track_undo_depth = 1
-          ..track_rms = 0.4
-          ..track_peak = 0.6;
+          ..track_count = 2;
 
-        final snapshot = EngineSnapshot.fromNative(ptr.ref);
+        const tracks = [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 0.75,
+            muted: true,
+            lengthFrames: 96000,
+            undoDepth: 1,
+            rms: 0.4,
+            peak: 0.6,
+          ),
+          TrackSnapshot.empty(),
+        ];
+        final snapshot = EngineSnapshot.fromNative(ptr.ref, tracks);
 
         expect(snapshot.isRunning, isTrue);
         expect(snapshot.sampleRate, 48000);
-        expect(snapshot.bufferFrames, 128);
-        expect(snapshot.channels, 2);
         expect(snapshot.framesProcessed, 123456);
-        expect(snapshot.xrunCount, 3);
-        expect(snapshot.inputRms, closeTo(0.25, 1e-6));
-        expect(snapshot.inputPeak, closeTo(0.5, 1e-6));
-        expect(snapshot.outputRms, closeTo(0.125, 1e-6));
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
-        expect(snapshot.masterPositionFrames, 1200);
+        expect(snapshot.trackCount, 2);
+        // Back-compat single-track accessors read track 0.
         expect(snapshot.trackState, TrackState.playing);
         expect(snapshot.trackVolume, closeTo(0.75, 1e-6));
         expect(snapshot.trackMuted, isTrue);
-        expect(snapshot.trackLengthFrames, 96000);
-        expect(snapshot.trackUndoDepth, 1);
-        expect(snapshot.trackRms, closeTo(0.4, 1e-6));
-        expect(snapshot.trackPeak, closeTo(0.6, 1e-6));
+        expect(snapshot.tracks, tracks);
       } finally {
         calloc.free(ptr);
       }
-    });
-
-    test('maps every TrackState code', () {
-      expect(TrackState.fromCode(0), TrackState.empty);
-      expect(TrackState.fromCode(1), TrackState.recording);
-      expect(TrackState.fromCode(2), TrackState.overdubbing);
-      expect(TrackState.fromCode(3), TrackState.playing);
-      expect(TrackState.fromCode(4), TrackState.stopped);
-      expect(TrackState.fromCode(99), TrackState.empty);
     });
 
     test('maps running == 0 to isRunning false', () {
       final ptr = calloc<le_snapshot>();
       try {
         ptr.ref.running = 0;
-        expect(EngineSnapshot.fromNative(ptr.ref).isRunning, isFalse);
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).isRunning,
+          isFalse,
+        );
       } finally {
         calloc.free(ptr);
       }

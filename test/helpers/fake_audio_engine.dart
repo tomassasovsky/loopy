@@ -71,43 +71,43 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult record() {
+  EngineResult record({int channel = 0}) {
     recordCalls++;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult stopTrack() {
+  EngineResult stopTrack({int channel = 0}) {
     stopTrackCalls++;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult play() {
+  EngineResult play({int channel = 0}) {
     playCalls++;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult clear() {
+  EngineResult clear({int channel = 0}) {
     clearCalls++;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult undo() {
+  EngineResult undo({int channel = 0}) {
     undoCalls++;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setTrackVolume(double volume) {
+  EngineResult setTrackVolume(double volume, {int channel = 0}) {
     lastVolume = volume;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setTrackMute({required bool muted}) {
+  EngineResult setTrackMute({required bool muted, int channel = 0}) {
     lastMuted = muted;
     return EngineResult.ok;
   }

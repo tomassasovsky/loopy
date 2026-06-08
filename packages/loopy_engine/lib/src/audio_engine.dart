@@ -87,28 +87,28 @@ abstract interface class AudioEngine {
   /// when the engine was started with [EngineConfig.useLoopbackCapture].
   EngineResult measureLatency();
 
-  /// Advances the track: start recording, finalize the master loop, or toggle
-  /// overdub depending on the current track state. When it begins an overdub it
-  /// also captures the one-level undo snapshot.
-  EngineResult record();
+  /// Advances track [channel]: start recording, finalize the master loop, or
+  /// toggle overdub depending on the current track state. When it begins an
+  /// overdub it also captures the one-level undo snapshot.
+  EngineResult record({int channel = 0});
 
-  /// Halts track playback, retaining the loop buffer.
-  EngineResult stopTrack();
+  /// Halts track [channel]'s playback, retaining the loop buffer.
+  EngineResult stopTrack({int channel = 0});
 
-  /// Resumes playback of a stopped track.
-  EngineResult play();
+  /// Resumes playback of track [channel].
+  EngineResult play({int channel = 0});
 
-  /// Erases the track and resets the master loop.
-  EngineResult clear();
+  /// Erases track [channel] (and resets the master loop if all tracks empty).
+  EngineResult clear({int channel = 0});
 
-  /// Removes the last overdub layer (one level).
-  EngineResult undo();
+  /// Removes the last overdub layer on track [channel] (one level).
+  EngineResult undo({int channel = 0});
 
-  /// Sets track playback gain, clamped to `0..1`.
-  EngineResult setTrackVolume(double volume);
+  /// Sets track [channel]'s playback gain, clamped to `0..1`.
+  EngineResult setTrackVolume(double volume, {int channel = 0});
 
-  /// Mutes or unmutes the track.
-  EngineResult setTrackMute({required bool muted});
+  /// Mutes or unmutes track [channel].
+  EngineResult setTrackMute({required bool muted, int channel = 0});
 
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();

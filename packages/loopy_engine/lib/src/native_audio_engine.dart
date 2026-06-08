@@ -48,11 +48,13 @@ class NativeAudioEngine implements AudioEngine {
       );
     }
     _snapshotPtr = calloc<le_snapshot>();
+    _trackPtr = calloc<le_track_snapshot>();
   }
 
   final LoopyEngineBindings _bindings;
   late final Pointer<le_engine> _engine;
   late final Pointer<le_snapshot> _snapshotPtr;
+  late final Pointer<le_track_snapshot> _trackPtr;
   bool _disposed = false;
 
   void _checkAlive() {
@@ -95,7 +97,13 @@ class NativeAudioEngine implements AudioEngine {
   EngineSnapshot snapshot() {
     _checkAlive();
     _bindings.le_engine_get_snapshot(_engine, _snapshotPtr);
-    return EngineSnapshot.fromNative(_snapshotPtr.ref);
+    final count = _snapshotPtr.ref.track_count;
+    final tracks = <TrackSnapshot>[];
+    for (var i = 0; i < count; i++) {
+      _bindings.le_engine_get_track(_engine, i, _trackPtr);
+      tracks.add(TrackSnapshot.fromNative(_trackPtr.ref));
+    }
+    return EngineSnapshot.fromNative(_snapshotPtr.ref, tracks);
   }
 
   @override
@@ -118,48 +126,52 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult record() {
-    _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_record(_engine));
-  }
-
-  @override
-  EngineResult stopTrack() {
-    _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_stop_track(_engine));
-  }
-
-  @override
-  EngineResult play() {
-    _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_play(_engine));
-  }
-
-  @override
-  EngineResult clear() {
-    _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_clear(_engine));
-  }
-
-  @override
-  EngineResult undo() {
-    _checkAlive();
-    return EngineResult.fromCode(_bindings.le_engine_undo(_engine));
-  }
-
-  @override
-  EngineResult setTrackVolume(double volume) {
+  EngineResult record({int channel = 0}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_volume(_engine, volume),
+      _bindings.le_engine_record(_engine, channel),
     );
   }
 
   @override
-  EngineResult setTrackMute({required bool muted}) {
+  EngineResult stopTrack({int channel = 0}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_mute(_engine, muted ? 1 : 0),
+      _bindings.le_engine_stop_track(_engine, channel),
+    );
+  }
+
+  @override
+  EngineResult play({int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_play(_engine, channel));
+  }
+
+  @override
+  EngineResult clear({int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_clear(_engine, channel));
+  }
+
+  @override
+  EngineResult undo({int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_undo(_engine, channel));
+  }
+
+  @override
+  EngineResult setTrackVolume(double volume, {int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_volume(_engine, channel, volume),
+    );
+  }
+
+  @override
+  EngineResult setTrackMute({required bool muted, int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_mute(_engine, channel, muted ? 1 : 0),
     );
   }
 
@@ -168,6 +180,8 @@ class NativeAudioEngine implements AudioEngine {
     if (_disposed) return;
     _disposed = true;
     _bindings.le_engine_destroy(_engine);
-    calloc.free(_snapshotPtr);
+    calloc
+      ..free(_snapshotPtr)
+      ..free(_trackPtr);
   }
 }

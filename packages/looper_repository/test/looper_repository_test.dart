@@ -20,12 +20,17 @@ const _playingSnapshot = EngineSnapshot(
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
   masterPositionFrames: 24000,
-  trackState: TrackState.playing,
-  trackVolume: 0.8,
-  trackLengthFrames: 96000,
-  trackUndoDepth: 1,
-  trackRms: 0.3,
-  trackPeak: 0.5,
+  tracks: [
+    TrackSnapshot(
+      state: TrackState.playing,
+      volume: 0.8,
+      muted: false,
+      lengthFrames: 96000,
+      undoDepth: 1,
+      rms: 0.3,
+      peak: 0.5,
+    ),
+  ],
 );
 
 void main() {
