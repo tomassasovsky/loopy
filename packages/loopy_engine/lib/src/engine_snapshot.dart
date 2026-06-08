@@ -18,8 +18,6 @@ enum LatencyState {
   timeout;
 
   /// Maps a native `le_latency_state` integer to a [LatencyState].
-  ///
-  /// Unknown values fall back to [LatencyState.idle].
   static LatencyState fromCode(int code) => switch (code) {
     0 => LatencyState.idle,
     1 => LatencyState.measuring,
@@ -36,7 +34,7 @@ enum TrackState {
   /// No audio captured yet.
   empty,
 
-  /// Capturing the first pass, which defines the master loop length.
+  /// Capturing the first pass (or overwriting one loop on a new track).
   recording,
 
   /// Summing input into the existing loop.
@@ -49,8 +47,6 @@ enum TrackState {
   stopped;
 
   /// Maps a native `le_track_state` integer to a [TrackState].
-  ///
-  /// Unknown values fall back to [TrackState.empty].
   static TrackState fromCode(int code) => switch (code) {
     0 => TrackState.empty,
     1 => TrackState.recording,
@@ -61,11 +57,84 @@ enum TrackState {
   };
 }
 
+/// An immutable per-track projection of the native `le_track_snapshot`.
+@immutable
+class TrackSnapshot {
+  /// Creates a [TrackSnapshot].
+  const TrackSnapshot({
+    required this.state,
+    required this.volume,
+    required this.muted,
+    required this.lengthFrames,
+    required this.undoDepth,
+    required this.rms,
+    required this.peak,
+  });
+
+  /// An empty track.
+  const TrackSnapshot.empty()
+    : state = TrackState.empty,
+      volume = 1,
+      muted = false,
+      lengthFrames = 0,
+      undoDepth = 0,
+      rms = 0,
+      peak = 0;
+
+  /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
+  factory TrackSnapshot.fromNative(le_track_snapshot native) => TrackSnapshot(
+    state: TrackState.fromCode(native.state),
+    volume: native.volume,
+    muted: native.muted != 0,
+    lengthFrames: native.length_frames,
+    undoDepth: native.undo_depth,
+    rms: native.rms,
+    peak: native.peak,
+  );
+
+  /// State-machine phase.
+  final TrackState state;
+
+  /// Playback gain in `0..1`.
+  final double volume;
+
+  /// Whether the track is muted.
+  final bool muted;
+
+  /// Captured length in frames (equals master once finalized).
+  final int lengthFrames;
+
+  /// Available undo levels (`0` or `1`).
+  final int undoDepth;
+
+  /// RMS level for the most recent block, in `0..1`.
+  final double rms;
+
+  /// Peak level for the most recent block, in `0..1`.
+  final double peak;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TrackSnapshot &&
+          runtimeType == other.runtimeType &&
+          state == other.state &&
+          volume == other.volume &&
+          muted == other.muted &&
+          lengthFrames == other.lengthFrames &&
+          undoDepth == other.undoDepth &&
+          rms == other.rms &&
+          peak == other.peak;
+
+  @override
+  int get hashCode =>
+      Object.hash(state, volume, muted, lengthFrames, undoDepth, rms, peak);
+}
+
 /// An immutable, lock-free snapshot of the native audio engine's state.
 ///
 /// Published by the engine's audio thread and read by Dart on a render-rate
-/// timer. This is the pure-Dart projection of the native `le_snapshot` struct;
-/// consumers never touch FFI memory directly.
+/// timer. The pure-Dart projection of the native `le_snapshot` struct.
 @immutable
 class EngineSnapshot {
   /// Creates an [EngineSnapshot] with explicit values.
@@ -83,13 +152,7 @@ class EngineSnapshot {
     required this.measuredLatencyMs,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
-    this.trackState = TrackState.empty,
-    this.trackVolume = 1,
-    this.trackMuted = false,
-    this.trackLengthFrames = 0,
-    this.trackUndoDepth = 0,
-    this.trackRms = 0,
-    this.trackPeak = 0,
+    this.tracks = const [],
   });
 
   /// The snapshot of an engine that has never started.
@@ -107,16 +170,17 @@ class EngineSnapshot {
       measuredLatencyMs = -1,
       masterLengthFrames = 0,
       masterPositionFrames = 0,
-      trackState = TrackState.empty,
-      trackVolume = 1,
-      trackMuted = false,
-      trackLengthFrames = 0,
-      trackUndoDepth = 0,
-      trackRms = 0,
-      trackPeak = 0;
+      tracks = const [];
 
-  /// Projects a native `le_snapshot` struct into an [EngineSnapshot].
-  factory EngineSnapshot.fromNative(le_snapshot native) => EngineSnapshot(
+  /// Projects a native `le_snapshot` struct (scalars) plus the already-read
+  /// [tracks] into an [EngineSnapshot].
+  ///
+  /// Tracks are read separately (via `le_engine_get_track`) because this ffi
+  /// version cannot index a native struct array.
+  factory EngineSnapshot.fromNative(
+    le_snapshot native,
+    List<TrackSnapshot> tracks,
+  ) => EngineSnapshot(
     isRunning: native.running != 0,
     sampleRate: native.sample_rate,
     bufferFrames: native.buffer_frames,
@@ -130,13 +194,7 @@ class EngineSnapshot {
     measuredLatencyMs: native.measured_latency_ms,
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
-    trackState: TrackState.fromCode(native.track_state),
-    trackVolume: native.track_volume,
-    trackMuted: native.track_muted != 0,
-    trackLengthFrames: native.track_length_frames,
-    trackUndoDepth: native.track_undo_depth,
-    trackRms: native.track_rms,
-    trackPeak: native.track_peak,
+    tracks: tracks,
   );
 
   /// Whether the audio device is open and the callback is running.
@@ -154,9 +212,7 @@ class EngineSnapshot {
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
 
-  /// Device xruns (dropouts) since the device started.
-  ///
-  /// Reserved: xrun detection is wired in a later phase and is currently `0`.
+  /// Device xruns since the device started (reserved; currently `0`).
   final int xrunCount;
 
   /// Input RMS level for the most recent block, in `0..1`.
@@ -181,26 +237,35 @@ class EngineSnapshot {
   /// Current master loop playhead in frames.
   final int masterPositionFrames;
 
-  /// State of the (single, Phase-2) track.
-  final TrackState trackState;
+  /// Per-track snapshots (length == active track count).
+  final List<TrackSnapshot> tracks;
 
-  /// Track playback gain in `0..1`.
-  final double trackVolume;
+  /// The number of tracks.
+  int get trackCount => tracks.length;
 
-  /// Whether the track is muted.
-  final bool trackMuted;
+  TrackSnapshot get _track0 =>
+      tracks.isNotEmpty ? tracks.first : const TrackSnapshot.empty();
 
-  /// Frames captured in the track (equals master length once finalized).
-  final int trackLengthFrames;
+  /// Track 0 state (back-compat single-track accessor).
+  TrackState get trackState => _track0.state;
 
-  /// Available undo levels (`0` or `1`).
-  final int trackUndoDepth;
+  /// Track 0 volume (back-compat single-track accessor).
+  double get trackVolume => _track0.volume;
 
-  /// Track RMS level for the most recent block, in `0..1`.
-  final double trackRms;
+  /// Track 0 mute (back-compat single-track accessor).
+  bool get trackMuted => _track0.muted;
 
-  /// Track peak level for the most recent block, in `0..1`.
-  final double trackPeak;
+  /// Track 0 length (back-compat single-track accessor).
+  int get trackLengthFrames => _track0.lengthFrames;
+
+  /// Track 0 undo depth (back-compat single-track accessor).
+  int get trackUndoDepth => _track0.undoDepth;
+
+  /// Track 0 RMS (back-compat single-track accessor).
+  double get trackRms => _track0.rms;
+
+  /// Track 0 peak (back-compat single-track accessor).
+  double get trackPeak => _track0.peak;
 
   @override
   bool operator ==(Object other) =>
@@ -220,16 +285,10 @@ class EngineSnapshot {
           measuredLatencyMs == other.measuredLatencyMs &&
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
-          trackState == other.trackState &&
-          trackVolume == other.trackVolume &&
-          trackMuted == other.trackMuted &&
-          trackLengthFrames == other.trackLengthFrames &&
-          trackUndoDepth == other.trackUndoDepth &&
-          trackRms == other.trackRms &&
-          trackPeak == other.trackPeak;
+          _listEquals(tracks, other.tracks);
 
   @override
-  int get hashCode => Object.hashAll([
+  int get hashCode => Object.hash(
     isRunning,
     sampleRate,
     bufferFrames,
@@ -243,19 +302,21 @@ class EngineSnapshot {
     measuredLatencyMs,
     masterLengthFrames,
     masterPositionFrames,
-    trackState,
-    trackVolume,
-    trackMuted,
-    trackLengthFrames,
-    trackUndoDepth,
-    trackRms,
-    trackPeak,
-  ]);
+    Object.hashAll(tracks),
+  );
 
   @override
   String toString() =>
       'EngineSnapshot(running: $isRunning, '
-      'sampleRate: $sampleRate, track: ${trackState.name}, '
+      'sampleRate: $sampleRate, tracks: $trackCount, '
       'master: $masterPositionFrames/$masterLengthFrames, '
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';
+}
+
+bool _listEquals(List<TrackSnapshot> a, List<TrackSnapshot> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

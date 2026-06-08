@@ -55,46 +55,56 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Last channel seen by a channel-scoped command.
+  int? lastChannel;
+
   @override
-  EngineResult record() {
+  EngineResult record({int channel = 0}) {
+    lastChannel = channel;
     calls.add('record');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult stopTrack() {
+  EngineResult stopTrack({int channel = 0}) {
+    lastChannel = channel;
     calls.add('stopTrack');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult play() {
+  EngineResult play({int channel = 0}) {
+    lastChannel = channel;
     calls.add('play');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult clear() {
+  EngineResult clear({int channel = 0}) {
+    lastChannel = channel;
     calls.add('clear');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult undo() {
+  EngineResult undo({int channel = 0}) {
+    lastChannel = channel;
     calls.add('undo');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setTrackVolume(double volume) {
+  EngineResult setTrackVolume(double volume, {int channel = 0}) {
     lastVolume = volume;
+    lastChannel = channel;
     calls.add('setTrackVolume');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setTrackMute({required bool muted}) {
+  EngineResult setTrackMute({required bool muted, int channel = 0}) {
     lastMuted = muted;
+    lastChannel = channel;
     calls.add('setTrackMute');
     return EngineResult.ok;
   }

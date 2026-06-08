@@ -132,6 +132,28 @@ class LoopyEngineBindings {
   late final _le_engine_get_snapshot = _le_engine_get_snapshotPtr.asFunction<
       void Function(ffi.Pointer<le_engine>, ffi.Pointer<le_snapshot>)>();
 
+  /// Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
+  /// empty track. No-op if either pointer is NULL.
+  void le_engine_get_track(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<le_track_snapshot> out,
+  ) {
+    return _le_engine_get_track(
+      engine,
+      channel,
+      out,
+    );
+  }
+
+  late final _le_engine_get_trackPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<le_engine>, ffi.Int32,
+              ffi.Pointer<le_track_snapshot>)>>('le_engine_get_track');
+  late final _le_engine_get_track = _le_engine_get_trackPtr.asFunction<
+      void Function(
+          ffi.Pointer<le_engine>, int, ffi.Pointer<le_track_snapshot>)>();
+
   /// Name of the active duplex/playback device, or "" if not running. The returned
   /// pointer is owned by the engine and valid until the next start/stop.
   ffi.Pointer<ffi.Char> le_engine_device_name(
@@ -188,114 +210,134 @@ class LoopyEngineBindings {
   late final _le_engine_measure_latency = _le_engine_measure_latencyPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
-  /// ---- looper control (channel 0) ---- *
-  /// These post ring commands. le_engine_record additionally takes the one-level
-  /// undo snapshot on the calling thread when it begins an overdub (the track is
-  /// read-only on the audio thread at that moment), so the audio callback only
-  /// performs an O(1) buffer swap to undo — never a copy.
+  /// ---- looper control (per channel) ---- *
+  /// These post ring commands targeting track `channel` (0..track_count-1).
+  /// le_engine_record additionally takes the one-level undo snapshot on the calling
+  /// thread when it begins an overdub (the track is read-only on the audio thread
+  /// at that moment), so the audio callback only performs an O(1) buffer swap to
+  /// undo — never a copy.
   int le_engine_record(
     ffi.Pointer<le_engine> engine,
+    int channel,
   ) {
     return _le_engine_record(
       engine,
+      channel,
     );
   }
 
-  late final _le_engine_recordPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_record');
-  late final _le_engine_record =
-      _le_engine_recordPtr.asFunction<int Function(ffi.Pointer<le_engine>)>();
+  late final _le_engine_recordPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_record');
+  late final _le_engine_record = _le_engine_recordPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   int le_engine_stop_track(
     ffi.Pointer<le_engine> engine,
+    int channel,
   ) {
     return _le_engine_stop_track(
       engine,
+      channel,
     );
   }
 
-  late final _le_engine_stop_trackPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_stop_track');
+  late final _le_engine_stop_trackPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_stop_track');
   late final _le_engine_stop_track = _le_engine_stop_trackPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   int le_engine_play(
     ffi.Pointer<le_engine> engine,
+    int channel,
   ) {
     return _le_engine_play(
       engine,
+      channel,
     );
   }
 
-  late final _le_engine_playPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_play');
-  late final _le_engine_play =
-      _le_engine_playPtr.asFunction<int Function(ffi.Pointer<le_engine>)>();
+  late final _le_engine_playPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_play');
+  late final _le_engine_play = _le_engine_playPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   int le_engine_clear(
     ffi.Pointer<le_engine> engine,
+    int channel,
   ) {
     return _le_engine_clear(
       engine,
+      channel,
     );
   }
 
-  late final _le_engine_clearPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_clear');
-  late final _le_engine_clear =
-      _le_engine_clearPtr.asFunction<int Function(ffi.Pointer<le_engine>)>();
+  late final _le_engine_clearPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_clear');
+  late final _le_engine_clear = _le_engine_clearPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   int le_engine_undo(
     ffi.Pointer<le_engine> engine,
+    int channel,
   ) {
     return _le_engine_undo(
       engine,
+      channel,
     );
   }
 
-  late final _le_engine_undoPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_undo');
-  late final _le_engine_undo =
-      _le_engine_undoPtr.asFunction<int Function(ffi.Pointer<le_engine>)>();
+  late final _le_engine_undoPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_undo');
+  late final _le_engine_undo = _le_engine_undoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   int le_engine_set_track_volume(
     ffi.Pointer<le_engine> engine,
+    int channel,
     double volume,
   ) {
     return _le_engine_set_track_volume(
       engine,
+      channel,
       volume,
     );
   }
 
   late final _le_engine_set_track_volumePtr = _lookup<
       ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>,
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
               ffi.Float)>>('le_engine_set_track_volume');
   late final _le_engine_set_track_volume = _le_engine_set_track_volumePtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
 
   int le_engine_set_track_mute(
     ffi.Pointer<le_engine> engine,
+    int channel,
     int muted,
   ) {
     return _le_engine_set_track_mute(
       engine,
+      channel,
       muted,
     );
   }
 
   late final _le_engine_set_track_mutePtr = _lookup<
       ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_set_track_mute');
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
+              ffi.Int32)>>('le_engine_set_track_mute');
   late final _le_engine_set_track_mute = _le_engine_set_track_mutePtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -491,6 +533,37 @@ final class le_config extends ffi.Struct {
   external int use_loopback_capture;
 }
 
+/// Per-track state published in le_snapshot.tracks.
+final class le_track_snapshot extends ffi.Struct {
+  /// le_track_state
+  @ffi.Int32()
+  external int state;
+
+  /// 0..1
+  @ffi.Float()
+  external double volume;
+
+  /// 0/1
+  @ffi.Int32()
+  external int muted;
+
+  /// frames captured (== master once finalized)
+  @ffi.Int32()
+  external int length_frames;
+
+  /// 0 or 1 (one-level undo)
+  @ffi.Int32()
+  external int undo_depth;
+
+  /// 0..1
+  @ffi.Float()
+  external double rms;
+
+  /// 0..1
+  @ffi.Float()
+  external double peak;
+}
+
 /// Lock-free snapshot of engine state, published by the audio thread and read by
 /// Dart on a render-rate timer. Fields are individually atomic; readers may see
 /// a one-frame-stale mix across fields, which is fine for metering/UI.
@@ -544,33 +617,14 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int master_position_frames;
 
-  /// le_track_state
+  /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()
-  external int track_state;
+  external int track_count;
 
-  /// 0..1
-  @ffi.Float()
-  external double track_volume;
-
-  /// 0/1
-  @ffi.Int32()
-  external int track_muted;
-
-  /// frames captured (== master once finalized)
-  @ffi.Int32()
-  external int track_length_frames;
-
-  /// 0 or 1 (one-level undo)
-  @ffi.Int32()
-  external int track_undo_depth;
-
-  /// 0..1
-  @ffi.Float()
-  external double track_rms;
-
-  /// 0..1
-  @ffi.Float()
-  external double track_peak;
+  @ffi.Array.multi([4])
+  external ffi.Array<le_track_snapshot> tracks;
 }
 
 final class le_engine extends ffi.Opaque {}
+
+const int LE_MAX_TRACKS = 4;

@@ -176,18 +176,18 @@ static void test_looper_record_then_play(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  CHECK(le_engine_record(e) == LE_OK); /* EMPTY -> RECORDING */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* EMPTY -> RECORDING */
   process_const(e, 1.0f, LOOP_N, out); /* capture 1.0 x N */
 
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.track_state == LE_TRACK_RECORDING);
-  CHECK(s.track_length_frames == LOOP_N);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
 
-  CHECK(le_engine_record(e) == LE_OK); /* finalize -> PLAYING */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> PLAYING */
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.track_state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
   CHECK(s.master_length_frames == LOOP_N);
 
   /* Playback reproduces the recorded loop (no input monitoring configured). */
@@ -202,31 +202,31 @@ static void test_looper_overdub_and_undo(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  le_engine_record(e);
+  le_engine_record(e, 0);
   process_const(e, 1.0f, LOOP_N, out);
-  le_engine_record(e); /* finalize -> PLAYING, loop == 1.0 */
+  le_engine_record(e, 0); /* finalize -> PLAYING, loop == 1.0 */
   drain(e);
 
   /* Overdub one loop of +0.5 -> loop becomes 1.5. */
-  CHECK(le_engine_record(e) == LE_OK); /* snapshot taken, -> OVERDUBBING */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* snapshot taken, -> OVERDUBBING */
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.track_undo_depth == 1);
+  CHECK(s.tracks[0].undo_depth == 1);
   process_const(e, 0.5f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
 
-  le_engine_record(e); /* OVERDUBBING -> PLAYING */
+  le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.track_state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
 
   /* Undo swaps back to the pre-overdub buffer at the next loop boundary. */
-  CHECK(le_engine_undo(e) == LE_OK);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
   process_const(e, 0.0f, LOOP_N, out); /* boundary crossed at end of this loop */
   process_const(e, 0.0f, LOOP_N, out); /* now playing pre-overdub */
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.track_undo_depth == 0);
+  CHECK(s.tracks[0].undo_depth == 0);
 
   le_engine_destroy(e);
 }
@@ -236,16 +236,16 @@ static void test_looper_volume_and_mute(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  le_engine_record(e);
+  le_engine_record(e, 0);
   process_const(e, 1.0f, LOOP_N, out);
-  le_engine_record(e); /* PLAYING, loop == 1.0 */
+  le_engine_record(e, 0); /* PLAYING, loop == 1.0 */
   drain(e);
 
-  CHECK(le_engine_set_track_volume(e, 0.5f) == LE_OK);
+  CHECK(le_engine_set_track_volume(e, 0, 0.5f) == LE_OK);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 0.5f) < 1e-6f);
 
-  CHECK(le_engine_set_track_mute(e, 1) == LE_OK);
+  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
 
@@ -257,16 +257,16 @@ static void test_looper_clear(void) {
   le_engine* e = make_configured_engine();
   float out[64];
 
-  le_engine_record(e);
+  le_engine_record(e, 0);
   process_const(e, 1.0f, LOOP_N, out);
-  le_engine_record(e);
+  le_engine_record(e, 0);
   drain(e);
 
-  CHECK(le_engine_clear(e) == LE_OK);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
   drain(e);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.track_state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
   CHECK(s.master_length_frames == 0);
 
   /* Cleared track is silent. */
@@ -279,9 +279,56 @@ static void test_looper_clear(void) {
 static void test_looper_requires_configure(void) {
   printf("test_looper_requires_configure\n");
   le_engine* e = le_engine_create();
-  CHECK(le_engine_record(e) == LE_ERR_NOT_RUNNING); /* not configured yet */
+  CHECK(le_engine_record(e, 0) == LE_ERR_NOT_RUNNING); /* not configured yet */
   le_engine_configure(e, 48000, 1, 100);
-  CHECK(le_engine_record(e) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  le_engine_destroy(e);
+}
+
+static void test_looper_multitrack(void) {
+  printf("test_looper_multitrack\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.track_count == LE_MAX_TRACKS);
+
+  /* Track 0 defines the master loop at 1.0. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  /* Track 1 records (overwrites one master loop) at 0.5. During its recording
+   * pass only track 0 is audible (1.0); track 1 is not mixed until it loops. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].length_frames == LOOP_N);
+
+  /* Now both tracks mix: 1.0 + 0.5 == 1.5. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+
+  /* Muting track 0 leaves only track 1 (0.5). */
+  le_engine_set_track_mute(e, 0, 1);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 0.5f) < 1e-6f);
+
+  /* Clearing both tracks resets the master. */
+  le_engine_set_track_mute(e, 0, 0);
+  le_engine_clear(e, 0);
+  le_engine_clear(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
   le_engine_destroy(e);
 }
 
@@ -331,6 +378,7 @@ int main(void) {
   test_looper_volume_and_mute();
   test_looper_clear();
   test_looper_requires_configure();
+  test_looper_multitrack();
   test_classify_capture_device();
   test_detect_loopback_runs();
 

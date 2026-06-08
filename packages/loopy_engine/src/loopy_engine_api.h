@@ -96,6 +96,20 @@ typedef struct le_config {
   int32_t use_loopback_capture; /* 1 = capture from a detected loopback device */
 } le_config;
 
+/* Maximum number of simultaneous looper tracks. */
+#define LE_MAX_TRACKS 4
+
+/* Per-track state published in le_snapshot.tracks. */
+typedef struct le_track_snapshot {
+  int32_t state;         /* le_track_state */
+  float volume;          /* 0..1 */
+  int32_t muted;         /* 0/1 */
+  int32_t length_frames; /* frames captured (== master once finalized) */
+  int32_t undo_depth;    /* 0 or 1 (one-level undo) */
+  float rms;             /* 0..1 */
+  float peak;            /* 0..1 */
+} le_track_snapshot;
+
 /* Lock-free snapshot of engine state, published by the audio thread and read by
  * Dart on a render-rate timer. Fields are individually atomic; readers may see
  * a one-frame-stale mix across fields, which is fine for metering/UI. */
@@ -116,14 +130,9 @@ typedef struct le_snapshot {
   int32_t master_length_frames;   /* 0 until the first recording is finalized */
   int32_t master_position_frames; /* current loop playhead */
 
-  /* Single track (channel 0). */
-  int32_t track_state;          /* le_track_state */
-  float track_volume;           /* 0..1 */
-  int32_t track_muted;          /* 0/1 */
-  int32_t track_length_frames;  /* frames captured (== master once finalized) */
-  int32_t track_undo_depth;     /* 0 or 1 (one-level undo) */
-  float track_rms;              /* 0..1 */
-  float track_peak;             /* 0..1 */
+  /* Tracks. */
+  int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
+  le_track_snapshot tracks[LE_MAX_TRACKS];
 } le_snapshot;
 
 /* Opaque engine handle. */
@@ -155,6 +164,11 @@ LE_EXPORT int32_t le_engine_stop(le_engine* engine);
  */
 LE_EXPORT void le_engine_get_snapshot(le_engine* engine, le_snapshot* out);
 
+/* Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
+ * empty track. No-op if either pointer is NULL. */
+LE_EXPORT void le_engine_get_track(le_engine* engine, int32_t channel,
+                                   le_track_snapshot* out);
+
 /* Name of the active duplex/playback device, or "" if not running. The returned
  * pointer is owned by the engine and valid until the next start/stop. */
 LE_EXPORT const char* le_engine_device_name(le_engine* engine);
@@ -169,18 +183,21 @@ LE_EXPORT int32_t le_engine_post_command(le_engine* engine, int32_t code,
  * output->input loopback path. */
 LE_EXPORT int32_t le_engine_measure_latency(le_engine* engine);
 
-/* ---- looper control (channel 0) ---- *
- * These post ring commands. le_engine_record additionally takes the one-level
- * undo snapshot on the calling thread when it begins an overdub (the track is
- * read-only on the audio thread at that moment), so the audio callback only
- * performs an O(1) buffer swap to undo — never a copy. */
-LE_EXPORT int32_t le_engine_record(le_engine* engine);
-LE_EXPORT int32_t le_engine_stop_track(le_engine* engine);
-LE_EXPORT int32_t le_engine_play(le_engine* engine);
-LE_EXPORT int32_t le_engine_clear(le_engine* engine);
-LE_EXPORT int32_t le_engine_undo(le_engine* engine);
-LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, float volume);
-LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t muted);
+/* ---- looper control (per channel) ---- *
+ * These post ring commands targeting track `channel` (0..track_count-1).
+ * le_engine_record additionally takes the one-level undo snapshot on the calling
+ * thread when it begins an overdub (the track is read-only on the audio thread
+ * at that moment), so the audio callback only performs an O(1) buffer swap to
+ * undo — never a copy. */
+LE_EXPORT int32_t le_engine_record(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_stop_track(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_play(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
+LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
+                                             float volume);
+LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
+                                           int32_t muted);
 
 #ifdef __cplusplus
 }
