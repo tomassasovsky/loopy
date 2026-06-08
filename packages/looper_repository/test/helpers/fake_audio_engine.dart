@@ -15,6 +15,9 @@ class FakeAudioEngine implements AudioEngine {
   bool? lastMuted;
   EngineConfig? lastConfig;
 
+  /// Result returned by [start].
+  EngineResult startResult = EngineResult.ok;
+
   @override
   String get version => 'fake-engine';
 
@@ -25,7 +28,7 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult start(EngineConfig config) {
     lastConfig = config;
     calls.add('start');
-    return EngineResult.ok;
+    return startResult;
   }
 
   @override

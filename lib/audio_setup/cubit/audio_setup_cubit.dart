@@ -14,22 +14,18 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   AudioSetupCubit({required LooperRepository repository})
     : _repository = repository,
       super(const AudioSetupState()) {
-    _subscription = _repository.looperState.listen((s) {
-      emit(
-        state.copyWith(
-          engineStatus: s.status,
-          status: s.status.isConnected
-              ? AudioSetupStatus.running
-              : state.status == AudioSetupStatus.error
-              ? AudioSetupStatus.error
-              : AudioSetupStatus.stopped,
-        ),
-      );
-    });
+    _subscription = _repository.looperState.listen(_onLooperState);
 
-    // Detect a cable-free loopback path so latency can be auto-measured.
-    final loopback = _repository.detectLoopback();
-    if (loopback.available) emit(state.copyWith(loopback: loopback));
+    // Hydrate from the repository immediately — [looperState] is a broadcast
+    // stream that does not replay, so a new cubit would otherwise show defaults
+    // until the next engine tick even when the device is already open.
+    emit(
+      _projectFromRepository(
+        _repository.state,
+        current: state.copyWith(loopback: _repository.detectLoopback()),
+        hydrateConfig: true,
+      ),
+    );
   }
 
   final LooperRepository _repository;
@@ -86,6 +82,62 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// Triggers a loopback round-trip latency measurement.
   void measureLatency() => _repository.measureLatency();
+
+  void _onLooperState(LooperState looper) {
+    emit(_projectFromRepository(looper, current: state));
+  }
+
+  AudioSetupState _projectFromRepository(
+    LooperState looper, {
+    required AudioSetupState current,
+    bool hydrateConfig = false,
+  }) {
+    final engineStatus = looper.status;
+    final lastConfig = _repository.lastEngineConfig;
+
+    return current.copyWith(
+      sampleRate: hydrateConfig
+          ? _resolvedOption(
+              negotiated: engineStatus.sampleRate,
+              requested: lastConfig?.sampleRate,
+              fallback: current.sampleRate,
+            )
+          : engineStatus.isConnected && engineStatus.sampleRate > 0
+          ? engineStatus.sampleRate
+          : current.sampleRate,
+      bufferFrames: hydrateConfig
+          ? _resolvedOption(
+              negotiated: engineStatus.bufferFrames,
+              requested: lastConfig?.bufferFrames,
+              fallback: current.bufferFrames,
+            )
+          : engineStatus.isConnected && engineStatus.bufferFrames > 0
+          ? engineStatus.bufferFrames
+          : current.bufferFrames,
+      monitorInput: hydrateConfig
+          ? lastConfig?.passthrough ?? current.monitorInput
+          : current.monitorInput,
+      mergeToMono: hydrateConfig
+          ? lastConfig?.mergeToMono ?? current.mergeToMono
+          : current.mergeToMono,
+      engineStatus: engineStatus,
+      status: engineStatus.isConnected
+          ? AudioSetupStatus.running
+          : current.status == AudioSetupStatus.error
+          ? AudioSetupStatus.error
+          : AudioSetupStatus.stopped,
+    );
+  }
+
+  int _resolvedOption({
+    required int negotiated,
+    required int? requested,
+    required int fallback,
+  }) {
+    if (negotiated > 0) return negotiated;
+    if (requested != null && requested > 0) return requested;
+    return fallback;
+  }
 
   @override
   Future<void> close() {
