@@ -480,6 +480,76 @@ class LoopyEngineBindings {
               ffi.Int32)>>('le_engine_set_record_offset');
   late final _le_engine_set_record_offset = _le_engine_set_record_offsetPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Copies up to `max_frames` frames of track `channel`'s loop (interleaved, the
+  /// engine's channel count) into `out`; returns the number of frames written
+  /// (the track length, clamped to `max_frames`), or 0 on a bad argument / empty
+  /// track. Reads the live buffer — call when the track is not capturing.
+  int le_engine_export_track(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_export_track(
+      engine,
+      channel,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_export_trackPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
+              ffi.Pointer<ffi.Float>, ffi.Int32)>>('le_engine_export_track');
+  late final _le_engine_export_track = _le_engine_export_trackPtr.asFunction<
+      int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)>();
+
+  /// Loads `frames` interleaved frames of PCM into track `channel`'s buffer and
+  /// records the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the
+  /// unfilled tail is zeroed. The track starts playing on le_engine_commit_session.
+  /// Returns LE_OK or an le_result error.
+  int le_engine_import_track(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<ffi.Float> pcm,
+    int frames,
+  ) {
+    return _le_engine_import_track(
+      engine,
+      channel,
+      pcm,
+      frames,
+    );
+  }
+
+  late final _le_engine_import_trackPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
+              ffi.Pointer<ffi.Float>, ffi.Int32)>>('le_engine_import_track');
+  late final _le_engine_import_track = _le_engine_import_trackPtr.asFunction<
+      int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)>();
+
+  /// Establishes the master loop at `base_frames` and starts every imported track
+  /// (EMPTY with a loaded length) playing at its whole-loop multiple
+  /// (length / base_frames). Posts a command; returns LE_OK or an le_result error.
+  int le_engine_commit_session(
+    ffi.Pointer<le_engine> engine,
+    int base_frames,
+  ) {
+    return _le_engine_commit_session(
+      engine,
+      base_frames,
+    );
+  }
+
+  late final _le_engine_commit_sessionPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_commit_session');
+  late final _le_engine_commit_session = _le_engine_commit_sessionPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -646,7 +716,10 @@ enum le_command_code {
   LE_CMD_SET_SYNC_TEMPO(14),
 
   /// arg_i = le_quantize_mode
-  LE_CMD_SET_QUANTIZE(15);
+  LE_CMD_SET_QUANTIZE(15),
+
+  /// arg_i = base loop length in frames
+  LE_CMD_COMMIT_SESSION(16);
 
   final int value;
   const le_command_code(this.value);
@@ -668,6 +741,7 @@ enum le_command_code {
         13 => LE_CMD_SET_RECORD_OFFSET,
         14 => LE_CMD_SET_SYNC_TEMPO,
         15 => LE_CMD_SET_QUANTIZE,
+        16 => LE_CMD_COMMIT_SESSION,
         _ => throw ArgumentError('Unknown value for le_command_code: $value'),
       };
 }

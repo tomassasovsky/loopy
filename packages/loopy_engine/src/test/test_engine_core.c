@@ -537,6 +537,70 @@ static void test_loop_multiple_rounds_up_partial(void) {
   le_engine_destroy(e);
 }
 
+/* ---- session persistence (#4 Phase 4) ---- */
+
+static void test_session_export_import_roundtrip(void) {
+  printf("test_session_export_import_roundtrip\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Build a session: track 0 = base loop 1.0; track 1 = 2-loop 2.0 then 3.0. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N, out);
+  process_const(e, 3.0f, LOOP_N, out);
+  le_engine_record(e, 1); /* finalize -> k = 2 */
+  drain(e);
+
+  /* Export both tracks' PCM (mono here, so frames == samples). */
+  float stem0[64];
+  float stem1[64];
+  CHECK(le_engine_export_track(e, 0, stem0, 64) == LOOP_N);
+  CHECK(le_engine_export_track(e, 1, stem1, 64) == 2 * LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(stem0[i] - 1.0f) < 1e-6f);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(stem1[i] - 2.0f) < 1e-6f);
+  for (int i = LOOP_N; i < 2 * LOOP_N; ++i) {
+    CHECK(fabsf(stem1[i] - 3.0f) < 1e-6f);
+  }
+
+  /* Tear the session down. */
+  le_engine_clear(e, 0);
+  le_engine_clear(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* Reload from the exported stems and commit. */
+  CHECK(le_engine_import_track(e, 0, stem0, LOOP_N) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, stem1, 2 * LOOP_N) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].multiple == 1);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].length_frames == 2 * LOOP_N);
+
+  /* Playback reproduces it: 1+2 then 1+3, alternating. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 3.0f) < 1e-6f);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 4.0f) < 1e-6f);
+
+  /* Importing into a non-empty track is rejected. */
+  CHECK(le_engine_import_track(e, 0, stem0, LOOP_N) == LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
 /* ---- tempo / metronome ---- */
 
 /* Processes `total` frames of silence in <=64-frame chunks. */
@@ -931,6 +995,7 @@ int main(void) {
   test_record_is_exclusive();
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();
+  test_session_export_import_roundtrip();
   test_tempo_set_and_clamp();
   test_metronome_click();
   test_tap_tempo();
