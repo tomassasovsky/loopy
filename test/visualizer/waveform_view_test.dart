@@ -20,18 +20,18 @@ void main() {
     expect(find.byKey(const Key('waveform_view_paint')), findsOneWidget);
   });
 
-  testWidgets('WaveformWindowApp renders the pushed waveform', (tester) async {
-    final samples = ValueNotifier<Float32List>(
-      Float32List.fromList([0, 1, 0]),
+  testWidgets('WaveformWindowApp renders the pushed frame', (tester) async {
+    final frame = ValueNotifier<WaveformFrame>(
+      (samples: Float32List.fromList([0, 1, 0]), progress: 0.2),
     );
-    addTearDown(samples.dispose);
+    addTearDown(frame.dispose);
 
-    await tester.pumpWidget(WaveformWindowApp(samples: samples));
+    await tester.pumpWidget(WaveformWindowApp(frame: frame));
     await tester.pump();
 
     expect(find.byType(WaveformView), findsOneWidget);
 
-    samples.value = Float32List.fromList([1, 0, 1, 0]);
+    frame.value = (samples: Float32List.fromList([1, 0, 1, 0]), progress: 0.6);
     await tester.pump();
     expect(find.byType(WaveformView), findsOneWidget);
   });
@@ -63,6 +63,20 @@ void main() {
       expect(
         painter.shouldRepaint(
           WaveformPainter(samples: samples, color: const Color(0xFFFF2D95)),
+        ),
+        isTrue,
+      );
+    });
+
+    test('repaints on a playhead change', () {
+      final painter = WaveformPainter(
+        samples: samples,
+        color: cyan,
+        progress: 0.2,
+      );
+      expect(
+        painter.shouldRepaint(
+          WaveformPainter(samples: samples, color: cyan, progress: 0.5),
         ),
         isTrue,
       );

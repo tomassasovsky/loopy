@@ -245,6 +245,19 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  Float32List readTrackVisual(int channel) {
+    _checkAlive();
+    final n = _bindings.le_engine_read_track_visual(
+      _engine,
+      channel,
+      _vizPtr,
+      LE_VIZ_POINTS,
+    );
+    if (n <= 0) return Float32List(0);
+    return Float32List.fromList(_vizPtr.asTypedList(n));
+  }
+
+  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;

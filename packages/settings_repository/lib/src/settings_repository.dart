@@ -32,9 +32,19 @@ class SettingsRepository {
 
   static const String _uiModeKey = 'ui_mode';
 
-  /// Loads the saved UI-mode index, or `null` if none has been stored.
-  Future<int?> loadUiMode() => _store.getInt(_uiModeKey);
+  /// Loads the saved UI-mode name, or `null` if none has been stored.
+  Future<String?> loadUiMode() => _store.getString(_uiModeKey);
 
-  /// Saves the UI-mode index.
-  Future<void> saveUiMode(int index) => _store.setInt(_uiModeKey, index);
+  /// Saves the UI-mode [name].
+  Future<void> saveUiMode(String name) => _store.setString(_uiModeKey, name);
+
+  String _trackNameKey(int channel) => 'track_name.$channel';
+
+  /// Loads the custom display name for track [channel], or `null` if unset.
+  Future<String?> loadTrackName(int channel) =>
+      _store.getString(_trackNameKey(channel));
+
+  /// Saves the custom display [name] for track [channel].
+  Future<void> saveTrackName(int channel, String name) =>
+      _store.setString(_trackNameKey(channel), name);
 }

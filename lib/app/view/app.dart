@@ -89,8 +89,10 @@ class _AppViewState extends State<_AppView> {
       await widget.waveformWindow.open();
       _pushTimer ??= Timer.periodic(_waveformFrame, (_) {
         if (!mounted) return;
+        final looper = context.read<LooperRepository>();
         widget.waveformWindow.pushWaveform(
-          context.read<LooperRepository>().readWaveform(),
+          looper.readWaveform(),
+          looper.state.transport.progress,
         );
       });
     } else {

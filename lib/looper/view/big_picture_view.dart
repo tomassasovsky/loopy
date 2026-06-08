@@ -1,39 +1,97 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
+import 'package:loopy/visualizer/visualizer.dart';
 
-/// The full-screen "Big Picture" performance view: a bold grid of colored loop
-/// tiles (Chewie-Monsta style). Tapping a tile records/overdubs it — the
-/// primary hands-free gesture. The master output waveform lives in a separate
-/// window (see the visualizer); this view is the track grid.
-class BigPictureView extends StatelessWidget {
+/// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
+/// of tall colored track columns, each showing its own loop-waveform thumbnail
+/// and editable name. Tapping a column selects it (white highlight) and toggles
+/// record/overdub; long-press stops. The master output waveform is in a
+/// separate window.
+class BigPictureView extends StatefulWidget {
   /// Creates a [BigPictureView].
   const BigPictureView({super.key});
 
   @override
+  State<BigPictureView> createState() => _BigPictureViewState();
+}
+
+class _BigPictureViewState extends State<BigPictureView> {
+  static const _thumbFrame = Duration(milliseconds: 50); // ~20 fps
+  Timer? _poll;
+  List<Float32List> _waveforms = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _poll = Timer.periodic(_thumbFrame, (_) => _pollWaveforms());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  void _pollWaveforms() {
+    if (!mounted) return;
+    final looper = context.read<LooperRepository>();
+    final count = context.read<LooperBloc>().state.tracks.length;
+    setState(() {
+      _waveforms = [
+        for (var i = 0; i < count; i++) looper.readTrackWaveform(i),
+      ];
+    });
+  }
+
+  Float32List _waveformFor(int channel) =>
+      channel < _waveforms.length ? _waveforms[channel] : Float32List(0);
+
+  @override
   Widget build(BuildContext context) {
     final state = context.watch<LooperBloc>().state;
+    final big = context.watch<BigPictureCubit>().state;
+
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _BigHeader(transport: state.transport),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               Expanded(
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: 2.4,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     for (final track in state.tracks)
-                      _BigTrackTile(track: track),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: FractionallySizedBox(
+                              heightFactor: track.channel == big.selectedChannel
+                                  ? 1.0
+                                  : 0.68,
+                              child: _TrackColumn(
+                                track: track,
+                                name: big.nameOf(track.channel),
+                                selected: track.channel == big.selectedChannel,
+                                waveform: _waveformFor(track.channel),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -95,61 +153,63 @@ class _BigHeader extends StatelessWidget {
   }
 }
 
-class _BigTrackTile extends StatelessWidget {
-  const _BigTrackTile({required this.track});
+class _TrackColumn extends StatelessWidget {
+  const _TrackColumn({
+    required this.track,
+    required this.name,
+    required this.selected,
+    required this.waveform,
+  });
 
   final Track track;
-
-  String get _label => switch (track.state) {
-    TrackState.empty => 'RECORD',
-    TrackState.recording => 'RECORDING',
-    TrackState.overdubbing => 'OVERDUB',
-    TrackState.playing => 'PLAYING',
-    TrackState.stopped => 'STOPPED',
-  };
+  final String name;
+  final bool selected;
+  final Float32List waveform;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final accent = looper.trackColor(track.channel);
-    final active = track.isCapturing || track.armed;
+    final recording = track.state == TrackState.recording;
     final bloc = context.read<LooperBloc>();
+    final borderColor = selected
+        ? Colors.white
+        : (track.isCapturing || track.armed ? accent : looper.tileBorder);
 
     return GestureDetector(
       key: Key('bigpicture_tile_${track.channel}'),
-      onTap: () => bloc.add(LooperRecordPressed(track.channel)),
+      onTap: () {
+        context.read<BigPictureCubit>().select(track.channel);
+        bloc.add(LooperRecordPressed(track.channel));
+      },
       onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
+      child: Container(
         decoration: BoxDecoration(
           color: looper.tileBackground,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: active ? accent : looper.tileBorder,
-            width: active ? 3 : 1.5,
-          ),
-          boxShadow: active
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor, width: selected ? 3 : 1.5),
+          boxShadow: track.isCapturing
               ? [
                   BoxShadow(
-                    color: accent.withValues(alpha: 0.4),
+                    color: (recording ? looper.recordColor : accent).withValues(
+                      alpha: 0.45,
+                    ),
                     blurRadius: 18,
                   ),
                 ]
               : null,
         ),
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(14),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                CircleAvatar(radius: 8, backgroundColor: accent),
-                const SizedBox(width: 10),
                 Text(
-                  'TRACK ${track.channel + 1}',
+                  '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
-                    letterSpacing: 1.5,
+                    color: Colors.white70,
                   ),
                 ),
                 const Spacer(),
@@ -157,37 +217,75 @@ class _BigTrackTile extends StatelessWidget {
                   Text(
                     'ARMED',
                     key: Key('bigpicture_armed_${track.channel}'),
-                    style: theme.textTheme.labelLarge?.copyWith(
+                    style: theme.textTheme.labelMedium?.copyWith(
                       color: looper.armedColor,
                     ),
                   )
                 else if (track.isMultiple)
                   Text(
                     '×${track.multiple}',
-                    style: theme.textTheme.labelLarge?.copyWith(color: accent),
+                    style: theme.textTheme.labelMedium?.copyWith(color: accent),
                   ),
               ],
             ),
-            const Spacer(),
-            Text(
-              _label,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                color: track.state == TrackState.recording
-                    ? looper.recordColor
-                    : accent,
-                fontWeight: FontWeight.w800,
+            Expanded(
+              child: Center(
+                child: track.hasContent || track.isCapturing
+                    ? WaveformView(
+                        key: Key('bigpicture_waveform_${track.channel}'),
+                        samples: waveform,
+                        color: recording ? looper.recordColor : accent,
+                      )
+                    : const SizedBox.shrink(),
               ),
             ),
             const SizedBox(height: 10),
-            LinearProgressIndicator(
-              value: track.peak.clamp(0.0, 1.0),
-              minHeight: 6,
-              color: accent,
-              backgroundColor: looper.tileBorder,
+            GestureDetector(
+              key: Key('bigpicture_name_${track.channel}'),
+              onTap: () => _rename(context),
+              child: Text(
+                name,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5,
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _rename(BuildContext context) async {
+    final cubit = context.read<BigPictureCubit>();
+    final controller = TextEditingController(text: name);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rename track'),
+        content: TextField(
+          key: const Key('bigpicture_rename_field'),
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            key: const Key('bigpicture_rename_save'),
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result != null) await cubit.rename(track.channel, result);
   }
 }

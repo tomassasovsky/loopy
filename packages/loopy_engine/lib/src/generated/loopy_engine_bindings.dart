@@ -154,9 +154,11 @@ class LoopyEngineBindings {
       void Function(
           ffi.Pointer<le_engine>, int, ffi.Pointer<le_track_snapshot>)>();
 
-  /// Copies up to `max_points` decimated output-peak samples (a scrolling waveform
-  /// of the mixed output, oldest first, each in 0..1) into `out`; returns the
-  /// number written. Lock-free read of the audio thread's visualization ring.
+  /// Copies up to `max_points` of the loop waveform — peaks of the mixed output
+  /// indexed by position across exactly one master loop (bucket 0 = loop start),
+  /// each in 0..1 — into `out`; returns the number written. Pair with the
+  /// snapshot's master_position/master_length for the playhead. Lock-free read of
+  /// the audio thread's loop-visualization buffer; empty until a loop exists.
   int le_engine_read_visual(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<ffi.Float> out,
@@ -175,6 +177,34 @@ class LoopyEngineBindings {
               ffi.Int32)>>('le_engine_read_visual');
   late final _le_engine_read_visual = _le_engine_read_visualPtr.asFunction<
       int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Float>, int)>();
+
+  /// Like le_engine_read_visual but for a single track's own contribution
+  /// (channel 0..track_count-1), for per-track waveform thumbnails.
+  int le_engine_read_track_visual(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    ffi.Pointer<ffi.Float> out,
+    int max_points,
+  ) {
+    return _le_engine_read_track_visual(
+      engine,
+      channel,
+      out,
+      max_points,
+    );
+  }
+
+  late final _le_engine_read_track_visualPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(
+              ffi.Pointer<le_engine>,
+              ffi.Int32,
+              ffi.Pointer<ffi.Float>,
+              ffi.Int32)>>('le_engine_read_track_visual');
+  late final _le_engine_read_track_visual =
+      _le_engine_read_track_visualPtr.asFunction<
+          int Function(
+              ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)>();
 
   /// Name of the active duplex/playback device, or "" if not running. The returned
   /// pointer is owned by the engine and valid until the next start/stop.
