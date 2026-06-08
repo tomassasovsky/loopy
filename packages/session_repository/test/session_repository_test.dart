@@ -126,4 +126,40 @@ void main() {
     expect(File('$dir/track0.wav').existsSync(), isTrue);
     expect(File('$dir/track1.wav').existsSync(), isFalse);
   });
+
+  test('load throws when the bundle is missing', () async {
+    final engine = FakeSessionEngine();
+    await expectLater(
+      repoFor(engine).load('${tempDir.path}/does_not_exist'),
+      throwsA(isA<FileSystemException>()),
+    );
+  });
+
+  test('load refuses a session saved at a different sample rate', () async {
+    final source = FakeSessionEngine(sampleRate: 44100)
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+    final dir = '${tempDir.path}/sr';
+    await repoFor(source).save(dir);
+
+    final target = FakeSessionEngine(); // 48000 Hz
+    await expectLater(
+      repoFor(target).load(dir),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('save then load round-trips a single mono track exactly', () async {
+    final source = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([0.1, -0.2, 0.3, -0.4]));
+    final dir = '${tempDir.path}/mono';
+    await repoFor(source).save(dir);
+
+    final target = FakeSessionEngine();
+    await repoFor(target).load(dir);
+
+    expect(
+      target.exportTrack(0),
+      Float32List.fromList([0.1, -0.2, 0.3, -0.4]),
+    );
+  });
 }

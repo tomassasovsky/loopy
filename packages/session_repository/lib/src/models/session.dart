@@ -88,20 +88,29 @@ class Session {
   });
 
   /// Projects a [Session] from a decoded JSON map.
-  factory Session.fromJson(Map<String, dynamic> json) => Session(
-    sampleRate: (json['sampleRate'] as num).toInt(),
-    channels: (json['channels'] as num).toInt(),
-    baseLengthFrames: (json['baseLengthFrames'] as num).toInt(),
-    tempoBpm: (json['tempoBpm'] as num).toDouble(),
-    syncLoopToTempo: json['syncLoopToTempo'] as bool,
-    quantizeMode: QuantizeMode.values.byName(json['quantizeMode'] as String),
-    metronomeOn: json['metronomeOn'] as bool,
-    countInEnabled: json['countInEnabled'] as bool,
-    tracks: [
-      for (final t in json['tracks'] as List<dynamic>)
-        SessionTrack.fromJson(t as Map<String, dynamic>),
-    ],
-  );
+  ///
+  /// Throws [FormatException] for a manifest written by a newer, incompatible
+  /// schema version than this code understands.
+  factory Session.fromJson(Map<String, dynamic> json) {
+    final version = (json['version'] as num?)?.toInt() ?? formatVersion;
+    if (version > formatVersion) {
+      throw FormatException('unsupported session version $version');
+    }
+    return Session(
+      sampleRate: (json['sampleRate'] as num).toInt(),
+      channels: (json['channels'] as num).toInt(),
+      baseLengthFrames: (json['baseLengthFrames'] as num).toInt(),
+      tempoBpm: (json['tempoBpm'] as num).toDouble(),
+      syncLoopToTempo: json['syncLoopToTempo'] as bool,
+      quantizeMode: QuantizeMode.values.byName(json['quantizeMode'] as String),
+      metronomeOn: json['metronomeOn'] as bool,
+      countInEnabled: json['countInEnabled'] as bool,
+      tracks: [
+        for (final t in json['tracks'] as List<dynamic>)
+          SessionTrack.fromJson(t as Map<String, dynamic>),
+      ],
+    );
+  }
 
   /// The manifest schema version this code writes and accepts.
   static const int formatVersion = 1;

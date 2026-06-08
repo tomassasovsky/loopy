@@ -9,7 +9,7 @@ import 'package:loopy/session/session.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Session bundle actions in the looper app bar.
-enum _SessionAction { save, load, exportMixdown }
+enum _SessionAction { save, load, exportMixdown, exportStems }
 
 /// The multi-track looper view: a Chewie-2-style grid of channel strips with
 /// transport controls, level meters, volume, and the master loop position.
@@ -51,6 +51,8 @@ class LooperView extends StatelessWidget {
                     unawaited(cubit.loadSession());
                   case _SessionAction.exportMixdown:
                     unawaited(cubit.exportMixdown());
+                  case _SessionAction.exportStems:
+                    unawaited(cubit.exportStems());
                 }
               },
               itemBuilder: (_) => const [
@@ -65,6 +67,10 @@ class LooperView extends StatelessWidget {
                 PopupMenuItem(
                   value: _SessionAction.exportMixdown,
                   child: Text('Export mixdown'),
+                ),
+                PopupMenuItem(
+                  value: _SessionAction.exportStems,
+                  child: Text('Export stems'),
                 ),
               ],
             ),

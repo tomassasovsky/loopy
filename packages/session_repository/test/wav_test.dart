@@ -46,5 +46,22 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test('rejects a non-float (PCM16) format', () {
+      final bytes = WavCodec.encodeFloat32(
+        samples: Float32List.fromList([0, 0]),
+        sampleRate: 48000,
+        channels: 1,
+      );
+      ByteData.view(bytes.buffer).setUint16(20, 1, Endian.little); // PCM int
+      expect(() => WavCodec.decodeFloat32(bytes), throwsFormatException);
+    });
+
+    test('rejects a WAVE with no data chunk', () {
+      final header = Uint8List(12)
+        ..setRange(0, 4, 'RIFF'.codeUnits)
+        ..setRange(8, 12, 'WAVE'.codeUnits);
+      expect(() => WavCodec.decodeFloat32(header), throwsFormatException);
+    });
   });
 }

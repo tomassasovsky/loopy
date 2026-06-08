@@ -50,5 +50,10 @@ void main() {
       expect(session.tracks.first, isNot(session.tracks[1]));
       expect(session.tracks.first, session.tracks.first);
     });
+
+    test('rejects a newer, incompatible manifest version', () {
+      final json = session.toJson()..['version'] = Session.formatVersion + 1;
+      expect(() => Session.fromJson(json), throwsFormatException);
+    });
   });
 }

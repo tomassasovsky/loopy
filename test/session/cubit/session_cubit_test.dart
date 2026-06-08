@@ -76,7 +76,22 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
-      'emits failure when the repository throws',
+      'exportStems writes stems under a stems folder',
+      setUp: () => when(
+        () => repository.exportStems(any()),
+      ).thenAnswer((_) async {}),
+      build: build,
+      act: (cubit) => cubit.exportStems(),
+      expect: () => const [
+        SessionState(status: SessionStatus.working),
+        SessionState(status: SessionStatus.success, message: 'Stems exported'),
+      ],
+      verify: (_) =>
+          verify(() => repository.exportStems('/tmp/x/stems')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'saveSession emits failure when the repository throws',
       setUp: () =>
           when(() => repository.save(any())).thenThrow(Exception('disk full')),
       build: build,
@@ -86,6 +101,21 @@ void main() {
         SessionState(
           status: SessionStatus.failure,
           message: 'Exception: disk full',
+        ),
+      ],
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'loadSession emits failure when the repository throws',
+      setUp: () =>
+          when(() => repository.load(any())).thenThrow(Exception('no bundle')),
+      build: build,
+      act: (cubit) => cubit.loadSession(),
+      expect: () => const [
+        SessionState(status: SessionStatus.working),
+        SessionState(
+          status: SessionStatus.failure,
+          message: 'Exception: no bundle',
         ),
       ],
     );

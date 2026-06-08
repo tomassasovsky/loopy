@@ -218,17 +218,32 @@ void main() {
     expect(find.text('×2'), findsOneWidget);
   });
 
-  testWidgets('session menu saves via the cubit', (tester) async {
+  testWidgets('session menu dispatches each action to the cubit', (
+    tester,
+  ) async {
     when(() => sessionCubit.saveSession()).thenAnswer((_) async {});
+    when(() => sessionCubit.loadSession()).thenAnswer((_) async {});
+    when(() => sessionCubit.exportMixdown()).thenAnswer((_) async {});
+    when(() => sessionCubit.exportStems()).thenAnswer((_) async {});
     seed(const LooperState(tracks: [Track()]));
     await pumpView(tester);
 
-    await tester.tap(find.byKey(const Key('looper_session_button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Save session'));
-    await tester.pumpAndSettle();
+    Future<void> selectMenu(String label) async {
+      await tester.tap(find.byKey(const Key('looper_session_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    await selectMenu('Save session');
+    await selectMenu('Load session');
+    await selectMenu('Export mixdown');
+    await selectMenu('Export stems');
 
     verify(() => sessionCubit.saveSession()).called(1);
+    verify(() => sessionCubit.loadSession()).called(1);
+    verify(() => sessionCubit.exportMixdown()).called(1);
+    verify(() => sessionCubit.exportStems()).called(1);
   });
 
   testWidgets('undo is disabled without an undo layer', (tester) async {
