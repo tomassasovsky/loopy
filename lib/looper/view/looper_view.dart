@@ -246,6 +246,13 @@ class _TrackStrip extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                 ],
+                if (track.isMultiple) ...[
+                  Chip(
+                    key: Key('looper_multiple_chip_$ch'),
+                    label: Text('×${track.multiple}'),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 Chip(
                   key: Key('looper_trackState_chip_$ch'),
                   label: Text(track.state.name),
