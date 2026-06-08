@@ -1451,7 +1451,9 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   /* Importing targets an empty track: its buffer is not read by the audio
    * thread, so the control thread can fill it directly. */
   if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
-  if (frames > engine->max_loop_frames) frames = engine->max_loop_frames;
+  /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
+   * so a corrupted/foreign loop fails loudly instead of loading clipped. */
+  if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
   const int live = load_i32(&t->a_live);
   if (t->pool[live] == NULL) return LE_ERR_INVALID;
   const size_t span = (size_t)frames * (size_t)engine->channels;

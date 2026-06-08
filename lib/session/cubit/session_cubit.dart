@@ -33,6 +33,12 @@ class SessionCubit extends Cubit<SessionState> {
     'Mixdown exported',
   );
 
+  /// Exports each track as a separate stem WAV under a `stems` folder.
+  Future<void> exportStems() => _run(
+    (dir) => _repository.exportStems('$dir/stems'),
+    'Stems exported',
+  );
+
   Future<void> _run(
     Future<void> Function(String directory) action,
     String successMessage,

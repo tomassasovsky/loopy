@@ -2,8 +2,8 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
 import 'package:loopy/bootstrap.dart';
+import 'package:loopy/session_directory.dart';
 import 'package:loopy_engine/loopy_engine.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -23,13 +23,7 @@ Future<void> main() async {
       controllerRepository: controllerRepository,
       settings: settings,
       sessionRepository: sessionRepository,
-      sessionDirectory: _sessionDirectory,
+      sessionDirectory: defaultSessionDirectory,
     ),
   );
-}
-
-/// Resolves the single on-disk session bundle directory under app documents.
-Future<String> _sessionDirectory() async {
-  final dir = await getApplicationDocumentsDirectory();
-  return '${dir.path}/loopy_session';
 }

@@ -78,12 +78,26 @@ class SessionRepository {
       jsonDecode(manifest) as Map<String, dynamic>,
     );
 
-    // Clear the current session and wait for the engine to settle to empty.
+    // The stems are raw PCM at the saved rate; loading them on a device running
+    // a different rate would play the session back at the wrong pitch (there is
+    // no resampling), so refuse rather than do so silently.
     final current = _engine.snapshot();
+    if (current.sampleRate > 0 &&
+        session.sampleRate > 0 &&
+        current.sampleRate != session.sampleRate) {
+      throw StateError(
+        'session sample rate ${session.sampleRate} Hz does not match the '
+        'device rate ${current.sampleRate} Hz',
+      );
+    }
+
+    // Clear the current session and wait for the engine to settle to empty.
     for (var i = 0; i < current.tracks.length; i++) {
       _engine.clear(channel: i);
     }
-    await _awaitCleared();
+    if (!await _awaitCleared()) {
+      throw StateError('engine did not clear before loading the session');
+    }
 
     // Apply tempo/sync/quantize before committing so the derived beat grid
     // matches the saved session, then transport toggles.
@@ -96,9 +110,18 @@ class SessionRepository {
 
     for (final track in session.tracks) {
       final bytes = await File('$directory/${track.stem}').readAsBytes();
-      _engine.importTrack(track.channel, WavCodec.decodeFloat32(bytes).samples);
+      final result = _engine.importTrack(
+        track.channel,
+        WavCodec.decodeFloat32(bytes).samples,
+      );
+      if (!result.isOk) {
+        throw StateError('failed to import ${track.stem}: ${result.name}');
+      }
     }
-    _engine.commitSession(session.baseLengthFrames);
+    final committed = _engine.commitSession(session.baseLengthFrames);
+    if (!committed.isOk) {
+      throw StateError('failed to start the session: ${committed.name}');
+    }
 
     for (final track in session.tracks) {
       _engine
@@ -143,7 +166,13 @@ class SessionRepository {
     final tracks = <SessionTrack>[];
     for (var i = 0; i < snapshot.tracks.length; i++) {
       final track = snapshot.tracks[i];
-      if (track.state == TrackState.empty || track.lengthFrames <= 0) continue;
+      // Only export settled tracks: a recording/overdubbing track's buffer is
+      // being written by the audio thread, so exporting it would race.
+      if (track.state != TrackState.playing &&
+          track.state != TrackState.stopped) {
+        continue;
+      }
+      if (track.lengthFrames <= 0) continue;
       final pcm = _engine.exportTrack(i);
       if (pcm.isEmpty) continue;
       stems[i] = pcm;
@@ -206,15 +235,18 @@ class SessionRepository {
     return mix;
   }
 
-  Future<void> _awaitCleared() async {
+  /// Polls until every track reports empty and the master is reset, returning
+  /// whether the engine settled within [_clearPollAttempts].
+  Future<bool> _awaitCleared() async {
     for (var attempt = 0; attempt < _clearPollAttempts; attempt++) {
       final snapshot = _engine.snapshot();
       final cleared =
           snapshot.masterLengthFrames == 0 &&
           snapshot.tracks.every((t) => t.state == TrackState.empty);
-      if (cleared) return;
+      if (cleared) return true;
       await Future<void>.delayed(_clearPollInterval);
     }
+    return false;
   }
 }
 
