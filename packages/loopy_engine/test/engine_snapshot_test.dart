@@ -46,7 +46,16 @@ void main() {
           ..input_peak = 0.5
           ..output_rms = 0.125
           ..latency_state = 2
-          ..measured_latency_ms = 7.5;
+          ..measured_latency_ms = 7.5
+          ..master_length_frames = 96000
+          ..master_position_frames = 1200
+          ..track_state = 3
+          ..track_volume = 0.75
+          ..track_muted = 1
+          ..track_length_frames = 96000
+          ..track_undo_depth = 1
+          ..track_rms = 0.4
+          ..track_peak = 0.6;
 
         final snapshot = EngineSnapshot.fromNative(ptr.ref);
 
@@ -61,9 +70,27 @@ void main() {
         expect(snapshot.outputRms, closeTo(0.125, 1e-6));
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
+        expect(snapshot.masterLengthFrames, 96000);
+        expect(snapshot.masterPositionFrames, 1200);
+        expect(snapshot.trackState, TrackState.playing);
+        expect(snapshot.trackVolume, closeTo(0.75, 1e-6));
+        expect(snapshot.trackMuted, isTrue);
+        expect(snapshot.trackLengthFrames, 96000);
+        expect(snapshot.trackUndoDepth, 1);
+        expect(snapshot.trackRms, closeTo(0.4, 1e-6));
+        expect(snapshot.trackPeak, closeTo(0.6, 1e-6));
       } finally {
         calloc.free(ptr);
       }
+    });
+
+    test('maps every TrackState code', () {
+      expect(TrackState.fromCode(0), TrackState.empty);
+      expect(TrackState.fromCode(1), TrackState.recording);
+      expect(TrackState.fromCode(2), TrackState.overdubbing);
+      expect(TrackState.fromCode(3), TrackState.playing);
+      expect(TrackState.fromCode(4), TrackState.stopped);
+      expect(TrackState.fromCode(99), TrackState.empty);
     });
 
     test('maps running == 0 to isRunning false', () {

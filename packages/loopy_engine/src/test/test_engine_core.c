@@ -8,15 +8,18 @@
  * Build & run (macOS):
  *   clang -std=c11 -I src -I src/miniaudio \
  *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
- *     src/miniaudio_impl.c \
+ *     src/loop_clock.c src/miniaudio_impl.c \
  *     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
  *     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
  *   /tmp/loopy_core_tests
  */
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "engine_internal.h"
 #include "lockfree_ring.h"
+#include "loop_clock.h"
 #include "loopy_engine_api.h"
 
 static int g_failures = 0;
@@ -125,6 +128,163 @@ static void test_null_safety(void) {
   CHECK(le_version() != NULL);
 }
 
+/* ---- loop_clock ---- */
+
+static void test_loop_clock(void) {
+  printf("test_loop_clock\n");
+  le_loop_clock clock;
+  le_loop_clock_reset(&clock);
+  CHECK(clock.length == 0);
+  CHECK(le_loop_clock_tick(&clock) == 0); /* unset never ticks */
+
+  le_loop_clock_set_length(&clock, 3);
+  CHECK(clock.position == 0);
+  CHECK(le_loop_clock_tick(&clock) == 0); /* -> 1 */
+  CHECK(clock.position == 1);
+  CHECK(le_loop_clock_tick(&clock) == 0); /* -> 2 */
+  CHECK(le_loop_clock_tick(&clock) == 1); /* wrap -> 0 */
+  CHECK(clock.position == 0);
+
+  le_loop_clock_set_length(&clock, -5); /* invalid resets */
+  CHECK(clock.length == 0);
+}
+
+/* ---- looper DSP (mono, device-free via le_engine_configure/process) ---- */
+
+#define LOOP_N 4
+
+/* Processes `frames` mono frames of constant `value`, capturing output. */
+static void process_const(le_engine* e, float value, int frames, float* out) {
+  float in[64];
+  for (int i = 0; i < frames; ++i) in[i] = value;
+  le_engine_process(e, out, in, (uint32_t)frames);
+}
+
+static le_engine* make_configured_engine(void) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1000);
+  return e;
+}
+
+static void drain(le_engine* e) {
+  float out[8];
+  process_const(e, 0.0f, 0, out); /* frames=0 just drains the ring */
+}
+
+static void test_looper_record_then_play(void) {
+  printf("test_looper_record_then_play\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_engine_record(e) == LE_OK); /* EMPTY -> RECORDING */
+  process_const(e, 1.0f, LOOP_N, out); /* capture 1.0 x N */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.track_state == LE_TRACK_RECORDING);
+  CHECK(s.track_length_frames == LOOP_N);
+
+  CHECK(le_engine_record(e) == LE_OK); /* finalize -> PLAYING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.track_state == LE_TRACK_PLAYING);
+  CHECK(s.master_length_frames == LOOP_N);
+
+  /* Playback reproduces the recorded loop (no input monitoring configured). */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_overdub_and_undo(void) {
+  printf("test_looper_overdub_and_undo\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  le_engine_record(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e); /* finalize -> PLAYING, loop == 1.0 */
+  drain(e);
+
+  /* Overdub one loop of +0.5 -> loop becomes 1.5. */
+  CHECK(le_engine_record(e) == LE_OK); /* snapshot taken, -> OVERDUBBING */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.track_undo_depth == 1);
+  process_const(e, 0.5f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+
+  le_engine_record(e); /* OVERDUBBING -> PLAYING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.track_state == LE_TRACK_PLAYING);
+
+  /* Undo swaps back to the pre-overdub buffer at the next loop boundary. */
+  CHECK(le_engine_undo(e) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out); /* boundary crossed at end of this loop */
+  process_const(e, 0.0f, LOOP_N, out); /* now playing pre-overdub */
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.track_undo_depth == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_volume_and_mute(void) {
+  printf("test_looper_volume_and_mute\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  le_engine_record(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e); /* PLAYING, loop == 1.0 */
+  drain(e);
+
+  CHECK(le_engine_set_track_volume(e, 0.5f) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 0.5f) < 1e-6f);
+
+  CHECK(le_engine_set_track_mute(e, 1) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_clear(void) {
+  printf("test_looper_clear\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  le_engine_record(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e);
+  drain(e);
+
+  CHECK(le_engine_clear(e) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.track_state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+
+  /* Cleared track is silent. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_requires_configure(void) {
+  printf("test_looper_requires_configure\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_engine_record(e) == LE_ERR_NOT_RUNNING); /* not configured yet */
+  le_engine_configure(e, 48000, 1, 100);
+  CHECK(le_engine_record(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_ring_init_rejects_bad_capacity();
@@ -133,6 +293,12 @@ int main(void) {
   test_ring_wraps_around();
   test_engine_lifecycle_without_device();
   test_null_safety();
+  test_loop_clock();
+  test_looper_record_then_play();
+  test_looper_overdub_and_undo();
+  test_looper_volume_and_mute();
+  test_looper_clear();
+  test_looper_requires_configure();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

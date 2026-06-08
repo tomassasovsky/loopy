@@ -5,9 +5,10 @@
  * opaque handle; no C++; no callbacks into Dart. The audio callback that backs
  * this API performs no allocation, locking, or I/O (see engine.c).
  *
- * Phase 1 surface: device lifecycle, duplex passthrough, level metering,
- * a loopback round-trip latency harness, and the command-ring foundation that
- * later phases use to drive the looper.
+ * Scope: device lifecycle, duplex passthrough, level metering, a loopback
+ * round-trip latency harness, the lock-free command ring, and a single-track
+ * looper (record / master-loop length / overdub / loop playback / mix /
+ * volume / mute / clear / one-level undo). Multi-track lands in a later phase.
  */
 #ifndef LOOPY_ENGINE_API_H
 #define LOOPY_ENGINE_API_H
@@ -41,11 +42,26 @@ typedef enum le_latency_state {
   LE_LATENCY_TIMEOUT = 3,   /* no loopback detected within the window */
 } le_latency_state;
 
-/* Command codes posted into the engine's SPSC ring. Phase 1 only needs the
- * latency trigger; later phases extend this set (record/overdub/stop/...). */
+/* Per-track state machine, mirrored in le_snapshot.track_state. */
+typedef enum le_track_state {
+  LE_TRACK_EMPTY = 0,
+  LE_TRACK_RECORDING = 1,    /* capturing the first pass (defines the loop) */
+  LE_TRACK_OVERDUBBING = 2,  /* summing input into the existing loop */
+  LE_TRACK_PLAYING = 3,
+  LE_TRACK_STOPPED = 4,      /* buffer retained, playback halted */
+} le_track_state;
+
+/* Command codes posted into the engine's SPSC ring. */
 typedef enum le_command_code {
   LE_CMD_NONE = 0,
   LE_CMD_MEASURE_LATENCY = 1,
+  LE_CMD_RECORD = 2,    /* record / finalize-loop / toggle overdub */
+  LE_CMD_STOP = 3,      /* halt playback (retain buffer) */
+  LE_CMD_PLAY = 4,      /* resume playback */
+  LE_CMD_CLEAR = 5,     /* erase the track, back to empty */
+  LE_CMD_UNDO = 6,      /* remove the last overdub layer */
+  LE_CMD_SET_VOLUME = 7,/* arg_f = 0..1 */
+  LE_CMD_SET_MUTE = 8,  /* arg_f = 0 (unmute) or 1 (mute) */
 } le_command_code;
 
 /* Requested device configuration. Any field set to 0 uses the device default
@@ -54,7 +70,8 @@ typedef struct le_config {
   int32_t sample_rate;
   int32_t buffer_frames;
   int32_t channels;
-  int32_t passthrough; /* 1 = copy captured input straight to the output */
+  int32_t passthrough;     /* 1 = copy captured input straight to the output */
+  int32_t max_loop_frames; /* per-track buffer cap; 0 => default (8 min @ sr) */
 } le_config;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -66,12 +83,25 @@ typedef struct le_snapshot {
   int32_t buffer_frames;
   int32_t channels;
   uint64_t frames_processed;  /* total frames seen by the callback */
-  uint32_t xrun_count;        /* reserved; xrun detection lands in Phase 2 (0) */
+  uint32_t xrun_count;        /* reserved; xrun detection lands later (0) */
   float input_rms;            /* 0..1 */
   float input_peak;           /* 0..1 */
   float output_rms;           /* 0..1 */
   int32_t latency_state;      /* le_latency_state */
   double measured_latency_ms; /* valid when latency_state == LE_LATENCY_DONE */
+
+  /* Looper transport. */
+  int32_t master_length_frames;   /* 0 until the first recording is finalized */
+  int32_t master_position_frames; /* current loop playhead */
+
+  /* Single track (channel 0). */
+  int32_t track_state;          /* le_track_state */
+  float track_volume;           /* 0..1 */
+  int32_t track_muted;          /* 0/1 */
+  int32_t track_length_frames;  /* frames captured (== master once finalized) */
+  int32_t track_undo_depth;     /* 0 or 1 (one-level undo) */
+  float track_rms;              /* 0..1 */
+  float track_peak;             /* 0..1 */
 } le_snapshot;
 
 /* Opaque engine handle. */
@@ -87,7 +117,8 @@ LE_EXPORT le_engine* le_engine_create(void);
 LE_EXPORT void le_engine_destroy(le_engine* engine);
 
 /* Opens the default duplex device with `config` and starts the audio callback.
- * Returns LE_OK or an le_result error. */
+ * Allocates the track buffers before the device starts. Returns LE_OK or an
+ * le_result error. */
 LE_EXPORT int32_t le_engine_start(le_engine* engine, const le_config* config);
 
 /* Stops and closes the device. Returns LE_OK or an le_result error. */
@@ -107,9 +138,22 @@ LE_EXPORT const char* le_engine_device_name(le_engine* engine);
 LE_EXPORT int32_t le_engine_post_command(le_engine* engine, int32_t code,
                                          int32_t arg_i, float arg_f);
 
-/* Convenience: triggers a single loopback latency measurement. Equivalent to
- * posting LE_CMD_MEASURE_LATENCY. Requires an output->input loopback path. */
+/* Convenience: triggers a single loopback latency measurement. Requires an
+ * output->input loopback path. */
 LE_EXPORT int32_t le_engine_measure_latency(le_engine* engine);
+
+/* ---- looper control (channel 0) ---- *
+ * These post ring commands. le_engine_record additionally takes the one-level
+ * undo snapshot on the calling thread when it begins an overdub (the track is
+ * read-only on the audio thread at that moment), so the audio callback only
+ * performs an O(1) buffer swap to undo — never a copy. */
+LE_EXPORT int32_t le_engine_record(le_engine* engine);
+LE_EXPORT int32_t le_engine_stop_track(le_engine* engine);
+LE_EXPORT int32_t le_engine_play(le_engine* engine);
+LE_EXPORT int32_t le_engine_clear(le_engine* engine);
+LE_EXPORT int32_t le_engine_undo(le_engine* engine);
+LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, float volume);
+LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t muted);
 
 #ifdef __cplusplus
 }
