@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -16,6 +17,7 @@ void main() {
       );
       final controllerRepository = ControllerRepository(sources: const []);
       final settings = SettingsRepository(store: FakeKeyValueStore());
+      final sessionRepository = SessionRepository(engine: FakeAudioEngine());
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
 
@@ -24,6 +26,8 @@ void main() {
           repository: repository,
           controllerRepository: controllerRepository,
           settings: settings,
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
         ),
       );
       await tester.pump();

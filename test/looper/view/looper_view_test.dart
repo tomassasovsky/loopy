@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/session/session.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../helpers/helpers.dart';
@@ -13,10 +14,22 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _MockSessionCubit extends MockCubit<SessionState>
+    implements SessionCubit {}
+
 void main() {
   late LooperBloc bloc;
+  late SessionCubit sessionCubit;
 
-  setUp(() => bloc = _MockLooperBloc());
+  setUp(() {
+    bloc = _MockLooperBloc();
+    sessionCubit = _MockSessionCubit();
+    whenListen(
+      sessionCubit,
+      const Stream<SessionState>.empty(),
+      initialState: const SessionState(),
+    );
+  });
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
@@ -27,8 +40,11 @@ void main() {
     return tester.pumpApp(
       RepositoryProvider<LooperRepository>.value(
         value: _MockLooperRepository(),
-        child: BlocProvider<LooperBloc>.value(
-          value: bloc,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<SessionCubit>.value(value: sessionCubit),
+          ],
           child: const LooperView(),
         ),
       ),
@@ -200,6 +216,19 @@ void main() {
 
     expect(find.byKey(const Key('looper_multiple_chip_0')), findsOneWidget);
     expect(find.text('×2'), findsOneWidget);
+  });
+
+  testWidgets('session menu saves via the cubit', (tester) async {
+    when(() => sessionCubit.saveSession()).thenAnswer((_) async {});
+    seed(const LooperState(tracks: [Track()]));
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('looper_session_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save session'));
+    await tester.pumpAndSettle();
+
+    verify(() => sessionCubit.saveSession()).called(1);
   });
 
   testWidgets('undo is disabled without an undo layer', (tester) async {
