@@ -8,7 +8,6 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
-import 'package:loopy/visualizer/visualizer.dart';
 
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
 /// of tall colored track columns, each showing its own loop-waveform thumbnail
@@ -229,14 +228,17 @@ class _TrackColumn extends StatelessWidget {
               ],
             ),
             Expanded(
-              child: Center(
-                child: track.hasContent || track.isCapturing
-                    ? WaveformView(
-                        key: Key('bigpicture_waveform_${track.channel}'),
-                        samples: waveform,
-                        color: recording ? looper.recordColor : accent,
-                      )
-                    : const SizedBox.shrink(),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  width: 80,
+                  child: FractionallySizedBox(
+                    heightFactor: (track.peak * 10).clamp(0.0, 1.0),
+                    child: Container(
+                      color: recording ? looper.recordColor : accent,
+                    ),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 10),
