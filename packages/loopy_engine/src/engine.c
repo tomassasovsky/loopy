@@ -77,6 +77,7 @@ struct le_engine {
   /* Latency harness (audio-thread-local + published state). */
   int lat_active;
   int lat_emitted;
+  int32_t lat_emit_remaining; /* frames left to broadcast the pulse */
   uint64_t lat_frames_since_emit;
 
   char device_name[256];
@@ -177,6 +178,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
     case LE_CMD_MEASURE_LATENCY:
       e->lat_active = 1;
       e->lat_emitted = 0;
+      /* Emit for 10 ms so the pulse survives D/A → cable → A/D. */
+      e->lat_emit_remaining = (e->sample_rate > 0 ? e->sample_rate : 48000) / 100;
       e->lat_frames_since_emit = 0;
       store_i32(&e->a_latency_state, LE_LATENCY_MEASURING);
       break;
