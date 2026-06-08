@@ -130,6 +130,27 @@ void main() {
       expect(engine.lastMuted, isTrue);
     });
 
+    test('startEngine stores the last successful config', () {
+      const config = EngineConfig(
+        sampleRate: 96000,
+        bufferFrames: 64,
+      );
+      final repo = buildRepo();
+
+      expect(repo.lastEngineConfig, isNull);
+      expect(repo.startEngine(config), EngineResult.ok);
+      expect(repo.lastEngineConfig, config);
+    });
+
+    test('startEngine does not store config when start fails', () {
+      engine.startResult = EngineResult.device;
+      const config = EngineConfig(sampleRate: 96000);
+      final repo = buildRepo();
+
+      expect(repo.startEngine(config), EngineResult.device);
+      expect(repo.lastEngineConfig, isNull);
+    });
+
     test('engineVersion is forwarded', () {
       final repo = buildRepo();
       expect(repo.engineVersion, 'fake-engine');

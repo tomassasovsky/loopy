@@ -20,6 +20,8 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => stateController.stream);
+    when(() => repository.state).thenReturn(const LooperState());
+    when(() => repository.lastEngineConfig).thenReturn(null);
     when(() => repository.startEngine(any())).thenReturn(EngineResult.ok);
     when(repository.stopEngine).thenReturn(EngineResult.ok);
     when(repository.measureLatency).thenReturn(EngineResult.ok);
@@ -38,6 +40,35 @@ void main() {
     expect(cubit.state.monitorInput, isTrue);
     expect(cubit.state.mergeToMono, isTrue);
     expect(cubit.state.status, AudioSetupStatus.stopped);
+  });
+
+  test('hydrates from the repository when the engine is already running', () {
+    when(() => repository.state).thenReturn(
+      const LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett',
+          sampleRate: 96000,
+          bufferFrames: 256,
+          isConnected: true,
+        ),
+      ),
+    );
+    when(() => repository.lastEngineConfig).thenReturn(
+      const EngineConfig(
+        sampleRate: 96000,
+        bufferFrames: 256,
+      ),
+    );
+
+    final cubit = buildCubit();
+    addTearDown(cubit.close);
+
+    expect(cubit.state.status, AudioSetupStatus.running);
+    expect(cubit.state.sampleRate, 96000);
+    expect(cubit.state.bufferFrames, 256);
+    expect(cubit.state.monitorInput, isFalse);
+    expect(cubit.state.mergeToMono, isFalse);
+    expect(cubit.state.engineStatus.deviceName, 'Scarlett');
   });
 
   blocTest<AudioSetupCubit, AudioSetupState>(

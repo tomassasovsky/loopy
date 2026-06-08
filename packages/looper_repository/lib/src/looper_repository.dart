@@ -34,12 +34,17 @@ class LooperRepository {
   late final StreamController<LooperState> _controller;
   StreamSubscription<void>? _tickerSub;
   LooperState? _last;
+  EngineConfig? _lastEngineConfig;
 
   /// Distinct stream of looper states.
   Stream<LooperState> get looperState => _controller.stream;
 
   /// The current state, read synchronously from the engine.
   LooperState get state => _project(_engine.snapshot());
+
+  /// The most recent config passed to [startEngine], or `null` before the first
+  /// successful start.
+  EngineConfig? get lastEngineConfig => _lastEngineConfig;
 
   /// The engine + miniaudio version string.
   String get engineVersion => _engine.version;
@@ -90,7 +95,11 @@ class LooperRepository {
   );
 
   /// Opens the audio device and starts processing.
-  EngineResult startEngine(EngineConfig config) => _engine.start(config);
+  EngineResult startEngine(EngineConfig config) {
+    final result = _engine.start(config);
+    if (result.isOk) _lastEngineConfig = config;
+    return result;
+  }
 
   /// Closes the audio device.
   EngineResult stopEngine() => _engine.stop();
