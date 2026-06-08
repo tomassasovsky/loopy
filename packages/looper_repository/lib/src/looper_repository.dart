@@ -95,6 +95,7 @@ class LooperRepository {
           undoDepth: s.tracks[i].undoDepth,
           redoDepth: s.tracks[i].redoDepth,
           armed: s.armedChannel == i,
+          multiple: s.tracks[i].multiple,
         ),
     ],
     status: EngineStatus(

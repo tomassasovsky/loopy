@@ -183,6 +183,25 @@ void main() {
     expect(find.text('armed'), findsOneWidget);
   });
 
+  testWidgets('a multi-loop track shows its multiple chip', (tester) async {
+    seed(
+      const LooperState(
+        transport: TransportState(isRunning: true, masterLengthFrames: 48000),
+        tracks: [
+          Track(
+            state: TrackState.playing,
+            lengthFrames: 96000,
+            multiple: 2,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    expect(find.byKey(const Key('looper_multiple_chip_0')), findsOneWidget);
+    expect(find.text('×2'), findsOneWidget);
+  });
+
   testWidgets('undo is disabled without an undo layer', (tester) async {
     seed(
       const LooperState(tracks: [Track(state: TrackState.playing)]),

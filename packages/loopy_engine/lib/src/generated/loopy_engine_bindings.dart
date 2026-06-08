@@ -715,9 +715,13 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int muted;
 
-  /// frames captured (== master once finalized)
+  /// frames captured (== multiple * master length)
   @ffi.Int32()
   external int length_frames;
+
+  /// track length in whole base loops (>= 1)
+  @ffi.Int32()
+  external int multiple;
 
   /// available undo steps (overdub layers)
   @ffi.Int32()

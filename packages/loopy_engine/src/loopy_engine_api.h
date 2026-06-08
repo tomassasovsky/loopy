@@ -119,7 +119,8 @@ typedef struct le_track_snapshot {
   int32_t state;         /* le_track_state */
   float volume;          /* 0..1 */
   int32_t muted;         /* 0/1 */
-  int32_t length_frames; /* frames captured (== master once finalized) */
+  int32_t length_frames; /* frames captured (== multiple * master length) */
+  int32_t multiple;      /* track length in whole base loops (>= 1) */
   int32_t undo_depth;    /* available undo steps (overdub layers) */
   int32_t redo_depth;    /* available redo steps */
   float rms;             /* 0..1 */

@@ -17,6 +17,7 @@ class Track extends Equatable {
     this.undoDepth = 0,
     this.redoDepth = 0,
     this.armed = false,
+    this.multiple = 1,
   });
 
   /// Track channel index (always 0 in the single-track phase).
@@ -53,6 +54,12 @@ class Track extends Equatable {
   /// grid boundary to begin capturing.
   final bool armed;
 
+  /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
+  final int multiple;
+
+  /// Whether this track spans more than one base loop.
+  bool get isMultiple => multiple > 1;
+
   /// Whether the track holds recorded audio.
   bool get hasContent => state != TrackState.empty && lengthFrames > 0;
 
@@ -79,5 +86,6 @@ class Track extends Equatable {
     undoDepth,
     redoDepth,
     armed,
+    multiple,
   ];
 }
