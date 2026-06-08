@@ -95,6 +95,7 @@ struct le_engine {
   _Atomic int32_t a_count_in_enabled;
   _Atomic int32_t a_counting_in;
   _Atomic int32_t a_current_beat;
+  _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
   /* Tracks. */
   le_track tracks[LE_MAX_TRACKS];
@@ -175,6 +176,15 @@ static int32_t load_i32(_Atomic int32_t* slot) {
 }
 static void store_i32(_Atomic int32_t* slot, int32_t v) {
   atomic_store_explicit(slot, v, memory_order_relaxed);
+}
+
+/* Wraps `pos - offset` into [0, len). Used to write captured input at the
+ * latency-compensated loop position so overdubs align with what was heard. */
+static int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
+  if (len <= 0) return pos;
+  int32_t p = (pos - offset) % len;
+  if (p < 0) p += len;
+  return p;
 }
 
 /* ---- tempo helpers (audio thread) ---- */
@@ -407,6 +417,9 @@ static void apply_command(le_engine* e, const le_command* cmd) {
     case LE_CMD_TAP_TEMPO:
       handle_tap(e);
       break;
+    case LE_CMD_SET_RECORD_OFFSET:
+      store_i32(&e->a_record_offset, cmd->arg_i > 0 ? cmd->arg_i : 0);
+      break;
     default:
       break;
   }
@@ -473,6 +486,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
                               memory_order_relaxed);
         store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+        /* The measured round-trip is exactly the record offset that aligns
+         * overdubs; apply it automatically (the UI can override). */
+        store_i32(&e->a_record_offset, (int32_t)e->lat_frames_since_emit);
         e->lat_active = 0;
       } else if (e->lat_frames_since_emit >= attempt_frames) {
         if (e->lat_attempts_remaining > 1) {
@@ -497,15 +513,17 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     float* buf[LE_MAX_TRACKS];
     float vol[LE_MAX_TRACKS];
     int mut[LE_MAX_TRACKS];
-    int any_overdub = 0;
     for (int t = 0; t < tc; ++t) {
       st[t] = load_i32(&e->tracks[t].a_state);
       buf[t] = e->tracks[t].buf[load_i32(&e->tracks[t].a_live_index)];
       vol[t] = load_f32(&e->tracks[t].a_vol_bits);
       mut[t] = load_i32(&e->tracks[t].a_muted);
-      if (st[t] == LE_TRACK_OVERDUBBING) any_overdub = 1;
     }
-    const int monitor_on = load_i32(&e->a_monitor) && !any_overdub;
+    /* Latency compensation: captured input is recorded this many frames earlier
+     * so it aligns with what the player heard. Monitoring stays live (it is no
+     * longer folded into the loop buffer at the playhead). */
+    const int32_t offset = load_i32(&e->a_record_offset);
+    const int monitor_on = load_i32(&e->a_monitor);
     const int32_t pos = e->clock.position;
 
     /* Metronome + count-in. Beat phase free-runs; a click is emitted at each
@@ -550,17 +568,21 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         float loopsample = 0.0f;
         if (st[t] == LE_TRACK_RECORDING) {
           if (e->clock.length == 0) {
-            /* defining track: append at the record head */
+            /* defining track: no reference loop yet, so no compensation */
             if (e->tracks[t].record_pos < e->max_loop_frames) {
               buf[t][e->tracks[t].record_pos * ch + c] = insample;
             }
           } else {
-            /* new track: overwrite one master loop */
-            buf[t][pos * ch + c] = insample;
+            /* new track: overwrite one master loop, latency-compensated */
+            const int32_t w = comp_pos(pos, offset, e->clock.length);
+            buf[t][w * ch + c] = insample;
           }
         } else if (st[t] == LE_TRACK_OVERDUBBING) {
-          buf[t][pos * ch + c] += insample;
+          /* Mix the existing loop (read before write); record the live input at
+           * the compensated position for the next pass. */
           loopsample = buf[t][pos * ch + c];
+          const int32_t w = comp_pos(pos, offset, e->clock.length);
+          buf[t][w * ch + c] += insample;
         } else if (st[t] == LE_TRACK_PLAYING) {
           loopsample = buf[t][pos * ch + c];
         }
@@ -681,6 +703,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->count_in_remaining = 0;
   store_i32(&engine->a_counting_in, 0);
   store_i32(&engine->a_current_beat, 0);
+  store_i32(&engine->a_record_offset, 0); /* re-measured per session */
 
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_channels, channels);
@@ -912,6 +935,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->count_in_enabled = load_i32(&engine->a_count_in_enabled);
   out->counting_in = load_i32(&engine->a_counting_in);
   out->current_beat = load_i32(&engine->a_current_beat);
+  out->record_offset_frames = load_i32(&engine->a_record_offset);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -1032,4 +1056,7 @@ int32_t le_engine_set_count_in(le_engine* engine, int32_t on) {
 }
 int32_t le_engine_tap_tempo(le_engine* engine) {
   return le_push(engine, LE_CMD_TAP_TEMPO, 0, 0.0f);
+}
+int32_t le_engine_set_record_offset(le_engine* engine, int32_t frames) {
+  return le_push(engine, LE_CMD_SET_RECORD_OFFSET, frames, 0.0f);
 }

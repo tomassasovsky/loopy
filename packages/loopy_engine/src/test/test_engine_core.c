@@ -207,18 +207,24 @@ static void test_looper_overdub_and_undo(void) {
   le_engine_record(e, 0); /* finalize -> PLAYING, loop == 1.0 */
   drain(e);
 
-  /* Overdub one loop of +0.5 -> loop becomes 1.5. */
+  /* Overdub one loop of +0.5. The live input is not folded into the monitored
+   * output (latency-compensated model), so during the pass the existing loop
+   * (1.0) is heard while the +0.5 lands in the buffer for the next pass. */
   CHECK(le_engine_record(e, 0) == LE_OK); /* snapshot taken, -> OVERDUBBING */
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].undo_depth == 1);
   process_const(e, 0.5f, LOOP_N, out);
-  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
   le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* The recorded layer now plays back: 1.0 + 0.5 == 1.5. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
 
   /* Undo swaps back to the pre-overdub buffer at the next loop boundary. */
   CHECK(le_engine_undo(e, 0) == LE_OK);
@@ -328,6 +334,35 @@ static void test_looper_multitrack(void) {
   CHECK(s.master_length_frames == 0);
   CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
   CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  le_engine_destroy(e);
+}
+
+static void test_latency_compensation(void) {
+  printf("test_latency_compensation\n");
+  le_engine* e = make_configured_engine();
+  float out[16];
+
+  /* Record a 10-frame silent base loop. */
+  le_engine_record(e, 0);
+  process_const(e, 0.0f, 10, out);
+  le_engine_record(e, 0); /* finalize: master == 10, silent */
+  drain(e);
+
+  /* Compensate by 3 frames, then overdub a single impulse at loop position 0.
+   * It must land at position (0 - 3) wrapped == 7. */
+  CHECK(le_engine_set_record_offset(e, 3) == LE_OK);
+  le_engine_record(e, 0); /* -> OVERDUBBING (drained with the offset) */
+  process_const(e, 1.0f, 1, out); /* impulse at pos 0 -> writes buf[7] */
+  process_const(e, 0.0f, 9, out); /* finish the loop with silence */
+  le_engine_record(e, 0);         /* stop overdub -> PLAYING */
+  drain(e);
+
+  float loop[16] = {0};
+  process_const(e, 0.0f, 10, loop);
+  for (int i = 0; i < 10; ++i) {
+    CHECK(fabsf(loop[i] - (i == 7 ? 1.0f : 0.0f)) < 1e-6f);
+  }
 
   le_engine_destroy(e);
 }
@@ -514,6 +549,7 @@ int main(void) {
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();
+  test_latency_compensation();
   test_record_is_exclusive();
   test_tempo_set_and_clamp();
   test_metronome_click();

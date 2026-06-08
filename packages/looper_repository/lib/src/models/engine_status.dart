@@ -13,6 +13,7 @@ class EngineStatus extends Equatable {
     this.measuredLatencyMs = -1,
     this.xrunCount = 0,
     this.isConnected = false,
+    this.recordOffsetFrames = 0,
   });
 
   /// Active device name, or empty when stopped.
@@ -40,6 +41,9 @@ class EngineStatus extends Equatable {
   /// Whether the audio device is open and running.
   final bool isConnected;
 
+  /// Record-offset latency compensation in frames (auto-set by a measurement).
+  final int recordOffsetFrames;
+
   /// Whether a latency measurement has completed.
   bool get hasMeasuredLatency => latencyState == LatencyState.done;
 
@@ -53,5 +57,6 @@ class EngineStatus extends Equatable {
     measuredLatencyMs,
     xrunCount,
     isConnected,
+    recordOffsetFrames,
   ];
 }

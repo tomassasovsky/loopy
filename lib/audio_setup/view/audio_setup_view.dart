@@ -173,6 +173,7 @@ class _StatusPanel extends StatelessWidget {
       ('Sample rate', '${status.sampleRate} Hz'),
       ('Buffer', '${status.bufferFrames} frames'),
       ('Round-trip latency', _latency),
+      ('Record offset', '${status.recordOffsetFrames} frames'),
     ];
     return Column(
       children: [

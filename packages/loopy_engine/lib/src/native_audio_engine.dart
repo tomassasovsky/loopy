@@ -204,6 +204,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setRecordOffset(int frames) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_record_offset(_engine, frames),
+    );
+  }
+
+  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;

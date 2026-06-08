@@ -86,6 +86,7 @@ typedef enum le_command_code {
   LE_CMD_SET_METRONOME = 10, /* arg_f = 0/1 */
   LE_CMD_SET_COUNT_IN = 11,  /* arg_f = 0/1 */
   LE_CMD_TAP_TEMPO = 12,
+  LE_CMD_SET_RECORD_OFFSET = 13, /* arg_i = round-trip latency in frames */
 } le_command_code;
 
 /* Requested device configuration. Any field set to 0 uses the device default
@@ -140,6 +141,11 @@ typedef struct le_snapshot {
   int32_t count_in_enabled; /* 0/1 */
   int32_t counting_in;      /* 0/1: a count-in is currently in progress */
   int32_t current_beat;     /* 0..3 within the bar */
+
+  /* Record-offset latency compensation (frames). Recorded/overdubbed input is
+   * written this many frames earlier in the loop so it aligns with what the
+   * player heard. Auto-set by a latency measurement; manually overridable. */
+  int32_t record_offset_frames;
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -216,6 +222,10 @@ LE_EXPORT int32_t le_engine_set_metronome(le_engine* engine, int32_t on);
 LE_EXPORT int32_t le_engine_set_count_in(le_engine* engine, int32_t on);
 /* Registers a tap; two taps set the tempo from their interval. */
 LE_EXPORT int32_t le_engine_tap_tempo(le_engine* engine);
+
+/* Sets the record-offset latency compensation in frames (clamped >= 0). */
+LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
+                                              int32_t frames);
 
 #ifdef __cplusplus
 }

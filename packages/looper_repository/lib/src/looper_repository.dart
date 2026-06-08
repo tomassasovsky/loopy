@@ -100,6 +100,7 @@ class LooperRepository {
       measuredLatencyMs: s.measuredLatencyMs,
       xrunCount: s.xrunCount,
       isConnected: s.isRunning,
+      recordOffsetFrames: s.recordOffsetFrames,
     ),
   );
 
@@ -155,6 +156,9 @@ class LooperRepository {
 
   /// Registers a tempo tap.
   EngineResult tapTempo() => _engine.tapTempo();
+
+  /// Sets the record-offset latency compensation in frames.
+  EngineResult setRecordOffset(int frames) => _engine.setRecordOffset(frames);
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {

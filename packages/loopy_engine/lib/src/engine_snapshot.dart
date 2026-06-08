@@ -157,6 +157,7 @@ class EngineSnapshot {
     this.countInEnabled = false,
     this.countingIn = false,
     this.currentBeat = 0,
+    this.recordOffsetFrames = 0,
     this.tracks = const [],
   });
 
@@ -180,6 +181,7 @@ class EngineSnapshot {
       countInEnabled = false,
       countingIn = false,
       currentBeat = 0,
+      recordOffsetFrames = 0,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -209,6 +211,7 @@ class EngineSnapshot {
     countInEnabled: native.count_in_enabled != 0,
     countingIn: native.counting_in != 0,
     currentBeat: native.current_beat,
+    recordOffsetFrames: native.record_offset_frames,
     tracks: tracks,
   );
 
@@ -267,6 +270,9 @@ class EngineSnapshot {
   /// The current beat within the bar (`0..3`).
   final int currentBeat;
 
+  /// Record-offset latency compensation in frames (auto-set by a measurement).
+  final int recordOffsetFrames;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -320,6 +326,7 @@ class EngineSnapshot {
           countInEnabled == other.countInEnabled &&
           countingIn == other.countingIn &&
           currentBeat == other.currentBeat &&
+          recordOffsetFrames == other.recordOffsetFrames &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -342,6 +349,7 @@ class EngineSnapshot {
     countInEnabled,
     countingIn,
     currentBeat,
+    recordOffsetFrames,
     ...tracks,
   ]);
 
