@@ -1,0 +1,21 @@
+name: settings_repository
+description: >-
+  Persists Loopy settings (per-device latency calibration) via a key-value
+  store.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  local_storage_client:
+    path: ../local_storage_client
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.2.0

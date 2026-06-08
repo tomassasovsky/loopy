@@ -5,6 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:settings_repository/settings_repository.dart';
+
+import '../../helpers/helpers.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -12,10 +15,14 @@ void main() {
   setUpAll(() => registerFallbackValue(const EngineConfig()));
 
   late LooperRepository repository;
+  late FakeKeyValueStore store;
+  late SettingsRepository settings;
   late StreamController<LooperState> stateController;
 
   setUp(() {
     repository = _MockLooperRepository();
+    store = FakeKeyValueStore();
+    settings = SettingsRepository(store: store);
     stateController = StreamController<LooperState>.broadcast();
     when(
       () => repository.looperState,
@@ -26,11 +33,13 @@ void main() {
     when(repository.stopEngine).thenReturn(EngineResult.ok);
     when(repository.measureLatency).thenReturn(EngineResult.ok);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
+    when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => stateController.close());
 
-  AudioSetupCubit buildCubit() => AudioSetupCubit(repository: repository);
+  AudioSetupCubit buildCubit() =>
+      AudioSetupCubit(repository: repository, settings: settings);
 
   test('initial state has sensible defaults', () {
     final cubit = buildCubit();
@@ -202,5 +211,62 @@ void main() {
       act: (cubit) => cubit.start(),
       verify: (_) => verifyNever(repository.measureLatency),
     );
+  });
+
+  group('latency persistence', () {
+    const connected = LooperState(
+      status: EngineStatus(
+        deviceName: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: 128,
+        isConnected: true,
+      ),
+    );
+
+    test('applies a saved offset when a device connects', () async {
+      await settings.saveLatencyOffsetFrames(
+        device: 'Scarlett',
+        sampleRate: 48000,
+        bufferFrames: 128,
+        frames: 512,
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(connected);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(() => repository.setRecordOffset(512)).called(1);
+    });
+
+    test('persists a freshly measured offset', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Scarlett',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            recordOffsetFrames: 640,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        await settings.loadLatencyOffsetFrames(
+          device: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+        ),
+        640,
+      );
+    });
   });
 }

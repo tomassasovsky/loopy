@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -14,6 +15,7 @@ void main() {
         ticker: const Stream<void>.empty(),
       );
       final controllerRepository = ControllerRepository(sources: const []);
+      final settings = SettingsRepository(store: FakeKeyValueStore());
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
 
@@ -21,6 +23,7 @@ void main() {
         App(
           repository: repository,
           controllerRepository: controllerRepository,
+          settings: settings,
         ),
       );
       await tester.pump();
