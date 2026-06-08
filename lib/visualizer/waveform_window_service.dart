@@ -54,12 +54,13 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   void pushWaveform(Float32List samples, double progress) {
     final id = _windowId;
     if (id == null) return;
-    // Fire-and-forget; the next frame supersedes any dropped one.
+    // Fire-and-forget; the next frame supersedes any dropped one. Ignore errors
+    // (e.g. the brief window before the new window registers its handler).
     unawaited(
       DesktopMultiWindow.invokeMethod(id, 'waveform', {
         'samples': samples,
         'progress': progress,
-      }),
+      }).catchError((Object _) => null),
     );
   }
 }
