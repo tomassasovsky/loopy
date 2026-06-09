@@ -1004,10 +1004,21 @@ static void test_loopback_exclusion(void) {
     in2[i * 2 + 1] = 0.0f;
   }
   le_engine_process(e2, out, in2, LOOP_N);
+
+  /* (c) Metering: a signal present only on the excluded channel must not show
+   * up in the input level (it carries our own output, not a real input). The
+   * snapshot reflects the block just processed (ch0 == 5.0, excluded). */
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.input_peak < 1e-6f);
+  CHECK(s.input_rms < 1e-6f);
+
   le_engine_record(e2, 0); /* finalize */
   drain(e2);
   le_engine_process(e2, out, zin, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
   le_engine_destroy(e2);
 }
 

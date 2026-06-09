@@ -475,9 +475,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
-  /* Loopback-labelled input channels are never recorded or monitored. */
+  /* Loopback-labelled input channels are never recorded, monitored, or
+   * metered (they carry our own output and would otherwise inflate the meter). */
   const uint32_t excluded =
       atomic_load_explicit(&e->a_excluded_input_mask, memory_order_relaxed);
+  int active_in = 0;
+  for (int c = 0; c < ch_in; ++c) {
+    if (!(excluded & (1u << c))) ++active_in;
+  }
 
   float in_sumsq = 0.0f;
   float in_peak = 0.0f;
@@ -488,18 +493,15 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   for (uint32_t f = 0; f < frames; ++f) {
     float frame_mag = 0.0f;
     float mono = 0.0f;
-    int mono_count = 0;
     for (int c = 0; c < ch_in; ++c) {
+      if (excluded & (1u << c)) continue; /* loopback: not an input channel */
       const float s = in ? in[f * ch_in + c] : 0.0f;
       const float a = fabsf(s);
       if (a > frame_mag) frame_mag = a;
       in_sumsq += s * s;
-      if (!(excluded & (1u << c))) { /* loopback channels are not input */
-        mono += s;
-        ++mono_count;
-      }
+      mono += s;
     }
-    mono /= (float)(mono_count > 0 ? mono_count : 1); /* clip-safe fold-down */
+    mono /= (float)(active_in > 0 ? active_in : 1); /* clip-safe fold-down */
     if (frame_mag > in_peak) in_peak = frame_mag;
 
     /* Latency harness takes over the output entirely while measuring.
@@ -609,7 +611,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         float sum = 0.0f;
         int cnt = 0;
         for (int c = 0; c < ch_in; ++c) {
-          /* Defensive: excluded bits are also clamped out of in_mask itself. */
+          /* The excluded check is load-bearing, not merely defensive: the
+           * default mask (0x1) is set without going through SET_INPUT_MASK's
+           * clamp, so it can still name an excluded channel here. */
           if ((in_mask[t] & (1u << c)) && !(excluded & (1u << c))) {
             sum += in[f * ch_in + c];
             ++cnt;
@@ -750,7 +754,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     }
   }
 
-  const uint32_t total_in = frames * (uint32_t)ch_in;
+  /* Input RMS is normalised by the active (non-loopback) channel count only. */
+  const uint32_t total_in = frames * (uint32_t)active_in;
   const uint32_t total_out = frames * (uint32_t)ch_out;
   store_f32(&e->a_in_rms_bits,
             total_in ? sqrtf(in_sumsq / (float)total_in) : 0.0f);
@@ -1267,9 +1272,11 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
    * default input. On string-id backends the id union is the UID string. */
   const char* capture_uid =
       cfg.capture.pDeviceID != NULL ? (const char*)&engine->capture_id : NULL;
+  /* relaxed: a lone published value, matching the other configuration atomics
+   * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
   atomic_store_explicit(&engine->a_excluded_input_mask,
                         le_compute_excluded_input_mask(capture_uid, neg_in),
-                        memory_order_release);
+                        memory_order_relaxed);
 
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     ma_device_uninit(&engine->device);
