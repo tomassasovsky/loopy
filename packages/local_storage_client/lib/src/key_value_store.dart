@@ -29,4 +29,7 @@ abstract interface class KeyValueStore {
 
   /// Removes any value stored at [key].
   Future<void> remove(String key);
+
+  /// Removes all values.
+  Future<void> clear();
 }

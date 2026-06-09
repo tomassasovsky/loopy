@@ -136,4 +136,7 @@ class SettingsRepository {
   /// Saves the custom display [name] for track [channel].
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
+
+  /// Clears all settings.
+  Future<void> clear() => _store.clear();
 }

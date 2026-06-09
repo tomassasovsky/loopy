@@ -23,9 +23,14 @@ Future<void> runLoopy(List<String> args) async {
   // shared_preferences platform channel.
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Hot restart resets Dart state while native sub-windows survive.
+  await DesktopMultiWindowWaveformService.closeOrphanWindows();
+
   final repository = LooperRepository(engine: NativeAudioEngine());
   final controllerRepository = ControllerRepository(sources: const []);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
+
+  await settings.clear();
 
   final configured = await tryAutoStartEngine(
     repository: repository,

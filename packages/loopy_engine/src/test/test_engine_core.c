@@ -577,6 +577,44 @@ static void test_new_track_records_mid_loop(void) {
   le_engine_destroy(e);
 }
 
+/* The transport must not free-run in silence: once every track is stopped the
+ * master position holds at the top, and the next play starts from there. */
+static void test_transport_resets_when_all_stopped(void) {
+  printf("test_transport_resets_when_all_stopped\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Record a LOOP_N master loop, then let it play. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  /* While playing, the master position advances. */
+  process_const(e, 0.0f, 2, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 2);
+
+  /* Stop the only track: the transport holds at the top instead of looping. */
+  le_engine_stop_track(e, 0);
+  drain(e);
+  process_const(e, 0.0f, 3, out); /* would reach 5 if it kept free-running */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.master_position_frames == 0);
+
+  /* Playing again resumes from the beginning. */
+  le_engine_play(e, 0);
+  drain(e);
+  process_const(e, 0.0f, 1, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.master_position_frames == 1);
+
+  le_engine_destroy(e);
+}
+
 /* ---- loop visualization tap ---- */
 
 static float max_of(const float* a, int n) {
@@ -681,6 +719,7 @@ int main(void) {
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();
   test_new_track_records_mid_loop();
+  test_transport_resets_when_all_stopped();
   test_visualization_tap();
   test_classify_capture_device();
   test_detect_loopback_runs();

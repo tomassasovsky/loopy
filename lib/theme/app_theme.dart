@@ -44,10 +44,7 @@ abstract final class AppTheme {
       extensions: const [
         LooperTheme(
           trackColors: [
-            Color(0xFF00E5FF), // cyan
-            Color(0xFFFF2D95), // magenta
-            Color(0xFFB6FF00), // lime
-            Color(0xFFFF9100), // orange
+            Color(0xFF4cda4a), // green
           ],
           tileBackground: Color(0xFF101019),
           tileBorder: Color(0xFF22222E),

@@ -40,4 +40,7 @@ class SharedPreferencesKeyValueStore implements KeyValueStore {
 
   @override
   Future<void> remove(String key) => _prefs.remove(key);
+
+  @override
+  Future<void> clear() => _prefs.clear();
 }

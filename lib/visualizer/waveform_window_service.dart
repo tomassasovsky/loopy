@@ -27,12 +27,22 @@ abstract interface class WaveformWindowService {
 class DesktopMultiWindowWaveformService implements WaveformWindowService {
   int? _windowId;
 
+  /// Closes sub-windows left over from a hot restart. Dart state is reset but
+  /// native windows from `desktop_multi_window` survive.
+  static Future<void> closeOrphanWindows() async {
+    final ids = await DesktopMultiWindow.getAllSubWindowIds();
+    for (final id in ids) {
+      await WindowController.fromWindowId(id).close();
+    }
+  }
+
   @override
   bool get isOpen => _windowId != null;
 
   @override
   Future<void> open() async {
     if (_windowId != null) return;
+    await closeOrphanWindows();
     final controller = await DesktopMultiWindow.createWindow(
       jsonEncode({'view': 'waveform'}),
     );
@@ -44,10 +54,8 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
 
   @override
   Future<void> close() async {
-    final id = _windowId;
-    if (id == null) return;
     _windowId = null;
-    await WindowController.fromWindowId(id).close();
+    await closeOrphanWindows();
   }
 
   @override
