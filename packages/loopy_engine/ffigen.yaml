@@ -22,6 +22,7 @@ structs:
     - 'le_snapshot'
     - 'le_track_snapshot'
     - 'le_loopback_info'
+    - 'le_device_info'
 enums:
   include:
     - 'le_result'

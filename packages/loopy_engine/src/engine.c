@@ -85,6 +85,15 @@ struct le_engine {
 
   /* Snapshot, published as independent atomics. */
   _Atomic int32_t a_running;
+  /* 1 while the device is present, 0 once a device-lost/rerouted/stopped
+   * notification fires. Written only by the RT-adjacent notification callback
+   * (store-only, no work) and the lifecycle calls; read into the snapshot.
+   * The callback stores `relaxed` (it carries no other state and must not block
+   * the audio thread); the lifecycle store and the snapshot load use
+   * release/acquire to match the `a_running` publication they sit beside. The
+   * flag is a single independent value, so plain visibility is all that's
+   * required either way. */
+  _Atomic int32_t a_device_present;
   _Atomic int32_t a_configured;
   _Atomic int32_t a_sample_rate;
   _Atomic int32_t a_buffer_frames;
@@ -144,11 +153,12 @@ struct le_engine {
   int passthrough; /* input monitoring */
   int mono_input;  /* average input channels and feed every output channel */
 
-  /* Explicit context + capture device id, only used when capturing from a
-   * detected loopback device (use_loopback_capture). */
+  /* Explicit context + resolved device ids, used when capturing from a detected
+   * loopback device (use_loopback_capture) or when a device is pinned by id. */
   ma_context context;
   int context_initialised;
   ma_device_id capture_id;
+  ma_device_id playback_id;
 };
 
 /* ---- float/double <-> atomic-bits helpers ---- */
@@ -902,6 +912,115 @@ int32_t le_detect_loopback(le_loopback_info* out) {
   return LE_OK;
 }
 
+/* ---- device enumeration & pinning ---- */
+
+/* Serializes a miniaudio device id into a printable, round-trippable token.
+ * On every string-id backend (CoreAudio, ALSA, PulseAudio, sndio, oss) the
+ * union's active member is a NUL-terminated char string at offset 0, so reading
+ * it as a C string is exact and matches byte-for-byte at resolve time. WASAPI
+ * (a wchar string) is not represented here; pinning is a no-op there and the
+ * engine falls back to the default device. */
+static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
+  strncpy(out, (const char*)id, cap - 1);
+  out[cap - 1] = '\0';
+}
+
+static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
+  device_id_to_str(&src->id, dst->id, sizeof(dst->id));
+  strncpy(dst->name, src->name, sizeof(dst->name) - 1);
+  dst->name[sizeof(dst->name) - 1] = '\0';
+  dst->is_default = src->isDefault ? 1 : 0;
+}
+
+/* Fills `out` (room for `max`) with the host's playback or capture devices and
+ * writes the count into *count. Uses a transient context so it never disturbs a
+ * running device. `capture` selects the direction. */
+static int32_t enumerate_devices(le_device_info* out, int32_t max,
+                                 int32_t* count, int capture) {
+  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
+  *count = 0;
+  ma_context ctx;
+  if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) return LE_ERR_INVALID;
+  ma_device_info* playback = NULL;
+  ma_uint32 playback_count = 0;
+  ma_device_info* cap = NULL;
+  ma_uint32 cap_count = 0;
+  if (ma_context_get_devices(&ctx, &playback, &playback_count, &cap,
+                             &cap_count) != MA_SUCCESS) {
+    ma_context_uninit(&ctx);
+    return LE_ERR_INVALID;
+  }
+  ma_device_info* list = capture ? cap : playback;
+  ma_uint32 n = capture ? cap_count : playback_count;
+  int32_t written = 0;
+  for (ma_uint32 i = 0; i < n && written < max; ++i) {
+    device_info_copy(&out[written++], &list[i]);
+  }
+  *count = written;
+  ma_context_uninit(&ctx);
+  return LE_OK;
+}
+
+int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max,
+                                      int32_t* count) {
+  return enumerate_devices(out, max, count, /*capture=*/0);
+}
+
+int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
+                                     int32_t* count) {
+  return enumerate_devices(out, max, count, /*capture=*/1);
+}
+
+/* Looks up the device whose serialized id equals `want` in the already-open
+ * `ctx` and copies its native id into *out_id. Returns 1 on a match (out_id set)
+ * or 0 if `want` is empty / unmatched / enumeration failed. */
+static int resolve_device_id(ma_context* ctx, int capture, const char* want,
+                             ma_device_id* out_id) {
+  if (want == NULL || want[0] == '\0') return 0;
+  ma_device_info* playback = NULL;
+  ma_uint32 playback_count = 0;
+  ma_device_info* cap = NULL;
+  ma_uint32 cap_count = 0;
+  if (ma_context_get_devices(ctx, &playback, &playback_count, &cap,
+                             &cap_count) != MA_SUCCESS) {
+    return 0;
+  }
+  ma_device_info* list = capture ? cap : playback;
+  ma_uint32 n = capture ? cap_count : playback_count;
+  char buf[256];
+  for (ma_uint32 i = 0; i < n; ++i) {
+    device_id_to_str(&list[i].id, buf, sizeof(buf));
+    if (strcmp(buf, want) == 0) {
+      *out_id = list[i].id;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Device-state notifications from miniaudio. RT-adjacent: stores the presence
+ * atomic only — never allocates, locks, or touches the device. A stopped /
+ * rerouted / interrupted device flips presence to 0; (re)start / resume flips it
+ * back to 1. Recovery from a 0 is the Dart layer's job (A2), not native's. */
+static void notification_callback(const ma_device_notification* notification) {
+  if (notification == NULL || notification->pDevice == NULL) return;
+  le_engine* e = (le_engine*)notification->pDevice->pUserData;
+  if (e == NULL) return;
+  switch (notification->type) {
+    case ma_device_notification_type_started:
+    case ma_device_notification_type_interruption_ended:
+      atomic_store_explicit(&e->a_device_present, 1, memory_order_relaxed);
+      break;
+    case ma_device_notification_type_stopped:
+    case ma_device_notification_type_rerouted:
+    case ma_device_notification_type_interruption_began:
+      atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
+      break;
+    default:
+      break;
+  }
+}
+
 static void le_uninit_context(le_engine* engine) {
   if (engine->context_initialised) {
     ma_context_uninit(&engine->context);
@@ -961,20 +1080,39 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     cfg.periods = 2;
   }
   cfg.dataCallback = data_callback;
+  cfg.notificationCallback = notification_callback;
   cfg.pUserData = engine;
 
-  /* When requested, capture from a detected loopback device so latency can be
-   * measured without a physical cable. Requires an explicit context (for both
-   * enumeration and the matching device id). Playback stays on the default. */
+  /* An explicit context is needed to capture from a detected loopback device
+   * (use_loopback_capture) or to pin playback/capture to a device by id. When
+   * any of those is requested, open one context and resolve the relevant ids;
+   * otherwise the default device is opened with no context. */
+  const int want_playback_pin = config->playback_device_id[0] != '\0';
+  const int want_capture_pin = config->capture_device_id[0] != '\0';
   ma_context* pContext = NULL;
-  if (config->use_loopback_capture) {
+  if (config->use_loopback_capture || want_playback_pin || want_capture_pin) {
     if (ma_context_init(NULL, 0, NULL, &engine->context) == MA_SUCCESS) {
       engine->context_initialised = 1;
       pContext = &engine->context;
-      le_loopback_info info;
-      find_loopback(&engine->context, &info, &engine->capture_id);
-      if (info.available && info.device_name[0] != '\0') {
-        cfg.capture.pDeviceID = &engine->capture_id;
+      if (config->use_loopback_capture) {
+        /* Loopback capture overrides an explicit capture device id. */
+        le_loopback_info info;
+        find_loopback(&engine->context, &info, &engine->capture_id);
+        if (info.available && info.device_name[0] != '\0') {
+          cfg.capture.pDeviceID = &engine->capture_id;
+        }
+      } else if (want_capture_pin) {
+        if (resolve_device_id(&engine->context, /*capture=*/1,
+                              config->capture_device_id, &engine->capture_id)) {
+          cfg.capture.pDeviceID = &engine->capture_id;
+        }
+      }
+      if (want_playback_pin) {
+        if (resolve_device_id(&engine->context, /*capture=*/0,
+                              config->playback_device_id,
+                              &engine->playback_id)) {
+          cfg.playback.pDeviceID = &engine->playback_id;
+        }
       }
     }
   }
@@ -1013,6 +1151,7 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     le_uninit_context(engine);
     return LE_ERR_DEVICE;
   }
+  atomic_store_explicit(&engine->a_device_present, 1, memory_order_release);
   atomic_store_explicit(&engine->a_running, 1, memory_order_release);
   return LE_OK;
 }
@@ -1026,6 +1165,7 @@ int32_t le_engine_stop(le_engine* engine) {
   engine->device_initialised = 0;
   le_uninit_context(engine);
   engine->device_name[0] = '\0';
+  atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
   return LE_OK;
 }
@@ -1033,6 +1173,8 @@ int32_t le_engine_stop(le_engine* engine) {
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
+  out->device_present =
+      atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
   out->sample_rate = load_i32(&engine->a_sample_rate);
   out->buffer_frames = load_i32(&engine->a_buffer_frames);
   out->input_channels = load_i32(&engine->a_in_channels);

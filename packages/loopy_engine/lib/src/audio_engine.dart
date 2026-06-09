@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
@@ -81,6 +82,12 @@ abstract interface class AudioEngine {
   /// driver / WASAPI) for auto-measuring latency. The result captures the
   /// digital round-trip only (see [LoopbackInfo]).
   LoopbackInfo detectLoopback();
+
+  /// Enumerates the host's audio devices — playback (output) and capture
+  /// (input) — each tagged with [AudioDevice.isInput] and
+  /// [AudioDevice.isDefault]. Safe to call while the engine is running. Returns
+  /// an empty list when enumeration fails.
+  List<AudioDevice> enumerateDevices();
 
   /// Triggers a single loopback round-trip latency measurement. The result is
   /// surfaced asynchronously via [snapshot]'s latency fields.
