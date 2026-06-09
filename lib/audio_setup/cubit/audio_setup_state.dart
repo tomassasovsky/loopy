@@ -34,6 +34,7 @@ class AudioSetupState extends Equatable {
     this.sampleRate = 48000,
     this.bufferFrames = 128,
     this.monitorInput = true,
+    this.maxLoopMinutes = 0,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
     this.loopback = const LoopbackInfo.none(),
@@ -53,6 +54,10 @@ class AudioSetupState extends Equatable {
 
   /// Whether captured input is monitored to the output.
   final bool monitorInput;
+
+  /// Maximum loop length per track, in whole minutes. `0` defers to the engine
+  /// default. Applied on the next start (buffers are allocated at start).
+  final int maxLoopMinutes;
 
   /// High-level lifecycle status.
   final AudioSetupStatus status;
@@ -96,11 +101,15 @@ class AudioSetupState extends Equatable {
   /// Selectable buffer sizes.
   static const bufferSizes = [64, 128, 256, 512];
 
+  /// Selectable max-loop-length options, in minutes. `0` is the engine default.
+  static const maxLoopMinuteOptions = [0, 2, 5, 10];
+
   /// Returns a copy with the given fields replaced.
   AudioSetupState copyWith({
     int? sampleRate,
     int? bufferFrames,
     bool? monitorInput,
+    int? maxLoopMinutes,
     AudioSetupStatus? status,
     EngineStatus? engineStatus,
     LoopbackInfo? loopback,
@@ -115,6 +124,7 @@ class AudioSetupState extends Equatable {
       sampleRate: sampleRate ?? this.sampleRate,
       bufferFrames: bufferFrames ?? this.bufferFrames,
       monitorInput: monitorInput ?? this.monitorInput,
+      maxLoopMinutes: maxLoopMinutes ?? this.maxLoopMinutes,
       status: status ?? this.status,
       engineStatus: engineStatus ?? this.engineStatus,
       loopback: loopback ?? this.loopback,
@@ -133,6 +143,7 @@ class AudioSetupState extends Equatable {
     sampleRate,
     bufferFrames,
     monitorInput,
+    maxLoopMinutes,
     status,
     engineStatus,
     loopback,

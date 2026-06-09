@@ -12,6 +12,7 @@ class StoredAudioConfig {
     required this.monitorInput,
     this.inputChannels = 0,
     this.outputChannels = 0,
+    this.maxLoopMinutes = 0,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
   });
@@ -31,6 +32,11 @@ class StoredAudioConfig {
   /// Requested hardware playback channel count (`0` => device default).
   final int outputChannels;
 
+  /// Maximum loop length the engine allocates per track, in whole minutes.
+  /// `0` defers to the engine default. Stored as minutes (not frames) so the
+  /// user's intent survives a later sample-rate change.
+  final int maxLoopMinutes;
+
   /// Pinned playback device id (empty => system default).
   final String playbackDeviceId;
 
@@ -47,6 +53,7 @@ class StoredAudioConfig {
           monitorInput == other.monitorInput &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
+          maxLoopMinutes == other.maxLoopMinutes &&
           playbackDeviceId == other.playbackDeviceId &&
           captureDeviceId == other.captureDeviceId;
 
@@ -57,6 +64,7 @@ class StoredAudioConfig {
     monitorInput,
     inputChannels,
     outputChannels,
+    maxLoopMinutes,
     playbackDeviceId,
     captureDeviceId,
   );
@@ -116,6 +124,7 @@ class SettingsRepository {
   static const String _audioMonitorKey = 'audio.monitor_input';
   static const String _audioInputChannelsKey = 'audio.input_channels';
   static const String _audioOutputChannelsKey = 'audio.output_channels';
+  static const String _audioMaxLoopMinutesKey = 'audio.max_loop_minutes';
   static const String _audioPlaybackDeviceIdKey = 'audio.playback_device_id';
   static const String _audioCaptureDeviceIdKey = 'audio.capture_device_id';
 
@@ -131,6 +140,7 @@ class SettingsRepository {
       monitorInput: await _store.getBool(_audioMonitorKey) ?? true,
       inputChannels: await _store.getInt(_audioInputChannelsKey) ?? 0,
       outputChannels: await _store.getInt(_audioOutputChannelsKey) ?? 0,
+      maxLoopMinutes: await _store.getInt(_audioMaxLoopMinutesKey) ?? 0,
       playbackDeviceId: await _store.getString(_audioPlaybackDeviceIdKey) ?? '',
       captureDeviceId: await _store.getString(_audioCaptureDeviceIdKey) ?? '',
     );
@@ -143,6 +153,7 @@ class SettingsRepository {
     await _store.setBool(_audioMonitorKey, value: config.monitorInput);
     await _store.setInt(_audioInputChannelsKey, config.inputChannels);
     await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
+    await _store.setInt(_audioMaxLoopMinutesKey, config.maxLoopMinutes);
     await _store.setString(
       _audioPlaybackDeviceIdKey,
       config.playbackDeviceId,
@@ -171,6 +182,26 @@ class SettingsRepository {
   /// Saves whether the second bank of four tracks is enabled.
   Future<void> saveBankEnabled({required bool value}) =>
       _store.setBool(_bankEnabledKey, value: value);
+
+  static const String _defaultPerformanceModeKey = 'big_picture.default_mode';
+
+  /// Loads the persisted default Big Picture performance mode (an opaque token,
+  /// e.g. `'record'` / `'play'`), or `null` if unset. The presentation layer
+  /// maps the token to its mode enum.
+  Future<String?> loadDefaultPerformanceMode() =>
+      _store.getString(_defaultPerformanceModeKey);
+
+  /// Saves the default Big Picture performance [mode] token.
+  Future<void> saveDefaultPerformanceMode(String mode) =>
+      _store.setString(_defaultPerformanceModeKey, mode);
+
+  static const String _refreshHzKey = 'ui.refresh_hz';
+
+  /// Loads the UI snapshot-poll rate in Hz. Defaults to `60` when unset.
+  Future<int> loadRefreshHz() async => await _store.getInt(_refreshHzKey) ?? 60;
+
+  /// Saves the UI snapshot-poll rate in [hz].
+  Future<void> saveRefreshHz(int hz) => _store.setInt(_refreshHzKey, hz);
 
   String _trackNameKey(int channel) => 'track_name.$channel';
 

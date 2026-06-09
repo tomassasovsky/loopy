@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
@@ -120,9 +121,12 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   List<Widget> _viewSection(BuildContext context) {
     final mode = context.watch<UiModeCubit>().state;
     final waveformEnabled = context.watch<WaveformWindowCubit>().state;
+    final defaultMode = context.watch<BigPictureCubit>().state.defaultMode;
+    final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
       const Text(
-        'Switch layouts and toggle the secondary output-waveform window.',
+        'Switch layouts, tune performance defaults, and toggle the secondary '
+        'output-waveform window.',
         style: setupBody,
       ),
       const SizedBox(height: 28),
@@ -150,6 +154,61 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
         value: waveformEnabled,
         onChanged: (on) =>
             context.read<WaveformWindowCubit>().setEnabled(value: on),
+      ),
+      const SizedBox(height: 28),
+      const SetupGroupLabel('PERFORMANCE'),
+      const SizedBox(height: 12),
+      const Text(
+        'Mode the Big Picture view starts in. Number keys select tracks; in '
+        'Record mode R/P arm and play the selection, in Play mode they '
+        'mute / unmute.',
+        style: setupBody,
+      ),
+      const SizedBox(height: 12),
+      SetupOptionRow<PerformanceMode>(
+        selected: defaultMode,
+        onSelected: (m) => unawaited(
+          context.read<BigPictureCubit>().setDefaultPerformanceMode(m),
+        ),
+        options: const [
+          SetupOption(
+            value: PerformanceMode.record,
+            label: 'Record',
+            sub: 'Arm & capture',
+            optionKey: Key('bpSettings_defaultMode_record'),
+          ),
+          SetupOption(
+            value: PerformanceMode.play,
+            label: 'Play',
+            sub: 'Mute / unmute',
+            optionKey: Key('bpSettings_defaultMode_play'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 20),
+      const Text(
+        'UI refresh rate — how often the waveforms and meters update. Higher '
+        'is smoother but uses more CPU.',
+        style: setupBody,
+      ),
+      const SizedBox(height: 12),
+      SetupOptionRow<int>(
+        selected: refreshHz,
+        onSelected: (hz) =>
+            unawaited(context.read<RefreshRateCubit>().setHz(hz)),
+        options: [
+          for (final hz in RefreshRateCubit.options)
+            SetupOption(
+              value: hz,
+              label: '$hz Hz',
+              sub: switch (hz) {
+                30 => 'Low CPU',
+                120 => 'Smoothest',
+                _ => 'Default',
+              },
+              optionKey: Key('bpSettings_refreshRate_$hz'),
+            ),
+        ],
       ),
     ];
   }

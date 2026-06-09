@@ -50,6 +50,42 @@ void main() {
   LooperRepository buildRepo() =>
       LooperRepository(engine: engine, ticker: ticker.stream);
 
+  group('poll interval', () {
+    test('reports and updates the configured cadence', () {
+      final repo = LooperRepository(
+        engine: engine,
+        ticker: ticker.stream,
+        pollInterval: const Duration(milliseconds: 32),
+      );
+      addTearDown(repo.dispose);
+
+      expect(repo.pollInterval, const Duration(milliseconds: 32));
+
+      repo.setPollInterval(const Duration(milliseconds: 8));
+      expect(repo.pollInterval, const Duration(milliseconds: 8));
+
+      // Setting the same value is a no-op.
+      repo.setPollInterval(const Duration(milliseconds: 8));
+      expect(repo.pollInterval, const Duration(milliseconds: 8));
+    });
+
+    test('default-timer polling keeps running after a cadence change', () {
+      // No injected ticker: the real Timer path is exercised.
+      final repo = LooperRepository(
+        engine: engine,
+        pollInterval: const Duration(milliseconds: 32),
+      );
+      addTearDown(repo.dispose);
+
+      // Subscribing starts the default poll timer.
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+
+      repo.setPollInterval(const Duration(milliseconds: 8));
+      expect(repo.pollInterval, const Duration(milliseconds: 8));
+    });
+  });
+
   group('projection', () {
     test('maps a snapshot into looper domain models', () {
       engine.nextSnapshot = _playingSnapshot;

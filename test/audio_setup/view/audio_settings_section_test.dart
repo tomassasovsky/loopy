@@ -116,8 +116,32 @@ void main() {
     seed(runningState);
     await pumpSection(tester);
 
-    await tester.tap(find.byKey(const Key('audioSettings_measure_button')));
+    final button = find.byKey(const Key('audioSettings_measure_button'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
     verify(cubit.measureLatency).called(1);
+  });
+
+  testWidgets('toggling monitor input forwards to the cubit', (tester) async {
+    seed(runningState); // monitorInput defaults to true
+    await pumpSection(tester);
+
+    final toggle = find.byKey(const Key('audioSettings_monitor_switch'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
+  });
+
+  testWidgets('choosing a max loop length forwards to the cubit', (
+    tester,
+  ) async {
+    seed(runningState); // maxLoopMinutes defaults to 0 (engine default)
+    await pumpSection(tester);
+
+    final option = find.byKey(const Key('audioSettings_maxLoop_5'));
+    await tester.ensureVisible(option);
+    await tester.tap(option);
+    verify(() => cubit.setMaxLoopMinutes(5)).called(1);
   });
 
   testWidgets('shows a measuring label while a measurement is in flight', (

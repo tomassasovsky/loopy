@@ -57,6 +57,51 @@ void main() {
     );
 
     blocTest<BigPictureCubit, BigPictureState>(
+      'setDefaultPerformanceMode persists and applies the mode',
+      build: () => BigPictureCubit(settings: settings),
+      act: (cubit) => cubit.setDefaultPerformanceMode(PerformanceMode.play),
+      expect: () => [
+        isA<BigPictureState>()
+            .having((s) => s.defaultMode, 'defaultMode', PerformanceMode.play)
+            .having((s) => s.mode, 'mode', PerformanceMode.play),
+      ],
+      verify: (_) async => expect(
+        await settings.loadDefaultPerformanceMode(),
+        PerformanceMode.play.token,
+      ),
+    );
+
+    blocTest<BigPictureCubit, BigPictureState>(
+      'load restores the default mode and boots the live mode into it',
+      setUp: () =>
+          settings.saveDefaultPerformanceMode(PerformanceMode.play.token),
+      build: () => BigPictureCubit(settings: settings),
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        isA<BigPictureState>()
+            .having((s) => s.defaultMode, 'defaultMode', PerformanceMode.play)
+            .having((s) => s.mode, 'mode', PerformanceMode.play),
+      ],
+    );
+
+    blocTest<BigPictureCubit, BigPictureState>(
+      'toggleMode does not change the persisted default mode',
+      build: () => BigPictureCubit(settings: settings),
+      act: (cubit) => cubit.toggleMode(),
+      expect: () => [
+        isA<BigPictureState>()
+            .having((s) => s.mode, 'mode', PerformanceMode.play)
+            .having(
+              (s) => s.defaultMode,
+              'defaultMode',
+              PerformanceMode.record,
+            ),
+      ],
+      verify: (_) async =>
+          expect(await settings.loadDefaultPerformanceMode(), isNull),
+    );
+
+    blocTest<BigPictureCubit, BigPictureState>(
       'rename updates and persists the name',
       build: () => BigPictureCubit(settings: settings),
       act: (cubit) => cubit.rename(1, ' Guitar '),

@@ -168,6 +168,137 @@ class SetupToggleRow extends StatelessWidget {
   }
 }
 
+/// One choice in a [SetupOptionRow].
+class SetupOption<T> {
+  /// Creates a [SetupOption] carrying [value], shown as [label] (+ optional
+  /// [sub]). [optionKey] keys the tappable card for tests.
+  const SetupOption({
+    required this.value,
+    required this.label,
+    this.sub = '',
+    this.optionKey,
+  });
+
+  /// The value selected when this option is tapped.
+  final T value;
+
+  /// The primary text shown on the card.
+  final String label;
+
+  /// An optional secondary line under [label].
+  final String sub;
+
+  /// An optional widget key for the tappable card.
+  final Key? optionKey;
+}
+
+/// A row of equal-width, single-select option cards — the multi-choice
+/// counterpart to [SetupToggleRow]. Mirrors the audio-onboarding option style.
+class SetupOptionRow<T> extends StatelessWidget {
+  /// Creates a [SetupOptionRow] over [options], highlighting [selected] and
+  /// reporting taps through [onSelected].
+  const SetupOptionRow({
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+    super.key,
+  });
+
+  /// The selectable options, laid out left-to-right.
+  final List<SetupOption<T>> options;
+
+  /// The currently selected value.
+  final T selected;
+
+  /// Called with an option's value when its card is tapped.
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < options.length; i++)
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: i == options.length - 1 ? 0 : 8),
+              child: _OptionCard<T>(
+                option: options[i],
+                selected: options[i].value == selected,
+                onTap: () => onSelected(options[i].value),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _OptionCard<T> extends StatelessWidget {
+  const _OptionCard({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final SetupOption<T> option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: option.optionKey,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+        decoration: BoxDecoration(
+          color: selected ? SetupSurfaceColors.cardHi : SetupSurfaceColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? SetupSurfaceColors.accent
+                : SetupSurfaceColors.line,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              option.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected
+                    ? SetupSurfaceColors.accent
+                    : SetupSurfaceColors.t1,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                fontFeatures: _setupNumerals,
+              ),
+            ),
+            if (option.sub.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text(
+                option.sub,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? SetupSurfaceColors.accent.withValues(alpha: 0.7)
+                      : SetupSurfaceColors.t3,
+                  fontSize: 10.5,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Tappable settings row with chevron, for navigation actions.
 class SetupNavRow extends StatelessWidget {
   const SetupNavRow({

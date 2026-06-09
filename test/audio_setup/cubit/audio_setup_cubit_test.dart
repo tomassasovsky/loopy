@@ -97,6 +97,111 @@ void main() {
     ],
   );
 
+  void seedRunning() {
+    when(() => repository.state).thenReturn(
+      const LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+        ),
+      ),
+    );
+    when(() => repository.lastEngineConfig).thenReturn(
+      const EngineConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        passthrough: true,
+      ),
+    );
+  }
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
+    'setMonitorInput while running reopens the device and persists it',
+    setUp: seedRunning,
+    build: buildCubit,
+    act: (cubit) => cubit.setMonitorInput(monitorInput: false),
+    expect: () => [
+      isA<AudioSetupState>().having(
+        (s) => s.monitorInput,
+        'monitorInput',
+        false,
+      ),
+    ],
+    verify: (_) async {
+      verify(repository.stopEngine).called(1);
+      verify(
+        () => repository.startEngine(
+          const EngineConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+          ),
+        ),
+      ).called(1);
+      expect((await settings.loadAudioConfig())?.monitorInput, isFalse);
+    },
+  );
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
+    'start uses the selected max loop length (minutes -> frames)',
+    build: buildCubit,
+    act: (cubit) => cubit
+      ..setMaxLoopMinutes(5)
+      ..start(),
+    expect: () => [
+      isA<AudioSetupState>().having(
+        (s) => s.maxLoopMinutes,
+        'maxLoopMinutes',
+        5,
+      ),
+      isA<AudioSetupState>().having(
+        (s) => s.status,
+        'status',
+        AudioSetupStatus.running,
+      ),
+    ],
+    verify: (_) async {
+      // 5 min * 60 s * 48000 Hz = 14_400_000 frames.
+      verify(
+        () => repository.startEngine(
+          const EngineConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            passthrough: true,
+            maxLoopFrames: 14400000,
+          ),
+        ),
+      ).called(1);
+      expect((await settings.loadAudioConfig())?.maxLoopMinutes, 5);
+    },
+  );
+
+  test('hydrates maxLoopMinutes from the last engine config (frames)', () {
+    when(() => repository.state).thenReturn(
+      const LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+        ),
+      ),
+    );
+    when(() => repository.lastEngineConfig).thenReturn(
+      const EngineConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        maxLoopFrames: 14400000, // 5 minutes at 48 kHz
+      ),
+    );
+
+    final cubit = buildCubit();
+    addTearDown(cubit.close);
+
+    expect(cubit.state.maxLoopMinutes, 5);
+  });
+
   blocTest<AudioSetupCubit, AudioSetupState>(
     'start opens the engine with the current options',
     build: buildCubit,

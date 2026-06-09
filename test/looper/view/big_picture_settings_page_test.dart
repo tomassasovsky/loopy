@@ -25,6 +25,7 @@ void main() {
   late WaveformWindowCubit waveformWindow;
   late BankCubit bank;
   late AudioSetupCubit audioSetup;
+  late RefreshRateCubit refreshRate;
   late LooperRepository repository;
 
   setUp(() {
@@ -45,6 +46,7 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    refreshRate = RefreshRateCubit(repository: repository, settings: settings);
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -61,6 +63,7 @@ void main() {
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+            BlocProvider<RefreshRateCubit>.value(value: refreshRate),
           ],
           child: const BigPictureSettingsPage(),
         ),
@@ -117,6 +120,44 @@ void main() {
 
     expect(find.text('DRUMS'), findsOneWidget);
     expect(await settings.loadTrackName(0), 'DRUMS');
+  });
+
+  testWidgets('choosing a default performance mode persists it', (
+    tester,
+  ) async {
+    await pump(tester);
+    expect(bigPicture.state.defaultMode, PerformanceMode.record);
+
+    final play = find.byKey(const Key('bpSettings_defaultMode_play'));
+    await tester.ensureVisible(play);
+    await tester.tap(play);
+    await tester.pumpAndSettle();
+
+    expect(bigPicture.state.defaultMode, PerformanceMode.play);
+    expect(bigPicture.state.mode, PerformanceMode.play);
+    expect(
+      await settings.loadDefaultPerformanceMode(),
+      PerformanceMode.play.token,
+    );
+  });
+
+  testWidgets('choosing a refresh rate persists it and applies it', (
+    tester,
+  ) async {
+    await pump(tester);
+    expect(refreshRate.state, 60);
+
+    final fast = find.byKey(const Key('bpSettings_refreshRate_120'));
+    await tester.ensureVisible(fast);
+    await tester.tap(fast);
+    await tester.pumpAndSettle();
+
+    expect(refreshRate.state, 120);
+    expect(await settings.loadRefreshHz(), 120);
+    // 120 Hz -> 1_000_000 / 120 ≈ 8333 µs.
+    verify(
+      () => repository.setPollInterval(const Duration(microseconds: 8333)),
+    ).called(1);
   });
 
   testWidgets('the Big Picture switch reflects the current mode', (
@@ -192,6 +233,7 @@ void main() {
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+            BlocProvider<RefreshRateCubit>.value(value: refreshRate),
           ],
           child: MaterialApp(
             home: Builder(

@@ -43,7 +43,7 @@ class LooperRepository {
 
   final AudioEngine _engine;
   final Stream<void>? _ticker;
-  final Duration _pollInterval;
+  Duration _pollInterval;
   final Stream<void>? _reconnectTicker;
   final Duration _reconnectInterval;
   late final StreamController<LooperState> _controller;
@@ -112,6 +112,21 @@ class LooperRepository {
     _tickerSub = null;
     _pollTimer?.cancel();
     _pollTimer = null;
+  }
+
+  /// The current snapshot-poll cadence.
+  Duration get pollInterval => _pollInterval;
+
+  /// Updates the snapshot-poll cadence (UI refresh rate). When polling on the
+  /// default timer, restarts it at the new [interval] so the change takes
+  /// effect immediately; an injected ticker (tests) is unaffected.
+  void setPollInterval(Duration interval) {
+    if (interval == _pollInterval) return;
+    _pollInterval = interval;
+    if (_ticker == null && _pollTimer != null) {
+      _pollTimer!.cancel();
+      _pollTimer = Timer.periodic(_pollInterval, (_) => _poll());
+    }
   }
 
   void _poll() {
