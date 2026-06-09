@@ -22,6 +22,9 @@ dependencies:
     path: packages/looper_repository
   loopy_engine:
     path: packages/loopy_engine
+  path_provider: ^2.1.4
+  session_repository:
+    path: packages/session_repository
   settings_repository:
     path: packages/settings_repository
 

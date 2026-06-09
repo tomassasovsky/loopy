@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/session/session.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../helpers/helpers.dart';
@@ -13,10 +14,22 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _MockSessionCubit extends MockCubit<SessionState>
+    implements SessionCubit {}
+
 void main() {
   late LooperBloc bloc;
+  late SessionCubit sessionCubit;
 
-  setUp(() => bloc = _MockLooperBloc());
+  setUp(() {
+    bloc = _MockLooperBloc();
+    sessionCubit = _MockSessionCubit();
+    whenListen(
+      sessionCubit,
+      const Stream<SessionState>.empty(),
+      initialState: const SessionState(),
+    );
+  });
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
@@ -27,8 +40,11 @@ void main() {
     return tester.pumpApp(
       RepositoryProvider<LooperRepository>.value(
         value: _MockLooperRepository(),
-        child: BlocProvider<LooperBloc>.value(
-          value: bloc,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<SessionCubit>.value(value: sessionCubit),
+          ],
           child: const LooperView(),
         ),
       ),
@@ -181,6 +197,53 @@ void main() {
 
     expect(find.byKey(const Key('looper_armed_chip_0')), findsOneWidget);
     expect(find.text('armed'), findsOneWidget);
+  });
+
+  testWidgets('a multi-loop track shows its multiple chip', (tester) async {
+    seed(
+      const LooperState(
+        transport: TransportState(isRunning: true, masterLengthFrames: 48000),
+        tracks: [
+          Track(
+            state: TrackState.playing,
+            lengthFrames: 96000,
+            multiple: 2,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    expect(find.byKey(const Key('looper_multiple_chip_0')), findsOneWidget);
+    expect(find.text('×2'), findsOneWidget);
+  });
+
+  testWidgets('session menu dispatches each action to the cubit', (
+    tester,
+  ) async {
+    when(() => sessionCubit.saveSession()).thenAnswer((_) async {});
+    when(() => sessionCubit.loadSession()).thenAnswer((_) async {});
+    when(() => sessionCubit.exportMixdown()).thenAnswer((_) async {});
+    when(() => sessionCubit.exportStems()).thenAnswer((_) async {});
+    seed(const LooperState(tracks: [Track()]));
+    await pumpView(tester);
+
+    Future<void> selectMenu(String label) async {
+      await tester.tap(find.byKey(const Key('looper_session_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    await selectMenu('Save session');
+    await selectMenu('Load session');
+    await selectMenu('Export mixdown');
+    await selectMenu('Export stems');
+
+    verify(() => sessionCubit.saveSession()).called(1);
+    verify(() => sessionCubit.loadSession()).called(1);
+    verify(() => sessionCubit.exportMixdown()).called(1);
+    verify(() => sessionCubit.exportStems()).called(1);
   });
 
   testWidgets('undo is disabled without an undo layer', (tester) async {

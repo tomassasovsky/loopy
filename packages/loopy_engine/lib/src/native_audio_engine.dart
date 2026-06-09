@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:loopy_engine/src/audio_engine.dart';
@@ -230,6 +231,55 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     return EngineResult.fromCode(
       _bindings.le_engine_set_record_offset(_engine, frames),
+    );
+  }
+
+  /// Reads the engine's negotiated channel count (interleave width).
+  int _channels() {
+    _bindings.le_engine_get_snapshot(_engine, _snapshotPtr);
+    final c = _snapshotPtr.ref.channels;
+    return c > 0 ? c : 1;
+  }
+
+  @override
+  Float32List exportTrack(int channel) {
+    _checkAlive();
+    _bindings.le_engine_get_track(_engine, channel, _trackPtr);
+    final frames = _trackPtr.ref.length_frames;
+    final channels = _channels();
+    if (frames <= 0) return Float32List(0);
+    final buf = calloc<Float>(frames * channels);
+    try {
+      final n = _bindings.le_engine_export_track(_engine, channel, buf, frames);
+      if (n <= 0) return Float32List(0);
+      return Float32List.fromList(buf.asTypedList(n * channels));
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  EngineResult importTrack(int channel, Float32List pcm) {
+    _checkAlive();
+    final channels = _channels();
+    final frames = pcm.length ~/ channels;
+    if (frames <= 0) return EngineResult.invalid;
+    final buf = calloc<Float>(pcm.length);
+    try {
+      buf.asTypedList(pcm.length).setAll(0, pcm);
+      return EngineResult.fromCode(
+        _bindings.le_engine_import_track(_engine, channel, buf, frames),
+      );
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  EngineResult commitSession(int baseFrames) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_commit_session(_engine, baseFrames),
     );
   }
 

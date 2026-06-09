@@ -1,0 +1,22 @@
+name: session_repository
+description: >-
+  Saves and restores Loopy sessions (.loopy bundles) and exports mixdown +
+  per-track WAV stems via the audio engine.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  loopy_engine:
+    path: ../loopy_engine
+  meta: ^1.16.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.2.0

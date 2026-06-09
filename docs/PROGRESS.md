@@ -111,6 +111,23 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   beat detection); a second press cancels the arm. Stops act immediately.
   `quantize_mode` + `armed_channel` in the snapshot; tempo-bar quantize selector
   + per-track "armed" chip in the UI.
+- **Loop multiples** (#4): a non-defining track can span an integer multiple of
+  the base loop. A free-running `loop_iteration` counts base-loop wraps; each
+  track plays `((iteration − start_iter) % multiple)·baseLen + position`, so the
+  master still wraps at the base length while a k-loop track cycles its k
+  segments. New tracks record freely from the loop top across base loops and are
+  **auto-rounded up** to whole base loops on stop (buffer zeroed on the control
+  thread so a rounded-up tail is silent). Per-track `multiple` in the snapshot;
+  `×N` chip in the UI.
+- **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
+  `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
+  exports mixdown / per-track stems. Native `le_engine_export_track` /
+  `import_track` / `commit_session` move loop PCM in and out (control-thread copy
+  into EMPTY tracks; a ring command flips them to PLAYING at their multiple, so
+  the audio thread's RT contract is preserved). `SessionCubit` + a session menu
+  in the looper app bar drive it; the engine is shared (looper owns dispose).
+  Load refuses a sample-rate mismatch (no resampling) or a newer manifest
+  version.
 
 ---
 
@@ -121,8 +138,11 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   loopback measurement, persisted per device.
 - **Undo/redo** — multi-level, per track, overdub layers only; clear removes a
   track. Immediate swap (tiny click on undo accepted).
-- **#4 loop multiples** — **auto-round on stop** (record freely; round track
-  length up to the nearest whole multiple of the base loop).
+- **#4 loop multiples** — **auto-round on stop** (record freely from the loop
+  top; round track length up to the nearest whole multiple of the base loop).
+  Free-running `loop_iteration`; track reads its `(iter-start_iter) % k` segment.
+  New-track first pass always begins at the loop top (phase-locked multiples);
+  per-track multi-loop phase is relative to each track's own start.
 - **#2 loop ↔ tempo** — round the defining loop to whole bars and derive the
   beat grid (and displayed tempo) from the loop; metronome locks to loop
   position. Sync is a persistent toggle, default on; off keeps the free-form
@@ -136,27 +156,26 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 
 ---
 
-## Roadmap (path forward) — remaining sync work
+## Roadmap (path forward)
 
-The last remaining sync item is a real-time engine change touching the master
-clock / position model. (#2 loop ↔ tempo and #3 quantize-start are done — see
-Done / Locked decisions.)
+**The sync roadmap (#2–#4) is complete** — loop ↔ tempo, quantize-start, and
+loop multiples all landed (see Done / Locked decisions). What remains needs
+hardware or a second display, or is Phase 4 scope.
 
-### #4 Loop multiples  (NEXT)
-- Per-track length that can be an integer multiple of the base loop.
-- Introduce a **free-running global position**; each track plays at
-  `globalPos % trackLen`. Master UI still wraps at the base length.
-- Auto-round: on stopping a track's recording, round its length up to the
-  nearest whole multiple of the base; track buffers are cap-sized so a longer
-  track fits up to `max_loop_frames`.
-- Snapshot per-track length already exists; add the multiple/length wiring.
+### Possible next steps (no hard dependency)
+- **Per-track multi-loop phase alignment** — multi-loop tracks currently phase
+  relative to their own start iteration; an absolute-parity option would align
+  all k-loop tracks to the same base-loop downbeat.
+- **Quantized stop / per-track loop-length display in bars** — small UX wins on
+  top of #2–#4.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding (abstraction + wiring ready; needs a
   pedal). Plug a `ControllerSource` into the already-wired `ControllerRepository`.
 - Secondary-window **visualizer** (`desktop_multi_window`) — needs a 2nd display.
-- **Phase 4:** sessions save/load + WAV export, Raspberry Pi GPIO backend,
-  device hot-plug handling, theming/accessibility/golden tests.
+- **Phase 4:** sessions save/load + WAV export ✅ (done — see Done); remaining:
+  Raspberry Pi GPIO backend, device hot-plug handling, theming/accessibility/
+  golden tests.
 
 ### On-hardware validations still open
 - Phase-1 **latency gate** (≤10 ms round-trip) — needs a class-compliant
@@ -166,6 +185,7 @@ Done / Locked decisions.)
 ---
 
 ## Test counts (last green)
-native (all C tests, 31 fns incl. 4 loop↔tempo + 5 quantize) · plugin 27 ·
-controller 14 · looper_repository 13 · settings 3 · local_storage 1 · app 44.
-macOS app builds end-to-end.
+native (all C tests, 34 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples + 1
+session roundtrip) · plugin 27 · controller 14 · looper_repository 14 ·
+settings 3 · local_storage 1 · session_repository 17 · app 53. macOS app builds
+end-to-end.

@@ -1,38 +1,37 @@
 import 'package:controller_repository/controller_repository.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/app/app.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:session_repository/session_repository.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
 void main() {
-  group('App', () {
-    testWidgets('renders the looper as the home page', (tester) async {
+  group('LooperPage', () {
+    testWidgets('wires its blocs and renders the looper view', (tester) async {
       final repository = LooperRepository(
         engine: FakeAudioEngine(),
         ticker: const Stream<void>.empty(),
       );
       final controllerRepository = ControllerRepository(sources: const []);
-      final settings = SettingsRepository(store: FakeKeyValueStore());
       final sessionRepository = SessionRepository(engine: FakeAudioEngine());
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
 
-      await tester.pumpWidget(
-        App(
-          repository: repository,
-          controllerRepository: controllerRepository,
-          settings: settings,
-          sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
+      await tester.pumpApp(
+        MultiRepositoryProvider(
+          providers: [
+            RepositoryProvider.value(value: repository),
+            RepositoryProvider.value(value: controllerRepository),
+            RepositoryProvider.value(value: sessionRepository),
+          ],
+          child: LooperPage(sessionDirectory: () async => '.'),
         ),
       );
       await tester.pump();
 
-      expect(find.byType(LooperPage), findsOneWidget);
+      expect(find.byType(LooperView), findsOneWidget);
     });
   });
 }
