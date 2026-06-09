@@ -11,9 +11,12 @@ class WaveformWindowCubit extends Cubit<bool> {
       super(true);
 
   final SettingsRepository _settings;
+  Future<void>? _loadFuture;
 
   /// Restores the persisted preference.
-  Future<void> load() async {
+  Future<void> load() => _loadFuture ??= _restore();
+
+  Future<void> _restore() async {
     emit(await _settings.loadShowWaveformWindow());
   }
 

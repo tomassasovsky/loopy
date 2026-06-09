@@ -15,9 +15,12 @@ class BankCubit extends Cubit<BankState> {
       super(const BankState());
 
   final SettingsRepository _settings;
+  Future<void>? _loadFuture;
 
   /// Restores the persisted bank-enabled preference.
-  Future<void> load() async {
+  Future<void> load() => _loadFuture ??= _restore();
+
+  Future<void> _restore() async {
     emit(state.copyWith(enabled: await _settings.loadBankEnabled()));
   }
 

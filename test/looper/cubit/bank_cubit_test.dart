@@ -11,10 +11,10 @@ void main() {
   setUp(() => settings = SettingsRepository(store: FakeKeyValueStore()));
 
   group('BankCubit', () {
-    test('defaults to a single, disabled bank showing channels 0-3', () {
+    test('defaults to two banks with bank A showing channels 0-3', () {
       final state = BankCubit(settings: settings).state;
-      expect(state.enabled, isFalse);
-      expect(state.bankCount, 1);
+      expect(state.enabled, isTrue);
+      expect(state.bankCount, 2);
       expect(state.baseChannel, 0);
       expect(state.contains(3), isTrue);
       expect(state.contains(4), isFalse);
@@ -24,18 +24,18 @@ void main() {
       'enabling the bank persists it and exposes two banks',
       build: () => BankCubit(settings: settings),
       act: (cubit) => cubit.setEnabled(value: true),
-      expect: () => [const BankState(enabled: true)],
+      expect: () => [const BankState()],
       verify: (_) async => expect(await settings.loadBankEnabled(), isTrue),
     );
 
     blocTest<BankCubit, BankState>(
       'selecting bank B exposes channels 4-7 when enabled',
       build: () => BankCubit(settings: settings),
-      seed: () => const BankState(enabled: true),
+      seed: () => const BankState(),
       act: (cubit) => cubit.selectBank(1),
-      expect: () => [const BankState(enabled: true, activeBank: 1)],
+      expect: () => [const BankState(activeBank: 1)],
       verify: (_) {
-        const state = BankState(enabled: true, activeBank: 1);
+        const state = BankState(activeBank: 1);
         expect(state.baseChannel, 4);
         expect(state.contains(4), isTrue);
         expect(state.contains(3), isFalse);
@@ -45,6 +45,7 @@ void main() {
     blocTest<BankCubit, BankState>(
       'selectBank is ignored while the second bank is disabled',
       build: () => BankCubit(settings: settings),
+      seed: () => const BankState(enabled: false),
       act: (cubit) => cubit.selectBank(1),
       expect: () => <BankState>[],
     );
@@ -52,9 +53,9 @@ void main() {
     blocTest<BankCubit, BankState>(
       'disabling the bank returns to bank A',
       build: () => BankCubit(settings: settings),
-      seed: () => const BankState(enabled: true, activeBank: 1),
+      seed: () => const BankState(activeBank: 1),
       act: (cubit) => cubit.setEnabled(value: false),
-      expect: () => [const BankState()],
+      expect: () => [const BankState(enabled: false)],
     );
 
     blocTest<BankCubit, BankState>(
@@ -62,7 +63,7 @@ void main() {
       setUp: () => settings.saveBankEnabled(value: true),
       build: () => BankCubit(settings: settings),
       act: (cubit) => cubit.load(),
-      expect: () => [const BankState(enabled: true)],
+      expect: () => [const BankState()],
     );
   });
 }
