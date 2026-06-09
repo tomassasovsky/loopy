@@ -80,6 +80,7 @@ class _BigPictureViewState extends State<BigPictureView> {
                                   name: big.nameOf(track.channel),
                                   selected:
                                       track.channel == big.selectedChannel,
+                                  playMode: big.mode == PerformanceMode.play,
                                 ),
                               ),
                             ),
@@ -315,11 +316,13 @@ class _TrackColumn extends StatelessWidget {
     required this.track,
     required this.name,
     required this.selected,
+    required this.playMode,
   });
 
   final Track track;
   final String name;
   final bool selected;
+  final bool playMode;
 
   @override
   Widget build(BuildContext context) {
@@ -332,6 +335,7 @@ class _TrackColumn extends StatelessWidget {
     // see LooperTheme.meterColors).
     final barColor = looper.meterColor(
       LooperMeterState.of(track.state, muted: track.muted),
+      playMode: playMode,
     );
 
     return Container(

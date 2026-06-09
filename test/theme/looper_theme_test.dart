@@ -11,32 +11,42 @@ void main() {
       waveformColor: Color(0xFF00E5FF),
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
-      meterColors: {
-        LooperMeterState.recording: Color(0xFFFF0000),
+      recordMeterColors: {
         LooperMeterState.playing: Color(0xFF00FF00),
         LooperMeterState.muted: Color(0xFFFFFFFF),
       },
+      playMeterColors: {
+        LooperMeterState.playing: Color(0xFF0000FF),
+      },
     );
 
-    test('meterColor looks up the meter state in the table', () {
+    test('meterColor picks the table for the current mode', () {
+      // Record mode uses recordMeterColors; play mode uses playMeterColors.
       expect(
-        theme.meterColor(LooperMeterState.playing),
+        theme.meterColor(LooperMeterState.playing, playMode: false),
         const Color(0xFF00FF00),
       );
       expect(
-        theme.meterColor(LooperMeterState.recording),
-        const Color(0xFFFF0000),
+        theme.meterColor(LooperMeterState.playing, playMode: true),
+        const Color(0xFF0000FF),
       );
-      expect(theme.meterColor(LooperMeterState.muted), const Color(0xFFFFFFFF));
-      // A state the table omits resolves to transparent.
-      expect(theme.meterColor(LooperMeterState.stopped), Colors.transparent);
+      // A state the active table omits resolves to transparent.
+      expect(
+        theme.meterColor(LooperMeterState.stopped, playMode: false),
+        Colors.transparent,
+      );
+      expect(
+        theme.meterColor(LooperMeterState.muted, playMode: true),
+        Colors.transparent,
+      );
     });
 
     test('copyWith overrides only the given fields', () {
       final updated = theme.copyWith(recordColor: const Color(0xFFABCDEF));
       expect(updated.recordColor, const Color(0xFFABCDEF));
       expect(updated.waveformColor, theme.waveformColor);
-      expect(updated.meterColors, theme.meterColors);
+      expect(updated.recordMeterColors, theme.recordMeterColors);
+      expect(updated.playMeterColors, theme.playMeterColors);
     });
 
     test('lerp interpolates toward the other theme', () {
@@ -86,12 +96,16 @@ void main() {
     });
   });
 
-  test('AppTheme maps every meter state to a color in both modes', () {
-    final desktop = AppTheme.desktop.extension<LooperTheme>()!;
-    final big = AppTheme.bigPicture.extension<LooperTheme>()!;
-    for (final state in LooperMeterState.values) {
-      expect(desktop.meterColors[state], isNotNull);
-      expect(big.meterColors[state], isNotNull);
+  test('AppTheme maps every meter state in both modes and both themes', () {
+    final themes = [
+      AppTheme.desktop.extension<LooperTheme>()!,
+      AppTheme.bigPicture.extension<LooperTheme>()!,
+    ];
+    for (final theme in themes) {
+      for (final state in LooperMeterState.values) {
+        expect(theme.recordMeterColors[state], isNotNull);
+        expect(theme.playMeterColors[state], isNotNull);
+      }
     }
     expect(AppTheme.bigPicture.useMaterial3, isTrue);
   });

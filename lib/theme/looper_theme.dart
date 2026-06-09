@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 
-/// The distinct appearances a track meter (peak bar) can take. This is the
-/// track's [TrackState] plus a [muted] case that overlays any state — collapsed
-/// into one enum so a single color table ([LooperTheme.meterColors]) covers
-/// every meter color in one place.
+/// The distinct appearances a track meter (peak bar) can take: the track's
+/// [TrackState] plus a `muted` case that overlays any state — collapsed into
+/// one enum so the per-mode meter tables key off a single concept.
 enum LooperMeterState {
   /// No audio recorded.
   empty,
@@ -51,7 +50,8 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.waveformColor,
     required this.waveformBackground,
     required this.recordColor,
-    required this.meterColors,
+    required this.recordMeterColors,
+    required this.playMeterColors,
   });
 
   /// Background of a track tile.
@@ -69,13 +69,17 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Accent for the record/recording state (e.g. the mode indicator).
   final Color recordColor;
 
-  /// The single source of truth for the track-meter (peak bar) color in each
-  /// [LooperMeterState].
-  final Map<LooperMeterState, Color> meterColors;
+  /// Track-meter (peak bar) colors by [LooperMeterState] in record mode.
+  final Map<LooperMeterState, Color> recordMeterColors;
 
-  /// The meter color for [state] (transparent if the table omits it).
-  Color meterColor(LooperMeterState state) =>
-      meterColors[state] ?? Colors.transparent;
+  /// Track-meter (peak bar) colors by [LooperMeterState] in play mode.
+  final Map<LooperMeterState, Color> playMeterColors;
+
+  /// The meter color for [state] in the current mode ([playMode] selects the
+  /// play table, else the record table). Transparent if the table omits it.
+  Color meterColor(LooperMeterState state, {required bool playMode}) =>
+      (playMode ? playMeterColors : recordMeterColors)[state] ??
+      Colors.transparent;
 
   @override
   LooperTheme copyWith({
@@ -84,15 +88,26 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? waveformColor,
     Color? waveformBackground,
     Color? recordColor,
-    Map<LooperMeterState, Color>? meterColors,
+    Map<LooperMeterState, Color>? recordMeterColors,
+    Map<LooperMeterState, Color>? playMeterColors,
   }) => LooperTheme(
     tileBackground: tileBackground ?? this.tileBackground,
     tileBorder: tileBorder ?? this.tileBorder,
     waveformColor: waveformColor ?? this.waveformColor,
     waveformBackground: waveformBackground ?? this.waveformBackground,
     recordColor: recordColor ?? this.recordColor,
-    meterColors: meterColors ?? this.meterColors,
+    recordMeterColors: recordMeterColors ?? this.recordMeterColors,
+    playMeterColors: playMeterColors ?? this.playMeterColors,
   );
+
+  static Map<LooperMeterState, Color> _lerpMeters(
+    Map<LooperMeterState, Color> a,
+    Map<LooperMeterState, Color> b,
+    double t,
+  ) => {
+    for (final entry in a.entries)
+      entry.key: Color.lerp(entry.value, b[entry.key], t) ?? entry.value,
+  };
 
   @override
   LooperTheme lerp(ThemeExtension<LooperTheme>? other, double t) {
@@ -107,12 +122,12 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
           Color.lerp(waveformBackground, other.waveformBackground, t) ??
           waveformBackground,
       recordColor: Color.lerp(recordColor, other.recordColor, t) ?? recordColor,
-      meterColors: {
-        for (final entry in meterColors.entries)
-          entry.key:
-              Color.lerp(entry.value, other.meterColors[entry.key], t) ??
-              entry.value,
-      },
+      recordMeterColors: _lerpMeters(
+        recordMeterColors,
+        other.recordMeterColors,
+        t,
+      ),
+      playMeterColors: _lerpMeters(playMeterColors, other.playMeterColors, t),
     );
   }
 }
