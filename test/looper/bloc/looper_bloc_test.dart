@@ -135,6 +135,22 @@ void main() {
     },
   );
 
+  blocTest<LooperBloc, LooperState>(
+    'LooperClearAllPressed clears every track that has content',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [
+        Track(state: TrackState.playing, lengthFrames: 100),
+        Track(channel: 1), // empty -> skipped
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperClearAllPressed()),
+    verify: (_) {
+      verify(() => repository.clear()).called(1);
+      verifyNever(() => repository.clear(channel: 1));
+    },
+  );
+
   group('controller wiring', () {
     late _FakeControllerSource source;
     late ControllerRepository controller;
