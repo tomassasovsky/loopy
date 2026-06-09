@@ -14,6 +14,7 @@ class EngineStatus extends Equatable {
     this.measuredLatencyMs = -1,
     this.xrunCount = 0,
     this.isConnected = false,
+    this.devicePresent = false,
     this.recordOffsetFrames = 0,
   });
 
@@ -45,6 +46,13 @@ class EngineStatus extends Equatable {
   /// Whether the audio device is open and running.
   final bool isConnected;
 
+  /// Whether the pinned (or default) device is currently present.
+  ///
+  /// Distinct from [isConnected]: a pinned device can be lost (unplugged) while
+  /// the engine object still reports running until it is restarted. The
+  /// disconnect signal the reconnect supervisor and the banner are driven from.
+  final bool devicePresent;
+
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
@@ -62,6 +70,7 @@ class EngineStatus extends Equatable {
     measuredLatencyMs,
     xrunCount,
     isConnected,
+    devicePresent,
     recordOffsetFrames,
   ];
 }

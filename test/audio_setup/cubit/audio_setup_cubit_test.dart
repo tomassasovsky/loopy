@@ -34,6 +34,7 @@ void main() {
     when(repository.measureLatency).thenReturn(EngineResult.ok);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
+    when(repository.devices).thenReturn(const []);
   });
 
   tearDown(() => stateController.close());
@@ -265,6 +266,140 @@ void main() {
         ),
         640,
       );
+    });
+  });
+
+  group('device selection', () {
+    test('hydrates devices and selected ids from the repository', () {
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'out-1',
+          name: 'Scarlett',
+          isDefault: true,
+          isInput: false,
+        ),
+        AudioDevice(
+          id: 'in-1',
+          name: 'Built-in Mic',
+          isDefault: true,
+          isInput: true,
+        ),
+      ]);
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1', captureDeviceId: 'in-1'),
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      expect(cubit.state.devices, hasLength(2));
+      expect(cubit.state.playbackDevices, hasLength(1));
+      expect(cubit.state.captureDevices, hasLength(1));
+      expect(cubit.state.playbackDeviceId, 'out-1');
+      expect(cubit.state.captureDeviceId, 'in-1');
+    });
+
+    test('setPlaybackDevice updates state and persists', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit.setPlaybackDevice('out-1');
+      expect(cubit.state.playbackDeviceId, 'out-1');
+      await Future<void>.delayed(Duration.zero);
+      expect((await settings.loadAudioConfig())?.playbackDeviceId, 'out-1');
+    });
+
+    test('setCaptureDevice updates state and persists', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit.setCaptureDevice('in-1');
+      expect(cubit.state.captureDeviceId, 'in-1');
+      await Future<void>.delayed(Duration.zero);
+      expect((await settings.loadAudioConfig())?.captureDeviceId, 'in-1');
+    });
+
+    test('selecting a device while running reopens the engine on it', () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(deviceName: 'X', isConnected: true),
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.status, AudioSetupStatus.running);
+
+      cubit.setPlaybackDevice('out-1');
+
+      verify(repository.stopEngine).called(1);
+      final captured =
+          verify(() => repository.startEngine(captureAny())).captured.single
+              as EngineConfig;
+      expect(captured.playbackDeviceId, 'out-1');
+    });
+
+    test('a failed reopen while running surfaces an error', () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(deviceName: 'X', isConnected: true),
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.status, AudioSetupStatus.running);
+
+      when(() => repository.startEngine(any())).thenReturn(EngineResult.device);
+      cubit.setPlaybackDevice('out-1');
+
+      expect(cubit.state.status, AudioSetupStatus.error);
+      expect(cubit.state.errorMessage, contains('Failed to open device'));
+    });
+  });
+
+  group('device connectivity', () {
+    LooperState present({
+      required bool devicePresent,
+      String name = 'Scarlett',
+    }) => LooperState(
+      status: EngineStatus(
+        deviceName: name,
+        isConnected: true,
+        devicePresent: devicePresent,
+      ),
+    );
+
+    test('raises lost then restored for a pinned device', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+
+      // Device lost (name now empty, but the last-seen name is remembered).
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      expect(cubit.state.connectivityDeviceName, 'Scarlett');
+
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
+    });
+
+    test('never raises an event for the system default', () async {
+      final cubit = buildCubit(); // no pinned device
+      addTearDown(cubit.close);
+
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
     });
   });
 }
