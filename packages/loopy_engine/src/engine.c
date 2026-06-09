@@ -28,6 +28,14 @@
 #include "loopy_engine_api.h"
 #include "miniaudio.h"
 
+#if defined(__APPLE__)
+/* Core Audio is used only to read per-channel hardware labels for loopback
+ * exclusion (see le_compute_excluded_input_mask). The frameworks are already
+ * linked by the macOS build. */
+#include <CoreAudio/CoreAudio.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 #define LE_RING_CAPACITY 256u
 /* Loopback latency harness. The echo returns only mildly attenuated (~0.9 from
  * a full-scale pulse on a typical interface), so we emit a quiet calibration
@@ -99,6 +107,9 @@ struct le_engine {
   _Atomic int32_t a_buffer_frames;
   _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
   _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
+  /* Input channels whose Core Audio label marks them as loopback; never
+   * recorded, monitored, or routable. Computed once at device open. */
+  _Atomic uint32_t a_excluded_input_mask;
   _Atomic uint64_t a_frames;
   _Atomic uint32_t a_xruns;
   _Atomic uint32_t a_in_rms_bits;
@@ -415,9 +426,22 @@ static void apply_command(le_engine* e, const le_command* cmd) {
         store_i32(&e->tracks[cmd->arg_i].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
       }
       break;
-    case LE_CMD_SET_RECORD_OFFSET:
-      store_i32(&e->a_record_offset, cmd->arg_i > 0 ? cmd->arg_i : 0);
+    case LE_CMD_SET_RECORD_OFFSET: {
+      const int32_t frames = cmd->arg_i > 0 ? cmd->arg_i : 0;
+      store_i32(&e->a_record_offset, frames);
+      /* An explicitly set offset (a restored measurement, or a manual override)
+       * is a known round-trip, so publish it as a completed measurement — the
+       * UI then shows the loaded latency instead of "not measured". */
+      if (frames > 0) {
+        const int32_t osr = e->sample_rate > 0 ? e->sample_rate : 48000;
+        atomic_store_explicit(
+            &e->a_latency_ms_bits,
+            f64_to_bits((double)frames * 1000.0 / (double)osr),
+            memory_order_relaxed);
+        store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+      }
       break;
+    }
     /* Unlike SET_VOLUME/SET_MUTE (track in arg_i), these two carry the track in
      * arg_f and the mask in arg_i — so a 32-bit mask round-trips exactly (a
      * float cannot). See le_engine_set_input_mask/set_output_mask. */
@@ -427,8 +451,12 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       const uint32_t valid = e->in_channels >= 32
                                  ? 0xFFFFFFFFu
                                  : ((1u << e->in_channels) - 1u);
+      /* A track can never record from a loopback-excluded channel. */
+      const uint32_t excluded = atomic_load_explicit(
+          &e->a_excluded_input_mask, memory_order_relaxed);
       atomic_store_explicit(&e->tracks[ch].a_input_mask,
-                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+                            (uint32_t)cmd->arg_i & valid & ~excluded,
+                            memory_order_relaxed);
       break;
     }
     case LE_CMD_SET_OUTPUT_MASK: {
@@ -460,6 +488,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  /* Loopback-labelled input channels are never recorded, monitored, or
+   * metered (they carry our own output and would otherwise inflate the meter). */
+  const uint32_t excluded =
+      atomic_load_explicit(&e->a_excluded_input_mask, memory_order_relaxed);
+  int active_in = 0;
+  for (int c = 0; c < ch_in; ++c) {
+    if (!(excluded & (1u << c))) ++active_in;
+  }
 
   float in_sumsq = 0.0f;
   float in_peak = 0.0f;
@@ -468,17 +504,29 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float trk_peak[LE_MAX_TRACKS] = {0};
 
   for (uint32_t f = 0; f < frames; ++f) {
-    float frame_mag = 0.0f;
+    float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
+    float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
     float mono = 0.0f;
     for (int c = 0; c < ch_in; ++c) {
       const float s = in ? in[f * ch_in + c] : 0.0f;
       const float a = fabsf(s);
+      if (excluded & (1u << c)) {
+        /* Loopback channels carry our own output back; not recorded/monitored/
+         * metered, but they are the round-trip path the latency harness times. */
+        if (a > loop_mag) loop_mag = a;
+        continue;
+      }
       if (a > frame_mag) frame_mag = a;
       in_sumsq += s * s;
       mono += s;
     }
-    mono /= (float)ch_in; /* clip-safe average fold-down */
+    mono /= (float)(active_in > 0 ? active_in : 1); /* clip-safe fold-down */
     if (frame_mag > in_peak) in_peak = frame_mag;
+
+    /* The latency pulse returns on the loopback channels when the interface has
+     * them (e.g. a Scarlett's "Loop 1/2"); otherwise (a physical cable, or a
+     * routed loopback capture device) it returns on the normal inputs. */
+    const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
 
     /* Latency harness takes over the output entirely while measuring.
      *
@@ -502,7 +550,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       const uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
       const uint64_t attempt_frames = (uint64_t)(sr / LE_LATENCY_RETRY_DIV);
       if (e->lat_frames_since_emit > dead_frames &&
-          frame_mag >= LE_LATENCY_THRESHOLD) {
+          lat_mag >= LE_LATENCY_THRESHOLD) {
         const double ms = (double)e->lat_frames_since_emit * 1000.0 / (double)sr;
         atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
                               memory_order_relaxed);
@@ -587,7 +635,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         float sum = 0.0f;
         int cnt = 0;
         for (int c = 0; c < ch_in; ++c) {
-          if (in_mask[t] & (1u << c)) {
+          /* The excluded check is load-bearing, not merely defensive: the
+           * default mask (0x1) is set without going through SET_INPUT_MASK's
+           * clamp, so it can still name an excluded channel here. */
+          if ((in_mask[t] & (1u << c)) && !(excluded & (1u << c))) {
             sum += in[f * ch_in + c];
             ++cnt;
           }
@@ -640,10 +691,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     }
 
     /* Input monitoring (passthrough): route input channel c to output channel c
-     * for the channels the two sides share. Kept deliberately simple. */
+     * for the channels the two sides share. Excluded (loopback) channels are
+     * never monitored. Kept deliberately simple. */
     if (monitor_on) {
       const int shared = ch_in < ch_out ? ch_in : ch_out;
       for (int c = 0; c < shared; ++c) {
+        if (excluded & (1u << c)) continue;
         out[f * ch_out + c] += e->mono_input ? mono : (in ? in[f * ch_in + c]
                                                           : 0.0f);
       }
@@ -725,7 +778,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     }
   }
 
-  const uint32_t total_in = frames * (uint32_t)ch_in;
+  /* Input RMS is normalised by the active (non-loopback) channel count only. */
+  const uint32_t total_in = frames * (uint32_t)active_in;
   const uint32_t total_out = frames * (uint32_t)ch_out;
   store_f32(&e->a_in_rms_bits,
             total_in ? sqrtf(in_sumsq / (float)total_in) : 0.0f);
@@ -825,6 +879,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
   store_i32(&engine->a_out_channels, output_channels);
+  /* Re-derived per device open in le_engine_start; default to none excluded. */
+  atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
+                        memory_order_relaxed);
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
@@ -863,6 +920,14 @@ le_loopback_kind le_classify_capture_device(const char* name) {
     if (contains_ci(name, virtual_names[i])) return LE_LOOPBACK_VIRTUAL;
   }
   return LE_LOOPBACK_NONE;
+}
+
+int le_label_is_loopback(const char* label) {
+  /* Case-insensitive "loop" match. This covers both the generic "Loopback"
+   * label and the Focusrite convention of naming the two loopback inputs
+   * "Loop 1" / "Loop 2" (verified on a Scarlett 4i4). "loop" subsumes
+   * "loopback", so one substring check handles both. */
+  return contains_ci(label, "loop");
 }
 
 static void find_loopback(ma_context* ctx, le_loopback_info* out,
@@ -1021,6 +1086,89 @@ static void notification_callback(const ma_device_notification* notification) {
   }
 }
 
+/* ---- loopback channel exclusion (Core Audio labels) ---- */
+
+#if defined(__APPLE__)
+/* Resolves the AudioDeviceID for `uid` (a Core Audio device UID string), or the
+ * default input device when `uid` is NULL/empty. Returns kAudioObjectUnknown on
+ * failure. */
+static AudioObjectID le_macos_input_device(const char* uid) {
+  if (uid != NULL && uid[0] != '\0') {
+    CFStringRef cf = CFStringCreateWithCString(NULL, uid, kCFStringEncodingUTF8);
+    if (cf == NULL) return kAudioObjectUnknown;
+    AudioObjectID dev = kAudioObjectUnknown;
+    AudioValueTranslation t = {&cf, sizeof(cf), &dev, sizeof(dev)};
+    UInt32 size = sizeof(t);
+    AudioObjectPropertyAddress addr = {
+        kAudioHardwarePropertyDeviceForUID, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+    const OSStatus st = AudioObjectGetPropertyData(
+        kAudioObjectSystemObject, &addr, 0, NULL, &size, &t);
+    CFRelease(cf);
+    if (st == noErr && dev != kAudioObjectUnknown) return dev;
+  }
+  AudioObjectID dev = kAudioObjectUnknown;
+  UInt32 size = sizeof(dev);
+  AudioObjectPropertyAddress addr = {kAudioHardwarePropertyDefaultInputDevice,
+                                     kAudioObjectPropertyScopeGlobal,
+                                     kAudioObjectPropertyElementMain};
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL, &size,
+                                 &dev) != noErr) {
+    return kAudioObjectUnknown;
+  }
+  return dev;
+}
+
+/* Builds a bitmask of input channels (0..channel_count-1) whose Core Audio
+ * element name matches "loopback". Channels with no label are treated as
+ * not-loopback. */
+static uint32_t le_macos_excluded_mask(const char* uid, int channel_count) {
+  const AudioObjectID dev = le_macos_input_device(uid);
+  if (dev == kAudioObjectUnknown) return 0;
+  uint32_t mask = 0;
+  const int n = channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
+  for (int c = 0; c < n; ++c) {
+    AudioObjectPropertyAddress addr = {kAudioObjectPropertyElementName,
+                                       kAudioObjectPropertyScopeInput,
+                                       (AudioObjectPropertyElement)(c + 1)};
+    CFStringRef name = NULL;
+    UInt32 size = sizeof(name);
+    if (AudioObjectGetPropertyData(dev, &addr, 0, NULL, &size, &name) != noErr ||
+        name == NULL) {
+      continue;
+    }
+    char buf[256];
+    if (CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) &&
+        le_label_is_loopback(buf)) {
+      mask |= (1u << c);
+    }
+    CFRelease(name);
+  }
+  return mask;
+}
+#endif
+
+/* Computes the excluded-input bitmask for the capture device identified by
+ * `uid` (NULL/empty => default input). macOS reads Core Audio channel labels;
+ * every other platform excludes nothing. */
+static uint32_t le_compute_excluded_input_mask(const char* uid,
+                                               int channel_count) {
+#if defined(__APPLE__)
+  return le_macos_excluded_mask(uid, channel_count);
+#else
+  (void)uid;
+  (void)channel_count;
+  return 0;
+#endif
+}
+
+void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
+                                                uint32_t mask) {
+  if (engine == NULL) return;
+  atomic_store_explicit(&engine->a_excluded_input_mask, mask,
+                        memory_order_relaxed);
+}
+
 static void le_uninit_context(le_engine* engine) {
   if (engine->context_initialised) {
     ma_context_uninit(&engine->context);
@@ -1145,6 +1293,17 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
+  /* Exclude any loopback-labelled capture channels. The capture device's UID is
+   * our explicit capture id when one was pinned/loopback-routed, else the system
+   * default input. On string-id backends the id union is the UID string. */
+  const char* capture_uid =
+      cfg.capture.pDeviceID != NULL ? (const char*)&engine->capture_id : NULL;
+  /* relaxed: a lone published value, matching the other configuration atomics
+   * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
+  atomic_store_explicit(&engine->a_excluded_input_mask,
+                        le_compute_excluded_input_mask(capture_uid, neg_in),
+                        memory_order_relaxed);
+
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
@@ -1179,6 +1338,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->buffer_frames = load_i32(&engine->a_buffer_frames);
   out->input_channels = load_i32(&engine->a_in_channels);
   out->output_channels = load_i32(&engine->a_out_channels);
+  out->excluded_input_mask =
+      atomic_load_explicit(&engine->a_excluded_input_mask, memory_order_relaxed);
   out->frames_processed =
       atomic_load_explicit(&engine->a_frames, memory_order_relaxed);
   out->xrun_count = atomic_load_explicit(&engine->a_xruns, memory_order_relaxed);
@@ -1296,6 +1457,12 @@ static int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i,
   }
   const le_command cmd = {code, arg_i, arg_f};
   return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
+}
+
+int32_t le_engine_begin_latency_for_test(le_engine* engine) {
+  /* Configured-gated (like the looper commands) so the harness's loopback
+   * detection can be driven without opening a device. */
+  return le_push(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
 }
 
 /* Returns a pool slot that is neither live nor referenced by either stack,

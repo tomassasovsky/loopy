@@ -16,6 +16,7 @@ class TrackRoutingPanel extends StatelessWidget {
     required this.outputChannels,
     required this.onInputMaskChanged,
     required this.onOutputMaskChanged,
+    this.excludedInputMask = 0,
     super.key,
   });
 
@@ -24,6 +25,10 @@ class TrackRoutingPanel extends StatelessWidget {
 
   /// Number of available hardware input channels.
   final int inputChannels;
+
+  /// Bitmask of input channels excluded as loopback: shown disabled and tagged,
+  /// never selectable as a record source.
+  final int excludedInputMask;
 
   /// Number of available hardware output channels.
   final int outputChannels;
@@ -58,16 +63,24 @@ class TrackRoutingPanel extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (var c = 0; c < inCount; c++)
-              FilterChip(
-                key: Key('trackRouting_input_chip_$c'),
-                label: Text('In ${c + 1}'),
-                selected: track.inputMask & (1 << c) != 0,
-                onSelected: (selected) => onInputMaskChanged(
-                  selected
-                      ? track.inputMask | (1 << c)
-                      : track.inputMask & ~(1 << c),
+              if (excludedInputMask & (1 << c) != 0)
+                // Loopback channel: disabled, never a record source.
+                FilterChip(
+                  key: Key('trackRouting_input_chip_$c'),
+                  label: Text('In ${c + 1} (loopback)'),
+                  onSelected: null,
+                )
+              else
+                FilterChip(
+                  key: Key('trackRouting_input_chip_$c'),
+                  label: Text('In ${c + 1}'),
+                  selected: track.inputMask & (1 << c) != 0,
+                  onSelected: (selected) => onInputMaskChanged(
+                    selected
+                        ? track.inputMask | (1 << c)
+                        : track.inputMask & ~(1 << c),
+                  ),
                 ),
-              ),
           ],
         ),
         const SizedBox(height: 16),

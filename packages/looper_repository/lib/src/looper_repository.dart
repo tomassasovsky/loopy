@@ -235,6 +235,7 @@ class LooperRepository {
       xrunCount: s.xrunCount,
       isConnected: s.isRunning,
       devicePresent: s.devicePresent,
+      excludedInputMask: s.excludedInputMask,
       recordOffsetFrames: s.recordOffsetFrames,
     ),
   );

@@ -15,6 +15,7 @@ class EngineStatus extends Equatable {
     this.xrunCount = 0,
     this.isConnected = false,
     this.devicePresent = false,
+    this.excludedInputMask = 0,
     this.recordOffsetFrames = 0,
   });
 
@@ -53,6 +54,10 @@ class EngineStatus extends Equatable {
   /// disconnect signal the reconnect supervisor and the banner are driven from.
   final bool devicePresent;
 
+  /// Bitmask of input channels excluded as loopback (never recorded, monitored,
+  /// or routable). `0` when nothing is excluded (always so off macOS).
+  final int excludedInputMask;
+
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
@@ -71,6 +76,7 @@ class EngineStatus extends Equatable {
     xrunCount,
     isConnected,
     devicePresent,
+    excludedInputMask,
     recordOffsetFrames,
   ];
 }

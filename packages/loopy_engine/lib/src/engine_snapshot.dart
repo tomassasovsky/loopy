@@ -192,6 +192,7 @@ class EngineSnapshot {
     this.devicePresent = false,
     this.inputChannels = 0,
     this.outputChannels = 0,
+    this.excludedInputMask = 0,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
@@ -206,6 +207,7 @@ class EngineSnapshot {
       bufferFrames = 0,
       inputChannels = 0,
       outputChannels = 0,
+      excludedInputMask = 0,
       framesProcessed = 0,
       xrunCount = 0,
       inputRms = 0,
@@ -233,6 +235,7 @@ class EngineSnapshot {
     bufferFrames: native.buffer_frames,
     inputChannels: native.input_channels,
     outputChannels: native.output_channels,
+    excludedInputMask: native.excluded_input_mask,
     framesProcessed: native.frames_processed,
     xrunCount: native.xrun_count,
     inputRms: native.input_rms,
@@ -267,6 +270,10 @@ class EngineSnapshot {
 
   /// Negotiated hardware playback channel count.
   final int outputChannels;
+
+  /// Bitmask of input channels excluded as loopback (never recorded, monitored,
+  /// or routable). `0` when nothing is excluded (always so off macOS).
+  final int excludedInputMask;
 
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
@@ -340,6 +347,7 @@ class EngineSnapshot {
           bufferFrames == other.bufferFrames &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
+          excludedInputMask == other.excludedInputMask &&
           framesProcessed == other.framesProcessed &&
           xrunCount == other.xrunCount &&
           inputRms == other.inputRms &&
@@ -360,6 +368,7 @@ class EngineSnapshot {
     bufferFrames,
     inputChannels,
     outputChannels,
+    excludedInputMask,
     framesProcessed,
     xrunCount,
     inputRms,

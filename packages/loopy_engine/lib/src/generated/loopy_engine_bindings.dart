@@ -916,6 +916,13 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int output_channels;
 
+  /// Bitmask of input channels excluded from recording/monitoring/routing
+  /// because their hardware (Core Audio) label matches "loopback". Such channels
+  /// are skipped in the capture average and in monitoring, and are stripped from
+  /// any track input mask. Always 0 off macOS / when no label matches.
+  @ffi.Uint32()
+  external int excluded_input_mask;
+
   /// total frames seen by the callback
   @ffi.Uint64()
   external int frames_processed;

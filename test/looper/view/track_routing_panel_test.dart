@@ -111,5 +111,41 @@ void main() {
       // Adding input 1 to mask 0x1 yields 0x3 (record both inputs).
       expect(mask, 0x3);
     });
+
+    testWidgets('a loopback-excluded input is disabled and tagged', (
+      tester,
+    ) async {
+      var changed = false;
+      await tester.pumpApp(
+        Material(
+          child: TrackRoutingPanel(
+            track: const Track(),
+            inputChannels: 2,
+            outputChannels: 2,
+            excludedInputMask: 0x2, // channel 1 is loopback
+            onInputMaskChanged: (_) => changed = true,
+            onOutputMaskChanged: (_) {},
+          ),
+        ),
+      );
+
+      // The excluded chip is tagged and disabled (onSelected == null).
+      expect(find.text('In 2 (loopback)'), findsOneWidget);
+      final excluded = tester.widget<FilterChip>(
+        find.byKey(const Key('trackRouting_input_chip_1')),
+      );
+      expect(excluded.onSelected, isNull);
+
+      // Tapping it does not toggle the mask.
+      await tester.tap(find.byKey(const Key('trackRouting_input_chip_1')));
+      await tester.pump();
+      expect(changed, isFalse);
+
+      // The non-excluded channel 0 is still interactive.
+      final normal = tester.widget<FilterChip>(
+        find.byKey(const Key('trackRouting_input_chip_0')),
+      );
+      expect(normal.onSelected, isNotNull);
+    });
   });
 }

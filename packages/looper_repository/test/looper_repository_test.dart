@@ -159,6 +159,25 @@ void main() {
       expect(state.transport.hasLoop, isFalse);
       expect(state.transport.progress, 0);
     });
+
+    test('projects the excluded input mask onto EngineStatus', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 2,
+        excludedInputMask: 0x2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+      );
+      expect(buildRepo().state.status.excludedInputMask, 0x2);
+    });
   });
 
   group('looperState stream', () {

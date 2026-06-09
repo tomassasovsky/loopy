@@ -403,6 +403,27 @@ static void test_looper_multitrack(void) {
   le_engine_destroy(e);
 }
 
+/* A restored/explicit record offset is published as a completed measurement so
+ * the UI shows the loaded latency rather than "not measured". */
+static void test_set_record_offset_publishes_latency(void) {
+  printf("test_set_record_offset_publishes_latency\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  le_snapshot s;
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_IDLE); /* nothing set yet */
+
+  CHECK(le_engine_set_record_offset(e, 480) == LE_OK); /* 480 frames @ 48k */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.record_offset_frames == 480);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(fabs(s.measured_latency_ms - 10.0) < 1e-6); /* 480/48000 s == 10 ms */
+
+  le_engine_destroy(e);
+}
+
 static void test_latency_compensation(void) {
   printf("test_latency_compensation\n");
   le_engine* e = make_configured_engine();
@@ -942,6 +963,134 @@ static void test_enumerate_devices_runs(void) {
   CHECK(le_enumerate_capture_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
 }
 
+/* ---- loopback channel exclusion (PR B) ---- */
+
+static void test_label_is_loopback(void) {
+  printf("test_label_is_loopback\n");
+  CHECK(le_label_is_loopback("Loopback 1") == 1);
+  CHECK(le_label_is_loopback("loopback") == 1);
+  CHECK(le_label_is_loopback("My LOOPBACK channel") == 1);
+  CHECK(le_label_is_loopback("Analog Loopback 2") == 1);
+  /* Focusrite Scarlett labels its loopback inputs "Loop 1" / "Loop 2". */
+  CHECK(le_label_is_loopback("Loop 1") == 1);
+  CHECK(le_label_is_loopback("Loop 2") == 1);
+  CHECK(le_label_is_loopback("loop") == 1);
+  CHECK(le_label_is_loopback("Input 1") == 0);
+  CHECK(le_label_is_loopback("Input 4") == 0);
+  CHECK(le_label_is_loopback("Microphone") == 0);
+  CHECK(le_label_is_loopback("") == 0);
+  CHECK(le_label_is_loopback(NULL) == 0);
+}
+
+/* An excluded channel is stripped from a track's input mask by SET_INPUT_MASK,
+ * and is dropped from the capture average even if a mask still selects it. */
+static void test_loopback_exclusion(void) {
+  printf("test_loopback_exclusion\n");
+  float out[64];
+  le_snapshot s;
+
+  /* (a) SET_INPUT_MASK strips excluded bits. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);    /* 2-in, 2-out */
+  le_engine_set_excluded_input_mask_for_test(e, 0x1u); /* exclude channel 0 */
+  CHECK(le_engine_set_input_mask(e, 0, 0x3) == LE_OK); /* request both inputs */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.excluded_input_mask == 0x1u);
+  CHECK(s.tracks[0].input_mask == 0x2u); /* channel 0 stripped, only ch1 left */
+
+  /* The recorded loop carries channel 1 (2.0), never the excluded channel 0
+   * decoy (9.0). */
+  le_engine_record(e, 0);
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 9.0f; /* excluded channel 0 */
+    in[i * 2 + 1] = 2.0f; /* channel 1 */
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+  le_engine_destroy(e);
+
+  /* (b) Average-drop: a track whose mask still includes the excluded channel
+   * (the default mask 0x1 == channel 0) records silence from it. */
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, 48000, 2, 2, 1000); /* default track mask 0x1 */
+  le_engine_set_excluded_input_mask_for_test(e2, 0x1u);
+  le_engine_record(e2, 0);
+  float in2[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in2[i * 2 + 0] = 5.0f; /* excluded channel 0 only */
+    in2[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e2, out, in2, LOOP_N);
+
+  /* (c) Metering: a signal present only on the excluded channel must not show
+   * up in the input level (it carries our own output, not a real input). The
+   * snapshot reflects the block just processed (ch0 == 5.0, excluded). */
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.input_peak < 1e-6f);
+  CHECK(s.input_rms < 1e-6f);
+
+  le_engine_record(e2, 0); /* finalize */
+  drain(e2);
+  le_engine_process(e2, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+  le_engine_destroy(e2);
+}
+
+/* The round-trip latency harness times the pulse returning on the loopback
+ * channel(s) when the interface exposes them, and ignores the real inputs. */
+static void test_loopback_latency_uses_loopback_channel(void) {
+  printf("test_loopback_latency_uses_loopback_channel\n");
+  enum { N = 200, RET = 150 };
+  float out[2 * N];
+  float in[2 * N];
+  le_snapshot s;
+
+  // ch1 is the loopback; the looped-back pulse arrives there at frame RET,
+  // after the detector's dead-time. ch0 (a real input) stays silent.
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
+  drain(e); // apply MEASURE_LATENCY
+  for (int i = 0; i < N; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = i >= RET ? 0.5f : 0.0f;
+  }
+  le_engine_process(e, out, in, N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
+  le_engine_destroy(e);
+
+  // Control: the same pulse on a real input (ch0) must NOT be mistaken for the
+  // loopback return — detection stays on the loopback channel only.
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, 48000, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e2, 0x2u);
+  le_engine_begin_latency_for_test(e2);
+  drain(e2);
+  for (int i = 0; i < N; ++i) {
+    in[i * 2 + 0] = i >= RET ? 0.5f : 0.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e2, out, in, N);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.latency_state == LE_LATENCY_MEASURING); // not detected on a real input
+  le_engine_destroy(e2);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_ring_init_rejects_bad_capacity();
@@ -975,6 +1124,10 @@ int main(void) {
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
+  test_label_is_loopback();
+  test_loopback_exclusion();
+  test_loopback_latency_uses_loopback_channel();
+  test_set_record_offset_publishes_latency();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

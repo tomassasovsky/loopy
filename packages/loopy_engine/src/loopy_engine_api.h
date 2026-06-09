@@ -163,6 +163,11 @@ typedef struct le_snapshot {
   int32_t buffer_frames;
   int32_t input_channels;     /* negotiated hardware capture channels */
   int32_t output_channels;    /* negotiated hardware playback channels */
+  /* Bitmask of input channels excluded from recording/monitoring/routing
+   * because their hardware (Core Audio) label matches "loopback". Such channels
+   * are skipped in the capture average and in monitoring, and are stripped from
+   * any track input mask. Always 0 off macOS / when no label matches. */
+  uint32_t excluded_input_mask;
   uint64_t frames_processed;  /* total frames seen by the callback */
   uint32_t xrun_count;        /* reserved; xrun detection lands later (0) */
   float input_rms;            /* 0..1 */
