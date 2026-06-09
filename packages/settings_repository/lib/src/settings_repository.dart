@@ -152,9 +152,9 @@ class SettingsRepository {
   static const String _bankEnabledKey = 'big_picture.bank_enabled';
 
   /// Whether the second bank of four tracks is enabled (8 tracks total, shown
-  /// as two banks of four). Defaults to `false` (a single bank of four).
+  /// as two banks of four). Defaults to `true` (two banks of four).
   Future<bool> loadBankEnabled() async =>
-      await _store.getBool(_bankEnabledKey) ?? false;
+      await _store.getBool(_bankEnabledKey) ?? true;
 
   /// Saves whether the second bank of four tracks is enabled.
   Future<void> saveBankEnabled({required bool value}) =>

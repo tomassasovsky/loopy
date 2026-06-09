@@ -4,7 +4,7 @@ part of 'bank_cubit.dart';
 /// active.
 class BankState extends Equatable {
   /// Creates a [BankState].
-  const BankState({this.enabled = false, this.activeBank = 0});
+  const BankState({this.enabled = true, this.activeBank = 0});
 
   /// Tracks per bank.
   static const int tracksPerBank = 4;

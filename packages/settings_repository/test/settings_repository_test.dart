@@ -218,8 +218,8 @@ void main() {
   });
 
   group('bank enabled', () {
-    test('defaults to disabled when unset', () async {
-      expect(await repository.loadBankEnabled(), isFalse);
+    test('defaults to enabled when unset', () async {
+      expect(await repository.loadBankEnabled(), isTrue);
     });
 
     test('round-trips a saved preference', () async {
