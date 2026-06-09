@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/theme/theme.dart';
-import 'package:loopy/ui_mode/ui_mode.dart';
 
 const _thumbFrame = Duration(milliseconds: 50); // ~20 fps
 
@@ -59,80 +60,59 @@ class _BigPictureViewState extends State<BigPictureView> {
     final state = context.watch<LooperBloc>().state;
     final big = context.watch<BigPictureCubit>().state;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: Row(
+    // Settings are reachable from the performance view by right-clicking
+    // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
+    // and minimal otherwise.
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyS): () =>
+            unawaited(openLoopySettings()),
+      },
+      child: Focus(
+        autofocus: true,
+        child: GestureDetector(
+          key: const Key('bigpicture_settings_secondaryTap'),
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
+          child: Scaffold(
+            body: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final track in state.tracks)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: _TrackColumn(
-                              track: track,
-                              name: big.nameOf(track.channel),
-                              selected: track.channel == big.selectedChannel,
-                              waveform: _waveformFor(track.channel),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final track in state.tracks)
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: _TrackColumn(
+                                    track: track,
+                                    name: big.nameOf(track.channel),
+                                    selected:
+                                        track.channel == big.selectedChannel,
+                                    waveform: _waveformFor(track.channel),
+                                  ),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class _BigHeader extends StatelessWidget {
-  const _BigHeader({required this.transport});
-
-  final TransportState transport;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final looper = theme.extension<LooperTheme>()!;
-    return Row(
-      children: [
-        Text(
-          'LOOPY',
-          style: theme.textTheme.titleLarge?.copyWith(
-            color: looper.waveformColor,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 3,
-          ),
-        ),
-        const SizedBox(width: 24),
-        Expanded(
-          child: LinearProgressIndicator(
-            key: const Key('bigpicture_masterLoop_progress'),
-            value: transport.hasLoop ? transport.progress : 0,
-            minHeight: 10,
-            color: looper.waveformColor,
-            backgroundColor: looper.tileBorder,
-          ),
-        ),
-        const SizedBox(width: 16),
-        IconButton(
-          key: const Key('bigpicture_exit_button'),
-          tooltip: 'Exit big picture',
-          icon: const Icon(Icons.close_fullscreen),
-          onPressed: () => context.read<UiModeCubit>().setMode(UiMode.desktop),
-        ),
-      ],
     );
   }
 }
@@ -205,11 +185,14 @@ class _TrackColumn extends StatelessWidget {
               ],
             ),
             Expanded(
-              child: _PeakBar(
-                channel: track.channel,
-                color: accent,
-                recordingColor: looper.recordColor,
-                recording: recording,
+              child: Visibility.maintain(
+                visible: track.hasContent,
+                child: _PeakBar(
+                  channel: track.channel,
+                  color: accent,
+                  recordingColor: looper.recordColor,
+                  recording: recording,
+                ),
               ),
             ),
             const SizedBox(height: 10),

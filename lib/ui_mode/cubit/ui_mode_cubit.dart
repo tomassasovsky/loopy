@@ -12,10 +12,11 @@ enum UiMode {
 
 /// Holds the current [UiMode] and persists it via [SettingsRepository].
 class UiModeCubit extends Cubit<UiMode> {
-  /// Creates a [UiModeCubit], defaulting to [UiMode.desktop] until [load].
+  /// Creates a [UiModeCubit], defaulting to [UiMode.bigPicture] until [load]
+  /// restores a persisted choice. Big Picture is the default look and feel.
   UiModeCubit({required SettingsRepository settings})
     : _settings = settings,
-      super(UiMode.desktop);
+      super(UiMode.bigPicture);
 
   final SettingsRepository _settings;
 

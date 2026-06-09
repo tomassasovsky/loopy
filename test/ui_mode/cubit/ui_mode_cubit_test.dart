@@ -11,26 +11,26 @@ void main() {
   setUp(() => settings = SettingsRepository(store: FakeKeyValueStore()));
 
   group('UiModeCubit', () {
-    test('defaults to desktop', () {
-      expect(UiModeCubit(settings: settings).state, UiMode.desktop);
+    test('defaults to big picture', () {
+      expect(UiModeCubit(settings: settings).state, UiMode.bigPicture);
     });
 
     blocTest<UiModeCubit, UiMode>(
-      'toggle switches to big picture and persists it',
+      'toggle switches to desktop and persists it',
       build: () => UiModeCubit(settings: settings),
       act: (cubit) => cubit.toggle(),
-      expect: () => [UiMode.bigPicture],
+      expect: () => [UiMode.desktop],
       verify: (_) async {
-        expect(await settings.loadUiMode(), UiMode.bigPicture.name);
+        expect(await settings.loadUiMode(), UiMode.desktop.name);
       },
     );
 
     blocTest<UiModeCubit, UiMode>(
       'load restores the persisted mode',
-      setUp: () => settings.saveUiMode(UiMode.bigPicture.name),
+      setUp: () => settings.saveUiMode(UiMode.desktop.name),
       build: () => UiModeCubit(settings: settings),
       act: (cubit) => cubit.load(),
-      expect: () => [UiMode.bigPicture],
+      expect: () => [UiMode.desktop],
     );
 
     blocTest<UiModeCubit, UiMode>(
@@ -43,10 +43,10 @@ void main() {
     blocTest<UiModeCubit, UiMode>(
       'setMode to the current mode does not emit but still persists',
       build: () => UiModeCubit(settings: settings),
-      act: (cubit) => cubit.setMode(UiMode.desktop),
+      act: (cubit) => cubit.setMode(UiMode.bigPicture),
       expect: () => <UiMode>[],
       verify: (_) async {
-        expect(await settings.loadUiMode(), UiMode.desktop.name);
+        expect(await settings.loadUiMode(), UiMode.bigPicture.name);
       },
     );
   });

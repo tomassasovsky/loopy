@@ -73,6 +73,17 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     );
     if (result.isOk) {
       emit(state.copyWith(status: AudioSetupStatus.running));
+      // Remember these options so the engine can auto-start on the next launch.
+      unawaited(
+        _settings.saveAudioConfig(
+          StoredAudioConfig(
+            sampleRate: state.sampleRate,
+            bufferFrames: state.bufferFrames,
+            monitorInput: state.monitorInput,
+            mergeToMono: state.mergeToMono,
+          ),
+        ),
+      );
       // With a routable loopback the capture carries our output, so we can
       // measure round-trip latency automatically (a digital-path estimate).
       if (state.loopback.isAutoRoutable) _repository.measureLatency();
