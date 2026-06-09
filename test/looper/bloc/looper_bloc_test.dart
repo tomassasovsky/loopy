@@ -66,9 +66,9 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setInputChannel(
+      () => repository.setInputMask(
         channel: any(named: 'channel'),
-        value: any(named: 'value'),
+        mask: any(named: 'mask'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
@@ -133,12 +133,11 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperInputChannelChanged forwards channel and value to the repository',
+    'LooperInputMaskChanged forwards channel and mask to the repository',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperInputChannelChanged(2, 1)),
-    verify: (_) => verify(
-      () => repository.setInputChannel(channel: 2, value: 1),
-    ).called(1),
+    act: (bloc) => bloc.add(const LooperInputMaskChanged(2, 0x3)),
+    verify: (_) =>
+        verify(() => repository.setInputMask(channel: 2, mask: 0x3)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -155,7 +154,7 @@ void main() {
     setUp(() {
       settings = _MockSettingsRepository();
       when(
-        () => settings.saveTrackInputChannel(any(), any()),
+        () => settings.saveTrackInputMask(any(), any()),
       ).thenAnswer((_) async {});
       when(
         () => settings.saveTrackOutputMask(any(), any()),
@@ -163,14 +162,14 @@ void main() {
     });
 
     blocTest<LooperBloc, LooperState>(
-      'LooperInputChannelChanged persists the input channel',
+      'LooperInputMaskChanged persists the input mask',
       build: () => LooperBloc(repository: repository, settings: settings),
-      act: (bloc) => bloc.add(const LooperInputChannelChanged(3, 2)),
+      act: (bloc) => bloc.add(const LooperInputMaskChanged(3, 0x3)),
       verify: (_) {
         verify(
-          () => repository.setInputChannel(channel: 3, value: 2),
+          () => repository.setInputMask(channel: 3, mask: 0x3),
         ).called(1);
-        verify(() => settings.saveTrackInputChannel(3, 2)).called(1);
+        verify(() => settings.saveTrackInputMask(3, 0x3)).called(1);
       },
     );
 

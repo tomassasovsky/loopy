@@ -170,17 +170,17 @@ class SettingsRepository {
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
 
-  String _trackInputChannelKey(int channel) => 'track_input_channel.$channel';
+  String _trackInputMaskKey(int channel) => 'track_input_mask.$channel';
   String _trackOutputMaskKey(int channel) => 'track_output_mask.$channel';
 
-  /// Loads the saved record-source input channel for track [channel], or `null`
+  /// Loads the saved record-source input bitmask for track [channel], or `null`
   /// if unset.
-  Future<int?> loadTrackInputChannel(int channel) =>
-      _store.getInt(_trackInputChannelKey(channel));
+  Future<int?> loadTrackInputMask(int channel) =>
+      _store.getInt(_trackInputMaskKey(channel));
 
-  /// Saves the record-source input [value] for track [channel].
-  Future<void> saveTrackInputChannel(int channel, int value) =>
-      _store.setInt(_trackInputChannelKey(channel), value);
+  /// Saves the record-source input [mask] for track [channel].
+  Future<void> saveTrackInputMask(int channel, int mask) =>
+      _store.setInt(_trackInputMaskKey(channel), mask);
 
   /// Loads the saved output-routing bitmask for track [channel], or `null` if
   /// unset.

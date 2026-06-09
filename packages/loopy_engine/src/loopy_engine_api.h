@@ -88,8 +88,8 @@ typedef enum le_command_code {
   LE_CMD_SET_VOLUME = 7,/* arg_f = 0..1 */
   LE_CMD_SET_MUTE = 8,  /* arg_f = 0 (unmute) or 1 (mute) */
   LE_CMD_SET_RECORD_OFFSET = 13, /* arg_i = round-trip latency in frames */
-  LE_CMD_SET_INPUT_CHANNEL = 14, /* route a track's record source (arg_f = track,
-                                  * arg_i = input channel index) */
+  LE_CMD_SET_INPUT_MASK = 14,    /* route a track's record sources (arg_f =
+                                  * track, arg_i = input bitmask) */
   LE_CMD_SET_OUTPUT_MASK = 15,   /* route a track's playback destinations
                                   * (arg_f = track, arg_i = output bitmask) */
 } le_command_code;
@@ -125,7 +125,8 @@ typedef struct le_track_snapshot {
   int32_t redo_depth;    /* available redo steps */
   float rms;             /* 0..1 */
   float peak;            /* 0..1 */
-  int32_t input_channel; /* hardware input channel this track records from */
+  uint32_t input_mask;   /* bitmask of input channels this track records from
+                          * (selected inputs are averaged into its mono buffer) */
   uint32_t output_mask;  /* bitmask of output channels this track plays to */
 } le_track_snapshot;
 
@@ -240,10 +241,12 @@ LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
                                            int32_t muted);
 
-/* Routes track `channel`'s record source to hardware input `value` (clamped to
- * the negotiated input-channel range). */
-LE_EXPORT int32_t le_engine_set_input_channel(le_engine* engine,
-                                              int32_t channel, int32_t value);
+/* Routes track `channel`'s record sources to the input channels set in `mask`
+ * (a bitmask; bit c => hardware input channel c). Selected inputs are averaged
+ * into the track's mono buffer. Bits beyond the negotiated input-channel range
+ * are ignored. */
+LE_EXPORT int32_t le_engine_set_input_mask(le_engine* engine, int32_t channel,
+                                           int32_t mask);
 
 /* Routes track `channel`'s playback to the output channels set in `mask` (a
  * bitmask; bit c => hardware output channel c). Bits beyond the negotiated

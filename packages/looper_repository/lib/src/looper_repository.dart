@@ -117,7 +117,7 @@ class LooperRepository {
           undoDepth: s.tracks[i].undoDepth,
           redoDepth: s.tracks[i].redoDepth,
           multiple: s.tracks[i].multiple,
-          inputChannel: s.tracks[i].inputChannel,
+          inputMask: s.tracks[i].inputMask,
           outputMask: s.tracks[i].outputMask,
         ),
     ],
@@ -178,9 +178,9 @@ class LooperRepository {
   EngineResult setMute({required bool muted, int channel = 0}) =>
       _engine.setTrackMute(muted: muted, channel: channel);
 
-  /// Routes track [channel]'s record source to hardware input [value].
-  EngineResult setInputChannel({required int channel, required int value}) =>
-      _engine.setInputChannel(channel: channel, value: value);
+  /// Routes track [channel]'s record sources to the input channels in [mask].
+  EngineResult setInputMask({required int channel, required int mask}) =>
+      _engine.setInputMask(channel: channel, mask: mask);
 
   /// Routes track [channel]'s playback to the output channels set in [mask].
   EngineResult setOutputMask({required int channel, required int mask}) =>

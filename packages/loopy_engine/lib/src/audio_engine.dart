@@ -115,9 +115,11 @@ abstract interface class AudioEngine {
   /// Mutes or unmutes track [channel].
   EngineResult setTrackMute({required bool muted, int channel = 0});
 
-  /// Routes track [channel]'s record source to hardware input [value] (clamped
-  /// to the negotiated input-channel range).
-  EngineResult setInputChannel({required int channel, required int value});
+  /// Routes track [channel]'s record sources to the input channels set in
+  /// [mask] (a bitmask; bit c => hardware input channel c). Selected inputs are
+  /// averaged into the track's mono buffer. Bits beyond the negotiated
+  /// input-channel range are ignored.
+  EngineResult setInputMask({required int channel, required int mask});
 
   /// Routes track [channel]'s playback to the output channels set in [mask] (a
   /// bitmask; bit c => hardware output channel c). Bits beyond the negotiated

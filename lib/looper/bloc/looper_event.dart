@@ -85,16 +85,16 @@ final class LooperVolumeChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, volume];
 }
 
-/// The record-source input channel changed on [channel].
-final class LooperInputChannelChanged extends LooperChannelEvent {
-  /// Creates a [LooperInputChannelChanged].
-  const LooperInputChannelChanged(super.channel, this.value);
+/// The record-source input bitmask changed on [channel].
+final class LooperInputMaskChanged extends LooperChannelEvent {
+  /// Creates a [LooperInputMaskChanged].
+  const LooperInputMaskChanged(super.channel, this.mask);
 
-  /// The hardware input channel to record from.
-  final int value;
+  /// Bitmask of hardware input channels to record from (bit c => in c).
+  final int mask;
 
   @override
-  List<Object?> get props => [channel, value];
+  List<Object?> get props => [channel, mask];
 }
 
 /// The output-routing bitmask changed on [channel].

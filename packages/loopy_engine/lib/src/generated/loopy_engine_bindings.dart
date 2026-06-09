@@ -408,25 +408,27 @@ class LoopyEngineBindings {
   late final _le_engine_set_track_mute = _le_engine_set_track_mutePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Routes track `channel`'s record source to hardware input `value` (clamped to
-  /// the negotiated input-channel range).
-  int le_engine_set_input_channel(
+  /// Routes track `channel`'s record sources to the input channels set in `mask`
+  /// (a bitmask; bit c => hardware input channel c). Selected inputs are averaged
+  /// into the track's mono buffer. Bits beyond the negotiated input-channel range
+  /// are ignored.
+  int le_engine_set_input_mask(
     ffi.Pointer<le_engine> engine,
     int channel,
-    int value,
+    int mask,
   ) {
-    return _le_engine_set_input_channel(
+    return _le_engine_set_input_mask(
       engine,
       channel,
-      value,
+      mask,
     );
   }
 
-  late final _le_engine_set_input_channelPtr = _lookup<
+  late final _le_engine_set_input_maskPtr = _lookup<
       ffi.NativeFunction<
           ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
-              ffi.Int32)>>('le_engine_set_input_channel');
-  late final _le_engine_set_input_channel = _le_engine_set_input_channelPtr
+              ffi.Int32)>>('le_engine_set_input_mask');
+  late final _le_engine_set_input_mask = _le_engine_set_input_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// Routes track `channel`'s playback to the output channels set in `mask` (a
@@ -620,9 +622,9 @@ enum le_command_code {
   /// arg_i = round-trip latency in frames
   LE_CMD_SET_RECORD_OFFSET(13),
 
-  /// route a track's record source (arg_f = track,
-  /// arg_i = input channel index)
-  LE_CMD_SET_INPUT_CHANNEL(14),
+  /// route a track's record sources (arg_f =
+  /// track, arg_i = input bitmask)
+  LE_CMD_SET_INPUT_MASK(14),
 
   /// route a track's playback destinations
   /// (arg_f = track, arg_i = output bitmask)
@@ -642,7 +644,7 @@ enum le_command_code {
         7 => LE_CMD_SET_VOLUME,
         8 => LE_CMD_SET_MUTE,
         13 => LE_CMD_SET_RECORD_OFFSET,
-        14 => LE_CMD_SET_INPUT_CHANNEL,
+        14 => LE_CMD_SET_INPUT_MASK,
         15 => LE_CMD_SET_OUTPUT_MASK,
         _ => throw ArgumentError('Unknown value for le_command_code: $value'),
       };
@@ -720,9 +722,10 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Float()
   external double peak;
 
-  /// hardware input channel this track records from
-  @ffi.Int32()
-  external int input_channel;
+  /// bitmask of input channels this track records from
+  /// (selected inputs are averaged into its mono buffer)
+  @ffi.Uint32()
+  external int input_mask;
 
   /// bitmask of output channels this track plays to
   @ffi.Uint32()

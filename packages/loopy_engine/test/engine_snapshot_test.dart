@@ -45,7 +45,7 @@ void main() {
           ..redo_depth = 2
           ..rms = 0.4
           ..peak = 0.6
-          ..input_channel = 1
+          ..input_mask = 0x2
           ..output_mask = 0x5;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
@@ -58,7 +58,7 @@ void main() {
         expect(track.redoDepth, 2);
         expect(track.rms, closeTo(0.4, 1e-6));
         expect(track.peak, closeTo(0.6, 1e-6));
-        expect(track.inputChannel, 1);
+        expect(track.inputMask, 0x2);
         expect(track.outputMask, 0x5);
       } finally {
         calloc.free(ptr);

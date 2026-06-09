@@ -662,16 +662,16 @@ static void test_transport_runs_until_last_track_stops(void) {
 
 /* A track records from its selected hardware input channel (not channel 0), and
  * the negotiated I/O channel counts + routing are reflected in the snapshot. */
-static void test_routing_input_channel(void) {
-  printf("test_routing_input_channel\n");
+static void test_routing_input_mask(void) {
+  printf("test_routing_input_mask\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
   float out[64];
   le_snapshot s;
 
-  /* Route track 0 to record from input channel 1, then capture a loop where
-   * channel 0 carries a decoy (9.0) and channel 1 carries the signal (2.0). */
-  CHECK(le_engine_set_input_channel(e, 0, 1) == LE_OK);
+  /* Route track 0 to record from input channel 1 only, then capture a loop
+   * where channel 0 carries a decoy (9.0) and channel 1 the signal (2.0). */
+  CHECK(le_engine_set_input_mask(e, 0, 0x2) == LE_OK); /* bit 1 */
   le_engine_record(e, 0);
   float in[2 * LOOP_N];
   for (int i = 0; i < LOOP_N; ++i) {
@@ -685,7 +685,7 @@ static void test_routing_input_channel(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.input_channels == 2);
   CHECK(s.output_channels == 2);
-  CHECK(s.tracks[0].input_channel == 1);
+  CHECK(s.tracks[0].input_mask == 0x2u);
   CHECK(s.tracks[0].output_mask == 0x3u); /* default stereo pair */
 
   /* Playback over silent input: the loop replays channel 1's 2.0, routed to the
@@ -695,6 +695,39 @@ static void test_routing_input_channel(void) {
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
     CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Selecting multiple inputs records their average into the mono track buffer. */
+static void test_routing_input_mask_averages(void) {
+  printf("test_routing_input_mask_averages\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_input_mask(e, 0, 0x3) == LE_OK); /* inputs 0 and 1 */
+  le_engine_record(e, 0);
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 2.0f;
+    in[i * 2 + 1] = 4.0f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].input_mask == 0x3u);
+
+  /* The mono buffer holds the average (2.0 + 4.0) / 2 == 3.0, on outputs 0+1. */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 3.0f) < 1e-6f);
   }
 
   le_engine_destroy(e);
@@ -765,24 +798,17 @@ static void test_routing_default_stereo(void) {
   le_engine_destroy(e);
 }
 
-/* An out-of-range input channel is clamped to the valid input range. */
-static void test_routing_input_channel_clamped(void) {
-  printf("test_routing_input_channel_clamped\n");
+/* Input-mask bits beyond the available input channels are dropped. */
+static void test_routing_input_mask_clamped(void) {
+  printf("test_routing_input_mask_clamped\n");
   le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in */
   le_snapshot s;
 
-  /* Above range clamps to the highest valid input (in_channels - 1). */
-  CHECK(le_engine_set_input_channel(e, 0, 5) == LE_OK);
+  CHECK(le_engine_set_input_mask(e, 0, 0xF) == LE_OK); /* request 4 inputs */
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].input_channel == 1);
-
-  /* Negative clamps to 0. */
-  CHECK(le_engine_set_input_channel(e, 0, -3) == LE_OK);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].input_channel == 0);
+  CHECK(s.tracks[0].input_mask == 0x3u); /* only inputs 0 and 1 exist */
 
   le_engine_destroy(e);
 }
@@ -908,10 +934,11 @@ int main(void) {
   test_new_track_records_mid_loop();
   test_transport_resets_when_all_stopped();
   test_transport_runs_until_last_track_stops();
-  test_routing_input_channel();
+  test_routing_input_mask();
+  test_routing_input_mask_averages();
   test_routing_output_mask();
   test_routing_default_stereo();
-  test_routing_input_channel_clamped();
+  test_routing_input_mask_clamped();
   test_routing_output_mask_clamped();
   test_visualization_tap();
   test_classify_capture_device();
