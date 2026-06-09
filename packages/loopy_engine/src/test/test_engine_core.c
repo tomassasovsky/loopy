@@ -950,7 +950,12 @@ static void test_label_is_loopback(void) {
   CHECK(le_label_is_loopback("loopback") == 1);
   CHECK(le_label_is_loopback("My LOOPBACK channel") == 1);
   CHECK(le_label_is_loopback("Analog Loopback 2") == 1);
+  /* Focusrite Scarlett labels its loopback inputs "Loop 1" / "Loop 2". */
+  CHECK(le_label_is_loopback("Loop 1") == 1);
+  CHECK(le_label_is_loopback("Loop 2") == 1);
+  CHECK(le_label_is_loopback("loop") == 1);
   CHECK(le_label_is_loopback("Input 1") == 0);
+  CHECK(le_label_is_loopback("Input 4") == 0);
   CHECK(le_label_is_loopback("Microphone") == 0);
   CHECK(le_label_is_loopback("") == 0);
   CHECK(le_label_is_loopback(NULL) == 0);

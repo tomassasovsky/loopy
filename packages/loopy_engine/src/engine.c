@@ -899,9 +899,11 @@ le_loopback_kind le_classify_capture_device(const char* name) {
 }
 
 int le_label_is_loopback(const char* label) {
-  /* Plain case-insensitive "loopback" match — synonyms are added only if a real
-   * driver is found that needs them (per the plan, no speculative list). */
-  return contains_ci(label, "loopback");
+  /* Case-insensitive "loop" match. This covers both the generic "Loopback"
+   * label and the Focusrite convention of naming the two loopback inputs
+   * "Loop 1" / "Loop 2" (verified on a Scarlett 4i4). "loop" subsumes
+   * "loopback", so one substring check handles both. */
+  return contains_ci(label, "loop");
 }
 
 static void find_loopback(ma_context* ctx, le_loopback_info* out,
