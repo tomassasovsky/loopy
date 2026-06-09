@@ -24,6 +24,7 @@ void main() {
     test('represents a never-started engine', () {
       const snapshot = EngineSnapshot.initial();
       expect(snapshot.isRunning, isFalse);
+      expect(snapshot.devicePresent, isFalse);
       expect(snapshot.sampleRate, 0);
       expect(snapshot.framesProcessed, 0);
       expect(snapshot.latencyState, LatencyState.idle);
@@ -75,12 +76,38 @@ void main() {
     });
   });
 
+  group('TrackSnapshot value semantics', () {
+    TrackSnapshot build({int inputMask = 0x1, int outputMask = 0x3}) =>
+        TrackSnapshot(
+          state: TrackState.playing,
+          volume: 0.5,
+          muted: false,
+          lengthFrames: 100,
+          undoDepth: 0,
+          rms: 0.1,
+          peak: 0.2,
+          inputMask: inputMask,
+          outputMask: outputMask,
+        );
+
+    test('equal tracks are equal and share a hashCode', () {
+      expect(build(), equals(build()));
+      expect(build().hashCode, build().hashCode);
+    });
+
+    test('a differing input or output mask breaks equality', () {
+      expect(build(), isNot(equals(build(inputMask: 0x2))));
+      expect(build(), isNot(equals(build(outputMask: 0x1))));
+    });
+  });
+
   group('EngineSnapshot.fromNative', () {
     test('projects scalar fields and the supplied tracks', () {
       final ptr = calloc<le_snapshot>();
       try {
         ptr.ref
           ..running = 1
+          ..device_present = 1
           ..sample_rate = 48000
           ..buffer_frames = 128
           ..input_channels = 2
@@ -112,6 +139,7 @@ void main() {
         final snapshot = EngineSnapshot.fromNative(ptr.ref, tracks);
 
         expect(snapshot.isRunning, isTrue);
+        expect(snapshot.devicePresent, isTrue);
         expect(snapshot.sampleRate, 48000);
         expect(snapshot.inputChannels, 2);
         expect(snapshot.outputChannels, 4);
@@ -143,6 +171,22 @@ void main() {
         calloc.free(ptr);
       }
     });
+
+    test('device_present is independent of running', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        // A device can be lost (device_present == 0) while the engine object
+        // still reports running == 1.
+        ptr.ref
+          ..running = 1
+          ..device_present = 0;
+        final snapshot = EngineSnapshot.fromNative(ptr.ref, const []);
+        expect(snapshot.isRunning, isTrue);
+        expect(snapshot.devicePresent, isFalse);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
   });
 
   group('value semantics', () {
@@ -151,6 +195,31 @@ void main() {
       const b = EngineSnapshot.initial();
       expect(a, equals(b));
       expect(a.hashCode, b.hashCode);
+    });
+
+    // Distinct (non-const) instances so the `==` body runs rather than being
+    // short-circuited by `identical`, exercising every field comparison.
+    EngineSnapshot build({bool devicePresent = true}) => EngineSnapshot(
+      isRunning: true,
+      devicePresent: devicePresent,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 10,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: LatencyState.idle,
+      measuredLatencyMs: -1,
+    );
+
+    test('distinct equal snapshots compare equal and share a hashCode', () {
+      expect(build(), equals(build()));
+      expect(build().hashCode, build().hashCode);
+    });
+
+    test('devicePresent participates in equality', () {
+      expect(build(), isNot(equals(build(devicePresent: false))));
     });
 
     test('differing snapshots are not equal', () {

@@ -94,6 +94,19 @@ typedef enum le_command_code {
                                   * (arg_f = track, arg_i = output bitmask) */
 } le_command_code;
 
+/* A hardware audio device discovered by enumeration (le_enumerate_*).
+ *
+ * `id` is an opaque, backend-specific token suitable for pinning a device via
+ * le_config.playback_device_id / capture_device_id. On every string-id backend
+ * (CoreAudio, ALSA, PulseAudio, sndio) it is the device's native id string; it
+ * round-trips byte-for-byte back into le_config. `name` is the human-readable
+ * label; `is_default` marks the system default for that direction. */
+typedef struct le_device_info {
+  char id[256];
+  char name[256];
+  int32_t is_default; /* 0/1 */
+} le_device_info;
+
 /* Requested device configuration. Any channel field set to 0 uses the device
  * default; counts are clamped to LE_MAX_CHANNELS. */
 typedef struct le_config {
@@ -105,6 +118,11 @@ typedef struct le_config {
   int32_t use_loopback_capture; /* 1 = capture from a detected loopback device */
   int32_t input_channels;  /* hardware capture channels (0 => device default) */
   int32_t output_channels; /* hardware playback channels (0 => device default) */
+  /* Pin a specific device by id (an `id` from le_enumerate_*). An empty string
+   * opens the system default (the unchanged behaviour). use_loopback_capture
+   * overrides capture_device_id when a loopback device is detected. */
+  char playback_device_id[256];
+  char capture_device_id[256];
 } le_config;
 
 /* Maximum number of simultaneous looper tracks (two banks of four). */
@@ -134,7 +152,13 @@ typedef struct le_track_snapshot {
  * Dart on a render-rate timer. Fields are individually atomic; readers may see
  * a one-frame-stale mix across fields, which is fine for metering/UI. */
 typedef struct le_snapshot {
-  int32_t running;            /* 0/1 */
+  int32_t running;            /* 0/1: device is open and the callback is live */
+  /* 0/1: the pinned (or default) device is currently present. DISTINCT from
+   * `running`: a device can be lost (device_present == 0) while the engine
+   * object still "runs" until it is restarted. Set from the RT-adjacent device
+   * notification callback; the Dart layer derives a higher-level isConnected
+   * from it and drives any reconnection (no reconnection happens in native). */
+  int32_t device_present;
   int32_t sample_rate;
   int32_t buffer_frames;
   int32_t input_channels;     /* negotiated hardware capture channels */
@@ -172,6 +196,18 @@ LE_EXPORT const char* le_version(void);
  * driver / WASAPI) by enumerating capture devices. Fills *out and returns LE_OK,
  * or LE_ERR_INVALID for a null argument / enumeration failure. */
 LE_EXPORT int32_t le_detect_loopback(le_loopback_info* out);
+
+/* Enumerates the host's playback (output) devices into `out`, a caller-allocated
+ * array with room for `max` entries, and writes the number filled into *count
+ * (clamped to `max`). Returns LE_OK, or LE_ERR_INVALID for a null argument,
+ * non-positive `max`, or an enumeration failure. Uses a transient ma_context, so
+ * it is safe to call while an engine is already started. */
+LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max,
+                                                int32_t* count);
+
+/* Like le_enumerate_playback_devices but for capture (input) devices. */
+LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
+                                               int32_t* count);
 
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
