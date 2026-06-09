@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:loopy/audio_setup/view/audio_device_picker.dart';
 
 part 'audio_setup_tokens.dart';
 part 'audio_setup_controls.dart';

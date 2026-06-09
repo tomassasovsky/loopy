@@ -186,63 +186,6 @@ class _Option extends StatelessWidget {
   }
 }
 
-/// A dark-styled dropdown that picks an audio device by id: "System default"
-/// (empty id) plus the enumerated [devices]. A selected id that is no longer
-/// present (e.g. an unplugged pinned device) falls back to the default so the
-/// dropdown value stays valid.
-class _DevicePicker extends StatelessWidget {
-  const _DevicePicker({
-    required this.pickerKey,
-    required this.devices,
-    required this.selectedId,
-    required this.onSelected,
-  });
-
-  final String pickerKey;
-  final List<AudioDevice> devices;
-  final String selectedId;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = devices.any((d) => d.id == selectedId) ? selectedId : '';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: _C.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _C.line),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          key: Key(pickerKey),
-          value: value,
-          isExpanded: true,
-          dropdownColor: _C.cardHi,
-          borderRadius: BorderRadius.circular(12),
-          icon: const Icon(Icons.expand_more, color: _C.t2),
-          style: const TextStyle(color: _C.t1, fontSize: 14),
-          items: [
-            const DropdownMenuItem(value: '', child: Text('System default')),
-            for (final device in devices)
-              DropdownMenuItem(
-                value: device.id,
-                child: Text(
-                  device.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-          onChanged: (id) {
-            if (id != null) onSelected(id);
-          },
-        ),
-      ),
-    );
-  }
-}
-
 class _Toggle extends StatelessWidget {
   const _Toggle({
     required this.toggleKey,
