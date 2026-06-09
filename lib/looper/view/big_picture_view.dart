@@ -327,26 +327,45 @@ class _TrackColumn extends StatelessWidget {
     final looper = theme.extension<LooperTheme>()!;
     final accent = looper.trackColor(track.channel);
     final recording = track.state == TrackState.recording;
+    final overdubbing = track.state == TrackState.overdubbing;
     final bloc = context.read<LooperBloc>();
-    final borderColor = selected
-        ? Colors.white
-        : (track.isCapturing ? accent : looper.tileBorder);
+
+    // Active state is a crisp ring, not a glow: recording = record color,
+    // overdub = accent, selection = white, idle = the tile border.
+    final Color borderColor;
+    final double borderWidth;
+    if (recording) {
+      borderColor = looper.recordColor;
+      borderWidth = 2.5;
+    } else if (overdubbing) {
+      borderColor = accent;
+      borderWidth = 2.5;
+    } else if (selected) {
+      borderColor = Colors.white;
+      borderWidth = 3;
+    } else {
+      borderColor = looper.tileBorder;
+      borderWidth = 1.5;
+    }
+
+    // Meter color: recording = record color, muted = white, armed/selected to
+    // play = green, otherwise the track accent.
+    final Color barColor;
+    if (recording) {
+      barColor = looper.recordColor;
+    } else if (track.muted) {
+      barColor = looper.mutedColor;
+    } else if (selected) {
+      barColor = looper.playColor;
+    } else {
+      barColor = accent;
+    }
 
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor, width: selected ? 3 : 1.5),
-        boxShadow: track.isCapturing
-            ? [
-                BoxShadow(
-                  color: (recording ? looper.recordColor : accent).withValues(
-                    alpha: 0.45,
-                  ),
-                  blurRadius: 18,
-                ),
-              ]
-            : null,
+        border: Border.all(color: borderColor, width: borderWidth),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -393,15 +412,9 @@ class _TrackColumn extends StatelessWidget {
                 bloc.add(LooperRecordPressed(track.channel));
               },
               onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-              child: Visibility.maintain(
-                visible: track.hasContent,
-                child: _PeakBar(
-                  peak: track.peak,
-                  color: accent,
-                  recordingColor: looper.recordColor,
-                  recording: recording,
-                ),
-              ),
+              // Every track shows at least a sliver (the _PeakBar floor), so an
+              // empty/idle track is still visible in play mode.
+              child: _PeakBar(peak: track.peak, color: barColor),
             ),
           ),
           const SizedBox(height: 10),
@@ -433,25 +446,19 @@ class _TrackColumn extends StatelessWidget {
 /// A bottom-anchored level meter driven by the track's current [peak]. Updates
 /// with the watched looper state — no own timer.
 class _PeakBar extends StatelessWidget {
-  const _PeakBar({
-    required this.peak,
-    required this.color,
-    required this.recordingColor,
-    required this.recording,
-  });
+  const _PeakBar({required this.peak, required this.color});
 
   final double peak;
   final Color color;
-  final Color recordingColor;
-  final bool recording;
 
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.bottomCenter,
       child: FractionallySizedBox(
+        // Floor at 0.01 so an idle track still shows a thin sliver.
         heightFactor: (peak * 10).clamp(0.01, 1.0),
-        child: Container(color: recording ? recordingColor : color),
+        child: Container(color: color),
       ),
     );
   }

@@ -15,6 +15,8 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.waveformBackground,
     required this.recordColor,
     required this.armedColor,
+    required this.playColor,
+    required this.mutedColor,
   });
 
   /// Per-track accent colors, indexed by channel (cycled if more tracks).
@@ -38,6 +40,12 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Accent for the armed (quantized-start pending) state.
   final Color armedColor;
 
+  /// Play-mode meter color for a track armed/selected to play (green).
+  final Color playColor;
+
+  /// Play-mode meter color for a muted track (white).
+  final Color mutedColor;
+
   /// The accent color for [channel] (cycles through [trackColors]).
   Color trackColor(int channel) => trackColors[channel % trackColors.length];
 
@@ -50,6 +58,8 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? waveformBackground,
     Color? recordColor,
     Color? armedColor,
+    Color? playColor,
+    Color? mutedColor,
   }) => LooperTheme(
     trackColors: trackColors ?? this.trackColors,
     tileBackground: tileBackground ?? this.tileBackground,
@@ -58,6 +68,8 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     waveformBackground: waveformBackground ?? this.waveformBackground,
     recordColor: recordColor ?? this.recordColor,
     armedColor: armedColor ?? this.armedColor,
+    playColor: playColor ?? this.playColor,
+    mutedColor: mutedColor ?? this.mutedColor,
   );
 
   @override
@@ -83,6 +95,8 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
           waveformBackground,
       recordColor: Color.lerp(recordColor, other.recordColor, t) ?? recordColor,
       armedColor: Color.lerp(armedColor, other.armedColor, t) ?? armedColor,
+      playColor: Color.lerp(playColor, other.playColor, t) ?? playColor,
+      mutedColor: Color.lerp(mutedColor, other.mutedColor, t) ?? mutedColor,
     );
   }
 }

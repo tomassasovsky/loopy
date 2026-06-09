@@ -12,6 +12,8 @@ void main() {
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
       armedColor: Color(0xFFFFD740),
+      playColor: Color(0xFF4CDA4A),
+      mutedColor: Color(0xFFFFFFFF),
     );
 
     test('trackColor cycles through the palette', () {
@@ -35,11 +37,24 @@ void main() {
     test('lerp with a non-LooperTheme returns this', () {
       expect(theme.lerp(null, 0.5), same(theme));
     });
+
+    test('exposes the play-mode semantic colors', () {
+      expect(theme.playColor, const Color(0xFF4CDA4A));
+      expect(theme.mutedColor, const Color(0xFFFFFFFF));
+      final updated = theme.copyWith(playColor: const Color(0xFF00FF00));
+      expect(updated.playColor, const Color(0xFF00FF00));
+      expect(updated.mutedColor, theme.mutedColor);
+    });
   });
 
-  test('AppTheme exposes a LooperTheme for both modes', () {
-    expect(AppTheme.desktop.extension<LooperTheme>(), isNotNull);
-    expect(AppTheme.bigPicture.extension<LooperTheme>(), isNotNull);
+  test('AppTheme exposes play-mode colors for both modes', () {
+    final desktop = AppTheme.desktop.extension<LooperTheme>()!;
+    final big = AppTheme.bigPicture.extension<LooperTheme>()!;
+    // Distinct, non-record/-track semantic colors so the meters read clearly.
+    expect(desktop.playColor, isNot(desktop.recordColor));
+    expect(desktop.mutedColor, const Color(0xFFFFFFFF));
+    expect(big.playColor, isNot(big.recordColor));
+    expect(big.mutedColor, const Color(0xFFFFFFFF));
     expect(AppTheme.bigPicture.useMaterial3, isTrue);
   });
 }
