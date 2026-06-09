@@ -53,9 +53,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         channel: event.channel,
       ),
     );
-    on<LooperInputChannelChanged>((event, _) {
-      _repository.setInputChannel(channel: event.channel, value: event.value);
-      unawaited(_settings?.saveTrackInputChannel(event.channel, event.value));
+    on<LooperInputMaskChanged>((event, _) {
+      _repository.setInputMask(channel: event.channel, mask: event.mask);
+      unawaited(_settings?.saveTrackInputMask(event.channel, event.mask));
     });
     on<LooperOutputMaskChanged>((event, _) {
       _repository.setOutputMask(channel: event.channel, mask: event.mask);

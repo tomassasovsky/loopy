@@ -71,7 +71,7 @@ class TrackSnapshot {
     required this.peak,
     this.redoDepth = 0,
     this.multiple = 1,
-    this.inputChannel = 0,
+    this.inputMask = 0x1,
     this.outputMask = 0x3,
   });
 
@@ -86,7 +86,7 @@ class TrackSnapshot {
       rms = 0,
       peak = 0,
       multiple = 1,
-      inputChannel = 0,
+      inputMask = 0x1,
       outputMask = 0x3;
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -100,7 +100,7 @@ class TrackSnapshot {
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
-    inputChannel: native.input_channel,
+    inputMask: native.input_mask,
     outputMask: native.output_mask,
   );
 
@@ -131,8 +131,9 @@ class TrackSnapshot {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
-  /// Hardware input channel this track records from.
-  final int inputChannel;
+  /// Bitmask of hardware input channels this track records from (bit c => in
+  /// c); selected inputs are averaged into the track's mono buffer.
+  final int inputMask;
 
   /// Bitmask of hardware output channels this track plays to (bit c => out c).
   final int outputMask;
@@ -151,7 +152,7 @@ class TrackSnapshot {
           redoDepth == other.redoDepth &&
           rms == other.rms &&
           peak == other.peak &&
-          inputChannel == other.inputChannel &&
+          inputMask == other.inputMask &&
           outputMask == other.outputMask;
 
   @override
@@ -165,7 +166,7 @@ class TrackSnapshot {
     redoDepth,
     rms,
     peak,
-    inputChannel,
+    inputMask,
     outputMask,
   );
 }

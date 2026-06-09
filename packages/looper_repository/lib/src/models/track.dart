@@ -17,7 +17,7 @@ class Track extends Equatable {
     this.undoDepth = 0,
     this.redoDepth = 0,
     this.multiple = 1,
-    this.inputChannel = 0,
+    this.inputMask = 0x1,
     this.outputMask = 0x3,
   });
 
@@ -54,8 +54,9 @@ class Track extends Equatable {
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
 
-  /// Hardware input channel this track records from.
-  final int inputChannel;
+  /// Bitmask of hardware input channels this track records from (bit c => in
+  /// c); selected inputs are averaged into the track's mono buffer.
+  final int inputMask;
 
   /// Bitmask of hardware output channels this track plays to (bit c => out c).
   final int outputMask;
@@ -89,7 +90,7 @@ class Track extends Equatable {
     undoDepth,
     redoDepth,
     multiple,
-    inputChannel,
+    inputMask,
     outputMask,
   ];
 }

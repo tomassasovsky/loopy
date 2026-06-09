@@ -180,8 +180,8 @@ class _TrackStrip extends StatelessWidget {
                   track: current,
                   inputChannels: state.status.inputChannels,
                   outputChannels: state.status.outputChannels,
-                  onInputChanged: (value) =>
-                      bloc.add(LooperInputChannelChanged(ch, value)),
+                  onInputMaskChanged: (mask) =>
+                      bloc.add(LooperInputMaskChanged(ch, mask)),
                   onOutputMaskChanged: (mask) =>
                       bloc.add(LooperOutputMaskChanged(ch, mask)),
                 );

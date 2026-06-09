@@ -30,7 +30,7 @@ const _playingSnapshot = EngineSnapshot(
       undoDepth: 1,
       rms: 0.3,
       peak: 0.5,
-      inputChannel: 1,
+      inputMask: 0x2,
       outputMask: 0x2,
     ),
   ],
@@ -67,7 +67,7 @@ void main() {
       expect(state.track.playheadFrames, 24000);
       expect(state.track.canUndo, isTrue);
       expect(state.track.hasContent, isTrue);
-      expect(state.track.inputChannel, 1);
+      expect(state.track.inputMask, 0x2);
       expect(state.track.outputMask, 0x2);
       expect(state.status.deviceName, 'Fake Device');
       expect(state.status.sampleRate, 48000);
@@ -287,11 +287,11 @@ void main() {
       expect(engine.lastRecordOffset, 480);
     });
 
-    test('setInputChannel forwards channel and value to the engine', () {
-      buildRepo().setInputChannel(channel: 2, value: 3);
-      expect(engine.calls, contains('setInputChannel'));
+    test('setInputMask forwards channel and mask to the engine', () {
+      buildRepo().setInputMask(channel: 2, mask: 0x3);
+      expect(engine.calls, contains('setInputMask'));
       expect(engine.lastChannel, 2);
-      expect(engine.lastInputChannelValue, 3);
+      expect(engine.lastInputMask, 0x3);
     });
 
     test('setOutputMask forwards channel and mask to the engine', () {

@@ -70,7 +70,7 @@ typedef struct le_track {
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
   _Atomic int32_t a_multiple; /* track length in whole base loops (>= 1) */
-  _Atomic int32_t a_input_channel; /* hardware input channel to record from */
+  _Atomic uint32_t a_input_mask;   /* bitmask of input channels to record from */
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
   int32_t record_pos; /* audio-thread-local record head. Defining track: linear
                        * frame count. New track over a master: the absolute
@@ -409,15 +409,16 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       store_i32(&e->a_record_offset, cmd->arg_i > 0 ? cmd->arg_i : 0);
       break;
     /* Unlike SET_VOLUME/SET_MUTE (track in arg_i), these two carry the track in
-     * arg_f and the value/mask in arg_i — so a 32-bit mask round-trips exactly
-     * (a float cannot). See le_engine_set_input_channel/set_output_mask. */
-    case LE_CMD_SET_INPUT_CHANNEL: {
+     * arg_f and the mask in arg_i — so a 32-bit mask round-trips exactly (a
+     * float cannot). See le_engine_set_input_mask/set_output_mask. */
+    case LE_CMD_SET_INPUT_MASK: {
       const int32_t ch = (int32_t)cmd->arg_f;
       if (!valid_channel(e, ch)) break;
-      int32_t v = cmd->arg_i;
-      if (v < 0) v = 0;
-      if (v >= e->in_channels) v = e->in_channels - 1;
-      store_i32(&e->tracks[ch].a_input_channel, v);
+      const uint32_t valid = e->in_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->in_channels) - 1u);
+      atomic_store_explicit(&e->tracks[ch].a_input_mask,
+                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
       break;
     }
     case LE_CMD_SET_OUTPUT_MASK: {
@@ -523,14 +524,15 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     float* buf[LE_MAX_TRACKS];
     float vol[LE_MAX_TRACKS];
     int mut[LE_MAX_TRACKS];
-    int32_t in_ch[LE_MAX_TRACKS];
+    uint32_t in_mask[LE_MAX_TRACKS];
     uint32_t out_mask[LE_MAX_TRACKS];
     for (int t = 0; t < tc; ++t) {
       st[t] = load_i32(&e->tracks[t].a_state);
       buf[t] = e->tracks[t].pool[load_i32(&e->tracks[t].a_live)];
       vol[t] = load_f32(&e->tracks[t].a_vol_bits);
       mut[t] = load_i32(&e->tracks[t].a_muted);
-      in_ch[t] = load_i32(&e->tracks[t].a_input_channel);
+      in_mask[t] = atomic_load_explicit(&e->tracks[t].a_input_mask,
+                                        memory_order_relaxed);
       out_mask[t] = atomic_load_explicit(&e->tracks[t].a_output_mask,
                                          memory_order_relaxed);
     }
@@ -565,12 +567,25 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] = 0.0f;
 
     for (int t = 0; t < tc; ++t) {
-      /* Each track records exactly one input channel into its mono buffer. */
-      int32_t ic = in_ch[t];
-      if (ic < 0) ic = 0;
-      if (ic >= ch_in) ic = ch_in - 1;
-      const float insample =
-          e->mono_input ? mono : (in ? in[f * ch_in + ic] : 0.0f);
+      /* Each track records the average of its selected input channels into its
+       * mono buffer. Averaging (not summing) keeps the captured level stable
+       * and clip-safe regardless of how many inputs are armed. */
+      float insample;
+      if (e->mono_input) {
+        insample = mono;
+      } else if (in) {
+        float sum = 0.0f;
+        int cnt = 0;
+        for (int c = 0; c < ch_in; ++c) {
+          if (in_mask[t] & (1u << c)) {
+            sum += in[f * ch_in + c];
+            ++cnt;
+          }
+        }
+        insample = cnt > 0 ? sum / (float)cnt : 0.0f;
+      } else {
+        insample = 0.0f;
+      }
 
       float loopsample = 0.0f;
       if (st[t] == LE_TRACK_RECORDING) {
@@ -769,7 +784,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_f32(&tr->a_peak_bits, 0.0f);
     store_i32(&tr->a_multiple, 1);
     /* Default routing preserves stereo behaviour: record input 0, play 0 + 1. */
-    store_i32(&tr->a_input_channel, 0);
+    atomic_store_explicit(&tr->a_input_mask, 0x1u, memory_order_relaxed);
     atomic_store_explicit(&tr->a_output_mask, 0x3u, memory_order_relaxed);
     tr->record_pos = 0;
     tr->start_iter = 0;
@@ -1047,7 +1062,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->tracks[t].redo_depth = load_i32(&tr->a_redo_depth);
     out->tracks[t].rms = load_f32(&tr->a_rms_bits);
     out->tracks[t].peak = load_f32(&tr->a_peak_bits);
-    out->tracks[t].input_channel = load_i32(&tr->a_input_channel);
+    out->tracks[t].input_mask =
+        atomic_load_explicit(&tr->a_input_mask, memory_order_relaxed);
     out->tracks[t].output_mask =
         atomic_load_explicit(&tr->a_output_mask, memory_order_relaxed);
   }
@@ -1066,7 +1082,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->redo_depth = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
-    out->input_channel = 0;
+    out->input_mask = 0x1u;
     out->output_mask = 0x3u;
     return;
   }
@@ -1080,7 +1096,8 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
   out->redo_depth = load_i32(&tr->a_redo_depth);
   out->rms = load_f32(&tr->a_rms_bits);
   out->peak = load_f32(&tr->a_peak_bits);
-  out->input_channel = load_i32(&tr->a_input_channel);
+  out->input_mask =
+      atomic_load_explicit(&tr->a_input_mask, memory_order_relaxed);
   out->output_mask =
       atomic_load_explicit(&tr->a_output_mask, memory_order_relaxed);
 }
@@ -1282,9 +1299,9 @@ int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
 
 /* Track index travels in arg_f (small, exact in float); the value/mask travels
  * in arg_i so a 32-bit mask round-trips exactly (a float cannot). */
-int32_t le_engine_set_input_channel(le_engine* engine, int32_t channel,
-                                    int32_t value) {
-  return le_push(engine, LE_CMD_SET_INPUT_CHANNEL, value, (float)channel);
+int32_t le_engine_set_input_mask(le_engine* engine, int32_t channel,
+                                 int32_t mask) {
+  return le_push(engine, LE_CMD_SET_INPUT_MASK, mask, (float)channel);
 }
 int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
                                   int32_t mask) {

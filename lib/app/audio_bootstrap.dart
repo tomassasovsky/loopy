@@ -46,9 +46,9 @@ Future<bool> tryAutoStartEngine({
   // Restore per-track I/O routing so a saved record source / output mask is
   // reapplied on launch (mirroring the latency-offset restore above).
   for (final track in repository.state.tracks) {
-    final input = await settings.loadTrackInputChannel(track.channel);
-    if (input != null) {
-      repository.setInputChannel(channel: track.channel, value: input);
+    final inputMask = await settings.loadTrackInputMask(track.channel);
+    if (inputMask != null) {
+      repository.setInputMask(channel: track.channel, mask: inputMask);
     }
     final mask = await settings.loadTrackOutputMask(track.channel);
     if (mask != null) {

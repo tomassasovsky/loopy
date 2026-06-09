@@ -127,14 +127,14 @@ class FakeAudioEngine implements AudioEngine {
   /// Last per-track routing values seen (kept separate so input and output
   /// assertions never clobber each other).
   int? lastInputRoutingChannel;
-  int? lastInputChannelValue;
+  int? lastInputMask;
   int? lastOutputRoutingChannel;
   int? lastOutputMask;
 
   @override
-  EngineResult setInputChannel({required int channel, required int value}) {
+  EngineResult setInputMask({required int channel, required int mask}) {
     lastInputRoutingChannel = channel;
-    lastInputChannelValue = value;
+    lastInputMask = mask;
     return EngineResult.ok;
   }
 

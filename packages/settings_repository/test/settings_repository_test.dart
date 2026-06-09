@@ -132,14 +132,14 @@ void main() {
 
   group('track routing', () {
     test('returns null when nothing is stored', () async {
-      expect(await repository.loadTrackInputChannel(0), isNull);
+      expect(await repository.loadTrackInputMask(0), isNull);
       expect(await repository.loadTrackOutputMask(0), isNull);
     });
 
-    test('round-trips a saved input channel per track', () async {
-      await repository.saveTrackInputChannel(1, 3);
-      expect(await repository.loadTrackInputChannel(1), 3);
-      expect(await repository.loadTrackInputChannel(0), isNull);
+    test('round-trips a saved input mask per track', () async {
+      await repository.saveTrackInputMask(1, 0x3);
+      expect(await repository.loadTrackInputMask(1), 0x3);
+      expect(await repository.loadTrackInputMask(0), isNull);
     });
 
     test('round-trips a saved output mask per track', () async {

@@ -13,10 +13,10 @@ void main() {
       await tester.pumpApp(
         Material(
           child: TrackRoutingPanel(
-            track: const Track(inputChannel: 1, outputMask: 0x1),
+            track: const Track(outputMask: 0x1),
             inputChannels: 2,
             outputChannels: 4,
-            onInputChanged: (_) {},
+            onInputMaskChanged: (_) {},
             onOutputMaskChanged: (_) {},
           ),
         ),
@@ -47,7 +47,7 @@ void main() {
             track: const Track(outputMask: 0x1),
             inputChannels: 2,
             outputChannels: 4,
-            onInputChanged: (_) {},
+            onInputMaskChanged: (_) {},
             onOutputMaskChanged: (m) => mask = m,
           ),
         ),
@@ -60,50 +60,56 @@ void main() {
       expect(mask, 0x3);
     });
 
-    testWidgets('deselecting an output chip clears its bit', (tester) async {
-      int? mask;
+    testWidgets('renders an input chip per channel reflecting the mask', (
+      tester,
+    ) async {
       await tester.pumpApp(
         Material(
           child: TrackRoutingPanel(
-            track: const Track(outputMask: 0x5),
+            track: const Track(inputMask: 0x2),
             inputChannels: 2,
-            outputChannels: 4,
-            onInputChanged: (_) {},
-            onOutputMaskChanged: (m) => mask = m,
+            outputChannels: 2,
+            onInputMaskChanged: (_) {},
+            onOutputMaskChanged: (_) {},
           ),
         ),
       );
 
-      await tester.tap(find.byKey(const Key('trackRouting_output_chip_0')));
-      await tester.pump();
-
-      // Removing channel 0 from mask 0x5 (bits 0 and 2) yields 0x4.
-      expect(mask, 0x4);
+      for (var c = 0; c < 2; c++) {
+        expect(find.byKey(Key('trackRouting_input_chip_$c')), findsOneWidget);
+      }
+      // Only input channel 1 is selected (mask 0x2).
+      final in0 = tester.widget<FilterChip>(
+        find.byKey(const Key('trackRouting_input_chip_0')),
+      );
+      final in1 = tester.widget<FilterChip>(
+        find.byKey(const Key('trackRouting_input_chip_1')),
+      );
+      expect(in0.selected, isFalse);
+      expect(in1.selected, isTrue);
     });
 
-    testWidgets('selecting an input source reports the new channel', (
+    testWidgets('selecting a second input adds its bit to the input mask', (
       tester,
     ) async {
-      int? input;
+      int? mask;
       await tester.pumpApp(
         Material(
           child: TrackRoutingPanel(
             track: const Track(),
             inputChannels: 2,
             outputChannels: 2,
-            onInputChanged: (v) => input = v,
+            onInputMaskChanged: (m) => mask = m,
             onOutputMaskChanged: (_) {},
           ),
         ),
       );
 
-      await tester.tap(find.byKey(const Key('trackRouting_input_dropdown')));
-      await tester.pumpAndSettle();
-      // Pick "Input 2" (channel index 1) from the opened menu.
-      await tester.tap(find.text('Input 2').last);
-      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('trackRouting_input_chip_1')));
+      await tester.pump();
 
-      expect(input, 1);
+      // Adding input 1 to mask 0x1 yields 0x3 (record both inputs).
+      expect(mask, 0x3);
     });
   });
 }

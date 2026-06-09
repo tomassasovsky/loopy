@@ -42,7 +42,7 @@ void main() {
       );
       // Save routing for channel 1 only; channel 0 has none (exercises the
       // null-guard skip in the restore loop).
-      await settings.saveTrackInputChannel(1, 2);
+      await settings.saveTrackInputMask(1, 0x2);
       await settings.saveTrackOutputMask(1, 0x4);
       // The restore loop iterates the engine's reported tracks.
       engine.nextSnapshot = const EngineSnapshot(
@@ -67,7 +67,7 @@ void main() {
       expect(started, isTrue);
       // Only channel 1 had saved routing, so it is the last (and only) applied.
       expect(engine.lastInputRoutingChannel, 1);
-      expect(engine.lastInputChannelValue, 2);
+      expect(engine.lastInputMask, 0x2);
       expect(engine.lastOutputRoutingChannel, 1);
       expect(engine.lastOutputMask, 0x4);
     });
