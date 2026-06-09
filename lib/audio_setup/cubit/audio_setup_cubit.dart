@@ -65,7 +65,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       EngineConfig(
         sampleRate: state.sampleRate,
         bufferFrames: state.bufferFrames,
-        channels: 2,
+        // Channel counts left at 0 (device default): a multichannel interface
+        // opens with all its channels; the negotiated counts are reported back.
         passthrough: state.monitorInput,
         mergeToMono: state.mergeToMono,
         useLoopbackCapture: state.loopback.isAutoRoutable,

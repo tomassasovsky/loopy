@@ -115,6 +115,15 @@ abstract interface class AudioEngine {
   /// Mutes or unmutes track [channel].
   EngineResult setTrackMute({required bool muted, int channel = 0});
 
+  /// Routes track [channel]'s record source to hardware input [value] (clamped
+  /// to the negotiated input-channel range).
+  EngineResult setInputChannel({required int channel, required int value});
+
+  /// Routes track [channel]'s playback to the output channels set in [mask] (a
+  /// bitmask; bit c => hardware output channel c). Bits beyond the negotiated
+  /// output-channel range are ignored.
+  EngineResult setOutputMask({required int channel, required int mask});
+
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
 

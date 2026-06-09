@@ -6,6 +6,7 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/view/big_picture_view.dart';
 import 'package:loopy/looper/view/looper_view.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// Entry point for the looper feature.
 ///
@@ -22,6 +23,7 @@ class LooperPage extends StatelessWidget {
       create: (context) => LooperBloc(
         repository: context.read<LooperRepository>(),
         controller: context.read<ControllerRepository>(),
+        settings: context.read<SettingsRepository>(),
       ),
       child: BlocBuilder<UiModeCubit, UiMode>(
         builder: (context, mode) => mode == UiMode.bigPicture

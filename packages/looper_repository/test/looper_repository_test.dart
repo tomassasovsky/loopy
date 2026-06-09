@@ -10,7 +10,9 @@ const _playingSnapshot = EngineSnapshot(
   isRunning: true,
   sampleRate: 48000,
   bufferFrames: 128,
-  channels: 2,
+  channels: 4,
+  inputChannels: 2,
+  outputChannels: 4,
   framesProcessed: 0,
   xrunCount: 0,
   inputRms: 0,
@@ -29,6 +31,8 @@ const _playingSnapshot = EngineSnapshot(
       undoDepth: 1,
       rms: 0.3,
       peak: 0.5,
+      inputChannel: 1,
+      outputMask: 0x2,
     ),
   ],
 );
@@ -64,8 +68,12 @@ void main() {
       expect(state.track.playheadFrames, 24000);
       expect(state.track.canUndo, isTrue);
       expect(state.track.hasContent, isTrue);
+      expect(state.track.inputChannel, 1);
+      expect(state.track.outputMask, 0x2);
       expect(state.status.deviceName, 'Fake Device');
       expect(state.status.sampleRate, 48000);
+      expect(state.status.inputChannels, 2);
+      expect(state.status.outputChannels, 4);
       expect(state.status.isConnected, isTrue);
     });
 
@@ -280,6 +288,20 @@ void main() {
       buildRepo().setRecordOffset(480);
       expect(engine.calls, contains('setRecordOffset'));
       expect(engine.lastRecordOffset, 480);
+    });
+
+    test('setInputChannel forwards channel and value to the engine', () {
+      buildRepo().setInputChannel(channel: 2, value: 3);
+      expect(engine.calls, contains('setInputChannel'));
+      expect(engine.lastChannel, 2);
+      expect(engine.lastInputChannelValue, 3);
+    });
+
+    test('setOutputMask forwards channel and mask to the engine', () {
+      buildRepo().setOutputMask(channel: 1, mask: 0x5);
+      expect(engine.calls, contains('setOutputMask'));
+      expect(engine.lastChannel, 1);
+      expect(engine.lastOutputMask, 0x5);
     });
 
     test('detectLoopback forwards the engine result', () {

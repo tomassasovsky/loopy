@@ -13,7 +13,8 @@ class EngineConfig {
   const EngineConfig({
     this.sampleRate = 0,
     this.bufferFrames = 0,
-    this.channels = 0,
+    this.inputChannels = 0,
+    this.outputChannels = 0,
     this.passthrough = false,
     this.maxLoopFrames = 0,
     this.mergeToMono = false,
@@ -28,9 +29,13 @@ class EngineConfig {
   /// Smaller values reduce latency at the cost of xrun risk.
   final int bufferFrames;
 
-  /// Requested channel count, or `0` for the device default. Clamped to a
-  /// maximum of two by the engine.
-  final int channels;
+  /// Requested hardware capture channel count, or `0` for the device default.
+  /// Clamped to the engine maximum.
+  final int inputChannels;
+
+  /// Requested hardware playback channel count, or `0` for the device default.
+  /// Clamped to the engine maximum.
+  final int outputChannels;
 
   /// Whether captured input should be copied straight to the output.
   final bool passthrough;
@@ -54,7 +59,8 @@ class EngineConfig {
     ptr.ref
       ..sample_rate = sampleRate
       ..buffer_frames = bufferFrames
-      ..channels = channels
+      ..input_channels = inputChannels
+      ..output_channels = outputChannels
       ..passthrough = passthrough ? 1 : 0
       ..max_loop_frames = maxLoopFrames
       ..merge_to_mono = mergeToMono ? 1 : 0
@@ -68,7 +74,8 @@ class EngineConfig {
           runtimeType == other.runtimeType &&
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
-          channels == other.channels &&
+          inputChannels == other.inputChannels &&
+          outputChannels == other.outputChannels &&
           passthrough == other.passthrough &&
           maxLoopFrames == other.maxLoopFrames &&
           mergeToMono == other.mergeToMono &&
@@ -78,7 +85,8 @@ class EngineConfig {
   int get hashCode => Object.hash(
     sampleRate,
     bufferFrames,
-    channels,
+    inputChannels,
+    outputChannels,
     passthrough,
     maxLoopFrames,
     mergeToMono,
@@ -88,7 +96,8 @@ class EngineConfig {
   @override
   String toString() =>
       'EngineConfig(sampleRate: $sampleRate, '
-      'bufferFrames: $bufferFrames, channels: $channels, '
+      'bufferFrames: $bufferFrames, inputChannels: $inputChannels, '
+      'outputChannels: $outputChannels, '
       'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames, '
       'mergeToMono: $mergeToMono, useLoopbackCapture: $useLoopbackCapture)';
 }

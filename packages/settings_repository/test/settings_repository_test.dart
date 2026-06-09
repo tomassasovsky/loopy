@@ -130,6 +130,25 @@ void main() {
     });
   });
 
+  group('track routing', () {
+    test('returns null when nothing is stored', () async {
+      expect(await repository.loadTrackInputChannel(0), isNull);
+      expect(await repository.loadTrackOutputMask(0), isNull);
+    });
+
+    test('round-trips a saved input channel per track', () async {
+      await repository.saveTrackInputChannel(1, 3);
+      expect(await repository.loadTrackInputChannel(1), 3);
+      expect(await repository.loadTrackInputChannel(0), isNull);
+    });
+
+    test('round-trips a saved output mask per track', () async {
+      await repository.saveTrackOutputMask(2, 0x5);
+      expect(await repository.loadTrackOutputMask(2), 0x5);
+      expect(await repository.loadTrackOutputMask(0), isNull);
+    });
+  });
+
   group('audio config', () {
     test('returns null on a first run (nothing saved)', () async {
       expect(await repository.loadAudioConfig(), isNull);
@@ -144,6 +163,29 @@ void main() {
       );
       await repository.saveAudioConfig(config);
       expect(await repository.loadAudioConfig(), config);
+    });
+
+    test('round-trips requested channel counts', () async {
+      const config = StoredAudioConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        monitorInput: true,
+        mergeToMono: false,
+        inputChannels: 2,
+        outputChannels: 4,
+      );
+      await repository.saveAudioConfig(config);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.inputChannels, 2);
+      expect(loaded?.outputChannels, 4);
+    });
+
+    test('defaults channel counts to 0 (device default) when unset', () async {
+      await store.setInt('audio.sample_rate', 44100);
+      await store.setInt('audio.buffer_frames', 64);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.inputChannels, 0);
+      expect(loaded?.outputChannels, 0);
     });
 
     test(

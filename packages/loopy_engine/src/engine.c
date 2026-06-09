@@ -923,13 +923,15 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   }
 
   /* Capture and playback widths may differ (e.g. 2-in / 4-out). Each falls back
-   * to the deprecated `channels` field, then to the device default (2). */
+   * to the deprecated `channels` field, then to 0 — which tells miniaudio to
+   * open the device's native channel count, so a multichannel interface comes
+   * up with all its channels. The negotiated counts are read back after init. */
   int in_channels = config->input_channels > 0    ? config->input_channels
                     : config->channels > 0         ? config->channels
-                                                   : 2;
+                                                   : 0;
   int out_channels = config->output_channels > 0  ? config->output_channels
                      : config->channels > 0        ? config->channels
-                                                   : 2;
+                                                   : 0;
   if (in_channels > LE_MAX_CHANNELS) in_channels = LE_MAX_CHANNELS;
   if (out_channels > LE_MAX_CHANNELS) out_channels = LE_MAX_CHANNELS;
   engine->passthrough = config->passthrough ? 1 : 0;

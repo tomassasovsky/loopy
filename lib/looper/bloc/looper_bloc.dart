@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
 
@@ -20,7 +21,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   LooperBloc({
     required LooperRepository repository,
     ControllerRepository? controller,
+    SettingsRepository? settings,
   }) : _repository = repository,
+       _settings = settings,
        super(const LooperState()) {
     on<LooperStateUpdated>((event, emit) => emit(event.state));
     on<LooperRecordPressed>(
@@ -50,6 +53,20 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         channel: event.channel,
       ),
     );
+    on<LooperInputChannelChanged>((event, _) {
+      _repository.setInputChannel(channel: event.channel, value: event.value);
+      final settings = _settings;
+      if (settings != null) {
+        unawaited(settings.saveTrackInputChannel(event.channel, event.value));
+      }
+    });
+    on<LooperOutputMaskChanged>((event, _) {
+      _repository.setOutputMask(channel: event.channel, mask: event.mask);
+      final settings = _settings;
+      if (settings != null) {
+        unawaited(settings.saveTrackOutputMask(event.channel, event.mask));
+      }
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);
@@ -73,6 +90,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   }
 
   final LooperRepository _repository;
+  final SettingsRepository? _settings;
   late final StreamSubscription<LooperState> _subscription;
   StreamSubscription<ControllerEvent>? _controllerSubscription;
 

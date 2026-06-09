@@ -9,6 +9,8 @@ class EngineStatus extends Equatable {
     this.sampleRate = 0,
     this.bufferFrames = 0,
     this.channels = 0,
+    this.inputChannels = 0,
+    this.outputChannels = 0,
     this.latencyState = LatencyState.idle,
     this.measuredLatencyMs = -1,
     this.xrunCount = 0,
@@ -25,8 +27,14 @@ class EngineStatus extends Equatable {
   /// Negotiated buffer (period) size in frames.
   final int bufferFrames;
 
-  /// Channel count of the duplex stream.
+  /// Channel count of the duplex stream (alias for [outputChannels]).
   final int channels;
+
+  /// Negotiated hardware capture channel count.
+  final int inputChannels;
+
+  /// Negotiated hardware playback channel count.
+  final int outputChannels;
 
   /// Phase of the latency harness.
   final LatencyState latencyState;
@@ -53,6 +61,8 @@ class EngineStatus extends Equatable {
     sampleRate,
     bufferFrames,
     channels,
+    inputChannels,
+    outputChannels,
     latencyState,
     measuredLatencyMs,
     xrunCount,

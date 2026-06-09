@@ -11,7 +11,8 @@ void main() {
       const config = EngineConfig();
       expect(config.sampleRate, 0);
       expect(config.bufferFrames, 0);
-      expect(config.channels, 0);
+      expect(config.inputChannels, 0);
+      expect(config.outputChannels, 0);
       expect(config.passthrough, isFalse);
       expect(config.mergeToMono, isFalse);
     });
@@ -22,7 +23,8 @@ void main() {
       const config = EngineConfig(
         sampleRate: 48000,
         bufferFrames: 64,
-        channels: 2,
+        inputChannels: 2,
+        outputChannels: 4,
         passthrough: true,
         maxLoopFrames: 480000,
         mergeToMono: true,
@@ -33,7 +35,8 @@ void main() {
         config.writeTo(ptr);
         expect(ptr.ref.sample_rate, 48000);
         expect(ptr.ref.buffer_frames, 64);
-        expect(ptr.ref.channels, 2);
+        expect(ptr.ref.input_channels, 2);
+        expect(ptr.ref.output_channels, 4);
         expect(ptr.ref.passthrough, 1);
         expect(ptr.ref.max_loop_frames, 480000);
         expect(ptr.ref.merge_to_mono, 1);

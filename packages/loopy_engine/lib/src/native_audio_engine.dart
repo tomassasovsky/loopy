@@ -185,6 +185,22 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setInputChannel({required int channel, required int value}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_input_channel(_engine, channel, value),
+    );
+  }
+
+  @override
+  EngineResult setOutputMask({required int channel, required int mask}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_output_mask(_engine, channel, mask),
+    );
+  }
+
+  @override
   EngineResult setRecordOffset(int frames) {
     _checkAlive();
     return EngineResult.fromCode(

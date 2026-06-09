@@ -17,6 +17,8 @@ class Track extends Equatable {
     this.undoDepth = 0,
     this.redoDepth = 0,
     this.multiple = 1,
+    this.inputChannel = 0,
+    this.outputMask = 0x3,
   });
 
   /// Track channel index (always 0 in the single-track phase).
@@ -52,6 +54,12 @@ class Track extends Equatable {
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
 
+  /// Hardware input channel this track records from.
+  final int inputChannel;
+
+  /// Bitmask of hardware output channels this track plays to (bit c => out c).
+  final int outputMask;
+
   /// Whether this track spans more than one base loop.
   bool get isMultiple => multiple > 1;
 
@@ -81,5 +89,7 @@ class Track extends Equatable {
     undoDepth,
     redoDepth,
     multiple,
+    inputChannel,
+    outputMask,
   ];
 }
