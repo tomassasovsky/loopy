@@ -94,5 +94,34 @@ void main() {
 
       verify(() => bloc.add(const LooperOutputMaskChanged(0, 0x2))).called(1);
     });
+
+    testWidgets('forwards the excluded input mask to the panel', (
+      tester,
+    ) async {
+      // A loopback-excluded channel 1 must render disabled in the dialog.
+      whenListen(
+        bloc,
+        const Stream<LooperState>.empty(),
+        initialState: const LooperState(
+          tracks: [Track()],
+          status: EngineStatus(
+            inputChannels: 2,
+            outputChannels: 2,
+            isConnected: true,
+            excludedInputMask: 0x2,
+          ),
+        ),
+      );
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('In 2 (loopback)'), findsOneWidget);
+      final chip = tester.widget<FilterChip>(
+        find.byKey(const Key('trackRouting_input_chip_1')),
+      );
+      // A null onSelected makes the chip non-interactive — it cannot dispatch.
+      expect(chip.onSelected, isNull);
+    });
   });
 }
