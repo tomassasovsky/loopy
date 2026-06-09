@@ -181,7 +181,6 @@ class EngineSnapshot {
     required this.isRunning,
     required this.sampleRate,
     required this.bufferFrames,
-    required this.channels,
     required this.framesProcessed,
     required this.xrunCount,
     required this.inputRms,
@@ -202,7 +201,6 @@ class EngineSnapshot {
     : isRunning = false,
       sampleRate = 0,
       bufferFrames = 0,
-      channels = 0,
       inputChannels = 0,
       outputChannels = 0,
       framesProcessed = 0,
@@ -229,7 +227,6 @@ class EngineSnapshot {
     isRunning: native.running != 0,
     sampleRate: native.sample_rate,
     bufferFrames: native.buffer_frames,
-    channels: native.channels,
     inputChannels: native.input_channels,
     outputChannels: native.output_channels,
     framesProcessed: native.frames_processed,
@@ -253,9 +250,6 @@ class EngineSnapshot {
 
   /// Negotiated device period (buffer) size in frames.
   final int bufferFrames;
-
-  /// Number of channels in the duplex stream (alias for [outputChannels]).
-  final int channels;
 
   /// Negotiated hardware capture channel count.
   final int inputChannels;
@@ -332,7 +326,6 @@ class EngineSnapshot {
           isRunning == other.isRunning &&
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
-          channels == other.channels &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
           framesProcessed == other.framesProcessed &&
@@ -352,7 +345,6 @@ class EngineSnapshot {
     isRunning,
     sampleRate,
     bufferFrames,
-    channels,
     inputChannels,
     outputChannels,
     framesProcessed,

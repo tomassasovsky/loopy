@@ -88,7 +88,6 @@ struct le_engine {
   _Atomic int32_t a_configured;
   _Atomic int32_t a_sample_rate;
   _Atomic int32_t a_buffer_frames;
-  _Atomic int32_t a_channels;       /* deprecated alias == a_out_channels */
   _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
   _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
   _Atomic uint64_t a_frames;
@@ -409,6 +408,9 @@ static void apply_command(le_engine* e, const le_command* cmd) {
     case LE_CMD_SET_RECORD_OFFSET:
       store_i32(&e->a_record_offset, cmd->arg_i > 0 ? cmd->arg_i : 0);
       break;
+    /* Unlike SET_VOLUME/SET_MUTE (track in arg_i), these two carry the track in
+     * arg_f and the value/mask in arg_i — so a 32-bit mask round-trips exactly
+     * (a float cannot). See le_engine_set_input_channel/set_output_mask. */
     case LE_CMD_SET_INPUT_CHANNEL: {
       const int32_t ch = (int32_t)cmd->arg_f;
       if (!valid_channel(e, ch)) break;
@@ -796,7 +798,6 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_record_offset, 0); /* re-measured per session */
 
   store_i32(&engine->a_sample_rate, sample_rate);
-  store_i32(&engine->a_channels, output_channels);
   store_i32(&engine->a_in_channels, input_channels);
   store_i32(&engine->a_out_channels, output_channels);
   store_i32(&engine->a_master_len, 0);
@@ -922,16 +923,12 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     return LE_ERR_ALREADY_RUNNING;
   }
 
-  /* Capture and playback widths may differ (e.g. 2-in / 4-out). Each falls back
-   * to the deprecated `channels` field, then to 0 — which tells miniaudio to
-   * open the device's native channel count, so a multichannel interface comes
-   * up with all its channels. The negotiated counts are read back after init. */
-  int in_channels = config->input_channels > 0    ? config->input_channels
-                    : config->channels > 0         ? config->channels
-                                                   : 0;
-  int out_channels = config->output_channels > 0  ? config->output_channels
-                     : config->channels > 0        ? config->channels
-                                                   : 0;
+  /* Capture and playback widths may differ (e.g. 2-in / 4-out). An unset (0)
+   * count tells miniaudio to open the device's native channel count, so a
+   * multichannel interface comes up with all its channels; the negotiated
+   * counts are read back after init. */
+  int in_channels = config->input_channels > 0 ? config->input_channels : 0;
+  int out_channels = config->output_channels > 0 ? config->output_channels : 0;
   if (in_channels > LE_MAX_CHANNELS) in_channels = LE_MAX_CHANNELS;
   if (out_channels > LE_MAX_CHANNELS) out_channels = LE_MAX_CHANNELS;
   engine->passthrough = config->passthrough ? 1 : 0;
@@ -1023,7 +1020,6 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->sample_rate = load_i32(&engine->a_sample_rate);
   out->buffer_frames = load_i32(&engine->a_buffer_frames);
-  out->channels = load_i32(&engine->a_channels);
   out->input_channels = load_i32(&engine->a_in_channels);
   out->output_channels = load_i32(&engine->a_out_channels);
   out->frames_processed =

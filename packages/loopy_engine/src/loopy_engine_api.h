@@ -99,14 +99,12 @@ typedef enum le_command_code {
 typedef struct le_config {
   int32_t sample_rate;
   int32_t buffer_frames;
-  int32_t channels;        /* deprecated alias: when input_channels /
-                            * output_channels are 0, applies to both. */
   int32_t passthrough;     /* 1 = copy captured input straight to the output */
   int32_t max_loop_frames; /* per-track buffer cap; 0 => default (8 min @ sr) */
   int32_t merge_to_mono;   /* 1 = average input channels and feed all outputs */
   int32_t use_loopback_capture; /* 1 = capture from a detected loopback device */
-  int32_t input_channels;  /* hardware capture channels (0 => channels/default) */
-  int32_t output_channels; /* hardware playback channels (0 => channels/default) */
+  int32_t input_channels;  /* hardware capture channels (0 => device default) */
+  int32_t output_channels; /* hardware playback channels (0 => device default) */
 } le_config;
 
 /* Maximum number of simultaneous looper tracks (two banks of four). */
@@ -138,7 +136,6 @@ typedef struct le_snapshot {
   int32_t running;            /* 0/1 */
   int32_t sample_rate;
   int32_t buffer_frames;
-  int32_t channels;           /* deprecated alias == output_channels */
   int32_t input_channels;     /* negotiated hardware capture channels */
   int32_t output_channels;    /* negotiated hardware playback channels */
   uint64_t frames_processed;  /* total frames seen by the callback */

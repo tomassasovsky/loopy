@@ -765,6 +765,43 @@ static void test_routing_default_stereo(void) {
   le_engine_destroy(e);
 }
 
+/* An out-of-range input channel is clamped to the valid input range. */
+static void test_routing_input_channel_clamped(void) {
+  printf("test_routing_input_channel_clamped\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  le_snapshot s;
+
+  /* Above range clamps to the highest valid input (in_channels - 1). */
+  CHECK(le_engine_set_input_channel(e, 0, 5) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].input_channel == 1);
+
+  /* Negative clamps to 0. */
+  CHECK(le_engine_set_input_channel(e, 0, -3) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].input_channel == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Output-mask bits beyond the available output channels are dropped. */
+static void test_routing_output_mask_clamped(void) {
+  printf("test_routing_output_mask_clamped\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-out */
+  le_snapshot s;
+
+  CHECK(le_engine_set_output_mask(e, 0, 0xF) == LE_OK); /* request 4 channels */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].output_mask == 0x3u); /* only outputs 0 and 1 exist */
+
+  le_engine_destroy(e);
+}
+
 /* ---- loop visualization tap ---- */
 
 static float max_of(const float* a, int n) {
@@ -874,6 +911,8 @@ int main(void) {
   test_routing_input_channel();
   test_routing_output_mask();
   test_routing_default_stereo();
+  test_routing_input_channel_clamped();
+  test_routing_output_mask_clamped();
   test_visualization_tap();
   test_classify_capture_device();
   test_detect_loopback_runs();
