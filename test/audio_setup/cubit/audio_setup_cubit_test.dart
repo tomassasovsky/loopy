@@ -48,7 +48,6 @@ void main() {
     expect(cubit.state.sampleRate, 48000);
     expect(cubit.state.bufferFrames, 128);
     expect(cubit.state.monitorInput, isTrue);
-    expect(cubit.state.mergeToMono, isTrue);
     expect(cubit.state.status, AudioSetupStatus.stopped);
   });
 
@@ -77,7 +76,6 @@ void main() {
     expect(cubit.state.sampleRate, 96000);
     expect(cubit.state.bufferFrames, 256);
     expect(cubit.state.monitorInput, isFalse);
-    expect(cubit.state.mergeToMono, isFalse);
     expect(cubit.state.engineStatus.deviceName, 'Scarlett');
   });
 
@@ -87,8 +85,7 @@ void main() {
     act: (cubit) => cubit
       ..setSampleRate(96000)
       ..setBufferFrames(64)
-      ..setMonitorInput(monitorInput: false)
-      ..setMergeToMono(mergeToMono: false),
+      ..setMonitorInput(monitorInput: false),
     expect: () => [
       isA<AudioSetupState>().having((s) => s.sampleRate, 'sampleRate', 96000),
       isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
@@ -97,7 +94,6 @@ void main() {
         'monitorInput',
         false,
       ),
-      isA<AudioSetupState>().having((s) => s.mergeToMono, 'mergeToMono', false),
     ],
   );
 
@@ -118,7 +114,6 @@ void main() {
           sampleRate: 48000,
           bufferFrames: 128,
           passthrough: true,
-          mergeToMono: true,
         ),
       ),
     ).called(1),
@@ -195,7 +190,6 @@ void main() {
               sampleRate: 48000,
               bufferFrames: 128,
               passthrough: true,
-              mergeToMono: true,
               useLoopbackCapture: true,
             ),
           ),

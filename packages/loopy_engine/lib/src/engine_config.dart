@@ -18,7 +18,6 @@ class EngineConfig {
     this.outputChannels = 0,
     this.passthrough = false,
     this.maxLoopFrames = 0,
-    this.mergeToMono = false,
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
@@ -47,11 +46,6 @@ class EngineConfig {
   /// (about two minutes at the device sample rate).
   final int maxLoopFrames;
 
-  /// Whether captured input channels are averaged to mono and fed to every
-  /// output channel. Useful for a mono source (e.g. a single mic on input 1)
-  /// so it is heard on both sides instead of one.
-  final bool mergeToMono;
-
   /// Whether the engine should capture from a detected loopback device (so
   /// latency can be measured without a physical cable). No effect when no
   /// loopback is detected.
@@ -75,7 +69,6 @@ class EngineConfig {
       ..output_channels = outputChannels
       ..passthrough = passthrough ? 1 : 0
       ..max_loop_frames = maxLoopFrames
-      ..merge_to_mono = mergeToMono ? 1 : 0
       ..use_loopback_capture = useLoopbackCapture ? 1 : 0;
     writeNativeString(ptr.ref.playback_device_id, playbackDeviceId);
     writeNativeString(ptr.ref.capture_device_id, captureDeviceId);
@@ -92,7 +85,6 @@ class EngineConfig {
           outputChannels == other.outputChannels &&
           passthrough == other.passthrough &&
           maxLoopFrames == other.maxLoopFrames &&
-          mergeToMono == other.mergeToMono &&
           useLoopbackCapture == other.useLoopbackCapture &&
           playbackDeviceId == other.playbackDeviceId &&
           captureDeviceId == other.captureDeviceId;
@@ -105,7 +97,6 @@ class EngineConfig {
     outputChannels,
     passthrough,
     maxLoopFrames,
-    mergeToMono,
     useLoopbackCapture,
     playbackDeviceId,
     captureDeviceId,
@@ -117,7 +108,7 @@ class EngineConfig {
       'bufferFrames: $bufferFrames, inputChannels: $inputChannels, '
       'outputChannels: $outputChannels, '
       'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames, '
-      'mergeToMono: $mergeToMono, useLoopbackCapture: $useLoopbackCapture, '
+      'useLoopbackCapture: $useLoopbackCapture, '
       'playbackDeviceId: $playbackDeviceId, '
       'captureDeviceId: $captureDeviceId)';
 }

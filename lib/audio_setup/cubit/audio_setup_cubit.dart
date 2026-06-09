@@ -64,10 +64,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setMonitorInput({required bool monitorInput}) =>
       emit(state.copyWith(monitorInput: monitorInput));
 
-  /// Toggles merging input channels to mono (applied on the next start).
-  void setMergeToMono({required bool mergeToMono}) =>
-      emit(state.copyWith(mergeToMono: mergeToMono));
-
   /// Selects the playback device to open (empty id = system default). Persists
   /// the choice and, when the engine is already running, reopens on it now.
   void setPlaybackDevice(String deviceId) =>
@@ -119,7 +115,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
     passthrough: state.monitorInput,
-    mergeToMono: state.mergeToMono,
     useLoopbackCapture: state.loopback.isAutoRoutable,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
@@ -130,7 +125,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     sampleRate: state.sampleRate,
     bufferFrames: state.bufferFrames,
     monitorInput: state.monitorInput,
-    mergeToMono: state.mergeToMono,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
   );
@@ -266,9 +260,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       monitorInput: hydrateConfig
           ? lastConfig?.passthrough ?? current.monitorInput
           : current.monitorInput,
-      mergeToMono: hydrateConfig
-          ? lastConfig?.mergeToMono ?? current.mergeToMono
-          : current.mergeToMono,
       playbackDeviceId: hydrateConfig
           ? lastConfig?.playbackDeviceId ?? current.playbackDeviceId
           : current.playbackDeviceId,

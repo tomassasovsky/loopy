@@ -812,10 +812,6 @@ final class le_config extends ffi.Struct {
   @ffi.Int32()
   external int max_loop_frames;
 
-  /// 1 = average input channels and feed all outputs
-  @ffi.Int32()
-  external int merge_to_mono;
-
   /// 1 = capture from a detected loopback device
   @ffi.Int32()
   external int use_loopback_capture;
