@@ -34,34 +34,52 @@ void main() {
     );
   }
 
-  testWidgets('renders device options; measure disabled while stopped', (
+  testWidgets('starts on the engine step with selectable sample rates', (
     tester,
   ) async {
     seed(const AudioSetupState());
     await pumpView(tester);
 
     expect(
-      find.byKey(const Key('audioSetup_sampleRate_dropdown')),
+      find.byKey(const Key('audioSetup_sampleRate_48000')),
       findsOneWidget,
     );
-    expect(find.text('Start engine'), findsOneWidget);
-    final measureButton = tester.widget<OutlinedButton>(
+    expect(find.byKey(const Key('audioSetup_next_button')), findsOneWidget);
+    // Start and measure are not reachable yet (later step / running only).
+    expect(find.byKey(const Key('audioSetup_startStop_button')), findsNothing);
+    expect(
       find.byKey(const Key('audioSetup_measureLatency_button')),
+      findsNothing,
     );
-    expect(measureButton.enabled, isFalse);
   });
 
-  testWidgets('tapping start calls cubit.start', (tester) async {
+  testWidgets('selecting a sample rate forwards to the cubit', (tester) async {
     seed(const AudioSetupState());
     await pumpView(tester);
 
+    await tester.tap(find.byKey(const Key('audioSetup_sampleRate_96000')));
+    verify(() => cubit.setSampleRate(96000)).called(1);
+  });
+
+  testWidgets('stepping to the end and starting calls cubit.start', (
+    tester,
+  ) async {
+    seed(const AudioSetupState());
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start engine'), findsOneWidget);
     await tester.tap(find.byKey(const Key('audioSetup_startStop_button')));
     await tester.pump();
 
     verify(cubit.start).called(1);
   });
 
-  testWidgets('running state shows stop and enables latency measurement', (
+  testWidgets('running state shows the live panel with stop and measure', (
     tester,
   ) async {
     seed(
@@ -72,15 +90,19 @@ void main() {
     );
     await pumpView(tester);
 
-    expect(find.text('Stop engine'), findsOneWidget);
     expect(find.text('Scarlett'), findsOneWidget);
-    final measureButton = tester.widget<OutlinedButton>(
+    expect(find.text('Stop engine'), findsOneWidget);
+
+    await tester.tap(
       find.byKey(const Key('audioSetup_measureLatency_button')),
     );
-    expect(measureButton.enabled, isTrue);
+    verify(cubit.measureLatency).called(1);
+
+    await tester.tap(find.byKey(const Key('audioSetup_startStop_button')));
+    verify(cubit.stop).called(1);
   });
 
-  testWidgets('error state shows the error text', (tester) async {
+  testWidgets('error state shows the error banner', (tester) async {
     seed(
       const AudioSetupState(
         status: AudioSetupStatus.error,
