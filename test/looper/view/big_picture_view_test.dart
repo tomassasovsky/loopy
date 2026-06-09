@@ -215,8 +215,10 @@ void main() {
                 .child!
             as Container;
 
-    testWidgets('an idle track still shows a sliver', (tester) async {
-      seed(const LooperState(tracks: [Track()])); // empty, peak 0
+    testWidgets('a track with nothing recorded has no bar (height 0)', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()])); // empty, no content
       await pump(tester);
 
       final box = tester.widget<FractionallySizedBox>(
@@ -225,48 +227,47 @@ void main() {
           matching: find.byType(FractionallySizedBox),
         ),
       );
-      expect(box.heightFactor, closeTo(0.01, 1e-9));
+      expect(box.heightFactor, 0.0);
     });
 
-    testWidgets('the selected track meter is the play color', (tester) async {
-      bigPicture.select(0);
-      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
-      await pump(tester, theme: desktop);
-      expect(barOf(tester, 0).color, looper.playColor);
-    });
-
-    testWidgets('an unselected idle track uses the track accent', (
-      tester,
-    ) async {
-      bigPicture.select(0);
-      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
-      await pump(tester, theme: desktop);
-      expect(barOf(tester, 1).color, looper.trackColor(1));
-    });
-
-    testWidgets('a muted track meter is white', (tester) async {
-      bigPicture.select(0);
-      seed(
-        const LooperState(
-          tracks: [Track(), Track(channel: 1, muted: true)],
-        ),
-      );
-      await pump(tester, theme: desktop);
-      expect(barOf(tester, 1).color, looper.mutedColor);
-    });
-
-    testWidgets('a recording track meter is the record color', (tester) async {
-      bigPicture.select(0);
+    testWidgets('the meter color is the track state color', (tester) async {
       seed(
         const LooperState(
           tracks: [
-            Track(),
-            Track(channel: 1, state: TrackState.recording),
+            Track(state: TrackState.recording),
+            Track(channel: 1, state: TrackState.playing),
           ],
         ),
       );
       await pump(tester, theme: desktop);
-      expect(barOf(tester, 1).color, looper.recordColor);
+      expect(barOf(tester, 0).color, looper.barColor(TrackState.recording, 0));
+      expect(barOf(tester, 1).color, looper.barColor(TrackState.playing, 1));
+    });
+
+    testWidgets('the tile border is always white', (tester) async {
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.recording), // selected + recording
+            Track(channel: 1, state: TrackState.playing), // unselected
+          ],
+        ),
+      );
+      await pump(tester);
+
+      for (final channel in [0, 1]) {
+        final tile = tester.widget<Container>(
+          find
+              .ancestor(
+                of: find.byKey(Key('bigpicture_tile_$channel')),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+        final border = (tile.decoration! as BoxDecoration).border! as Border;
+        expect(border.top.color, Colors.white);
+      }
     });
 
     testWidgets('track tiles have no glow shadow', (tester) async {
