@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:controller_repository/controller_repository.dart';
@@ -10,6 +11,7 @@ import 'package:loopy/app/app.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/visualizer/visualizer.dart';
+import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -148,6 +150,76 @@ void main() {
       await tester.tap(find.byKey(const Key('bpSettings_close_button')));
       await tester.pumpAndSettle();
       expect(find.byType(BigPictureSettingsPage), findsNothing);
+    });
+
+    testWidgets('shows a disconnect banner for a lost pinned device, then '
+        'clears it on reconnect', (tester) async {
+      EngineSnapshot snap({required bool devicePresent}) => EngineSnapshot(
+        isRunning: true,
+        devicePresent: devicePresent,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+      );
+
+      final engine = FakeAudioEngine();
+      final ticker = StreamController<void>.broadcast();
+      final reconnectTicker = StreamController<void>.broadcast();
+      final repo = LooperRepository(
+        engine: engine,
+        ticker: ticker.stream,
+        reconnectTicker: reconnectTicker.stream,
+      );
+      addTearDown(repo.dispose);
+      addTearDown(ticker.close);
+      addTearDown(reconnectTicker.close);
+
+      // Pin a device so the supervisor + banner treat it as recoverable.
+      engine
+        ..devices = const [
+          AudioDevice(
+            id: 'out-1',
+            name: 'Scarlett 2i2',
+            isDefault: false,
+            isInput: false,
+          ),
+        ]
+        ..nextSnapshot = snap(devicePresent: true);
+      repo.startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+
+      await tester.pumpWidget(
+        App(
+          repository: repo,
+          controllerRepository: controllerRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Establish the present baseline, then lose the device.
+      ticker.add(null);
+      await tester.pumpAndSettle();
+      engine.nextSnapshot = snap(devicePresent: false);
+      ticker.add(null);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('app_deviceLost_banner')), findsOneWidget);
+
+      // The device returns: the banner clears.
+      engine.nextSnapshot = snap(devicePresent: true);
+      ticker.add(null);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('app_deviceLost_banner')), findsNothing);
+
+      // Flush the transient "reconnected" snackbar timer.
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 }

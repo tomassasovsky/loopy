@@ -22,9 +22,13 @@ class LooperRepository {
     required AudioEngine engine,
     Stream<void>? ticker,
     Duration pollInterval = const Duration(milliseconds: 16),
+    Stream<void>? reconnectTicker,
+    Duration reconnectInterval = const Duration(seconds: 1),
   }) : _engine = engine,
        _ticker = ticker,
-       _pollInterval = pollInterval {
+       _pollInterval = pollInterval,
+       _reconnectTicker = reconnectTicker,
+       _reconnectInterval = reconnectInterval {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
@@ -40,11 +44,31 @@ class LooperRepository {
   final AudioEngine _engine;
   final Stream<void>? _ticker;
   final Duration _pollInterval;
+  final Stream<void>? _reconnectTicker;
+  final Duration _reconnectInterval;
   late final StreamController<LooperState> _controller;
   StreamSubscription<void>? _tickerSub;
   Timer? _pollTimer;
   LooperState? _last;
   EngineConfig? _lastEngineConfig;
+
+  /// Whether the user intends the engine to be running (set on a successful
+  /// [startEngine], cleared on [stopEngine]). The reconnect supervisor only
+  /// recovers a device the user did not deliberately stop.
+  bool _intendRunning = false;
+
+  /// Reconnect supervision: while these are non-null a pinned device is absent
+  /// and we are polling enumeration to reopen it. Their presence *is* the
+  /// "awaiting reconnect" state, so there is no separate flag to keep in sync.
+  StreamSubscription<void>? _reconnectSub;
+  Timer? _reconnectTimer;
+
+  /// Signature of the device list at the last restart attempt. A failed
+  /// restart is not retried until the device list changes (e.g. a re-plug), so
+  /// a present but unopenable device cannot thrash the engine.
+  String? _lastAttemptSignature;
+
+  bool get _isReconnecting => _reconnectSub != null || _reconnectTimer != null;
 
   /// Distinct stream of looper states.
   ///
@@ -91,10 +115,89 @@ class LooperRepository {
   }
 
   void _poll() {
-    final next = _project(_engine.snapshot());
+    final snapshot = _engine.snapshot();
+    _superviseDevice(devicePresent: snapshot.devicePresent);
+    final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
     _controller.add(next);
+  }
+
+  /// Watches the pinned device's presence each poll. When a pinned device goes
+  /// absent (and the user did not stop the engine), it begins polling
+  /// enumeration on the reconnect ticker/timer; when it reappears it stops and
+  /// restarts the engine on that device. System default ('' device ids) is
+  /// never auto-restarted. Cheap on the hot path: only a bool is checked here;
+  /// the expensive enumeration runs on the slower reconnect cadence.
+  void _superviseDevice({required bool devicePresent}) {
+    if (!_isPinned || !_intendRunning) return;
+    if (!devicePresent && !_isReconnecting) {
+      _startReconnectPolling();
+    } else if (devicePresent && _isReconnecting) {
+      _stopReconnectPolling();
+    }
+  }
+
+  /// Whether the last successful start pinned a specific device (vs the system
+  /// default, which is never auto-restarted on transient loss).
+  bool get _isPinned {
+    final config = _lastEngineConfig;
+    return config != null &&
+        (config.playbackDeviceId.isNotEmpty ||
+            config.captureDeviceId.isNotEmpty);
+  }
+
+  void _startReconnectPolling() {
+    _lastAttemptSignature = null; // a fresh loss may retry immediately
+    final ticker = _reconnectTicker;
+    if (ticker != null) {
+      _reconnectSub = ticker.listen((_) => _attemptReconnect());
+    } else {
+      _reconnectTimer = Timer.periodic(
+        _reconnectInterval,
+        (_) => _attemptReconnect(),
+      );
+    }
+  }
+
+  void _stopReconnectPolling() {
+    unawaited(_reconnectSub?.cancel());
+    _reconnectSub = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+  }
+
+  /// Reopens the pinned device once it reappears in enumeration. A restart is
+  /// attempted at most once per distinct device list: if it fails, we wait for
+  /// the list to change (e.g. a re-plug) before retrying, so a present-but-
+  /// unopenable device cannot thrash the engine. (Engine calls are synchronous,
+  /// so no re-entrancy guard is needed.)
+  void _attemptReconnect() {
+    final config = _lastEngineConfig;
+    if (config == null || !_isPinned) {
+      _stopReconnectPolling();
+      return;
+    }
+    final devices = _engine.enumerateDevices();
+    if (!_pinnedDevicesPresent(config, devices)) {
+      return; // still absent — keep waiting
+    }
+    final signature = devices
+        .map((d) => '${d.isInput ? 'i' : 'o'}:${d.id}')
+        .join('|');
+    if (signature == _lastAttemptSignature) return; // already tried this set
+    _lastAttemptSignature = signature;
+    _engine.stop();
+    if (_engine.start(config).isOk) _stopReconnectPolling();
+  }
+
+  /// Whether every pinned device id in [config] is present in [devices]. An
+  /// empty id (system default) is always considered present.
+  bool _pinnedDevicesPresent(EngineConfig config, List<AudioDevice> devices) {
+    bool present(String id, {required bool isInput}) =>
+        id.isEmpty || devices.any((d) => d.isInput == isInput && d.id == id);
+    return present(config.playbackDeviceId, isInput: false) &&
+        present(config.captureDeviceId, isInput: true);
   }
 
   LooperState _project(EngineSnapshot s) => LooperState(
@@ -131,19 +234,31 @@ class LooperRepository {
       measuredLatencyMs: s.measuredLatencyMs,
       xrunCount: s.xrunCount,
       isConnected: s.isRunning,
+      devicePresent: s.devicePresent,
       recordOffsetFrames: s.recordOffsetFrames,
     ),
   );
 
+  /// Enumerates the host's audio devices (playback + capture) for the picker.
+  List<AudioDevice> devices() => _engine.enumerateDevices();
+
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
     final result = _engine.start(config);
-    if (result.isOk) _lastEngineConfig = config;
+    if (result.isOk) {
+      _lastEngineConfig = config;
+      _intendRunning = true;
+    }
     return result;
   }
 
-  /// Closes the audio device.
-  EngineResult stopEngine() => _engine.stop();
+  /// Closes the audio device. A deliberate stop also cancels any in-flight
+  /// reconnect supervision so the engine is not reopened behind the user.
+  EngineResult stopEngine() {
+    _intendRunning = false;
+    _stopReconnectPolling();
+    return _engine.stop();
+  }
 
   /// Detects a cable-free loopback capture path for auto-measuring latency.
   LoopbackInfo detectLoopback() => _engine.detectLoopback();
@@ -205,6 +320,7 @@ class LooperRepository {
 
   Future<void> _stopPollingAndClose() async {
     _stopPolling();
+    _stopReconnectPolling();
     await _controller.close();
   }
 }

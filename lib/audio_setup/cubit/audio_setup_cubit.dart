@@ -27,7 +27,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     emit(
       _projectFromRepository(
         _repository.state,
-        current: state.copyWith(loopback: _repository.detectLoopback()),
+        current: state.copyWith(
+          loopback: _repository.detectLoopback(),
+          devices: _repository.devices(),
+        ),
         hydrateConfig: true,
       ),
     );
@@ -42,6 +45,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// The last record-offset value we persisted, to avoid redundant writes.
   int? _persistedOffset;
+
+  /// Previous pinned-device presence, to detect lost/restored transitions; and
+  /// the last device name seen while present, so a disconnect banner can name
+  /// the device even after the snapshot stops reporting it.
+  bool? _lastDevicePresent;
+  String _lastPresentDeviceName = '';
 
   /// Selects the requested sample rate (applied on the next start).
   void setSampleRate(int sampleRate) =>
@@ -59,32 +68,69 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setMergeToMono({required bool mergeToMono}) =>
       emit(state.copyWith(mergeToMono: mergeToMono));
 
-  /// Opens the audio device with the current options.
-  void start() {
-    final result = _repository.startEngine(
-      EngineConfig(
-        sampleRate: state.sampleRate,
-        bufferFrames: state.bufferFrames,
-        // Channel counts left at 0 (device default): a multichannel interface
-        // opens with all its channels; the negotiated counts are reported back.
-        passthrough: state.monitorInput,
-        mergeToMono: state.mergeToMono,
-        useLoopbackCapture: state.loopback.isAutoRoutable,
+  /// Selects the playback device to open (empty id = system default). Persists
+  /// the choice and, when the engine is already running, reopens on it now.
+  void setPlaybackDevice(String deviceId) =>
+      _selectDevice(playbackDeviceId: deviceId);
+
+  /// Selects the capture device to open (empty id = system default).
+  void setCaptureDevice(String deviceId) =>
+      _selectDevice(captureDeviceId: deviceId);
+
+  void _selectDevice({String? playbackDeviceId, String? captureDeviceId}) {
+    emit(
+      state.copyWith(
+        playbackDeviceId: playbackDeviceId,
+        captureDeviceId: captureDeviceId,
       ),
     );
+    unawaited(_settings.saveAudioConfig(_storedConfig()));
+    // Apply immediately when running so the picked device opens now; otherwise
+    // it is used on the next start / auto-start.
+    if (state.status == AudioSetupStatus.running) {
+      _repository.stopEngine();
+      final result = _repository.startEngine(_engineConfig());
+      if (!result.isOk) {
+        emit(
+          state.copyWith(
+            status: AudioSetupStatus.error,
+            errorMessage: 'Failed to open device: ${result.name}',
+          ),
+        );
+      }
+    }
+  }
+
+  /// The engine configuration for the current options + device selection.
+  EngineConfig _engineConfig() => EngineConfig(
+    sampleRate: state.sampleRate,
+    bufferFrames: state.bufferFrames,
+    // Channel counts left at 0 (device default): a multichannel interface
+    // opens with all its channels; the negotiated counts are reported back.
+    passthrough: state.monitorInput,
+    mergeToMono: state.mergeToMono,
+    useLoopbackCapture: state.loopback.isAutoRoutable,
+    playbackDeviceId: state.playbackDeviceId,
+    captureDeviceId: state.captureDeviceId,
+  );
+
+  /// The persisted form of the current options + device selection.
+  StoredAudioConfig _storedConfig() => StoredAudioConfig(
+    sampleRate: state.sampleRate,
+    bufferFrames: state.bufferFrames,
+    monitorInput: state.monitorInput,
+    mergeToMono: state.mergeToMono,
+    playbackDeviceId: state.playbackDeviceId,
+    captureDeviceId: state.captureDeviceId,
+  );
+
+  /// Opens the audio device with the current options.
+  void start() {
+    final result = _repository.startEngine(_engineConfig());
     if (result.isOk) {
       emit(state.copyWith(status: AudioSetupStatus.running));
       // Remember these options so the engine can auto-start on the next launch.
-      unawaited(
-        _settings.saveAudioConfig(
-          StoredAudioConfig(
-            sampleRate: state.sampleRate,
-            bufferFrames: state.bufferFrames,
-            monitorInput: state.monitorInput,
-            mergeToMono: state.mergeToMono,
-          ),
-        ),
-      );
+      unawaited(_settings.saveAudioConfig(_storedConfig()));
       // With a routable loopback the capture carries our output, so we can
       // measure round-trip latency automatically (a digital-path estimate).
       if (state.loopback.isAutoRoutable) _repository.measureLatency();
@@ -109,7 +155,31 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   void _onLooperState(LooperState looper) {
     emit(_projectFromRepository(looper, current: state));
+    _detectConnectivity(looper.status);
     unawaited(_syncLatencyPersistence(looper.status));
+  }
+
+  /// Diffs `devicePresent` against the previous tick and raises a transient
+  /// lost/restored banner trigger for a pinned device. The system default is
+  /// not flagged (it is never auto-restarted, so a banner would be noise).
+  void _detectConnectivity(EngineStatus status) {
+    final pinned =
+        state.playbackDeviceId.isNotEmpty || state.captureDeviceId.isNotEmpty;
+    final present = status.devicePresent;
+    final previous = _lastDevicePresent;
+    _lastDevicePresent = present;
+    if (present && status.deviceName.isNotEmpty) {
+      _lastPresentDeviceName = status.deviceName;
+    }
+    if (!pinned || previous == null || previous == present) return;
+    emit(
+      state.copyWith(
+        deviceConnectivity: present
+            ? DeviceConnectivity.restored
+            : DeviceConnectivity.lost,
+        connectivityDeviceName: _lastPresentDeviceName,
+      ),
+    );
   }
 
   /// Loads a saved per-device record offset the first time a device connects,
@@ -182,6 +252,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       mergeToMono: hydrateConfig
           ? lastConfig?.mergeToMono ?? current.mergeToMono
           : current.mergeToMono,
+      playbackDeviceId: hydrateConfig
+          ? lastConfig?.playbackDeviceId ?? current.playbackDeviceId
+          : current.playbackDeviceId,
+      captureDeviceId: hydrateConfig
+          ? lastConfig?.captureDeviceId ?? current.captureDeviceId
+          : current.captureDeviceId,
       engineStatus: engineStatus,
       status: engineStatus.isConnected
           ? AudioSetupStatus.running
