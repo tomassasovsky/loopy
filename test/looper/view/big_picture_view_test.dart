@@ -27,16 +27,16 @@ void main() {
   late BigPictureCubit bigPicture;
   late BankCubit bank;
   late LooperRepository repository;
+  late SettingsRepository settings;
 
   setUpAll(() => registerFallbackValue(UiMode.desktop));
 
   setUp(() {
+    settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
     uiMode = _MockUiModeCubit();
-    bigPicture = BigPictureCubit(
-      settings: SettingsRepository(store: FakeKeyValueStore()),
-    );
-    bank = BankCubit(settings: SettingsRepository(store: FakeKeyValueStore()));
+    bigPicture = BigPictureCubit(settings: settings);
+    bank = BankCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     whenListen(
@@ -191,10 +191,10 @@ void main() {
       'GUITAR',
     );
     await tester.tap(find.byKey(const Key('renameTrack_save')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400)); // close dialog
+    await tester.pumpAndSettle();
 
     expect(find.text('GUITAR'), findsOneWidget);
     expect(find.text('TRACK 1'), findsNothing);
+    expect(await settings.loadTrackName(0), 'GUITAR');
   });
 }

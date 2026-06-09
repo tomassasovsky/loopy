@@ -65,12 +65,16 @@ void main() {
 
   testWidgets('toggling the second bank persists it', (tester) async {
     await pump(tester);
+    expect(bank.state.enabled, isTrue);
 
-    await tester.tap(find.byKey(const Key('bpSettings_bank_switch')));
+    final bankSwitch = find.byKey(const Key('bpSettings_bank_switch'));
+    await tester.ensureVisible(bankSwitch);
+    await tester.pumpAndSettle();
+    await tester.tap(bankSwitch);
     await tester.pumpAndSettle();
 
-    expect(bank.state.enabled, isTrue);
-    expect(await settings.loadBankEnabled(), isTrue);
+    expect(bank.state.enabled, isFalse);
+    expect(await settings.loadBankEnabled(), isFalse);
   });
 
   testWidgets('renaming a track updates the list and persists it', (
@@ -79,7 +83,10 @@ void main() {
     await pump(tester);
     expect(find.text('TRACK 1'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('bpSettings_trackName_0')));
+    final trackName = find.byKey(const Key('bpSettings_trackName_0'));
+    await tester.ensureVisible(trackName);
+    await tester.pumpAndSettle();
+    await tester.tap(trackName);
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -98,9 +105,9 @@ void main() {
   ) async {
     await pump(tester);
 
-    final switchTile = tester.widget<SwitchListTile>(
+    final toggle = tester.widget<Switch>(
       find.byKey(const Key('bpSettings_bigPicture_switch')),
     );
-    expect(switchTile.value, isTrue); // default is big picture
+    expect(toggle.value, isTrue); // default is big picture
   });
 }

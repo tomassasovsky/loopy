@@ -82,5 +82,19 @@ void main() {
         isA<BigPictureState>().having((s) => s.names[0], 'name', 'VOX'),
       ],
     );
+
+    blocTest<BigPictureCubit, BigPictureState>(
+      'rename during load keeps the renamed value',
+      build: () => BigPictureCubit(settings: settings),
+      act: (cubit) async {
+        final loadFuture = cubit.load();
+        await cubit.rename(0, 'BASS');
+        await loadFuture;
+      },
+      expect: () => [
+        isA<BigPictureState>().having((s) => s.names[0], 'name', 'BASS'),
+      ],
+      verify: (_) async => expect(await settings.loadTrackName(0), 'BASS'),
+    );
   });
 }

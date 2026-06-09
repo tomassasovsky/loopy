@@ -19,9 +19,12 @@ class UiModeCubit extends Cubit<UiMode> {
       super(UiMode.bigPicture);
 
   final SettingsRepository _settings;
+  Future<void>? _loadFuture;
 
   /// Restores the persisted mode, if any.
-  Future<void> load() async {
+  Future<void> load() => _loadFuture ??= _restore();
+
+  Future<void> _restore() async {
     final name = await _settings.loadUiMode();
     for (final mode in UiMode.values) {
       if (mode.name == name) {
