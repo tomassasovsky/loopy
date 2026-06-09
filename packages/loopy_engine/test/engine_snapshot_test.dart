@@ -112,6 +112,7 @@ void main() {
           ..buffer_frames = 128
           ..input_channels = 2
           ..output_channels = 4
+          ..excluded_input_mask = 0x4
           ..frames_processed = 123456
           ..xrun_count = 3
           ..input_rms = 0.25
@@ -143,6 +144,7 @@ void main() {
         expect(snapshot.sampleRate, 48000);
         expect(snapshot.inputChannels, 2);
         expect(snapshot.outputChannels, 4);
+        expect(snapshot.excludedInputMask, 0x4);
         expect(snapshot.framesProcessed, 123456);
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));

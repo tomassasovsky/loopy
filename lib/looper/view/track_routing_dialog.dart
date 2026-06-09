@@ -31,6 +31,7 @@ Future<void> showTrackRoutingDialog({
               track: current,
               inputChannels: state.status.inputChannels,
               outputChannels: state.status.outputChannels,
+              excludedInputMask: state.status.excludedInputMask,
               onInputMaskChanged: (mask) =>
                   bloc.add(LooperInputMaskChanged(channel, mask)),
               onOutputMaskChanged: (mask) =>

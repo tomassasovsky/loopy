@@ -942,6 +942,75 @@ static void test_enumerate_devices_runs(void) {
   CHECK(le_enumerate_capture_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
 }
 
+/* ---- loopback channel exclusion (PR B) ---- */
+
+static void test_label_is_loopback(void) {
+  printf("test_label_is_loopback\n");
+  CHECK(le_label_is_loopback("Loopback 1") == 1);
+  CHECK(le_label_is_loopback("loopback") == 1);
+  CHECK(le_label_is_loopback("My LOOPBACK channel") == 1);
+  CHECK(le_label_is_loopback("Analog Loopback 2") == 1);
+  CHECK(le_label_is_loopback("Input 1") == 0);
+  CHECK(le_label_is_loopback("Microphone") == 0);
+  CHECK(le_label_is_loopback("") == 0);
+  CHECK(le_label_is_loopback(NULL) == 0);
+}
+
+/* An excluded channel is stripped from a track's input mask by SET_INPUT_MASK,
+ * and is dropped from the capture average even if a mask still selects it. */
+static void test_loopback_exclusion(void) {
+  printf("test_loopback_exclusion\n");
+  float out[64];
+  le_snapshot s;
+
+  /* (a) SET_INPUT_MASK strips excluded bits. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);    /* 2-in, 2-out */
+  le_engine_set_excluded_input_mask_for_test(e, 0x1u); /* exclude channel 0 */
+  CHECK(le_engine_set_input_mask(e, 0, 0x3) == LE_OK); /* request both inputs */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.excluded_input_mask == 0x1u);
+  CHECK(s.tracks[0].input_mask == 0x2u); /* channel 0 stripped, only ch1 left */
+
+  /* The recorded loop carries channel 1 (2.0), never the excluded channel 0
+   * decoy (9.0). */
+  le_engine_record(e, 0);
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 9.0f; /* excluded channel 0 */
+    in[i * 2 + 1] = 2.0f; /* channel 1 */
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+  le_engine_destroy(e);
+
+  /* (b) Average-drop: a track whose mask still includes the excluded channel
+   * (the default mask 0x1 == channel 0) records silence from it. */
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, 48000, 2, 2, 1000); /* default track mask 0x1 */
+  le_engine_set_excluded_input_mask_for_test(e2, 0x1u);
+  le_engine_record(e2, 0);
+  float in2[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in2[i * 2 + 0] = 5.0f; /* excluded channel 0 only */
+    in2[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e2, out, in2, LOOP_N);
+  le_engine_record(e2, 0); /* finalize */
+  drain(e2);
+  le_engine_process(e2, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+  le_engine_destroy(e2);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_ring_init_rejects_bad_capacity();
@@ -975,6 +1044,8 @@ int main(void) {
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
+  test_label_is_loopback();
+  test_loopback_exclusion();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
