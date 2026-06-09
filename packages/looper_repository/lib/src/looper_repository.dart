@@ -23,7 +23,8 @@ class LooperRepository {
     Stream<void>? ticker,
     Duration pollInterval = const Duration(milliseconds: 16),
   }) : _engine = engine,
-       _ticker = ticker ?? Stream<void>.periodic(pollInterval) {
+       _ticker = ticker,
+       _pollInterval = pollInterval {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
@@ -31,9 +32,11 @@ class LooperRepository {
   }
 
   final AudioEngine _engine;
-  final Stream<void> _ticker;
+  final Stream<void>? _ticker;
+  final Duration _pollInterval;
   late final StreamController<LooperState> _controller;
   StreamSubscription<void>? _tickerSub;
+  Timer? _pollTimer;
   LooperState? _last;
   EngineConfig? _lastEngineConfig;
 
@@ -60,13 +63,25 @@ class LooperRepository {
   String get engineVersion => _engine.version;
 
   void _startPolling() {
-    _tickerSub = _ticker.listen((_) => _poll());
+    // Polling must survive subscribe/cancel cycles (hot restart, a bloc being
+    // rebuilt). An injected ticker (tests) is a broadcast stream and can be
+    // re-listened; the default uses a recreatable [Timer] because
+    // `Stream.periodic` is single-subscription and cannot be re-listened after
+    // [_stopPolling] cancels it.
+    final ticker = _ticker;
+    if (ticker != null) {
+      _tickerSub = ticker.listen((_) => _poll());
+    } else {
+      _pollTimer = Timer.periodic(_pollInterval, (_) => _poll());
+    }
     _poll();
   }
 
   void _stopPolling() {
     unawaited(_tickerSub?.cancel());
     _tickerSub = null;
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 
   void _poll() {

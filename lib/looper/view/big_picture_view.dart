@@ -63,57 +63,71 @@ class _BigPictureViewState extends State<BigPictureView> {
     // Settings are reachable from the performance view by right-clicking
     // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
     // and minimal otherwise.
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyS): () =>
-            unawaited(openLoopySettings()),
-      },
-      child: Focus(
-        autofocus: true,
-        child: GestureDetector(
-          key: const Key('bigpicture_settings_secondaryTap'),
-          behavior: HitTestBehavior.translucent,
-          onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
-          child: Scaffold(
-            body: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final track in state.tracks)
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: _TrackColumn(
-                                    track: track,
-                                    name: big.nameOf(track.channel),
-                                    selected:
-                                        track.channel == big.selectedChannel,
-                                    waveform: _waveformFor(track.channel),
-                                  ),
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: GestureDetector(
+        key: const Key('bigpicture_settings_secondaryTap'),
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
+        child: Scaffold(
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final track in state.tracks)
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: _TrackColumn(
+                                  track: track,
+                                  name: big.nameOf(track.channel),
+                                  selected:
+                                      track.channel == big.selectedChannel,
+                                  waveform: _waveformFor(track.channel),
                                 ),
                               ),
                             ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Handles keyboard input on the performance surface. Opens settings on `S`
+  /// and swallows other plain keys so macOS does not beep (`NSBeep`) on every
+  /// unhandled key press. Modifier combos pass through to OS / menu shortcuts.
+  /// The full Record/Play key map will be built here.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isMetaPressed ||
+        keyboard.isControlPressed ||
+        keyboard.isAltPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyS) {
+      unawaited(openLoopySettings());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.handled;
   }
 }
 
