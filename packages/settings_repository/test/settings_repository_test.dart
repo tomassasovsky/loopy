@@ -126,4 +126,49 @@ void main() {
       expect(await repository.loadTrackName(0), isNull);
     });
   });
+
+  group('audio config', () {
+    test('returns null on a first run (nothing saved)', () async {
+      expect(await repository.loadAudioConfig(), isNull);
+    });
+
+    test('round-trips a saved config', () async {
+      const config = StoredAudioConfig(
+        sampleRate: 96000,
+        bufferFrames: 256,
+        monitorInput: false,
+        mergeToMono: false,
+      );
+      await repository.saveAudioConfig(config);
+      expect(await repository.loadAudioConfig(), config);
+    });
+
+    test(
+      'defaults the toggles to true when only rate/buffer are set',
+      () async {
+        await store.setInt('audio.sample_rate', 44100);
+        await store.setInt('audio.buffer_frames', 64);
+        expect(
+          await repository.loadAudioConfig(),
+          const StoredAudioConfig(
+            sampleRate: 44100,
+            bufferFrames: 64,
+            monitorInput: true,
+            mergeToMono: true,
+          ),
+        );
+      },
+    );
+  });
+
+  group('waveform window', () {
+    test('defaults to enabled when unset', () async {
+      expect(await repository.loadShowWaveformWindow(), isTrue);
+    });
+
+    test('round-trips a saved preference', () async {
+      await repository.saveShowWaveformWindow(value: false);
+      expect(await repository.loadShowWaveformWindow(), isFalse);
+    });
+  });
 }

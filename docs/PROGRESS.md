@@ -123,8 +123,21 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   (`le_engine_read_visual` + `read_track_visual`: peak per loop bucket, master
   + per-track, refreshed as the playhead sweeps). `KeyValueStore` now stores
   string/bool/double. (Two-window runtime is build-verified only; needs an
-  on-machine run to confirm visually.) Upstream SPM fix for
-  `desktop_multi_window`: MixinNetwork/flutter-plugins#482.
+  on-machine run to confirm visually.) `desktop_multi_window` is pinned to
+  pub.dev `^0.2.0` (the SPM-fork branch was dropped; CocoaPods builds fine).
+- **Auto-start audio + first-run flow:** the last-used audio config (sample
+  rate / buffer / monitor / merge-to-mono) is persisted on a successful start
+  (`SettingsRepository.save/loadAudioConfig`). On launch, `tryAutoStartEngine`
+  loads it and starts the engine; if none is saved (first run) the **Audio Setup
+  page is the start screen** until the engine connects, then it hands off to the
+  looper.
+- **Big Picture is the default look** (`UiModeCubit` defaults to `bigPicture`).
+  A dedicated, minimal **Big Picture settings page** (rename tracks, reach audio
+  setup, toggle the waveform window, switch to Desktop) is reachable from the
+  performance view by **right-click** or the **`S` key**, and from the **macOS
+  system menu bar** (`PlatformMenuBar`, ⌘,). A persisted `WaveformWindowCubit`
+  gates the secondary window. The chromeless big-picture exit button was removed
+  (exit lives in settings now).
 
 ---
 
@@ -176,6 +189,7 @@ needs hardware or a second display, or is Phase 4 scope.
 ---
 
 ## Test counts (last green)
-native (all C tests, 21 fns: 2 loop-multiples + 1 loop-viz, tempo tests removed
-in the free-mode strip) · plugin 26 · controller 14 · looper_repository 12 ·
-settings 6 · app 62. `flutter analyze` clean; macOS app builds end-to-end.
+native (all C tests, 22 fns: 2 loop-multiples + 1 loop-viz + 1 mid-loop record,
+tempo tests removed in the free-mode strip) · plugin 26 · controller 14 ·
+looper_repository 12 · settings 11 · app 70 (auto-start, first-run, big-picture
+settings + access). `flutter analyze` clean; macOS app builds end-to-end.

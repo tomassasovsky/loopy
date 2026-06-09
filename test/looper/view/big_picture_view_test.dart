@@ -89,15 +89,6 @@ void main() {
     verify(() => bloc.add(const LooperStopPressed(0))).called(1);
   });
 
-  testWidgets('exit button returns to desktop mode', (tester) async {
-    when(() => uiMode.setMode(any())).thenAnswer((_) async {});
-    seed(const LooperState(tracks: [Track()]));
-    await pump(tester);
-
-    await tester.tap(find.byKey(const Key('bigpicture_exit_button')));
-    verify(() => uiMode.setMode(UiMode.desktop)).called(1);
-  });
-
   testWidgets('renaming a track updates its label', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);

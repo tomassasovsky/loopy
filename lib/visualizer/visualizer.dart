@@ -2,6 +2,7 @@
 /// view that renders the engine's output tap.
 library;
 
+export 'cubit/waveform_window_cubit.dart';
 export 'waveform_window.dart';
 export 'waveform_window_service.dart';
 export 'widgets/waveform_view.dart';
