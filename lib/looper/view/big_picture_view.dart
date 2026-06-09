@@ -80,6 +80,7 @@ class _BigPictureViewState extends State<BigPictureView> {
                                   name: big.nameOf(track.channel),
                                   selected:
                                       track.channel == big.selectedChannel,
+                                  playMode: big.mode == PerformanceMode.play,
                                 ),
                               ),
                             ),
@@ -222,7 +223,7 @@ class _ModeIndicator extends StatelessWidget {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final recording = mode == PerformanceMode.record;
-    final color = recording ? looper.recordColor : looper.trackColor(0);
+    final color = recording ? looper.recordColor : theme.colorScheme.primary;
 
     return GestureDetector(
       key: const Key('bigpicture_mode_indicator'),
@@ -268,7 +269,7 @@ class _BankSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
-    final accent = looper.trackColor(0);
+    final accent = theme.colorScheme.primary;
     final cubit = context.read<BankCubit>();
 
     return Container(
@@ -315,38 +316,36 @@ class _TrackColumn extends StatelessWidget {
     required this.track,
     required this.name,
     required this.selected,
+    required this.playMode,
   });
 
   final Track track;
   final String name;
   final bool selected;
+  final bool playMode;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
-    final accent = looper.trackColor(track.channel);
-    final recording = track.state == TrackState.recording;
     final bloc = context.read<LooperBloc>();
-    final borderColor = selected
-        ? Colors.white
-        : (track.isCapturing ? accent : looper.tileBorder);
+
+    // The border is always white; selection only changes its weight. The meter
+    // bar color is one table lookup on the track's meter state (muted included;
+    // see LooperTheme.meterColors).
+    final barColor = looper.meterColor(
+      LooperMeterState.of(track.state, muted: track.muted),
+      playMode: playMode,
+    );
 
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor, width: selected ? 3 : 1.5),
-        boxShadow: track.isCapturing
-            ? [
-                BoxShadow(
-                  color: (recording ? looper.recordColor : accent).withValues(
-                    alpha: 0.45,
-                  ),
-                  blurRadius: 18,
-                ),
-              ]
-            : null,
+        border: Border.all(
+          color: selected ? Colors.white : Colors.transparent,
+          width: 3,
+        ),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -364,7 +363,9 @@ class _TrackColumn extends StatelessWidget {
               if (track.isMultiple)
                 Text(
                   '×${track.multiple}',
-                  style: theme.textTheme.labelMedium?.copyWith(color: accent),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
               IconButton(
                 key: Key('bigpicture_routing_${track.channel}'),
@@ -393,14 +394,10 @@ class _TrackColumn extends StatelessWidget {
                 bloc.add(LooperRecordPressed(track.channel));
               },
               onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-              child: Visibility.maintain(
-                visible: track.hasContent,
-                child: _PeakBar(
-                  peak: track.peak,
-                  color: accent,
-                  recordingColor: looper.recordColor,
-                  recording: recording,
-                ),
+              child: _PeakBar(
+                peak: track.peak,
+                color: barColor,
+                hasContent: track.hasContent,
               ),
             ),
           ),
@@ -436,22 +433,22 @@ class _PeakBar extends StatelessWidget {
   const _PeakBar({
     required this.peak,
     required this.color,
-    required this.recordingColor,
-    required this.recording,
+    required this.hasContent,
   });
 
   final double peak;
   final Color color;
-  final Color recordingColor;
-  final bool recording;
+  final bool hasContent;
 
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.bottomCenter,
       child: FractionallySizedBox(
-        heightFactor: (peak * 10).clamp(0.01, 1.0),
-        child: Container(color: recording ? recordingColor : color),
+        // A track with nothing recorded has no bar (height 0); otherwise the
+        // bar tracks the live peak.
+        heightFactor: hasContent ? (peak * 10).clamp(0.0, 1.0) : 0.0,
+        child: Container(color: color),
       ),
     );
   }

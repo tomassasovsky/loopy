@@ -51,23 +51,24 @@ void main() {
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
   }
 
-  Future<void> pump(WidgetTester tester) => tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.bigPicture,
-      home: RepositoryProvider<LooperRepository>.value(
-        value: repository,
-        child: MultiBlocProvider(
-          providers: [
-            BlocProvider<LooperBloc>.value(value: bloc),
-            BlocProvider<UiModeCubit>.value(value: uiMode),
-            BlocProvider<BigPictureCubit>.value(value: bigPicture),
-            BlocProvider<BankCubit>.value(value: bank),
-          ],
-          child: const BigPictureView(),
+  Future<void> pump(WidgetTester tester, {ThemeData? theme}) =>
+      tester.pumpWidget(
+        MaterialApp(
+          theme: theme ?? AppTheme.bigPicture,
+          home: RepositoryProvider<LooperRepository>.value(
+            value: repository,
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<LooperBloc>.value(value: bloc),
+                BlocProvider<UiModeCubit>.value(value: uiMode),
+                BlocProvider<BigPictureCubit>.value(value: bigPicture),
+                BlocProvider<BankCubit>.value(value: bank),
+              ],
+              child: const BigPictureView(),
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
@@ -196,5 +197,133 @@ void main() {
     expect(find.text('GUITAR'), findsOneWidget);
     expect(find.text('TRACK 1'), findsNothing);
     expect(await settings.loadTrackName(0), 'GUITAR');
+  });
+
+  group('play-mode visuals', () {
+    final desktop = AppTheme.desktop;
+    final looper = desktop.extension<LooperTheme>()!;
+
+    // The meter Container inside a track tile (the _PeakBar's fill).
+    Container barOf(WidgetTester tester, int channel) =>
+        tester
+                .widget<FractionallySizedBox>(
+                  find.descendant(
+                    of: find.byKey(Key('bigpicture_tile_$channel')),
+                    matching: find.byType(FractionallySizedBox),
+                  ),
+                )
+                .child!
+            as Container;
+
+    testWidgets('a track with nothing recorded has no bar (height 0)', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()])); // empty, no content
+      await pump(tester);
+
+      final box = tester.widget<FractionallySizedBox>(
+        find.descendant(
+          of: find.byKey(const Key('bigpicture_tile_0')),
+          matching: find.byType(FractionallySizedBox),
+        ),
+      );
+      expect(box.heightFactor, 0.0);
+    });
+
+    testWidgets('the meter color is the track state color', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.recording),
+            Track(channel: 1, state: TrackState.playing),
+          ],
+        ),
+      );
+      await pump(tester, theme: desktop);
+      expect(
+        barOf(tester, 0).color,
+        looper.meterColor(LooperMeterState.recording, playMode: false),
+      );
+      expect(
+        barOf(tester, 1).color,
+        looper.meterColor(LooperMeterState.playing, playMode: false),
+      );
+    });
+
+    testWidgets('play mode uses the play-mode meter table', (tester) async {
+      bigPicture.toggleMode(); // record -> play
+      seed(const LooperState(tracks: [Track(state: TrackState.playing)]));
+      await pump(tester, theme: desktop);
+      expect(
+        barOf(tester, 0).color,
+        looper.meterColor(LooperMeterState.playing, playMode: true),
+      );
+    });
+
+    testWidgets('a muted track uses the muted override color', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.playing, muted: true)],
+        ),
+      );
+      await pump(tester, theme: desktop);
+      expect(
+        barOf(tester, 0).color,
+        looper.meterColor(LooperMeterState.muted, playMode: false),
+      );
+    });
+
+    testWidgets('the tile border is white only when selected', (tester) async {
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.recording), // selected + recording
+            Track(channel: 1, state: TrackState.playing), // unselected
+          ],
+        ),
+      );
+      await pump(tester);
+
+      Color borderColor(int channel) {
+        final tile = tester.widget<Container>(
+          find
+              .ancestor(
+                of: find.byKey(Key('bigpicture_tile_$channel')),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+        return ((tile.decoration! as BoxDecoration).border! as Border)
+            .top
+            .color;
+      }
+
+      expect(borderColor(0), Colors.white); // selected
+      expect(borderColor(1), Colors.transparent); // unselected
+    });
+
+    testWidgets('track tiles have no glow shadow', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.recording),
+            Track(channel: 1),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      final tile = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.byKey(const Key('bigpicture_tile_0')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final decoration = tile.decoration! as BoxDecoration;
+      expect(decoration.boxShadow, anyOf(isNull, isEmpty));
+    });
   });
 }
