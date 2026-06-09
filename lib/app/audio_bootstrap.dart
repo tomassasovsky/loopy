@@ -22,5 +22,24 @@ Future<bool> tryAutoStartEngine({
       useLoopbackCapture: loopback.isAutoRoutable,
     ),
   );
-  return result.isOk;
+  if (!result.isOk) return false;
+
+  // Restore latency compensation. The interactive flow does this in
+  // AudioSetupCubit, but the cubit is not created on the auto-start path, so
+  // without this the engine would come up with no record offset (compensation
+  // off) — overdubs would land late by the full hardware round-trip. Restore
+  // the saved per-device offset; if there is none yet, auto-measure when a
+  // cable-free loopback is available (matching the interactive start).
+  final status = repository.state.status;
+  final savedOffset = await settings.loadLatencyOffsetFrames(
+    device: status.deviceName,
+    sampleRate: status.sampleRate,
+    bufferFrames: status.bufferFrames,
+  );
+  if (savedOffset != null && savedOffset > 0) {
+    repository.setRecordOffset(savedOffset);
+  } else if (loopback.isAutoRoutable) {
+    repository.measureLatency();
+  }
+  return true;
 }

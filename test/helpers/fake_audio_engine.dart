@@ -37,6 +37,9 @@ class FakeAudioEngine implements AudioEngine {
   double? lastVolume;
   bool? lastMuted;
 
+  /// Last record offset (latency compensation) applied, in frames.
+  int? lastRecordOffset;
+
   @override
   String get version => 'fake-engine 0.0.0';
 
@@ -122,7 +125,10 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setRecordOffset(int frames) => EngineResult.ok;
+  EngineResult setRecordOffset(int frames) {
+    lastRecordOffset = frames;
+    return EngineResult.ok;
+  }
 
   @override
   Float32List readVisual() => Float32List(0);
