@@ -125,8 +125,19 @@ class _AppViewState extends State<_AppView> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => unawaited(_syncWindow()),
+      (_) => unawaited(_bootstrapWindow()),
     );
+  }
+
+  /// Waits for persisted UI preferences before opening the waveform window so
+  /// a disabled preference does not flash a second OS window on launch.
+  Future<void> _bootstrapWindow() async {
+    await Future.wait([
+      context.read<WaveformWindowCubit>().load(),
+      context.read<UiModeCubit>().load(),
+    ]);
+    if (!mounted) return;
+    await _syncWindow();
   }
 
   @override
@@ -197,6 +208,7 @@ class _AppViewState extends State<_AppView> {
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             home: _RootView(needsSetup: widget.needsSetup),
+            debugShowCheckedModeBanner: false,
           );
           if (defaultTargetPlatform == TargetPlatform.macOS) {
             app = PlatformMenuBar(menus: _menus(), child: app);

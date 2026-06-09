@@ -105,6 +105,17 @@ void main() {
       expect(windowService.isOpen, isTrue);
     });
 
+    testWidgets('does not open the waveform window when it is disabled', (
+      tester,
+    ) async {
+      await settings.saveShowWaveformWindow(value: false);
+      final windowService = _RecordingWindowService();
+      await pumpApp(tester, windowService);
+
+      expect(windowService.openCalls, 0);
+      expect(windowService.isOpen, isFalse);
+    });
+
     testWidgets('right-click opens settings; switching to desktop closes the '
         'window', (tester) async {
       final windowService = _RecordingWindowService();

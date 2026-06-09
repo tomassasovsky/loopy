@@ -35,5 +35,8 @@ Future<void> showRenameTrackDialog({
       ],
     ),
   );
-  if (result != null) await cubit.rename(channel, result);
+  if (result != null) {
+    final trimmed = result.trim();
+    if (trimmed.isNotEmpty) await cubit.rename(channel, trimmed);
+  }
 }

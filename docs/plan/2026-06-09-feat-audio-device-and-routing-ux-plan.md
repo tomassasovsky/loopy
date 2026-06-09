@@ -3,8 +3,17 @@
 Type: **feat** · Status: **planned (follow-up)** · Created: 2026-06-09
 
 A follow-up bundle of UX + device-management features requested after the
-multichannel per-track I/O routing work. Split into **five focused PRs** so each
-is independently reviewable and mergeable.
+multichannel per-track I/O routing work. Split into focused PRs so each is
+independently reviewable and mergeable.
+
+> **Note:** After technical review, **PR A was sub-split** into two standalone
+> plans (it touched every layer at ~600–850 LOC):
+> - **A1 — native device enumeration + presence + FFI:**
+>   [part-a1 plan](2026-06-09-feat-audio-device-selection-part-a1-native-ffi-plan.md)
+> - **A2 — reconnect supervisor + selection/persistence + banner UI:**
+>   [part-a2 plan](2026-06-09-feat-audio-device-selection-part-a2-supervisor-ui-plan.md)
+>
+> The "PR A" section below is retained for context; build from the A1/A2 files.
 
 ---
 
@@ -24,10 +33,18 @@ in-flight changes:
    (play-mode visuals/shadow) edit exactly those files, so they must rebase onto
    the reworked versions, not the current `HEAD`.
 
-Recommended order: **A → B** (native/device, independent of the UI rework) can
-start as soon as the multichannel PR merges; **C, D** wait for the BP rework;
-**E** (visualizer) is mostly standalone and can go any time after A/B expose the
-routing state it draws.
+Recommended order: **A1 → {A2, B}** (native/device, independent of the UI
+rework) can start as soon as the multichannel PR merges; **C, D** wait for the BP
+rework; **E** (visualizer) depends on **A1 + B** — it needs `inputMask`/
+`outputMask` (A1's enumeration is not enough on its own) and the
+`excluded_input_mask` from **B** to mark loopback channels, so it must follow B,
+not merely "A/B in parallel".
+
+```
+multichannel PR ─► A1 ─┬─► A2 (supervisor + cubit + UI)
+                       ├─► B  (loopback exclusion) ─► E (routing visualizer)
+BP/settings rework ────┴─► C, D  (independent of each other)
+```
 
 ## Decisions (locked by the user)
 
@@ -45,8 +62,9 @@ routing state it draws.
   a track armed/selected to play is **green**; a muted track is **white**.
 - **Remove the green/red record/overdub/mute drop shadow** on track tiles —
   replace with a cleaner state treatment (border/ring + icon, no glow).
-- **Routing visualizer** uses a **node-flow package** (evaluate
-  `vyuh_node_flow` vs `graph_edit`; pick one in PR E).
+- **Routing visualizer** defaults to a **read-only `CustomPaint` diagram** (no
+  new dependency); only reach for a node-flow package (`vyuh_node_flow` /
+  `graph_edit`) if a concrete need exceeds what `CustomPaint` can do.
 
 ## Codebase context & conventions
 
@@ -62,7 +80,17 @@ macOS build.
 
 ---
 
-## PR A — Audio device selection + disconnect/reconnect
+## PR A — Audio device selection + disconnect/reconnect  *(superseded — see A1/A2)*
+
+> **Superseded.** This section is split into
+> [A1](2026-06-09-feat-audio-device-selection-part-a1-native-ffi-plan.md) (native
+> + FFI) and
+> [A2](2026-06-09-feat-audio-device-selection-part-a2-supervisor-ui-plan.md)
+> (supervisor + UI). Two review-driven changes were folded into those plans:
+> device IDs persist inside **`StoredAudioConfig`** (not loose
+> `audio.*_device_id` keys), and lost/restored events are **derived from
+> `EngineStatus.devicePresent`** in the cubit (no separate repository stream).
+> The original detail is kept below for context.
 
 Goal: choose the output/input device (default = system); detect disconnects;
 auto-recover a pinned device; surface it all through the repository.
@@ -118,9 +146,10 @@ still works; native `ALL PASSED`; analyze clean; macOS builds.
 
 ## PR B — Per-channel loopback exclusion (macOS Core Audio)
 
-Goal: channels whose Core Audio label contains "loopback" (case-insensitive, or
-a small synonym list) are never recordable/monitorable and are hidden/disabled
-in routing.
+Goal: channels whose Core Audio label contains "loopback" (case-insensitive) are
+never recordable/monitorable and are hidden/disabled in routing. Match on a plain
+`contains("loopback")` — do **not** pre-build a synonym list; add synonyms only
+if a real driver is found that needs them.
 
 Native:
 - New macOS-only source (e.g. `engine_channel_labels.m` or C using
@@ -178,8 +207,11 @@ In the reworked `_TrackColumn` / `_PeakBar`:
 - Remove the `boxShadow` glow on record/overdub/mute. Replace the "active" cue
   with a crisp border/ring (+ existing REC indicator), no colored blur.
 
-Tests: golden or widget tests asserting min-height in play mode, the
-green/white/accent mapping, and absence of the shadow.
+Tests: widget tests asserting min-height in play mode, the green/white/accent
+mapping, and absence of the `boxShadow` — assert `BoxDecoration` properties
+directly rather than goldens (goldens are pixel-brittle across Flutter
+versions). Add a `LooperTheme` test for the new semantic play-mode colors
+(`test/theme/looper_theme_test.dart`).
 
 Acceptance: play-mode bars never fully collapse; selected=green, muted=white;
 no glow; desktop + big-picture both updated; analyze clean.
@@ -190,13 +222,17 @@ Goal: a visual graph of how audio is routed: **hardware inputs → tracks →
 hardware outputs**, reflecting per-track `inputMask` / `outputMask`, with
 excluded loopback channels marked.
 
-- Evaluate `vyuh_node_flow` vs `graph_edit` (null-safety, desktop/macOS support,
-  maintenance, license); pick one and pin it. If neither is suitable, fall back
-  to a `CustomPaint` diagram (note the decision).
+- **Default to a `CustomPaint` diagram.** A read-only three-column graph is
+  ~50 lines with zero new dependencies, no null-safety unknowns, and no
+  maintenance/license risk. Only evaluate `vyuh_node_flow` / `graph_edit` if a
+  concrete need (interactivity, layout) emerges that `CustomPaint` can't meet;
+  if so, vet null-safety, desktop/macOS support, maintenance, and license, then
+  pin one and note the decision.
 - Build a `RoutingGraphView`: input nodes (left), track nodes (middle), output
   nodes (right); edges from each selected input→track and track→each masked
-  output. Live-updates from `LooperBloc` state. Read-only first; optionally make
-  edges editable (drag to connect) in a later iteration.
+  output. Live-updates from `LooperBloc` state. **Read-only.** (Drag-to-connect
+  editing is explicitly out of scope — do not carry it as a "later iteration"
+  note here.)
 - Reach it from a Settings "Routing" tab (PR C) and/or a button in the views.
 
 Tests: widget test that the graph renders the expected node/edge counts for a

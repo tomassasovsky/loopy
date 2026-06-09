@@ -332,66 +332,67 @@ class _TrackColumn extends StatelessWidget {
         ? Colors.white
         : (track.isCapturing ? accent : looper.tileBorder);
 
-    return GestureDetector(
-      key: Key('bigpicture_tile_${track.channel}'),
-      onTap: () {
-        context.read<BigPictureCubit>().select(track.channel);
-        bloc.add(LooperRecordPressed(track.channel));
-      },
-      onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-      child: Container(
-        decoration: BoxDecoration(
-          color: looper.tileBackground,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderColor, width: selected ? 3 : 1.5),
-          boxShadow: track.isCapturing
-              ? [
-                  BoxShadow(
-                    color: (recording ? looper.recordColor : accent).withValues(
-                      alpha: 0.45,
-                    ),
-                    blurRadius: 18,
+    return Container(
+      decoration: BoxDecoration(
+        color: looper.tileBackground,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor, width: selected ? 3 : 1.5),
+        boxShadow: track.isCapturing
+            ? [
+                BoxShadow(
+                  color: (recording ? looper.recordColor : accent).withValues(
+                    alpha: 0.45,
                   ),
-                ]
-              : null,
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Text(
-                  '${track.channel + 1}',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white70,
-                  ),
+                  blurRadius: 18,
                 ),
-                const Spacer(),
-                if (track.isMultiple)
-                  Text(
-                    '×${track.multiple}',
-                    style: theme.textTheme.labelMedium?.copyWith(color: accent),
-                  ),
-                IconButton(
-                  key: Key('bigpicture_routing_${track.channel}'),
-                  tooltip: 'I/O routing',
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  iconSize: 18,
+              ]
+            : null,
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                '${track.channel + 1}',
+                style: theme.textTheme.titleMedium?.copyWith(
                   color: Colors.white70,
-                  icon: const Icon(Icons.alt_route),
-                  onPressed: () => unawaited(
-                    showTrackRoutingDialog(
-                      context: context,
-                      channel: track.channel,
-                    ),
+                ),
+              ),
+              const Spacer(),
+              if (track.isMultiple)
+                Text(
+                  '×${track.multiple}',
+                  style: theme.textTheme.labelMedium?.copyWith(color: accent),
+                ),
+              IconButton(
+                key: Key('bigpicture_routing_${track.channel}'),
+                tooltip: 'I/O routing',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                iconSize: 18,
+                color: Colors.white70,
+                icon: const Icon(Icons.alt_route),
+                onPressed: () => unawaited(
+                  showTrackRoutingDialog(
+                    context: context,
+                    channel: track.channel,
                   ),
                 ),
-              ],
-            ),
-            Expanded(
+              ),
+            ],
+          ),
+          Expanded(
+            child: GestureDetector(
+              key: Key('bigpicture_tile_${track.channel}'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                context.read<BigPictureCubit>().select(track.channel);
+                bloc.add(LooperRecordPressed(track.channel));
+              },
+              onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
               child: Visibility.maintain(
                 visible: track.hasContent,
                 child: _PeakBar(
@@ -402,27 +403,28 @@ class _TrackColumn extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            GestureDetector(
-              key: Key('bigpicture_name_${track.channel}'),
-              onTap: () => showRenameTrackDialog(
-                context: context,
-                cubit: context.read<BigPictureCubit>(),
-                channel: track.channel,
-                current: name,
-              ),
-              child: Text(
-                name,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.5,
-                ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            key: Key('bigpicture_name_${track.channel}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => showRenameTrackDialog(
+              context: context,
+              cubit: context.read<BigPictureCubit>(),
+              channel: track.channel,
+              current: name,
+            ),
+            child: Text(
+              name,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

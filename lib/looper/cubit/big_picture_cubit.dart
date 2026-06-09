@@ -21,15 +21,22 @@ class BigPictureCubit extends Cubit<BigPictureState> {
        );
 
   final SettingsRepository _settings;
+  Future<void>? _loadFuture;
+  int _loadGeneration = 0;
 
   /// Restores any persisted track names.
-  Future<void> load() async {
+  Future<void> load() => _loadFuture ??= _restoreNames();
+
+  Future<void> _restoreNames() async {
+    final generation = ++_loadGeneration;
     final names = [...state.names];
     for (var i = 0; i < names.length; i++) {
       final saved = await _settings.loadTrackName(i);
       if (saved != null && saved.isNotEmpty) names[i] = saved;
     }
-    emit(state.copyWith(names: names));
+    if (!isClosed && generation == _loadGeneration) {
+      emit(state.copyWith(names: names));
+    }
   }
 
   /// Selects track [channel] (the highlighted tile).
@@ -48,6 +55,7 @@ class BigPictureCubit extends Cubit<BigPictureState> {
   Future<void> rename(int channel, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty || channel < 0 || channel >= state.names.length) return;
+    _loadGeneration++;
     final names = [...state.names]..[channel] = trimmed;
     emit(state.copyWith(names: names));
     await _settings.saveTrackName(channel, trimmed);
