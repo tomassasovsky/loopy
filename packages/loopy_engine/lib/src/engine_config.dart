@@ -1,5 +1,6 @@
 import 'dart:ffi';
 
+import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:meta/meta.dart';
 
@@ -19,6 +20,8 @@ class EngineConfig {
     this.maxLoopFrames = 0,
     this.mergeToMono = false,
     this.useLoopbackCapture = false,
+    this.playbackDeviceId = '',
+    this.captureDeviceId = '',
   });
 
   /// Requested sample rate in Hz, or `0` for the device default.
@@ -54,6 +57,15 @@ class EngineConfig {
   /// loopback is detected.
   final bool useLoopbackCapture;
 
+  /// The id of the playback device to open (an `AudioDevice.id` from
+  /// `AudioEngine.enumerateDevices`), or the empty string for the system
+  /// default (the unchanged behaviour).
+  final String playbackDeviceId;
+
+  /// The id of the capture device to open, or the empty string for the system
+  /// default. Ignored when [useLoopbackCapture] resolves a loopback device.
+  final String captureDeviceId;
+
   /// Writes this configuration into a native [le_config] struct in [ptr].
   void writeTo(Pointer<le_config> ptr) {
     ptr.ref
@@ -65,6 +77,8 @@ class EngineConfig {
       ..max_loop_frames = maxLoopFrames
       ..merge_to_mono = mergeToMono ? 1 : 0
       ..use_loopback_capture = useLoopbackCapture ? 1 : 0;
+    writeNativeString(ptr.ref.playback_device_id, playbackDeviceId);
+    writeNativeString(ptr.ref.capture_device_id, captureDeviceId);
   }
 
   @override
@@ -79,7 +93,9 @@ class EngineConfig {
           passthrough == other.passthrough &&
           maxLoopFrames == other.maxLoopFrames &&
           mergeToMono == other.mergeToMono &&
-          useLoopbackCapture == other.useLoopbackCapture;
+          useLoopbackCapture == other.useLoopbackCapture &&
+          playbackDeviceId == other.playbackDeviceId &&
+          captureDeviceId == other.captureDeviceId;
 
   @override
   int get hashCode => Object.hash(
@@ -91,6 +107,8 @@ class EngineConfig {
     maxLoopFrames,
     mergeToMono,
     useLoopbackCapture,
+    playbackDeviceId,
+    captureDeviceId,
   );
 
   @override
@@ -99,5 +117,7 @@ class EngineConfig {
       'bufferFrames: $bufferFrames, inputChannels: $inputChannels, '
       'outputChannels: $outputChannels, '
       'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames, '
-      'mergeToMono: $mergeToMono, useLoopbackCapture: $useLoopbackCapture)';
+      'mergeToMono: $mergeToMono, useLoopbackCapture: $useLoopbackCapture, '
+      'playbackDeviceId: $playbackDeviceId, '
+      'captureDeviceId: $captureDeviceId)';
 }
