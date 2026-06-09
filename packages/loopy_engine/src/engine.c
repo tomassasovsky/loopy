@@ -491,18 +491,29 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float trk_peak[LE_MAX_TRACKS] = {0};
 
   for (uint32_t f = 0; f < frames; ++f) {
-    float frame_mag = 0.0f;
+    float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
+    float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
     float mono = 0.0f;
     for (int c = 0; c < ch_in; ++c) {
-      if (excluded & (1u << c)) continue; /* loopback: not an input channel */
       const float s = in ? in[f * ch_in + c] : 0.0f;
       const float a = fabsf(s);
+      if (excluded & (1u << c)) {
+        /* Loopback channels carry our own output back; not recorded/monitored/
+         * metered, but they are the round-trip path the latency harness times. */
+        if (a > loop_mag) loop_mag = a;
+        continue;
+      }
       if (a > frame_mag) frame_mag = a;
       in_sumsq += s * s;
       mono += s;
     }
     mono /= (float)(active_in > 0 ? active_in : 1); /* clip-safe fold-down */
     if (frame_mag > in_peak) in_peak = frame_mag;
+
+    /* The latency pulse returns on the loopback channels when the interface has
+     * them (e.g. a Scarlett's "Loop 1/2"); otherwise (a physical cable, or a
+     * routed loopback capture device) it returns on the normal inputs. */
+    const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
 
     /* Latency harness takes over the output entirely while measuring.
      *
@@ -526,7 +537,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       const uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
       const uint64_t attempt_frames = (uint64_t)(sr / LE_LATENCY_RETRY_DIV);
       if (e->lat_frames_since_emit > dead_frames &&
-          frame_mag >= LE_LATENCY_THRESHOLD) {
+          lat_mag >= LE_LATENCY_THRESHOLD) {
         const double ms = (double)e->lat_frames_since_emit * 1000.0 / (double)sr;
         atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
                               memory_order_relaxed);
@@ -1433,6 +1444,12 @@ static int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i,
   }
   const le_command cmd = {code, arg_i, arg_f};
   return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
+}
+
+int32_t le_engine_begin_latency_for_test(le_engine* engine) {
+  /* Configured-gated (like the looper commands) so the harness's loopback
+   * detection can be driven without opening a device. */
+  return le_push(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
 }
 
 /* Returns a pool slot that is neither live nor referenced by either stack,

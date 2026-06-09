@@ -1027,6 +1027,49 @@ static void test_loopback_exclusion(void) {
   le_engine_destroy(e2);
 }
 
+/* The round-trip latency harness times the pulse returning on the loopback
+ * channel(s) when the interface exposes them, and ignores the real inputs. */
+static void test_loopback_latency_uses_loopback_channel(void) {
+  printf("test_loopback_latency_uses_loopback_channel\n");
+  enum { N = 200, RET = 150 };
+  float out[2 * N];
+  float in[2 * N];
+  le_snapshot s;
+
+  // ch1 is the loopback; the looped-back pulse arrives there at frame RET,
+  // after the detector's dead-time. ch0 (a real input) stays silent.
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
+  drain(e); // apply MEASURE_LATENCY
+  for (int i = 0; i < N; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = i >= RET ? 0.5f : 0.0f;
+  }
+  le_engine_process(e, out, in, N);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
+  le_engine_destroy(e);
+
+  // Control: the same pulse on a real input (ch0) must NOT be mistaken for the
+  // loopback return — detection stays on the loopback channel only.
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, 48000, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e2, 0x2u);
+  le_engine_begin_latency_for_test(e2);
+  drain(e2);
+  for (int i = 0; i < N; ++i) {
+    in[i * 2 + 0] = i >= RET ? 0.5f : 0.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e2, out, in, N);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.latency_state == LE_LATENCY_MEASURING); // not detected on a real input
+  le_engine_destroy(e2);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_ring_init_rejects_bad_capacity();
@@ -1062,6 +1105,7 @@ int main(void) {
   test_enumerate_devices_runs();
   test_label_is_loopback();
   test_loopback_exclusion();
+  test_loopback_latency_uses_loopback_channel();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

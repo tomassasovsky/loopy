@@ -44,6 +44,11 @@ int le_label_is_loopback(const char* label);
 void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
                                                 uint32_t mask);
 
+/* Begins a round-trip latency measurement without a device (configured-gated,
+ * like the looper commands), so the harness's loopback-channel detection can be
+ * tested deterministically. Not part of the FFI surface. */
+int32_t le_engine_begin_latency_for_test(le_engine* engine);
+
 #ifdef __cplusplus
 }
 #endif
