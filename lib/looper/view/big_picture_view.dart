@@ -9,6 +9,7 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
+import 'package:loopy/looper/view/track_routing_dialog.dart';
 import 'package:loopy/theme/theme.dart';
 
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
@@ -372,6 +373,22 @@ class _TrackColumn extends StatelessWidget {
                     '×${track.multiple}',
                     style: theme.textTheme.labelMedium?.copyWith(color: accent),
                   ),
+                IconButton(
+                  key: Key('bigpicture_routing_${track.channel}'),
+                  tooltip: 'I/O routing',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  iconSize: 18,
+                  color: Colors.white70,
+                  icon: const Icon(Icons.alt_route),
+                  onPressed: () => unawaited(
+                    showTrackRoutingDialog(
+                      context: context,
+                      channel: track.channel,
+                    ),
+                  ),
+                ),
               ],
             ),
             Expanded(
