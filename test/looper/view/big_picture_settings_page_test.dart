@@ -25,6 +25,7 @@ void main() {
   late WaveformWindowCubit waveformWindow;
   late BankCubit bank;
   late AudioSetupCubit audioSetup;
+  late LooperRepository repository;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -34,15 +35,23 @@ void main() {
     bank = BankCubit(settings: settings);
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(const AudioSetupState());
+    repository = _MockLooperRepository();
+    when(() => repository.state).thenReturn(
+      const LooperState(
+        tracks: [Track()],
+        status: EngineStatus(inputChannels: 2, outputChannels: 2),
+      ),
+    );
+    when(
+      () => repository.looperState,
+    ).thenAnswer((_) => const Stream<LooperState>.empty());
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     MaterialApp(
       home: MultiRepositoryProvider(
         providers: [
-          RepositoryProvider<LooperRepository>.value(
-            value: _MockLooperRepository(),
-          ),
+          RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<SettingsRepository>.value(value: settings),
         ],
         child: MultiBlocProvider(
@@ -149,6 +158,23 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('bpSettings_bank_switch')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('routingGraph_view')), findsOneWidget);
+    expect(
+      find.byKey(const Key('audioSettings_playbackDevice_picker')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('the Routing tab shows the signal-flow graph', (tester) async {
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('routingGraph_view')), findsOneWidget);
   });
 
   testWidgets('Escape pops the settings page', (tester) async {
@@ -156,9 +182,7 @@ void main() {
     await tester.pumpWidget(
       MultiRepositoryProvider(
         providers: [
-          RepositoryProvider<LooperRepository>.value(
-            value: _MockLooperRepository(),
-          ),
+          RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<SettingsRepository>.value(value: settings),
         ],
         child: MultiBlocProvider(

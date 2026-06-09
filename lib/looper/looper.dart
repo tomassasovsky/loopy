@@ -9,3 +9,4 @@ export 'view/big_picture_settings_page.dart';
 export 'view/big_picture_view.dart';
 export 'view/looper_page.dart';
 export 'view/looper_view.dart';
+export 'view/routing_graph_view.dart';
