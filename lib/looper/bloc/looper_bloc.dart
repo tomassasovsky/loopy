@@ -60,6 +60,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _repository.stopTrack(channel: track.channel);
       }
     });
+    on<LooperClearAllPressed>((_, _) {
+      for (final track in state.tracks) {
+        if (track.hasContent) _repository.clear(channel: track.channel);
+      }
+    });
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),

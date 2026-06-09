@@ -83,13 +83,17 @@ class _BigPictureViewState extends State<BigPictureView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (bank.enabled) ...[
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: _BankSwitch(active: bank.activeBank),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
+                  Row(
+                    children: [
+                      _ModeIndicator(mode: big.mode),
+                      if (bank.enabled) ...[
+                        const SizedBox(width: 12),
+                        _BankSwitch(active: bank.activeBank),
+                      ],
+                      const Spacer(),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -124,23 +128,165 @@ class _BigPictureViewState extends State<BigPictureView> {
     );
   }
 
-  /// Handles keyboard input on the performance surface. Opens settings on `S`
-  /// and swallows other plain keys so macOS does not beep (`NSBeep`) on every
-  /// unhandled key press. Modifier combos pass through to OS / menu shortcuts.
-  /// The full Record/Play key map will be built here.
+  /// The performance keyboard map. Plain keys are consumed (so macOS does not
+  /// beep) and dispatched to the looper; modifier combos other than undo/redo
+  /// pass through to OS / menu shortcuts.
+  ///
+  /// Both modes: `M` switch mode · `S` settings · `Space` play/pause all ·
+  /// `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo.
+  /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
+  /// Play mode: `1`–`8` select + mute/unmute.
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
     final keyboard = HardwareKeyboard.instance;
-    if (keyboard.isMetaPressed ||
-        keyboard.isControlPressed ||
-        keyboard.isAltPressed) {
-      return KeyEventResult.ignored;
+    final bloc = context.read<LooperBloc>();
+    final big = context.read<BigPictureCubit>();
+    final selected = big.state.selectedChannel;
+
+    if (keyboard.isMetaPressed || keyboard.isControlPressed) {
+      if (key == LogicalKeyboardKey.keyZ) {
+        bloc.add(
+          keyboard.isShiftPressed
+              ? LooperRedoPressed(selected)
+              : LooperUndoPressed(selected),
+        );
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.keyY) {
+        bloc.add(LooperRedoPressed(selected));
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored; // let OS / menu shortcuts through
     }
-    if (event.logicalKey == LogicalKeyboardKey.keyS) {
+
+    // Common to both modes.
+    if (key == LogicalKeyboardKey.keyM) {
+      big.toggleMode();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyS) {
       unawaited(openLoopySettings());
       return KeyEventResult.handled;
     }
+    if (key == LogicalKeyboardKey.space) {
+      final playing = bloc.state.tracks.any(
+        (t) =>
+            t.state == TrackState.playing || t.state == TrackState.overdubbing,
+      );
+      bloc.add(
+        playing ? const LooperStopAllPressed() : const LooperPlayAllPressed(),
+      );
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyC) {
+      bloc.add(const LooperClearAllPressed());
+      return KeyEventResult.handled;
+    }
+
+    // Number keys 1–8 select a track (auto-revealing its bank). In play mode
+    // they also toggle mute on that track.
+    final digit = _digitOf(key);
+    if (digit != null) {
+      final channel = digit - 1;
+      final bankEnabled = context.read<BankCubit>().state.enabled;
+      if (channel <= (bankEnabled ? 7 : 3)) {
+        if (bankEnabled) {
+          context.read<BankCubit>().selectBank(
+            channel ~/ BankState.tracksPerBank,
+          );
+        }
+        big.select(channel);
+        if (big.state.mode == PerformanceMode.play) {
+          bloc.add(LooperMuteToggled(channel));
+        }
+      }
+      return KeyEventResult.handled;
+    }
+
+    // Record-mode actions on the selected track.
+    if (big.state.mode == PerformanceMode.record) {
+      if (key == LogicalKeyboardKey.keyR) {
+        bloc.add(LooperRecordPressed(selected));
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.keyP) {
+        final track = bloc.state.tracks.firstWhere(
+          (t) => t.channel == selected,
+          orElse: () => const Track(),
+        );
+        final playing =
+            track.state == TrackState.playing ||
+            track.state == TrackState.overdubbing ||
+            track.state == TrackState.recording;
+        bloc.add(
+          playing ? LooperStopPressed(selected) : LooperPlayPressed(selected),
+        );
+        return KeyEventResult.handled;
+      }
+    }
+
+    // Swallow other plain keys so macOS does not beep.
     return KeyEventResult.handled;
+  }
+
+  /// Maps a `1`–`8` digit key to its number, or `null`. Digit keys have
+  /// sequential key ids (ASCII `'1'`–`'8'`), so a range check avoids a map
+  /// keyed on the (non-primitive-equality) [LogicalKeyboardKey].
+  int? _digitOf(LogicalKeyboardKey key) {
+    final id = key.keyId;
+    if (id >= LogicalKeyboardKey.digit1.keyId &&
+        id <= LogicalKeyboardKey.digit8.keyId) {
+      return id - LogicalKeyboardKey.digit0.keyId;
+    }
+    return null;
+  }
+}
+
+/// Shows the active performance mode (REC / PLAY). Tap to toggle.
+class _ModeIndicator extends StatelessWidget {
+  const _ModeIndicator({required this.mode});
+
+  final PerformanceMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final looper = theme.extension<LooperTheme>()!;
+    final recording = mode == PerformanceMode.record;
+    final color = recording ? looper.recordColor : looper.trackColor(0);
+
+    return GestureDetector(
+      key: const Key('bigpicture_mode_indicator'),
+      onTap: context.read<BigPictureCubit>().toggleMode,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              recording ? Icons.fiber_manual_record : Icons.play_arrow_rounded,
+              size: 16,
+              color: color,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              recording ? 'REC' : 'PLAY',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

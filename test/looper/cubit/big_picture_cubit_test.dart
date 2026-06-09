@@ -37,6 +37,26 @@ void main() {
     );
 
     blocTest<BigPictureCubit, BigPictureState>(
+      'toggleMode switches between record and play',
+      build: () => BigPictureCubit(settings: settings),
+      act: (cubit) => cubit
+        ..toggleMode()
+        ..toggleMode(),
+      expect: () => [
+        isA<BigPictureState>().having(
+          (s) => s.mode,
+          'mode',
+          PerformanceMode.play,
+        ),
+        isA<BigPictureState>().having(
+          (s) => s.mode,
+          'mode',
+          PerformanceMode.record,
+        ),
+      ],
+    );
+
+    blocTest<BigPictureCubit, BigPictureState>(
       'rename updates and persists the name',
       build: () => BigPictureCubit(settings: settings),
       act: (cubit) => cubit.rename(1, ' Guitar '),

@@ -34,6 +34,15 @@ class BigPictureCubit extends Cubit<BigPictureState> {
   /// Selects track [channel] (the highlighted tile).
   void select(int channel) => emit(state.copyWith(selectedChannel: channel));
 
+  /// Toggles between record and play performance modes.
+  void toggleMode() => emit(
+    state.copyWith(
+      mode: state.mode == PerformanceMode.record
+          ? PerformanceMode.play
+          : PerformanceMode.record,
+    ),
+  );
+
   /// Renames track [channel] and persists the new [name].
   Future<void> rename(int channel, String name) async {
     final trimmed = name.trim();

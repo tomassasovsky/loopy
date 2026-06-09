@@ -96,3 +96,9 @@ final class LooperStopAllPressed extends LooperEvent {
   /// Creates a [LooperStopAllPressed].
   const LooperStopAllPressed();
 }
+
+/// Clear every track that has content.
+final class LooperClearAllPressed extends LooperEvent {
+  /// Creates a [LooperClearAllPressed].
+  const LooperClearAllPressed();
+}

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -112,6 +113,68 @@ void main() {
     expect(find.byKey(const Key('bigpicture_tile_4')), findsOneWidget);
     expect(find.byKey(const Key('bigpicture_tile_7')), findsOneWidget);
     expect(find.byKey(const Key('bigpicture_tile_0')), findsNothing);
+  });
+
+  group('keyboard', () {
+    testWidgets('M toggles the performance mode', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(bigPicture.state.mode, PerformanceMode.record);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+      await tester.pump();
+      expect(bigPicture.state.mode, PerformanceMode.play);
+    });
+
+    testWidgets('a number key selects that track', (tester) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      await tester.pump();
+      expect(bigPicture.state.selectedChannel, 1);
+    });
+
+    testWidgets('record mode: R records the selected track', (tester) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
+      await tester.pump();
+      verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
+    });
+
+    testWidgets('play mode: a number key selects and toggles mute', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM); // -> play mode
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
+      await tester.pump();
+      expect(bigPicture.state.selectedChannel, 0);
+      verify(() => bloc.add(const LooperMuteToggled(0))).called(1);
+    });
+
+    testWidgets('Space plays all when nothing is playing', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.stopped, lengthFrames: 100)],
+        ),
+      );
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
+    });
+
+    testWidgets('C clears all', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.pump();
+      verify(() => bloc.add(const LooperClearAllPressed())).called(1);
+    });
   });
 
   testWidgets('renaming a track updates its label', (tester) async {
