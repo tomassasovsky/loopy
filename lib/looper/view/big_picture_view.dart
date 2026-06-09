@@ -222,7 +222,7 @@ class _ModeIndicator extends StatelessWidget {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final recording = mode == PerformanceMode.record;
-    final color = recording ? looper.recordColor : looper.trackColor(0);
+    final color = recording ? looper.recordColor : theme.colorScheme.primary;
 
     return GestureDetector(
       key: const Key('bigpicture_mode_indicator'),
@@ -268,7 +268,7 @@ class _BankSwitch extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
-    final accent = looper.trackColor(0);
+    final accent = theme.colorScheme.primary;
     final cubit = context.read<BankCubit>();
 
     return Container(
@@ -357,7 +357,7 @@ class _TrackColumn extends StatelessWidget {
                 Text(
                   '×${track.multiple}',
                   style: theme.textTheme.labelMedium?.copyWith(
-                    color: looper.trackColor(track.channel),
+                    color: theme.colorScheme.primary,
                   ),
                 ),
               IconButton(

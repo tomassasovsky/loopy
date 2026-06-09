@@ -6,25 +6,17 @@ import 'package:loopy/theme/theme.dart';
 void main() {
   group('LooperTheme', () {
     const theme = LooperTheme(
-      trackColors: [Color(0xFF000001), Color(0xFF000002)],
       tileBackground: Color(0xFF111111),
       tileBorder: Color(0xFF222222),
       waveformColor: Color(0xFF00E5FF),
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
-      armedColor: Color(0xFFFFD740),
       meterColors: {
         LooperMeterState.recording: Color(0xFFFF0000),
         LooperMeterState.playing: Color(0xFF00FF00),
         LooperMeterState.muted: Color(0xFFFFFFFF),
       },
     );
-
-    test('trackColor cycles through the palette', () {
-      expect(theme.trackColor(0), const Color(0xFF000001));
-      expect(theme.trackColor(1), const Color(0xFF000002));
-      expect(theme.trackColor(2), const Color(0xFF000001));
-    });
 
     test('meterColor looks up the meter state in the table', () {
       expect(
