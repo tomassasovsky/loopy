@@ -26,18 +26,11 @@ abstract final class AppTheme {
     return _base(scheme).copyWith(
       extensions: const [
         LooperTheme(
-          trackColors: [
-            Color(0xFF26C6DA), // teal
-            Color(0xFF7E9CFF), // indigo
-            Color(0xFFFFCA56), // amber
-            Color(0xFFFF8A80), // rose
-          ],
           tileBackground: Color(0xFF1B1E24),
           tileBorder: Color(0xFF2C313A),
           waveformColor: Color(0xFF35D6C4),
           waveformBackground: Color(0xFF14161B),
           recordColor: Color(0xFFFF5252),
-          armedColor: Color(0xFFFFB74D),
           meterColors: _meterColors,
         ),
       ],
@@ -55,13 +48,11 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: const Color(0xFF06060A),
       extensions: const [
         LooperTheme(
-          trackColors: [Color(0xFF4cda4a)],
           tileBackground: Color(0xFF101019),
           tileBorder: Color(0xFF22222E),
           waveformColor: Color(0xFF00E5FF),
           waveformBackground: Color(0xFF06060A),
           recordColor: Color(0xFFFF1744),
-          armedColor: Color(0xFFFFD740),
           meterColors: _meterColors,
         ),
       ],
