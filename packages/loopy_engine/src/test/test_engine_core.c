@@ -366,15 +366,22 @@ static void test_looper_multitrack(void) {
   le_engine_record(e, 0); /* finalize -> PLAYING */
   drain(e);
 
-  /* Track 1 records (overwrites one master loop) at 0.5. During its recording
-   * pass only track 0 is audible (1.0); track 1 is not mixed until it loops. */
+  /* Track 1 records a fresh layer at 0.5. It begins at the loop top and records
+   * freely; during its recording pass only track 0 is audible (1.0). A second
+   * record press finalizes it, rounding up to one whole base loop. */
   CHECK(le_engine_record(e, 1) == LE_OK);
   process_const(e, 0.5f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
   le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  CHECK(le_engine_record(e, 1) == LE_OK); /* finalize -> PLAYING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[1].length_frames == LOOP_N);
+  CHECK(s.tracks[1].multiple == 1);
 
   /* Now both tracks mix: 1.0 + 0.5 == 1.5. */
   process_const(e, 0.0f, LOOP_N, out);
@@ -448,6 +455,148 @@ static void test_record_is_exclusive(void) {
   CHECK(s.master_length_frames == LOOP_N);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
   CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* ---- loop multiples (#4) ---- */
+
+static void test_loop_multiple_records_two_loops(void) {
+  printf("test_loop_multiple_records_two_loops\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Track 0 defines the base loop (1.0) over LOOP_N frames. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize */
+  drain(e);
+
+  /* Track 1 records a 2-base-loop pattern (2.0 then 3.0). It begins at the loop
+   * top and records freely; a second press finalizes it, rounding to k = 2. */
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N, out); /* first base loop */
+  process_const(e, 3.0f, LOOP_N, out); /* second base loop */
+  le_engine_record(e, 1);              /* finalize -> PLAYING */
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].length_frames == 2 * LOOP_N);
+
+  /* The 2-loop track alternates its segments under the 1.0 base: 1+2 then 1+3,
+   * repeating (the iteration count is even here, so segment 0 plays first). */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 3.0f) < 1e-6f);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 4.0f) < 1e-6f);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 3.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_loop_multiple_rounds_up_partial(void) {
+  printf("test_loop_multiple_rounds_up_partial\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Base loop (1.0), then mute it so track 1 can be observed alone. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  le_engine_set_track_mute(e, 0, 1);
+
+  /* Track 1 records 1.5 base loops of 2.0; the length rounds UP to 2 loops. */
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N, out);     /* full first loop */
+  process_const(e, 2.0f, LOOP_N / 2, out); /* half of the second loop */
+  le_engine_record(e, 1);                  /* finalize -> PLAYING */
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].length_frames == 2 * LOOP_N);
+
+  /* Align to the loop top (also drains the mute), then read the two segments:
+   * segment 0 is the full 2.0 loop; segment 1 is the recorded half followed by
+   * the rounded-up silent tail (zeroed on the control thread at record start). */
+  process_const(e, 0.0f, LOOP_N / 2, out); /* pos 2..3 -> wrap to the top */
+  process_const(e, 0.0f, LOOP_N, out);     /* segment 0: all 2.0 */
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+  process_const(e, 0.0f, LOOP_N, out);     /* segment 1: 2.0, 2.0, 0, 0 */
+  for (int i = 0; i < LOOP_N; ++i) {
+    const float want = i < LOOP_N / 2 ? 2.0f : 0.0f;
+    CHECK(fabsf(out[i] - want) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* ---- session persistence (#4 Phase 4) ---- */
+
+static void test_session_export_import_roundtrip(void) {
+  printf("test_session_export_import_roundtrip\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Build a session: track 0 = base loop 1.0; track 1 = 2-loop 2.0 then 3.0. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N, out);
+  process_const(e, 3.0f, LOOP_N, out);
+  le_engine_record(e, 1); /* finalize -> k = 2 */
+  drain(e);
+
+  /* Export both tracks' PCM (mono here, so frames == samples). */
+  float stem0[64];
+  float stem1[64];
+  CHECK(le_engine_export_track(e, 0, stem0, 64) == LOOP_N);
+  CHECK(le_engine_export_track(e, 1, stem1, 64) == 2 * LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(stem0[i] - 1.0f) < 1e-6f);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(stem1[i] - 2.0f) < 1e-6f);
+  for (int i = LOOP_N; i < 2 * LOOP_N; ++i) {
+    CHECK(fabsf(stem1[i] - 3.0f) < 1e-6f);
+  }
+
+  /* Tear the session down. */
+  le_engine_clear(e, 0);
+  le_engine_clear(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* Reload from the exported stems and commit. */
+  CHECK(le_engine_import_track(e, 0, stem0, LOOP_N) == LE_OK);
+  CHECK(le_engine_import_track(e, 1, stem1, 2 * LOOP_N) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].multiple == 1);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].length_frames == 2 * LOOP_N);
+
+  /* Playback reproduces it: 1+2 then 1+3, alternating. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 3.0f) < 1e-6f);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 4.0f) < 1e-6f);
+
+  /* Importing into a non-empty track is rejected. */
+  CHECK(le_engine_import_track(e, 0, stem0, LOOP_N) == LE_ERR_INVALID);
 
   le_engine_destroy(e);
 }
@@ -844,6 +993,9 @@ int main(void) {
   test_looper_multitrack();
   test_latency_compensation();
   test_record_is_exclusive();
+  test_loop_multiple_records_two_loops();
+  test_loop_multiple_rounds_up_partial();
+  test_session_export_import_roundtrip();
   test_tempo_set_and_clamp();
   test_metronome_click();
   test_tap_tempo();

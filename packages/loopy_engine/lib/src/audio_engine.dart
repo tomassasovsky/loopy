@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
@@ -137,6 +139,21 @@ abstract interface class AudioEngine {
 
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
+
+  /// Copies track [channel]'s recorded loop PCM out for session export, or an
+  /// empty list when the track is empty. Samples are interleaved by
+  /// [EngineSnapshot.channels]. Read-only — call when not capturing.
+  Float32List exportTrack(int channel);
+
+  /// Loads interleaved [pcm] into the EMPTY track [channel] for a session
+  /// restore. Pair with [commitSession] to establish the master and play.
+  /// Returns [EngineResult.invalid] if the track is not empty.
+  EngineResult importTrack(int channel, Float32List pcm);
+
+  /// Establishes the master loop at [baseFrames] and starts every imported
+  /// track playing at its whole-loop multiple. Apply tempo/sync/quantize
+  /// settings before calling so the derived beat grid matches the session.
+  EngineResult commitSession(int baseFrames);
 
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();

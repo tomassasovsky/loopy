@@ -96,6 +96,7 @@ class TrackSnapshot {
     required this.rms,
     required this.peak,
     this.redoDepth = 0,
+    this.multiple = 1,
   });
 
   /// An empty track.
@@ -107,7 +108,8 @@ class TrackSnapshot {
       undoDepth = 0,
       redoDepth = 0,
       rms = 0,
-      peak = 0;
+      peak = 0,
+      multiple = 1;
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
   factory TrackSnapshot.fromNative(le_track_snapshot native) => TrackSnapshot(
@@ -119,6 +121,7 @@ class TrackSnapshot {
     redoDepth: native.redo_depth,
     rms: native.rms,
     peak: native.peak,
+    multiple: native.multiple,
   );
 
   /// State-machine phase.
@@ -130,8 +133,11 @@ class TrackSnapshot {
   /// Whether the track is muted.
   final bool muted;
 
-  /// Captured length in frames (equals master once finalized).
+  /// Captured length in frames (equals `multiple` × the master length).
   final int lengthFrames;
+
+  /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
+  final int multiple;
 
   /// Available undo steps (overdub layers).
   final int undoDepth;
@@ -154,6 +160,7 @@ class TrackSnapshot {
           volume == other.volume &&
           muted == other.muted &&
           lengthFrames == other.lengthFrames &&
+          multiple == other.multiple &&
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
           rms == other.rms &&
@@ -165,6 +172,7 @@ class TrackSnapshot {
     volume,
     muted,
     lengthFrames,
+    multiple,
     undoDepth,
     redoDepth,
     rms,

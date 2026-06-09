@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/session/session.dart';
 import 'package:settings_repository/settings_repository.dart';
+
+/// Session bundle actions in the looper app bar.
+enum _SessionAction { save, load, exportMixdown, exportStems }
 
 /// The multi-track looper view: a Chewie-2-style grid of channel strips with
 /// transport controls, level meters, volume, and the master loop position.
@@ -16,55 +22,104 @@ class LooperView extends StatelessWidget {
     final state = context.watch<LooperBloc>().state;
     final bloc = context.read<LooperBloc>();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Loopy'),
-        actions: [
-          IconButton(
-            key: const Key('looper_playAll_button'),
-            tooltip: 'Play all',
-            icon: const Icon(Icons.playlist_play),
-            onPressed: () => bloc.add(const LooperPlayAllPressed()),
-          ),
-          IconButton(
-            key: const Key('looper_stopAll_button'),
-            tooltip: 'Stop all',
-            icon: const Icon(Icons.stop_circle_outlined),
-            onPressed: () => bloc.add(const LooperStopAllPressed()),
-          ),
-          IconButton(
-            key: const Key('looper_openSetup_button'),
-            tooltip: 'Audio setup',
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AudioSetupPage(
-                  repository: context.read<LooperRepository>(),
-                  settings: context.read<SettingsRepository>(),
+    return BlocListener<SessionCubit, SessionState>(
+      listenWhen: (previous, current) =>
+          previous.status != current.status &&
+          (current.status == SessionStatus.success ||
+              current.status == SessionStatus.failure),
+      listener: (context, sessionState) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text(sessionState.message ?? '')),
+          );
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Loopy'),
+          actions: [
+            PopupMenuButton<_SessionAction>(
+              key: const Key('looper_session_button'),
+              tooltip: 'Session',
+              icon: const Icon(Icons.folder_outlined),
+              onSelected: (action) {
+                final cubit = context.read<SessionCubit>();
+                switch (action) {
+                  case _SessionAction.save:
+                    unawaited(cubit.saveSession());
+                  case _SessionAction.load:
+                    unawaited(cubit.loadSession());
+                  case _SessionAction.exportMixdown:
+                    unawaited(cubit.exportMixdown());
+                  case _SessionAction.exportStems:
+                    unawaited(cubit.exportStems());
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: _SessionAction.save,
+                  child: Text('Save session'),
+                ),
+                PopupMenuItem(
+                  value: _SessionAction.load,
+                  child: Text('Load session'),
+                ),
+                PopupMenuItem(
+                  value: _SessionAction.exportMixdown,
+                  child: Text('Export mixdown'),
+                ),
+                PopupMenuItem(
+                  value: _SessionAction.exportStems,
+                  child: Text('Export stems'),
+                ),
+              ],
+            ),
+            IconButton(
+              key: const Key('looper_playAll_button'),
+              tooltip: 'Play all',
+              icon: const Icon(Icons.playlist_play),
+              onPressed: () => bloc.add(const LooperPlayAllPressed()),
+            ),
+            IconButton(
+              key: const Key('looper_stopAll_button'),
+              tooltip: 'Stop all',
+              icon: const Icon(Icons.stop_circle_outlined),
+              onPressed: () => bloc.add(const LooperStopAllPressed()),
+            ),
+            IconButton(
+              key: const Key('looper_openSetup_button'),
+              tooltip: 'Audio setup',
+              icon: const Icon(Icons.settings),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => AudioSetupPage(
+                    repository: context.read<LooperRepository>(),
+                    settings: context.read<SettingsRepository>(),
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _MasterLoopBar(transport: state.transport),
-            const SizedBox(height: 8),
-            _TempoBar(transport: state.transport),
-            const SizedBox(height: 12),
-            if (!state.transport.isRunning) const _EngineStoppedBanner(),
-            Expanded(
-              child: ListView.builder(
-                itemCount: state.tracks.length,
-                itemBuilder: (_, i) => _TrackStrip(track: state.tracks[i]),
-              ),
-            ),
-            _StatusFooter(status: state.status),
           ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _MasterLoopBar(transport: state.transport),
+              const SizedBox(height: 8),
+              _TempoBar(transport: state.transport),
+              const SizedBox(height: 12),
+              if (!state.transport.isRunning) const _EngineStoppedBanner(),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: state.tracks.length,
+                  itemBuilder: (_, i) => _TrackStrip(track: state.tracks[i]),
+                ),
+              ),
+              _StatusFooter(status: state.status),
+            ],
+          ),
         ),
       ),
     );
@@ -243,6 +298,13 @@ class _TrackStrip extends StatelessWidget {
                     key: Key('looper_armed_chip_$ch'),
                     avatar: const Icon(Icons.hourglass_top, size: 16),
                     label: const Text('armed'),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                if (track.isMultiple) ...[
+                  Chip(
+                    key: Key('looper_multiple_chip_$ch'),
+                    label: Text('×${track.multiple}'),
                   ),
                   const SizedBox(width: 8),
                 ],

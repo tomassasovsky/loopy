@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:loopy_engine/loopy_engine.dart';
 
 /// A controllable in-memory [AudioEngine] for repository tests.
@@ -169,6 +171,24 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setRecordOffset(int frames) {
     lastRecordOffset = frames;
     calls.add('setRecordOffset');
+    return EngineResult.ok;
+  }
+
+  @override
+  Float32List exportTrack(int channel) {
+    calls.add('exportTrack');
+    return Float32List(0);
+  }
+
+  @override
+  EngineResult importTrack(int channel, Float32List pcm) {
+    calls.add('importTrack');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult commitSession(int baseFrames) {
+    calls.add('commitSession');
     return EngineResult.ok;
   }
 

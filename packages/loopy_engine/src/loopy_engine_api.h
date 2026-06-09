@@ -97,6 +97,7 @@ typedef enum le_command_code {
   LE_CMD_SET_RECORD_OFFSET = 13, /* arg_i = round-trip latency in frames */
   LE_CMD_SET_SYNC_TEMPO = 14,    /* arg_f = 0/1: snap tempo+grid to the loop */
   LE_CMD_SET_QUANTIZE = 15,      /* arg_i = le_quantize_mode */
+  LE_CMD_COMMIT_SESSION = 16,    /* arg_i = base loop length in frames */
 } le_command_code;
 
 /* Requested device configuration. Any field set to 0 uses the device default
@@ -119,7 +120,8 @@ typedef struct le_track_snapshot {
   int32_t state;         /* le_track_state */
   float volume;          /* 0..1 */
   int32_t muted;         /* 0/1 */
-  int32_t length_frames; /* frames captured (== master once finalized) */
+  int32_t length_frames; /* frames captured (== multiple * master length) */
+  int32_t multiple;      /* track length in whole base loops (>= 1) */
   int32_t undo_depth;    /* available undo steps (overdub layers) */
   int32_t redo_depth;    /* available redo steps */
   float rms;             /* 0..1 */
@@ -257,6 +259,34 @@ LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t mode);
 /* Sets the record-offset latency compensation in frames (clamped >= 0). */
 LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
                                               int32_t frames);
+
+/* ---- session persistence ---- *
+ * Save: read each track's loop PCM with le_engine_export_track. Load: clear the
+ * engine (so every track is EMPTY), le_engine_import_track each stem, then
+ * le_engine_commit_session to establish the master and start playback. Apply
+ * tempo / sync / quantize settings (via their setters) before committing so the
+ * derived beat grid matches the saved session. */
+
+/* Copies up to `max_frames` frames of track `channel`'s loop (interleaved, the
+ * engine's channel count) into `out`; returns the number of frames written
+ * (the track length, clamped to `max_frames`), or 0 on a bad argument / empty
+ * track. Reads the live buffer — call when the track is not capturing. */
+LE_EXPORT int32_t le_engine_export_track(le_engine* engine, int32_t channel,
+                                         float* out, int32_t max_frames);
+
+/* Loads `frames` interleaved frames of PCM into track `channel`'s buffer and
+ * records the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the
+ * unfilled tail is zeroed. The track starts playing on le_engine_commit_session.
+ * Returns LE_OK or an le_result error. */
+LE_EXPORT int32_t le_engine_import_track(le_engine* engine, int32_t channel,
+                                         const float* pcm, int32_t frames);
+
+/* Establishes the master loop at `base_frames` and starts every imported track
+ * (EMPTY with a loaded length) playing at its whole-loop multiple
+ * (length / base_frames). Posts a command; returns LE_OK or an le_result error.
+ */
+LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
+                                           int32_t base_frames);
 
 #ifdef __cplusplus
 }

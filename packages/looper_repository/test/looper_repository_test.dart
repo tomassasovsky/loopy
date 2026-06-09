@@ -160,6 +160,39 @@ void main() {
       expect(state.tracks[1].armed, isTrue);
     });
 
+    test('projects a track loop multiple', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        channels: 2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 48000,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 96000,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            multiple: 2,
+          ),
+        ],
+      );
+      final track = buildRepo().state.tracks.first;
+      expect(track.multiple, 2);
+      expect(track.isMultiple, isTrue);
+      expect(track.lengthFrames, 96000);
+    });
+
     test('initial snapshot projects an empty looper', () {
       final repo = buildRepo();
       final state = repo.state;
