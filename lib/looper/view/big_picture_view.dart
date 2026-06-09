@@ -328,8 +328,12 @@ class _TrackColumn extends StatelessWidget {
     final bloc = context.read<LooperBloc>();
 
     // The border is always white; selection only changes its weight. The meter
-    // bar carries the state color (see LooperTheme.trackStateColors).
-    final barColor = looper.barColor(track.state, track.channel);
+    // bar carries the state color (muted overrides; see LooperTheme).
+    final barColor = looper.barColor(
+      track.state,
+      track.channel,
+      muted: track.muted,
+    );
 
     return Container(
       decoration: BoxDecoration(

@@ -3,15 +3,17 @@ import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:loopy/theme/looper_theme.dart';
 
 /// Track meter (peak bar) color per track state, shared by both themes.
-//
-// TODO(loopy): fill in the intended color for each track state.
 const _trackStateColors = <TrackState, Color>{
   TrackState.empty: Color(0xFF2C313A), // not shown (empty tracks have no bar)
   TrackState.recording: Color(0xFFFF1744),
-  TrackState.overdubbing: Color(0xFFFFA000),
+  TrackState.overdubbing: Color(0xFFFF1744),
   TrackState.playing: Color(0xFF4CDA4A),
-  TrackState.stopped: Color(0xFF7E8590),
+  TrackState.stopped: Colors.transparent,
 };
+
+/// Meter color when a track is muted (overrides the state color above; muted is
+/// orthogonal to the track state, so it is not one of the keys).
+const _mutedBarColor = Color(0xFFFFFFFF);
 
 /// The two Loopy visual themes: a refined dark-neutral **Desktop** theme for
 /// the working layout, and a high-contrast neon-on-black **Big Picture** theme
@@ -40,6 +42,7 @@ abstract final class AppTheme {
           recordColor: Color(0xFFFF5252),
           armedColor: Color(0xFFFFB74D),
           trackStateColors: _trackStateColors,
+          mutedColor: _mutedBarColor,
         ),
       ],
     );
@@ -66,6 +69,7 @@ abstract final class AppTheme {
           recordColor: Color(0xFFFF1744),
           armedColor: Color(0xFFFFD740),
           trackStateColors: _trackStateColors,
+          mutedColor: _mutedBarColor,
         ),
       ],
     );

@@ -17,6 +17,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.recordColor,
     required this.armedColor,
     required this.trackStateColors,
+    required this.mutedColor,
   });
 
   /// Per-track accent colors, indexed by channel (cycled if more tracks).
@@ -43,13 +44,17 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// The track meter (peak bar) color for each track state.
   final Map<TrackState, Color> trackStateColors;
 
+  /// Meter color override for a muted track (muted is orthogonal to
+  /// [TrackState], so it is not a key in [trackStateColors]).
+  final Color mutedColor;
+
   /// The accent color for [channel] (cycles through [trackColors]).
   Color trackColor(int channel) => trackColors[channel % trackColors.length];
 
-  /// The meter color for [state], falling back to the track accent for
-  /// [channel] when the state has no mapping.
-  Color barColor(TrackState state, int channel) =>
-      trackStateColors[state] ?? trackColor(channel);
+  /// The meter color for a track: [mutedColor] when [muted], otherwise the
+  /// [state] color, falling back to the track accent for [channel].
+  Color barColor(TrackState state, int channel, {required bool muted}) =>
+      muted ? mutedColor : (trackStateColors[state] ?? trackColor(channel));
 
   @override
   LooperTheme copyWith({
@@ -61,6 +66,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? recordColor,
     Color? armedColor,
     Map<TrackState, Color>? trackStateColors,
+    Color? mutedColor,
   }) => LooperTheme(
     trackColors: trackColors ?? this.trackColors,
     tileBackground: tileBackground ?? this.tileBackground,
@@ -70,6 +76,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     recordColor: recordColor ?? this.recordColor,
     armedColor: armedColor ?? this.armedColor,
     trackStateColors: trackStateColors ?? this.trackStateColors,
+    mutedColor: mutedColor ?? this.mutedColor,
   );
 
   @override
@@ -101,6 +108,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
               Color.lerp(entry.value, other.trackStateColors[entry.key], t) ??
               entry.value,
       },
+      mutedColor: Color.lerp(mutedColor, other.mutedColor, t) ?? mutedColor,
     );
   }
 }
