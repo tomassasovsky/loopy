@@ -627,11 +627,15 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     for (int t = 0; t < tc; ++t) {
       /* Each track records the average of its selected input channels into its
        * mono buffer. Averaging (not summing) keeps the captured level stable
-       * and clip-safe regardless of how many inputs are armed. */
-      float insample;
-      if (e->mono_input) {
-        insample = mono;
-      } else if (in) {
+       * and clip-safe regardless of how many inputs are armed.
+       *
+       * The per-track input mask is always honored — including in mono-input
+       * mode. A track buffer is mono either way, so "merge to mono" is just
+       * this average over the selected channels; letting mono_input fold every
+       * input here would silently override per-track routing (an empty mask
+       * must record silence, not the whole bus). */
+      float insample = 0.0f;
+      if (in) {
         float sum = 0.0f;
         int cnt = 0;
         for (int c = 0; c < ch_in; ++c) {
@@ -644,8 +648,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
           }
         }
         insample = cnt > 0 ? sum / (float)cnt : 0.0f;
-      } else {
-        insample = 0.0f;
       }
 
       float loopsample = 0.0f;
@@ -1167,6 +1169,11 @@ void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
   if (engine == NULL) return;
   atomic_store_explicit(&engine->a_excluded_input_mask, mask,
                         memory_order_relaxed);
+}
+
+void le_engine_set_mono_input_for_test(le_engine* engine, int mono) {
+  if (engine == NULL) return;
+  engine->mono_input = mono ? 1 : 0;
 }
 
 static void le_uninit_context(le_engine* engine) {
