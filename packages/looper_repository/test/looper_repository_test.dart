@@ -198,6 +198,22 @@ void main() {
       expect(lateState, isNotNull);
       expect(lateState!.track.state, TrackState.playing);
     });
+
+    test('polling restarts cleanly across subscribe/cancel cycles', () async {
+      // The default ticker is single-subscription; a subscribe → cancel →
+      // subscribe cycle (hot restart, a bloc rebuild) must not throw
+      // "Stream has already been listened to".
+      final repo = LooperRepository(engine: engine);
+      addTearDown(repo.dispose);
+
+      final sub1 = repo.looperState.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await sub1.cancel();
+
+      final sub2 = repo.looperState.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await sub2.cancel();
+    });
   });
 
   group('commands forward to the engine', () {
