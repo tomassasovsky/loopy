@@ -170,8 +170,8 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
       const Text(
         'How audio is wired: hardware inputs flow into tracks, and tracks '
         'play out to hardware outputs. Loopback inputs are struck through — '
-        'they are never recorded. Drag between a track and an input or output '
-        'to connect or disconnect it.',
+        'they are never recorded. Click a track to select it, then click an '
+        'input or output to connect or disconnect it.',
         style: setupBody,
       ),
       const SizedBox(height: 28),
