@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:loopy/theme/theme.dart';
 
 void main() {
@@ -12,8 +13,10 @@ void main() {
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
       armedColor: Color(0xFFFFD740),
-      playColor: Color(0xFF4CDA4A),
-      mutedColor: Color(0xFFFFFFFF),
+      trackStateColors: {
+        TrackState.recording: Color(0xFFFF0000),
+        TrackState.playing: Color(0xFF00FF00),
+      },
     );
 
     test('trackColor cycles through the palette', () {
@@ -22,10 +25,18 @@ void main() {
       expect(theme.trackColor(2), const Color(0xFF000001));
     });
 
+    test('barColor maps a state, falling back to the track accent', () {
+      expect(theme.barColor(TrackState.playing, 0), const Color(0xFF00FF00));
+      expect(theme.barColor(TrackState.recording, 1), const Color(0xFFFF0000));
+      // Unmapped state -> the track accent for the channel.
+      expect(theme.barColor(TrackState.stopped, 1), const Color(0xFF000002));
+    });
+
     test('copyWith overrides only the given fields', () {
       final updated = theme.copyWith(recordColor: const Color(0xFFABCDEF));
       expect(updated.recordColor, const Color(0xFFABCDEF));
       expect(updated.waveformColor, theme.waveformColor);
+      expect(updated.trackStateColors, theme.trackStateColors);
     });
 
     test('lerp interpolates toward the other theme', () {
@@ -37,24 +48,15 @@ void main() {
     test('lerp with a non-LooperTheme returns this', () {
       expect(theme.lerp(null, 0.5), same(theme));
     });
-
-    test('exposes the play-mode semantic colors', () {
-      expect(theme.playColor, const Color(0xFF4CDA4A));
-      expect(theme.mutedColor, const Color(0xFFFFFFFF));
-      final updated = theme.copyWith(playColor: const Color(0xFF00FF00));
-      expect(updated.playColor, const Color(0xFF00FF00));
-      expect(updated.mutedColor, theme.mutedColor);
-    });
   });
 
-  test('AppTheme exposes play-mode colors for both modes', () {
+  test('AppTheme maps every track state to a meter color in both modes', () {
     final desktop = AppTheme.desktop.extension<LooperTheme>()!;
     final big = AppTheme.bigPicture.extension<LooperTheme>()!;
-    // Distinct, non-record/-track semantic colors so the meters read clearly.
-    expect(desktop.playColor, isNot(desktop.recordColor));
-    expect(desktop.mutedColor, const Color(0xFFFFFFFF));
-    expect(big.playColor, isNot(big.recordColor));
-    expect(big.mutedColor, const Color(0xFFFFFFFF));
+    for (final state in TrackState.values) {
+      expect(desktop.trackStateColors[state], isNotNull);
+      expect(big.trackStateColors[state], isNotNull);
+    }
     expect(AppTheme.bigPicture.useMaterial3, isTrue);
   });
 }

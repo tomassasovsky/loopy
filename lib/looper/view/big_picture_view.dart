@@ -325,47 +325,17 @@ class _TrackColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
-    final accent = looper.trackColor(track.channel);
-    final recording = track.state == TrackState.recording;
-    final overdubbing = track.state == TrackState.overdubbing;
     final bloc = context.read<LooperBloc>();
 
-    // Active state is a crisp ring, not a glow: recording = record color,
-    // overdub = accent, selection = white, idle = the tile border.
-    final Color borderColor;
-    final double borderWidth;
-    if (recording) {
-      borderColor = looper.recordColor;
-      borderWidth = 2.5;
-    } else if (overdubbing) {
-      borderColor = accent;
-      borderWidth = 2.5;
-    } else if (selected) {
-      borderColor = Colors.white;
-      borderWidth = 3;
-    } else {
-      borderColor = looper.tileBorder;
-      borderWidth = 1.5;
-    }
-
-    // Meter color: recording = record color, muted = white, armed/selected to
-    // play = green, otherwise the track accent.
-    final Color barColor;
-    if (recording) {
-      barColor = looper.recordColor;
-    } else if (track.muted) {
-      barColor = looper.mutedColor;
-    } else if (selected) {
-      barColor = looper.playColor;
-    } else {
-      barColor = accent;
-    }
+    // The border is always white; selection only changes its weight. The meter
+    // bar carries the state color (see LooperTheme.trackStateColors).
+    final barColor = looper.barColor(track.state, track.channel);
 
     return Container(
       decoration: BoxDecoration(
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor, width: borderWidth),
+        border: Border.all(color: Colors.white, width: selected ? 3 : 1.5),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -383,7 +353,9 @@ class _TrackColumn extends StatelessWidget {
               if (track.isMultiple)
                 Text(
                   '×${track.multiple}',
-                  style: theme.textTheme.labelMedium?.copyWith(color: accent),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: looper.trackColor(track.channel),
+                  ),
                 ),
               IconButton(
                 key: Key('bigpicture_routing_${track.channel}'),
@@ -412,9 +384,11 @@ class _TrackColumn extends StatelessWidget {
                 bloc.add(LooperRecordPressed(track.channel));
               },
               onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-              // Every track shows at least a sliver (the _PeakBar floor), so an
-              // empty/idle track is still visible in play mode.
-              child: _PeakBar(peak: track.peak, color: barColor),
+              child: _PeakBar(
+                peak: track.peak,
+                color: barColor,
+                hasContent: track.hasContent,
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -446,18 +420,24 @@ class _TrackColumn extends StatelessWidget {
 /// A bottom-anchored level meter driven by the track's current [peak]. Updates
 /// with the watched looper state — no own timer.
 class _PeakBar extends StatelessWidget {
-  const _PeakBar({required this.peak, required this.color});
+  const _PeakBar({
+    required this.peak,
+    required this.color,
+    required this.hasContent,
+  });
 
   final double peak;
   final Color color;
+  final bool hasContent;
 
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.bottomCenter,
       child: FractionallySizedBox(
-        // Floor at 0.01 so an idle track still shows a thin sliver.
-        heightFactor: (peak * 10).clamp(0.01, 1.0),
+        // A track with nothing recorded has no bar (height 0); otherwise the
+        // bar tracks the live peak.
+        heightFactor: hasContent ? (peak * 10).clamp(0.0, 1.0) : 0.0,
         child: Container(color: color),
       ),
     );
