@@ -147,6 +147,39 @@ void main() {
       },
     );
 
+    test(
+      'auto-measures when no saved offset and the device has loopback channels',
+      () async {
+        // No routable loopback device, but the opened interface reports
+        // dedicated loopback channels via the excluded-input mask.
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          excludedInputMask: 0x30,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: LatencyState.idle,
+          measuredLatencyMs: -1,
+        );
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            monitorInput: true,
+            mergeToMono: true,
+          ),
+        );
+
+        await tryAutoStartEngine(repository: repository, settings: settings);
+
+        expect(engine.measureLatencyCalls, 1);
+      },
+    );
+
     test('returns false when the engine fails to start', () async {
       engine.startResult = EngineResult.device;
       await settings.saveAudioConfig(

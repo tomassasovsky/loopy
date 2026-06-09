@@ -31,8 +31,11 @@ Future<bool> tryAutoStartEngine({
   // AudioSetupCubit, but the cubit is not created on the auto-start path, so
   // without this the engine would come up with no record offset (compensation
   // off) — overdubs would land late by the full hardware round-trip. Restore
-  // the saved per-device offset; if there is none yet, auto-measure when a
-  // cable-free loopback is available (matching the interactive start).
+  // the saved per-device offset; if there is none yet, auto-measure when the
+  // capture path loops our output back — a cable-free loopback device or an
+  // interface with dedicated loopback channels (matching the interactive
+  // start). A freshly measured offset is persisted the next time the cubit is
+  // created (or the next interactive measurement).
   final status = repository.state.status;
   final savedOffset = await settings.loadLatencyOffsetFrames(
     device: status.deviceName,
@@ -41,7 +44,7 @@ Future<bool> tryAutoStartEngine({
   );
   if (savedOffset != null && savedOffset > 0) {
     repository.setRecordOffset(savedOffset);
-  } else if (loopback.isAutoRoutable) {
+  } else if (loopback.isAutoRoutable || status.excludedInputMask != 0) {
     repository.measureLatency();
   }
 

@@ -210,6 +210,22 @@ void main() {
       act: (cubit) => cubit.start(),
       verify: (_) => verifyNever(repository.measureLatency),
     );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'start auto-measures when the device exposes loopback channels',
+      build: () {
+        // No routable loopback device, but the opened interface reports
+        // dedicated loopback channels (e.g. a Scarlett's "Loop 1/2").
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            status: EngineStatus(isConnected: true, excludedInputMask: 0x30),
+          ),
+        );
+        return buildCubit();
+      },
+      act: (cubit) => cubit.start(),
+      verify: (_) => verify(repository.measureLatency).called(1),
+    );
   });
 
   group('latency persistence', () {
