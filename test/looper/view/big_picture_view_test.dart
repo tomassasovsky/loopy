@@ -242,11 +242,11 @@ void main() {
       await pump(tester, theme: desktop);
       expect(
         barOf(tester, 0).color,
-        looper.barColor(TrackState.recording, 0, muted: false),
+        looper.meterColor(LooperMeterState.recording),
       );
       expect(
         barOf(tester, 1).color,
-        looper.barColor(TrackState.playing, 1, muted: false),
+        looper.meterColor(LooperMeterState.playing),
       );
     });
 
@@ -257,7 +257,7 @@ void main() {
         ),
       );
       await pump(tester, theme: desktop);
-      expect(barOf(tester, 0).color, looper.mutedColor);
+      expect(barOf(tester, 0).color, looper.meterColor(LooperMeterState.muted));
     });
 
     testWidgets('the tile border is always white', (tester) async {
