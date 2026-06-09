@@ -1091,45 +1091,28 @@ static void test_loopback_latency_uses_loopback_channel(void) {
   le_engine_destroy(e2);
 }
 
-/* Regression: mono-input (merge-to-mono) mode must still honor each track's
- * input mask. Folding every input here would override per-track routing — a
- * single-channel mask records only that channel, and an empty mask records
- * silence even with a hot input bus. */
-static void test_routing_input_mask_honored_in_mono_mode(void) {
-  printf("test_routing_input_mask_honored_in_mono_mode\n");
+/* Regression: an empty input mask records silence even with a hot input bus.
+ * (The single-channel-only case is covered by test_routing_input_mask.) */
+static void test_routing_input_mask_empty_records_silence(void) {
+  printf("test_routing_input_mask_empty_records_silence\n");
   float out[64];
   float zin[2 * LOOP_N] = {0};
   float in[2 * LOOP_N];
   for (int i = 0; i < LOOP_N; ++i) {
-    in[i * 2 + 0] = 9.0f; /* decoy on channel 0 */
-    in[i * 2 + 1] = 2.0f; /* signal on channel 1 */
+    in[i * 2 + 0] = 9.0f; /* hot bus on both channels */
+    in[i * 2 + 1] = 2.0f;
   }
 
-  /* Channel-1-only mask records 2.0, not the all-input fold (9+2)/2 == 5.5. */
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000);
-  le_engine_set_mono_input_for_test(e, 1);
-  CHECK(le_engine_set_input_mask(e, 0, 0x2) == LE_OK);
+  CHECK(le_engine_set_input_mask(e, 0, 0x0) == LE_OK);
   le_engine_record(e, 0);
   le_engine_process(e, out, in, LOOP_N);
   le_engine_record(e, 0); /* finalize -> PLAYING */
   drain(e);
   le_engine_process(e, out, zin, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
-  le_engine_destroy(e);
-
-  /* An empty mask captures silence even though the input bus is hot. */
-  le_engine* e2 = le_engine_create();
-  le_engine_configure(e2, 48000, 2, 2, 1000);
-  le_engine_set_mono_input_for_test(e2, 1);
-  CHECK(le_engine_set_input_mask(e2, 0, 0x0) == LE_OK);
-  le_engine_record(e2, 0);
-  le_engine_process(e2, out, in, LOOP_N);
-  le_engine_record(e2, 0); /* finalize -> PLAYING */
-  drain(e2);
-  le_engine_process(e2, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
-  le_engine_destroy(e2);
+  le_engine_destroy(e);
 }
 
 int main(void) {
@@ -1157,7 +1140,7 @@ int main(void) {
   test_transport_runs_until_last_track_stops();
   test_routing_input_mask();
   test_routing_input_mask_averages();
-  test_routing_input_mask_honored_in_mono_mode();
+  test_routing_input_mask_empty_records_silence();
   test_routing_output_mask();
   test_routing_default_stereo();
   test_routing_input_mask_clamped();

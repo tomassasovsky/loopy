@@ -10,7 +10,6 @@ class StoredAudioConfig {
     required this.sampleRate,
     required this.bufferFrames,
     required this.monitorInput,
-    required this.mergeToMono,
     this.inputChannels = 0,
     this.outputChannels = 0,
     this.playbackDeviceId = '',
@@ -25,9 +24,6 @@ class StoredAudioConfig {
 
   /// Whether captured input is monitored to the output.
   final bool monitorInput;
-
-  /// Whether input channels are averaged to mono and fed to both outputs.
-  final bool mergeToMono;
 
   /// Requested hardware capture channel count (`0` => device default).
   final int inputChannels;
@@ -49,7 +45,6 @@ class StoredAudioConfig {
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
           monitorInput == other.monitorInput &&
-          mergeToMono == other.mergeToMono &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
           playbackDeviceId == other.playbackDeviceId &&
@@ -60,7 +55,6 @@ class StoredAudioConfig {
     sampleRate,
     bufferFrames,
     monitorInput,
-    mergeToMono,
     inputChannels,
     outputChannels,
     playbackDeviceId,
@@ -120,7 +114,6 @@ class SettingsRepository {
   static const String _audioSampleRateKey = 'audio.sample_rate';
   static const String _audioBufferFramesKey = 'audio.buffer_frames';
   static const String _audioMonitorKey = 'audio.monitor_input';
-  static const String _audioMergeToMonoKey = 'audio.merge_to_mono';
   static const String _audioInputChannelsKey = 'audio.input_channels';
   static const String _audioOutputChannelsKey = 'audio.output_channels';
   static const String _audioPlaybackDeviceIdKey = 'audio.playback_device_id';
@@ -136,7 +129,6 @@ class SettingsRepository {
       sampleRate: sampleRate,
       bufferFrames: bufferFrames,
       monitorInput: await _store.getBool(_audioMonitorKey) ?? true,
-      mergeToMono: await _store.getBool(_audioMergeToMonoKey) ?? true,
       inputChannels: await _store.getInt(_audioInputChannelsKey) ?? 0,
       outputChannels: await _store.getInt(_audioOutputChannelsKey) ?? 0,
       playbackDeviceId: await _store.getString(_audioPlaybackDeviceIdKey) ?? '',
@@ -149,7 +141,6 @@ class SettingsRepository {
     await _store.setInt(_audioSampleRateKey, config.sampleRate);
     await _store.setInt(_audioBufferFramesKey, config.bufferFrames);
     await _store.setBool(_audioMonitorKey, value: config.monitorInput);
-    await _store.setBool(_audioMergeToMonoKey, value: config.mergeToMono);
     await _store.setInt(_audioInputChannelsKey, config.inputChannels);
     await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
     await _store.setString(

@@ -34,7 +34,6 @@ class AudioSetupState extends Equatable {
     this.sampleRate = 48000,
     this.bufferFrames = 128,
     this.monitorInput = true,
-    this.mergeToMono = true,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
     this.loopback = const LoopbackInfo.none(),
@@ -54,9 +53,6 @@ class AudioSetupState extends Equatable {
 
   /// Whether captured input is monitored to the output.
   final bool monitorInput;
-
-  /// Whether input channels are averaged to mono and fed to both outputs.
-  final bool mergeToMono;
 
   /// High-level lifecycle status.
   final AudioSetupStatus status;
@@ -105,7 +101,6 @@ class AudioSetupState extends Equatable {
     int? sampleRate,
     int? bufferFrames,
     bool? monitorInput,
-    bool? mergeToMono,
     AudioSetupStatus? status,
     EngineStatus? engineStatus,
     LoopbackInfo? loopback,
@@ -120,7 +115,6 @@ class AudioSetupState extends Equatable {
       sampleRate: sampleRate ?? this.sampleRate,
       bufferFrames: bufferFrames ?? this.bufferFrames,
       monitorInput: monitorInput ?? this.monitorInput,
-      mergeToMono: mergeToMono ?? this.mergeToMono,
       status: status ?? this.status,
       engineStatus: engineStatus ?? this.engineStatus,
       loopback: loopback ?? this.loopback,
@@ -139,7 +133,6 @@ class AudioSetupState extends Equatable {
     sampleRate,
     bufferFrames,
     monitorInput,
-    mergeToMono,
     status,
     engineStatus,
     loopback,

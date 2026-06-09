@@ -49,11 +49,6 @@ void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
  * tested deterministically. Not part of the FFI surface. */
 int32_t le_engine_begin_latency_for_test(le_engine* engine);
 
-/* Forces mono-input (merge-to-mono) mode without opening a device, so the
- * capture path can be tested with mono_input on (it must still honor each
- * track's input mask). Not part of the FFI surface. */
-void le_engine_set_mono_input_for_test(le_engine* engine, int mono);
-
 #ifdef __cplusplus
 }
 #endif
