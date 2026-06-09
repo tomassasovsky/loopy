@@ -155,7 +155,7 @@ class _EngineStep extends StatelessWidget {
       children: [
         const _GroupLabel('Output device'),
         const SizedBox(height: 12),
-        _DevicePicker(
+        AudioDevicePicker(
           pickerKey: 'audioSetup_playbackDevice_picker',
           devices: state.playbackDevices,
           selectedId: state.playbackDeviceId,
@@ -211,7 +211,7 @@ class _InputStep extends StatelessWidget {
       children: [
         const _GroupLabel('Input device'),
         const SizedBox(height: 12),
-        _DevicePicker(
+        AudioDevicePicker(
           pickerKey: 'audioSetup_captureDevice_picker',
           devices: state.captureDevices,
           selectedId: state.captureDeviceId,
