@@ -83,7 +83,6 @@ void main() {
           ..running = 1
           ..sample_rate = 48000
           ..buffer_frames = 128
-          ..channels = 2
           ..input_channels = 2
           ..output_channels = 4
           ..frames_processed = 123456
@@ -160,7 +159,6 @@ void main() {
         isRunning: true,
         sampleRate: 48000,
         bufferFrames: 128,
-        channels: 2,
         framesProcessed: 0,
         xrunCount: 0,
         inputRms: 0,

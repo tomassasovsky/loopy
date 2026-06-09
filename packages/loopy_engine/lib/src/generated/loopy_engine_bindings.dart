@@ -657,11 +657,6 @@ final class le_config extends ffi.Struct {
   @ffi.Int32()
   external int buffer_frames;
 
-  /// deprecated alias: when input_channels /
-  /// output_channels are 0, applies to both.
-  @ffi.Int32()
-  external int channels;
-
   /// 1 = copy captured input straight to the output
   @ffi.Int32()
   external int passthrough;
@@ -678,11 +673,11 @@ final class le_config extends ffi.Struct {
   @ffi.Int32()
   external int use_loopback_capture;
 
-  /// hardware capture channels (0 => channels/default)
+  /// hardware capture channels (0 => device default)
   @ffi.Int32()
   external int input_channels;
 
-  /// hardware playback channels (0 => channels/default)
+  /// hardware playback channels (0 => device default)
   @ffi.Int32()
   external int output_channels;
 }
@@ -747,10 +742,6 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Int32()
   external int buffer_frames;
-
-  /// deprecated alias == output_channels
-  @ffi.Int32()
-  external int channels;
 
   /// negotiated hardware capture channels
   @ffi.Int32()

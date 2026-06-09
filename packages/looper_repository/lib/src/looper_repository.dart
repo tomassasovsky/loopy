@@ -125,7 +125,6 @@ class LooperRepository {
       deviceName: _engine.deviceName,
       sampleRate: s.sampleRate,
       bufferFrames: s.bufferFrames,
-      channels: s.channels,
       inputChannels: s.inputChannels,
       outputChannels: s.outputChannels,
       latencyState: s.latencyState,

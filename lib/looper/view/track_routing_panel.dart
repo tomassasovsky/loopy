@@ -39,9 +39,11 @@ class TrackRoutingPanel extends StatelessWidget {
     // Fall back to at least the track's current routing when the engine isn't
     // running (channel counts are 0), so the panel still shows a usable choice.
     final inCount = inputChannels > 0 ? inputChannels : track.inputChannel + 1;
+    // When the engine isn't running, show at least a stereo pair, expanded to
+    // cover the highest channel the saved mask already targets.
     final outCount = outputChannels > 0
         ? outputChannels
-        : _minOutputCount(track.outputMask);
+        : track.outputMask.bitLength.clamp(2, 32);
 
     return Column(
       key: const Key('trackRouting_panel'),
@@ -84,15 +86,5 @@ class TrackRoutingPanel extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  /// At least two output slots (a stereo pair), expanded to cover the highest
-  /// channel set in [mask].
-  int _minOutputCount(int mask) {
-    var highest = 2;
-    for (var c = 0; c < 32; c++) {
-      if (mask & (1 << c) != 0) highest = c + 1;
-    }
-    return highest;
   }
 }

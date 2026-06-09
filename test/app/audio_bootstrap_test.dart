@@ -40,14 +40,15 @@ void main() {
           mergeToMono: true,
         ),
       );
-      await settings.saveTrackInputChannel(0, 2);
-      await settings.saveTrackOutputMask(0, 0x4);
+      // Save routing for channel 1 only; channel 0 has none (exercises the
+      // null-guard skip in the restore loop).
+      await settings.saveTrackInputChannel(1, 2);
+      await settings.saveTrackOutputMask(1, 0x4);
       // The restore loop iterates the engine's reported tracks.
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
         bufferFrames: 128,
-        channels: 2,
         framesProcessed: 0,
         xrunCount: 0,
         inputRms: 0,
@@ -55,7 +56,7 @@ void main() {
         outputRms: 0,
         latencyState: LatencyState.idle,
         measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
+        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
       );
 
       final started = await tryAutoStartEngine(
@@ -64,8 +65,10 @@ void main() {
       );
 
       expect(started, isTrue);
-      expect(engine.lastRoutingChannel, 0);
+      // Only channel 1 had saved routing, so it is the last (and only) applied.
+      expect(engine.lastInputRoutingChannel, 1);
       expect(engine.lastInputChannelValue, 2);
+      expect(engine.lastOutputRoutingChannel, 1);
       expect(engine.lastOutputMask, 0x4);
     });
 

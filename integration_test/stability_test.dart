@@ -20,7 +20,8 @@ Future<void> main() async {
       const EngineConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        channels: 2,
+        inputChannels: 2,
+        outputChannels: 2,
       ),
     );
     log('start -> ${result.name}, device "${engine.deviceName}"');
