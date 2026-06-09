@@ -13,6 +13,8 @@ class StoredAudioConfig {
     required this.mergeToMono,
     this.inputChannels = 0,
     this.outputChannels = 0,
+    this.playbackDeviceId = '',
+    this.captureDeviceId = '',
   });
 
   /// Requested sample rate in Hz.
@@ -33,6 +35,12 @@ class StoredAudioConfig {
   /// Requested hardware playback channel count (`0` => device default).
   final int outputChannels;
 
+  /// Pinned playback device id (empty => system default).
+  final String playbackDeviceId;
+
+  /// Pinned capture device id (empty => system default).
+  final String captureDeviceId;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -43,7 +51,9 @@ class StoredAudioConfig {
           monitorInput == other.monitorInput &&
           mergeToMono == other.mergeToMono &&
           inputChannels == other.inputChannels &&
-          outputChannels == other.outputChannels;
+          outputChannels == other.outputChannels &&
+          playbackDeviceId == other.playbackDeviceId &&
+          captureDeviceId == other.captureDeviceId;
 
   @override
   int get hashCode => Object.hash(
@@ -53,6 +63,8 @@ class StoredAudioConfig {
     mergeToMono,
     inputChannels,
     outputChannels,
+    playbackDeviceId,
+    captureDeviceId,
   );
 }
 
@@ -111,6 +123,8 @@ class SettingsRepository {
   static const String _audioMergeToMonoKey = 'audio.merge_to_mono';
   static const String _audioInputChannelsKey = 'audio.input_channels';
   static const String _audioOutputChannelsKey = 'audio.output_channels';
+  static const String _audioPlaybackDeviceIdKey = 'audio.playback_device_id';
+  static const String _audioCaptureDeviceIdKey = 'audio.capture_device_id';
 
   /// Loads the last-used audio configuration, or `null` if none has been saved
   /// yet (a first run, so the setup flow should be shown).
@@ -125,6 +139,8 @@ class SettingsRepository {
       mergeToMono: await _store.getBool(_audioMergeToMonoKey) ?? true,
       inputChannels: await _store.getInt(_audioInputChannelsKey) ?? 0,
       outputChannels: await _store.getInt(_audioOutputChannelsKey) ?? 0,
+      playbackDeviceId: await _store.getString(_audioPlaybackDeviceIdKey) ?? '',
+      captureDeviceId: await _store.getString(_audioCaptureDeviceIdKey) ?? '',
     );
   }
 
@@ -136,6 +152,11 @@ class SettingsRepository {
     await _store.setBool(_audioMergeToMonoKey, value: config.mergeToMono);
     await _store.setInt(_audioInputChannelsKey, config.inputChannels);
     await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
+    await _store.setString(
+      _audioPlaybackDeviceIdKey,
+      config.playbackDeviceId,
+    );
+    await _store.setString(_audioCaptureDeviceIdKey, config.captureDeviceId);
   }
 
   static const String _showWaveformWindowKey = 'big_picture.waveform_window';

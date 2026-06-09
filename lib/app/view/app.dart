@@ -96,6 +96,15 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          // Provided at the shell (not just the setup screen) so the device
+          // picker, the persisted selection, and the connect/disconnect banner
+          // stay live during normal looping, not only during first-run setup.
+          BlocProvider(
+            create: (context) => AudioSetupCubit(
+              repository: context.read<LooperRepository>(),
+              settings: context.read<SettingsRepository>(),
+            ),
+          ),
         ],
         child: _AppView(
           waveformWindow: waveformWindow,
@@ -120,6 +129,10 @@ class _AppView extends StatefulWidget {
 
 class _AppViewState extends State<_AppView> {
   Timer? _pushTimer;
+
+  /// Drives the app-level device connect/disconnect banner. Held at the shell
+  /// (above the pages) so the banner survives navigation between layouts.
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   @override
   void initState() {
@@ -171,6 +184,47 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
+  /// Shows a persistent "disconnected — trying to reconnect" banner when a
+  /// pinned device is lost, and replaces it with a transient "reconnected"
+  /// snackbar when it returns. Driven from [AudioSetupCubit] connectivity
+  /// transitions; mounted on the shell messenger so it persists across layouts.
+  void _showConnectivityBanner(AudioSetupState state) {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+    messenger.clearMaterialBanners();
+    final name = state.connectivityDeviceName.isEmpty
+        ? 'Audio device'
+        : state.connectivityDeviceName;
+    switch (state.deviceConnectivity) {
+      case DeviceConnectivity.lost:
+        messenger.showMaterialBanner(
+          MaterialBanner(
+            key: const Key('app_deviceLost_banner'),
+            content: Text('$name disconnected — trying to reconnect…'),
+            leading: const Icon(Icons.warning_amber_rounded),
+            actions: [
+              TextButton(
+                onPressed: messenger.clearMaterialBanners,
+                child: const Text('Dismiss'),
+              ),
+            ],
+          ),
+        );
+      case DeviceConnectivity.restored:
+        messenger
+          ..clearSnackBars()
+          ..showSnackBar(
+            SnackBar(
+              key: const Key('app_deviceRestored_snackbar'),
+              content: Text('$name reconnected'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+      case DeviceConnectivity.none:
+        break;
+    }
+  }
+
   List<PlatformMenuItem> _menus() => const [
     PlatformMenu(
       label: 'Loopy',
@@ -197,10 +251,16 @@ class _AppViewState extends State<_AppView> {
           listenWhen: (previous, current) => previous != current,
           listener: (_, _) => unawaited(_syncWindow()),
         ),
+        BlocListener<AudioSetupCubit, AudioSetupState>(
+          listenWhen: (previous, current) =>
+              previous.deviceConnectivity != current.deviceConnectivity,
+          listener: (_, state) => _showConnectivityBanner(state),
+        ),
       ],
       child: BlocBuilder<UiModeCubit, UiMode>(
         builder: (context, mode) {
           Widget app = MaterialApp(
+            scaffoldMessengerKey: _messengerKey,
             navigatorKey: loopyNavigatorKey,
             theme: mode == UiMode.bigPicture
                 ? AppTheme.bigPicture
@@ -237,18 +297,14 @@ class _RootViewState extends State<_RootView> {
   @override
   Widget build(BuildContext context) {
     if (!_inSetup) return const LooperPage();
-    return BlocProvider(
-      create: (context) => AudioSetupCubit(
-        repository: context.read<LooperRepository>(),
-        settings: context.read<SettingsRepository>(),
-      ),
-      child: BlocListener<AudioSetupCubit, AudioSetupState>(
-        listenWhen: (previous, current) =>
-            !previous.engineStatus.isConnected &&
-            current.engineStatus.isConnected,
-        listener: (_, _) => setState(() => _inSetup = false),
-        child: const AudioSetupView(),
-      ),
+    // The AudioSetupCubit is provided at the app shell, so the setup screen
+    // listens to the shared instance for the connect → hand-off to the looper.
+    return BlocListener<AudioSetupCubit, AudioSetupState>(
+      listenWhen: (previous, current) =>
+          !previous.engineStatus.isConnected &&
+          current.engineStatus.isConnected,
+      listener: (_, _) => setState(() => _inSetup = false),
+      child: const AudioSetupView(),
     );
   }
 }

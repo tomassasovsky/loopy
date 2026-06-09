@@ -129,4 +129,89 @@ void main() {
 
     expect(find.byKey(const Key('audioSetup_error_text')), findsOneWidget);
   });
+
+  testWidgets('the engine step lists output devices and System default', (
+    tester,
+  ) async {
+    seed(
+      const AudioSetupState(
+        devices: [
+          AudioDevice(
+            id: 'out-1',
+            name: 'Scarlett 2i2',
+            isDefault: true,
+            isInput: false,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    final picker = find.byKey(const Key('audioSetup_playbackDevice_picker'));
+    expect(picker, findsOneWidget);
+
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    expect(find.text('System default'), findsWidgets);
+    expect(find.text('Scarlett 2i2'), findsWidgets);
+  });
+
+  testWidgets('selecting an output device forwards to the cubit', (
+    tester,
+  ) async {
+    seed(
+      const AudioSetupState(
+        devices: [
+          AudioDevice(
+            id: 'out-1',
+            name: 'Scarlett 2i2',
+            isDefault: true,
+            isInput: false,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    await tester.tap(
+      find.byKey(const Key('audioSetup_playbackDevice_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scarlett 2i2').last);
+    await tester.pumpAndSettle();
+
+    verify(() => cubit.setPlaybackDevice('out-1')).called(1);
+  });
+
+  testWidgets('the input step lists capture devices and forwards selection', (
+    tester,
+  ) async {
+    seed(
+      const AudioSetupState(
+        devices: [
+          AudioDevice(
+            id: 'in-1',
+            name: 'Built-in Mic',
+            isDefault: true,
+            isInput: true,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    // Advance the wizard to the Input step.
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+
+    final picker = find.byKey(const Key('audioSetup_captureDevice_picker'));
+    expect(picker, findsOneWidget);
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    expect(find.text('Built-in Mic'), findsWidgets);
+    await tester.tap(find.text('Built-in Mic').last);
+    await tester.pumpAndSettle();
+
+    verify(() => cubit.setCaptureDevice('in-1')).called(1);
+  });
 }
