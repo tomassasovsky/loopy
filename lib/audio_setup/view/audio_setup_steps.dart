@@ -153,6 +153,15 @@ class _EngineStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const _GroupLabel('Output device'),
+        const SizedBox(height: 12),
+        _DevicePicker(
+          pickerKey: 'audioSetup_playbackDevice_picker',
+          devices: state.playbackDevices,
+          selectedId: state.playbackDeviceId,
+          onSelected: cubit.setPlaybackDevice,
+        ),
+        const SizedBox(height: 26),
         const _GroupLabel('Sample rate'),
         const SizedBox(height: 12),
         _OptionRow(
@@ -200,6 +209,15 @@ class _InputStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const _GroupLabel('Input device'),
+        const SizedBox(height: 12),
+        _DevicePicker(
+          pickerKey: 'audioSetup_captureDevice_picker',
+          devices: state.captureDevices,
+          selectedId: state.captureDeviceId,
+          onSelected: cubit.setCaptureDevice,
+        ),
+        const SizedBox(height: 26),
         _Toggle(
           toggleKey: 'audioSetup_monitor_switch',
           title: 'Monitor input',

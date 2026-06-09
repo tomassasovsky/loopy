@@ -21,6 +21,8 @@ Future<bool> tryAutoStartEngine({
       passthrough: saved.monitorInput,
       mergeToMono: saved.mergeToMono,
       useLoopbackCapture: loopback.isAutoRoutable,
+      playbackDeviceId: saved.playbackDeviceId,
+      captureDeviceId: saved.captureDeviceId,
     ),
   );
   if (!result.isOk) return false;
