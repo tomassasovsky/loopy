@@ -17,6 +17,7 @@ void main() {
         TrackState.recording: Color(0xFFFF0000),
         TrackState.playing: Color(0xFF00FF00),
       },
+      mutedColor: Color(0xFFFFFFFF),
     );
 
     test('trackColor cycles through the palette', () {
@@ -26,10 +27,30 @@ void main() {
     });
 
     test('barColor maps a state, falling back to the track accent', () {
-      expect(theme.barColor(TrackState.playing, 0), const Color(0xFF00FF00));
-      expect(theme.barColor(TrackState.recording, 1), const Color(0xFFFF0000));
+      expect(
+        theme.barColor(TrackState.playing, 0, muted: false),
+        const Color(0xFF00FF00),
+      );
+      expect(
+        theme.barColor(TrackState.recording, 1, muted: false),
+        const Color(0xFFFF0000),
+      );
       // Unmapped state -> the track accent for the channel.
-      expect(theme.barColor(TrackState.stopped, 1), const Color(0xFF000002));
+      expect(
+        theme.barColor(TrackState.stopped, 1, muted: false),
+        const Color(0xFF000002),
+      );
+    });
+
+    test('barColor uses the muted override regardless of state', () {
+      expect(
+        theme.barColor(TrackState.playing, 0, muted: true),
+        const Color(0xFFFFFFFF),
+      );
+      expect(
+        theme.barColor(TrackState.recording, 1, muted: true),
+        const Color(0xFFFFFFFF),
+      );
     });
 
     test('copyWith overrides only the given fields', () {

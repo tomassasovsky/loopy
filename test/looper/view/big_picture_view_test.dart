@@ -240,8 +240,24 @@ void main() {
         ),
       );
       await pump(tester, theme: desktop);
-      expect(barOf(tester, 0).color, looper.barColor(TrackState.recording, 0));
-      expect(barOf(tester, 1).color, looper.barColor(TrackState.playing, 1));
+      expect(
+        barOf(tester, 0).color,
+        looper.barColor(TrackState.recording, 0, muted: false),
+      );
+      expect(
+        barOf(tester, 1).color,
+        looper.barColor(TrackState.playing, 1, muted: false),
+      );
+    });
+
+    testWidgets('a muted track uses the muted override color', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.playing, muted: true)],
+        ),
+      );
+      await pump(tester, theme: desktop);
+      expect(barOf(tester, 0).color, looper.mutedColor);
     });
 
     testWidgets('the tile border is always white', (tester) async {
