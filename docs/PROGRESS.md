@@ -138,6 +138,33 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   system menu bar** (`PlatformMenuBar`, ⌘,). A persisted `WaveformWindowCubit`
   gates the secondary window. The chromeless big-picture exit button was removed
   (exit lives in settings now).
+- **Record immediately, even mid-loop** — a new track over an existing master
+  starts capturing at the current loop phase (no waiting for the loop top);
+  `record_pos` seeds to the master position so writes stay phase-locked and the
+  pre-press slice stays silent. Start-at-top is unchanged (multiples preserved).
+- **Transport reset-to-zero** — the master clock no longer free-runs in silence:
+  when no track is playing/recording/overdubbing it holds at position 0 (and
+  resets each track's loop phase), so play after a full stop starts from the top.
+  While any track is active the clock advances as before.
+- **8 tracks as two banks of four** — `LE_MAX_TRACKS = 8` (FFI regenerated). A
+  persisted **bank-enable** toggle (default off = one bank of four); when on, the
+  eight tracks show as two banks of four (A / B), one bank visible at a time.
+  `BankCubit` (app-wide) holds enabled + active bank; Big Picture shows an A|B
+  switch, desktop `LooperView` an app-bar A/B toggle.
+- **Performance keyboard + Record/Play modes** — handled in the Big Picture
+  `Focus` (plain keys consumed so macOS does not beep). `M` switches mode (a
+  REC/PLAY indicator shows it); `1`–`8` select a track (auto-revealing its bank);
+  Record mode adds `R` record/overdub and `P` play/pause the selection; Play mode
+  makes `1`–`8` select + mute/unmute; both modes: `Space` play/pause all, `C`
+  clear all, `⌘/Ctrl+Z` undo, `⌘/Ctrl+Y`/`Shift+Z` redo. `PerformanceMode` +
+  `toggleMode` on `BigPictureCubit`; new `LooperClearAllPressed` event.
+- **Code-review pass** — removed a debug `settings.clear()`; app composes the
+  engine via `LooperRepository.withNativeEngine()` (no `loopy_engine` import in
+  `lib/`); deleted dead Big-Picture waveform polling and made the level meter a
+  stateless widget (no per-tile timers); extracted a shared rename dialog;
+  `AudioSetupPage` reads its repositories from context; added the missing test
+  coverage. The Big Picture per-track thumbnail is a **level meter**, not a
+  waveform.
 
 ---
 
@@ -160,14 +187,27 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   (#4), latency compensation, the waveform visualizer, Big Picture / two-window,
   and theming are retained. (Supersedes the earlier #2 loop↔tempo and #3
   quantize-start decisions, which were removed.)
+- **Transport holds at the top when idle** — the master clock advances only
+  while a track is active; otherwise it sits at 0. Play always resumes from the
+  beginning, never mid-loop in silence.
+- **8 slots, two banks of four** — the engine always carries 8 tracks; the bank
+  toggle is **app-side presentation** (show 4 = bank A, or two banks of 4). The
+  engine processes all 8 (empty ones are silent).
+- **Keyboard map lives in the Big Picture `Focus`** — plain keys are consumed
+  (no macOS beep); number keys map to the visible bank, auto-switching banks when
+  a digit targets the other four.
 
 ---
 
 ## Roadmap (path forward)
 
-**The looper is now fully free (tempo-free).** Loop multiples (#4) remain; the
-tempo features (#2 loop↔tempo, #3 quantize-start) were removed. What remains
-needs hardware or a second display, or is Phase 4 scope.
+**Next: full multichannel per-track I/O routing** — the last big feature. Plan
+written and ready to `/build`:
+`docs/plan/2026-06-09-feat-multichannel-routing-plan.md`. Five phases (native
+I/O channel counts → mono track buffers + routing → Dart data/repo → routing UI
+→ on-hardware validation). Needs the user's audio interface plugged in to verify
+end-to-end. User decisions: **full device channels** and **two banks of four**
+(already shipped).
 
 ### Possible next steps (no hard dependency)
 - **Per-track multi-loop phase alignment** — multi-loop tracks currently phase
@@ -189,7 +229,9 @@ needs hardware or a second display, or is Phase 4 scope.
 ---
 
 ## Test counts (last green)
-native (all C tests, 22 fns: 2 loop-multiples + 1 loop-viz + 1 mid-loop record,
-tempo tests removed in the free-mode strip) · plugin 26 · controller 14 ·
-looper_repository 12 · settings 11 · app 70 (auto-start, first-run, big-picture
-settings + access). `flutter analyze` clean; macOS app builds end-to-end.
+native (all C tests, 24 fns: incl. mid-loop record, transport reset single- &
+multi-track, loop multiples, loop-viz) · plugin 26 · controller 14 ·
+looper_repository 14 · settings 13 · app 96 (auto-start/first-run, big-picture
+settings + access, banks + A/B, performance keyboard, review-fix coverage).
+`flutter analyze` clean; macOS app builds end-to-end. `LE_MAX_TRACKS = 8`,
+`LE_MAX_CHANNELS = 2` (raised to 32 in the routing plan).
