@@ -33,6 +33,17 @@ void le_engine_process(le_engine* engine, float* output, const float* input,
  * only; WASAPI detection is context-level). Pure and unit-testable. */
 le_loopback_kind le_classify_capture_device(const char* name);
 
+/* Whether a Core Audio channel label marks a loopback channel (case-insensitive
+ * substring "loopback"). Pure and unit-testable; a NULL/blank label is not a
+ * loopback. */
+int le_label_is_loopback(const char* label);
+
+/* Overrides the excluded-input-channel mask without opening a device, so the
+ * capture-average / monitoring / SET_INPUT_MASK exclusion paths can be tested
+ * deterministically. Not part of the FFI surface. */
+void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
+                                                uint32_t mask);
+
 #ifdef __cplusplus
 }
 #endif
