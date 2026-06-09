@@ -242,11 +242,21 @@ void main() {
       await pump(tester, theme: desktop);
       expect(
         barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.recording),
+        looper.meterColor(LooperMeterState.recording, playMode: false),
       );
       expect(
         barOf(tester, 1).color,
-        looper.meterColor(LooperMeterState.playing),
+        looper.meterColor(LooperMeterState.playing, playMode: false),
+      );
+    });
+
+    testWidgets('play mode uses the play-mode meter table', (tester) async {
+      bigPicture.toggleMode(); // record -> play
+      seed(const LooperState(tracks: [Track(state: TrackState.playing)]));
+      await pump(tester, theme: desktop);
+      expect(
+        barOf(tester, 0).color,
+        looper.meterColor(LooperMeterState.playing, playMode: true),
       );
     });
 
@@ -257,7 +267,10 @@ void main() {
         ),
       );
       await pump(tester, theme: desktop);
-      expect(barOf(tester, 0).color, looper.meterColor(LooperMeterState.muted));
+      expect(
+        barOf(tester, 0).color,
+        looper.meterColor(LooperMeterState.muted, playMode: false),
+      );
     });
 
     testWidgets('the tile border is always white', (tester) async {
