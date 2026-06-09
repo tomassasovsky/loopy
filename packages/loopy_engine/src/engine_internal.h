@@ -16,10 +16,12 @@ extern "C" {
 #endif
 
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
- * device. Used by le_engine_start and by tests. `channels` is clamped to 2 and
- * `max_loop_frames` to a positive value. Returns LE_OK or LE_ERR_INVALID. */
+ * device. Used by le_engine_start and by tests. `input_channels` /
+ * `output_channels` are each clamped to LE_MAX_CHANNELS and `max_loop_frames` to
+ * a positive value. Returns LE_OK or LE_ERR_INVALID. */
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
-                            int32_t channels, int32_t max_loop_frames);
+                            int32_t input_channels, int32_t output_channels,
+                            int32_t max_loop_frames);
 
 /* Processes one interleaved block: drains commands, advances the loop, records/
  * overdubs/mixes, and publishes metering. This is exactly what the miniaudio

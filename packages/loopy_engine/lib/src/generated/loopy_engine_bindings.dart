@@ -408,6 +408,49 @@ class LoopyEngineBindings {
   late final _le_engine_set_track_mute = _le_engine_set_track_mutePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Routes track `channel`'s record source to hardware input `value` (clamped to
+  /// the negotiated input-channel range).
+  int le_engine_set_input_channel(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int value,
+  ) {
+    return _le_engine_set_input_channel(
+      engine,
+      channel,
+      value,
+    );
+  }
+
+  late final _le_engine_set_input_channelPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
+              ffi.Int32)>>('le_engine_set_input_channel');
+  late final _le_engine_set_input_channel = _le_engine_set_input_channelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Routes track `channel`'s playback to the output channels set in `mask` (a
+  /// bitmask; bit c => hardware output channel c). Bits beyond the negotiated
+  /// output-channel range are ignored.
+  int le_engine_set_output_mask(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int mask,
+  ) {
+    return _le_engine_set_output_mask(
+      engine,
+      channel,
+      mask,
+    );
+  }
+
+  late final _le_engine_set_output_maskPtr = _lookup<
+      ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
+              ffi.Int32)>>('le_engine_set_output_mask');
+  late final _le_engine_set_output_mask = _le_engine_set_output_maskPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Sets the record-offset latency compensation in frames (clamped >= 0).
   int le_engine_set_record_offset(
     ffi.Pointer<le_engine> engine,
@@ -575,7 +618,15 @@ enum le_command_code {
   LE_CMD_SET_MUTE(8),
 
   /// arg_i = round-trip latency in frames
-  LE_CMD_SET_RECORD_OFFSET(13);
+  LE_CMD_SET_RECORD_OFFSET(13),
+
+  /// route a track's record source (arg_f = track,
+  /// arg_i = input channel index)
+  LE_CMD_SET_INPUT_CHANNEL(14),
+
+  /// route a track's playback destinations
+  /// (arg_f = track, arg_i = output bitmask)
+  LE_CMD_SET_OUTPUT_MASK(15);
 
   final int value;
   const le_command_code(this.value);
@@ -591,12 +642,14 @@ enum le_command_code {
         7 => LE_CMD_SET_VOLUME,
         8 => LE_CMD_SET_MUTE,
         13 => LE_CMD_SET_RECORD_OFFSET,
+        14 => LE_CMD_SET_INPUT_CHANNEL,
+        15 => LE_CMD_SET_OUTPUT_MASK,
         _ => throw ArgumentError('Unknown value for le_command_code: $value'),
       };
 }
 
-/// Requested device configuration. Any field set to 0 uses the device default
-/// (channels is additionally clamped to a maximum of 2).
+/// Requested device configuration. Any channel field set to 0 uses the device
+/// default; counts are clamped to LE_MAX_CHANNELS.
 final class le_config extends ffi.Struct {
   @ffi.Int32()
   external int sample_rate;
@@ -604,6 +657,8 @@ final class le_config extends ffi.Struct {
   @ffi.Int32()
   external int buffer_frames;
 
+  /// deprecated alias: when input_channels /
+  /// output_channels are 0, applies to both.
   @ffi.Int32()
   external int channels;
 
@@ -622,6 +677,14 @@ final class le_config extends ffi.Struct {
   /// 1 = capture from a detected loopback device
   @ffi.Int32()
   external int use_loopback_capture;
+
+  /// hardware capture channels (0 => channels/default)
+  @ffi.Int32()
+  external int input_channels;
+
+  /// hardware playback channels (0 => channels/default)
+  @ffi.Int32()
+  external int output_channels;
 }
 
 /// Per-track state published in le_snapshot.tracks.
@@ -661,6 +724,14 @@ final class le_track_snapshot extends ffi.Struct {
   /// 0..1
   @ffi.Float()
   external double peak;
+
+  /// hardware input channel this track records from
+  @ffi.Int32()
+  external int input_channel;
+
+  /// bitmask of output channels this track plays to
+  @ffi.Uint32()
+  external int output_mask;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -677,8 +748,17 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int buffer_frames;
 
+  /// deprecated alias == output_channels
   @ffi.Int32()
   external int channels;
+
+  /// negotiated hardware capture channels
+  @ffi.Int32()
+  external int input_channels;
+
+  /// negotiated hardware playback channels
+  @ffi.Int32()
+  external int output_channels;
 
   /// total frames seen by the callback
   @ffi.Uint64()
@@ -731,6 +811,8 @@ final class le_snapshot extends ffi.Struct {
 }
 
 final class le_engine extends ffi.Opaque {}
+
+const int LE_MAX_CHANNELS = 32;
 
 const int LE_MAX_TRACKS = 8;
 

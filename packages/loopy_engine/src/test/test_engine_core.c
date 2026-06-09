@@ -162,7 +162,7 @@ static void process_const(le_engine* e, float value, int frames, float* out) {
 
 static le_engine* make_configured_engine(void) {
   le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 1, 1000);
+  le_engine_configure(e, 48000, 1, 1, 1000); /* mono in, mono out */
   return e;
 }
 
@@ -343,7 +343,7 @@ static void test_looper_requires_configure(void) {
   printf("test_looper_requires_configure\n");
   le_engine* e = le_engine_create();
   CHECK(le_engine_record(e, 0) == LE_ERR_NOT_RUNNING); /* not configured yet */
-  le_engine_configure(e, 48000, 1, 100);
+  le_engine_configure(e, 48000, 1, 1, 100);
   CHECK(le_engine_record(e, 0) == LE_OK);
   le_engine_destroy(e);
 }
@@ -658,6 +658,113 @@ static void test_transport_runs_until_last_track_stops(void) {
   le_engine_destroy(e);
 }
 
+/* ---- per-track I/O routing ---- */
+
+/* A track records from its selected hardware input channel (not channel 0), and
+ * the negotiated I/O channel counts + routing are reflected in the snapshot. */
+static void test_routing_input_channel(void) {
+  printf("test_routing_input_channel\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[64];
+  le_snapshot s;
+
+  /* Route track 0 to record from input channel 1, then capture a loop where
+   * channel 0 carries a decoy (9.0) and channel 1 carries the signal (2.0). */
+  CHECK(le_engine_set_input_channel(e, 0, 1) == LE_OK);
+  le_engine_record(e, 0);
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 9.0f; /* decoy on channel 0 */
+    in[i * 2 + 1] = 2.0f; /* signal on channel 1 */
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.input_channels == 2);
+  CHECK(s.output_channels == 2);
+  CHECK(s.tracks[0].input_channel == 1);
+  CHECK(s.tracks[0].output_mask == 0x3u); /* default stereo pair */
+
+  /* Playback over silent input: the loop replays channel 1's 2.0, routed to the
+   * default output pair (channels 0 and 1) — not channel 0's decoy. */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* An output mask routes a track's mono loop to exactly the selected output
+ * channels and leaves the others silent. */
+static void test_routing_output_mask(void) {
+  printf("test_routing_output_mask\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[64];
+
+  /* Record a 1.0 loop from the default input channel 0. */
+  le_engine_record(e, 0);
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  float zin[2 * LOOP_N] = {0};
+
+  /* Route to output channel 1 only: channel 0 must be silent. */
+  CHECK(le_engine_set_output_mask(e, 0, 0x2) == LE_OK);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+
+  /* Route to output channel 0 only: channel 1 must now be silent. */
+  CHECK(le_engine_set_output_mask(e, 0, 0x1) == LE_OK);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Default routing on a mono-in / stereo-out device sends the recorded input to
+ * both output channels (preserving today's stereo behaviour). */
+static void test_routing_default_stereo(void) {
+  printf("test_routing_default_stereo\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* mono in, stereo out */
+  float out[64];
+
+  le_engine_record(e, 0);
+  float in[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 1.0f;
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  float zin[LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
 /* ---- loop visualization tap ---- */
 
 static float max_of(const float* a, int n) {
@@ -764,6 +871,9 @@ int main(void) {
   test_new_track_records_mid_loop();
   test_transport_resets_when_all_stopped();
   test_transport_runs_until_last_track_stops();
+  test_routing_input_channel();
+  test_routing_output_mask();
+  test_routing_default_stereo();
   test_visualization_tap();
   test_classify_capture_device();
   test_detect_loopback_runs();
