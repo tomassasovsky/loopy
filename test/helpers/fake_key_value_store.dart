@@ -32,4 +32,7 @@ class FakeKeyValueStore implements KeyValueStore {
 
   @override
   Future<void> remove(String key) async => values.remove(key);
+
+  @override
+  Future<void> clear() async => values.clear();
 }

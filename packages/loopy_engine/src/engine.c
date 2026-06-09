@@ -624,7 +624,25 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
     if (e->clock.length > 0) {
-      if (le_loop_clock_tick(&e->clock)) e->loop_iteration++;
+      int any_active = 0;
+      for (int t = 0; t < tc; ++t) {
+        if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_RECORDING ||
+            st[t] == LE_TRACK_OVERDUBBING) {
+          any_active = 1;
+          break;
+        }
+      }
+      if (any_active) {
+        if (le_loop_clock_tick(&e->clock)) e->loop_iteration++;
+      } else {
+        /* Nothing is playing or recording: hold the transport at the top so the
+         * next play starts from the beginning rather than looping in silence.
+         * Resetting each track's start_iter keeps multi-loop tracks aligned to
+         * their first segment on the next play. */
+        e->clock.position = 0;
+        e->loop_iteration = 0;
+        for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
+      }
     }
   }
 
