@@ -27,6 +27,8 @@ abstract final class AppTheme {
           waveformBackground: Color(0xFF14161B),
           recordColor: Color(0xFFFF5252),
           armedColor: Color(0xFFFFB74D),
+          playColor: Color(0xFF4CAF50), // green: armed/selected to play
+          mutedColor: Color(0xFFFFFFFF), // white: muted
         ),
       ],
     );
@@ -52,6 +54,8 @@ abstract final class AppTheme {
           waveformBackground: Color(0xFF06060A),
           recordColor: Color(0xFFFF1744),
           armedColor: Color(0xFFFFD740),
+          playColor: Color(0xFF4CDA4A), // green: armed/selected to play
+          mutedColor: Color(0xFFFFFFFF), // white: muted
         ),
       ],
     );
