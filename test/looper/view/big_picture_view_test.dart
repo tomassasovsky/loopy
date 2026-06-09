@@ -273,7 +273,7 @@ void main() {
       );
     });
 
-    testWidgets('the tile border is always white', (tester) async {
+    testWidgets('the tile border is white only when selected', (tester) async {
       bigPicture.select(0);
       seed(
         const LooperState(
@@ -285,7 +285,7 @@ void main() {
       );
       await pump(tester);
 
-      for (final channel in [0, 1]) {
+      Color borderColor(int channel) {
         final tile = tester.widget<Container>(
           find
               .ancestor(
@@ -294,9 +294,13 @@ void main() {
               )
               .first,
         );
-        final border = (tile.decoration! as BoxDecoration).border! as Border;
-        expect(border.top.color, Colors.white);
+        return ((tile.decoration! as BoxDecoration).border! as Border)
+            .top
+            .color;
       }
+
+      expect(borderColor(0), Colors.white); // selected
+      expect(borderColor(1), Colors.transparent); // unselected
     });
 
     testWidgets('track tiles have no glow shadow', (tester) async {

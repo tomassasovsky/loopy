@@ -342,7 +342,10 @@ class _TrackColumn extends StatelessWidget {
       decoration: BoxDecoration(
         color: looper.tileBackground,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white, width: selected ? 3 : 1.5),
+        border: Border.all(
+          color: selected ? Colors.white : Colors.transparent,
+          width: 3,
+        ),
       ),
       padding: const EdgeInsets.all(14),
       child: Column(
