@@ -13,11 +13,11 @@ void main() {
       waveformBackground: Color(0xFF000000),
       recordColor: Color(0xFFFF1744),
       armedColor: Color(0xFFFFD740),
-      trackStateColors: {
-        TrackState.recording: Color(0xFFFF0000),
-        TrackState.playing: Color(0xFF00FF00),
+      meterColors: {
+        LooperMeterState.recording: Color(0xFFFF0000),
+        LooperMeterState.playing: Color(0xFF00FF00),
+        LooperMeterState.muted: Color(0xFFFFFFFF),
       },
-      mutedColor: Color(0xFFFFFFFF),
     );
 
     test('trackColor cycles through the palette', () {
@@ -26,38 +26,25 @@ void main() {
       expect(theme.trackColor(2), const Color(0xFF000001));
     });
 
-    test('barColor maps a state, falling back to the track accent', () {
+    test('meterColor looks up the meter state in the table', () {
       expect(
-        theme.barColor(TrackState.playing, 0, muted: false),
+        theme.meterColor(LooperMeterState.playing),
         const Color(0xFF00FF00),
       );
       expect(
-        theme.barColor(TrackState.recording, 1, muted: false),
+        theme.meterColor(LooperMeterState.recording),
         const Color(0xFFFF0000),
       );
-      // Unmapped state -> the track accent for the channel.
-      expect(
-        theme.barColor(TrackState.stopped, 1, muted: false),
-        const Color(0xFF000002),
-      );
-    });
-
-    test('barColor uses the muted override regardless of state', () {
-      expect(
-        theme.barColor(TrackState.playing, 0, muted: true),
-        const Color(0xFFFFFFFF),
-      );
-      expect(
-        theme.barColor(TrackState.recording, 1, muted: true),
-        const Color(0xFFFFFFFF),
-      );
+      expect(theme.meterColor(LooperMeterState.muted), const Color(0xFFFFFFFF));
+      // A state the table omits resolves to transparent.
+      expect(theme.meterColor(LooperMeterState.stopped), Colors.transparent);
     });
 
     test('copyWith overrides only the given fields', () {
       final updated = theme.copyWith(recordColor: const Color(0xFFABCDEF));
       expect(updated.recordColor, const Color(0xFFABCDEF));
       expect(updated.waveformColor, theme.waveformColor);
-      expect(updated.trackStateColors, theme.trackStateColors);
+      expect(updated.meterColors, theme.meterColors);
     });
 
     test('lerp interpolates toward the other theme', () {
@@ -71,12 +58,48 @@ void main() {
     });
   });
 
-  test('AppTheme maps every track state to a meter color in both modes', () {
+  group('LooperMeterState.of', () {
+    test('muted wins over the underlying track state', () {
+      expect(
+        LooperMeterState.of(TrackState.playing, muted: true),
+        LooperMeterState.muted,
+      );
+      expect(
+        LooperMeterState.of(TrackState.recording, muted: true),
+        LooperMeterState.muted,
+      );
+    });
+
+    test('maps each track state when not muted', () {
+      expect(
+        LooperMeterState.of(TrackState.empty, muted: false),
+        LooperMeterState.empty,
+      );
+      expect(
+        LooperMeterState.of(TrackState.recording, muted: false),
+        LooperMeterState.recording,
+      );
+      expect(
+        LooperMeterState.of(TrackState.overdubbing, muted: false),
+        LooperMeterState.overdubbing,
+      );
+      expect(
+        LooperMeterState.of(TrackState.playing, muted: false),
+        LooperMeterState.playing,
+      );
+      expect(
+        LooperMeterState.of(TrackState.stopped, muted: false),
+        LooperMeterState.stopped,
+      );
+    });
+  });
+
+  test('AppTheme maps every meter state to a color in both modes', () {
     final desktop = AppTheme.desktop.extension<LooperTheme>()!;
     final big = AppTheme.bigPicture.extension<LooperTheme>()!;
-    for (final state in TrackState.values) {
-      expect(desktop.trackStateColors[state], isNotNull);
-      expect(big.trackStateColors[state], isNotNull);
+    for (final state in LooperMeterState.values) {
+      expect(desktop.meterColors[state], isNotNull);
+      expect(big.meterColors[state], isNotNull);
     }
     expect(AppTheme.bigPicture.useMaterial3, isTrue);
   });

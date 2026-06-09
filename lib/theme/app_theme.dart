@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:loopy/theme/looper_theme.dart';
 
-/// Track meter (peak bar) color per track state, shared by both themes.
-const _trackStateColors = <TrackState, Color>{
-  TrackState.empty: Color(0xFF2C313A), // not shown (empty tracks have no bar)
-  TrackState.recording: Color(0xFFFF1744),
-  TrackState.overdubbing: Color(0xFFFF1744),
-  TrackState.playing: Color(0xFF4CDA4A),
-  TrackState.stopped: Colors.transparent,
+/// The track meter (peak bar) color for every meter state, shared by both
+/// themes. One table — muted overlays the others and is just another entry.
+const _meterColors = <LooperMeterState, Color>{
+  LooperMeterState.empty: Color(0xFF2C313A), // not shown (empty = no bar)
+  LooperMeterState.recording: Color(0xFFFF1744),
+  LooperMeterState.overdubbing: Color(0xFFFF1744),
+  LooperMeterState.playing: Color(0xFF4CDA4A),
+  LooperMeterState.stopped: Colors.transparent,
+  LooperMeterState.muted: Color(0xFFFFFFFF),
 };
-
-/// Meter color when a track is muted (overrides the state color above; muted is
-/// orthogonal to the track state, so it is not one of the keys).
-const _mutedBarColor = Color(0xFFFFFFFF);
 
 /// The two Loopy visual themes: a refined dark-neutral **Desktop** theme for
 /// the working layout, and a high-contrast neon-on-black **Big Picture** theme
@@ -41,8 +38,7 @@ abstract final class AppTheme {
           waveformBackground: Color(0xFF14161B),
           recordColor: Color(0xFFFF5252),
           armedColor: Color(0xFFFFB74D),
-          trackStateColors: _trackStateColors,
-          mutedColor: _mutedBarColor,
+          meterColors: _meterColors,
         ),
       ],
     );
@@ -59,17 +55,14 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: const Color(0xFF06060A),
       extensions: const [
         LooperTheme(
-          trackColors: [
-            Color(0xFF4cda4a), // green
-          ],
+          trackColors: [Color(0xFF4cda4a)],
           tileBackground: Color(0xFF101019),
           tileBorder: Color(0xFF22222E),
           waveformColor: Color(0xFF00E5FF),
           waveformBackground: Color(0xFF06060A),
           recordColor: Color(0xFFFF1744),
           armedColor: Color(0xFFFFD740),
-          trackStateColors: _trackStateColors,
-          mutedColor: _mutedBarColor,
+          meterColors: _meterColors,
         ),
       ],
     );
