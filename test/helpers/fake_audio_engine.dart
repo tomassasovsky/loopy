@@ -70,6 +70,12 @@ class FakeAudioEngine implements AudioEngine {
   @override
   LoopbackInfo detectLoopback() => loopback;
 
+  /// Devices returned by [enumerateDevices].
+  List<AudioDevice> devices = const [];
+
+  @override
+  List<AudioDevice> enumerateDevices() => devices;
+
   @override
   EngineResult measureLatency() {
     measureLatencyCalls++;

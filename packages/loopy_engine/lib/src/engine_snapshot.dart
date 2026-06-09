@@ -189,6 +189,7 @@ class EngineSnapshot {
     required this.outputRms,
     required this.latencyState,
     required this.measuredLatencyMs,
+    this.devicePresent = false,
     this.inputChannels = 0,
     this.outputChannels = 0,
     this.masterLengthFrames = 0,
@@ -200,6 +201,7 @@ class EngineSnapshot {
   /// The snapshot of an engine that has never started.
   const EngineSnapshot.initial()
     : isRunning = false,
+      devicePresent = false,
       sampleRate = 0,
       bufferFrames = 0,
       inputChannels = 0,
@@ -226,6 +228,7 @@ class EngineSnapshot {
     List<TrackSnapshot> tracks,
   ) => EngineSnapshot(
     isRunning: native.running != 0,
+    devicePresent: native.device_present != 0,
     sampleRate: native.sample_rate,
     bufferFrames: native.buffer_frames,
     inputChannels: native.input_channels,
@@ -245,6 +248,13 @@ class EngineSnapshot {
 
   /// Whether the audio device is open and the callback is running.
   final bool isRunning;
+
+  /// Whether the pinned (or default) device is currently present.
+  ///
+  /// Distinct from [isRunning]: a device can be lost (e.g. unplugged) while the
+  /// engine object still reports running until it is restarted. Flips to
+  /// `false` on a device-lost / rerouted / interrupted notification.
+  final bool devicePresent;
 
   /// Negotiated device sample rate in Hz.
   final int sampleRate;
@@ -325,6 +335,7 @@ class EngineSnapshot {
       other is EngineSnapshot &&
           runtimeType == other.runtimeType &&
           isRunning == other.isRunning &&
+          devicePresent == other.devicePresent &&
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
           inputChannels == other.inputChannels &&
@@ -344,6 +355,7 @@ class EngineSnapshot {
   @override
   int get hashCode => Object.hashAll([
     isRunning,
+    devicePresent,
     sampleRate,
     bufferFrames,
     inputChannels,
@@ -364,6 +376,7 @@ class EngineSnapshot {
   @override
   String toString() =>
       'EngineSnapshot(running: $isRunning, '
+      'devicePresent: $devicePresent, '
       'sampleRate: $sampleRate, tracks: $trackCount, '
       'master: $masterPositionFrames/$masterLengthFrames, '
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';

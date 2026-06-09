@@ -3,9 +3,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/audio_engine.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
+import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 
@@ -52,6 +54,10 @@ class NativeAudioEngine implements AudioEngine {
     _trackPtr = calloc<le_track_snapshot>();
     _vizPtr = calloc<Float>(LE_VIZ_POINTS);
   }
+
+  /// Capacity of the device-enumeration buffer; devices beyond this are not
+  /// reported (far more than any realistic host exposes).
+  static const int _maxDevices = 64;
 
   final LoopyEngineBindings _bindings;
   late final Pointer<le_engine> _engine;
@@ -119,6 +125,50 @@ class NativeAudioEngine implements AudioEngine {
       return LoopbackInfo.fromNative(ptr);
     } finally {
       calloc.free(ptr);
+    }
+  }
+
+  @override
+  List<AudioDevice> enumerateDevices() {
+    _checkAlive();
+    return [
+      ..._enumerate(isInput: false),
+      ..._enumerate(isInput: true),
+    ];
+  }
+
+  /// Reads one direction's devices via the matching native enumeration call.
+  /// Capacity is fixed; any devices beyond [_maxDevices] are not reported.
+  List<AudioDevice> _enumerate({required bool isInput}) {
+    final outPtr = calloc<le_device_info>(_maxDevices);
+    final countPtr = calloc<Int32>();
+    try {
+      final code = isInput
+          ? _bindings.le_enumerate_capture_devices(
+              outPtr,
+              _maxDevices,
+              countPtr,
+            )
+          : _bindings.le_enumerate_playback_devices(
+              outPtr,
+              _maxDevices,
+              countPtr,
+            );
+      if (code != 0) return const [];
+      final count = countPtr.value;
+      return [
+        for (var i = 0; i < count; i++)
+          AudioDevice(
+            id: readNativeString((outPtr + i).ref.id),
+            name: readNativeString((outPtr + i).ref.name),
+            isDefault: (outPtr + i).ref.is_default != 0,
+            isInput: isInput,
+          ),
+      ];
+    } finally {
+      calloc
+        ..free(outPtr)
+        ..free(countPtr);
     }
   }
 

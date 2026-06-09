@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy_engine/loopy_engine.dart';
+import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 
 void main() {
@@ -15,6 +16,8 @@ void main() {
       expect(config.outputChannels, 0);
       expect(config.passthrough, isFalse);
       expect(config.mergeToMono, isFalse);
+      expect(config.playbackDeviceId, '');
+      expect(config.captureDeviceId, '');
     });
   });
 
@@ -29,6 +32,8 @@ void main() {
         maxLoopFrames: 480000,
         mergeToMono: true,
         useLoopbackCapture: true,
+        playbackDeviceId: 'out-device-1',
+        captureDeviceId: 'in-device-2',
       );
       final ptr = calloc<le_config>();
       try {
@@ -41,6 +46,33 @@ void main() {
         expect(ptr.ref.max_loop_frames, 480000);
         expect(ptr.ref.merge_to_mono, 1);
         expect(ptr.ref.use_loopback_capture, 1);
+        expect(readNativeString(ptr.ref.playback_device_id), 'out-device-1');
+        expect(readNativeString(ptr.ref.capture_device_id), 'in-device-2');
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('empty device ids write a NUL-terminated empty string', () {
+      const config = EngineConfig();
+      final ptr = calloc<le_config>();
+      try {
+        config.writeTo(ptr);
+        expect(readNativeString(ptr.ref.playback_device_id), '');
+        expect(readNativeString(ptr.ref.capture_device_id), '');
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('a device id longer than the buffer is truncated and terminated', () {
+      final config = EngineConfig(playbackDeviceId: 'x' * 400);
+      final ptr = calloc<le_config>();
+      try {
+        config.writeTo(ptr);
+        final written = readNativeString(ptr.ref.playback_device_id);
+        expect(written.length, 255); // 256-byte buffer, 1 byte for the NUL
+        expect(written, 'x' * 255);
       } finally {
         calloc.free(ptr);
       }
@@ -70,6 +102,15 @@ void main() {
       const a = EngineConfig(sampleRate: 48000);
       const b = EngineConfig(sampleRate: 44100);
       expect(a, isNot(equals(b)));
+    });
+
+    test('differing device ids break equality', () {
+      const a = EngineConfig(playbackDeviceId: 'a');
+      const b = EngineConfig(playbackDeviceId: 'b');
+      expect(a, isNot(equals(b)));
+      const c = EngineConfig(captureDeviceId: 'a');
+      const d = EngineConfig();
+      expect(c, isNot(equals(d)));
     });
 
     test('toString surfaces key fields', () {

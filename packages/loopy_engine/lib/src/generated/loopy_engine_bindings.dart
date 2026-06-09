@@ -12,17 +12,16 @@ import 'dart:ffi' as ffi;
 class LoopyEngineBindings {
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
-      _lookup;
+  _lookup;
 
   /// The symbols are looked up in [dynamicLibrary].
   LoopyEngineBindings(ffi.DynamicLibrary dynamicLibrary)
-      : _lookup = dynamicLibrary.lookup;
+    : _lookup = dynamicLibrary.lookup;
 
   /// The symbols are looked up with [lookup].
   LoopyEngineBindings.fromLookup(
-      ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
-          lookup)
-      : _lookup = lookup;
+    ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName) lookup,
+  ) : _lookup = lookup;
 
   /// Returns the miniaudio + engine version string (never NULL).
   ffi.Pointer<ffi.Char> le_version() {
@@ -31,9 +30,10 @@ class LoopyEngineBindings {
 
   late final _le_versionPtr =
       _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function()>>(
-          'le_version');
-  late final _le_version =
-      _le_versionPtr.asFunction<ffi.Pointer<ffi.Char> Function()>();
+        'le_version',
+      );
+  late final _le_version = _le_versionPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function()>();
 
   /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
   /// driver / WASAPI) by enumerating capture devices. Fills *out and returns LE_OK,
@@ -46,12 +46,72 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_detect_loopbackPtr = _lookup<
-          ffi
-          .NativeFunction<ffi.Int32 Function(ffi.Pointer<le_loopback_info>)>>(
-      'le_detect_loopback');
+  late final _le_detect_loopbackPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_loopback_info>)>
+      >('le_detect_loopback');
   late final _le_detect_loopback = _le_detect_loopbackPtr
       .asFunction<int Function(ffi.Pointer<le_loopback_info>)>();
+
+  /// Enumerates the host's playback (output) devices into `out`, a caller-allocated
+  /// array with room for `max` entries, and writes the number filled into *count
+  /// (clamped to `max`). Returns LE_OK, or LE_ERR_INVALID for a null argument,
+  /// non-positive `max`, or an enumeration failure. Uses a transient ma_context, so
+  /// it is safe to call while an engine is already started.
+  int le_enumerate_playback_devices(
+    ffi.Pointer<le_device_info> out,
+    int max,
+    ffi.Pointer<ffi.Int32> count,
+  ) {
+    return _le_enumerate_playback_devices(
+      out,
+      max,
+      count,
+    );
+  }
+
+  late final _le_enumerate_playback_devicesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_device_info>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_enumerate_playback_devices');
+  late final _le_enumerate_playback_devices = _le_enumerate_playback_devicesPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Like le_enumerate_playback_devices but for capture (input) devices.
+  int le_enumerate_capture_devices(
+    ffi.Pointer<le_device_info> out,
+    int max,
+    ffi.Pointer<ffi.Int32> count,
+  ) {
+    return _le_enumerate_capture_devices(
+      out,
+      max,
+      count,
+    );
+  }
+
+  late final _le_enumerate_capture_devicesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_device_info>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_enumerate_capture_devices');
+  late final _le_enumerate_capture_devices = _le_enumerate_capture_devicesPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
+      >();
 
   /// Allocates an engine. Returns NULL on allocation failure.
   ffi.Pointer<le_engine> le_engine_create() {
@@ -60,9 +120,10 @@ class LoopyEngineBindings {
 
   late final _le_engine_createPtr =
       _lookup<ffi.NativeFunction<ffi.Pointer<le_engine> Function()>>(
-          'le_engine_create');
-  late final _le_engine_create =
-      _le_engine_createPtr.asFunction<ffi.Pointer<le_engine> Function()>();
+        'le_engine_create',
+      );
+  late final _le_engine_create = _le_engine_createPtr
+      .asFunction<ffi.Pointer<le_engine> Function()>();
 
   /// Stops (if running) and frees the engine. Safe to call with NULL.
   void le_engine_destroy(
@@ -75,9 +136,10 @@ class LoopyEngineBindings {
 
   late final _le_engine_destroyPtr =
       _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_destroy');
-  late final _le_engine_destroy =
-      _le_engine_destroyPtr.asFunction<void Function(ffi.Pointer<le_engine>)>();
+        'le_engine_destroy',
+      );
+  late final _le_engine_destroy = _le_engine_destroyPtr
+      .asFunction<void Function(ffi.Pointer<le_engine>)>();
 
   /// Opens the default duplex device with `config` and starts the audio callback.
   /// Allocates the track buffers before the device starts. Returns LE_OK or an
@@ -92,12 +154,16 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_startPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>,
-              ffi.Pointer<le_config>)>>('le_engine_start');
-  late final _le_engine_start = _le_engine_startPtr.asFunction<
-      int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_config>)>();
+  late final _le_engine_startPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Pointer<le_config>)
+        >
+      >('le_engine_start');
+  late final _le_engine_start = _le_engine_startPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<le_config>)
+      >();
 
   /// Stops and closes the device. Returns LE_OK or an le_result error.
   int le_engine_stop(
@@ -110,9 +176,10 @@ class LoopyEngineBindings {
 
   late final _le_engine_stopPtr =
       _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_stop');
-  late final _le_engine_stop =
-      _le_engine_stopPtr.asFunction<int Function(ffi.Pointer<le_engine>)>();
+        'le_engine_stop',
+      );
+  late final _le_engine_stop = _le_engine_stopPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
   /// Copies the current state snapshot into *out. No-op if either pointer is NULL.
   void le_engine_get_snapshot(
@@ -125,12 +192,16 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_get_snapshotPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Void Function(ffi.Pointer<le_engine>,
-              ffi.Pointer<le_snapshot>)>>('le_engine_get_snapshot');
-  late final _le_engine_get_snapshot = _le_engine_get_snapshotPtr.asFunction<
-      void Function(ffi.Pointer<le_engine>, ffi.Pointer<le_snapshot>)>();
+  late final _le_engine_get_snapshotPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<le_engine>, ffi.Pointer<le_snapshot>)
+        >
+      >('le_engine_get_snapshot');
+  late final _le_engine_get_snapshot = _le_engine_get_snapshotPtr
+      .asFunction<
+        void Function(ffi.Pointer<le_engine>, ffi.Pointer<le_snapshot>)
+      >();
 
   /// Copies track `channel`'s snapshot into *out. Out-of-range channels yield an
   /// empty track. No-op if either pointer is NULL.
@@ -146,13 +217,24 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_get_trackPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Void Function(ffi.Pointer<le_engine>, ffi.Int32,
-              ffi.Pointer<le_track_snapshot>)>>('le_engine_get_track');
-  late final _le_engine_get_track = _le_engine_get_trackPtr.asFunction<
-      void Function(
-          ffi.Pointer<le_engine>, int, ffi.Pointer<le_track_snapshot>)>();
+  late final _le_engine_get_trackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<le_track_snapshot>,
+          )
+        >
+      >('le_engine_get_track');
+  late final _le_engine_get_track = _le_engine_get_trackPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<le_track_snapshot>,
+        )
+      >();
 
   /// Copies up to `max_points` of the loop waveform — peaks of the mixed output
   /// indexed by position across exactly one master loop (bucket 0 = loop start),
@@ -171,12 +253,20 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_read_visualPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Float>,
-              ffi.Int32)>>('le_engine_read_visual');
-  late final _le_engine_read_visual = _le_engine_read_visualPtr.asFunction<
-      int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Float>, int)>();
+  late final _le_engine_read_visualPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_read_visual');
+  late final _le_engine_read_visual = _le_engine_read_visualPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Float>, int)
+      >();
 
   /// Like le_engine_read_visual but for a single track's own contribution
   /// (channel 0..track_count-1), for per-track waveform thumbnails.
@@ -194,17 +284,21 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_read_track_visualPtr = _lookup<
-      ffi.NativeFunction<
+  late final _le_engine_read_track_visualPtr =
+      _lookup<
+        ffi.NativeFunction<
           ffi.Int32 Function(
-              ffi.Pointer<le_engine>,
-              ffi.Int32,
-              ffi.Pointer<ffi.Float>,
-              ffi.Int32)>>('le_engine_read_track_visual');
-  late final _le_engine_read_track_visual =
-      _le_engine_read_track_visualPtr.asFunction<
-          int Function(
-              ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)>();
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_read_track_visual');
+  late final _le_engine_read_track_visual = _le_engine_read_track_visualPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)
+      >();
 
   /// Name of the active duplex/playback device, or "" if not running. The returned
   /// pointer is owned by the engine and valid until the next start/stop.
@@ -216,10 +310,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_device_namePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<le_engine>)>>('le_engine_device_name');
+  late final _le_engine_device_namePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<le_engine>)
+        >
+      >('le_engine_device_name');
   late final _le_engine_device_name = _le_engine_device_namePtr
       .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<le_engine>)>();
 
@@ -239,10 +335,17 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_post_commandPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32,
-              ffi.Float)>>('le_engine_post_command');
+  late final _le_engine_post_commandPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_post_command');
   late final _le_engine_post_command = _le_engine_post_commandPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
 
@@ -258,7 +361,8 @@ class LoopyEngineBindings {
 
   late final _le_engine_measure_latencyPtr =
       _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-          'le_engine_measure_latency');
+        'le_engine_measure_latency',
+      );
   late final _le_engine_measure_latency = _le_engine_measure_latencyPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
@@ -278,10 +382,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_recordPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_record');
+  late final _le_engine_recordPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_record');
   late final _le_engine_record = _le_engine_recordPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
@@ -295,10 +401,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_stop_trackPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_stop_track');
+  late final _le_engine_stop_trackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_stop_track');
   late final _le_engine_stop_track = _le_engine_stop_trackPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
@@ -312,10 +420,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_playPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_play');
+  late final _le_engine_playPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_play');
   late final _le_engine_play = _le_engine_playPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
@@ -329,10 +439,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_clearPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_clear');
+  late final _le_engine_clearPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_clear');
   late final _le_engine_clear = _le_engine_clearPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
@@ -346,10 +458,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_undoPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_undo');
+  late final _le_engine_undoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_undo');
   late final _le_engine_undo = _le_engine_undoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
@@ -363,10 +477,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_redoPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(
-              ffi.Pointer<le_engine>, ffi.Int32)>>('le_engine_redo');
+  late final _le_engine_redoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_redo');
   late final _le_engine_redo = _le_engine_redoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
@@ -382,10 +498,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_set_track_volumePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
-              ffi.Float)>>('le_engine_set_track_volume');
+  late final _le_engine_set_track_volumePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_track_volume');
   late final _le_engine_set_track_volume = _le_engine_set_track_volumePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
 
@@ -401,10 +519,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_set_track_mutePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
-              ffi.Int32)>>('le_engine_set_track_mute');
+  late final _le_engine_set_track_mutePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_mute');
   late final _le_engine_set_track_mute = _le_engine_set_track_mutePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
@@ -424,10 +544,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_set_input_maskPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
-              ffi.Int32)>>('le_engine_set_input_mask');
+  late final _le_engine_set_input_maskPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_input_mask');
   late final _le_engine_set_input_mask = _le_engine_set_input_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
@@ -446,10 +568,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_set_output_maskPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32,
-              ffi.Int32)>>('le_engine_set_output_mask');
+  late final _le_engine_set_output_maskPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_output_mask');
   late final _le_engine_set_output_mask = _le_engine_set_output_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
@@ -464,10 +588,12 @@ class LoopyEngineBindings {
     );
   }
 
-  late final _le_engine_set_record_offsetPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>,
-              ffi.Int32)>>('le_engine_set_record_offset');
+  late final _le_engine_set_record_offsetPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_record_offset');
   late final _le_engine_set_record_offset = _le_engine_set_record_offsetPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 }
@@ -488,13 +614,13 @@ enum le_result {
   const le_result(this.value);
 
   static le_result fromValue(int value) => switch (value) {
-        0 => LE_OK,
-        -1 => LE_ERR_INVALID,
-        -2 => LE_ERR_ALREADY_RUNNING,
-        -3 => LE_ERR_NOT_RUNNING,
-        -4 => LE_ERR_DEVICE,
-        _ => throw ArgumentError('Unknown value for le_result: $value'),
-      };
+    0 => LE_OK,
+    -1 => LE_ERR_INVALID,
+    -2 => LE_ERR_ALREADY_RUNNING,
+    -3 => LE_ERR_NOT_RUNNING,
+    -4 => LE_ERR_DEVICE,
+    _ => throw ArgumentError('Unknown value for le_result: $value'),
+  };
 }
 
 /// Latency-harness phase, mirrored in le_snapshot.latency_state.
@@ -514,12 +640,12 @@ enum le_latency_state {
   const le_latency_state(this.value);
 
   static le_latency_state fromValue(int value) => switch (value) {
-        0 => LE_LATENCY_IDLE,
-        1 => LE_LATENCY_MEASURING,
-        2 => LE_LATENCY_DONE,
-        3 => LE_LATENCY_TIMEOUT,
-        _ => throw ArgumentError('Unknown value for le_latency_state: $value'),
-      };
+    0 => LE_LATENCY_IDLE,
+    1 => LE_LATENCY_MEASURING,
+    2 => LE_LATENCY_DONE,
+    3 => LE_LATENCY_TIMEOUT,
+    _ => throw ArgumentError('Unknown value for le_latency_state: $value'),
+  };
 }
 
 /// Per-track state machine, mirrored in le_snapshot.track_state.
@@ -540,13 +666,13 @@ enum le_track_state {
   const le_track_state(this.value);
 
   static le_track_state fromValue(int value) => switch (value) {
-        0 => LE_TRACK_EMPTY,
-        1 => LE_TRACK_RECORDING,
-        2 => LE_TRACK_OVERDUBBING,
-        3 => LE_TRACK_PLAYING,
-        4 => LE_TRACK_STOPPED,
-        _ => throw ArgumentError('Unknown value for le_track_state: $value'),
-      };
+    0 => LE_TRACK_EMPTY,
+    1 => LE_TRACK_RECORDING,
+    2 => LE_TRACK_OVERDUBBING,
+    3 => LE_TRACK_PLAYING,
+    4 => LE_TRACK_STOPPED,
+    _ => throw ArgumentError('Unknown value for le_track_state: $value'),
+  };
 }
 
 /// Classification of a cable-free loopback path used to auto-measure latency.
@@ -569,12 +695,12 @@ enum le_loopback_kind {
   const le_loopback_kind(this.value);
 
   static le_loopback_kind fromValue(int value) => switch (value) {
-        0 => LE_LOOPBACK_NONE,
-        1 => LE_LOOPBACK_WASAPI,
-        2 => LE_LOOPBACK_MONITOR,
-        3 => LE_LOOPBACK_VIRTUAL,
-        _ => throw ArgumentError('Unknown value for le_loopback_kind: $value'),
-      };
+    0 => LE_LOOPBACK_NONE,
+    1 => LE_LOOPBACK_WASAPI,
+    2 => LE_LOOPBACK_MONITOR,
+    3 => LE_LOOPBACK_VIRTUAL,
+    _ => throw ArgumentError('Unknown value for le_loopback_kind: $value'),
+  };
 }
 
 /// Result of loopback detection. `device_name` is the capture device to open for
@@ -634,20 +760,39 @@ enum le_command_code {
   const le_command_code(this.value);
 
   static le_command_code fromValue(int value) => switch (value) {
-        0 => LE_CMD_NONE,
-        1 => LE_CMD_MEASURE_LATENCY,
-        2 => LE_CMD_RECORD,
-        3 => LE_CMD_STOP,
-        4 => LE_CMD_PLAY,
-        5 => LE_CMD_CLEAR,
-        6 => LE_CMD_UNDO,
-        7 => LE_CMD_SET_VOLUME,
-        8 => LE_CMD_SET_MUTE,
-        13 => LE_CMD_SET_RECORD_OFFSET,
-        14 => LE_CMD_SET_INPUT_MASK,
-        15 => LE_CMD_SET_OUTPUT_MASK,
-        _ => throw ArgumentError('Unknown value for le_command_code: $value'),
-      };
+    0 => LE_CMD_NONE,
+    1 => LE_CMD_MEASURE_LATENCY,
+    2 => LE_CMD_RECORD,
+    3 => LE_CMD_STOP,
+    4 => LE_CMD_PLAY,
+    5 => LE_CMD_CLEAR,
+    6 => LE_CMD_UNDO,
+    7 => LE_CMD_SET_VOLUME,
+    8 => LE_CMD_SET_MUTE,
+    13 => LE_CMD_SET_RECORD_OFFSET,
+    14 => LE_CMD_SET_INPUT_MASK,
+    15 => LE_CMD_SET_OUTPUT_MASK,
+    _ => throw ArgumentError('Unknown value for le_command_code: $value'),
+  };
+}
+
+/// A hardware audio device discovered by enumeration (le_enumerate_*).
+///
+/// `id` is an opaque, backend-specific token suitable for pinning a device via
+/// le_config.playback_device_id / capture_device_id. On every string-id backend
+/// (CoreAudio, ALSA, PulseAudio, sndio) it is the device's native id string; it
+/// round-trips byte-for-byte back into le_config. `name` is the human-readable
+/// label; `is_default` marks the system default for that direction.
+final class le_device_info extends ffi.Struct {
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> id;
+
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> name;
+
+  /// 0/1
+  @ffi.Int32()
+  external int is_default;
 }
 
 /// Requested device configuration. Any channel field set to 0 uses the device
@@ -682,6 +827,15 @@ final class le_config extends ffi.Struct {
   /// hardware playback channels (0 => device default)
   @ffi.Int32()
   external int output_channels;
+
+  /// Pin a specific device by id (an `id` from le_enumerate_*). An empty string
+  /// opens the system default (the unchanged behaviour). use_loopback_capture
+  /// overrides capture_device_id when a loopback device is detected.
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> playback_device_id;
+
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> capture_device_id;
 }
 
 /// Per-track state published in le_snapshot.tracks.
@@ -736,9 +890,17 @@ final class le_track_snapshot extends ffi.Struct {
 /// Dart on a render-rate timer. Fields are individually atomic; readers may see
 /// a one-frame-stale mix across fields, which is fine for metering/UI.
 final class le_snapshot extends ffi.Struct {
-  /// 0/1
+  /// 0/1: device is open and the callback is live
   @ffi.Int32()
   external int running;
+
+  /// 0/1: the pinned (or default) device is currently present. DISTINCT from
+  /// `running`: a device can be lost (device_present == 0) while the engine
+  /// object still "runs" until it is restarted. Set from the RT-adjacent device
+  /// notification callback; the Dart layer derives a higher-level isConnected
+  /// from it and drives any reconnection (no reconnection happens in native).
+  @ffi.Int32()
+  external int device_present;
 
   @ffi.Int32()
   external int sample_rate;

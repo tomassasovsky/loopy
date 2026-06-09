@@ -5,6 +5,7 @@
 /// exported — depend on `AudioEngine` and the value objects instead.
 library;
 
+export 'src/audio_device.dart' show AudioDevice;
 export 'src/audio_engine.dart' show AudioEngine, EngineException, EngineResult;
 export 'src/engine_config.dart' show EngineConfig;
 export 'src/engine_snapshot.dart'

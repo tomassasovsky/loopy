@@ -113,6 +113,7 @@ static void test_engine_lifecycle_without_device(void) {
   le_snapshot snap;
   le_engine_get_snapshot(engine, &snap);
   CHECK(snap.running == 0);
+  CHECK(snap.device_present == 0); /* no device opened yet */
   CHECK(snap.frames_processed == 0);
   CHECK(snap.latency_state == LE_LATENCY_IDLE);
 
@@ -911,6 +912,36 @@ static void test_detect_loopback_runs(void) {
   CHECK(le_detect_loopback(NULL) == LE_ERR_INVALID);
 }
 
+/* Enumeration is environment-dependent (a headless box may report zero devices),
+ * so assert it runs safely and fills a consistent, NUL-terminated struct rather
+ * than asserting any specific device. This is the device-free smoke test for the
+ * id/name plumbing; pinning a resolved id into a live device is covered by the
+ * manual unplug acceptance test (it requires an open device). */
+static void test_enumerate_devices_runs(void) {
+  printf("test_enumerate_devices_runs\n");
+  enum { MAXD = 32 };
+  le_device_info devices[MAXD];
+  int32_t count = -1;
+
+  CHECK(le_enumerate_playback_devices(devices, MAXD, &count) == LE_OK);
+  CHECK(count >= 0 && count <= MAXD);
+  for (int32_t i = 0; i < count; ++i) {
+    CHECK(strlen(devices[i].id) < sizeof(devices[i].id));     /* NUL-terminated */
+    CHECK(strlen(devices[i].name) < sizeof(devices[i].name)); /* NUL-terminated */
+    CHECK(devices[i].is_default == 0 || devices[i].is_default == 1);
+  }
+
+  count = -1;
+  CHECK(le_enumerate_capture_devices(devices, MAXD, &count) == LE_OK);
+  CHECK(count >= 0 && count <= MAXD);
+
+  /* Bad arguments are rejected without touching the output. */
+  CHECK(le_enumerate_playback_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
+  CHECK(le_enumerate_playback_devices(devices, MAXD, NULL) == LE_ERR_INVALID);
+  CHECK(le_enumerate_playback_devices(devices, 0, &count) == LE_ERR_INVALID);
+  CHECK(le_enumerate_capture_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_ring_init_rejects_bad_capacity();
@@ -943,6 +974,7 @@ int main(void) {
   test_visualization_tap();
   test_classify_capture_device();
   test_detect_loopback_runs();
+  test_enumerate_devices_runs();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
