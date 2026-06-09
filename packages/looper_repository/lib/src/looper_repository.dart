@@ -38,7 +38,16 @@ class LooperRepository {
   EngineConfig? _lastEngineConfig;
 
   /// Distinct stream of looper states.
-  Stream<LooperState> get looperState => _controller.stream;
+  ///
+  /// A new subscriber immediately receives the most recent state before live
+  /// updates, so a late listener — e.g. a bloc created after the audio-setup
+  /// flow already drove the engine to a steady state — shows the current tracks
+  /// instead of waiting for the next change.
+  Stream<LooperState> get looperState async* {
+    final last = _last;
+    if (last != null) yield last;
+    yield* _controller.stream;
+  }
 
   /// The current state, read synchronously from the engine.
   LooperState get state => _project(_engine.snapshot());
