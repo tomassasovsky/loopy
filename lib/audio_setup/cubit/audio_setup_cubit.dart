@@ -78,6 +78,17 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       _selectDevice(captureDeviceId: deviceId);
 
   void _selectDevice({String? playbackDeviceId, String? captureDeviceId}) {
+    assert(
+      (playbackDeviceId != null) ^ (captureDeviceId != null),
+      'Either playbackDeviceId or captureDeviceId must be provided, '
+      'but not both',
+    );
+
+    if (playbackDeviceId == state.playbackDeviceId ||
+        captureDeviceId == state.captureDeviceId) {
+      return;
+    }
+
     emit(
       state.copyWith(
         playbackDeviceId: playbackDeviceId,

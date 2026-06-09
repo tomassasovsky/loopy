@@ -253,63 +253,6 @@ class _Toggle extends StatelessWidget {
   }
 }
 
-class _InfoTable extends StatelessWidget {
-  const _InfoTable({required this.rows});
-
-  final List<(String, String)> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _C.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _C.line),
-      ),
-      child: Column(
-        children: [
-          for (var i = 0; i < rows.length; i++)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-              decoration: BoxDecoration(
-                border: i == rows.length - 1
-                    ? null
-                    : const Border(bottom: BorderSide(color: _C.line)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      rows[i].$1,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _C.t2, fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: Text(
-                      rows[i].$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: _C.t1,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: _num,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 class _Hint extends StatelessWidget {
   const _Hint(this.text, {this.icon = Icons.info_outline, super.key});
 

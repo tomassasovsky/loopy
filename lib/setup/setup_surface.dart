@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+/// Tabular figures keep numeric values vertically aligned in status tables.
+const _setupNumerals = [FontFeature.tabularFigures()];
+
 /// Shared palette for stepped setup surfaces (audio onboarding, settings).
 class SetupSurfaceColors {
   static const bg = Color(0xFF08080A);
@@ -54,18 +57,15 @@ class SetupSurfacePanel extends StatelessWidget {
       body: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: SetupSurfaceColors.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: SetupSurfaceColors.line),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: child,
-              ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: SetupSurfaceColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: SetupSurfaceColors.line),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: child,
             ),
           ),
         ),
@@ -230,6 +230,73 @@ class SetupNavRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A bordered card of label/value rows, used for read-only status (the audio
+/// running panel and the in-settings audio status). Values use tabular figures
+/// so numbers stay aligned.
+class SetupInfoTable extends StatelessWidget {
+  /// Creates a [SetupInfoTable] from `(label, value)` [rows].
+  const SetupInfoTable({required this.rows, super.key});
+
+  /// The label/value pairs, rendered one per row in order.
+  final List<(String, String)> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: SetupSurfaceColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: SetupSurfaceColors.line),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+              decoration: BoxDecoration(
+                border: i == rows.length - 1
+                    ? null
+                    : const Border(
+                        bottom: BorderSide(color: SetupSurfaceColors.line),
+                      ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      rows[i].$1,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SetupSurfaceColors.t2,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      rows[i].$2,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: SetupSurfaceColors.t1,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: _setupNumerals,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

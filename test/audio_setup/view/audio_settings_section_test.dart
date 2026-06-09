@@ -96,11 +96,58 @@ void main() {
     verify(() => cubit.setPlaybackDevice('out-1')).called(1);
   });
 
+  testWidgets('selecting a capture device forwards to the cubit', (
+    tester,
+  ) async {
+    seed(runningState);
+    await pumpSection(tester);
+
+    await tester.tap(
+      find.byKey(const Key('audioSettings_captureDevice_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scarlett Input 1').last);
+    await tester.pumpAndSettle();
+
+    verify(() => cubit.setCaptureDevice('in-1')).called(1);
+  });
+
   testWidgets('the measure button triggers a measurement', (tester) async {
     seed(runningState);
     await pumpSection(tester);
 
     await tester.tap(find.byKey(const Key('audioSettings_measure_button')));
     verify(cubit.measureLatency).called(1);
+  });
+
+  testWidgets('shows a measuring label while a measurement is in flight', (
+    tester,
+  ) async {
+    seed(
+      const AudioSetupState(
+        status: AudioSetupStatus.running,
+        engineStatus: EngineStatus(
+          deviceName: 'Scarlett 4i4',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+          latencyState: LatencyState.measuring,
+        ),
+      ),
+    );
+    await pumpSection(tester);
+
+    // Both the status row and the action button reflect the measuring state.
+    expect(find.text('Measuring…'), findsWidgets);
+  });
+
+  testWidgets('shows the not-running status before the engine starts', (
+    tester,
+  ) async {
+    seed(const AudioSetupState()); // stopped, empty engine status
+    await pumpSection(tester);
+
+    expect(find.text('Not running'), findsOneWidget);
+    expect(find.text('Not measured'), findsOneWidget);
   });
 }
