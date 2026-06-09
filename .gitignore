@@ -4,6 +4,7 @@
 *.pyc
 *.swp
 .DS_Store
+devtools_options.yaml
 .atom/
 .build/
 .buildlog/

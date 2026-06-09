@@ -126,7 +126,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   on-machine run to confirm visually.) `desktop_multi_window` is pinned to
   pub.dev `^0.2.0` (the SPM-fork branch was dropped; CocoaPods builds fine).
 - **Auto-start audio + first-run flow:** the last-used audio config (sample
-  rate / buffer / monitor / merge-to-mono) is persisted on a successful start
+  rate / buffer / monitor) is persisted on a successful start
   (`SettingsRepository.save/loadAudioConfig`). On launch, `tryAutoStartEngine`
   loads it and starts the engine; if none is saved (first run) the **Audio Setup
   page is the start screen** until the engine connects, then it hands off to the

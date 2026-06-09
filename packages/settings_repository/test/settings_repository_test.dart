@@ -226,16 +226,19 @@ void main() {
 
     test('ignores a legacy audio.merge_to_mono key on load', () async {
       // The merge-to-mono feature was removed; an old store may still carry the
-      // key. Loading must succeed and simply not read it.
+      // key. Loading must succeed and simply not read it. monitorInput is set
+      // to false (against the legacy bool's true) so the assertion fails if the
+      // stale key were ever wired back into a real field.
       await store.setInt('audio.sample_rate', 48000);
       await store.setInt('audio.buffer_frames', 128);
+      await store.setBool('audio.monitor_input', value: false);
       await store.setBool('audio.merge_to_mono', value: true);
       expect(
         await repository.loadAudioConfig(),
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
+          monitorInput: false,
         ),
       );
     });
