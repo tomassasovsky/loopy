@@ -122,5 +122,197 @@ void main() {
       expect(find.byKey(const Key('routingGraph_view')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('dragging an input onto a track toggles its input routing', (
+      tester,
+    ) async {
+      int? channel;
+      int? mask;
+      const tracks = [Track()]; // channel 0, inputMask 0x1, outputMask 0x3
+      final graph = RoutingGraph.fromTracks(
+        tracks: tracks,
+        inputChannels: 2,
+        outputChannels: 2,
+      );
+
+      await pump(
+        tester,
+        RoutingGraphView(
+          tracks: tracks,
+          inputChannels: 2,
+          outputChannels: 2,
+          onInputMaskChanged: (c, m) {
+            channel = c;
+            mask = m;
+          },
+        ),
+      );
+
+      final rect = tester.getRect(find.byKey(const Key('routingGraph_view')));
+      Offset globalOf(RoutingNode node) =>
+          rect.topLeft + RoutingGraphView.nodeCenter(node, rect.size, graph);
+
+      // Input 2 (bit 1) is not yet wired; dragging it onto the track adds it.
+      final from = globalOf(graph.inputs[1]);
+      await tester.dragFrom(from, globalOf(graph.tracks[0]) - from);
+      await tester.pump();
+
+      expect(channel, 0);
+      expect(mask, 0x3); // 0x1 | (1 << 1)
+    });
+
+    testWidgets('dragging a track onto an output toggles its output routing', (
+      tester,
+    ) async {
+      int? channel;
+      int? mask;
+      const tracks = [Track()]; // outputMask 0x3 (out 1 & 2)
+      final graph = RoutingGraph.fromTracks(
+        tracks: tracks,
+        inputChannels: 2,
+        outputChannels: 2,
+      );
+
+      await pump(
+        tester,
+        RoutingGraphView(
+          tracks: tracks,
+          inputChannels: 2,
+          outputChannels: 2,
+          onOutputMaskChanged: (c, m) {
+            channel = c;
+            mask = m;
+          },
+        ),
+      );
+
+      final rect = tester.getRect(find.byKey(const Key('routingGraph_view')));
+      Offset globalOf(RoutingNode node) =>
+          rect.topLeft + RoutingGraphView.nodeCenter(node, rect.size, graph);
+
+      // Output 2 (bit 1) is wired; dragging the track onto it removes it.
+      final from = globalOf(graph.tracks[0]);
+      await tester.dragFrom(from, globalOf(graph.outputs[1]) - from);
+      await tester.pump();
+
+      expect(channel, 0);
+      expect(mask, 0x1); // 0x3 & ~(1 << 1)
+    });
+
+    testWidgets('dragging from a loopback input does nothing', (tester) async {
+      var called = false;
+      const tracks = [Track()];
+      final graph = RoutingGraph.fromTracks(
+        tracks: tracks,
+        inputChannels: 2,
+        outputChannels: 2,
+        excludedInputMask: 0x2, // input 2 is loopback
+      );
+
+      await pump(
+        tester,
+        RoutingGraphView(
+          tracks: tracks,
+          inputChannels: 2,
+          outputChannels: 2,
+          excludedInputMask: 0x2,
+          onInputMaskChanged: (_, _) => called = true,
+        ),
+      );
+
+      final rect = tester.getRect(find.byKey(const Key('routingGraph_view')));
+      Offset globalOf(RoutingNode node) =>
+          rect.topLeft + RoutingGraphView.nodeCenter(node, rect.size, graph);
+
+      final from = globalOf(graph.inputs[1]); // the loopback input
+      await tester.dragFrom(from, globalOf(graph.tracks[0]) - from);
+      await tester.pump();
+
+      expect(called, isFalse);
+    });
+  });
+
+  group('RoutingGraphView.resolveEdit', () {
+    const track0 = RoutingNode(
+      kind: RoutingNodeKind.track,
+      index: 0,
+      label: 'Track 1',
+    );
+    const in0 = RoutingNode(
+      kind: RoutingNodeKind.input,
+      index: 0,
+      label: 'In 1',
+    );
+    const in1 = RoutingNode(
+      kind: RoutingNodeKind.input,
+      index: 1,
+      label: 'In 2',
+    );
+    const out1 = RoutingNode(
+      kind: RoutingNodeKind.output,
+      index: 1,
+      label: 'Out 2',
+    );
+    const tracks = [Track()]; // inputMask 0x1, outputMask 0x3
+
+    test('input→track adds an unset input bit', () {
+      expect(
+        RoutingGraphView.resolveEdit(in1, track0, tracks),
+        const RoutingEdit(isInput: true, channel: 0, mask: 0x3),
+      );
+    });
+
+    test('input→track clears an already-set input bit', () {
+      expect(
+        RoutingGraphView.resolveEdit(in0, track0, tracks),
+        const RoutingEdit(isInput: true, channel: 0, mask: 0x0),
+      );
+    });
+
+    test('is direction-agnostic (track→input resolves the same)', () {
+      expect(
+        RoutingGraphView.resolveEdit(track0, in1, tracks),
+        RoutingGraphView.resolveEdit(in1, track0, tracks),
+      );
+    });
+
+    test('track→output toggles the output bit', () {
+      expect(
+        RoutingGraphView.resolveEdit(track0, out1, tracks),
+        const RoutingEdit(isInput: false, channel: 0, mask: 0x1),
+      );
+    });
+
+    test('an excluded input never resolves to an edit', () {
+      const excluded = RoutingNode(
+        kind: RoutingNodeKind.input,
+        index: 1,
+        label: 'In 2',
+        excluded: true,
+      );
+      expect(RoutingGraphView.resolveEdit(excluded, track0, tracks), isNull);
+    });
+
+    test('a non-track pair (input↔output) resolves to nothing', () {
+      expect(RoutingGraphView.resolveEdit(in0, out1, tracks), isNull);
+    });
+
+    test('two tracks resolve to nothing', () {
+      const track1 = RoutingNode(
+        kind: RoutingNodeKind.track,
+        index: 1,
+        label: 'Track 2',
+      );
+      expect(RoutingGraphView.resolveEdit(track0, track1, tracks), isNull);
+    });
+
+    test('a track index out of range resolves to nothing', () {
+      const ghost = RoutingNode(
+        kind: RoutingNodeKind.track,
+        index: 9,
+        label: 'Track 10',
+      );
+      expect(RoutingGraphView.resolveEdit(ghost, in0, tracks), isNull);
+    });
   });
 }
