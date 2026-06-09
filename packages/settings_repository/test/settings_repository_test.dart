@@ -265,4 +265,48 @@ void main() {
       expect(await repository.loadBankEnabled(), isTrue);
     });
   });
+
+  group('default performance mode', () {
+    test('returns null when unset', () async {
+      expect(await repository.loadDefaultPerformanceMode(), isNull);
+    });
+
+    test('round-trips a saved token', () async {
+      await repository.saveDefaultPerformanceMode('play');
+      expect(await repository.loadDefaultPerformanceMode(), 'play');
+    });
+  });
+
+  group('refresh rate', () {
+    test('defaults to 60 Hz when unset', () async {
+      expect(await repository.loadRefreshHz(), 60);
+    });
+
+    test('round-trips a saved rate', () async {
+      await repository.saveRefreshHz(120);
+      expect(await repository.loadRefreshHz(), 120);
+    });
+  });
+
+  group('StoredAudioConfig.maxLoopMinutes', () {
+    test(
+      'defaults to 0 (engine default) and round-trips a saved value',
+      () async {
+        const config = StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          monitorInput: true,
+          maxLoopMinutes: 5,
+        );
+        await repository.saveAudioConfig(config);
+        expect((await repository.loadAudioConfig())?.maxLoopMinutes, 5);
+      },
+    );
+
+    test('defaults to 0 when only rate/buffer are set', () async {
+      await store.setInt('audio.sample_rate', 48000);
+      await store.setInt('audio.buffer_frames', 128);
+      expect((await repository.loadAudioConfig())?.maxLoopMinutes, 0);
+    });
+  });
 }

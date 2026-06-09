@@ -46,6 +46,37 @@ class AudioSettingsSection extends StatelessWidget {
           onSelected: cubit.setCaptureDevice,
         ),
         const SizedBox(height: 28),
+        const SetupGroupLabel('MONITORING'),
+        const SizedBox(height: 12),
+        SetupToggleRow(
+          toggleKey: const Key('audioSettings_monitor_switch'),
+          title: 'Monitor input',
+          subtitle: 'Hear the live input through the outputs',
+          value: state.monitorInput,
+          onChanged: (on) => cubit.setMonitorInput(monitorInput: on),
+        ),
+        const SizedBox(height: 28),
+        const SetupGroupLabel('RECORDING'),
+        const SizedBox(height: 12),
+        const Text(
+          'Maximum loop length per track. A higher cap reserves more memory '
+          'per track. Changing it reopens the device.',
+          style: setupBody,
+        ),
+        const SizedBox(height: 12),
+        SetupOptionRow<int>(
+          selected: state.maxLoopMinutes,
+          onSelected: cubit.setMaxLoopMinutes,
+          options: [
+            for (final m in AudioSetupState.maxLoopMinuteOptions)
+              SetupOption(
+                value: m,
+                label: m == 0 ? 'Default' : '$m min',
+                optionKey: Key('audioSettings_maxLoop_$m'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 28),
         const SetupGroupLabel('STATUS'),
         const SizedBox(height: 12),
         SetupInfoTable(

@@ -24,25 +24,36 @@ class BigPictureCubit extends Cubit<BigPictureState> {
   Future<void>? _loadFuture;
   int _loadGeneration = 0;
 
-  /// Restores any persisted track names.
-  Future<void> load() => _loadFuture ??= _restoreNames();
+  /// Restores any persisted track names and the default performance mode.
+  Future<void> load() => _loadFuture ??= _restore();
 
-  Future<void> _restoreNames() async {
+  Future<void> _restore() async {
     final generation = ++_loadGeneration;
     final names = [...state.names];
     for (var i = 0; i < names.length; i++) {
       final saved = await _settings.loadTrackName(i);
       if (saved != null && saved.isNotEmpty) names[i] = saved;
     }
+    final defaultMode = PerformanceMode.fromToken(
+      await _settings.loadDefaultPerformanceMode(),
+    );
     if (!isClosed && generation == _loadGeneration) {
-      emit(state.copyWith(names: names));
+      // Boot the live mode into the restored default.
+      emit(
+        state.copyWith(
+          names: names,
+          mode: defaultMode,
+          defaultMode: defaultMode,
+        ),
+      );
     }
   }
 
   /// Selects track [channel] (the highlighted tile).
   void select(int channel) => emit(state.copyWith(selectedChannel: channel));
 
-  /// Toggles between record and play performance modes.
+  /// Toggles between record and play performance modes. Transient — does not
+  /// change the persisted [BigPictureState.defaultMode].
   void toggleMode() => emit(
     state.copyWith(
       mode: state.mode == PerformanceMode.record
@@ -50,6 +61,13 @@ class BigPictureCubit extends Cubit<BigPictureState> {
           : PerformanceMode.record,
     ),
   );
+
+  /// Sets and persists the default performance [mode] the view boots into, and
+  /// applies it to the live mode now.
+  Future<void> setDefaultPerformanceMode(PerformanceMode mode) async {
+    emit(state.copyWith(mode: mode, defaultMode: mode));
+    await _settings.saveDefaultPerformanceMode(mode.token);
+  }
 
   /// Renames track [channel] and persists the new [name].
   Future<void> rename(int channel, String name) async {

@@ -19,6 +19,9 @@ Future<bool> tryAutoStartEngine({
       inputChannels: saved.inputChannels,
       outputChannels: saved.outputChannels,
       passthrough: saved.monitorInput,
+      maxLoopFrames: saved.maxLoopMinutes <= 0
+          ? 0
+          : saved.maxLoopMinutes * 60 * saved.sampleRate,
       useLoopbackCapture: loopback.isAutoRoutable,
       playbackDeviceId: saved.playbackDeviceId,
       captureDeviceId: saved.captureDeviceId,

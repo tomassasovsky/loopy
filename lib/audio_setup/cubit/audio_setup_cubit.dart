@@ -60,9 +60,22 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setBufferFrames(int bufferFrames) =>
       emit(state.copyWith(bufferFrames: bufferFrames));
 
-  /// Toggles input monitoring (applied on the next start).
-  void setMonitorInput({required bool monitorInput}) =>
-      emit(state.copyWith(monitorInput: monitorInput));
+  /// Toggles input monitoring. Persists the choice and, when the engine is
+  /// running, reopens the device so it takes effect immediately.
+  void setMonitorInput({required bool monitorInput}) {
+    if (monitorInput == state.monitorInput) return;
+    emit(state.copyWith(monitorInput: monitorInput));
+    _persistAndApply();
+  }
+
+  /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine
+  /// default). Persists the choice and, when running, reopens the device so the
+  /// engine reallocates buffers at the new cap.
+  void setMaxLoopMinutes(int minutes) {
+    if (minutes == state.maxLoopMinutes) return;
+    emit(state.copyWith(maxLoopMinutes: minutes));
+    _persistAndApply();
+  }
 
   /// Selects the playback device to open (empty id = system default). Persists
   /// the choice and, when the engine is already running, reopens on it now.
@@ -91,9 +104,14 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         captureDeviceId: captureDeviceId,
       ),
     );
+    _persistAndApply();
+  }
+
+  /// Persists the current options and, when the engine is running, reopens the
+  /// device so a config change (device, monitoring, loop cap) takes effect now;
+  /// otherwise it is used on the next start / auto-start.
+  void _persistAndApply() {
     unawaited(_settings.saveAudioConfig(_storedConfig()));
-    // Apply immediately when running so the picked device opens now; otherwise
-    // it is used on the next start / auto-start.
     if (state.status == AudioSetupStatus.running) {
       _repository.stopEngine();
       final result = _repository.startEngine(_engineConfig());
@@ -115,6 +133,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
     passthrough: state.monitorInput,
+    maxLoopFrames: _maxLoopFrames(state.maxLoopMinutes, state.sampleRate),
     useLoopbackCapture: state.loopback.isAutoRoutable,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
@@ -125,9 +144,22 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     sampleRate: state.sampleRate,
     bufferFrames: state.bufferFrames,
     monitorInput: state.monitorInput,
+    maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
   );
+
+  /// Converts a minute cap to engine frames at [sampleRate]; `0` (engine
+  /// default) stays `0`. Inverse of [_maxLoopMinutes].
+  static int _maxLoopFrames(int minutes, int sampleRate) =>
+      minutes <= 0 || sampleRate <= 0 ? 0 : minutes * 60 * sampleRate;
+
+  /// Converts an engine frame cap back to whole minutes at [sampleRate]; `0`
+  /// stays `0`. Inverse of [_maxLoopFrames].
+  static int _maxLoopMinutes(int? frames, int sampleRate) =>
+      frames == null || frames <= 0 || sampleRate <= 0
+      ? 0
+      : (frames / (60 * sampleRate)).round();
 
   /// Opens the audio device with the current options.
   void start() {
@@ -238,16 +270,18 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final engineStatus = looper.status;
     final lastConfig = _repository.lastEngineConfig;
 
+    final resolvedSampleRate = hydrateConfig
+        ? _resolvedOption(
+            negotiated: engineStatus.sampleRate,
+            requested: lastConfig?.sampleRate,
+            fallback: current.sampleRate,
+          )
+        : engineStatus.isConnected && engineStatus.sampleRate > 0
+        ? engineStatus.sampleRate
+        : current.sampleRate;
+
     return current.copyWith(
-      sampleRate: hydrateConfig
-          ? _resolvedOption(
-              negotiated: engineStatus.sampleRate,
-              requested: lastConfig?.sampleRate,
-              fallback: current.sampleRate,
-            )
-          : engineStatus.isConnected && engineStatus.sampleRate > 0
-          ? engineStatus.sampleRate
-          : current.sampleRate,
+      sampleRate: resolvedSampleRate,
       bufferFrames: hydrateConfig
           ? _resolvedOption(
               negotiated: engineStatus.bufferFrames,
@@ -260,6 +294,9 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       monitorInput: hydrateConfig
           ? lastConfig?.passthrough ?? current.monitorInput
           : current.monitorInput,
+      maxLoopMinutes: hydrateConfig
+          ? _maxLoopMinutes(lastConfig?.maxLoopFrames, resolvedSampleRate)
+          : current.maxLoopMinutes,
       playbackDeviceId: hydrateConfig
           ? lastConfig?.playbackDeviceId ?? current.playbackDeviceId
           : current.playbackDeviceId,
