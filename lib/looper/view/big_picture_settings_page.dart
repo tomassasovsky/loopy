@@ -12,6 +12,7 @@ import 'package:loopy/looper/view/routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
 enum _Section {
@@ -158,15 +159,19 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   ];
 
   List<Widget> _routingSection(BuildContext context) {
-    // The settings page is pushed above the LooperBloc provider, so the
-    // read-only graph is sourced from the repository's projected state stream.
+    // The settings page is pushed above the LooperBloc provider, so the graph
+    // is sourced from — and edits are applied through — the repository (and
+    // persisted via settings, mirroring what the bloc does for the in-view
+    // routing controls).
     final repository = context.read<LooperRepository>();
+    final settings = context.read<SettingsRepository>();
     final names = context.watch<BigPictureCubit>().state.names;
     return [
       const Text(
         'How audio is wired: hardware inputs flow into tracks, and tracks '
         'play out to hardware outputs. Loopback inputs are struck through — '
-        'they are never recorded. Edit a track to change its routing.',
+        'they are never recorded. Drag between a track and an input or output '
+        'to connect or disconnect it.',
         style: setupBody,
       ),
       const SizedBox(height: 28),
@@ -183,6 +188,14 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
             outputChannels: state.status.outputChannels,
             excludedInputMask: state.status.excludedInputMask,
             trackLabels: names,
+            onInputMaskChanged: (channel, mask) {
+              repository.setInputMask(channel: channel, mask: mask);
+              unawaited(settings.saveTrackInputMask(channel, mask));
+            },
+            onOutputMaskChanged: (channel, mask) {
+              repository.setOutputMask(channel: channel, mask: mask);
+              unawaited(settings.saveTrackOutputMask(channel, mask));
+            },
           );
         },
       ),

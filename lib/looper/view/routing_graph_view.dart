@@ -203,11 +203,46 @@ class RoutingGraph {
   }
 }
 
-/// A read-only diagram of the current audio routing: hardware inputs on the
-/// left, tracks in the middle, hardware outputs on the right, with an edge for
-/// every wired input→track and track→output connection. Loopback inputs are
-/// shown dimmed and never wired. Drawn with [CustomPaint] — no editing.
-class RoutingGraphView extends StatelessWidget {
+/// The routing change a drag between two nodes resolves to: which mask of which
+/// track [channel] to set to [mask], on the input or output side.
+@immutable
+class RoutingEdit {
+  /// Creates a [RoutingEdit].
+  const RoutingEdit({
+    required this.isInput,
+    required this.channel,
+    required this.mask,
+  });
+
+  /// Whether the input mask (`true`) or the output mask (`false`) changed.
+  final bool isInput;
+
+  /// The track channel whose routing changed.
+  final int channel;
+
+  /// The new bitmask value.
+  final int mask;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RoutingEdit &&
+      other.isInput == isInput &&
+      other.channel == channel &&
+      other.mask == mask;
+
+  @override
+  int get hashCode => Object.hash(isInput, channel, mask);
+}
+
+/// A diagram of the current audio routing: hardware inputs on the left, tracks
+/// in the middle, hardware outputs on the right, with an edge for every wired
+/// input→track and track→output connection. Loopback inputs are shown dimmed
+/// and never wired. Drawn with [CustomPaint].
+///
+/// Read-only by default. Pass [onInputMaskChanged] / [onOutputMaskChanged] to
+/// make it editable: dragging between a track and an input (or an output)
+/// toggles that connection, reporting the track channel and its new bitmask.
+class RoutingGraphView extends StatefulWidget {
   /// Creates a [RoutingGraphView].
   const RoutingGraphView({
     required this.tracks,
@@ -215,6 +250,8 @@ class RoutingGraphView extends StatelessWidget {
     required this.outputChannels,
     this.excludedInputMask = 0,
     this.trackLabels,
+    this.onInputMaskChanged,
+    this.onOutputMaskChanged,
     super.key,
   });
 
@@ -233,51 +270,203 @@ class RoutingGraphView extends StatelessWidget {
   /// Optional per-track labels (e.g. user track names); defaults to `Track N`.
   final List<String>? trackLabels;
 
+  /// Called with `(channel, newMask)` when a drag toggles a track's input
+  /// routing. When both this and [onOutputMaskChanged] are null the graph is
+  /// read-only.
+  final void Function(int channel, int mask)? onInputMaskChanged;
+
+  /// Called with `(channel, newMask)` when a drag toggles a track's output
+  /// routing.
+  final void Function(int channel, int mask)? onOutputMaskChanged;
+
+  /// Node box width.
+  static const double nodeWidth = 84;
+
+  /// Node box height.
+  static const double nodeHeight = 30;
+
   static const double _rowHeight = 46;
   static const double _topPad = 8;
 
+  /// The center of [node] within a diagram of [size]. Nodes are built in index
+  /// order, so `node.index` is its row within the column.
+  @visibleForTesting
+  static Offset nodeCenter(RoutingNode node, Size size, RoutingGraph graph) {
+    final (x, length) = switch (node.kind) {
+      RoutingNodeKind.input => (nodeWidth / 2, graph.inputs.length),
+      RoutingNodeKind.track => (size.width / 2, graph.tracks.length),
+      RoutingNodeKind.output => (
+        size.width - nodeWidth / 2,
+        graph.outputs.length,
+      ),
+    };
+    final slot = size.height / length;
+    return Offset(x, slot * (node.index + 0.5));
+  }
+
+  /// The routing change a drag from [a] to [b] resolves to, or null if the pair
+  /// is not connectable (not exactly one track end, an excluded input, etc.).
+  /// Direction-agnostic.
+  @visibleForTesting
+  static RoutingEdit? resolveEdit(
+    RoutingNode a,
+    RoutingNode b,
+    List<Track> tracks,
+  ) {
+    final isTrackA = a.kind == RoutingNodeKind.track;
+    final isTrackB = b.kind == RoutingNodeKind.track;
+    if (isTrackA == isTrackB) return null; // need exactly one track end
+    final trackNode = isTrackA ? a : b;
+    final other = isTrackA ? b : a;
+    if (trackNode.index >= tracks.length) return null;
+    final track = tracks[trackNode.index];
+    final bit = 1 << other.index;
+    return switch (other.kind) {
+      RoutingNodeKind.input =>
+        other.excluded
+            ? null
+            : RoutingEdit(
+                isInput: true,
+                channel: track.channel,
+                mask: track.inputMask ^ bit,
+              ),
+      RoutingNodeKind.output => RoutingEdit(
+        isInput: false,
+        channel: track.channel,
+        mask: track.outputMask ^ bit,
+      ),
+      RoutingNodeKind.track => null,
+    };
+  }
+
+  @override
+  State<RoutingGraphView> createState() => _RoutingGraphViewState();
+}
+
+class _RoutingGraphViewState extends State<RoutingGraphView> {
+  RoutingGraph? _graph;
+  Size _size = Size.zero;
+
+  // The in-progress drag: the node it started on and the current pointer.
+  RoutingNode? _dragNode;
+  Offset? _dragTo;
+
+  bool get _editable =>
+      widget.onInputMaskChanged != null || widget.onOutputMaskChanged != null;
+
+  RoutingNode? _nodeAt(Offset position) {
+    final graph = _graph;
+    if (graph == null) return null;
+    for (final node in [...graph.inputs, ...graph.tracks, ...graph.outputs]) {
+      final center = RoutingGraphView.nodeCenter(node, _size, graph);
+      final rect = Rect.fromCenter(
+        center: center,
+        width: RoutingGraphView.nodeWidth,
+        height: RoutingGraphView.nodeHeight,
+      );
+      if (rect.contains(position)) return node;
+    }
+    return null;
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    final node = _nodeAt(details.localPosition);
+    // Excluded inputs can never be wired, so don't start a drag from one.
+    if (node == null || node.excluded) return;
+    setState(() {
+      _dragNode = node;
+      _dragTo = details.localPosition;
+    });
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    if (_dragNode == null) return;
+    setState(() => _dragTo = details.localPosition);
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    final from = _dragNode;
+    final to = _dragTo == null ? null : _nodeAt(_dragTo!);
+    setState(() {
+      _dragNode = null;
+      _dragTo = null;
+    });
+    if (from == null || to == null) return;
+    final edit = RoutingGraphView.resolveEdit(from, to, widget.tracks);
+    if (edit == null) return;
+    if (edit.isInput) {
+      widget.onInputMaskChanged?.call(edit.channel, edit.mask);
+    } else {
+      widget.onOutputMaskChanged?.call(edit.channel, edit.mask);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final graph = RoutingGraph.fromTracks(
-      tracks: tracks,
-      inputChannels: inputChannels,
-      outputChannels: outputChannels,
-      excludedInputMask: excludedInputMask,
-      trackLabels: trackLabels,
+    final graph = _graph = RoutingGraph.fromTracks(
+      tracks: widget.tracks,
+      inputChannels: widget.inputChannels,
+      outputChannels: widget.outputChannels,
+      excludedInputMask: widget.excludedInputMask,
+      trackLabels: widget.trackLabels,
     );
-    final height = graph.maxColumnLength * _rowHeight + _topPad * 2;
-    return SizedBox(
-      key: const Key('routingGraph_view'),
-      width: double.infinity,
-      height: height,
-      child: CustomPaint(painter: _RoutingGraphPainter(graph)),
+    final height =
+        graph.maxColumnLength * RoutingGraphView._rowHeight +
+        RoutingGraphView._topPad * 2;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _size = Size(constraints.maxWidth, height);
+        final pendingFrom = _dragNode == null
+            ? null
+            : RoutingGraphView.nodeCenter(_dragNode!, _size, graph);
+        final painter = CustomPaint(
+          size: _size,
+          painter: _RoutingGraphPainter(
+            graph: graph,
+            pendingFrom: pendingFrom,
+            pendingTo: _dragNode == null ? null : _dragTo,
+          ),
+        );
+        return SizedBox(
+          key: const Key('routingGraph_view'),
+          width: double.infinity,
+          height: height,
+          child: _editable
+              ? GestureDetector(
+                  onPanStart: _onPanStart,
+                  onPanUpdate: _onPanUpdate,
+                  onPanEnd: _onPanEnd,
+                  child: painter,
+                )
+              : painter,
+        );
+      },
     );
   }
 }
 
 class _RoutingGraphPainter extends CustomPainter {
-  _RoutingGraphPainter(this.graph);
+  _RoutingGraphPainter({
+    required this.graph,
+    this.pendingFrom,
+    this.pendingTo,
+  });
 
   final RoutingGraph graph;
 
-  static const double _nodeWidth = 84;
-  static const double _nodeHeight = 30;
+  /// While a connection is being dragged, the source node center and the
+  /// current pointer; a guide line is drawn between them.
+  final Offset? pendingFrom;
+  final Offset? pendingTo;
+
+  static const double _nodeWidth = RoutingGraphView.nodeWidth;
+  static const double _nodeHeight = RoutingGraphView.nodeHeight;
 
   @override
   void paint(Canvas canvas, Size size) {
-    Offset center(RoutingNode node) {
-      // Nodes are built in index order, so node.index is its row in the column.
-      final (x, length) = switch (node.kind) {
-        RoutingNodeKind.input => (_nodeWidth / 2, graph.inputs.length),
-        RoutingNodeKind.track => (size.width / 2, graph.tracks.length),
-        RoutingNodeKind.output => (
-          size.width - _nodeWidth / 2,
-          graph.outputs.length,
-        ),
-      };
-      final slot = size.height / length;
-      return Offset(x, slot * (node.index + 0.5));
-    }
+    Offset center(RoutingNode node) =>
+        RoutingGraphView.nodeCenter(node, size, graph);
 
     // Edges behind the nodes.
     final edgePaint = Paint()
@@ -294,6 +483,18 @@ class _RoutingGraphPainter extends CustomPainter {
         ..moveTo(start.dx, start.dy)
         ..cubicTo(start.dx + dx, start.dy, end.dx - dx, end.dy, end.dx, end.dy);
       canvas.drawPath(path, edgePaint);
+    }
+
+    // The in-progress drag guide.
+    if (pendingFrom != null && pendingTo != null) {
+      canvas.drawLine(
+        pendingFrom!,
+        pendingTo!,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = SetupSurfaceColors.accent,
+      );
     }
 
     for (final node in [...graph.inputs, ...graph.tracks, ...graph.outputs]) {
@@ -361,5 +562,7 @@ class _RoutingGraphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RoutingGraphPainter oldDelegate) =>
-      oldDelegate.graph != graph;
+      oldDelegate.graph != graph ||
+      oldDelegate.pendingFrom != pendingFrom ||
+      oldDelegate.pendingTo != pendingTo;
 }
