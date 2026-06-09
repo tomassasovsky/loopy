@@ -178,6 +178,26 @@ void main() {
       expect(emitted.first.track.state, TrackState.empty);
       expect(emitted.last.track.state, TrackState.playing);
     });
+
+    test('a late subscriber immediately receives the current state', () async {
+      final repo = buildRepo();
+
+      // A first listener drives the engine to a steady playing state.
+      engine.nextSnapshot = _playingSnapshot;
+      final first = repo.looperState.listen((_) {});
+      addTearDown(first.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      // A second listener that subscribes afterwards must get the current
+      // state right away, without waiting for the next change.
+      LooperState? lateState;
+      final second = repo.looperState.listen((s) => lateState = s);
+      addTearDown(second.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(lateState, isNotNull);
+      expect(lateState!.track.state, TrackState.playing);
+    });
   });
 
   group('commands forward to the engine', () {

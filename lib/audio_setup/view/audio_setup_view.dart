@@ -7,16 +7,17 @@ import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 /// the first-run start screen or pushed from settings. Neutral near-black with
 /// a single green accent used sparingly (selection + primary action).
 class _C {
-  static const bg = Color(0xFF09090B);
+  static const bg = Color(0xFF0A0A0D);
   static const card = Color(0xFF141418);
-  static const cardHi = Color(0xFF1A1A20);
-  static const line = Color(0xFF26262E);
-  static const accent = Color(0xFF4CDA4A);
-  static const onAccent = Color(0xFF06160A);
+  static const cardHi = Color(0xFF1C1C22);
+  static const line = Color(0xFF272730);
+  static const accent = Color(0xFF3B82F6); // blue
+  static const accentSoft = Color(0x1A3B82F6); // blue @ 10%
+  static const onAccent = Color(0xFFFFFFFF);
   static const danger = Color(0xFFFF5468);
-  static const t1 = Color(0xFFF4F4F6);
-  static const t2 = Color(0xFF9A9AA6);
-  static const t3 = Color(0xFF5B5B66);
+  static const t1 = Color(0xFFF3F4F7);
+  static const t2 = Color(0xFF989AA4);
+  static const t3 = Color(0xFF5B5D67);
 }
 
 const _kicker = TextStyle(
@@ -41,6 +42,12 @@ class AudioSetupView extends StatefulWidget {
 class _AudioSetupViewState extends State<AudioSetupView> {
   static const _steps = ['Audio engine', 'Input', 'Ready to play'];
   int _step = 0;
+  bool _forward = true;
+
+  void _go(int next) => setState(() {
+    _forward = next > _step;
+    _step = next;
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +55,8 @@ class _AudioSetupViewState extends State<AudioSetupView> {
     final state = cubit.state;
     final running = state.status == AudioSetupStatus.running;
     final isLast = _step == _steps.length - 1;
+    final showError =
+        state.status == AudioSetupStatus.error && state.errorMessage != null;
 
     return Scaffold(
       backgroundColor: _C.bg,
@@ -55,7 +64,7 @@ class _AudioSetupViewState extends State<AudioSetupView> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 460),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 28),
             child: running
                 ? _RunningPanel(state: state, cubit: cubit)
                 : Column(
@@ -67,36 +76,45 @@ class _AudioSetupViewState extends State<AudioSetupView> {
                       ),
                       const SizedBox(height: 18),
                       _Progress(count: _steps.length, current: _step),
-                      const SizedBox(height: 30),
-                      Text(_steps[_step], style: _title),
-                      const SizedBox(height: 8),
-                      Text(_blurb(_step), style: _body),
-                      const SizedBox(height: 28),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          child: AnimatedSize(
-                            duration: const Duration(milliseconds: 200),
-                            alignment: Alignment.topCenter,
-                            child: _StepBody(
-                              step: _step,
-                              state: state,
-                              cubit: cubit,
+                      // The animated, scrollable body expands so the footer is
+                      // always pinned to the bottom of the surface.
+                      Expanded(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 340),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: _slideFade,
+                          child: SingleChildScrollView(
+                            key: ValueKey(_step),
+                            padding: const EdgeInsets.only(top: 30),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(_steps[_step], style: _title),
+                                const SizedBox(height: 8),
+                                Text(_blurb(_step), style: _body),
+                                const SizedBox(height: 28),
+                                switch (_step) {
+                                  0 => _EngineStep(state: state, cubit: cubit),
+                                  1 => _InputStep(state: state, cubit: cubit),
+                                  _ => _ReadyStep(state: state),
+                                },
+                              ],
                             ),
                           ),
                         ),
                       ),
-                      if (state.status == AudioSetupStatus.error &&
-                          state.errorMessage != null) ...[
+                      if (showError) ...[
                         const SizedBox(height: 16),
                         _ErrorBanner(state.errorMessage!),
                       ],
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                       Row(
                         children: [
                           if (_step > 0)
                             _Ghost(
                               label: 'Back',
-                              onTap: () => setState(() => _step--),
+                              onTap: () => _go(_step - 1),
                             ),
                           const Spacer(),
                           if (isLast)
@@ -112,7 +130,7 @@ class _AudioSetupViewState extends State<AudioSetupView> {
                               label: 'Continue',
                               icon: Icons.arrow_forward_rounded,
                               iconTrailing: true,
-                              onTap: () => setState(() => _step++),
+                              onTap: () => _go(_step + 1),
                             ),
                         ],
                       ),
@@ -124,35 +142,25 @@ class _AudioSetupViewState extends State<AudioSetupView> {
     );
   }
 
+  Widget _slideFade(Widget child, Animation<double> animation) {
+    final entering = child.key == ValueKey(_step);
+    final dx = (_forward ? 1.0 : -1.0) * (entering ? 0.10 : -0.10);
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: animation.drive(
+          Tween(begin: Offset(dx, 0), end: Offset.zero),
+        ),
+        child: child,
+      ),
+    );
+  }
+
   static String _blurb(int step) => switch (step) {
     0 => 'Pick the resolution and the latency / stability trade-off.',
     1 => 'Choose how your incoming signal is monitored and routed.',
     _ => 'Review your settings and open the device.',
   };
-}
-
-class _StepBody extends StatelessWidget {
-  const _StepBody({
-    required this.step,
-    required this.state,
-    required this.cubit,
-  });
-
-  final int step;
-  final AudioSetupState state;
-  final AudioSetupCubit cubit;
-
-  @override
-  Widget build(BuildContext context) {
-    return KeyedSubtree(
-      key: ValueKey(step),
-      child: switch (step) {
-        0 => _EngineStep(state: state, cubit: cubit),
-        1 => _InputStep(state: state, cubit: cubit),
-        _ => _ReadyStep(state: state),
-      },
-    );
-  }
 }
 
 // ── Steps ────────────────────────────────────────────────────────────────────
@@ -286,10 +294,9 @@ class _RunningPanel extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         const _TopBar(kicker: 'AUDIO ENGINE'),
-        const SizedBox(height: 30),
+        const SizedBox(height: 40),
         Row(
           children: [
             const _Pulse(),
@@ -313,7 +320,8 @@ class _RunningPanel extends StatelessWidget {
             ('Record offset', '${s.recordOffsetFrames} frames'),
           ],
         ),
-        const SizedBox(height: 14),
+        // Pin the actions to the bottom of the surface.
+        const Spacer(),
         _Ghost(
           key: const Key('audioSetup_measureLatency_button'),
           label: measuring ? 'Measuring…' : 'Measure round-trip latency',
@@ -321,7 +329,7 @@ class _RunningPanel extends StatelessWidget {
           stretch: true,
           onTap: cubit.measureLatency,
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 12),
         _Primary(
           key: const Key('audioSetup_startStop_button'),
           label: 'Stop engine',
@@ -471,7 +479,7 @@ class _Option extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 6),
         decoration: BoxDecoration(
-          color: selected ? const Color(0x1A4CDA4A) : _C.card,
+          color: selected ? _C.accentSoft : _C.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: selected ? _C.accent : _C.line,
