@@ -187,10 +187,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400)); // open dialog
 
     await tester.enterText(
-      find.byKey(const Key('bigpicture_rename_field')),
+      find.byKey(const Key('renameTrack_field')),
       'GUITAR',
     );
-    await tester.tap(find.byKey(const Key('bigpicture_rename_save')));
+    await tester.tap(find.byKey(const Key('renameTrack_save')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400)); // close dialog
 

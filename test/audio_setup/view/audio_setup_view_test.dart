@@ -61,6 +61,22 @@ void main() {
     verify(() => cubit.setSampleRate(96000)).called(1);
   });
 
+  testWidgets('the input step forwards monitor and mono toggles', (
+    tester,
+  ) async {
+    seed(const AudioSetupState());
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('audioSetup_monitor_switch')));
+    verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
+
+    await tester.tap(find.byKey(const Key('audioSetup_mergeToMono_switch')));
+    verify(() => cubit.setMergeToMono(mergeToMono: false)).called(1);
+  });
+
   testWidgets('stepping to the end and starting calls cubit.start', (
     tester,
   ) async {

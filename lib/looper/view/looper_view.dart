@@ -5,7 +5,6 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 /// The multi-track looper view: a Chewie-2-style grid of channel strips with
 /// transport controls, level meters, volume, and the master loop position.
@@ -74,10 +73,7 @@ class LooperView extends StatelessWidget {
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => AudioSetupPage(
-                  repository: context.read<LooperRepository>(),
-                  settings: context.read<SettingsRepository>(),
-                ),
+                builder: (_) => const AudioSetupPage(),
               ),
             ),
           ),

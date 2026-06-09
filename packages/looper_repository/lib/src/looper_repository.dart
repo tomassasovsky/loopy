@@ -31,6 +31,12 @@ class LooperRepository {
     );
   }
 
+  /// Creates a repository driving the real native miniaudio engine, so the app
+  /// composes the looper without importing the data layer (`loopy_engine`)
+  /// directly.
+  factory LooperRepository.withNativeEngine() =>
+      LooperRepository(engine: NativeAudioEngine());
+
   final AudioEngine _engine;
   final Stream<void>? _ticker;
   final Duration _pollInterval;

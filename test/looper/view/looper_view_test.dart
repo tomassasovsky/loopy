@@ -20,12 +20,14 @@ class _MockUiModeCubit extends MockCubit<UiMode> implements UiModeCubit {}
 void main() {
   late LooperBloc bloc;
   late UiModeCubit uiMode;
+  late BankCubit bank;
 
   setUpAll(() => registerFallbackValue(UiMode.desktop));
 
   setUp(() {
     bloc = _MockLooperBloc();
     uiMode = _MockUiModeCubit();
+    bank = BankCubit(settings: SettingsRepository(store: FakeKeyValueStore()));
     whenListen(
       uiMode,
       const Stream<UiMode>.empty(),
@@ -46,17 +48,24 @@ void main() {
           providers: [
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<UiModeCubit>.value(value: uiMode),
-            BlocProvider<BankCubit>(
-              create: (_) => BankCubit(
-                settings: SettingsRepository(store: FakeKeyValueStore()),
-              ),
-            ),
+            BlocProvider<BankCubit>.value(value: bank),
           ],
           child: const LooperView(),
         ),
       ),
     );
   }
+
+  testWidgets('bank A/B buttons switch the active bank', (tester) async {
+    await bank.setEnabled(value: true);
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pumpView(tester);
+    expect(bank.state.activeBank, 0);
+
+    await tester.tap(find.byKey(const Key('looper_bank_1')));
+    await tester.pump();
+    expect(bank.state.activeBank, 1);
+  });
 
   testWidgets('renders a strip per track and the stopped banner', (
     tester,

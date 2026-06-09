@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,15 +8,13 @@ import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/theme/theme.dart';
 
-const _thumbFrame = Duration(milliseconds: 50); // ~20 fps
-
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
-/// of tall colored track columns, each showing its own loop-waveform thumbnail
-/// and editable name. Tapping a column selects it (white highlight) and toggles
-/// record/overdub; long-press stops. The master output waveform is in a
-/// separate window.
+/// of tall colored track columns, each a level meter with an editable name.
+/// Tapping a column selects it (white highlight) and toggles record/overdub;
+/// long-press stops. The master output waveform is in a separate window.
 class BigPictureView extends StatefulWidget {
   /// Creates a [BigPictureView].
   const BigPictureView({super.key});
@@ -27,35 +24,6 @@ class BigPictureView extends StatefulWidget {
 }
 
 class _BigPictureViewState extends State<BigPictureView> {
-  Timer? _poll;
-  List<Float32List> _waveforms = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _poll = Timer.periodic(_thumbFrame, (_) => _pollWaveforms());
-  }
-
-  @override
-  void dispose() {
-    _poll?.cancel();
-    super.dispose();
-  }
-
-  void _pollWaveforms() {
-    if (!mounted) return;
-    final looper = context.read<LooperRepository>();
-    final count = context.read<LooperBloc>().state.tracks.length;
-    setState(() {
-      _waveforms = [
-        for (var i = 0; i < count; i++) looper.readTrackWaveform(i),
-      ];
-    });
-  }
-
-  Float32List _waveformFor(int channel) =>
-      channel < _waveforms.length ? _waveforms[channel] : Float32List(0);
-
   @override
   Widget build(BuildContext context) {
     final state = context.watch<LooperBloc>().state;
@@ -111,7 +79,6 @@ class _BigPictureViewState extends State<BigPictureView> {
                                   name: big.nameOf(track.channel),
                                   selected:
                                       track.channel == big.selectedChannel,
-                                  waveform: _waveformFor(track.channel),
                                 ),
                               ),
                             ),
@@ -347,13 +314,11 @@ class _TrackColumn extends StatelessWidget {
     required this.track,
     required this.name,
     required this.selected,
-    required this.waveform,
   });
 
   final Track track;
   final String name;
   final bool selected;
-  final Float32List waveform;
 
   @override
   Widget build(BuildContext context) {
@@ -413,7 +378,7 @@ class _TrackColumn extends StatelessWidget {
               child: Visibility.maintain(
                 visible: track.hasContent,
                 child: _PeakBar(
-                  channel: track.channel,
+                  peak: track.peak,
                   color: accent,
                   recordingColor: looper.recordColor,
                   recording: recording,
@@ -423,7 +388,12 @@ class _TrackColumn extends StatelessWidget {
             const SizedBox(height: 10),
             GestureDetector(
               key: Key('bigpicture_name_${track.channel}'),
-              onTap: () => _rename(context),
+              onTap: () => showRenameTrackDialog(
+                context: context,
+                cubit: context.read<BigPictureCubit>(),
+                channel: track.channel,
+                current: name,
+              ),
               child: Text(
                 name,
                 textAlign: TextAlign.center,
@@ -439,90 +409,30 @@ class _TrackColumn extends StatelessWidget {
       ),
     );
   }
-
-  Future<void> _rename(BuildContext context) async {
-    final cubit = context.read<BigPictureCubit>();
-    final controller = TextEditingController(text: name);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Rename track'),
-        content: TextField(
-          key: const Key('bigpicture_rename_field'),
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            key: const Key('bigpicture_rename_save'),
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (result != null) await cubit.rename(track.channel, result);
-  }
 }
 
-class _PeakBar extends StatefulWidget {
+/// A bottom-anchored level meter driven by the track's current [peak]. Updates
+/// with the watched looper state — no own timer.
+class _PeakBar extends StatelessWidget {
   const _PeakBar({
-    required this.channel,
+    required this.peak,
     required this.color,
     required this.recordingColor,
     required this.recording,
   });
 
-  final int channel;
+  final double peak;
   final Color color;
   final Color recordingColor;
   final bool recording;
-
-  @override
-  State<_PeakBar> createState() => _PeakBarState();
-}
-
-class _PeakBarState extends State<_PeakBar> {
-  Timer? _timer;
-  double _peak = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(_thumbFrame, (_) => _poll());
-    _poll();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _poll() {
-    if (!mounted) return;
-    final tracks = context.read<LooperBloc>().state.tracks;
-    if (widget.channel >= tracks.length) return;
-    final next = tracks[widget.channel].peak;
-    if (next == _peak) return;
-    setState(() => _peak = next);
-  }
 
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.bottomCenter,
       child: FractionallySizedBox(
-        heightFactor: (_peak * 10).clamp(0.01, 1.0),
-        child: Container(
-          color: widget.recording ? widget.recordingColor : widget.color,
-        ),
+        heightFactor: (peak * 10).clamp(0.01, 1.0),
+        child: Container(color: recording ? recordingColor : color),
       ),
     );
   }

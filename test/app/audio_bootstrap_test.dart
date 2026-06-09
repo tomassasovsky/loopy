@@ -77,6 +77,31 @@ void main() {
       expect(engine.lastRecordOffset, 720);
     });
 
+    test(
+      'auto-measures when no saved offset and loopback is routable',
+      () async {
+        engine.loopback = const LoopbackInfo(
+          available: true,
+          kind: LoopbackKind.virtualDevice,
+          deviceName: 'BlackHole',
+        );
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            monitorInput: true,
+            mergeToMono: true,
+          ),
+        );
+        // No saved latency offset for this profile.
+
+        await tryAutoStartEngine(repository: repository, settings: settings);
+
+        expect(engine.measureLatencyCalls, 1);
+        expect(engine.lastRecordOffset, isNull); // restored nothing, measured
+      },
+    );
+
     test('returns false when the engine fails to start', () async {
       engine.startResult = EngineResult.device;
       await settings.saveAudioConfig(

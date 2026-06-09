@@ -224,6 +224,7 @@ void main() {
         ..stopTrack()
         ..play()
         ..undo()
+        ..redo()
         ..clear()
         ..measureLatency()
         ..stopEngine()
@@ -238,6 +239,7 @@ void main() {
           'stopTrack',
           'play',
           'undo',
+          'redo',
           'clear',
           'measureLatency',
           'stop',

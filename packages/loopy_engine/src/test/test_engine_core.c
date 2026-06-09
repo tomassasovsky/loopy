@@ -615,6 +615,49 @@ static void test_transport_resets_when_all_stopped(void) {
   le_engine_destroy(e);
 }
 
+/* The transport keeps running while any track plays, and only resets to the top
+ * once the last one stops. */
+static void test_transport_runs_until_last_track_stops(void) {
+  printf("test_transport_runs_until_last_track_stops\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Track 0 defines the master loop and plays. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  /* Track 1 records one base loop and plays. */
+  le_engine_record(e, 1);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 1);
+  drain(e);
+
+  /* Both playing: the transport advances. */
+  process_const(e, 0.0f, 2, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 2);
+
+  /* Stop track 0 — track 1 still plays, so the transport keeps advancing. */
+  le_engine_stop_track(e, 0);
+  drain(e);
+  process_const(e, 0.0f, 1, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.master_position_frames == 3);
+
+  /* Stop track 1 — now everything is stopped, so the transport resets. */
+  le_engine_stop_track(e, 1);
+  drain(e);
+  process_const(e, 0.0f, 2, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+
+  le_engine_destroy(e);
+}
+
 /* ---- loop visualization tap ---- */
 
 static float max_of(const float* a, int n) {
@@ -720,6 +763,7 @@ int main(void) {
   test_loop_multiple_rounds_up_partial();
   test_new_track_records_mid_loop();
   test_transport_resets_when_all_stopped();
+  test_transport_runs_until_last_track_stops();
   test_visualization_tap();
   test_classify_capture_device();
   test_detect_loopback_runs();
