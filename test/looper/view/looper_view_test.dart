@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -45,6 +46,11 @@ void main() {
           providers: [
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<UiModeCubit>.value(value: uiMode),
+            BlocProvider<BankCubit>(
+              create: (_) => BankCubit(
+                settings: SettingsRepository(store: FakeKeyValueStore()),
+              ),
+            ),
           ],
           child: const LooperView(),
         ),

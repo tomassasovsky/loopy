@@ -31,7 +31,7 @@ class _InMemoryStore implements KeyValueStore {
 
   @override
   Future<void> remove(String key) async => values.remove(key);
-  
+
   @override
   Future<void> clear() async => values.clear();
 }
@@ -172,6 +172,17 @@ void main() {
     test('round-trips a saved preference', () async {
       await repository.saveShowWaveformWindow(value: false);
       expect(await repository.loadShowWaveformWindow(), isFalse);
+    });
+  });
+
+  group('bank enabled', () {
+    test('defaults to disabled when unset', () async {
+      expect(await repository.loadBankEnabled(), isFalse);
+    });
+
+    test('round-trips a saved preference', () async {
+      await repository.saveBankEnabled(value: true);
+      expect(await repository.loadBankEnabled(), isTrue);
     });
   });
 }

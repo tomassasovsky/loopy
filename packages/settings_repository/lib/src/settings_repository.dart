@@ -127,6 +127,17 @@ class SettingsRepository {
   Future<void> saveShowWaveformWindow({required bool value}) =>
       _store.setBool(_showWaveformWindowKey, value: value);
 
+  static const String _bankEnabledKey = 'big_picture.bank_enabled';
+
+  /// Whether the second bank of four tracks is enabled (8 tracks total, shown
+  /// as two banks of four). Defaults to `false` (a single bank of four).
+  Future<bool> loadBankEnabled() async =>
+      await _store.getBool(_bankEnabledKey) ?? false;
+
+  /// Saves whether the second bank of four tracks is enabled.
+  Future<void> saveBankEnabled({required bool value}) =>
+      _store.setBool(_bankEnabledKey, value: value);
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.

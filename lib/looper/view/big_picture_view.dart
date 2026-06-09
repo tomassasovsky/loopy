@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/theme/theme.dart';
 
@@ -59,6 +60,11 @@ class _BigPictureViewState extends State<BigPictureView> {
   Widget build(BuildContext context) {
     final state = context.watch<LooperBloc>().state;
     final big = context.watch<BigPictureCubit>().state;
+    final bank = context.watch<BankCubit>().state;
+    final tracks = [
+      for (final track in state.tracks)
+        if (bank.contains(track.channel)) track,
+    ];
 
     // Settings are reachable from the performance view by right-clicking
     // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
@@ -77,11 +83,18 @@ class _BigPictureViewState extends State<BigPictureView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (bank.enabled) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _BankSwitch(active: bank.activeBank),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        for (final track in state.tracks)
+                        for (final track in tracks)
                           Expanded(
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -128,6 +141,58 @@ class _BigPictureViewState extends State<BigPictureView> {
       return KeyEventResult.handled;
     }
     return KeyEventResult.handled;
+  }
+}
+
+/// A small A | B segmented control for switching between the two track banks.
+class _BankSwitch extends StatelessWidget {
+  const _BankSwitch({required this.active});
+
+  final int active;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final looper = theme.extension<LooperTheme>()!;
+    final accent = looper.trackColor(0);
+    final cubit = context.read<BankCubit>();
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: looper.tileBackground,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: looper.tileBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < BankState.bankCountMax; i++)
+            GestureDetector(
+              key: Key('bigpicture_bank_$i'),
+              onTap: () => cubit.selectBank(i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: i == active ? accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  String.fromCharCode(0x41 + i),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: i == active ? Colors.black : Colors.white70,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

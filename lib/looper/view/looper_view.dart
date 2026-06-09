@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -16,11 +17,38 @@ class LooperView extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<LooperBloc>().state;
     final bloc = context.read<LooperBloc>();
+    final bank = context.watch<BankCubit>().state;
+    final tracks = [
+      for (final track in state.tracks)
+        if (bank.contains(track.channel)) track,
+    ];
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Loopy'),
         actions: [
+          if (bank.enabled) ...[
+            for (var i = 0; i < BankState.bankCountMax; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: TextButton(
+                  key: Key('looper_bank_$i'),
+                  onPressed: () => context.read<BankCubit>().selectBank(i),
+                  style: TextButton.styleFrom(
+                    backgroundColor: i == bank.activeBank
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                    foregroundColor: i == bank.activeBank
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : null,
+                    minimumSize: const Size(40, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: Text(String.fromCharCode(0x41 + i)),
+                ),
+              ),
+            const SizedBox(width: 8),
+          ],
           IconButton(
             key: const Key('looper_playAll_button'),
             tooltip: 'Play all',
@@ -65,8 +93,8 @@ class LooperView extends StatelessWidget {
             if (!state.transport.isRunning) const _EngineStoppedBanner(),
             Expanded(
               child: ListView.builder(
-                itemCount: state.tracks.length,
-                itemBuilder: (_, i) => _TrackStrip(track: state.tracks[i]),
+                itemCount: tracks.length,
+                itemBuilder: (_, i) => _TrackStrip(track: tracks[i]),
               ),
             ),
             _StatusFooter(status: state.status),

@@ -11,7 +11,7 @@ class BigPictureCubit extends Cubit<BigPictureState> {
   /// Creates a [BigPictureCubit] for [trackCount] tracks.
   BigPictureCubit({
     required SettingsRepository settings,
-    int trackCount = 4,
+    int trackCount = 8,
   }) : _settings = settings,
        super(
          BigPictureState(
