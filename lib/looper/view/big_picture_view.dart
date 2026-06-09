@@ -66,8 +66,6 @@ class _BigPictureViewState extends State<BigPictureView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _BigHeader(transport: state.transport),
-              const SizedBox(height: 16),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -78,16 +76,11 @@ class _BigPictureViewState extends State<BigPictureView> {
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Align(
                             alignment: Alignment.bottomCenter,
-                            child: FractionallySizedBox(
-                              heightFactor: track.channel == big.selectedChannel
-                                  ? 1.0
-                                  : 0.68,
-                              child: _TrackColumn(
-                                track: track,
-                                name: big.nameOf(track.channel),
-                                selected: track.channel == big.selectedChannel,
-                                waveform: _waveformFor(track.channel),
-                              ),
+                            child: _TrackColumn(
+                              track: track,
+                              name: big.nameOf(track.channel),
+                              selected: track.channel == big.selectedChannel,
+                              waveform: _waveformFor(track.channel),
                             ),
                           ),
                         ),
@@ -317,13 +310,10 @@ class _PeakBarState extends State<_PeakBar> {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.bottomCenter,
-      child: SizedBox(
-        width: 80,
-        child: FractionallySizedBox(
-          heightFactor: (_peak * 10).clamp(0.0, 1.0),
-          child: Container(
-            color: widget.recording ? widget.recordingColor : widget.color,
-          ),
+      child: FractionallySizedBox(
+        heightFactor: (_peak * 10).clamp(0.01, 1.0),
+        child: Container(
+          color: widget.recording ? widget.recordingColor : widget.color,
         ),
       ),
     );

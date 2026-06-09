@@ -534,6 +534,49 @@ static void test_loop_multiple_rounds_up_partial(void) {
   le_engine_destroy(e);
 }
 
+/* A new track recorded while the master loop is mid-cycle must begin capturing
+ * immediately (no arming, no waiting for the loop top). The capture is
+ * phase-locked: audio lands at the master phase where it was played, and the
+ * slice before the press stays silent. */
+static void test_new_track_records_mid_loop(void) {
+  printf("test_new_track_records_mid_loop\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Base loop (1.0) of LOOP_N, then mute it so track 1 is observed alone. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize */
+  drain(e);
+  le_engine_set_track_mute(e, 0, 1);
+
+  /* Advance the master one frame past the loop top (pos 0 -> 1). */
+  process_const(e, 0.0f, 1, out);
+
+  /* Press record on track 1 mid-loop. It must already be RECORDING (not armed)
+   * and capture immediately from pos 1 for the rest of this loop. */
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N - 1, out); /* pos 1,2,3 -> wraps to the top */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_record(e, 1); /* finalize -> PLAYING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 1);
+  CHECK(s.tracks[1].length_frames == LOOP_N);
+
+  /* One full loop from the top: silence at pos 0 (the pre-press slice), the
+   * recorded 2.0 at pos 1..3. */
+  process_const(e, 0.0f, LOOP_N, out);
+  CHECK(fabsf(out[0] - 0.0f) < 1e-6f);
+  for (int i = 1; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
 /* ---- loop visualization tap ---- */
 
 static float max_of(const float* a, int n) {
@@ -637,6 +680,7 @@ int main(void) {
   test_record_is_exclusive();
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();
+  test_new_track_records_mid_loop();
   test_visualization_tap();
   test_classify_capture_device();
   test_detect_loopback_runs();

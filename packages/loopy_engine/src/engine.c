@@ -71,8 +71,10 @@ typedef struct le_track {
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
   _Atomic int32_t a_multiple; /* track length in whole base loops (>= 1) */
-  int32_t record_pos; /* audio-thread-local linear record head; -1 = waiting for
-                       * the loop top before a new-track recording begins */
+  int32_t record_pos; /* audio-thread-local record head. Defining track: linear
+                       * frame count. New track over a master: the absolute
+                       * phase (segment*base + position), seeded at press so
+                       * writes stay phase-locked to the master loop. */
   uint64_t start_iter; /* loop_iteration when this track's recording began */
 } le_track;
 
@@ -267,9 +269,16 @@ static void handle_record(le_engine* e, int32_t ch) {
         le_loop_clock_reset(&e->clock);
         store_i32(&t->a_state, LE_TRACK_RECORDING);
       } else {
-        /* New track: record freely from the next loop top across one or more
-         * base loops (record_pos == -1 waits for pos == 0). */
-        t->record_pos = -1;
+        /* New track over an existing master: begin capturing immediately at the
+         * current loop phase — no waiting for the loop top. record_pos seeds to
+         * the master position and start_iter to the current iteration, so it
+         * stays equal to (loop_iteration - start_iter)*base + position; buffer
+         * writes are therefore phase-locked to the master and the slice before
+         * the press in this first segment stays silent (the live buffer was
+         * zeroed on the control thread). Spans one or more base loops, rounded
+         * up on stop. */
+        t->record_pos = e->clock.position;
+        t->start_iter = e->loop_iteration;
         store_i32(&t->a_state, LE_TRACK_RECORDING);
       }
       break;
@@ -501,18 +510,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     const int monitor_on = load_i32(&e->a_monitor);
     const int32_t pos = e->clock.position;
 
-    /* A waiting new-track recording (record_pos == -1) begins at the loop top so
-     * its buffer is phase-locked to the base loop. */
-    if (pos == 0 && e->clock.length > 0) {
-      for (int t = 0; t < tc; ++t) {
-        le_track* tr = &e->tracks[t];
-        if (st[t] == LE_TRACK_RECORDING && tr->record_pos < 0) {
-          tr->record_pos = 0;
-          tr->start_iter = e->loop_iteration;
-        }
-      }
-    }
-
     /* Per-track read base for this frame: a track of multiple k plays its k-th
      * base-loop segment, cycling relative to where its recording began. k == 1
      * (the common case) collapses to the master position. */
@@ -544,12 +541,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
               buf[t][e->tracks[t].record_pos * ch + c] = insample;
             }
           } else {
-            /* new track: linear write head (started at the loop top), spanning
-             * one or more base loops; latency-compensated by dropping the first
-             * `offset` frames so it aligns with what the player heard. */
-            const int32_t rp = e->tracks[t].record_pos;
-            const int32_t w = rp - offset;
-            if (rp >= 0 && w >= 0 && w < e->max_loop_frames) {
+            /* new track: phase-locked write head (record_pos == segment*base +
+             * position), spanning one or more base loops; latency-compensated by
+             * dropping the first `offset` frames so it aligns with what the
+             * player heard. */
+            const int32_t w = e->tracks[t].record_pos - offset;
+            if (w >= 0 && w < e->max_loop_frames) {
               buf[t][w * ch + c] = insample;
             }
           }
@@ -619,7 +616,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       if (e->clock.length == 0) {
         tr->record_pos++;
         if (tr->record_pos >= e->max_loop_frames) finalize_master(e, tr);
-      } else if (tr->record_pos >= 0) {
+      } else {
         tr->record_pos++;
         if (tr->record_pos >= e->max_loop_frames) {
           finalize_new_track(e, tr, LE_TRACK_PLAYING);
