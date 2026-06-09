@@ -83,10 +83,10 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(
-      find.byKey(const Key('bpSettings_rename_field')),
+      find.byKey(const Key('renameTrack_field')),
       'DRUMS',
     );
-    await tester.tap(find.byKey(const Key('bpSettings_rename_save')));
+    await tester.tap(find.byKey(const Key('renameTrack_save')));
     await tester.pumpAndSettle();
 
     expect(find.text('DRUMS'), findsOneWidget);

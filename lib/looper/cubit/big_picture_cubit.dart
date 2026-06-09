@@ -1,5 +1,6 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'big_picture_state.dart';
@@ -11,7 +12,7 @@ class BigPictureCubit extends Cubit<BigPictureState> {
   /// Creates a [BigPictureCubit] for [trackCount] tracks.
   BigPictureCubit({
     required SettingsRepository settings,
-    int trackCount = 8,
+    int trackCount = BankState.tracksPerBank * BankState.bankCountMax,
   }) : _settings = settings,
        super(
          BigPictureState(

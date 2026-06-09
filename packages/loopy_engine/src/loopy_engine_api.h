@@ -6,9 +6,9 @@
  * this API performs no allocation, locking, or I/O (see engine.c).
  *
  * Scope: device lifecycle, duplex passthrough, level metering, a loopback
- * round-trip latency harness, the lock-free command ring, and a single-track
- * looper (record / master-loop length / overdub / loop playback / mix /
- * volume / mute / clear / one-level undo). Multi-track lands in a later phase.
+ * round-trip latency harness, the lock-free command ring, and a multi-track
+ * looper (LE_MAX_TRACKS tracks: record / master-loop length / overdub / loop
+ * playback / loop multiples / mix / volume / mute / clear / multi-level undo).
  */
 #ifndef LOOPY_ENGINE_API_H
 #define LOOPY_ENGINE_API_H

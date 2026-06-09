@@ -2,13 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 /// Settings for the Big Picture performance view, reachable from the view via
 /// right-click or the `S` key, and from the system menu bar on macOS.
@@ -74,10 +73,7 @@ class BigPictureSettingsPage extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => AudioSetupPage(
-                  repository: context.read<LooperRepository>(),
-                  settings: context.read<SettingsRepository>(),
-                ),
+                builder: (_) => const AudioSetupPage(),
               ),
             ),
           ),
@@ -98,45 +94,16 @@ class BigPictureSettingsPage extends StatelessWidget {
               leading: CircleAvatar(child: Text('${i + 1}')),
               title: Text(big.state.names[i]),
               trailing: const Icon(Icons.edit),
-              onTap: () => _renameTrack(context, i, big.state.names[i]),
+              onTap: () => showRenameTrackDialog(
+                context: context,
+                cubit: context.read<BigPictureCubit>(),
+                channel: i,
+                current: big.state.names[i],
+              ),
             ),
         ],
       ),
     );
-  }
-
-  Future<void> _renameTrack(
-    BuildContext context,
-    int channel,
-    String current,
-  ) async {
-    final cubit = context.read<BigPictureCubit>();
-    final controller = TextEditingController(text: current);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Rename track ${channel + 1}'),
-        content: TextField(
-          key: const Key('bpSettings_rename_field'),
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            key: const Key('bpSettings_rename_save'),
-            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (result != null) await cubit.rename(channel, result);
   }
 }
 

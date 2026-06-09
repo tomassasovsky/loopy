@@ -1,5 +1,5 @@
-/// Single-track looper feature: transport + track controls over the looper
-/// repository.
+/// Multi-track looper feature: transport + per-track controls (in two banks of
+/// four) over the looper repository, with a keyboard-driven performance view.
 library;
 
 export 'bloc/looper_bloc.dart';

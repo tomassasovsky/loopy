@@ -5,7 +5,6 @@ import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
 import 'package:loopy/visualizer/visualizer.dart';
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
@@ -26,11 +25,9 @@ Future<void> runLoopy(List<String> args) async {
   // Hot restart resets Dart state while native sub-windows survive.
   await DesktopMultiWindowWaveformService.closeOrphanWindows();
 
-  final repository = LooperRepository(engine: NativeAudioEngine());
+  final repository = LooperRepository.withNativeEngine();
   final controllerRepository = ControllerRepository(sources: const []);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
-
-  await settings.clear();
 
   final configured = await tryAutoStartEngine(
     repository: repository,
