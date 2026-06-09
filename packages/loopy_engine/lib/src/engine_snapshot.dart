@@ -71,6 +71,8 @@ class TrackSnapshot {
     required this.peak,
     this.redoDepth = 0,
     this.multiple = 1,
+    this.inputChannel = 0,
+    this.outputMask = 0x3,
   });
 
   /// An empty track.
@@ -83,7 +85,9 @@ class TrackSnapshot {
       redoDepth = 0,
       rms = 0,
       peak = 0,
-      multiple = 1;
+      multiple = 1,
+      inputChannel = 0,
+      outputMask = 0x3;
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
   factory TrackSnapshot.fromNative(le_track_snapshot native) => TrackSnapshot(
@@ -96,6 +100,8 @@ class TrackSnapshot {
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
+    inputChannel: native.input_channel,
+    outputMask: native.output_mask,
   );
 
   /// State-machine phase.
@@ -125,6 +131,12 @@ class TrackSnapshot {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
+  /// Hardware input channel this track records from.
+  final int inputChannel;
+
+  /// Bitmask of hardware output channels this track plays to (bit c => out c).
+  final int outputMask;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -138,7 +150,9 @@ class TrackSnapshot {
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
           rms == other.rms &&
-          peak == other.peak;
+          peak == other.peak &&
+          inputChannel == other.inputChannel &&
+          outputMask == other.outputMask;
 
   @override
   int get hashCode => Object.hash(
@@ -151,6 +165,8 @@ class TrackSnapshot {
     redoDepth,
     rms,
     peak,
+    inputChannel,
+    outputMask,
   );
 }
 
@@ -173,6 +189,8 @@ class EngineSnapshot {
     required this.outputRms,
     required this.latencyState,
     required this.measuredLatencyMs,
+    this.inputChannels = 0,
+    this.outputChannels = 0,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
@@ -185,6 +203,8 @@ class EngineSnapshot {
       sampleRate = 0,
       bufferFrames = 0,
       channels = 0,
+      inputChannels = 0,
+      outputChannels = 0,
       framesProcessed = 0,
       xrunCount = 0,
       inputRms = 0,
@@ -210,6 +230,8 @@ class EngineSnapshot {
     sampleRate: native.sample_rate,
     bufferFrames: native.buffer_frames,
     channels: native.channels,
+    inputChannels: native.input_channels,
+    outputChannels: native.output_channels,
     framesProcessed: native.frames_processed,
     xrunCount: native.xrun_count,
     inputRms: native.input_rms,
@@ -232,8 +254,14 @@ class EngineSnapshot {
   /// Negotiated device period (buffer) size in frames.
   final int bufferFrames;
 
-  /// Number of channels in the duplex stream.
+  /// Number of channels in the duplex stream (alias for [outputChannels]).
   final int channels;
+
+  /// Negotiated hardware capture channel count.
+  final int inputChannels;
+
+  /// Negotiated hardware playback channel count.
+  final int outputChannels;
 
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
@@ -305,6 +333,8 @@ class EngineSnapshot {
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
           channels == other.channels &&
+          inputChannels == other.inputChannels &&
+          outputChannels == other.outputChannels &&
           framesProcessed == other.framesProcessed &&
           xrunCount == other.xrunCount &&
           inputRms == other.inputRms &&
@@ -323,6 +353,8 @@ class EngineSnapshot {
     sampleRate,
     bufferFrames,
     channels,
+    inputChannels,
+    outputChannels,
     framesProcessed,
     xrunCount,
     inputRms,

@@ -118,6 +118,25 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  int? lastInputChannelValue;
+  int? lastOutputMask;
+
+  @override
+  EngineResult setInputChannel({required int channel, required int value}) {
+    lastChannel = channel;
+    lastInputChannelValue = value;
+    calls.add('setInputChannel');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOutputMask({required int channel, required int mask}) {
+    lastChannel = channel;
+    lastOutputMask = mask;
+    calls.add('setOutputMask');
+    return EngineResult.ok;
+  }
+
   int? lastRecordOffset;
 
   @override

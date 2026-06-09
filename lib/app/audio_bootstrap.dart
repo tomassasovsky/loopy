@@ -16,7 +16,8 @@ Future<bool> tryAutoStartEngine({
     EngineConfig(
       sampleRate: saved.sampleRate,
       bufferFrames: saved.bufferFrames,
-      channels: 2,
+      inputChannels: saved.inputChannels,
+      outputChannels: saved.outputChannels,
       passthrough: saved.monitorInput,
       mergeToMono: saved.mergeToMono,
       useLoopbackCapture: loopback.isAutoRoutable,
@@ -40,6 +41,19 @@ Future<bool> tryAutoStartEngine({
     repository.setRecordOffset(savedOffset);
   } else if (loopback.isAutoRoutable) {
     repository.measureLatency();
+  }
+
+  // Restore per-track I/O routing so a saved record source / output mask is
+  // reapplied on launch (mirroring the latency-offset restore above).
+  for (final track in repository.state.tracks) {
+    final input = await settings.loadTrackInputChannel(track.channel);
+    if (input != null) {
+      repository.setInputChannel(channel: track.channel, value: input);
+    }
+    final mask = await settings.loadTrackOutputMask(track.channel);
+    if (mask != null) {
+      repository.setOutputMask(channel: track.channel, mask: mask);
+    }
   }
   return true;
 }

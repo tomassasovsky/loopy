@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
+import 'package:loopy_engine/loopy_engine.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -30,6 +31,44 @@ void main() {
       expect(engine.startCalls, 0);
     });
 
+    test('restores saved per-track routing on launch', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          monitorInput: true,
+          mergeToMono: true,
+        ),
+      );
+      await settings.saveTrackInputChannel(0, 2);
+      await settings.saveTrackOutputMask(0, 0x4);
+      // The restore loop iterates the engine's reported tracks.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        channels: 2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started, isTrue);
+      expect(engine.lastRoutingChannel, 0);
+      expect(engine.lastInputChannelValue, 2);
+      expect(engine.lastOutputMask, 0x4);
+    });
+
     test('starts the engine with the saved config', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(
@@ -51,7 +90,10 @@ void main() {
       expect(engine.lastConfig?.bufferFrames, 256);
       expect(engine.lastConfig?.passthrough, isFalse);
       expect(engine.lastConfig?.mergeToMono, isFalse);
-      expect(engine.lastConfig?.channels, 2);
+      // Channel counts left at 0 (device default) so the interface opens with
+      // all its channels; the negotiated counts come back via the snapshot.
+      expect(engine.lastConfig?.inputChannels, 0);
+      expect(engine.lastConfig?.outputChannels, 0);
     });
 
     test('restores the saved latency offset for the device', () async {

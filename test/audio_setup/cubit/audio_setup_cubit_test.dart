@@ -116,7 +116,6 @@ void main() {
         const EngineConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          channels: 2,
           passthrough: true,
           mergeToMono: true,
         ),
@@ -194,7 +193,6 @@ void main() {
             const EngineConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              channels: 2,
               passthrough: true,
               mergeToMono: true,
               useLoopbackCapture: true,

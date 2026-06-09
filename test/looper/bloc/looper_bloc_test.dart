@@ -6,8 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockSettingsRepository extends Mock implements SettingsRepository {}
 
 class _FakeControllerSource implements ControllerSource {
   final StreamController<RawControllerInput> _controller =
@@ -60,6 +63,18 @@ void main() {
       () => repository.setMute(
         muted: any(named: 'muted'),
         channel: any(named: 'channel'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setInputChannel(
+        channel: any(named: 'channel'),
+        value: any(named: 'value'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setOutputMask(
+        channel: any(named: 'channel'),
+        mask: any(named: 'mask'),
       ),
     ).thenReturn(EngineResult.ok);
   });
@@ -116,6 +131,59 @@ void main() {
     act: (bloc) => bloc.add(const LooperMuteToggled(0)),
     verify: (_) => verify(() => repository.setMute(muted: true)).called(1),
   );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperInputChannelChanged forwards channel and value to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperInputChannelChanged(2, 1)),
+    verify: (_) => verify(
+      () => repository.setInputChannel(channel: 2, value: 1),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperOutputMaskChanged forwards channel and mask to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperOutputMaskChanged(1, 0x5)),
+    verify: (_) =>
+        verify(() => repository.setOutputMask(channel: 1, mask: 0x5)).called(1),
+  );
+
+  group('routing persistence', () {
+    late SettingsRepository settings;
+
+    setUp(() {
+      settings = _MockSettingsRepository();
+      when(
+        () => settings.saveTrackInputChannel(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveTrackOutputMask(any(), any()),
+      ).thenAnswer((_) async {});
+    });
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputChannelChanged persists the input channel',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperInputChannelChanged(3, 2)),
+      verify: (_) {
+        verify(
+          () => repository.setInputChannel(channel: 3, value: 2),
+        ).called(1);
+        verify(() => settings.saveTrackInputChannel(3, 2)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperOutputMaskChanged persists the output mask',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperOutputMaskChanged(0, 0x6)),
+      verify: (_) {
+        verify(() => repository.setOutputMask(channel: 0, mask: 0x6)).called(1);
+        verify(() => settings.saveTrackOutputMask(0, 0x6)).called(1);
+      },
+    );
+  });
 
   blocTest<LooperBloc, LooperState>(
     'LooperPlayAllPressed plays every track with content',

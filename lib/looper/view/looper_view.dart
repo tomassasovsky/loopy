@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
+import 'package:loopy/looper/view/track_routing_panel.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 
 /// The multi-track looper view: a Chewie-2-style grid of channel strips with
@@ -156,6 +159,47 @@ class _TrackStrip extends StatelessWidget {
 
   final Track track;
 
+  /// Opens the per-track I/O routing dialog, dispatching routing events to the
+  /// [LooperBloc] (which forwards to the engine and persists the choice).
+  void _showRoutingDialog(BuildContext context, int ch) {
+    final bloc = context.read<LooperBloc>();
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: AlertDialog(
+            key: const Key('trackRouting_dialog'),
+            title: Text('Track ${ch + 1} routing'),
+            content: BlocBuilder<LooperBloc, LooperState>(
+              builder: (context, state) {
+                final current = ch < state.tracks.length
+                    ? state.tracks[ch]
+                    : track;
+                return TrackRoutingPanel(
+                  track: current,
+                  inputChannels: state.status.inputChannels,
+                  outputChannels: state.status.outputChannels,
+                  onInputChanged: (value) =>
+                      bloc.add(LooperInputChannelChanged(ch, value)),
+                  onOutputMaskChanged: (mask) =>
+                      bloc.add(LooperOutputMaskChanged(ch, mask)),
+                );
+              },
+            ),
+            actions: [
+              TextButton(
+                key: const Key('trackRouting_done_button'),
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String get _recordLabel => switch (track.state) {
     TrackState.empty => 'Record',
     TrackState.recording => 'Finish',
@@ -193,6 +237,12 @@ class _TrackStrip extends StatelessWidget {
                 Chip(
                   key: Key('looper_trackState_chip_$ch'),
                   label: Text(track.state.name),
+                ),
+                IconButton(
+                  key: Key('looper_routing_button_$ch'),
+                  tooltip: 'I/O routing',
+                  icon: const Icon(Icons.alt_route),
+                  onPressed: () => _showRoutingDialog(context, ch),
                 ),
               ],
             ),
@@ -302,6 +352,7 @@ class _StatusFooter extends StatelessWidget {
     final device = status.deviceName.isEmpty ? 'no device' : status.deviceName;
     return Text(
       '$device · ${status.sampleRate} Hz · ${status.bufferFrames} frames · '
+      '${status.inputChannels} in / ${status.outputChannels} out · '
       'latency $_latency',
       style: Theme.of(context).textTheme.bodySmall,
     );

@@ -11,6 +11,8 @@ class StoredAudioConfig {
     required this.bufferFrames,
     required this.monitorInput,
     required this.mergeToMono,
+    this.inputChannels = 0,
+    this.outputChannels = 0,
   });
 
   /// Requested sample rate in Hz.
@@ -25,6 +27,12 @@ class StoredAudioConfig {
   /// Whether input channels are averaged to mono and fed to both outputs.
   final bool mergeToMono;
 
+  /// Requested hardware capture channel count (`0` => device default).
+  final int inputChannels;
+
+  /// Requested hardware playback channel count (`0` => device default).
+  final int outputChannels;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -33,11 +41,19 @@ class StoredAudioConfig {
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
           monitorInput == other.monitorInput &&
-          mergeToMono == other.mergeToMono;
+          mergeToMono == other.mergeToMono &&
+          inputChannels == other.inputChannels &&
+          outputChannels == other.outputChannels;
 
   @override
-  int get hashCode =>
-      Object.hash(sampleRate, bufferFrames, monitorInput, mergeToMono);
+  int get hashCode => Object.hash(
+    sampleRate,
+    bufferFrames,
+    monitorInput,
+    mergeToMono,
+    inputChannels,
+    outputChannels,
+  );
 }
 
 /// Persists user/device settings via a [KeyValueStore].
@@ -93,6 +109,8 @@ class SettingsRepository {
   static const String _audioBufferFramesKey = 'audio.buffer_frames';
   static const String _audioMonitorKey = 'audio.monitor_input';
   static const String _audioMergeToMonoKey = 'audio.merge_to_mono';
+  static const String _audioInputChannelsKey = 'audio.input_channels';
+  static const String _audioOutputChannelsKey = 'audio.output_channels';
 
   /// Loads the last-used audio configuration, or `null` if none has been saved
   /// yet (a first run, so the setup flow should be shown).
@@ -105,6 +123,8 @@ class SettingsRepository {
       bufferFrames: bufferFrames,
       monitorInput: await _store.getBool(_audioMonitorKey) ?? true,
       mergeToMono: await _store.getBool(_audioMergeToMonoKey) ?? true,
+      inputChannels: await _store.getInt(_audioInputChannelsKey) ?? 0,
+      outputChannels: await _store.getInt(_audioOutputChannelsKey) ?? 0,
     );
   }
 
@@ -114,6 +134,8 @@ class SettingsRepository {
     await _store.setInt(_audioBufferFramesKey, config.bufferFrames);
     await _store.setBool(_audioMonitorKey, value: config.monitorInput);
     await _store.setBool(_audioMergeToMonoKey, value: config.mergeToMono);
+    await _store.setInt(_audioInputChannelsKey, config.inputChannels);
+    await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
   }
 
   static const String _showWaveformWindowKey = 'big_picture.waveform_window';
@@ -147,6 +169,27 @@ class SettingsRepository {
   /// Saves the custom display [name] for track [channel].
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
+
+  String _trackInputChannelKey(int channel) => 'track_input_channel.$channel';
+  String _trackOutputMaskKey(int channel) => 'track_output_mask.$channel';
+
+  /// Loads the saved record-source input channel for track [channel], or `null`
+  /// if unset.
+  Future<int?> loadTrackInputChannel(int channel) =>
+      _store.getInt(_trackInputChannelKey(channel));
+
+  /// Saves the record-source input [value] for track [channel].
+  Future<void> saveTrackInputChannel(int channel, int value) =>
+      _store.setInt(_trackInputChannelKey(channel), value);
+
+  /// Loads the saved output-routing bitmask for track [channel], or `null` if
+  /// unset.
+  Future<int?> loadTrackOutputMask(int channel) =>
+      _store.getInt(_trackOutputMaskKey(channel));
+
+  /// Saves the output-routing [mask] for track [channel].
+  Future<void> saveTrackOutputMask(int channel, int mask) =>
+      _store.setInt(_trackOutputMaskKey(channel), mask);
 
   /// Clears all settings.
   Future<void> clear() => _store.clear();

@@ -44,7 +44,9 @@ void main() {
           ..undo_depth = 1
           ..redo_depth = 2
           ..rms = 0.4
-          ..peak = 0.6;
+          ..peak = 0.6
+          ..input_channel = 1
+          ..output_mask = 0x5;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -56,6 +58,8 @@ void main() {
         expect(track.redoDepth, 2);
         expect(track.rms, closeTo(0.4, 1e-6));
         expect(track.peak, closeTo(0.6, 1e-6));
+        expect(track.inputChannel, 1);
+        expect(track.outputMask, 0x5);
       } finally {
         calloc.free(ptr);
       }
@@ -80,6 +84,8 @@ void main() {
           ..sample_rate = 48000
           ..buffer_frames = 128
           ..channels = 2
+          ..input_channels = 2
+          ..output_channels = 4
           ..frames_processed = 123456
           ..xrun_count = 3
           ..input_rms = 0.25
@@ -108,6 +114,8 @@ void main() {
 
         expect(snapshot.isRunning, isTrue);
         expect(snapshot.sampleRate, 48000);
+        expect(snapshot.inputChannels, 2);
+        expect(snapshot.outputChannels, 4);
         expect(snapshot.framesProcessed, 123456);
         expect(snapshot.latencyState, LatencyState.done);
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
