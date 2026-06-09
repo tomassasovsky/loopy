@@ -403,6 +403,27 @@ static void test_looper_multitrack(void) {
   le_engine_destroy(e);
 }
 
+/* A restored/explicit record offset is published as a completed measurement so
+ * the UI shows the loaded latency rather than "not measured". */
+static void test_set_record_offset_publishes_latency(void) {
+  printf("test_set_record_offset_publishes_latency\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  le_snapshot s;
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_IDLE); /* nothing set yet */
+
+  CHECK(le_engine_set_record_offset(e, 480) == LE_OK); /* 480 frames @ 48k */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.record_offset_frames == 480);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(fabs(s.measured_latency_ms - 10.0) < 1e-6); /* 480/48000 s == 10 ms */
+
+  le_engine_destroy(e);
+}
+
 static void test_latency_compensation(void) {
   printf("test_latency_compensation\n");
   le_engine* e = make_configured_engine();
@@ -1106,6 +1127,7 @@ int main(void) {
   test_label_is_loopback();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
+  test_set_record_offset_publishes_latency();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

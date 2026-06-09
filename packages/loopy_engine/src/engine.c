@@ -426,9 +426,22 @@ static void apply_command(le_engine* e, const le_command* cmd) {
         store_i32(&e->tracks[cmd->arg_i].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
       }
       break;
-    case LE_CMD_SET_RECORD_OFFSET:
-      store_i32(&e->a_record_offset, cmd->arg_i > 0 ? cmd->arg_i : 0);
+    case LE_CMD_SET_RECORD_OFFSET: {
+      const int32_t frames = cmd->arg_i > 0 ? cmd->arg_i : 0;
+      store_i32(&e->a_record_offset, frames);
+      /* An explicitly set offset (a restored measurement, or a manual override)
+       * is a known round-trip, so publish it as a completed measurement — the
+       * UI then shows the loaded latency instead of "not measured". */
+      if (frames > 0) {
+        const int32_t osr = e->sample_rate > 0 ? e->sample_rate : 48000;
+        atomic_store_explicit(
+            &e->a_latency_ms_bits,
+            f64_to_bits((double)frames * 1000.0 / (double)osr),
+            memory_order_relaxed);
+        store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+      }
       break;
+    }
     /* Unlike SET_VOLUME/SET_MUTE (track in arg_i), these two carry the track in
      * arg_f and the mask in arg_i — so a 32-bit mask round-trips exactly (a
      * float cannot). See le_engine_set_input_mask/set_output_mask. */
