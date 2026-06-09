@@ -54,6 +54,29 @@ void main() {
       expect(engine.lastConfig?.channels, 2);
     });
 
+    test('restores the saved latency offset for the device', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          monitorInput: true,
+          mergeToMono: true,
+        ),
+      );
+      // Saved under the profile the running engine reports (the fake's default
+      // snapshot has sample rate / buffer 0, device 'Fake Device').
+      await settings.saveLatencyOffsetFrames(
+        device: 'Fake Device',
+        sampleRate: 0,
+        bufferFrames: 0,
+        frames: 720,
+      );
+
+      await tryAutoStartEngine(repository: repository, settings: settings);
+
+      expect(engine.lastRecordOffset, 720);
+    });
+
     test('returns false when the engine fails to start', () async {
       engine.startResult = EngineResult.device;
       await settings.saveAudioConfig(
