@@ -188,6 +188,29 @@ void main() {
       expect(loaded?.outputChannels, 0);
     });
 
+    test('round-trips pinned device ids', () async {
+      const config = StoredAudioConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        monitorInput: true,
+        mergeToMono: false,
+        playbackDeviceId: 'out-device-1',
+        captureDeviceId: 'in-device-2',
+      );
+      await repository.saveAudioConfig(config);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.playbackDeviceId, 'out-device-1');
+      expect(loaded?.captureDeviceId, 'in-device-2');
+    });
+
+    test('defaults device ids to empty (system default) when unset', () async {
+      await store.setInt('audio.sample_rate', 44100);
+      await store.setInt('audio.buffer_frames', 64);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.playbackDeviceId, '');
+      expect(loaded?.captureDeviceId, '');
+    });
+
     test(
       'defaults the toggles to true when only rate/buffer are set',
       () async {

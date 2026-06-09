@@ -315,6 +315,211 @@ void main() {
     });
   });
 
+  group('reconnect supervisor', () {
+    late StreamController<void> reconnectTicker;
+
+    setUp(() => reconnectTicker = StreamController<void>.broadcast());
+    tearDown(() => reconnectTicker.close());
+
+    LooperRepository buildSupervised() => LooperRepository(
+      engine: engine,
+      ticker: ticker.stream,
+      reconnectTicker: reconnectTicker.stream,
+    );
+
+    EngineSnapshot runningSnapshot({required bool devicePresent}) =>
+        EngineSnapshot(
+          isRunning: true,
+          devicePresent: devicePresent,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: LatencyState.idle,
+          measuredLatencyMs: -1,
+        );
+
+    const pinned = AudioDevice(
+      id: 'out-1',
+      name: 'Scarlett 2i2',
+      isDefault: false,
+      isInput: false,
+    );
+    const captureDevice = AudioDevice(
+      id: 'in-1',
+      name: 'Built-in Mic',
+      isDefault: false,
+      isInput: true,
+    );
+    const otherDevice = AudioDevice(
+      id: 'out-2',
+      name: 'Headphones',
+      isDefault: false,
+      isInput: false,
+    );
+
+    int startCount() => engine.calls.where((c) => c == 'start').length;
+    int stopCount() => engine.calls.where((c) => c == 'stop').length;
+
+    test('reopens a pinned device when it reappears', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+      expect(startCount(), 1);
+
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      // Device is lost: snapshot reports present == false.
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // Still absent from enumeration → no restart yet.
+      engine.devices = const [];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(startCount(), 1);
+
+      // Reappears → stop + restart on the same device.
+      engine.devices = const [pinned];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(engine.calls, containsAllInOrder(<String>['stop', 'start']));
+      expect(startCount(), 2);
+      expect(engine.lastConfig?.playbackDeviceId, 'out-1');
+    });
+
+    test('never restarts the system default on transient loss', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig()); // empty device id = default
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // Even though the device "reappears", a default config is never pinned.
+      engine.devices = const [pinned];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(startCount(), 1);
+      expect(engine.calls, isNot(contains('stop')));
+    });
+
+    test('a deliberate stop cancels reconnection', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      repo.stopEngine();
+      final startsAfterStop = startCount();
+
+      // The device reappears, but the user stopped — no auto-restart.
+      engine.devices = const [pinned];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(startCount(), startsAfterStop);
+    });
+
+    test('devicePresent is projected onto EngineStatus', () {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      expect(buildSupervised().state.status.devicePresent, isTrue);
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      expect(buildSupervised().state.status.devicePresent, isFalse);
+    });
+
+    test('reopens a pinned capture device when it reappears', () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(captureDeviceId: 'in-1'));
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // A playback device alone does not satisfy a pinned capture device.
+      engine.devices = const [pinned];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(startCount(), 1);
+
+      // The capture device returns → reopen.
+      engine.devices = const [pinned, captureDevice];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(startCount(), 2);
+      expect(engine.lastConfig?.captureDeviceId, 'in-1');
+    });
+
+    test(
+      'does not retry a failed restart until the device list changes',
+      () async {
+        engine.nextSnapshot = runningSnapshot(devicePresent: true);
+        final repo = buildSupervised()
+          ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'));
+        final sub = repo.looperState.listen((_) {});
+        addTearDown(sub.cancel);
+        await Future<void>.delayed(Duration.zero);
+
+        engine.nextSnapshot = runningSnapshot(devicePresent: false);
+        ticker.add(null);
+        await Future<void>.delayed(Duration.zero);
+
+        // Device present, but the engine refuses to open it.
+        engine
+          ..devices = const [pinned]
+          ..startResult = EngineResult.device;
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        final stopsAfterFirst = stopCount();
+        final startsAfterFirst = startCount();
+        expect(startsAfterFirst, 2); // one failed reopen attempt
+
+        // Same device list → no further thrash.
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(stopCount(), stopsAfterFirst);
+        expect(startCount(), startsAfterFirst);
+
+        // The list changes (a re-plug) → retry, and this time it succeeds.
+        engine
+          ..startResult = EngineResult.ok
+          ..devices = const [pinned, otherDevice];
+        reconnectTicker.add(null);
+        await Future<void>.delayed(Duration.zero);
+        expect(startCount(), startsAfterFirst + 1);
+      },
+    );
+
+    test('devices() forwards to the engine enumeration', () {
+      engine.devices = const [pinned];
+      final repo = buildSupervised();
+      expect(repo.devices(), const [pinned]);
+      expect(engine.calls, contains('enumerateDevices'));
+    });
+  });
+
   group('dispose', () {
     test('disposes the engine and closes the stream', () async {
       final repo = buildRepo();
