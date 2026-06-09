@@ -97,8 +97,8 @@ typedef struct le_config {
   int32_t use_loopback_capture; /* 1 = capture from a detected loopback device */
 } le_config;
 
-/* Maximum number of simultaneous looper tracks. */
-#define LE_MAX_TRACKS 4
+/* Maximum number of simultaneous looper tracks (two banks of four). */
+#define LE_MAX_TRACKS 8
 
 /* Number of points in the loop visualization buffer (le_engine_read_visual):
  * one peak per loop position, spanning exactly one master loop. */

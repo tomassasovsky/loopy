@@ -17,12 +17,14 @@ void main() {
   late UiModeCubit uiMode;
   late BigPictureCubit bigPicture;
   late WaveformWindowCubit waveformWindow;
+  late BankCubit bank;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     uiMode = UiModeCubit(settings: settings);
     bigPicture = BigPictureCubit(settings: settings);
     waveformWindow = WaveformWindowCubit(settings: settings);
+    bank = BankCubit(settings: settings);
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -39,6 +41,7 @@ void main() {
             BlocProvider<UiModeCubit>.value(value: uiMode),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
+            BlocProvider<BankCubit>.value(value: bank),
           ],
           child: const BigPictureSettingsPage(),
         ),
@@ -58,6 +61,16 @@ void main() {
 
     expect(waveformWindow.state, isFalse);
     expect(await settings.loadShowWaveformWindow(), isFalse);
+  });
+
+  testWidgets('toggling the second bank persists it', (tester) async {
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('bpSettings_bank_switch')));
+    await tester.pumpAndSettle();
+
+    expect(bank.state.enabled, isTrue);
+    expect(await settings.loadBankEnabled(), isTrue);
   });
 
   testWidgets('renaming a track updates the list and persists it', (

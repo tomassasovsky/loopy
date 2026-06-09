@@ -24,6 +24,7 @@ void main() {
   late LooperBloc bloc;
   late UiModeCubit uiMode;
   late BigPictureCubit bigPicture;
+  late BankCubit bank;
   late LooperRepository repository;
 
   setUpAll(() => registerFallbackValue(UiMode.desktop));
@@ -34,6 +35,7 @@ void main() {
     bigPicture = BigPictureCubit(
       settings: SettingsRepository(store: FakeKeyValueStore()),
     );
+    bank = BankCubit(settings: SettingsRepository(store: FakeKeyValueStore()));
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     whenListen(
@@ -58,6 +60,7 @@ void main() {
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<UiModeCubit>.value(value: uiMode),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
+            BlocProvider<BankCubit>.value(value: bank),
           ],
           child: const BigPictureView(),
         ),
@@ -87,6 +90,28 @@ void main() {
 
     await tester.longPress(find.byKey(const Key('bigpicture_tile_0')));
     verify(() => bloc.add(const LooperStopPressed(0))).called(1);
+  });
+
+  testWidgets('with the bank enabled, shows one bank and switches A/B', (
+    tester,
+  ) async {
+    await bank.setEnabled(value: true);
+    seed(
+      LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
+    );
+    await pump(tester);
+
+    // Bank A shows channels 0-3 only.
+    expect(find.byKey(const Key('bigpicture_tile_0')), findsOneWidget);
+    expect(find.byKey(const Key('bigpicture_tile_3')), findsOneWidget);
+    expect(find.byKey(const Key('bigpicture_tile_4')), findsNothing);
+
+    // Switch to bank B -> channels 4-7.
+    await tester.tap(find.byKey(const Key('bigpicture_bank_1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('bigpicture_tile_4')), findsOneWidget);
+    expect(find.byKey(const Key('bigpicture_tile_7')), findsOneWidget);
+    expect(find.byKey(const Key('bigpicture_tile_0')), findsNothing);
   });
 
   testWidgets('renaming a track updates its label', (tester) async {

@@ -14,7 +14,16 @@ void main() {
     test('defaults to channel 0 and generated names', () {
       final cubit = BigPictureCubit(settings: settings);
       expect(cubit.state.selectedChannel, 0);
-      expect(cubit.state.names, ['TRACK 1', 'TRACK 2', 'TRACK 3', 'TRACK 4']);
+      expect(cubit.state.names, [
+        'TRACK 1',
+        'TRACK 2',
+        'TRACK 3',
+        'TRACK 4',
+        'TRACK 5',
+        'TRACK 6',
+        'TRACK 7',
+        'TRACK 8',
+      ]);
       expect(cubit.state.nameOf(2), 'TRACK 3');
     });
 

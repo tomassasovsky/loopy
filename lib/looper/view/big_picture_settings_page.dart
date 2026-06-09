@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -23,6 +24,7 @@ class BigPictureSettingsPage extends StatelessWidget {
     final big = context.watch<BigPictureCubit>();
     final mode = context.watch<UiModeCubit>().state;
     final waveformEnabled = context.watch<WaveformWindowCubit>().state;
+    final bankEnabled = context.watch<BankCubit>().state.enabled;
 
     return Scaffold(
       appBar: AppBar(
@@ -81,6 +83,15 @@ class BigPictureSettingsPage extends StatelessWidget {
           ),
           const Divider(),
           const _SectionHeader('Tracks'),
+          SwitchListTile(
+            key: const Key('bpSettings_bank_switch'),
+            title: const Text('Second bank (8 tracks)'),
+            subtitle: const Text(
+              'Adds a second bank of four tracks, switchable as A / B',
+            ),
+            value: bankEnabled,
+            onChanged: (on) => context.read<BankCubit>().setEnabled(value: on),
+          ),
           for (var i = 0; i < big.state.names.length; i++)
             ListTile(
               key: Key('bpSettings_trackName_$i'),

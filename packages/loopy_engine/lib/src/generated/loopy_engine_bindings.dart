@@ -726,12 +726,12 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int track_count;
 
-  @ffi.Array.multi([4])
+  @ffi.Array.multi([8])
   external ffi.Array<le_track_snapshot> tracks;
 }
 
 final class le_engine extends ffi.Opaque {}
 
-const int LE_MAX_TRACKS = 4;
+const int LE_MAX_TRACKS = 8;
 
 const int LE_VIZ_POINTS = 512;
