@@ -248,7 +248,7 @@ class _ReadyStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _InfoTable(
+        SetupInfoTable(
           rows: [
             ('Sample rate', _khz(state.sampleRate)),
             ('Buffer', '${state.bufferFrames} frames'),
@@ -329,7 +329,7 @@ class _RunningPanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _InfoTable(
+                SetupInfoTable(
                   rows: [
                     ('Sample rate', '${s.sampleRate} Hz'),
                     ('Buffer', '${s.bufferFrames} frames'),

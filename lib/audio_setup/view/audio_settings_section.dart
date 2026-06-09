@@ -48,7 +48,7 @@ class AudioSettingsSection extends StatelessWidget {
         const SizedBox(height: 28),
         const SetupGroupLabel('STATUS'),
         const SizedBox(height: 12),
-        _StatusCard(
+        SetupInfoTable(
           rows: [
             (
               'Device',
@@ -84,64 +84,4 @@ class AudioSettingsSection extends StatelessWidget {
     LatencyState.timeout => 'No signal detected',
     LatencyState.idle => 'Not measured',
   };
-}
-
-/// A bordered card listing label/value status rows.
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.rows});
-
-  final List<(String, String)> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: SetupSurfaceColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: SetupSurfaceColors.line),
-      ),
-      child: Column(
-        children: [
-          for (var i = 0; i < rows.length; i++)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-              decoration: BoxDecoration(
-                border: i == rows.length - 1
-                    ? null
-                    : const Border(
-                        bottom: BorderSide(color: SetupSurfaceColors.line),
-                      ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      rows[i].$1,
-                      style: const TextStyle(
-                        color: SetupSurfaceColors.t2,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: Text(
-                      rows[i].$2,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: SetupSurfaceColors.t1,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }
