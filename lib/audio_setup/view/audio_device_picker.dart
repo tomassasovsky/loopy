@@ -32,6 +32,8 @@ class AudioDevicePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final value = devices.any((d) => d.id == selectedId) ? selectedId : '';
+    final defaults = devices.where((d) => d.isDefault);
+    final defaultName = defaults.isEmpty ? null : defaults.first.name;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
@@ -49,7 +51,16 @@ class AudioDevicePicker extends StatelessWidget {
           icon: const Icon(Icons.expand_more, color: SetupSurfaceColors.t2),
           style: const TextStyle(color: SetupSurfaceColors.t1, fontSize: 14),
           items: [
-            const DropdownMenuItem(value: '', child: Text('System default')),
+            DropdownMenuItem(
+              value: '',
+              child: Text(
+                defaultName == null
+                    ? 'System default'
+                    : 'System default ($defaultName)',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             for (final device in devices)
               DropdownMenuItem(
                 value: device.id,

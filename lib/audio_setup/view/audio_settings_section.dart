@@ -77,7 +77,8 @@ class AudioSettingsSection extends StatelessWidget {
             for (final m in AudioSetupState.maxLoopMinuteOptions)
               SetupOption(
                 value: m,
-                label: m == 0 ? 'Default' : '$m min',
+                // 0 uses the engine's built-in cap (sample_rate * 30 = 30 s).
+                label: m == 0 ? 'Default (30 s)' : '$m min',
                 optionKey: Key('audioSettings_maxLoop_$m'),
               ),
           ],

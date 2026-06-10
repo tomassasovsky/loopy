@@ -101,6 +101,7 @@ class _TrackQuantizeControl extends StatefulWidget {
 
 class _TrackQuantizeControlState extends State<_TrackQuantizeControl> {
   bool? _override;
+  bool _globalDefault = false;
 
   @override
   void initState() {
@@ -110,7 +111,13 @@ class _TrackQuantizeControlState extends State<_TrackQuantizeControl> {
 
   Future<void> _load() async {
     final value = await widget.settings.loadTrackQuantize(widget.channel);
-    if (mounted) setState(() => _override = value);
+    final global = await widget.settings.loadQuantize();
+    if (mounted) {
+      setState(() {
+        _override = value;
+        _globalDefault = global;
+      });
+    }
   }
 
   void _set(bool? value) {
@@ -127,7 +134,7 @@ class _TrackQuantizeControlState extends State<_TrackQuantizeControl> {
       children: [
         ChoiceChip(
           key: const Key('trackRouting_quantize_default'),
-          label: const Text('Default'),
+          label: Text('Default (${_globalDefault ? 'On' : 'Off'})'),
           selected: _override == null,
           onSelected: (_) => _set(null),
         ),
@@ -162,8 +169,9 @@ class _TrackMultipleControl extends StatefulWidget {
 }
 
 class _TrackMultipleControlState extends State<_TrackMultipleControl> {
-  /// 0 = auto; 1/2/3 = fixed.
+  /// 0 = inherit the global default; 1/2/3 = fixed.
   int _multiple = 0;
+  int _globalDefault = 0;
 
   @override
   void initState() {
@@ -173,7 +181,13 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
 
   Future<void> _load() async {
     final value = await widget.settings.loadTrackMultiple(widget.channel);
-    if (mounted) setState(() => _multiple = value);
+    final global = await widget.settings.loadDefaultMultiple();
+    if (mounted) {
+      setState(() {
+        _multiple = value;
+        _globalDefault = global;
+      });
+    }
   }
 
   void _set(int value) {
@@ -185,12 +199,13 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
 
   @override
   Widget build(BuildContext context) {
+    final globalLabel = _globalDefault == 0 ? 'Auto' : '×$_globalDefault';
     return Wrap(
       spacing: 8,
       children: [
         ChoiceChip(
           key: const Key('trackRouting_multiple_auto'),
-          label: const Text('Default'),
+          label: Text('Default ($globalLabel)'),
           selected: _multiple == 0,
           onSelected: (_) => _set(0),
         ),
