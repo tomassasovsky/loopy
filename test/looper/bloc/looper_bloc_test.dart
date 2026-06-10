@@ -77,6 +77,12 @@ void main() {
         mask: any(named: 'mask'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackQuantize(
+        channel: any(named: 'channel'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => stateController.close());
@@ -146,6 +152,15 @@ void main() {
     act: (bloc) => bloc.add(const LooperOutputMaskChanged(1, 0x5)),
     verify: (_) =>
         verify(() => repository.setOutputMask(channel: 1, mask: 0x5)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackQuantizeChanged forwards the override to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackQuantizeChanged(2, enabled: true)),
+    verify: (_) => verify(
+      () => repository.setTrackQuantize(channel: 2, enabled: true),
+    ).called(1),
   );
 
   group('routing persistence', () {

@@ -1344,8 +1344,77 @@ static void test_monitor_excluded_and_off(void) {
   le_engine_destroy(e);
 }
 
+/* A per-track quantize override wins over the global default: force-on captures
+ * on a track while the global default is off (arms instead of starting now). */
+static void test_quantize_track_override_forces_on(void) {
+  printf("test_quantize_track_override_forces_on\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out);
+  // Global default off (the engine default); force quantize on for track 1.
+  CHECK(le_engine_set_track_quantize(e, 1, 1) == LE_OK);
+  process_const(e, 0.0f, 1, out); /* move off the loop top */
+
+  le_engine_record(e, 1); /* should ARM (override on), not start now */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  process_const(e, 2.0f, 3, out); /* wrap -> fires at the top */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* A force-off override wins over a global default of on: the track records
+ * immediately even though quantize is globally enabled. */
+static void test_quantize_track_override_forces_off(void) {
+  printf("test_quantize_track_override_forces_off\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out);
+  le_engine_set_quantize(e, 1);              /* global on */
+  CHECK(le_engine_set_track_quantize(e, 1, 0) == LE_OK); /* force off track 1 */
+  process_const(e, 0.0f, 1, out);
+
+  le_engine_record(e, 1); /* immediate, not armed */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* Inheriting tracks (override < 0) follow the global default. */
+static void test_quantize_track_override_inherits(void) {
+  printf("test_quantize_track_override_inherits\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out);
+  le_engine_set_quantize(e, 1);                /* global on */
+  le_engine_set_track_quantize(e, 1, -1);      /* explicit inherit */
+  process_const(e, 0.0f, 1, out);
+
+  le_engine_record(e, 1); /* inherits global on -> arms */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* armed, not recording */
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
+  test_quantize_track_override_forces_on();
+  test_quantize_track_override_forces_off();
+  test_quantize_track_override_inherits();
   test_monitor_routing_masks();
   test_monitor_excluded_and_off();
   test_quantize_start_and_finalize_on_grid();

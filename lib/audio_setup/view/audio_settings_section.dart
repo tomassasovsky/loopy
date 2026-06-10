@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
+import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 
 /// The audio controls embedded in the Big Picture settings "Audio" section,
@@ -79,6 +80,17 @@ class AudioSettingsSection extends StatelessWidget {
                 optionKey: Key('audioSettings_maxLoop_$m'),
               ),
           ],
+        ),
+        const SizedBox(height: 12),
+        SetupToggleRow(
+          toggleKey: const Key('audioSettings_quantize_switch'),
+          title: 'Quantize recording',
+          subtitle:
+              'Snap record start/stop to the loop grid. The default for '
+              'all tracks; override per track from its routing dialog.',
+          value: context.watch<QuantizeCubit>().state,
+          onChanged: (on) =>
+              unawaited(context.read<QuantizeCubit>().setEnabled(value: on)),
         ),
         const SizedBox(height: 28),
         const SetupGroupLabel('STATUS'),

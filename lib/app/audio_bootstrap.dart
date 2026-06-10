@@ -50,7 +50,7 @@ Future<bool> tryAutoStartEngine({
     repository.measureLatency();
   }
 
-  // Restore per-track I/O routing so a saved record source / output mask is
+  // Restore per-track I/O routing and quantize overrides so saved settings are
   // reapplied on launch (mirroring the latency-offset restore above).
   for (final track in repository.state.tracks) {
     final inputMask = await settings.loadTrackInputMask(track.channel);
@@ -60,6 +60,10 @@ Future<bool> tryAutoStartEngine({
     final mask = await settings.loadTrackOutputMask(track.channel);
     if (mask != null) {
       repository.setOutputMask(channel: track.channel, mask: mask);
+    }
+    final quantize = await settings.loadTrackQuantize(track.channel);
+    if (quantize != null) {
+      repository.setTrackQuantize(channel: track.channel, enabled: quantize);
     }
   }
   return true;

@@ -143,6 +143,11 @@ abstract interface class AudioEngine {
   /// immediately.
   EngineResult setQuantize({required bool enabled});
 
+  /// Sets track [channel]'s quantize override: `null` inherits the global
+  /// [setQuantize] default, `false` forces quantize off for the track, and
+  /// `true` forces it on.
+  EngineResult setTrackQuantize({required int channel, required bool? enabled});
+
   /// Sets the monitor input mask: which input channels are averaged (mono) into
   /// the live monitor signal (a bitmask; bit c => hardware input channel c).
   /// Bits beyond the input range or loopback-excluded are ignored.

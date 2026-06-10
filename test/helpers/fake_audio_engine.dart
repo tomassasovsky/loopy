@@ -166,6 +166,18 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-track quantize overrides passed to [setTrackQuantize].
+  final Map<int, bool?> trackQuantize = {};
+
+  @override
+  EngineResult setTrackQuantize({
+    required int channel,
+    required bool? enabled,
+  }) {
+    trackQuantize[channel] = enabled;
+    return EngineResult.ok;
+  }
+
   /// The last masks passed to [setMonitorInputMask] / [setMonitorOutputMask].
   int? lastMonitorInputMask;
   int? lastMonitorOutputMask;

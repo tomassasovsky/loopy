@@ -253,6 +253,7 @@ class RoutingGraphView extends StatefulWidget {
     this.trackLabels,
     this.onInputMaskChanged,
     this.onOutputMaskChanged,
+    this.initialArmed,
     super.key,
   });
 
@@ -279,6 +280,10 @@ class RoutingGraphView extends StatefulWidget {
   /// Called with `(channel, newMask)` when a click toggles a track's output
   /// routing.
   final void Function(int channel, int mask)? onOutputMaskChanged;
+
+  /// Index in [tracks] to arm initially (e.g. the only track in a single-track
+  /// view), so its channels are immediately clickable. `null` starts unarmed.
+  final int? initialArmed;
 
   /// Node box width.
   static const double nodeWidth = 92;
@@ -336,6 +341,12 @@ class RoutingGraphView extends StatefulWidget {
 class _RoutingGraphViewState extends State<RoutingGraphView> {
   /// The armed track's index in [RoutingGraphView.tracks], or null.
   int? _armed;
+
+  @override
+  void initState() {
+    super.initState();
+    _armed = widget.initialArmed;
+  }
 
   /// The node currently under the pointer (drives connection highlighting).
   RoutingNode? _hovered;
