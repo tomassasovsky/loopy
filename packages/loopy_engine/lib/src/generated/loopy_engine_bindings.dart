@@ -620,6 +620,51 @@ class LoopyEngineBindings {
       >('le_engine_set_quantize');
   late final _le_engine_set_quantize = _le_engine_set_quantizePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets the monitor input mask: which input channels are averaged (mono) into
+  /// the live monitor signal. Bits beyond the input range or loopback-excluded are
+  /// ignored.
+  int le_engine_set_monitor_input_mask(
+    ffi.Pointer<le_engine> engine,
+    int mask,
+  ) {
+    return _le_engine_set_monitor_input_mask(
+      engine,
+      mask,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_maskPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_monitor_input_mask');
+  late final _le_engine_set_monitor_input_mask =
+      _le_engine_set_monitor_input_maskPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets the monitor output mask: which output channels the monitor is routed to.
+  /// Bits beyond the output range are ignored.
+  int le_engine_set_monitor_output_mask(
+    ffi.Pointer<le_engine> engine,
+    int mask,
+  ) {
+    return _le_engine_set_monitor_output_mask(
+      engine,
+      mask,
+    );
+  }
+
+  late final _le_engine_set_monitor_output_maskPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_monitor_output_mask');
+  late final _le_engine_set_monitor_output_mask =
+      _le_engine_set_monitor_output_maskPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -784,7 +829,13 @@ enum le_command_code {
   LE_CMD_ARM(16),
 
   /// arg_i = track: cancel a pending quantized record
-  LE_CMD_DISARM(17);
+  LE_CMD_DISARM(17),
+
+  /// arg_i = monitor input bitmask
+  LE_CMD_SET_MONITOR_INPUT_MASK(18),
+
+  /// arg_i = monitor output bitmask
+  LE_CMD_SET_MONITOR_OUTPUT_MASK(19);
 
   final int value;
   const le_command_code(this.value);
@@ -804,6 +855,8 @@ enum le_command_code {
     15 => LE_CMD_SET_OUTPUT_MASK,
     16 => LE_CMD_ARM,
     17 => LE_CMD_DISARM,
+    18 => LE_CMD_SET_MONITOR_INPUT_MASK,
+    19 => LE_CMD_SET_MONITOR_OUTPUT_MASK,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }

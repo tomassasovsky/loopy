@@ -94,6 +94,8 @@ typedef enum le_command_code {
                                   * (arg_f = track, arg_i = output bitmask) */
   LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop top) */
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record */
+  LE_CMD_SET_MONITOR_INPUT_MASK = 18,  /* arg_i = monitor input bitmask */
+  LE_CMD_SET_MONITOR_OUTPUT_MASK = 19, /* arg_i = monitor output bitmask */
 } le_command_code;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
@@ -306,6 +308,17 @@ LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
  * the boundary cancels the pending action. The defining recording (no master
  * yet) always acts immediately. Disabling cancels any pending arms. */
 LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
+
+/* Sets the monitor input mask: which input channels are averaged (mono) into
+ * the live monitor signal. Bits beyond the input range or loopback-excluded are
+ * ignored. */
+LE_EXPORT int32_t le_engine_set_monitor_input_mask(le_engine* engine,
+                                                   int32_t mask);
+
+/* Sets the monitor output mask: which output channels the monitor is routed to.
+ * Bits beyond the output range are ignored. */
+LE_EXPORT int32_t le_engine_set_monitor_output_mask(le_engine* engine,
+                                                    int32_t mask);
 
 #ifdef __cplusplus
 }

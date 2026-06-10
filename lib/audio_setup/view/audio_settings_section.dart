@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
 import 'package:loopy/setup/setup_surface.dart';
 
@@ -55,6 +58,7 @@ class AudioSettingsSection extends StatelessWidget {
           value: state.monitorInput,
           onChanged: (on) => cubit.setMonitorInput(monitorInput: on),
         ),
+        if (state.monitorInput) ..._monitorRouting(context, status),
         const SizedBox(height: 28),
         const SetupGroupLabel('RECORDING'),
         const SizedBox(height: 12),
@@ -107,6 +111,64 @@ class AudioSettingsSection extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  /// The monitor-routing controls shown under the monitor toggle: pick whether
+  /// the monitor uses custom channel masks or follows the selected track, and
+  /// (custom) which input/output channels are routed.
+  List<Widget> _monitorRouting(BuildContext context, EngineStatus status) {
+    final monitor = context.watch<MonitorCubit>();
+    final mode = monitor.state.mode;
+    return [
+      const SizedBox(height: 12),
+      SetupOptionRow<MonitorMode>(
+        selected: mode,
+        onSelected: (m) => unawaited(context.read<MonitorCubit>().setMode(m)),
+        options: const [
+          SetupOption(
+            value: MonitorMode.custom,
+            label: 'Custom',
+            sub: 'Pick channels',
+            optionKey: Key('audioSettings_monitorMode_custom'),
+          ),
+          SetupOption(
+            value: MonitorMode.followSelected,
+            label: 'Follow track',
+            sub: 'Selected track',
+            optionKey: Key('audioSettings_monitorMode_follow'),
+          ),
+        ],
+      ),
+      if (mode == MonitorMode.custom)
+        if (status.inputChannels > 0 || status.outputChannels > 0) ...[
+          const SizedBox(height: 16),
+          const Text('Monitor these inputs', style: setupBody),
+          const SizedBox(height: 8),
+          SetupChannelChips(
+            keyPrefix: 'audioSettings_monitorIn',
+            channelCount: status.inputChannels,
+            mask: monitor.state.inputMask,
+            onChanged: (m) =>
+                unawaited(context.read<MonitorCubit>().setInputMask(m)),
+          ),
+          const SizedBox(height: 16),
+          const Text('Route to these outputs', style: setupBody),
+          const SizedBox(height: 8),
+          SetupChannelChips(
+            keyPrefix: 'audioSettings_monitorOut',
+            channelCount: status.outputChannels,
+            mask: monitor.state.outputMask,
+            onChanged: (m) =>
+                unawaited(context.read<MonitorCubit>().setOutputMask(m)),
+          ),
+        ] else ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Start the engine to choose monitor channels.',
+            style: setupBody,
+          ),
+        ],
+    ];
   }
 
   String _latencyText(EngineStatus s) => switch (s.latencyState) {

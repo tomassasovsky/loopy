@@ -267,6 +267,22 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMonitorInputMask({required int mask}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_mask(_engine, mask),
+    );
+  }
+
+  @override
+  EngineResult setMonitorOutputMask({required int mask}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_output_mask(_engine, mask),
+    );
+  }
+
+  @override
   Float32List readVisual() {
     _checkAlive();
     final n = _bindings.le_engine_read_visual(_engine, _vizPtr, LE_VIZ_POINTS);

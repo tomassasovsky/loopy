@@ -116,6 +116,16 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          BlocProvider(
+            create: (context) {
+              final cubit = MonitorCubit(
+                repository: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           // Provided at the shell (not just the setup screen) so the device
           // picker, the persisted selection, and the connect/disconnect banner
           // stay live during normal looping, not only during first-run setup.
@@ -275,6 +285,15 @@ class _AppViewState extends State<_AppView> {
           listenWhen: (previous, current) =>
               previous.deviceConnectivity != current.deviceConnectivity,
           listener: (_, state) => _showConnectivityBanner(state),
+        ),
+        // Feed the selected track to the monitor so "follow selected" mirrors
+        // its routing as the selection changes.
+        BlocListener<BigPictureCubit, BigPictureState>(
+          listenWhen: (previous, current) =>
+              previous.selectedChannel != current.selectedChannel,
+          listener: (context, state) => context
+              .read<MonitorCubit>()
+              .setSelectedChannel(state.selectedChannel),
         ),
       ],
       child: BlocBuilder<UiModeCubit, UiMode>(

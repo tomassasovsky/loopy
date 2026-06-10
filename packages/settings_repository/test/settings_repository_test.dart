@@ -299,6 +299,23 @@ void main() {
     });
   });
 
+  group('monitor routing', () {
+    test('mode is null and masks default when unset', () async {
+      expect(await repository.loadMonitorMode(), isNull);
+      expect(await repository.loadMonitorInputMask(), 0x1);
+      expect(await repository.loadMonitorOutputMask(), 0x3);
+    });
+
+    test('round-trips mode and masks', () async {
+      await repository.saveMonitorMode('followSelected');
+      await repository.saveMonitorInputMask(0x2);
+      await repository.saveMonitorOutputMask(0x5);
+      expect(await repository.loadMonitorMode(), 'followSelected');
+      expect(await repository.loadMonitorInputMask(), 0x2);
+      expect(await repository.loadMonitorOutputMask(), 0x5);
+    });
+  });
+
   group('StoredAudioConfig.maxLoopMinutes', () {
     test(
       'defaults to 0 (engine default) and round-trips a saved value',

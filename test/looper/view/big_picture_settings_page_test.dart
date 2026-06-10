@@ -27,6 +27,7 @@ void main() {
   late AudioSetupCubit audioSetup;
   late RefreshRateCubit refreshRate;
   late QuantizeCubit quantize;
+  late MonitorCubit monitor;
   late LooperRepository repository;
 
   setUp(() {
@@ -49,8 +50,15 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
+    monitor = MonitorCubit(repository: repository, settings: settings);
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorInputMask(any()),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorOutputMask(any()),
     ).thenReturn(EngineResult.ok);
   });
 
@@ -70,6 +78,7 @@ void main() {
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
+            BlocProvider<MonitorCubit>.value(value: monitor),
           ],
           child: const BigPictureSettingsPage(),
         ),
@@ -257,6 +266,7 @@ void main() {
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
+            BlocProvider<MonitorCubit>.value(value: monitor),
           ],
           child: MaterialApp(
             home: Builder(

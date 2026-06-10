@@ -5,16 +5,33 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
+class _MockLooperRepository extends Mock implements LooperRepository {}
+
 void main() {
   late AudioSetupCubit cubit;
+  late MonitorCubit monitor;
 
-  setUp(() => cubit = _MockAudioSetupCubit());
+  setUp(() {
+    cubit = _MockAudioSetupCubit();
+    final repository = _MockLooperRepository();
+    when(
+      () => repository.setMonitorInputMask(any()),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorOutputMask(any()),
+    ).thenReturn(EngineResult.ok);
+    monitor = MonitorCubit(
+      repository: repository,
+      settings: SettingsRepository(store: FakeKeyValueStore()),
+    );
+  });
 
   void seed(AudioSetupState state) {
     when(() => cubit.state).thenReturn(state);
@@ -26,8 +43,11 @@ void main() {
   }
 
   Future<void> pumpSection(WidgetTester tester) => tester.pumpApp(
-    BlocProvider<AudioSetupCubit>.value(
-      value: cubit,
+    MultiBlocProvider(
+      providers: [
+        BlocProvider<AudioSetupCubit>.value(value: cubit),
+        BlocProvider<MonitorCubit>.value(value: monitor),
+      ],
       child: const Material(
         child: SingleChildScrollView(child: AudioSettingsSection()),
       ),
@@ -130,6 +150,47 @@ void main() {
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
+  });
+
+  testWidgets('switching the monitor to follow-track updates the cubit', (
+    tester,
+  ) async {
+    seed(runningState); // monitorInput on, custom mode by default
+    await pumpSection(tester);
+    expect(monitor.state.mode, MonitorMode.custom);
+
+    final follow = find.byKey(const Key('audioSettings_monitorMode_follow'));
+    await tester.ensureVisible(follow);
+    await tester.tap(follow);
+    await tester.pumpAndSettle();
+
+    expect(monitor.state.mode, MonitorMode.followSelected);
+  });
+
+  testWidgets('custom monitor input chips toggle the mask', (tester) async {
+    seed(
+      const AudioSetupState(
+        status: AudioSetupStatus.running,
+        engineStatus: EngineStatus(
+          deviceName: 'Scarlett 4i4',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+          inputChannels: 2,
+          outputChannels: 2,
+        ),
+      ),
+    );
+    await pumpSection(tester);
+    expect(monitor.state.inputMask, 0x1); // default: channel 0 only
+
+    // Tap input channel 2 (index 1) to add it: 0x1 | (1 << 1) == 0x3.
+    final inChannel2 = find.byKey(const Key('audioSettings_monitorIn_1'));
+    await tester.ensureVisible(inChannel2);
+    await tester.tap(inChannel2);
+    await tester.pumpAndSettle();
+
+    expect(monitor.state.inputMask, 0x3);
   });
 
   testWidgets('choosing a max loop length forwards to the cubit', (

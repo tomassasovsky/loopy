@@ -214,6 +214,34 @@ class SettingsRepository {
   Future<void> saveQuantize({required bool value}) =>
       _store.setBool(_quantizeKey, value: value);
 
+  static const String _monitorModeKey = 'monitor.mode';
+  static const String _monitorInputMaskKey = 'monitor.input_mask';
+  static const String _monitorOutputMaskKey = 'monitor.output_mask';
+
+  /// Loads the monitor-routing mode token (`'custom'` / `'followSelected'`), or
+  /// `null` if unset. The presentation layer maps it to its mode enum.
+  Future<String?> loadMonitorMode() => _store.getString(_monitorModeKey);
+
+  /// Saves the monitor-routing [mode] token.
+  Future<void> saveMonitorMode(String mode) =>
+      _store.setString(_monitorModeKey, mode);
+
+  /// Loads the custom monitor input bitmask. Defaults to `0x1` (input 0).
+  Future<int> loadMonitorInputMask() async =>
+      await _store.getInt(_monitorInputMaskKey) ?? 0x1;
+
+  /// Saves the custom monitor input bitmask.
+  Future<void> saveMonitorInputMask(int mask) =>
+      _store.setInt(_monitorInputMaskKey, mask);
+
+  /// Loads the custom monitor output bitmask. Defaults to `0x3` (outs 0 + 1).
+  Future<int> loadMonitorOutputMask() async =>
+      await _store.getInt(_monitorOutputMaskKey) ?? 0x3;
+
+  /// Saves the custom monitor output bitmask.
+  Future<void> saveMonitorOutputMask(int mask) =>
+      _store.setInt(_monitorOutputMaskKey, mask);
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.

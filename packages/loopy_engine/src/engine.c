@@ -128,6 +128,10 @@ struct le_engine {
   _Atomic int32_t a_latency_state;
   _Atomic uint64_t a_latency_ms_bits;
   _Atomic int32_t a_monitor; /* input monitoring on/off (latency disables it) */
+  /* Monitor routing: the masked, non-excluded inputs are averaged to mono (like
+   * a track) and added to every output the monitor output mask selects. */
+  _Atomic uint32_t a_monitor_input_mask;
+  _Atomic uint32_t a_monitor_output_mask;
 
   /* Looper transport (master). */
   _Atomic int32_t a_master_len;
@@ -500,6 +504,25 @@ static void apply_command(le_engine* e, const le_command* cmd) {
                             (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
       break;
     }
+    case LE_CMD_SET_MONITOR_INPUT_MASK: {
+      const uint32_t valid = e->in_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->in_channels) - 1u);
+      const uint32_t excluded = atomic_load_explicit(
+          &e->a_excluded_input_mask, memory_order_relaxed);
+      atomic_store_explicit(&e->a_monitor_input_mask,
+                            (uint32_t)cmd->arg_i & valid & ~excluded,
+                            memory_order_relaxed);
+      break;
+    }
+    case LE_CMD_SET_MONITOR_OUTPUT_MASK: {
+      const uint32_t valid = e->out_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->out_channels) - 1u);
+      atomic_store_explicit(&e->a_monitor_output_mask,
+                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+      break;
+    }
     default:
       break;
   }
@@ -627,6 +650,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * longer folded into the loop buffer at the playhead). */
     const int32_t offset = load_i32(&e->a_record_offset);
     const int monitor_on = load_i32(&e->a_monitor);
+    const uint32_t mon_in_mask =
+        atomic_load_explicit(&e->a_monitor_input_mask, memory_order_relaxed);
+    const uint32_t mon_out_mask =
+        atomic_load_explicit(&e->a_monitor_output_mask, memory_order_relaxed);
     const int32_t pos = e->clock.position;
 
     /* Per-track read base for this frame: a track of multiple k plays its k-th
@@ -719,14 +746,26 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       trk_sumsq[t] += loopsample * loopsample;
     }
 
-    /* Input monitoring (passthrough): route input channel c to output channel c
-     * for the channels the two sides share. Excluded (loopback) channels are
-     * never monitored. Kept deliberately simple. */
+    /* Input monitoring: average the masked, non-excluded inputs to mono (like a
+     * track's capture) and add that to every output the monitor mask selects.
+     * Empty masks monitor silence; excluded (loopback) channels are never
+     * monitored. With the default masks (input 0 -> outputs 0 + 1) this is the
+     * familiar passthrough; custom masks pick which inputs you hear and where. */
     if (monitor_on) {
-      const int shared = ch_in < ch_out ? ch_in : ch_out;
-      for (int c = 0; c < shared; ++c) {
-        if (excluded & (1u << c)) continue;
-        out[f * ch_out + c] += in ? in[f * ch_in + c] : 0.0f;
+      float msample = 0.0f;
+      if (in) {
+        float sum = 0.0f;
+        int cnt = 0;
+        for (int c = 0; c < ch_in; ++c) {
+          if ((mon_in_mask & (1u << c)) && !(excluded & (1u << c))) {
+            sum += in[f * ch_in + c];
+            ++cnt;
+          }
+        }
+        msample = cnt > 0 ? sum / (float)cnt : 0.0f;
+      }
+      for (int c = 0; c < ch_out; ++c) {
+        if (mon_out_mask & (1u << c)) out[f * ch_out + c] += msample;
       }
     }
 
@@ -921,6 +960,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_out_channels, output_channels);
   /* Re-derived per device open in le_engine_start; default to none excluded. */
   atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
+                        memory_order_relaxed);
+  /* Monitor routing defaults to input 0 -> outputs 0 + 1, matching the track
+   * routing default (a mono source on input 1 is heard on both sides). */
+  atomic_store_explicit(&engine->a_monitor_input_mask, 0x1u,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_monitor_output_mask, 0x3u,
                         memory_order_relaxed);
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
@@ -1207,6 +1252,11 @@ void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
   if (engine == NULL) return;
   atomic_store_explicit(&engine->a_excluded_input_mask, mask,
                         memory_order_relaxed);
+}
+
+void le_engine_set_monitor_for_test(le_engine* engine, int on) {
+  if (engine == NULL) return;
+  store_i32(&engine->a_monitor, on ? 1 : 0);
 }
 
 static void le_uninit_context(le_engine* engine) {
@@ -1713,6 +1763,14 @@ int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
 
 int32_t le_engine_set_record_offset(le_engine* engine, int32_t frames) {
   return le_push(engine, LE_CMD_SET_RECORD_OFFSET, frames, 0.0f);
+}
+
+int32_t le_engine_set_monitor_input_mask(le_engine* engine, int32_t mask) {
+  return le_push(engine, LE_CMD_SET_MONITOR_INPUT_MASK, mask, 0.0f);
+}
+
+int32_t le_engine_set_monitor_output_mask(le_engine* engine, int32_t mask) {
+  return le_push(engine, LE_CMD_SET_MONITOR_OUTPUT_MASK, mask, 0.0f);
 }
 
 int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {
