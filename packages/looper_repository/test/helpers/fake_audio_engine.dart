@@ -276,6 +276,43 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-index monitor-bus effect type passed to [setMonitorFx].
+  final Map<int, TrackEffectType> monitorFx = {};
+
+  /// The active monitor-bus chain length passed to [setMonitorFxCount].
+  int? monitorFxCount;
+
+  /// Per-(index, param) value passed to [setMonitorFxParam].
+  final Map<(int, int), double> monitorFxParam = {};
+
+  @override
+  EngineResult setMonitorFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    monitorFx[index] = type;
+    calls.add('setMonitorFx');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorFxCount({required int count}) {
+    monitorFxCount = count;
+    calls.add('setMonitorFxCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    monitorFxParam[(index, param)] = value;
+    calls.add('setMonitorFxParam');
+    return EngineResult.ok;
+  }
+
   @override
   Float32List exportTrack(int channel) {
     calls.add('exportTrack');

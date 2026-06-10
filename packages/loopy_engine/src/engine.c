@@ -174,6 +174,15 @@ struct le_engine {
    * before-track effects are heard live. */
   _Atomic int32_t a_monitor_fx_track;
 
+  /* The monitor-FX bus: a single global effects chain run on the monitored
+   * signal in every mode. Published config (control writes, audio reads once
+   * per buffer) plus its audio-thread-owned DSP state. No pre/post — all active
+   * entries apply in order. */
+  _Atomic int32_t a_monitor_fx_count;
+  _Atomic int32_t a_monitor_fx_type[LE_FX_MAX];
+  _Atomic uint32_t a_monitor_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits */
+  le_fx_state monitor_fx;
+
   /* Looper transport (master). */
   _Atomic int32_t a_master_len;
   _Atomic int32_t a_master_pos;
@@ -559,15 +568,17 @@ static float fx_tremolo(le_fx_state* fx, int slot, int sr, float x,
   return x * (1.0f - depth * (1.0f - lfo));
 }
 
-/* Applies the [stage] entries of track [t]'s chain to one sample, in order.
- * [count] is the active chain length; [types]/[stages]/[params] are the
- * per-buffer snapshot for this track. */
+/* Applies a chain to one sample, in order. Only entries whose stage equals
+ * [stage] are applied; pass stage = -1 to apply every entry (and [stages] may
+ * then be NULL — used by the monitor-FX bus, which has no pre/post). [count] is
+ * the active chain length; [types]/[stages]/[params] are the per-buffer
+ * snapshot. */
 static float fx_apply_chain(le_fx_state* fx, int sr, int cap, float x, int stage,
                             int count, const int32_t* types,
                             const int32_t* stages,
                             const float params[LE_FX_MAX][LE_FX_PARAMS]) {
   for (int s = 0; s < count; ++s) {
-    if (stages[s] != stage) continue;
+    if (stage >= 0 && stages[s] != stage) continue;
     switch (types[s]) {
       case LE_FX_DRIVE:
         x = fx_drive(x, params[s]);
@@ -751,6 +762,24 @@ static void apply_command(le_engine* e, const le_command* cmd) {
                 (track >= 0 && track < e->track_count) ? track : -1);
       break;
     }
+    case LE_CMD_SET_MONITOR_FX: {
+      const int32_t index = cmd->arg_i;
+      if (index < 0 || index >= LE_FX_MAX) break;
+      store_i32(&e->a_monitor_fx_type[index], (int32_t)cmd->arg_f);
+      /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
+      e->monitor_fx.svf_ic1[index] = 0.0f;
+      e->monitor_fx.svf_ic2[index] = 0.0f;
+      e->monitor_fx.lfo[index] = 0.0f;
+      e->monitor_fx.delay_pos[index] = 0;
+      break;
+    }
+    case LE_CMD_SET_MONITOR_FX_COUNT: {
+      int32_t count = cmd->arg_i;
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->a_monitor_fx_count, count);
+      break;
+    }
     case LE_CMD_COMMIT_SESSION: {
       const int32_t base = cmd->arg_i;
       if (base <= 0) break;
@@ -841,6 +870,21 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
   }
+
+  /* Monitor-FX bus, snapshotted the same way. All active entries apply (no
+   * stage), so a single flat snapshot suffices. */
+  int32_t mon_fx_count = load_i32(&e->a_monitor_fx_count);
+  if (mon_fx_count < 0) mon_fx_count = 0;
+  if (mon_fx_count > LE_FX_MAX) mon_fx_count = LE_FX_MAX;
+  int32_t mon_fx_type[LE_FX_MAX];
+  float mon_fx_params[LE_FX_MAX][LE_FX_PARAMS];
+  for (int s = 0; s < mon_fx_count; ++s) {
+    mon_fx_type[s] = load_i32(&e->a_monitor_fx_type[s]);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      mon_fx_params[s][p] = load_f32(&e->a_monitor_fx_param[s][p]);
+    }
+  }
+
   const int fx_cap = e->fx_delay_frames;
 
   for (uint32_t f = 0; f < frames; ++f) {
@@ -1103,6 +1147,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         }
         msample = cnt > 0 ? sum / (float)cnt : 0.0f;
       }
+      /* Monitor-FX bus: color the monitored signal in every mode (stage = -1
+       * applies all entries). When following a track the signal already carries
+       * that track's before-track effects; the bus stacks on top. */
+      if (mon_fx_count > 0) {
+        msample = fx_apply_chain(&e->monitor_fx, sr, fx_cap, msample, -1,
+                                 mon_fx_count, mon_fx_type, NULL, mon_fx_params);
+      }
       for (int c = 0; c < ch_out; ++c) {
         if (mon_out_mask & (1u << c)) out[f * ch_out + c] += msample;
       }
@@ -1343,6 +1394,23 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   atomic_store_explicit(&engine->a_monitor_output_mask, 0x3u,
                         memory_order_relaxed);
   store_i32(&engine->a_monitor_fx_track, -1); /* not following a track */
+
+  /* Monitor-FX bus: empty chain, every entry bypassed, DSP state cleared, delay
+   * lines released (re-allocated lazily when an entry becomes LE_FX_DELAY). */
+  store_i32(&engine->a_monitor_fx_count, 0);
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    store_i32(&engine->a_monitor_fx_type[s], LE_FX_NONE);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&engine->a_monitor_fx_param[s][p], 0.0f);
+    }
+    engine->monitor_fx.svf_ic1[s] = 0.0f;
+    engine->monitor_fx.svf_ic2[s] = 0.0f;
+    engine->monitor_fx.lfo[s] = 0.0f;
+    free(engine->monitor_fx.delay[s]);
+    engine->monitor_fx.delay[s] = NULL;
+    engine->monitor_fx.delay_pos[s] = 0;
+  }
+
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
@@ -1665,6 +1733,9 @@ void le_engine_destroy(le_engine* engine) {
       free(engine->tracks[t].fx.delay[s]);
       free(engine->tracks[t].mon_fx.delay[s]);
     }
+  }
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    free(engine->monitor_fx.delay[s]);
   }
   free(engine);
 }
@@ -2356,6 +2427,56 @@ int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
    * race-free and needs no ring command (unlike the type, which also resets
    * audio-thread DSP state). Works whether or not the device is running. */
   store_f32(&engine->tracks[channel].a_fx_param[index][param], value);
+  return LE_OK;
+}
+
+int32_t le_engine_set_monitor_fx(le_engine* engine, int32_t index,
+                                 int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_TREMOLO) return LE_ERR_INVALID;
+
+  /* Delay needs a ring buffer; allocate it here (control thread) before the
+   * audio thread can read it, and keep it for reuse once allocated. */
+  if (type == LE_FX_DELAY && engine->monitor_fx.delay[index] == NULL) {
+    const int32_t cap =
+        engine->fx_delay_frames > 0 ? engine->fx_delay_frames : 48000;
+    float* line = (float*)calloc((size_t)cap, sizeof(float));
+    if (line == NULL) return LE_ERR_INVALID;
+    engine->monitor_fx.delay[index] = line;
+  }
+
+  /* Seed musical defaults only when the type actually changes, so re-selecting
+   * the same effect (e.g. on reorder) doesn't wipe the user's tweaks. */
+  if (load_i32(&engine->a_monitor_fx_type[index]) != type) {
+    float defaults[LE_FX_PARAMS];
+    le_fx_default_params(type, defaults);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&engine->a_monitor_fx_param[index][p], defaults[p]);
+    }
+  }
+
+  /* Publish via the ring so the audio thread resets the entry's DSP state in
+   * lockstep with the type change (the delay pointer above is made visible by
+   * the ring's release/acquire pairing). */
+  return le_push(engine, LE_CMD_SET_MONITOR_FX, index, (float)type);
+}
+
+int32_t le_engine_set_monitor_fx_count(le_engine* engine, int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  return le_push(engine, LE_CMD_SET_MONITOR_FX_COUNT, count, 0.0f);
+}
+
+int32_t le_engine_set_monitor_fx_param(le_engine* engine, int32_t index,
+                                       int32_t param, float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  store_f32(&engine->a_monitor_fx_param[index][param], value);
   return LE_OK;
 }
 

@@ -105,6 +105,11 @@ typedef enum le_command_code {
                                      * arg_i = track index, or -1 for none. */
   LE_CMD_COMMIT_SESSION = 23,    /* arg_i = base loop length in frames: publish
                                   * the master loop and start imported tracks */
+  LE_CMD_SET_MONITOR_FX = 24, /* set a monitor-bus chain entry's type (and reset
+                               * its DSP state). arg_i = index, arg_f =
+                               * le_fx_type. */
+  LE_CMD_SET_MONITOR_FX_COUNT = 25, /* set the monitor bus's active chain length.
+                                     * arg_i = count (0..LE_FX_MAX). */
 } le_command_code;
 
 /* Per-track effects: each track carries an ordered chain of up to LE_FX_MAX
@@ -418,6 +423,30 @@ LE_EXPORT int32_t le_engine_set_track_fx_count(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_track_fx_param(le_engine* engine,
                                                int32_t channel, int32_t index,
                                                int32_t param, float value);
+
+/* The monitor-FX bus: a single global effects chain applied to the live
+ * monitored signal in every monitor mode (raw masked inputs or following a
+ * track), so input effects are heard without depending on a track. The bus has
+ * no pre/post distinction — all active entries process the monitor signal in
+ * order. These mirror the per-track effect setters. */
+
+/* Sets monitor-bus chain entry [index] (0..LE_FX_MAX-1) to [type]. Changing the
+ * type resets that entry's DSP state; LE_FX_DELAY lazily allocates its delay
+ * line (on this calling thread) and seeds the type's default parameters. Use
+ * le_engine_set_monitor_fx_count to make entries active. */
+LE_EXPORT int32_t le_engine_set_monitor_fx(le_engine* engine, int32_t index,
+                                           int32_t type);
+
+/* Sets the monitor bus's active chain length to [count] (0..LE_FX_MAX): only
+ * entries [0, count) are processed, in order. */
+LE_EXPORT int32_t le_engine_set_monitor_fx_count(le_engine* engine,
+                                                 int32_t count);
+
+/* Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor-bus entry [index] to
+ * [value] (clamped to 0..1). Its meaning depends on the entry's le_fx_type. */
+LE_EXPORT int32_t le_engine_set_monitor_fx_param(le_engine* engine,
+                                                 int32_t index, int32_t param,
+                                                 float value);
 
 /* ---- session persistence ---- *
  * Save: read each track's loop PCM with le_engine_export_track. Load: clear the

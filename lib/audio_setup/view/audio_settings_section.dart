@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
+import 'package:loopy/audio_setup/view/monitor_fx_editor.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
@@ -242,6 +243,10 @@ class AudioSettingsSection extends StatelessWidget {
             style: setupBody,
           ),
         ],
+      // The monitor-FX bus applies in every mode, so it sits outside the
+      // mode-specific controls.
+      const SizedBox(height: 16),
+      const MonitorFxEditor(),
     ];
   }
 
