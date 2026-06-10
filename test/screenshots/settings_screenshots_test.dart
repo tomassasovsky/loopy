@@ -255,7 +255,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await expectLater(
-      find.byKey(const Key('trackRouting_dialog')),
+      find.byKey(const Key('trackRouting_page')),
       matchesGoldenFile('goldens/track_routing_dialog.png'),
     );
   });

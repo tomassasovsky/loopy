@@ -64,7 +64,7 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('trackRouting_dialog')), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_page')), findsOneWidget);
       // The integrated signal-flow graph: channel nodes + the track node.
       expect(find.byKey(const Key('signalFlow_input_0')), findsOneWidget);
       expect(find.byKey(const Key('signalFlow_output_0')), findsOneWidget);
@@ -199,41 +199,6 @@ void main() {
       expect(find.byKey(const Key('trackRouting_fx_type')), findsOneWidget);
       expect(find.byKey(const Key('trackRouting_fx_param0')), findsOneWidget);
       expect(find.byKey(const Key('trackRouting_fx_param1')), findsOneWidget);
-    });
-
-    testWidgets('moving an effect across the track changes its stage', (
-      tester,
-    ) async {
-      // Start with one after-track effect (selected, editor open).
-      await settings.saveTrackEffects(
-        0,
-        encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
-      );
-      await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      final card = find.byKey(const Key('signalFlow_fx_0'));
-      await tester.ensureVisible(card);
-      await tester.tap(card);
-      await tester.pumpAndSettle();
-
-      final before = find.text('Before');
-      await tester.ensureVisible(before);
-      await tester.tap(before);
-      await tester.pumpAndSettle();
-
-      verify(
-        () => bloc.add(
-          any(
-            that: isA<LooperTrackEffectsChanged>().having(
-              (e) => e.effects.first.stage,
-              'stage',
-              TrackEffectStage.pre,
-            ),
-          ),
-        ),
-      ).called(1);
     });
 
     testWidgets('dragging a param slider dispatches the granular param event', (
