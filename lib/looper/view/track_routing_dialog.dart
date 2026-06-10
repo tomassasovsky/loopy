@@ -41,57 +41,83 @@ class _TrackRoutingPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       key: const Key('trackRouting_page'),
-      appBar: AppBar(title: Text('Track ${channel + 1} routing')),
+      appBar: AppBar(
+        title: Text('Track ${channel + 1} routing'),
+        actions: [
+          IconButton(
+            key: const Key('trackRouting_settings_button'),
+            icon: const Icon(Icons.tune),
+            tooltip: 'Track settings',
+            onPressed: () => _openSettings(context),
+          ),
+        ],
+      ),
+      // The signal-flow graph fills the whole page.
       body: BlocBuilder<LooperBloc, LooperState>(
         builder: (context, state) {
           final current = channel < state.tracks.length
               ? state.tracks[channel]
               : Track(channel: channel);
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Click a channel to connect it. Add effects with +, then '
-                      'drag a card by its handle to reorder it or across the '
-                      'track to switch before/after. Tap a card to edit it; '
-                      'pinch or scroll to zoom.',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    _TrackSignalFlowControl(
-                      channel: channel,
-                      settings: settings,
-                      track: current,
-                      inputChannels: state.status.inputChannels,
-                      outputChannels: state.status.outputChannels,
-                      excludedInputMask: state.status.excludedInputMask,
-                      height: 400,
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Quantize recording',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    _TrackQuantizeControl(channel: channel, settings: settings),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Loop length',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    _TrackMultipleControl(channel: channel, settings: settings),
-                  ],
-                ),
-              ),
-            ),
+          return _TrackSignalFlowControl(
+            channel: channel,
+            settings: settings,
+            track: current,
+            inputChannels: state.status.inputChannels,
+            outputChannels: state.status.outputChannels,
+            excludedInputMask: state.status.excludedInputMask,
           );
         },
+      ),
+    );
+  }
+
+  /// Opens the secondary settings (quantize + loop length) for this track.
+  void _openSettings(BuildContext context) {
+    final bloc = context.read<LooperBloc>();
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: AlertDialog(
+            key: const Key('trackRouting_settings_dialog'),
+            title: Text('Track ${channel + 1} settings'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Quantize recording',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  _TrackQuantizeControl(channel: channel, settings: settings),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Loop length',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  _TrackMultipleControl(channel: channel, settings: settings),
+                  const SizedBox(height: 16),
+                  Text(
+                    'To hear before-track effects live, set monitoring to '
+                    'follow this track.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -239,10 +265,6 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
 /// "Before" effects are printed into the recording; "after" effects process
 /// playback (non-destructive). Cards are added per lane, reordered within a
 /// lane, moved across the track (changing the stage), and edited (type +
-/// parameter sliders) by selecting one. Loads the saved chain from [settings]
-/// and dispatches changes through the [LooperBloc]: structural edits as a whole
-/// [LooperTrackEffectsChanged], live slider tweaks as a granular
-/// [LooperTrackEffectParamChanged].
 /// The integrated single-track signal-flow graph: channel routing plus the
 /// effects chain as draggable cards on the path. Loads the saved chain from
 /// [settings], dispatches routing + structural changes as [LooperBloc] events,
@@ -255,7 +277,6 @@ class _TrackSignalFlowControl extends StatefulWidget {
     required this.inputChannels,
     required this.outputChannels,
     required this.excludedInputMask,
-    required this.height,
   });
 
   final int channel;
@@ -264,7 +285,6 @@ class _TrackSignalFlowControl extends StatefulWidget {
   final int inputChannels;
   final int outputChannels;
   final int excludedInputMask;
-  final double height;
 
   @override
   State<_TrackSignalFlowControl> createState() =>
@@ -361,35 +381,23 @@ class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TrackSignalFlowView(
-          track: widget.track,
-          inputChannels: widget.inputChannels,
-          outputChannels: widget.outputChannels,
-          excludedInputMask: widget.excludedInputMask,
-          effects: _chain,
-          selectedEffect: _selected,
-          onInputMaskChanged: (mask) =>
-              _bloc.add(LooperInputMaskChanged(widget.channel, mask)),
-          onOutputMaskChanged: (mask) =>
-              _bloc.add(LooperOutputMaskChanged(widget.channel, mask)),
-          onAddEffect: _add,
-          onMoveEffect: _move,
-          onSelectEffect: (i) => setState(() => _selected = i),
-          onSetType: _setType,
-          onSetParam: _setParam,
-          onRemoveEffect: _removeAt,
-          height: widget.height,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'To hear before-track effects live, set monitoring to follow this '
-          'track.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
+    return TrackSignalFlowView(
+      track: widget.track,
+      inputChannels: widget.inputChannels,
+      outputChannels: widget.outputChannels,
+      excludedInputMask: widget.excludedInputMask,
+      effects: _chain,
+      selectedEffect: _selected,
+      onInputMaskChanged: (mask) =>
+          _bloc.add(LooperInputMaskChanged(widget.channel, mask)),
+      onOutputMaskChanged: (mask) =>
+          _bloc.add(LooperOutputMaskChanged(widget.channel, mask)),
+      onAddEffect: _add,
+      onMoveEffect: _move,
+      onSelectEffect: (i) => setState(() => _selected = i),
+      onSetType: _setType,
+      onSetParam: _setParam,
+      onRemoveEffect: _removeAt,
     );
   }
 }

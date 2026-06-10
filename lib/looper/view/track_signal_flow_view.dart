@@ -29,7 +29,6 @@ class TrackSignalFlowView extends StatefulWidget {
     required this.onSetParam,
     required this.onRemoveEffect,
     this.excludedInputMask = 0,
-    this.height = 320,
     super.key,
   });
 
@@ -66,9 +65,6 @@ class TrackSignalFlowView extends StatefulWidget {
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
   final void Function(int index) onRemoveEffect;
-
-  /// The fixed viewport height the graph fits/centers into.
-  final double height;
 
   // ---- geometry ----
   static const double _chW = 60;
@@ -181,84 +177,82 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
       canvasH: canvasH,
     );
 
-    return SizedBox(
-      height: widget.height,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: SetupSurfaceColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: SetupSurfaceColors.line),
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            _maybeFit(constraints.maxWidth, widget.height, canvasW, canvasH);
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: InteractiveViewer(
-                transformationController: _tc,
-                constrained: false,
-                boundaryMargin: const EdgeInsets.all(160),
-                minScale: 0.4,
-                maxScale: 3,
-                child: SizedBox(
-                  width: canvasW,
-                  height: canvasH,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: CustomPaint(painter: _PathPainter(edges)),
-                      ),
-                      for (var c = 0; c < inCount; c++)
-                        _channel(
-                          key: 'signalFlow_input_$c',
-                          label: 'In ${c + 1}',
-                          x: inX,
-                          y: _rowY(c, inCount, canvasH),
-                          connected: widget.track.inputMask & (1 << c) != 0,
-                          excluded: widget.excludedInputMask & (1 << c) != 0,
-                          onTap: () => widget.onInputMaskChanged(
-                            widget.track.inputMask ^ (1 << c),
-                          ),
+    // Fills the page; the graph fits-and-centers into the available space.
+    return ColoredBox(
+      color: SetupSurfaceColors.surface,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          _maybeFit(
+            constraints.maxWidth,
+            constraints.maxHeight,
+            canvasW,
+            canvasH,
+          );
+          return ClipRect(
+            child: InteractiveViewer(
+              transformationController: _tc,
+              constrained: false,
+              boundaryMargin: const EdgeInsets.all(160),
+              minScale: 0.4,
+              maxScale: 3,
+              child: SizedBox(
+                width: canvasW,
+                height: canvasH,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(painter: _PathPainter(edges)),
+                    ),
+                    for (var c = 0; c < inCount; c++)
+                      _channel(
+                        key: 'signalFlow_input_$c',
+                        label: 'In ${c + 1}',
+                        x: inX,
+                        y: _rowY(c, inCount, canvasH),
+                        connected: widget.track.inputMask & (1 << c) != 0,
+                        excluded: widget.excludedInputMask & (1 << c) != 0,
+                        onTap: () => widget.onInputMaskChanged(
+                          widget.track.inputMask ^ (1 << c),
                         ),
-                      for (var c = 0; c < outCount; c++)
-                        _channel(
-                          key: 'signalFlow_output_$c',
-                          label: 'Out ${c + 1}',
-                          x: outX,
-                          y: _rowY(c, outCount, canvasH),
-                          connected: widget.track.outputMask & (1 << c) != 0,
-                          excluded: false,
-                          onTap: () => widget.onOutputMaskChanged(
-                            widget.track.outputMask ^ (1 << c),
-                          ),
+                      ),
+                    for (var c = 0; c < outCount; c++)
+                      _channel(
+                        key: 'signalFlow_output_$c',
+                        label: 'Out ${c + 1}',
+                        x: outX,
+                        y: _rowY(c, outCount, canvasH),
+                        connected: widget.track.outputMask & (1 << c) != 0,
+                        excluded: false,
+                        onTap: () => widget.onOutputMaskChanged(
+                          widget.track.outputMask ^ (1 << c),
                         ),
-                      Positioned(
-                        left: trackX,
-                        top: centerY - TrackSignalFlowView._trkH / 2,
-                        width: trkW,
-                        height: TrackSignalFlowView._trkH,
-                        child: _trackNode(),
                       ),
-                      ..._dropZones(TrackEffectStage.pre, pre, preXs, centerY),
-                      ..._dropZones(
-                        TrackEffectStage.post,
-                        post,
-                        postXs,
-                        centerY,
-                      ),
-                      for (var k = 0; k < pre.length; k++)
-                        _card(pre[k], preXs[k], centerY),
-                      for (var k = 0; k < post.length; k++)
-                        _card(post[k], postXs[k], centerY),
-                      _addButton(TrackEffectStage.pre, addPreX, centerY),
-                      _addButton(TrackEffectStage.post, addPostX, centerY),
-                    ],
-                  ),
+                    Positioned(
+                      left: trackX,
+                      top: centerY - TrackSignalFlowView._trkH / 2,
+                      width: trkW,
+                      height: TrackSignalFlowView._trkH,
+                      child: _trackNode(),
+                    ),
+                    ..._dropZones(TrackEffectStage.pre, pre, preXs, centerY),
+                    ..._dropZones(
+                      TrackEffectStage.post,
+                      post,
+                      postXs,
+                      centerY,
+                    ),
+                    for (var k = 0; k < pre.length; k++)
+                      _card(pre[k], preXs[k], centerY),
+                    for (var k = 0; k < post.length; k++)
+                      _card(post[k], postXs[k], centerY),
+                    _addButton(TrackEffectStage.pre, addPreX, centerY),
+                    _addButton(TrackEffectStage.post, addPostX, centerY),
+                  ],
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
