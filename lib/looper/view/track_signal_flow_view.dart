@@ -192,7 +192,10 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
             child: InteractiveViewer(
               transformationController: _tc,
               constrained: false,
-              boundaryMargin: const EdgeInsets.all(160),
+              // Unbounded: without this the viewer clamps the fit-and-center
+              // translation back to the top-left on the first pan (the canvas
+              // is smaller than the viewport), snapping the graph to the edge.
+              boundaryMargin: const EdgeInsets.all(double.infinity),
               minScale: 0.4,
               maxScale: 3,
               child: SizedBox(
