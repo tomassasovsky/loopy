@@ -107,7 +107,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
   double _cardHeight(int index) {
     if (index != widget.selectedEffect) return TrackSignalFlowView._compactH;
     final params = widget.effects[index].type.paramLabels.length;
-    return 60 + params * 40; // padding + header + param rows
+    return 62 + params * 38; // padding + header + gap + param rows
   }
 
   @override
@@ -460,7 +460,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
         : Row(
             children: [
               handle,
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               Expanded(
                 child: _Tappable(
                   nodeKey: Key('signalFlow_fx_label_$index'),
@@ -468,7 +468,10 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
                   child: Text(
                     fx.type.label,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: SetupSurfaceColors.t1),
+                    style: const TextStyle(
+                      color: SetupSurfaceColors.t1,
+                      height: 1.1,
+                    ),
                   ),
                 ),
               ),
@@ -526,7 +529,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
         Row(
           children: [
             handle,
-            const SizedBox(width: 2),
+            const SizedBox(width: 6),
             Expanded(
               child: DropdownButton<TrackEffectType>(
                 key: const Key('trackRouting_fx_type'),
@@ -550,37 +553,30 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
                 ],
               ),
             ),
-            InkWell(
-              key: const Key('signalFlow_fx_collapse'),
+            const SizedBox(width: 8),
+            _HeaderIcon(
+              nodeKey: const Key('signalFlow_fx_collapse'),
+              icon: Icons.expand_less,
+              tooltip: 'Collapse',
               onTap: () => widget.onSelectEffect(null),
-              child: const Icon(
-                Icons.expand_less,
-                size: 18,
-                color: SetupSurfaceColors.t2,
-              ),
             ),
-            IconButton(
-              key: const Key('trackRouting_fx_remove'),
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              icon: const Icon(
-                Icons.delete_outline,
-                size: 18,
-                color: SetupSurfaceColors.t2,
-              ),
+            const SizedBox(width: 2),
+            _HeaderIcon(
+              nodeKey: const Key('trackRouting_fx_remove'),
+              icon: Icons.delete_outline,
               tooltip: 'Remove effect',
-              onPressed: () => widget.onRemoveEffect(index),
+              onTap: () => widget.onRemoveEffect(index),
             ),
           ],
         ),
+        const SizedBox(height: 2),
         for (var p = 0; p < fx.type.paramLabels.length; p++)
           SizedBox(
-            height: 40,
+            height: 38,
             child: Row(
               children: [
                 SizedBox(
-                  width: 64,
+                  width: 56,
                   child: Text(
                     fx.type.paramLabels[p],
                     style: const TextStyle(
@@ -589,12 +585,26 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Slider(
-                    key: Key('trackRouting_fx_param$p'),
-                    activeColor: SetupSurfaceColors.accent,
-                    value: fx.params[p].clamp(0.0, 1.0),
-                    onChanged: (v) => widget.onSetParam(index, p, v),
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3,
+                      activeTrackColor: SetupSurfaceColors.accent,
+                      inactiveTrackColor: SetupSurfaceColors.line,
+                      thumbColor: SetupSurfaceColors.accent,
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
+                      ),
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 7,
+                      ),
+                    ),
+                    child: Slider(
+                      key: Key('trackRouting_fx_param$p'),
+                      value: fx.params[p].clamp(0.0, 1.0),
+                      onChanged: (v) => widget.onSetParam(index, p, v),
+                    ),
                   ),
                 ),
               ],
@@ -680,6 +690,37 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
 }
 
 /// A click target that stays hittable beside a [Draggable] by being opaque.
+/// A compact, uniform tap target for the card-editor header (collapse, remove).
+/// Square 28px hit area so the icons line up and are comfortable to click.
+class _HeaderIcon extends StatelessWidget {
+  const _HeaderIcon({
+    required this.nodeKey,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final Key nodeKey;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: InkResponse(
+      key: nodeKey,
+      onTap: onTap,
+      radius: 18,
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: Icon(icon, size: 18, color: SetupSurfaceColors.t2),
+      ),
+    ),
+  );
+}
+
 class _Tappable extends StatelessWidget {
   const _Tappable({
     required this.nodeKey,
