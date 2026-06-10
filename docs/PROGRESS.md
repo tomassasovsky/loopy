@@ -208,6 +208,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **VST3 SDK went MIT (VST 3.8, Oct 2025)**, so a host is no longer licence- or
   GPL-blocked; it remains a gated follow-up (needs the SDK vendored to compile +
   plugin-editor child-window embedding).
+- **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
+  `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
+  exports mixdown / per-track stems. Native `le_engine_export_track` /
+  `import_track` / `commit_session` move loop PCM in and out (control-thread copy
+  into EMPTY tracks; a ring command flips them to PLAYING at their multiple, so
+  the audio thread's RT contract is preserved). `SessionCubit` + a session menu
+  in the looper app bar drive it; the engine is shared (looper owns dispose).
+  Load refuses a sample-rate mismatch (no resampling) or a newer manifest
+  version.
 
 ---
 
@@ -261,8 +270,9 @@ end-to-end. User decisions: **full device channels** and **two banks of four**
 - `midi_client` — real USB-MIDI binding (abstraction + wiring ready; needs a
   pedal). Plug a `ControllerSource` into the already-wired `ControllerRepository`.
 - Secondary-window **visualizer** (`desktop_multi_window`) — needs a 2nd display.
-- **Phase 4:** sessions save/load + WAV export, Raspberry Pi GPIO backend,
-  device hot-plug handling, theming/accessibility/golden tests.
+- **Phase 4:** sessions save/load + WAV export ✅ (done — see Done); remaining:
+  Raspberry Pi GPIO backend, device hot-plug handling, theming/accessibility/
+  golden tests.
 
 ### On-hardware validations still open
 - Phase-1 **latency gate** (≤10 ms round-trip) — needs a class-compliant
@@ -272,10 +282,11 @@ end-to-end. User decisions: **full device channels** and **two banks of four**
 ---
 
 ## Test counts (last green)
-native (all C tests, 62 fns: incl. mid-loop record, transport reset single- &
+native (all C tests, 63 fns: incl. mid-loop record, transport reset single- &
 multi-track, loop multiples, loop-viz, per-track effects DSP incl. pre/post
-stage) · plugin 38 · controller 14 · looper_repository 38 · settings 38 · app
-207 (auto-start/first-run, big-picture settings + access, banks + A/B,
+stage, session export/import roundtrip) · plugin 38 · controller 14 ·
+looper_repository 38 · settings 38 · session_repository 17 · local_storage 1 ·
+app 207 (auto-start/first-run, big-picture settings + access, banks + A/B,
 performance keyboard, functional-settings + per-track effects card strip,
-routing-dialog goldens). `flutter analyze` clean; macOS app builds end-to-end.
+session menu, goldens). `flutter analyze` clean; macOS app builds end-to-end.
 `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`, `LE_FX_MAX = 8`.

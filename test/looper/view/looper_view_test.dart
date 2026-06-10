@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/session/session.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -17,10 +18,14 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockUiModeCubit extends MockCubit<UiMode> implements UiModeCubit {}
 
+class _MockSessionCubit extends MockCubit<SessionState>
+    implements SessionCubit {}
+
 void main() {
   late LooperBloc bloc;
   late UiModeCubit uiMode;
   late BankCubit bank;
+  late SessionCubit sessionCubit;
 
   setUpAll(() => registerFallbackValue(UiMode.desktop));
 
@@ -28,10 +33,16 @@ void main() {
     bloc = _MockLooperBloc();
     uiMode = _MockUiModeCubit();
     bank = BankCubit(settings: SettingsRepository(store: FakeKeyValueStore()));
+    sessionCubit = _MockSessionCubit();
     whenListen(
       uiMode,
       const Stream<UiMode>.empty(),
       initialState: UiMode.desktop,
+    );
+    whenListen(
+      sessionCubit,
+      const Stream<SessionState>.empty(),
+      initialState: const SessionState(),
     );
   });
 
@@ -49,6 +60,7 @@ void main() {
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<UiModeCubit>.value(value: uiMode),
             BlocProvider<BankCubit>.value(value: bank),
+            BlocProvider<SessionCubit>.value(value: sessionCubit),
           ],
           child: const LooperView(),
         ),
@@ -164,6 +176,34 @@ void main() {
 
     expect(find.byKey(const Key('looper_multiple_chip_0')), findsOneWidget);
     expect(find.text('×2'), findsOneWidget);
+  });
+
+  testWidgets('session menu dispatches each action to the cubit', (
+    tester,
+  ) async {
+    when(() => sessionCubit.saveSession()).thenAnswer((_) async {});
+    when(() => sessionCubit.loadSession()).thenAnswer((_) async {});
+    when(() => sessionCubit.exportMixdown()).thenAnswer((_) async {});
+    when(() => sessionCubit.exportStems()).thenAnswer((_) async {});
+    seed(const LooperState(tracks: [Track()]));
+    await pumpView(tester);
+
+    Future<void> selectMenu(String label) async {
+      await tester.tap(find.byKey(const Key('looper_session_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    await selectMenu('Save session');
+    await selectMenu('Load session');
+    await selectMenu('Export mixdown');
+    await selectMenu('Export stems');
+
+    verify(() => sessionCubit.saveSession()).called(1);
+    verify(() => sessionCubit.loadSession()).called(1);
+    verify(() => sessionCubit.exportMixdown()).called(1);
+    verify(() => sessionCubit.exportStems()).called(1);
   });
 
   testWidgets('undo is disabled without an undo layer', (tester) async {

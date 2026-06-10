@@ -277,6 +277,24 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
+  Float32List exportTrack(int channel) {
+    calls.add('exportTrack');
+    return Float32List(0);
+  }
+
+  @override
+  EngineResult importTrack(int channel, Float32List pcm) {
+    calls.add('importTrack');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult commitSession(int baseFrames) {
+    calls.add('commitSession');
+    return EngineResult.ok;
+  }
+
+  @override
   void dispose() => calls.add('dispose');
 
   /// Waveform returned by [readVisual] (mutate in tests).

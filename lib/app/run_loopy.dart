@@ -4,7 +4,10 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
+import 'package:loopy/session_directory.dart';
 import 'package:loopy/visualizer/visualizer.dart';
+import 'package:loopy_engine/loopy_engine.dart';
+import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
@@ -25,9 +28,13 @@ Future<void> runLoopy(List<String> args) async {
   // Hot restart resets Dart state while native sub-windows survive.
   await DesktopMultiWindowWaveformService.closeOrphanWindows();
 
-  final repository = LooperRepository.withNativeEngine();
+  // One engine instance, shared by the looper (which owns its lifecycle) and
+  // the session repository (which only reads/writes its loop PCM).
+  final engine = NativeAudioEngine();
+  final repository = LooperRepository(engine: engine);
   final controllerRepository = ControllerRepository(sources: const []);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
+  final sessionRepository = SessionRepository(engine: engine);
 
   final configured = await tryAutoStartEngine(
     repository: repository,
@@ -40,6 +47,8 @@ Future<void> runLoopy(List<String> args) async {
       controllerRepository: controllerRepository,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
+      sessionRepository: sessionRepository,
+      sessionDirectory: defaultSessionDirectory,
       needsSetup: !configured,
     ),
   );

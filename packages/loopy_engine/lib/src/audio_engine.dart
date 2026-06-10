@@ -217,6 +217,20 @@ abstract interface class AudioEngine {
   /// per-track waveform thumbnails.
   Float32List readTrackVisual(int channel);
 
+  /// Copies track [channel]'s recorded mono loop PCM out for session export, or
+  /// an empty list when the track is empty. Read-only — call when not
+  /// capturing.
+  Float32List exportTrack(int channel);
+
+  /// Loads mono [pcm] into the EMPTY track [channel] for a session restore.
+  /// Pair with [commitSession] to establish the master and play. Returns
+  /// [EngineResult.invalid] if the track is not empty.
+  EngineResult importTrack(int channel, Float32List pcm);
+
+  /// Establishes the master loop at [baseFrames] and starts every imported
+  /// track playing at its whole-loop multiple.
+  EngineResult commitSession(int baseFrames);
+
   /// Releases the native engine. The instance must not be used afterwards.
   void dispose();
 }

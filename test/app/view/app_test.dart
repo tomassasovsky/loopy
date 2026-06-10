@@ -12,6 +12,7 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
+import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -46,6 +47,7 @@ void main() {
     late LooperRepository repository;
     late ControllerRepository controllerRepository;
     late SettingsRepository settings;
+    late SessionRepository sessionRepository;
 
     setUp(() {
       repository = LooperRepository(
@@ -54,6 +56,7 @@ void main() {
       );
       controllerRepository = ControllerRepository(sources: const []);
       settings = SettingsRepository(store: FakeKeyValueStore());
+      sessionRepository = SessionRepository(engine: FakeAudioEngine());
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
     });
@@ -68,6 +71,8 @@ void main() {
           controllerRepository: controllerRepository,
           settings: settings,
           waveformWindow: windowService,
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -88,6 +93,8 @@ void main() {
           controllerRepository: controllerRepository,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
           needsSetup: true,
         ),
       );
@@ -199,6 +206,8 @@ void main() {
           controllerRepository: controllerRepository,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
