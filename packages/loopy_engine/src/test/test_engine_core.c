@@ -1433,6 +1433,38 @@ static void test_target_multiple_forces_length(void) {
   le_engine_destroy(e);
 }
 
+/* The global default multiple applies to tracks that inherit (no per-track
+ * override), and a per-track override wins over it. */
+static void test_default_multiple_applies_to_inheriting_tracks(void) {
+  printf("test_default_multiple_applies_to_inheriting_tracks\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out); /* base loop length == LOOP_N */
+  CHECK(le_engine_set_default_multiple(e, 2) == LE_OK);
+
+  /* Track 1 inherits (target 0) -> uses the global default of 2. */
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N, out);
+  le_engine_record(e, 1); /* finalize */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].length_frames == 2 * LOOP_N);
+
+  /* Track 2 overrides to x1, beating the global default of 2. */
+  le_engine_set_track_multiple(e, 2, 1);
+  le_engine_record(e, 2);
+  process_const(e, 3.0f, LOOP_N, out);
+  le_engine_record(e, 2); /* finalize */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].multiple == 1);
+
+  le_engine_destroy(e);
+}
+
 /* In rec/dub mode a record press finalizes into overdub; a stop press still
  * ends in stopped. */
 static void test_rec_dub_continues_into_overdub(void) {
@@ -1501,6 +1533,7 @@ static void test_auto_record_starts_on_signal(void) {
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_target_multiple_forces_length();
+  test_default_multiple_applies_to_inheriting_tracks();
   test_rec_dub_continues_into_overdub();
   test_auto_record_starts_on_signal();
   test_quantize_track_override_forces_on();

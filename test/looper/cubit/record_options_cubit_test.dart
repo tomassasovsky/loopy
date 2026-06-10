@@ -22,6 +22,9 @@ void main() {
     when(
       () => repository.setAutoRecord(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
   });
 
   RecordOptionsCubit build() =>
@@ -66,6 +69,17 @@ void main() {
       verify: (_) async {
         verify(() => repository.setAutoRecord(enabled: true)).called(1);
         expect(await settings.loadAutoRecord(), isTrue);
+      },
+    );
+
+    blocTest<RecordOptionsCubit, RecordOptions>(
+      'setDefaultMultiple emits, applies, and persists',
+      build: build,
+      act: (cubit) => cubit.setDefaultMultiple(2),
+      expect: () => [const RecordOptions(defaultMultiple: 2)],
+      verify: (_) async {
+        verify(() => repository.setDefaultMultiple(multiple: 2)).called(1);
+        expect(await settings.loadDefaultMultiple(), 2);
       },
     );
   });

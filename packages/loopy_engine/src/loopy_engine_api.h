@@ -316,11 +316,16 @@ LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
                                                int32_t channel, int32_t mode);
 
 /* Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
- * 0 to auto-round-up on stop. Applies to the next recording; existing content
- * is unchanged. */
+ * 0 to inherit the global default (le_engine_set_default_multiple). Applies to
+ * the next recording; existing content is unchanged. */
 LE_EXPORT int32_t le_engine_set_track_multiple(le_engine* engine,
                                                int32_t channel,
                                                int32_t multiple);
+
+/* Sets the global default loop length used by tracks that inherit (target 0):
+ * [multiple] whole base loops (>= 1), or 0 to auto-round-up on stop. */
+LE_EXPORT int32_t le_engine_set_default_multiple(le_engine* engine,
+                                                 int32_t multiple);
 
 /* Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
  * with a record press continues into overdub instead of playback. A stop press

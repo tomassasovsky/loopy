@@ -181,6 +181,9 @@ class FakeAudioEngine implements AudioEngine {
   /// Per-track forced multiples passed to [setTrackMultiple].
   final Map<int, int> trackMultiple = {};
 
+  /// The last value passed to [setDefaultMultiple].
+  int? lastDefaultMultiple;
+
   /// The last values passed to [setRecDub] / [setAutoRecord].
   bool? lastRecDub;
   bool? lastAutoRecord;
@@ -188,6 +191,12 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setTrackMultiple({required int channel, required int multiple}) {
     trackMultiple[channel] = multiple;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setDefaultMultiple({required int multiple}) {
+    lastDefaultMultiple = multiple;
     return EngineResult.ok;
   }
 

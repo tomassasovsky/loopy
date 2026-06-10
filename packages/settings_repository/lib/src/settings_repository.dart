@@ -224,6 +224,16 @@ class SettingsRepository {
   Future<void> saveRecDub({required bool value}) =>
       _store.setBool(_recDubKey, value: value);
 
+  static const String _defaultMultipleKey = 'looper.default_multiple';
+
+  /// Loads the global default loop length (`0` = auto), or `0` if unset.
+  Future<int> loadDefaultMultiple() async =>
+      await _store.getInt(_defaultMultipleKey) ?? 0;
+
+  /// Saves the global default loop length (`0` = auto).
+  Future<void> saveDefaultMultiple(int multiple) =>
+      _store.setInt(_defaultMultipleKey, multiple);
+
   static const String _autoRecordKey = 'looper.auto_record';
 
   /// Whether recording is sound-activated (starts on input). Defaults to

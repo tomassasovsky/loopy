@@ -646,8 +646,8 @@ class LoopyEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
-  /// 0 to auto-round-up on stop. Applies to the next recording; existing content
-  /// is unchanged.
+  /// 0 to inherit the global default (le_engine_set_default_multiple). Applies to
+  /// the next recording; existing content is unchanged.
   int le_engine_set_track_multiple(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -668,6 +668,28 @@ class LoopyEngineBindings {
       >('le_engine_set_track_multiple');
   late final _le_engine_set_track_multiple = _le_engine_set_track_multiplePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets the global default loop length used by tracks that inherit (target 0):
+  /// [multiple] whole base loops (>= 1), or 0 to auto-round-up on stop.
+  int le_engine_set_default_multiple(
+    ffi.Pointer<le_engine> engine,
+    int multiple,
+  ) {
+    return _le_engine_set_default_multiple(
+      engine,
+      multiple,
+    );
+  }
+
+  late final _le_engine_set_default_multiplePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_default_multiple');
+  late final _le_engine_set_default_multiple =
+      _le_engine_set_default_multiplePtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback. A stop press

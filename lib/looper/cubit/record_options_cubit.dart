@@ -7,7 +7,11 @@ import 'package:settings_repository/settings_repository.dart';
 /// persisted via [SettingsRepository].
 class RecordOptions extends Equatable {
   /// Creates a [RecordOptions].
-  const RecordOptions({this.recDub = false, this.autoRecord = false});
+  const RecordOptions({
+    this.recDub = false,
+    this.autoRecord = false,
+    this.defaultMultiple = 0,
+  });
 
   /// When `true`, a record press finalizing a recording continues into overdub
   /// instead of playback (the second-press "rec/dub" mode).
@@ -17,14 +21,22 @@ class RecordOptions extends Equatable {
   /// track waits and starts when the input crosses the threshold.
   final bool autoRecord;
 
+  /// The global default loop length used by inheriting tracks (`0` = auto).
+  final int defaultMultiple;
+
   /// Returns a copy with the given overrides.
-  RecordOptions copyWith({bool? recDub, bool? autoRecord}) => RecordOptions(
+  RecordOptions copyWith({
+    bool? recDub,
+    bool? autoRecord,
+    int? defaultMultiple,
+  }) => RecordOptions(
     recDub: recDub ?? this.recDub,
     autoRecord: autoRecord ?? this.autoRecord,
+    defaultMultiple: defaultMultiple ?? this.defaultMultiple,
   );
 
   @override
-  List<Object?> get props => [recDub, autoRecord];
+  List<Object?> get props => [recDub, autoRecord, defaultMultiple];
 }
 
 /// Owns the global record-behavior options: applies them to the repository and
@@ -49,10 +61,20 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
   Future<void> _restore() async {
     final recDub = await _settings.loadRecDub();
     final autoRecord = await _settings.loadAutoRecord();
+    final defaultMultiple = await _settings.loadDefaultMultiple();
     _repository
       ..setRecDub(enabled: recDub)
-      ..setAutoRecord(enabled: autoRecord);
-    if (!isClosed) emit(RecordOptions(recDub: recDub, autoRecord: autoRecord));
+      ..setAutoRecord(enabled: autoRecord)
+      ..setDefaultMultiple(multiple: defaultMultiple);
+    if (!isClosed) {
+      emit(
+        RecordOptions(
+          recDub: recDub,
+          autoRecord: autoRecord,
+          defaultMultiple: defaultMultiple,
+        ),
+      );
+    }
   }
 
   /// Sets and persists the rec/dub second-press mode, applying it now.
@@ -71,5 +93,14 @@ class RecordOptionsCubit extends Cubit<RecordOptions> {
       _repository.setAutoRecord(enabled: value);
     }
     await _settings.saveAutoRecord(value: value);
+  }
+
+  /// Sets and persists the global default loop length, applying it now.
+  Future<void> setDefaultMultiple(int multiple) async {
+    if (multiple != state.defaultMultiple) {
+      emit(state.copyWith(defaultMultiple: multiple));
+      _repository.setDefaultMultiple(multiple: multiple);
+    }
+    await _settings.saveDefaultMultiple(multiple);
   }
 }

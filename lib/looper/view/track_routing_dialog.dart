@@ -190,7 +190,7 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
       children: [
         ChoiceChip(
           key: const Key('trackRouting_multiple_auto'),
-          label: const Text('Auto'),
+          label: const Text('Default'),
           selected: _multiple == 0,
           onSelected: (_) => _set(0),
         ),
