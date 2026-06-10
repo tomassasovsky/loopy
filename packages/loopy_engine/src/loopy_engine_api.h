@@ -114,10 +114,13 @@ typedef enum le_command_code {
 #define LE_FX_MAX 8
 #define LE_FX_PARAMS 3
 
-/* Where a chain entry sits relative to the track's loop buffer:
- *   POST — applied to playback (the loop stays dry; non-destructive, the
- *          default). PRE — applied to the live input before it is written, so
- *          the effect is printed into the recording (record-through-FX). */
+/* Whether a chain entry is heard on the live input monitor. The recording is
+ * ALWAYS dry (no effect is ever printed into the buffer), and EVERY entry — pre
+ * or post — colors playback in chain order. The stage only adds monitoring:
+ *   POST (after-track) — playback only; not heard on the live input. The
+ *        default. PRE (before-track) — also applied to the live monitored
+ *        input, so when the monitor follows this track you hear it while
+ *        playing. */
 typedef enum le_fx_stage {
   LE_FX_POST = 0,
   LE_FX_PRE = 1,

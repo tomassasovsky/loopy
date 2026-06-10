@@ -258,15 +258,16 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
   }
 }
 
-/// The per-track effects chain, drawn as a signal-flow strip of cards:
-///
-///   In ▸ [before-the-track effects] ▸ Track ▸ [after-the-track effects] ▸ Out
-///
-/// "Before" effects are printed into the recording; "after" effects process
-/// playback (non-destructive). Cards are added per lane, reordered within a
-/// lane, moved across the track (changing the stage), and edited (type +
 /// The integrated single-track signal-flow graph: channel routing plus the
-/// effects chain as draggable cards on the path. Loads the saved chain from
+/// effects chain as draggable cards on the path:
+///
+///   In ▸ [before-track effects] ▸ Track ▸ [after-track effects] ▸ Out
+///
+/// The recording is always dry and every effect colors playback in chain order;
+/// the lane only governs monitoring — "before-track" effects are also heard on
+/// the live input monitor (when it follows this track), "after-track" effects
+/// are playback only. Cards are added per lane, reordered within a lane, and
+/// moved across the track (which flips the stage). Loads the saved chain from
 /// [settings], dispatches routing + structural changes as [LooperBloc] events,
 /// and shows an inline editor for the selected card.
 class _TrackSignalFlowControl extends StatefulWidget {
@@ -292,8 +293,9 @@ class _TrackSignalFlowControl extends StatefulWidget {
 }
 
 class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
-  /// The chain in engine order. Pre-stage entries process the input; post-stage
-  /// entries process playback. The split into lanes is derived for display.
+  /// The chain in engine order; every entry colors playback. Before-track
+  /// entries are additionally heard on the live monitor. The split into lanes
+  /// is derived for display.
   List<TrackEffect> _chain = [];
 
   /// The index in [_chain] of the card being edited, or null.
