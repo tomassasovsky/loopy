@@ -330,20 +330,35 @@ class NativeAudioEngine implements AudioEngine {
   @override
   EngineResult setTrackFx({
     required int channel,
-    required int slot,
+    required int index,
     required TrackEffectType type,
+    required TrackEffectStage stage,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_fx(_engine, channel, slot, type.code),
+      _bindings.le_engine_set_track_fx(
+        _engine,
+        channel,
+        index,
+        type.code,
+        stage.code,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxCount({required int channel, required int count}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_count(_engine, channel, count),
     );
   }
 
   @override
   EngineResult setTrackFxParam({
     required int channel,
-    required int slot,
     required int index,
+    required int param,
     required double value,
   }) {
     _checkAlive();
@@ -351,8 +366,8 @@ class NativeAudioEngine implements AudioEngine {
       _bindings.le_engine_set_track_fx_param(
         _engine,
         channel,
-        slot,
         index,
+        param,
         value,
       ),
     );

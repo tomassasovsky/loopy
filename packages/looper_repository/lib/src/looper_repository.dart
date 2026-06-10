@@ -72,11 +72,9 @@ class LooperRepository {
   bool _recDub = false;
   bool _autoRecord = false;
 
-  /// Per-track effect chains, re-applied on every successful (re)start. Keyed
-  /// by (channel, slot) for the slot's type and (channel, slot, paramIndex)
-  /// for its normalized parameter values. A bypassed (none) slot is absent.
-  final Map<(int, int), TrackEffectType> _trackFxType = {};
-  final Map<(int, int, int), double> _trackFxParam = {};
+  /// Per-track effect chains (ordered), re-applied on every successful
+  /// (re)start. Absent / empty means no effects on that track.
+  final Map<int, List<TrackEffect>> _trackEffects = {};
 
   /// Monitor routing, re-applied on every successful (re)start. The custom
   /// masks default to input 0 -> outputs 0 + 1 (the engine default); when
@@ -307,20 +305,7 @@ class LooperRepository {
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
       );
-      // Types first (each seeds the engine's default params), then the
-      // remembered parameter values override those defaults.
-      _trackFxType.forEach(
-        (key, type) =>
-            _engine.setTrackFx(channel: key.$1, slot: key.$2, type: type),
-      );
-      _trackFxParam.forEach(
-        (key, value) => _engine.setTrackFxParam(
-          channel: key.$1,
-          slot: key.$2,
-          index: key.$3,
-          value: value,
-        ),
-      );
+      _trackEffects.keys.forEach(_applyTrackEffects);
       _applyMonitor();
     }
     return result;
@@ -477,42 +462,82 @@ class LooperRepository {
     );
   }
 
-  /// Sets effect [slot] on track [channel] to [type]. Remembered and re-applied
-  /// on every (re)start; selecting [TrackEffectType.none] also drops the slot's
-  /// remembered parameters.
-  EngineResult setTrackFx({
+  /// Replaces track [channel]'s entire effects chain with [effects] (clamped to
+  /// [kTrackEffectMax]). Remembered and re-applied on every (re)start. Use this
+  /// for structural edits (add / remove / reorder / type / stage); it resets the
+  /// affected entries' DSP state. For a live parameter tweak use
+  /// [setTrackEffectParam], which does not.
+  EngineResult setTrackEffects({
     required int channel,
-    required int slot,
-    required TrackEffectType type,
+    required List<TrackEffect> effects,
   }) {
-    if (type == TrackEffectType.none) {
-      _trackFxType.remove((channel, slot));
-      _trackFxParam.removeWhere(
-        (key, _) => key.$1 == channel && key.$2 == slot,
-      );
+    final clamped = effects.length > kTrackEffectMax
+        ? effects.sublist(0, kTrackEffectMax)
+        : List<TrackEffect>.of(effects);
+    if (clamped.isEmpty) {
+      _trackEffects.remove(channel);
     } else {
-      _trackFxType[(channel, slot)] = type;
+      _trackEffects[channel] = clamped;
     }
     if (!_intendRunning) return EngineResult.ok;
-    return _engine.setTrackFx(channel: channel, slot: slot, type: type);
+    return _applyTrackEffects(channel);
   }
 
-  /// Sets parameter [index] of effect [slot] on track [channel] to [value]
-  /// (`0..1`). Remembered and re-applied on every (re)start.
-  EngineResult setTrackFxParam({
+  /// Sets parameter [param] of chain entry [index] on track [channel] to
+  /// [value] (`0..1`) without resetting DSP state. Remembered and re-applied on
+  /// (re)start. No-op if [index] is out of range for the remembered chain.
+  EngineResult setTrackEffectParam({
     required int channel,
-    required int slot,
     required int index,
+    required int param,
     required double value,
   }) {
-    _trackFxParam[(channel, slot, index)] = value;
+    final effects = _trackEffects[channel];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    final params = List<double>.of(fx.params)..[param] = value;
+    effects[index] = fx.copyWith(params: params);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setTrackFxParam(
       channel: channel,
-      slot: slot,
       index: index,
+      param: param,
       value: value,
     );
+  }
+
+  /// Track [channel]'s remembered effects chain (empty if none). The order is
+  /// the processing order; pre-stage entries process the input, post-stage
+  /// entries process playback.
+  List<TrackEffect> trackEffects(int channel) =>
+      List<TrackEffect>.unmodifiable(_trackEffects[channel] ?? const []);
+
+  /// Pushes track [channel]'s remembered chain to the engine: each entry's type
+  /// + stage (which seeds default params), then its parameter values, then the
+  /// active count. Called on (re)start and after a structural edit.
+  EngineResult _applyTrackEffects(int channel) {
+    final effects = _trackEffects[channel] ?? const <TrackEffect>[];
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      _engine.setTrackFx(
+        channel: channel,
+        index: i,
+        type: fx.type,
+        stage: fx.stage,
+      );
+      for (var p = 0; p < fx.params.length; p++) {
+        _engine.setTrackFxParam(
+          channel: channel,
+          index: i,
+          param: p,
+          value: fx.params[p],
+        );
+      }
+    }
+    return _engine.setTrackFxCount(channel: channel, count: effects.length);
   }
 
   /// Sets the global default loop length for inheriting tracks (`0` = auto).

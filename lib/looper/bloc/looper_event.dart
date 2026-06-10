@@ -134,44 +134,41 @@ final class LooperTrackMultipleChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, multiple];
 }
 
-/// Track [channel]'s effect [slot] changed to [type]
-/// ([TrackEffectType.none] bypasses the slot).
-final class LooperTrackFxChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackFxChanged].
-  const LooperTrackFxChanged(super.channel, this.slot, this.type);
+/// Track [channel]'s entire effects chain changed (a structural edit: add,
+/// remove, reorder, type, or stage). Resets the affected entries' DSP state.
+final class LooperTrackEffectsChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectsChanged].
+  const LooperTrackEffectsChanged(super.channel, this.effects);
 
-  /// The effect slot index (`0..kTrackEffectSlots-1`).
-  final int slot;
-
-  /// The effect type for the slot.
-  final TrackEffectType type;
+  /// The new ordered chain (clamped to [kTrackEffectMax] downstream).
+  final List<TrackEffect> effects;
 
   @override
-  List<Object?> get props => [channel, slot, type];
+  List<Object?> get props => [channel, effects];
 }
 
-/// Parameter [index] of track [channel]'s effect [slot] changed to [value]
-/// (`0..1`).
-final class LooperTrackFxParamChanged extends LooperChannelEvent {
-  /// Creates a [LooperTrackFxParamChanged].
-  const LooperTrackFxParamChanged(
+/// Parameter [param] of chain entry [index] on track [channel] changed to
+/// [value] (`0..1`). A live tweak — does not reset DSP state.
+final class LooperTrackEffectParamChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectParamChanged].
+  const LooperTrackEffectParamChanged(
     super.channel,
-    this.slot,
     this.index,
+    this.param,
     this.value,
   );
 
-  /// The effect slot index (`0..kTrackEffectSlots-1`).
-  final int slot;
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
 
   /// The parameter index (`0..kTrackEffectParams-1`).
-  final int index;
+  final int param;
 
   /// The normalized parameter value (`0..1`).
   final double value;
 
   @override
-  List<Object?> get props => [channel, slot, index, value];
+  List<Object?> get props => [channel, index, param, value];
 }
 
 /// Play every track that has content.

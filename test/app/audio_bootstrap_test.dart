@@ -79,10 +79,21 @@ void main() {
           monitorInput: true,
         ),
       );
-      // Track 0 slot 1 = delay with a feedback override; track 0 slot 0 has no
-      // saved type (exercises the bypass skip).
-      await settings.saveTrackFxType(0, 1, TrackEffectType.delay.code);
-      await settings.saveTrackFxParam(0, 1, 1, 0.42);
+      // Track 0 = a two-effect chain (pre filter, post delay with a feedback
+      // override); track 1 has no saved chain (exercises the empty skip).
+      await settings.saveTrackEffects(
+        0,
+        encodeTrackEffects([
+          TrackEffect(
+            type: TrackEffectType.filter,
+            stage: TrackEffectStage.pre,
+          ),
+          TrackEffect(
+            type: TrackEffectType.delay,
+            params: const [0.3, 0.42, 0.5],
+          ),
+        ]),
+      );
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
         sampleRate: 48000,
@@ -103,8 +114,15 @@ void main() {
       );
 
       expect(started, isTrue);
-      expect(engine.trackFx[(0, 1)], TrackEffectType.delay);
-      expect(engine.trackFx.containsKey((0, 0)), isFalse);
+      expect(engine.trackFx[(0, 0)], (
+        TrackEffectType.filter,
+        TrackEffectStage.pre,
+      ));
+      expect(engine.trackFx[(0, 1)], (
+        TrackEffectType.delay,
+        TrackEffectStage.post,
+      ));
+      expect(engine.trackFxCount[0], 2);
       expect(engine.trackFxParam[(0, 1, 1)], 0.42);
     });
 

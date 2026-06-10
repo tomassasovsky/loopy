@@ -13,4 +13,11 @@ export 'src/engine_snapshot.dart'
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/native_audio_engine.dart' show NativeAudioEngine;
 export 'src/track_effect.dart'
-    show TrackEffectType, kTrackEffectParams, kTrackEffectSlots;
+    show
+        TrackEffect,
+        TrackEffectStage,
+        TrackEffectType,
+        decodeTrackEffects,
+        encodeTrackEffects,
+        kTrackEffectMax,
+        kTrackEffectParams;

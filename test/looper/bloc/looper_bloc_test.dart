@@ -32,7 +32,7 @@ void main() {
   late LooperRepository repository;
   late StreamController<LooperState> stateController;
 
-  setUpAll(() => registerFallbackValue(TrackEffectType.none));
+  setUpAll(() => registerFallbackValue(<TrackEffect>[]));
 
   setUp(() {
     repository = _MockLooperRepository();
@@ -92,20 +92,20 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setTrackFx(
+      () => repository.setTrackEffects(
         channel: any(named: 'channel'),
-        slot: any(named: 'slot'),
-        type: any(named: 'type'),
+        effects: any(named: 'effects'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setTrackFxParam(
+      () => repository.setTrackEffectParam(
         channel: any(named: 'channel'),
-        slot: any(named: 'slot'),
         index: any(named: 'index'),
+        param: any(named: 'param'),
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(() => repository.trackEffects(any())).thenReturn(const []);
   });
 
   tearDown(() => stateController.close());
@@ -196,28 +196,30 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackFxChanged forwards the slot type to the repository',
+    'LooperTrackEffectsChanged forwards the chain to the repository',
     build: buildBloc,
-    act: (bloc) =>
-        bloc.add(const LooperTrackFxChanged(1, 0, TrackEffectType.delay)),
+    act: (bloc) => bloc.add(
+      LooperTrackEffectsChanged(1, [
+        TrackEffect(type: TrackEffectType.delay),
+      ]),
+    ),
     verify: (_) => verify(
-      () => repository.setTrackFx(
+      () => repository.setTrackEffects(
         channel: 1,
-        slot: 0,
-        type: TrackEffectType.delay,
+        effects: any(named: 'effects'),
       ),
     ).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackFxParamChanged forwards the param to the repository',
+    'LooperTrackEffectParamChanged forwards the param to the repository',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTrackFxParamChanged(2, 1, 0, 0.6)),
+    act: (bloc) => bloc.add(const LooperTrackEffectParamChanged(2, 1, 0, 0.6)),
     verify: (_) => verify(
-      () => repository.setTrackFxParam(
+      () => repository.setTrackEffectParam(
         channel: 2,
-        slot: 1,
-        index: 0,
+        index: 1,
+        param: 0,
         value: 0.6,
       ),
     ).called(1),
@@ -235,10 +237,7 @@ void main() {
         () => settings.saveTrackOutputMask(any(), any()),
       ).thenAnswer((_) async {});
       when(
-        () => settings.saveTrackFxType(any(), any(), any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => settings.saveTrackFxParam(any(), any(), any(), any()),
+        () => settings.saveTrackEffects(any(), any()),
       ).thenAnswer((_) async {});
     });
 
@@ -265,38 +264,39 @@ void main() {
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperTrackFxChanged persists the slot type code',
+      'LooperTrackEffectsChanged persists the encoded chain',
       build: () => LooperBloc(repository: repository, settings: settings),
-      act: (bloc) =>
-          bloc.add(const LooperTrackFxChanged(1, 2, TrackEffectType.filter)),
+      act: (bloc) => bloc.add(
+        LooperTrackEffectsChanged(1, [
+          TrackEffect(type: TrackEffectType.filter),
+        ]),
+      ),
       verify: (_) {
         verify(
-          () => repository.setTrackFx(
+          () => repository.setTrackEffects(
             channel: 1,
-            slot: 2,
-            type: TrackEffectType.filter,
+            effects: any(named: 'effects'),
           ),
         ).called(1);
-        verify(
-          () => settings.saveTrackFxType(1, 2, TrackEffectType.filter.code),
-        ).called(1);
+        verify(() => settings.saveTrackEffects(1, any())).called(1);
       },
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperTrackFxParamChanged persists the param value',
+      'LooperTrackEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(repository: repository, settings: settings),
-      act: (bloc) => bloc.add(const LooperTrackFxParamChanged(0, 1, 2, 0.25)),
+      act: (bloc) =>
+          bloc.add(const LooperTrackEffectParamChanged(0, 1, 2, 0.25)),
       verify: (_) {
         verify(
-          () => repository.setTrackFxParam(
+          () => repository.setTrackEffectParam(
             channel: 0,
-            slot: 1,
-            index: 2,
+            index: 1,
+            param: 2,
             value: 0.25,
           ),
         ).called(1);
-        verify(() => settings.saveTrackFxParam(0, 1, 2, 0.25)).called(1);
+        verify(() => settings.saveTrackEffects(0, any())).called(1);
       },
     );
   });
