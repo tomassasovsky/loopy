@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/session/session.dart';
+import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -14,16 +16,29 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _MockUiModeCubit extends MockCubit<UiMode> implements UiModeCubit {}
+
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
 void main() {
   late LooperBloc bloc;
+  late UiModeCubit uiMode;
+  late BankCubit bank;
   late SessionCubit sessionCubit;
+
+  setUpAll(() => registerFallbackValue(UiMode.desktop));
 
   setUp(() {
     bloc = _MockLooperBloc();
+    uiMode = _MockUiModeCubit();
+    bank = BankCubit(settings: SettingsRepository(store: FakeKeyValueStore()));
     sessionCubit = _MockSessionCubit();
+    whenListen(
+      uiMode,
+      const Stream<UiMode>.empty(),
+      initialState: UiMode.desktop,
+    );
     whenListen(
       sessionCubit,
       const Stream<SessionState>.empty(),
@@ -43,6 +58,8 @@ void main() {
         child: MultiBlocProvider(
           providers: [
             BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<UiModeCubit>.value(value: uiMode),
+            BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<SessionCubit>.value(value: sessionCubit),
           ],
           child: const LooperView(),
@@ -50,6 +67,17 @@ void main() {
       ),
     );
   }
+
+  testWidgets('bank A/B buttons switch the active bank', (tester) async {
+    await bank.setEnabled(value: true);
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pumpView(tester);
+    expect(bank.state.activeBank, 0);
+
+    await tester.tap(find.byKey(const Key('looper_bank_1')));
+    await tester.pump();
+    expect(bank.state.activeBank, 1);
+  });
 
   testWidgets('renders a strip per track and the stopped banner', (
     tester,
@@ -118,85 +146,17 @@ void main() {
     verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
   });
 
-  testWidgets('tempo bar shows BPM and dispatches tap/metronome', (
+  testWidgets('big picture button switches to big-picture mode', (
     tester,
   ) async {
-    seed(
-      const LooperState(
-        transport: TransportState(isRunning: true, tempoBpm: 128),
-        tracks: [Track()],
-      ),
-    );
+    when(() => uiMode.setMode(any())).thenAnswer((_) async {});
+    seed(const LooperState(tracks: [Track()]));
     await pumpView(tester);
 
-    expect(find.text('128 BPM'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('looper_tap_button')));
+    await tester.tap(find.byKey(const Key('looper_bigPicture_button')));
     await tester.pump();
-    verify(() => bloc.add(const LooperTapTempo())).called(1);
 
-    await tester.tap(find.byKey(const Key('looper_metronome_button')));
-    await tester.pump();
-    verify(() => bloc.add(const LooperMetronomeToggled())).called(1);
-
-    await tester.tap(find.byKey(const Key('looper_countIn_button')));
-    await tester.pump();
-    verify(() => bloc.add(const LooperCountInToggled())).called(1);
-
-    await tester.tap(find.byKey(const Key('looper_syncTempo_button')));
-    await tester.pump();
-    verify(() => bloc.add(const LooperSyncTempoToggled())).called(1);
-  });
-
-  testWidgets('tempo bar shows the synced bar count when a loop exists', (
-    tester,
-  ) async {
-    seed(
-      const LooperState(
-        transport: TransportState(
-          isRunning: true,
-          masterLengthFrames: 96000,
-          loopBars: 2,
-        ),
-        tracks: [Track()],
-      ),
-    );
-    await pumpView(tester);
-
-    expect(find.byKey(const Key('looper_bars_text')), findsOneWidget);
-    expect(find.text('2 bars'), findsOneWidget);
-  });
-
-  testWidgets('quantize menu dispatches the selected mode', (tester) async {
-    seed(
-      const LooperState(
-        transport: TransportState(isRunning: true),
-        tracks: [Track()],
-      ),
-    );
-    await pumpView(tester);
-
-    await tester.tap(find.byKey(const Key('looper_quantize_button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Quantize: beat'));
-    await tester.pumpAndSettle();
-
-    verify(
-      () => bloc.add(const LooperQuantizeChanged(QuantizeMode.beat)),
-    ).called(1);
-  });
-
-  testWidgets('an armed track shows the armed chip', (tester) async {
-    seed(
-      const LooperState(
-        transport: TransportState(isRunning: true, armedChannel: 0),
-        tracks: [Track(state: TrackState.playing, armed: true)],
-      ),
-    );
-    await pumpView(tester);
-
-    expect(find.byKey(const Key('looper_armed_chip_0')), findsOneWidget);
-    expect(find.text('armed'), findsOneWidget);
+    verify(() => uiMode.setMode(UiMode.bigPicture)).called(1);
   });
 
   testWidgets('a multi-loop track shows its multiple chip', (tester) async {

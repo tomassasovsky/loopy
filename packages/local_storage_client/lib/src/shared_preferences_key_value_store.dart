@@ -18,5 +18,29 @@ class SharedPreferencesKeyValueStore implements KeyValueStore {
   Future<void> setInt(String key, int value) => _prefs.setInt(key, value);
 
   @override
+  Future<String?> getString(String key) => _prefs.getString(key);
+
+  @override
+  Future<void> setString(String key, String value) =>
+      _prefs.setString(key, value);
+
+  @override
+  Future<bool?> getBool(String key) => _prefs.getBool(key);
+
+  @override
+  Future<void> setBool(String key, {required bool value}) =>
+      _prefs.setBool(key, value);
+
+  @override
+  Future<double?> getDouble(String key) => _prefs.getDouble(key);
+
+  @override
+  Future<void> setDouble(String key, double value) =>
+      _prefs.setDouble(key, value);
+
+  @override
   Future<void> remove(String key) => _prefs.remove(key);
+
+  @override
+  Future<void> clear() => _prefs.clear();
 }

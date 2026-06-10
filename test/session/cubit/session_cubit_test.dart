@@ -1,7 +1,6 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy/session/session.dart';
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:session_repository/session_repository.dart';
 
@@ -11,11 +10,6 @@ const _session = Session(
   sampleRate: 48000,
   channels: 1,
   baseLengthFrames: 0,
-  tempoBpm: 120,
-  syncLoopToTempo: true,
-  quantizeMode: QuantizeMode.bar,
-  metronomeOn: false,
-  countInEnabled: false,
   tracks: [],
 );
 

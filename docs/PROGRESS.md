@@ -35,7 +35,15 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   /tmp/loopy_core_tests
   ```
 - **Regenerate FFI bindings** after touching `src/loopy_engine_api.h`:
-  `cd packages/loopy_engine && dart run ffigen --config ffigen.yaml`
+  ```sh
+  cd packages/loopy_engine
+  dart run ffigen --config ffigen.yaml
+  dart format lib/src/generated/loopy_engine_bindings.dart
+  ```
+  The `dart format` step is required: ffigen emits legacy short-style code,
+  but the committed bindings are canonical `dart format` (tall) style. Without
+  it, every regen rewrites the whole file and buries the real diff. With it,
+  regens are field-scoped regardless of your local SDK's formatter version.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
@@ -83,9 +91,8 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 - **Phase 2:** single-track looper (record → master length → overdub → mix →
   vol/mute → clear), `looper_repository` + `LooperBloc` + channel-strip view,
   `audio_setup`.
-- **Phase 3 core:** N-track engine (LE_MAX_TRACKS=4) + grid UI; metronome +
-  count-in + tap-tempo; `controller_repository` (MIDI-learn-ready) wired into
-  the bloc.
+- **Phase 3 core:** N-track engine (LE_MAX_TRACKS=4) + grid UI;
+  `controller_repository` (MIDI-learn-ready) wired into the bloc.
 - **Loopback latency auto-detect** (PulseAudio monitor / WASAPI / virtual
   driver) + cable-free auto-measure (digital-path estimate; cable for true
   analog).
@@ -98,19 +105,13 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   finalizes the current one and starts the new from the loop top.
 - **Multi-level undo/redo** per track (control-thread buffer pool; undo = overdub
   layers, clear = remove track).
-- **Loop ↔ tempo sync** (#2): finalizing the defining loop rounds it to whole
-  bars at the current tempo, derives the beat grid back from the loop (so it
-  divides exactly), and snaps the displayed tempo to fit. The metronome is
-  driven from the master position once a loop exists (free-runs at the tapped
-  tempo before that, for count-in). Toggle "sync loop to tempo" (default on);
-  off = free-form length, untouched tempo. `loop_bars` + sync flag in the
-  snapshot, surfaced in the tempo bar (bar count + sync toggle).
-- **Quantize-start** (#3): `quantize` off / beat / bar (default bar). While a
-  loop exists, a record/overdub press **arms** the track and the capture begins
-  at the next grid boundary (applied in `process` via the #2 master-position
-  beat detection); a second press cancels the arm. Stops act immediately.
-  `quantize_mode` + `armed_channel` in the snapshot; tempo-bar quantize selector
-  + per-track "armed" chip in the UI.
+- **Fully free mode** (no tempo): all BPM/metronome/click/count-in/tap-tempo,
+  loop↔tempo sync (#2), and quantize-start (#3) logic was **removed** from the
+  native engine, FFI, repository, bloc, and UI. The looper has **one master loop
+  length**, set by the first finalized recording; there is no beat grid, no
+  click, and no quantization — captures start and stop immediately. Per-track
+  loop multiples (#4, below) are retained, as is latency compensation, the loop
+  waveform visualizer, Big Picture / two-window mode, and theming.
 - **Loop multiples** (#4): a non-defining track can span an integer multiple of
   the base loop. A free-running `loop_iteration` counts base-loop wraps; each
   track plays `((iteration − start_iter) % multiple)·baseLen + position`, so the
@@ -119,6 +120,94 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **auto-rounded up** to whole base loops on stop (buffer zeroed on the control
   thread so a rounded-up tail is silent). Per-track `multiple` in the snapshot;
   `×N` chip in the UI.
+- **Theming + Big Picture mode** (Phase 4 slice): two Material 3 themes via a
+  `LooperTheme` `ThemeExtension` (dark-neutral **Desktop**, neon-on-black **Big
+  Picture**); `UiModeCubit` persists the mode (as a string). Big Picture is a
+  Chewie-Monsta-style row of tall colored track columns (per-track number,
+  loop-waveform thumbnail, editable persisted name via `BigPictureCubit`,
+  selection highlight, per-track accent / red recording) **plus a second OS
+  window** (`desktop_multi_window`) showing the whole-loop output waveform with
+  a white playhead bar. Fed by a new RT-safe native **loop-indexed viz tap**
+  (`le_engine_read_visual` + `read_track_visual`: peak per loop bucket, master
+  + per-track, refreshed as the playhead sweeps). `KeyValueStore` now stores
+  string/bool/double. (Two-window runtime is build-verified only; needs an
+  on-machine run to confirm visually.) `desktop_multi_window` is pinned to
+  pub.dev `^0.2.0` (the SPM-fork branch was dropped; CocoaPods builds fine).
+- **Auto-start audio + first-run flow:** the last-used audio config (sample
+  rate / buffer / monitor) is persisted on a successful start
+  (`SettingsRepository.save/loadAudioConfig`). On launch, `tryAutoStartEngine`
+  loads it and starts the engine; if none is saved (first run) the **Audio Setup
+  page is the start screen** until the engine connects, then it hands off to the
+  looper.
+- **Big Picture is the default look** (`UiModeCubit` defaults to `bigPicture`).
+  A dedicated, minimal **Big Picture settings page** (rename tracks, reach audio
+  setup, toggle the waveform window, switch to Desktop) is reachable from the
+  performance view by **right-click** or the **`S` key**, and from the **macOS
+  system menu bar** (`PlatformMenuBar`, ⌘,). A persisted `WaveformWindowCubit`
+  gates the secondary window. The chromeless big-picture exit button was removed
+  (exit lives in settings now).
+- **Record immediately, even mid-loop** — a new track over an existing master
+  starts capturing at the current loop phase (no waiting for the loop top);
+  `record_pos` seeds to the master position so writes stay phase-locked and the
+  pre-press slice stays silent. Start-at-top is unchanged (multiples preserved).
+- **Transport reset-to-zero** — the master clock no longer free-runs in silence:
+  when no track is playing/recording/overdubbing it holds at position 0 (and
+  resets each track's loop phase), so play after a full stop starts from the top.
+  While any track is active the clock advances as before.
+- **8 tracks as two banks of four** — `LE_MAX_TRACKS = 8` (FFI regenerated). A
+  persisted **bank-enable** toggle (default off = one bank of four); when on, the
+  eight tracks show as two banks of four (A / B), one bank visible at a time.
+  `BankCubit` (app-wide) holds enabled + active bank; Big Picture shows an A|B
+  switch, desktop `LooperView` an app-bar A/B toggle.
+- **Performance keyboard + Record/Play modes** — handled in the Big Picture
+  `Focus` (plain keys consumed so macOS does not beep). `M` switches mode (a
+  REC/PLAY indicator shows it); `1`–`8` select a track (auto-revealing its bank);
+  Record mode adds `R` record/overdub and `P` play/pause the selection; Play mode
+  makes `1`–`8` select + mute/unmute; both modes: `Space` play/pause all, `C`
+  clear all, `⌘/Ctrl+Z` undo, `⌘/Ctrl+Y`/`Shift+Z` redo. `PerformanceMode` +
+  `toggleMode` on `BigPictureCubit`; new `LooperClearAllPressed` event.
+- **Code-review pass** — removed a debug `settings.clear()`; app composes the
+  engine via `LooperRepository.withNativeEngine()` (no `loopy_engine` import in
+  `lib/`); deleted dead Big-Picture waveform polling and made the level meter a
+  stateless widget (no per-tile timers); extracted a shared rename dialog;
+  `AudioSetupPage` reads its repositories from context; added the missing test
+  coverage. The Big Picture per-track thumbnail is a **level meter**, not a
+  waveform.
+- **Functional settings surfaced** — the settings/routing UI now exposes the
+  engine's real knobs: **quantized recording** (snap start/stop to the loop
+  grid, global + per-track override), **configurable input monitoring**
+  (input/output channel masks, or follow-the-selected-track), **rec/dub**
+  second-press mode, **sound-activated** recording, **loop multiples** (global
+  default + per-track `×N`), and **max-loop cap** / **UI refresh rate**. Each
+  is remembered in `LooperRepository` and re-applied on every (re)start, and
+  persisted via `SettingsRepository`. "Default" chips/labels name the resolved
+  global value. The per-track routing dialog reuses the signal-flow graph
+  scoped to one track.
+- **Per-track effects chain** — each track carries an ordered chain of up to
+  `LE_FX_MAX = 8` effects (the cap is for a fixed, allocation-free audio-thread
+  array, not a CPU limit), each with a **stage** (`le_fx_stage`: PRE processes
+  the live input so it is printed into the recording — record-through-FX; POST
+  processes playback, non-destructive) and `LE_FX_PARAMS = 3` normalized params:
+  **Drive** (tanh saturation), **Filter** (TPT state-variable low-pass),
+  **Delay** (feedback + wet mix, lazily allocated 1 s ring per entry on the
+  control thread), **Tremolo** (sine-LFO). All DSP is allocation-free in the
+  callback; the pre chain runs on `insample` before the buffer write, the post
+  chain on the playback sample before routing. Structural edits (type/stage)
+  route through the command ring so the audio thread resets that entry's DSP in
+  lockstep; a published `a_fx_count` gates active entries; params are plain
+  atoms read once per buffer (a live tweak never resets DSP). Setters
+  `le_engine_set_track_fx(index,type,stage)` / `set_track_fx_count` /
+  `set_track_fx_param`. `TrackEffect {type, stage, params}` + `TrackEffectType`
+  carry native codes, labels and musical defaults; the chain is JSON-encoded for
+  persistence. Configured from each track's routing dialog as a **signal-flow
+  card strip** — `In ▸ [pre cards] ▸ Track ▸ [post cards] ▸ Out`, add per lane,
+  reorder within a lane, move across the track (flips the stage), tap a card to
+  edit type + sliders. `LooperRepository` remembers the chain and re-applies on
+  (re)start (structural vs. granular-param paths); persisted per channel.
+  Designed plugin-ready — a hosted VST3/CLAP plugin is just another effect type.
+  **VST3 SDK went MIT (VST 3.8, Oct 2025)**, so a host is no longer licence- or
+  GPL-blocked; it remains a gated follow-up (needs the SDK vendored to compile +
+  plugin-editor child-window embedding).
 - **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
   `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
   exports mixdown / per-track stems. Native `le_engine_export_track` /
@@ -143,31 +232,39 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   Free-running `loop_iteration`; track reads its `(iter-start_iter) % k` segment.
   New-track first pass always begins at the loop top (phase-locked multiples);
   per-track multi-loop phase is relative to each track's own start.
-- **#2 loop ↔ tempo** — round the defining loop to whole bars and derive the
-  beat grid (and displayed tempo) from the loop; metronome locks to loop
-  position. Sync is a persistent toggle, default on; off keeps the free-form
-  length and tempo. Bars/grid are computed once at finalize (toggling sync on
-  after a free-form loop does not retro-snap it).
-- **#3 quantize-start** — default **bar**; off/beat/bar. A press while a loop
-  exists arms; capture starts at the next grid boundary; second press cancels.
-  Only *starts* are quantized (stops are immediate). The undo snapshot is still
-  taken on the control thread at press time; a cancelled arm leaves a harmless
-  duplicate undo layer (never an RT-unsafe copy on the audio thread).
+- **Fully free mode (no tempo)** — the looper is tempo-free: one master loop
+  length set by the first recording, no metronome/click/count-in/tap-tempo, no
+  loop↔tempo sync, no quantization. Captures start/stop immediately. BPM logic
+  was deleted (not hidden) from engine → FFI → repo → bloc → UI. Loop multiples
+  (#4), latency compensation, the waveform visualizer, Big Picture / two-window,
+  and theming are retained. (Supersedes the earlier #2 loop↔tempo and #3
+  quantize-start decisions, which were removed.)
+- **Transport holds at the top when idle** — the master clock advances only
+  while a track is active; otherwise it sits at 0. Play always resumes from the
+  beginning, never mid-loop in silence.
+- **8 slots, two banks of four** — the engine always carries 8 tracks; the bank
+  toggle is **app-side presentation** (show 4 = bank A, or two banks of 4). The
+  engine processes all 8 (empty ones are silent).
+- **Keyboard map lives in the Big Picture `Focus`** — plain keys are consumed
+  (no macOS beep); number keys map to the visible bank, auto-switching banks when
+  a digit targets the other four.
 
 ---
 
 ## Roadmap (path forward)
 
-**The sync roadmap (#2–#4) is complete** — loop ↔ tempo, quantize-start, and
-loop multiples all landed (see Done / Locked decisions). What remains needs
-hardware or a second display, or is Phase 4 scope.
+**Next: full multichannel per-track I/O routing** — the last big feature. Plan
+written and ready to `/build`:
+`docs/plan/2026-06-09-feat-multichannel-routing-plan.md`. Five phases (native
+I/O channel counts → mono track buffers + routing → Dart data/repo → routing UI
+→ on-hardware validation). Needs the user's audio interface plugged in to verify
+end-to-end. User decisions: **full device channels** and **two banks of four**
+(already shipped).
 
 ### Possible next steps (no hard dependency)
 - **Per-track multi-loop phase alignment** — multi-loop tracks currently phase
   relative to their own start iteration; an absolute-parity option would align
   all k-loop tracks to the same base-loop downbeat.
-- **Quantized stop / per-track loop-length display in bars** — small UX wins on
-  top of #2–#4.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding (abstraction + wiring ready; needs a
@@ -185,7 +282,11 @@ hardware or a second display, or is Phase 4 scope.
 ---
 
 ## Test counts (last green)
-native (all C tests, 34 fns: 4 loop↔tempo + 5 quantize + 2 loop-multiples + 1
-session roundtrip) · plugin 27 · controller 14 · looper_repository 14 ·
-settings 3 · local_storage 1 · session_repository 17 · app 53. macOS app builds
-end-to-end.
+native (all C tests, 63 fns: incl. mid-loop record, transport reset single- &
+multi-track, loop multiples, loop-viz, per-track effects DSP incl. pre/post
+stage, session export/import roundtrip) · plugin 38 · controller 14 ·
+looper_repository 38 · settings 38 · session_repository 17 · local_storage 1 ·
+app 207 (auto-start/first-run, big-picture settings + access, banks + A/B,
+performance keyboard, functional-settings + per-track effects card strip,
+session menu, goldens). `flutter analyze` clean; macOS app builds end-to-end.
+`LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`, `LE_FX_MAX = 8`.

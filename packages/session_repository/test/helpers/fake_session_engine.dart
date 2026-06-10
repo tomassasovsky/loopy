@@ -22,11 +22,6 @@ class FakeSessionEngine implements AudioEngine {
 
   final List<_FakeTrack> _tracks = List.generate(4, (_) => _FakeTrack());
   int masterLength = 0;
-  double tempo = 120;
-  bool sync = true;
-  QuantizeMode quantize = QuantizeMode.bar;
-  bool metronome = false;
-  bool countIn = false;
 
   /// Seeds a playing track with [pcm] and sets the base loop length from it.
   /// Seed consistent tracks (same base) — the last call wins.
@@ -53,7 +48,6 @@ class FakeSessionEngine implements AudioEngine {
     isRunning: true,
     sampleRate: sampleRate,
     bufferFrames: 128,
-    channels: channels,
     framesProcessed: 0,
     xrunCount: 0,
     inputRms: 0,
@@ -62,11 +56,6 @@ class FakeSessionEngine implements AudioEngine {
     latencyState: LatencyState.idle,
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
-    tempoBpm: tempo,
-    syncLoopToTempo: sync,
-    quantizeMode: quantize,
-    metronomeOn: metronome,
-    countInEnabled: countIn,
     tracks: [
       for (final t in _tracks)
         TrackSnapshot(
@@ -124,36 +113,6 @@ class FakeSessionEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTempo(double bpm) {
-    tempo = bpm;
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setSyncTempo({required bool on}) {
-    sync = on;
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setQuantize(QuantizeMode mode) {
-    quantize = mode;
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setMetronome({required bool on}) {
-    metronome = on;
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setCountIn({required bool enabled}) {
-    countIn = enabled;
-    return EngineResult.ok;
-  }
-
-  @override
   EngineResult setTrackVolume(double volume, {int channel = 0}) {
     _tracks[channel].volume = volume;
     return EngineResult.ok;
@@ -177,6 +136,8 @@ class FakeSessionEngine implements AudioEngine {
   @override
   LoopbackInfo detectLoopback() => const LoopbackInfo.none();
   @override
+  List<AudioDevice> enumerateDevices() => const [];
+  @override
   EngineResult measureLatency() => EngineResult.ok;
   @override
   EngineResult record({int channel = 0}) => EngineResult.ok;
@@ -189,9 +150,58 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult redo({int channel = 0}) => EngineResult.ok;
   @override
-  EngineResult tapTempo() => EngineResult.ok;
-  @override
   EngineResult setRecordOffset(int frames) => EngineResult.ok;
+  @override
+  EngineResult setInputMask({required int channel, required int mask}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOutputMask({required int channel, required int mask}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setQuantize({required bool enabled}) => EngineResult.ok;
+  @override
+  EngineResult setTrackQuantize({
+    required int channel,
+    required bool? enabled,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackMultiple({
+    required int channel,
+    required int multiple,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setDefaultMultiple({required int multiple}) => EngineResult.ok;
+  @override
+  EngineResult setRecDub({required bool enabled}) => EngineResult.ok;
+  @override
+  EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputMask({required int mask}) => EngineResult.ok;
+  @override
+  EngineResult setMonitorOutputMask({required int mask}) => EngineResult.ok;
+  @override
+  EngineResult setMonitorFxTrack({required int track}) => EngineResult.ok;
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+    required TrackEffectStage stage,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setTrackFxCount({required int channel, required int count}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
+  Float32List readVisual() => Float32List(0);
+  @override
+  Float32List readTrackVisual(int channel) => Float32List(0);
   @override
   void dispose() {}
 }

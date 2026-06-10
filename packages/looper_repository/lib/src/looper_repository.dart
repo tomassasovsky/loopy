@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
@@ -21,23 +22,91 @@ class LooperRepository {
     required AudioEngine engine,
     Stream<void>? ticker,
     Duration pollInterval = const Duration(milliseconds: 16),
+    Stream<void>? reconnectTicker,
+    Duration reconnectInterval = const Duration(seconds: 1),
   }) : _engine = engine,
-       _ticker = ticker ?? Stream<void>.periodic(pollInterval) {
+       _ticker = ticker,
+       _pollInterval = pollInterval,
+       _reconnectTicker = reconnectTicker,
+       _reconnectInterval = reconnectInterval {
     _controller = StreamController<LooperState>.broadcast(
       onListen: _startPolling,
       onCancel: _stopPolling,
     );
   }
 
+  /// Creates a repository driving the real native miniaudio engine, so the app
+  /// composes the looper without importing the data layer (`loopy_engine`)
+  /// directly.
+  factory LooperRepository.withNativeEngine() =>
+      LooperRepository(engine: NativeAudioEngine());
+
   final AudioEngine _engine;
-  final Stream<void> _ticker;
+  final Stream<void>? _ticker;
+  Duration _pollInterval;
+  final Stream<void>? _reconnectTicker;
+  final Duration _reconnectInterval;
   late final StreamController<LooperState> _controller;
   StreamSubscription<void>? _tickerSub;
+  Timer? _pollTimer;
   LooperState? _last;
   EngineConfig? _lastEngineConfig;
 
+  /// Whether the user intends the engine to be running (set on a successful
+  /// [startEngine], cleared on [stopEngine]). The reconnect supervisor only
+  /// recovers a device the user did not deliberately stop.
+  bool _intendRunning = false;
+
+  /// The desired quantize-recording state, re-applied to the engine on every
+  /// successful (re)start so it survives device changes and reconnects.
+  bool _quantize = false;
+
+  /// Per-track quantize overrides (absent => inherit the global default).
+  /// Remembered and re-applied on every successful (re)start.
+  final Map<int, bool> _trackQuantize = {};
+
+  /// Per-track forced loop multiples (absent => auto). The global rec/dub and
+  /// auto-record (sound-activated) flags. All re-applied on every (re)start.
+  final Map<int, int> _trackMultiple = {};
+  int _defaultMultiple = 0;
+  bool _recDub = false;
+  bool _autoRecord = false;
+
+  /// Per-track effect chains (ordered), re-applied on every successful
+  /// (re)start. Absent / empty means no effects on that track.
+  final Map<int, List<TrackEffect>> _trackEffects = {};
+
+  /// Monitor routing, re-applied on every successful (re)start. The custom
+  /// masks default to input 0 -> outputs 0 + 1 (the engine default); when
+  /// [_monitorFollowChannel] is non-null the monitor mirrors that track.
+  int _monitorInputMask = 0x1;
+  int _monitorOutputMask = 0x3;
+  int? _monitorFollowChannel;
+
+  /// Reconnect supervision: while these are non-null a pinned device is absent
+  /// and we are polling enumeration to reopen it. Their presence *is* the
+  /// "awaiting reconnect" state, so there is no separate flag to keep in sync.
+  StreamSubscription<void>? _reconnectSub;
+  Timer? _reconnectTimer;
+
+  /// Signature of the device list at the last restart attempt. A failed
+  /// restart is not retried until the device list changes (e.g. a re-plug), so
+  /// a present but unopenable device cannot thrash the engine.
+  String? _lastAttemptSignature;
+
+  bool get _isReconnecting => _reconnectSub != null || _reconnectTimer != null;
+
   /// Distinct stream of looper states.
-  Stream<LooperState> get looperState => _controller.stream;
+  ///
+  /// A new subscriber immediately receives the most recent state before live
+  /// updates, so a late listener — e.g. a bloc created after the audio-setup
+  /// flow already drove the engine to a steady state — shows the current tracks
+  /// instead of waiting for the next change.
+  Stream<LooperState> get looperState async* {
+    final last = _last;
+    if (last != null) yield last;
+    yield* _controller.stream;
+  }
 
   /// The current state, read synchronously from the engine.
   LooperState get state => _project(_engine.snapshot());
@@ -50,20 +119,126 @@ class LooperRepository {
   String get engineVersion => _engine.version;
 
   void _startPolling() {
-    _tickerSub = _ticker.listen((_) => _poll());
+    // Polling must survive subscribe/cancel cycles (hot restart, a bloc being
+    // rebuilt). An injected ticker (tests) is a broadcast stream and can be
+    // re-listened; the default uses a recreatable [Timer] because
+    // `Stream.periodic` is single-subscription and cannot be re-listened after
+    // [_stopPolling] cancels it.
+    final ticker = _ticker;
+    if (ticker != null) {
+      _tickerSub = ticker.listen((_) => _poll());
+    } else {
+      _pollTimer = Timer.periodic(_pollInterval, (_) => _poll());
+    }
     _poll();
   }
 
   void _stopPolling() {
     unawaited(_tickerSub?.cancel());
     _tickerSub = null;
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  /// The current snapshot-poll cadence.
+  Duration get pollInterval => _pollInterval;
+
+  /// Updates the snapshot-poll cadence (UI refresh rate). When polling on the
+  /// default timer, restarts it at the new [interval] so the change takes
+  /// effect immediately; an injected ticker (tests) is unaffected.
+  void setPollInterval(Duration interval) {
+    if (interval == _pollInterval) return;
+    _pollInterval = interval;
+    if (_ticker == null && _pollTimer != null) {
+      _pollTimer!.cancel();
+      _pollTimer = Timer.periodic(_pollInterval, (_) => _poll());
+    }
   }
 
   void _poll() {
-    final next = _project(_engine.snapshot());
+    final snapshot = _engine.snapshot();
+    _superviseDevice(devicePresent: snapshot.devicePresent);
+    final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
     _controller.add(next);
+  }
+
+  /// Watches the pinned device's presence each poll. When a pinned device goes
+  /// absent (and the user did not stop the engine), it begins polling
+  /// enumeration on the reconnect ticker/timer; when it reappears it stops and
+  /// restarts the engine on that device. System default ('' device ids) is
+  /// never auto-restarted. Cheap on the hot path: only a bool is checked here;
+  /// the expensive enumeration runs on the slower reconnect cadence.
+  void _superviseDevice({required bool devicePresent}) {
+    if (!_isPinned || !_intendRunning) return;
+    if (!devicePresent && !_isReconnecting) {
+      _startReconnectPolling();
+    } else if (devicePresent && _isReconnecting) {
+      _stopReconnectPolling();
+    }
+  }
+
+  /// Whether the last successful start pinned a specific device (vs the system
+  /// default, which is never auto-restarted on transient loss).
+  bool get _isPinned {
+    final config = _lastEngineConfig;
+    return config != null &&
+        (config.playbackDeviceId.isNotEmpty ||
+            config.captureDeviceId.isNotEmpty);
+  }
+
+  void _startReconnectPolling() {
+    _lastAttemptSignature = null; // a fresh loss may retry immediately
+    final ticker = _reconnectTicker;
+    if (ticker != null) {
+      _reconnectSub = ticker.listen((_) => _attemptReconnect());
+    } else {
+      _reconnectTimer = Timer.periodic(
+        _reconnectInterval,
+        (_) => _attemptReconnect(),
+      );
+    }
+  }
+
+  void _stopReconnectPolling() {
+    unawaited(_reconnectSub?.cancel());
+    _reconnectSub = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+  }
+
+  /// Reopens the pinned device once it reappears in enumeration. A restart is
+  /// attempted at most once per distinct device list: if it fails, we wait for
+  /// the list to change (e.g. a re-plug) before retrying, so a present-but-
+  /// unopenable device cannot thrash the engine. (Engine calls are synchronous,
+  /// so no re-entrancy guard is needed.)
+  void _attemptReconnect() {
+    final config = _lastEngineConfig;
+    if (config == null || !_isPinned) {
+      _stopReconnectPolling();
+      return;
+    }
+    final devices = _engine.enumerateDevices();
+    if (!_pinnedDevicesPresent(config, devices)) {
+      return; // still absent — keep waiting
+    }
+    final signature = devices
+        .map((d) => '${d.isInput ? 'i' : 'o'}:${d.id}')
+        .join('|');
+    if (signature == _lastAttemptSignature) return; // already tried this set
+    _lastAttemptSignature = signature;
+    _engine.stop();
+    if (_engine.start(config).isOk) _stopReconnectPolling();
+  }
+
+  /// Whether every pinned device id in [config] is present in [devices]. An
+  /// empty id (system default) is always considered present.
+  bool _pinnedDevicesPresent(EngineConfig config, List<AudioDevice> devices) {
+    bool present(String id, {required bool isInput}) =>
+        id.isEmpty || devices.any((d) => d.isInput == isInput && d.id == id);
+    return present(config.playbackDeviceId, isInput: false) &&
+        present(config.captureDeviceId, isInput: true);
   }
 
   LooperState _project(EngineSnapshot s) => LooperState(
@@ -71,15 +246,6 @@ class LooperRepository {
       isRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
       masterPositionFrames: s.masterPositionFrames,
-      tempoBpm: s.tempoBpm,
-      metronomeOn: s.metronomeOn,
-      countInEnabled: s.countInEnabled,
-      countingIn: s.countingIn,
-      currentBeat: s.currentBeat,
-      loopBars: s.loopBars,
-      syncLoopToTempo: s.syncLoopToTempo,
-      quantizeMode: s.quantizeMode,
-      armedChannel: s.armedChannel,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -94,32 +260,64 @@ class LooperRepository {
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
           redoDepth: s.tracks[i].redoDepth,
-          armed: s.armedChannel == i,
           multiple: s.tracks[i].multiple,
+          inputMask: s.tracks[i].inputMask,
+          outputMask: s.tracks[i].outputMask,
         ),
     ],
     status: EngineStatus(
       deviceName: _engine.deviceName,
       sampleRate: s.sampleRate,
       bufferFrames: s.bufferFrames,
-      channels: s.channels,
+      inputChannels: s.inputChannels,
+      outputChannels: s.outputChannels,
       latencyState: s.latencyState,
       measuredLatencyMs: s.measuredLatencyMs,
       xrunCount: s.xrunCount,
       isConnected: s.isRunning,
+      devicePresent: s.devicePresent,
+      excludedInputMask: s.excludedInputMask,
       recordOffsetFrames: s.recordOffsetFrames,
     ),
   );
 
+  /// Enumerates the host's audio devices (playback + capture) for the picker.
+  List<AudioDevice> devices() => _engine.enumerateDevices();
+
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
     final result = _engine.start(config);
-    if (result.isOk) _lastEngineConfig = config;
+    if (result.isOk) {
+      _lastEngineConfig = config;
+      _intendRunning = true;
+      // A fresh start resets the engine's quantize flag and monitor masks;
+      // re-apply the desired state so it survives device changes / reconnects.
+      _engine.setQuantize(enabled: _quantize);
+      _trackQuantize.forEach(
+        (channel, enabled) =>
+            _engine.setTrackQuantize(channel: channel, enabled: enabled),
+      );
+      _engine
+        ..setRecDub(enabled: _recDub)
+        ..setAutoRecord(enabled: _autoRecord)
+        ..setDefaultMultiple(multiple: _defaultMultiple);
+      _trackMultiple.forEach(
+        (channel, multiple) =>
+            _engine.setTrackMultiple(channel: channel, multiple: multiple),
+      );
+      _trackEffects.keys.forEach(_applyTrackEffects);
+      _applyMonitor();
+    }
     return result;
   }
 
-  /// Closes the audio device.
-  EngineResult stopEngine() => _engine.stop();
+  /// Closes the audio device. A deliberate stop also cancels any in-flight
+  /// reconnect supervision so the engine is not reopened behind the user.
+  EngineResult stopEngine() {
+    _intendRunning = false;
+    _stopReconnectPolling();
+    return _engine.stop();
+  }
 
   /// Detects a cable-free loopback capture path for auto-measuring latency.
   LoopbackInfo detectLoopback() => _engine.detectLoopback();
@@ -154,27 +352,231 @@ class LooperRepository {
   EngineResult setMute({required bool muted, int channel = 0}) =>
       _engine.setTrackMute(muted: muted, channel: channel);
 
-  /// Sets the tempo in beats per minute.
-  EngineResult setTempo(double bpm) => _engine.setTempo(bpm);
+  /// Routes track [channel]'s record sources to the input channels in [mask].
+  /// When monitoring follows this track, the monitor input mask tracks it.
+  EngineResult setInputMask({required int channel, required int mask}) {
+    final result = _engine.setInputMask(channel: channel, mask: mask);
+    if (_intendRunning && _monitorFollowChannel == channel) {
+      _engine.setMonitorInputMask(mask: mask);
+    }
+    return result;
+  }
 
-  /// Enables or disables the metronome click.
-  EngineResult setMetronome({required bool on}) => _engine.setMetronome(on: on);
+  /// Routes track [channel]'s playback to the output channels set in [mask].
+  /// When monitoring follows this track, the monitor output mask tracks it.
+  EngineResult setOutputMask({required int channel, required int mask}) {
+    final result = _engine.setOutputMask(channel: channel, mask: mask);
+    if (_intendRunning && _monitorFollowChannel == channel) {
+      _engine.setMonitorOutputMask(mask: mask);
+    }
+    return result;
+  }
 
-  /// Enables or disables the one-bar count-in.
-  EngineResult setCountIn({required bool enabled}) =>
-      _engine.setCountIn(enabled: enabled);
+  /// Sets the monitor input mask (custom mode): which input channels are
+  /// averaged into the live monitor. Remembered and re-applied on start; takes
+  /// effect immediately only while running and not following a track.
+  EngineResult setMonitorInputMask(int mask) {
+    _monitorInputMask = mask;
+    if (_intendRunning && _monitorFollowChannel == null) {
+      return _engine.setMonitorInputMask(mask: mask);
+    }
+    return EngineResult.ok;
+  }
 
-  /// Registers a tempo tap.
-  EngineResult tapTempo() => _engine.tapTempo();
+  /// Sets the monitor output mask (custom mode): which output channels the
+  /// monitor is routed to. Remembered and re-applied on start.
+  EngineResult setMonitorOutputMask(int mask) {
+    _monitorOutputMask = mask;
+    if (_intendRunning && _monitorFollowChannel == null) {
+      return _engine.setMonitorOutputMask(mask: mask);
+    }
+    return EngineResult.ok;
+  }
 
-  /// Enables or disables snapping the tempo and metronome grid to the loop.
-  EngineResult setSyncTempo({required bool on}) => _engine.setSyncTempo(on: on);
+  /// Selects what the monitor routes: a track [channel] to mirror that track's
+  /// input/output routing, or `null` for the custom monitor masks. Remembered
+  /// and re-applied on start.
+  void setMonitorFollowTrack(int? channel) {
+    _monitorFollowChannel = channel;
+    _applyMonitor();
+  }
 
-  /// Sets the quantize-start resolution for record/overdub presses.
-  EngineResult setQuantize(QuantizeMode mode) => _engine.setQuantize(mode);
+  /// Pushes the effective monitor masks to the engine: the followed track's
+  /// masks, or the custom masks. No-op while not running.
+  void _applyMonitor() {
+    if (!_intendRunning) return;
+    final follow = _monitorFollowChannel;
+    if (follow != null) {
+      final tracks = _engine.snapshot().tracks;
+      if (follow >= 0 && follow < tracks.length) {
+        _engine
+          ..setMonitorInputMask(mask: tracks[follow].inputMask)
+          ..setMonitorOutputMask(mask: tracks[follow].outputMask)
+          // Route the monitor through the followed track's before-track effects
+          // so they are heard live on the input.
+          ..setMonitorFxTrack(track: follow);
+      }
+      return;
+    }
+    _engine
+      ..setMonitorInputMask(mask: _monitorInputMask)
+      ..setMonitorOutputMask(mask: _monitorOutputMask)
+      ..setMonitorFxTrack(track: -1);
+  }
+
+  /// Reads the loop waveform (peaks indexed by loop position, `0..1`) of the
+  /// mixed output for the visualizer.
+  Float32List readWaveform() => _engine.readVisual();
+
+  /// Reads track [channel]'s loop waveform for a per-track thumbnail.
+  Float32List readTrackWaveform(int channel) =>
+      _engine.readTrackVisual(channel);
 
   /// Sets the record-offset latency compensation in frames.
   EngineResult setRecordOffset(int frames) => _engine.setRecordOffset(frames);
+
+  /// Overrides quantize for track [channel]: `null` inherits the global
+  /// default, `false` forces it off, `true` forces it on. Remembered and
+  /// re-applied on every (re)start.
+  EngineResult setTrackQuantize({
+    required int channel,
+    required bool? enabled,
+  }) {
+    if (enabled == null) {
+      _trackQuantize.remove(channel);
+    } else {
+      _trackQuantize[channel] = enabled;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackQuantize(channel: channel, enabled: enabled);
+  }
+
+  /// Fixes track [channel]'s loop length to [multiple] base loops (`0` = auto).
+  /// Remembered and re-applied on every (re)start.
+  EngineResult setTrackMultiple({required int channel, required int multiple}) {
+    if (multiple <= 0) {
+      _trackMultiple.remove(channel);
+    } else {
+      _trackMultiple[channel] = multiple;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackMultiple(
+      channel: channel,
+      multiple: multiple <= 0 ? 0 : multiple,
+    );
+  }
+
+  /// Replaces track [channel]'s entire effects chain with [effects] (clamped to
+  /// [kTrackEffectMax]). Remembered and re-applied on every (re)start. Use this
+  /// for structural edits (add / remove / reorder / type / stage); it resets the
+  /// affected entries' DSP state. For a live parameter tweak use
+  /// [setTrackEffectParam], which does not.
+  EngineResult setTrackEffects({
+    required int channel,
+    required List<TrackEffect> effects,
+  }) {
+    final clamped = effects.length > kTrackEffectMax
+        ? effects.sublist(0, kTrackEffectMax)
+        : List<TrackEffect>.of(effects);
+    if (clamped.isEmpty) {
+      _trackEffects.remove(channel);
+    } else {
+      _trackEffects[channel] = clamped;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyTrackEffects(channel);
+  }
+
+  /// Sets parameter [param] of chain entry [index] on track [channel] to
+  /// [value] (`0..1`) without resetting DSP state. Remembered and re-applied on
+  /// (re)start. No-op if [index] is out of range for the remembered chain.
+  EngineResult setTrackEffectParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    final effects = _trackEffects[channel];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    final params = List<double>.of(fx.params)..[param] = value;
+    effects[index] = fx.copyWith(params: params);
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackFxParam(
+      channel: channel,
+      index: index,
+      param: param,
+      value: value,
+    );
+  }
+
+  /// Track [channel]'s remembered effects chain (empty if none). The order is
+  /// the processing order; pre-stage entries process the input, post-stage
+  /// entries process playback.
+  List<TrackEffect> trackEffects(int channel) =>
+      List<TrackEffect>.unmodifiable(_trackEffects[channel] ?? const []);
+
+  /// Pushes track [channel]'s remembered chain to the engine: each entry's type
+  /// + stage (which seeds default params), then its parameter values, then the
+  /// active count. Called on (re)start and after a structural edit.
+  EngineResult _applyTrackEffects(int channel) {
+    final effects = _trackEffects[channel] ?? const <TrackEffect>[];
+    for (var i = 0; i < effects.length; i++) {
+      final fx = effects[i];
+      _engine.setTrackFx(
+        channel: channel,
+        index: i,
+        type: fx.type,
+        stage: fx.stage,
+      );
+      for (var p = 0; p < fx.params.length; p++) {
+        _engine.setTrackFxParam(
+          channel: channel,
+          index: i,
+          param: p,
+          value: fx.params[p],
+        );
+      }
+    }
+    return _engine.setTrackFxCount(channel: channel, count: effects.length);
+  }
+
+  /// Sets the global default loop length for inheriting tracks (`0` = auto).
+  /// Remembered and re-applied on every (re)start.
+  EngineResult setDefaultMultiple({required int multiple}) {
+    _defaultMultiple = multiple < 0 ? 0 : multiple;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setDefaultMultiple(multiple: _defaultMultiple);
+  }
+
+  /// Sets the global rec/dub second-press mode. Remembered and re-applied on
+  /// every (re)start.
+  EngineResult setRecDub({required bool enabled}) {
+    _recDub = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setRecDub(enabled: enabled);
+  }
+
+  /// Enables global sound-activated recording. Remembered and re-applied on
+  /// every (re)start.
+  EngineResult setAutoRecord({required bool enabled}) {
+    _autoRecord = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setAutoRecord(enabled: enabled);
+  }
+
+  /// Enables or disables quantized recording (captures snap to the loop grid).
+  /// The value is remembered and re-applied on every engine (re)start — a fresh
+  /// start (device change, reconnect) resets the engine's flag — so it survives
+  /// restarts. Applied to the live engine only while running.
+  EngineResult setQuantize({required bool enabled}) {
+    _quantize = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setQuantize(enabled: enabled);
+  }
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
@@ -184,6 +586,7 @@ class LooperRepository {
 
   Future<void> _stopPollingAndClose() async {
     _stopPolling();
+    _stopReconnectPolling();
     await _controller.close();
   }
 }

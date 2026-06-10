@@ -4,6 +4,7 @@ import 'package:bloc/bloc.dart';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 part 'looper_event.dart';
 
@@ -20,7 +21,9 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   LooperBloc({
     required LooperRepository repository,
     ControllerRepository? controller,
+    SettingsRepository? settings,
   }) : _repository = repository,
+       _settings = settings,
        super(const LooperState()) {
     on<LooperStateUpdated>((event, emit) => emit(event.state));
     on<LooperRecordPressed>(
@@ -50,6 +53,60 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         channel: event.channel,
       ),
     );
+    on<LooperInputMaskChanged>((event, _) {
+      _repository.setInputMask(channel: event.channel, mask: event.mask);
+      unawaited(_settings?.saveTrackInputMask(event.channel, event.mask));
+    });
+    on<LooperOutputMaskChanged>((event, _) {
+      _repository.setOutputMask(channel: event.channel, mask: event.mask);
+      unawaited(_settings?.saveTrackOutputMask(event.channel, event.mask));
+    });
+    on<LooperTrackQuantizeChanged>((event, _) {
+      _repository.setTrackQuantize(
+        channel: event.channel,
+        enabled: event.enabled,
+      );
+      unawaited(
+        _settings?.saveTrackQuantize(event.channel, enabled: event.enabled),
+      );
+    });
+    on<LooperTrackMultipleChanged>((event, _) {
+      _repository.setTrackMultiple(
+        channel: event.channel,
+        multiple: event.multiple,
+      );
+      unawaited(
+        _settings?.saveTrackMultiple(event.channel, event.multiple),
+      );
+    });
+    on<LooperTrackEffectsChanged>((event, _) {
+      _repository.setTrackEffects(
+        channel: event.channel,
+        effects: event.effects,
+      );
+      unawaited(
+        _settings?.saveTrackEffects(
+          event.channel,
+          encodeTrackEffects(event.effects),
+        ),
+      );
+    });
+    on<LooperTrackEffectParamChanged>((event, _) {
+      _repository.setTrackEffectParam(
+        channel: event.channel,
+        index: event.index,
+        param: event.param,
+        value: event.value,
+      );
+      // Re-save the whole chain (the engine call above was granular and did not
+      // reset DSP; persistence stores the chain as one encoded string).
+      unawaited(
+        _settings?.saveTrackEffects(
+          event.channel,
+          encodeTrackEffects(_repository.trackEffects(event.channel)),
+        ),
+      );
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);
@@ -60,21 +117,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _repository.stopTrack(channel: track.channel);
       }
     });
-    on<LooperTempoChanged>((event, _) => _repository.setTempo(event.bpm));
-    on<LooperMetronomeToggled>(
-      (_, _) => _repository.setMetronome(on: !state.transport.metronomeOn),
-    );
-    on<LooperCountInToggled>(
-      (_, _) =>
-          _repository.setCountIn(enabled: !state.transport.countInEnabled),
-    );
-    on<LooperTapTempo>((_, _) => _repository.tapTempo());
-    on<LooperSyncTempoToggled>(
-      (_, _) => _repository.setSyncTempo(on: !state.transport.syncLoopToTempo),
-    );
-    on<LooperQuantizeChanged>(
-      (event, _) => _repository.setQuantize(event.mode),
-    );
+    on<LooperClearAllPressed>((_, _) {
+      for (final track in state.tracks) {
+        if (track.hasContent) _repository.clear(channel: track.channel);
+      }
+    });
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),
@@ -83,6 +130,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   }
 
   final LooperRepository _repository;
+  final SettingsRepository? _settings;
   late final StreamSubscription<LooperState> _subscription;
   StreamSubscription<ControllerEvent>? _controllerSubscription;
 
@@ -107,8 +155,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         add(const LooperPlayAllPressed());
       case LooperAction.stopAll:
         add(const LooperStopAllPressed());
-      case LooperAction.tapTempo:
-        add(const LooperTapTempo());
     }
   }
 

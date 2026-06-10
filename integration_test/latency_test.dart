@@ -29,7 +29,8 @@ Future<void> main() async {
       const EngineConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        channels: 2,
+        inputChannels: 2,
+        outputChannels: 2,
       ),
     );
     log('start -> ${result.name}');
@@ -41,7 +42,8 @@ Future<void> main() async {
     log('device: "${engine.deviceName}"');
     log(
       'negotiated: ${opened.sampleRate} Hz, '
-      '${opened.bufferFrames} frames, ${opened.channels} ch',
+      '${opened.bufferFrames} frames, '
+      '${opened.inputChannels} in / ${opened.outputChannels} out',
     );
 
     // --- Step 1: ambient input level (informational) ---

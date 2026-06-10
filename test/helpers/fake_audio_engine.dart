@@ -37,6 +37,9 @@ class FakeAudioEngine implements AudioEngine {
   double? lastVolume;
   bool? lastMuted;
 
+  /// Last record offset (latency compensation) applied, in frames.
+  int? lastRecordOffset;
+
   @override
   String get version => 'fake-engine 0.0.0';
 
@@ -66,6 +69,12 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   LoopbackInfo detectLoopback() => loopback;
+
+  /// Devices returned by [enumerateDevices].
+  List<AudioDevice> devices = const [];
+
+  @override
+  List<AudioDevice> enumerateDevices() => devices;
 
   @override
   EngineResult measureLatency() {
@@ -121,26 +130,155 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  @override
-  EngineResult setTempo(double bpm) => EngineResult.ok;
+  /// Last per-track routing values seen (kept separate so input and output
+  /// assertions never clobber each other).
+  int? lastInputRoutingChannel;
+  int? lastInputMask;
+  int? lastOutputRoutingChannel;
+  int? lastOutputMask;
 
   @override
-  EngineResult setMetronome({required bool on}) => EngineResult.ok;
+  EngineResult setInputMask({required int channel, required int mask}) {
+    lastInputRoutingChannel = channel;
+    lastInputMask = mask;
+    return EngineResult.ok;
+  }
 
   @override
-  EngineResult setCountIn({required bool enabled}) => EngineResult.ok;
+  EngineResult setOutputMask({required int channel, required int mask}) {
+    lastOutputRoutingChannel = channel;
+    lastOutputMask = mask;
+    return EngineResult.ok;
+  }
 
   @override
-  EngineResult tapTempo() => EngineResult.ok;
+  EngineResult setRecordOffset(int frames) {
+    lastRecordOffset = frames;
+    return EngineResult.ok;
+  }
+
+  /// The last value passed to [setQuantize].
+  bool? lastQuantize;
 
   @override
-  EngineResult setSyncTempo({required bool on}) => EngineResult.ok;
+  EngineResult setQuantize({required bool enabled}) {
+    lastQuantize = enabled;
+    return EngineResult.ok;
+  }
+
+  /// Per-track quantize overrides passed to [setTrackQuantize].
+  final Map<int, bool?> trackQuantize = {};
 
   @override
-  EngineResult setQuantize(QuantizeMode mode) => EngineResult.ok;
+  EngineResult setTrackQuantize({
+    required int channel,
+    required bool? enabled,
+  }) {
+    trackQuantize[channel] = enabled;
+    return EngineResult.ok;
+  }
+
+  /// Per-track forced multiples passed to [setTrackMultiple].
+  final Map<int, int> trackMultiple = {};
+
+  /// The last value passed to [setDefaultMultiple].
+  int? lastDefaultMultiple;
+
+  /// The last values passed to [setRecDub] / [setAutoRecord].
+  bool? lastRecDub;
+  bool? lastAutoRecord;
 
   @override
-  EngineResult setRecordOffset(int frames) => EngineResult.ok;
+  EngineResult setTrackMultiple({required int channel, required int multiple}) {
+    trackMultiple[channel] = multiple;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setDefaultMultiple({required int multiple}) {
+    lastDefaultMultiple = multiple;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setRecDub({required bool enabled}) {
+    lastRecDub = enabled;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAutoRecord({required bool enabled}) {
+    lastAutoRecord = enabled;
+    return EngineResult.ok;
+  }
+
+  /// The last masks passed to [setMonitorInputMask] / [setMonitorOutputMask].
+  int? lastMonitorInputMask;
+  int? lastMonitorOutputMask;
+
+  @override
+  EngineResult setMonitorInputMask({required int mask}) {
+    lastMonitorInputMask = mask;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorOutputMask({required int mask}) {
+    lastMonitorOutputMask = mask;
+    return EngineResult.ok;
+  }
+
+  /// The last track passed to [setMonitorFxTrack] (-1 = not following).
+  int? lastMonitorFxTrack;
+
+  @override
+  EngineResult setMonitorFxTrack({required int track}) {
+    lastMonitorFxTrack = track;
+    return EngineResult.ok;
+  }
+
+  /// Per-(channel, index) effect type/stage passed to [setTrackFx].
+  final Map<(int, int), (TrackEffectType, TrackEffectStage)> trackFx = {};
+
+  /// Per-channel active chain length passed to [setTrackFxCount].
+  final Map<int, int> trackFxCount = {};
+
+  /// Per-(channel, index, param) value passed to [setTrackFxParam].
+  final Map<(int, int, int), double> trackFxParam = {};
+
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+    required TrackEffectStage stage,
+  }) {
+    trackFx[(channel, index)] = (type, stage);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxCount({required int channel, required int count}) {
+    trackFxCount[channel] = count;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    trackFxParam[(channel, index, param)] = value;
+    return EngineResult.ok;
+  }
+
+  @override
+  Float32List readVisual() => Float32List(0);
+
+  @override
+  Float32List readTrackVisual(int channel) => Float32List(0);
 
   @override
   Float32List exportTrack(int channel) => Float32List(0);

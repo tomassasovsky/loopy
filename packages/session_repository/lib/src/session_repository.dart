@@ -46,7 +46,7 @@ class SessionRepository {
         WavCodec.encodeFloat32(
           samples: captured.stems[track.channel]!,
           sampleRate: captured.snapshot.sampleRate,
-          channels: captured.snapshot.channels,
+          channels: 1,
         ),
       );
     }
@@ -62,7 +62,7 @@ class SessionRepository {
         WavCodec.encodeFloat32(
           samples: mix,
           sampleRate: captured.snapshot.sampleRate,
-          channels: captured.snapshot.channels,
+          channels: 1,
         ),
       );
     }
@@ -99,15 +99,6 @@ class SessionRepository {
       throw StateError('engine did not clear before loading the session');
     }
 
-    // Apply tempo/sync/quantize before committing so the derived beat grid
-    // matches the saved session, then transport toggles.
-    _engine
-      ..setTempo(session.tempoBpm)
-      ..setSyncTempo(on: session.syncLoopToTempo)
-      ..setQuantize(session.quantizeMode)
-      ..setMetronome(on: session.metronomeOn)
-      ..setCountIn(enabled: session.countInEnabled);
-
     for (final track in session.tracks) {
       final bytes = await File('$directory/${track.stem}').readAsBytes();
       final result = _engine.importTrack(
@@ -139,7 +130,7 @@ class SessionRepository {
       WavCodec.encodeFloat32(
         samples: mix,
         sampleRate: captured.snapshot.sampleRate,
-        channels: captured.snapshot.channels,
+        channels: 1,
       ),
     );
   }
@@ -153,7 +144,7 @@ class SessionRepository {
         WavCodec.encodeFloat32(
           samples: captured.stems[track.channel]!,
           sampleRate: captured.snapshot.sampleRate,
-          channels: captured.snapshot.channels,
+          channels: 1,
         ),
       );
     }
@@ -194,13 +185,8 @@ class SessionRepository {
     final snapshot = captured.snapshot;
     return Session(
       sampleRate: snapshot.sampleRate,
-      channels: snapshot.channels,
+      channels: 1,
       baseLengthFrames: snapshot.masterLengthFrames,
-      tempoBpm: snapshot.tempoBpm,
-      syncLoopToTempo: snapshot.syncLoopToTempo,
-      quantizeMode: snapshot.quantizeMode,
-      metronomeOn: snapshot.metronomeOn,
-      countInEnabled: snapshot.countInEnabled,
       tracks: captured.tracks,
     );
   }
@@ -208,7 +194,7 @@ class SessionRepository {
   /// Sums the unmuted tracks (at their gains) over the session period — the LCM
   /// of the track lengths, so every track's loop closes cleanly.
   Float32List _mixdown(_Capture captured) {
-    final channels = captured.snapshot.channels;
+    const channels = 1; // per-track buffers are mono
     final active = captured.tracks.where((t) => !t.muted).toList();
     if (active.isEmpty || channels <= 0) return Float32List(0);
 

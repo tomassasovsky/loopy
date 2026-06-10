@@ -85,6 +85,92 @@ final class LooperVolumeChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, volume];
 }
 
+/// The record-source input bitmask changed on [channel].
+final class LooperInputMaskChanged extends LooperChannelEvent {
+  /// Creates a [LooperInputMaskChanged].
+  const LooperInputMaskChanged(super.channel, this.mask);
+
+  /// Bitmask of hardware input channels to record from (bit c => in c).
+  final int mask;
+
+  @override
+  List<Object?> get props => [channel, mask];
+}
+
+/// The output-routing bitmask changed on [channel].
+final class LooperOutputMaskChanged extends LooperChannelEvent {
+  /// Creates a [LooperOutputMaskChanged].
+  const LooperOutputMaskChanged(super.channel, this.mask);
+
+  /// Bitmask of hardware output channels to play to (bit c => out c).
+  final int mask;
+
+  @override
+  List<Object?> get props => [channel, mask];
+}
+
+/// Track [channel]'s quantize override changed: `null` inherits the global
+/// default, `false` forces it off, `true` forces it on.
+final class LooperTrackQuantizeChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackQuantizeChanged].
+  const LooperTrackQuantizeChanged(super.channel, {required this.enabled});
+
+  /// The override (`null` => inherit the global default).
+  final bool? enabled;
+
+  @override
+  List<Object?> get props => [channel, enabled];
+}
+
+/// Track [channel]'s forced loop multiple changed (`0` = auto-round-up).
+final class LooperTrackMultipleChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackMultipleChanged].
+  const LooperTrackMultipleChanged(super.channel, this.multiple);
+
+  /// The forced loop length in whole base loops, or `0` for auto.
+  final int multiple;
+
+  @override
+  List<Object?> get props => [channel, multiple];
+}
+
+/// Track [channel]'s entire effects chain changed (a structural edit: add,
+/// remove, reorder, type, or stage). Resets the affected entries' DSP state.
+final class LooperTrackEffectsChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectsChanged].
+  const LooperTrackEffectsChanged(super.channel, this.effects);
+
+  /// The new ordered chain (clamped to [kTrackEffectMax] downstream).
+  final List<TrackEffect> effects;
+
+  @override
+  List<Object?> get props => [channel, effects];
+}
+
+/// Parameter [param] of chain entry [index] on track [channel] changed to
+/// [value] (`0..1`). A live tweak — does not reset DSP state.
+final class LooperTrackEffectParamChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackEffectParamChanged].
+  const LooperTrackEffectParamChanged(
+    super.channel,
+    this.index,
+    this.param,
+    this.value,
+  );
+
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
+
+  /// The parameter index (`0..kTrackEffectParams-1`).
+  final int param;
+
+  /// The normalized parameter value (`0..1`).
+  final double value;
+
+  @override
+  List<Object?> get props => [channel, index, param, value];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].
@@ -97,50 +183,8 @@ final class LooperStopAllPressed extends LooperEvent {
   const LooperStopAllPressed();
 }
 
-/// The tempo was changed to [bpm].
-final class LooperTempoChanged extends LooperEvent {
-  /// Creates a [LooperTempoChanged].
-  const LooperTempoChanged(this.bpm);
-
-  /// New tempo in beats per minute.
-  final double bpm;
-
-  @override
-  List<Object?> get props => [bpm];
-}
-
-/// The metronome was toggled.
-final class LooperMetronomeToggled extends LooperEvent {
-  /// Creates a [LooperMetronomeToggled].
-  const LooperMetronomeToggled();
-}
-
-/// The count-in was toggled.
-final class LooperCountInToggled extends LooperEvent {
-  /// Creates a [LooperCountInToggled].
-  const LooperCountInToggled();
-}
-
-/// A tempo tap was registered.
-final class LooperTapTempo extends LooperEvent {
-  /// Creates a [LooperTapTempo].
-  const LooperTapTempo();
-}
-
-/// The loop-to-tempo sync was toggled.
-final class LooperSyncTempoToggled extends LooperEvent {
-  /// Creates a [LooperSyncTempoToggled].
-  const LooperSyncTempoToggled();
-}
-
-/// The quantize-start resolution was changed to [mode].
-final class LooperQuantizeChanged extends LooperEvent {
-  /// Creates a [LooperQuantizeChanged].
-  const LooperQuantizeChanged(this.mode);
-
-  /// The new quantize-start resolution.
-  final QuantizeMode mode;
-
-  @override
-  List<Object?> get props => [mode];
+/// Clear every track that has content.
+final class LooperClearAllPressed extends LooperEvent {
+  /// Creates a [LooperClearAllPressed].
+  const LooperClearAllPressed();
 }

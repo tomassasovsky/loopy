@@ -5,8 +5,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/bank_cubit.dart';
+import 'package:loopy/looper/view/track_routing_dialog.dart';
 import 'package:loopy/session/session.dart';
-import 'package:settings_repository/settings_repository.dart';
+import 'package:loopy/ui_mode/ui_mode.dart';
 
 /// Session bundle actions in the looper app bar.
 enum _SessionAction { save, load, exportMixdown, exportStems }
@@ -21,6 +23,11 @@ class LooperView extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<LooperBloc>().state;
     final bloc = context.read<LooperBloc>();
+    final bank = context.watch<BankCubit>().state;
+    final tracks = [
+      for (final track in state.tracks)
+        if (bank.contains(track.channel)) track,
+    ];
 
     return BlocListener<SessionCubit, SessionState>(
       listenWhen: (previous, current) =>
@@ -30,9 +37,7 @@ class LooperView extends StatelessWidget {
       listener: (context, sessionState) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(content: Text(sessionState.message ?? '')),
-          );
+          ..showSnackBar(SnackBar(content: Text(sessionState.message ?? '')));
       },
       child: Scaffold(
         appBar: AppBar(
@@ -74,6 +79,28 @@ class LooperView extends StatelessWidget {
                 ),
               ],
             ),
+            if (bank.enabled) ...[
+              for (var i = 0; i < BankState.bankCountMax; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: TextButton(
+                    key: Key('looper_bank_$i'),
+                    onPressed: () => context.read<BankCubit>().selectBank(i),
+                    style: TextButton.styleFrom(
+                      backgroundColor: i == bank.activeBank
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                      foregroundColor: i == bank.activeBank
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : null,
+                      minimumSize: const Size(40, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: Text(String.fromCharCode(0x41 + i)),
+                  ),
+                ),
+              const SizedBox(width: 8),
+            ],
             IconButton(
               key: const Key('looper_playAll_button'),
               tooltip: 'Play all',
@@ -87,15 +114,19 @@ class LooperView extends StatelessWidget {
               onPressed: () => bloc.add(const LooperStopAllPressed()),
             ),
             IconButton(
+              key: const Key('looper_bigPicture_button'),
+              tooltip: 'Big picture',
+              icon: const Icon(Icons.open_in_full),
+              onPressed: () =>
+                  context.read<UiModeCubit>().setMode(UiMode.bigPicture),
+            ),
+            IconButton(
               key: const Key('looper_openSetup_button'),
               tooltip: 'Audio setup',
               icon: const Icon(Icons.settings),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => AudioSetupPage(
-                    repository: context.read<LooperRepository>(),
-                    settings: context.read<SettingsRepository>(),
-                  ),
+                  builder: (_) => const AudioSetupPage(),
                 ),
               ),
             ),
@@ -107,14 +138,12 @@ class LooperView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _MasterLoopBar(transport: state.transport),
-              const SizedBox(height: 8),
-              _TempoBar(transport: state.transport),
               const SizedBox(height: 12),
               if (!state.transport.isRunning) const _EngineStoppedBanner(),
               Expanded(
                 child: ListView.builder(
-                  itemCount: state.tracks.length,
-                  itemBuilder: (_, i) => _TrackStrip(track: state.tracks[i]),
+                  itemCount: tracks.length,
+                  itemBuilder: (_, i) => _TrackStrip(track: tracks[i]),
                 ),
               ),
               _StatusFooter(status: state.status),
@@ -143,91 +172,6 @@ class _MasterLoopBar extends StatelessWidget {
           key: const Key('looper_masterLoop_progress'),
           value: transport.hasLoop ? transport.progress : 0,
           minHeight: 8,
-        ),
-      ],
-    );
-  }
-}
-
-class _TempoBar extends StatelessWidget {
-  const _TempoBar({required this.transport});
-
-  final TransportState transport;
-
-  @override
-  Widget build(BuildContext context) {
-    final bloc = context.read<LooperBloc>();
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Text(
-          '${transport.tempoBpm.round()} BPM',
-          key: const Key('looper_bpm_text'),
-          style: theme.textTheme.titleMedium,
-        ),
-        if (transport.syncLoopToTempo && transport.loopBars > 0) ...[
-          const SizedBox(width: 8),
-          Text(
-            '${transport.loopBars} ${transport.loopBars == 1 ? 'bar' : 'bars'}',
-            key: const Key('looper_bars_text'),
-            style: theme.textTheme.labelMedium,
-          ),
-        ],
-        if (transport.countingIn) ...[
-          const SizedBox(width: 8),
-          Text('count-in…', style: theme.textTheme.labelMedium),
-        ],
-        const Spacer(),
-        IconButton(
-          key: const Key('looper_syncTempo_button'),
-          tooltip: transport.syncLoopToTempo
-              ? 'Sync loop to tempo on'
-              : 'Sync loop to tempo off',
-          isSelected: transport.syncLoopToTempo,
-          icon: const Icon(Icons.sync),
-          onPressed: () => bloc.add(const LooperSyncTempoToggled()),
-        ),
-        PopupMenuButton<QuantizeMode>(
-          key: const Key('looper_quantize_button'),
-          tooltip: 'Quantize start: ${transport.quantizeMode.name}',
-          initialValue: transport.quantizeMode,
-          icon: const Icon(Icons.grid_4x4),
-          onSelected: (mode) => bloc.add(LooperQuantizeChanged(mode)),
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: QuantizeMode.off,
-              child: Text('Quantize: off'),
-            ),
-            PopupMenuItem(
-              value: QuantizeMode.beat,
-              child: Text('Quantize: beat'),
-            ),
-            PopupMenuItem(
-              value: QuantizeMode.bar,
-              child: Text('Quantize: bar'),
-            ),
-          ],
-        ),
-        OutlinedButton.icon(
-          key: const Key('looper_tap_button'),
-          onPressed: () => bloc.add(const LooperTapTempo()),
-          icon: const Icon(Icons.touch_app),
-          label: const Text('Tap'),
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          key: const Key('looper_metronome_button'),
-          tooltip: transport.metronomeOn ? 'Metronome on' : 'Metronome off',
-          isSelected: transport.metronomeOn,
-          icon: const Icon(Icons.av_timer),
-          onPressed: () => bloc.add(const LooperMetronomeToggled()),
-        ),
-        IconButton(
-          key: const Key('looper_countIn_button'),
-          tooltip: transport.countInEnabled ? 'Count-in on' : 'Count-in off',
-          isSelected: transport.countInEnabled,
-          icon: const Icon(Icons.timer_3),
-          onPressed: () => bloc.add(const LooperCountInToggled()),
         ),
       ],
     );
@@ -293,14 +237,6 @@ class _TrackStrip extends StatelessWidget {
               children: [
                 Text('Track ${ch + 1}', style: theme.textTheme.titleSmall),
                 const Spacer(),
-                if (track.armed) ...[
-                  Chip(
-                    key: Key('looper_armed_chip_$ch'),
-                    avatar: const Icon(Icons.hourglass_top, size: 16),
-                    label: const Text('armed'),
-                  ),
-                  const SizedBox(width: 8),
-                ],
                 if (track.isMultiple) ...[
                   Chip(
                     key: Key('looper_multiple_chip_$ch'),
@@ -311,6 +247,14 @@ class _TrackStrip extends StatelessWidget {
                 Chip(
                   key: Key('looper_trackState_chip_$ch'),
                   label: Text(track.state.name),
+                ),
+                IconButton(
+                  key: Key('looper_routing_button_$ch'),
+                  tooltip: 'I/O routing',
+                  icon: const Icon(Icons.alt_route),
+                  onPressed: () => unawaited(
+                    showTrackRoutingDialog(context: context, channel: ch),
+                  ),
                 ),
               ],
             ),
@@ -420,6 +364,7 @@ class _StatusFooter extends StatelessWidget {
     final device = status.deviceName.isEmpty ? 'no device' : status.deviceName;
     return Text(
       '$device · ${status.sampleRate} Hz · ${status.bufferFrames} frames · '
+      '${status.inputChannels} in / ${status.outputChannels} out · '
       'latency $_latency',
       style: Theme.of(context).textTheme.bodySmall,
     );

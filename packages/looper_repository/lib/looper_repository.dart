@@ -4,13 +4,20 @@ library;
 
 export 'package:loopy_engine/loopy_engine.dart'
     show
+        AudioDevice,
         EngineConfig,
         EngineResult,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
-        QuantizeMode,
-        TrackState;
+        TrackEffect,
+        TrackEffectStage,
+        TrackEffectType,
+        TrackState,
+        decodeTrackEffects,
+        encodeTrackEffects,
+        kTrackEffectMax,
+        kTrackEffectParams;
 
 export 'src/looper_repository.dart';
 export 'src/models/engine_status.dart';

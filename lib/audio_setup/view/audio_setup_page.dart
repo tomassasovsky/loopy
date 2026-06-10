@@ -8,26 +8,19 @@ import 'package:settings_repository/settings_repository.dart';
 /// Entry point for the audio setup feature.
 ///
 /// Provides an [AudioSetupCubit] backed by the shared [LooperRepository] and
-/// [SettingsRepository].
+/// [SettingsRepository] read from context, so callers can push it without
+/// threading the repositories through.
 class AudioSetupPage extends StatelessWidget {
   /// Creates an [AudioSetupPage].
-  const AudioSetupPage({
-    required this.repository,
-    required this.settings,
-    super.key,
-  });
-
-  /// The shared looper repository (owns the engine).
-  final LooperRepository repository;
-
-  /// The shared settings repository (persists latency calibration).
-  final SettingsRepository settings;
+  const AudioSetupPage({super.key});
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) =>
-          AudioSetupCubit(repository: repository, settings: settings),
+      create: (context) => AudioSetupCubit(
+        repository: context.read<LooperRepository>(),
+        settings: context.read<SettingsRepository>(),
+      ),
       child: const AudioSetupView(),
     );
   }
