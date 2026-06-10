@@ -395,30 +395,64 @@ void main() {
       expect(engine.trackMultiple[1], 3);
     });
 
-    test('per-track effects are deferred then re-applied on start', () {
+    test('a per-track effects chain is deferred then re-applied on start', () {
       final repo = buildRepo()
-        ..setTrackFx(channel: 1, slot: 0, type: TrackEffectType.delay)
-        ..setTrackFxParam(channel: 1, slot: 0, index: 1, value: 0.4);
+        ..setTrackEffects(
+          channel: 1,
+          effects: [
+            TrackEffect(
+              type: TrackEffectType.delay,
+              params: const [0.3, 0.4, 0.5],
+            ),
+          ],
+        );
       expect(engine.trackFx, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.trackFx[(1, 0)], TrackEffectType.delay);
+      expect(engine.trackFx[(1, 0)], (
+        TrackEffectType.delay,
+        TrackEffectStage.post,
+      ));
       expect(engine.trackFxParam[(1, 0, 1)], 0.4);
+      expect(engine.trackFxCount[1], 1);
     });
 
-    test('selecting none drops the slot type and its params on restart', () {
+    test('a live param tweak updates the entry without resetting it', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setTrackFx(channel: 0, slot: 0, type: TrackEffectType.drive)
-        ..setTrackFxParam(channel: 0, slot: 0, index: 0, value: 0.7);
-      expect(engine.trackFx[(0, 0)], TrackEffectType.drive);
+        ..setTrackEffects(
+          channel: 0,
+          effects: [TrackEffect(type: TrackEffectType.drive)],
+        );
+      engine.calls.clear();
 
-      repo.setTrackFx(channel: 0, slot: 0, type: TrackEffectType.none);
-      engine.trackFx.clear();
+      repo.setTrackEffectParam(channel: 0, index: 0, param: 0, value: 0.9);
+      expect(engine.trackFxParam[(0, 0, 0)], 0.9);
+      // No setTrackFx (which would reset DSP) — only the granular param call.
+      expect(engine.calls, isNot(contains('setTrackFx')));
+      expect(engine.calls, contains('setTrackFxParam'));
+
+      // The tweak is remembered and re-applied on restart.
       engine.trackFxParam.clear();
       repo.startEngine(const EngineConfig());
+      expect(engine.trackFxParam[(0, 0, 0)], 0.9);
+    });
+
+    test('an empty chain drops the track and zeroes the count on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [TrackEffect(type: TrackEffectType.drive)],
+        );
+      expect(engine.trackFx[(0, 0)]?.$1, TrackEffectType.drive);
+
+      repo.setTrackEffects(channel: 0, effects: const []);
+      expect(engine.trackFxCount[0], 0);
+
+      engine.trackFx.clear();
+      repo.startEngine(const EngineConfig());
       expect(engine.trackFx.containsKey((0, 0)), isFalse);
-      expect(engine.trackFxParam.containsKey((0, 0, 0)), isFalse);
     });
 
     test('clearing a track multiple (0) drops the override', () {

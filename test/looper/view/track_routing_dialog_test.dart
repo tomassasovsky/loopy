@@ -146,95 +146,146 @@ void main() {
       ).called(1);
     });
 
-    testWidgets('choosing an effect type dispatches LooperTrackFxChanged', (
+    testWidgets('adding an after-track effect dispatches the chain', (
       tester,
     ) async {
       await pumpOpener(tester);
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      final typePicker = find.byKey(const Key('trackRouting_fx0_type'));
-      await tester.ensureVisible(typePicker);
-      await tester.tap(typePicker);
+      final add = find.byKey(const Key('trackRouting_fx_addPost'));
+      await tester.ensureVisible(add);
+      await tester.tap(add);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Drive').last);
+
+      // A default (drive, post) effect is appended and its editor opens.
+      verify(
+        () => bloc.add(
+          any(
+            that: isA<LooperTrackEffectsChanged>()
+                .having((e) => e.channel, 'channel', 0)
+                .having((e) => e.effects.length, 'length', 1)
+                .having(
+                  (e) => e.effects.first.stage,
+                  'stage',
+                  TrackEffectStage.post,
+                ),
+          ),
+        ),
+      ).called(1);
+      expect(find.byKey(const Key('trackRouting_fx_card_0')), findsOneWidget);
+    });
+
+    testWidgets('the card editor shows the type and its parameter sliders', (
+      tester,
+    ) async {
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('trackRouting_fx_type')), findsNothing);
+
+      final add = find.byKey(const Key('trackRouting_fx_addPre'));
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      // The editor opens for the new effect: type selector + drive's params.
+      expect(find.byKey(const Key('trackRouting_fx_type')), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_fx_param0')), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_fx_param1')), findsOneWidget);
+    });
+
+    testWidgets('moving an effect across the track changes its stage', (
+      tester,
+    ) async {
+      // Start with one after-track effect (selected, editor open).
+      await settings.saveTrackEffects(
+        0,
+        encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
+      );
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final card = find.byKey(const Key('trackRouting_fx_card_0'));
+      await tester.ensureVisible(card);
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+
+      final before = find.text('Before track');
+      await tester.ensureVisible(before);
+      await tester.tap(before);
       await tester.pumpAndSettle();
 
       verify(
         () => bloc.add(
-          const LooperTrackFxChanged(0, 0, TrackEffectType.drive),
+          any(
+            that: isA<LooperTrackEffectsChanged>().having(
+              (e) => e.effects.first.stage,
+              'stage',
+              TrackEffectStage.pre,
+            ),
+          ),
         ),
       ).called(1);
     });
 
-    testWidgets('selecting a type reveals its parameter sliders', (
+    testWidgets('dragging a param slider dispatches the granular param event', (
       tester,
     ) async {
+      await settings.saveTrackEffects(
+        0,
+        encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
+      );
       await pumpOpener(tester);
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      // No effect yet -> no parameter sliders.
-      expect(find.byKey(const Key('trackRouting_fx0_param0')), findsNothing);
-
-      final typePicker = find.byKey(const Key('trackRouting_fx0_type'));
-      await tester.ensureVisible(typePicker);
-      await tester.tap(typePicker);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Delay').last);
+      final card = find.byKey(const Key('trackRouting_fx_card_0'));
+      await tester.ensureVisible(card);
+      await tester.tap(card);
       await tester.pumpAndSettle();
 
-      // Delay exposes three parameters (Time, Feedback, Mix).
-      expect(find.byKey(const Key('trackRouting_fx0_param0')), findsOneWidget);
-      expect(find.byKey(const Key('trackRouting_fx0_param1')), findsOneWidget);
-      expect(find.byKey(const Key('trackRouting_fx0_param2')), findsOneWidget);
-    });
+      final slider = find.byKey(const Key('trackRouting_fx_param0'));
+      await tester.ensureVisible(slider);
+      await tester.drag(slider, const Offset(200, 0));
+      await tester.pump();
 
-    testWidgets(
-      'dragging a param slider dispatches LooperTrackFxParamChanged',
-      (
-        tester,
-      ) async {
-        await pumpOpener(tester);
-        await tester.tap(find.text('open'));
-        await tester.pumpAndSettle();
-
-        final typePicker = find.byKey(const Key('trackRouting_fx0_type'));
-        await tester.ensureVisible(typePicker);
-        await tester.tap(typePicker);
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Drive').last);
-        await tester.pumpAndSettle();
-
-        final slider = find.byKey(const Key('trackRouting_fx0_param0'));
-        await tester.ensureVisible(slider);
-        await tester.drag(slider, const Offset(200, 0));
-        await tester.pump();
-
-        verify(
-          () => bloc.add(
-            any(
-              that: isA<LooperTrackFxParamChanged>()
-                  .having((e) => e.channel, 'channel', 0)
-                  .having((e) => e.slot, 'slot', 0)
-                  .having((e) => e.index, 'index', 0),
-            ),
+      verify(
+        () => bloc.add(
+          any(
+            that: isA<LooperTrackEffectParamChanged>()
+                .having((e) => e.channel, 'channel', 0)
+                .having((e) => e.index, 'index', 0)
+                .having((e) => e.param, 'param', 0),
           ),
-        ).called(greaterThanOrEqualTo(1));
-      },
-    );
+        ),
+      ).called(greaterThanOrEqualTo(1));
+    });
 
     testWidgets('a saved effect chain is preloaded into the dialog', (
       tester,
     ) async {
-      await settings.saveTrackFxType(0, 0, TrackEffectType.tremolo.code);
+      await settings.saveTrackEffects(
+        0,
+        encodeTrackEffects([
+          TrackEffect(
+            type: TrackEffectType.tremolo,
+            stage: TrackEffectStage.pre,
+          ),
+          TrackEffect(type: TrackEffectType.delay),
+        ]),
+      );
       await pumpOpener(tester);
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      // The saved type's parameter sliders are rendered on open.
-      expect(find.byKey(const Key('trackRouting_fx0_param0')), findsOneWidget);
-      expect(find.byKey(const Key('trackRouting_fx0_param1')), findsOneWidget);
+      // Both saved effects render as cards.
+      expect(find.byKey(const Key('trackRouting_fx_card_0')), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_fx_card_1')), findsOneWidget);
+      expect(find.text('Tremolo'), findsWidgets);
+      expect(find.text('Delay'), findsWidgets);
     });
   });
 }

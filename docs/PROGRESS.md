@@ -183,21 +183,31 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   persisted via `SettingsRepository`. "Default" chips/labels name the resolved
   global value. The per-track routing dialog reuses the signal-flow graph
   scoped to one track.
-- **Per-track effects chain** — each track has `LE_FX_SLOTS = 3` insert slots
-  applied in order to its mono output before routing, each `LE_FX_PARAMS = 3`
-  normalized params: **Drive** (tanh saturation), **Filter** (TPT
-  state-variable low-pass), **Delay** (feedback + wet mix, lazily allocated
-  1 s ring per slot on the control thread), **Tremolo** (sine-LFO). All DSP is
-  allocation-free in the callback; type changes route through the command ring
-  so the audio thread resets slot DSP state in lockstep, while params are plain
-  published atoms read once per buffer. Setters `le_engine_set_track_fx` /
-  `le_engine_set_track_fx_param`; `TrackEffectType` carries native codes, param
-  labels, and musical defaults (mirrored from the engine). Configured per track
-  from its routing dialog (type dropdown + a slider per param); remembered and
-  re-applied on (re)start; persisted per `(channel, slot[, paramIndex])`.
-  Designed plugin-ready — a hosted VST3/CLAP plugin is just another slot type
-  (the host/SDK is a gated follow-up; needs the SDK present to compile + a
-  licence to distribute).
+- **Per-track effects chain** — each track carries an ordered chain of up to
+  `LE_FX_MAX = 8` effects (the cap is for a fixed, allocation-free audio-thread
+  array, not a CPU limit), each with a **stage** (`le_fx_stage`: PRE processes
+  the live input so it is printed into the recording — record-through-FX; POST
+  processes playback, non-destructive) and `LE_FX_PARAMS = 3` normalized params:
+  **Drive** (tanh saturation), **Filter** (TPT state-variable low-pass),
+  **Delay** (feedback + wet mix, lazily allocated 1 s ring per entry on the
+  control thread), **Tremolo** (sine-LFO). All DSP is allocation-free in the
+  callback; the pre chain runs on `insample` before the buffer write, the post
+  chain on the playback sample before routing. Structural edits (type/stage)
+  route through the command ring so the audio thread resets that entry's DSP in
+  lockstep; a published `a_fx_count` gates active entries; params are plain
+  atoms read once per buffer (a live tweak never resets DSP). Setters
+  `le_engine_set_track_fx(index,type,stage)` / `set_track_fx_count` /
+  `set_track_fx_param`. `TrackEffect {type, stage, params}` + `TrackEffectType`
+  carry native codes, labels and musical defaults; the chain is JSON-encoded for
+  persistence. Configured from each track's routing dialog as a **signal-flow
+  card strip** — `In ▸ [pre cards] ▸ Track ▸ [post cards] ▸ Out`, add per lane,
+  reorder within a lane, move across the track (flips the stage), tap a card to
+  edit type + sliders. `LooperRepository` remembers the chain and re-applies on
+  (re)start (structural vs. granular-param paths); persisted per channel.
+  Designed plugin-ready — a hosted VST3/CLAP plugin is just another effect type.
+  **VST3 SDK went MIT (VST 3.8, Oct 2025)**, so a host is no longer licence- or
+  GPL-blocked; it remains a gated follow-up (needs the SDK vendored to compile +
+  plugin-editor child-window embedding).
 
 ---
 
@@ -262,10 +272,10 @@ end-to-end. User decisions: **full device channels** and **two banks of four**
 ---
 
 ## Test counts (last green)
-native (all C tests, 59 fns: incl. mid-loop record, transport reset single- &
-multi-track, loop multiples, loop-viz, per-track effects DSP) · plugin 38 ·
-controller 14 · looper_repository 37 · settings 39 · app 206 (auto-start/
-first-run, big-picture settings + access, banks + A/B, performance keyboard,
-functional-settings + per-track effects UI, routing-dialog goldens). `flutter
-analyze` clean; macOS app builds end-to-end. `LE_MAX_TRACKS = 8`,
-`LE_MAX_CHANNELS = 32`.
+native (all C tests, 62 fns: incl. mid-loop record, transport reset single- &
+multi-track, loop multiples, loop-viz, per-track effects DSP incl. pre/post
+stage) · plugin 38 · controller 14 · looper_repository 38 · settings 38 · app
+207 (auto-start/first-run, big-picture settings + access, banks + A/B,
+performance keyboard, functional-settings + per-track effects card strip,
+routing-dialog goldens). `flutter analyze` clean; macOS app builds end-to-end.
+`LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`, `LE_FX_MAX = 8`.

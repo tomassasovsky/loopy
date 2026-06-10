@@ -176,22 +176,28 @@ abstract interface class AudioEngine {
   /// the output range are ignored.
   EngineResult setMonitorOutputMask({required int mask});
 
-  /// Sets effect [slot] (`0..kTrackEffectSlots-1`) on track [channel] to
-  /// [type]. Switching type resets that slot's DSP state and seeds the type's
-  /// default parameters; [TrackEffectType.none] bypasses the slot.
+  /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on track [channel] to
+  /// [type] at [stage]. Changing the type resets that entry's DSP state and
+  /// seeds the type's default parameters. This sets the entry's value only; use
+  /// [setTrackFxCount] to control how many entries are active.
   EngineResult setTrackFx({
     required int channel,
-    required int slot,
+    required int index,
     required TrackEffectType type,
+    required TrackEffectStage stage,
   });
 
-  /// Sets parameter [index] (`0..kTrackEffectParams-1`) of effect [slot] on
-  /// track [channel] to [value] (clamped to `0..1`). The parameter's meaning
-  /// depends on the slot's effect type.
+  /// Sets the active chain length on track [channel] to [count]
+  /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
+  EngineResult setTrackFxCount({required int channel, required int count});
+
+  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of chain entry [index]
+  /// on track [channel] to [value] (clamped to `0..1`). The parameter's meaning
+  /// depends on the entry's effect type.
   EngineResult setTrackFxParam({
     required int channel,
-    required int slot,
     required int index,
+    required int param,
     required double value,
   });
 

@@ -79,29 +79,31 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackMultiple(event.channel, event.multiple),
       );
     });
-    on<LooperTrackFxChanged>((event, _) {
-      _repository.setTrackFx(
+    on<LooperTrackEffectsChanged>((event, _) {
+      _repository.setTrackEffects(
         channel: event.channel,
-        slot: event.slot,
-        type: event.type,
+        effects: event.effects,
       );
       unawaited(
-        _settings?.saveTrackFxType(event.channel, event.slot, event.type.code),
+        _settings?.saveTrackEffects(
+          event.channel,
+          encodeTrackEffects(event.effects),
+        ),
       );
     });
-    on<LooperTrackFxParamChanged>((event, _) {
-      _repository.setTrackFxParam(
+    on<LooperTrackEffectParamChanged>((event, _) {
+      _repository.setTrackEffectParam(
         channel: event.channel,
-        slot: event.slot,
         index: event.index,
+        param: event.param,
         value: event.value,
       );
+      // Re-save the whole chain (the engine call above was granular and did not
+      // reset DSP; persistence stores the chain as one encoded string).
       unawaited(
-        _settings?.saveTrackFxParam(
+        _settings?.saveTrackEffects(
           event.channel,
-          event.slot,
-          event.index,
-          event.value,
+          encodeTrackEffects(_repository.trackEffects(event.channel)),
         ),
       );
     });

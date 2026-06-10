@@ -331,32 +331,17 @@ class SettingsRepository {
   Future<void> saveTrackOutputMask(int channel, int mask) =>
       _store.setInt(_trackOutputMaskKey(channel), mask);
 
-  String _trackFxTypeKey(int channel, int slot) =>
-      'track_fx_type.$channel.$slot';
-  String _trackFxParamKey(int channel, int slot, int index) =>
-      'track_fx_param.$channel.$slot.$index';
+  String _trackEffectsKey(int channel) => 'track_effects.$channel';
 
-  /// Loads the effect type code (matching `le_fx_type`) for track [channel]'s
-  /// effect [slot], or `null` if unset (bypassed).
-  Future<int?> loadTrackFxType(int channel, int slot) =>
-      _store.getInt(_trackFxTypeKey(channel, slot));
+  /// Loads track [channel]'s persisted effects chain as an opaque encoded
+  /// string (see `encodeTrackEffects`), or `null` if none is saved.
+  Future<String?> loadTrackEffects(int channel) =>
+      _store.getString(_trackEffectsKey(channel));
 
-  /// Saves the effect [typeCode] for track [channel]'s effect [slot].
-  Future<void> saveTrackFxType(int channel, int slot, int typeCode) =>
-      _store.setInt(_trackFxTypeKey(channel, slot), typeCode);
-
-  /// Loads parameter [index] of track [channel]'s effect [slot], or `null` if
-  /// unset.
-  Future<double?> loadTrackFxParam(int channel, int slot, int index) =>
-      _store.getDouble(_trackFxParamKey(channel, slot, index));
-
-  /// Saves parameter [index] (`0..1`) of track [channel]'s effect [slot].
-  Future<void> saveTrackFxParam(
-    int channel,
-    int slot,
-    int index,
-    double value,
-  ) => _store.setDouble(_trackFxParamKey(channel, slot, index), value);
+  /// Saves track [channel]'s [encoded] effects chain (see
+  /// `encodeTrackEffects`).
+  Future<void> saveTrackEffects(int channel, String encoded) =>
+      _store.setString(_trackEffectsKey(channel), encoded);
 
   /// Clears all settings.
   Future<void> clear() => _store.clear();

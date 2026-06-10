@@ -228,9 +228,17 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
   }
 }
 
-/// The per-track effects chain: [kTrackEffectSlots] insert slots, each a type
-/// selector plus a slider per parameter the chosen type exposes. Loads the
-/// saved chain from [settings] and dispatches changes through the [LooperBloc].
+/// The per-track effects chain, drawn as a signal-flow strip of cards:
+///
+///   In ▸ [before-the-track effects] ▸ Track ▸ [after-the-track effects] ▸ Out
+///
+/// "Before" effects are printed into the recording; "after" effects process
+/// playback (non-destructive). Cards are added per lane, reordered within a
+/// lane, moved across the track (changing the stage), and edited (type +
+/// parameter sliders) by selecting one. Loads the saved chain from [settings]
+/// and dispatches changes through the [LooperBloc]: structural edits as a whole
+/// [LooperTrackEffectsChanged], live slider tweaks as a granular
+/// [LooperTrackEffectParamChanged].
 class _TrackEffectsControl extends StatefulWidget {
   const _TrackEffectsControl({required this.channel, required this.settings});
 
@@ -242,16 +250,12 @@ class _TrackEffectsControl extends StatefulWidget {
 }
 
 class _TrackEffectsControlState extends State<_TrackEffectsControl> {
-  /// Per-slot effect type and its [kTrackEffectParams] parameter values.
-  final List<TrackEffectType> _types = List.filled(
-    kTrackEffectSlots,
-    TrackEffectType.none,
-  );
-  final List<List<double>> _params = List.generate(
-    kTrackEffectSlots,
-    (_) => List<double>.filled(kTrackEffectParams, 0),
-    growable: false,
-  );
+  /// The chain in engine order. Pre-stage entries process the input; post-stage
+  /// entries process playback. The split into lanes is derived for display.
+  List<TrackEffect> _chain = [];
+
+  /// The index in [_chain] of the card being edited, or null.
+  int? _selected;
 
   @override
   void initState() {
@@ -260,117 +264,303 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
   }
 
   Future<void> _load() async {
-    final types = List<TrackEffectType>.filled(
-      kTrackEffectSlots,
-      TrackEffectType.none,
-    );
-    final params = List.generate(
-      kTrackEffectSlots,
-      (_) => List<double>.filled(kTrackEffectParams, 0),
-      growable: false,
-    );
-    for (var slot = 0; slot < kTrackEffectSlots; slot++) {
-      final code = await widget.settings.loadTrackFxType(widget.channel, slot);
-      final type = code == null
-          ? TrackEffectType.none
-          : TrackEffectType.fromCode(code);
-      types[slot] = type;
-      for (var i = 0; i < kTrackEffectParams; i++) {
-        final saved = await widget.settings.loadTrackFxParam(
-          widget.channel,
-          slot,
-          i,
-        );
-        params[slot][i] = saved ?? type.defaultParams[i];
-      }
-    }
-    if (mounted) {
-      setState(() {
-        for (var slot = 0; slot < kTrackEffectSlots; slot++) {
-          _types[slot] = types[slot];
-          _params[slot] = params[slot];
-        }
-      });
-    }
+    final encoded = await widget.settings.loadTrackEffects(widget.channel);
+    final chain = decodeTrackEffects(encoded);
+    if (mounted) setState(() => _chain = chain);
   }
 
-  void _setType(int slot, TrackEffectType type) {
+  /// Indices in [_chain] of entries on [stage], in chain (processing) order.
+  List<int> _lane(TrackEffectStage stage) => [
+    for (var i = 0; i < _chain.length; i++)
+      if (_chain[i].stage == stage) i,
+  ];
+
+  void _pushStructural() {
+    context.read<LooperBloc>().add(
+      LooperTrackEffectsChanged(widget.channel, List<TrackEffect>.of(_chain)),
+    );
+  }
+
+  void _add(TrackEffectStage stage) {
+    if (_chain.length >= kTrackEffectMax) return;
     setState(() {
-      _types[slot] = type;
-      // Mirror the engine's seeded defaults for the new type so the sliders
-      // start where the engine does (parameters are not dispatched here; the
-      // engine seeds them when the type changes).
-      _params[slot] = List<double>.from(type.defaultParams);
+      _chain = [
+        ..._chain,
+        TrackEffect(type: TrackEffectType.drive, stage: stage),
+      ];
+      _selected = _chain.length - 1;
+    });
+    _pushStructural();
+  }
+
+  void _removeAt(int index) {
+    setState(() {
+      _chain = [..._chain]..removeAt(index);
+      _selected = null;
+    });
+    _pushStructural();
+  }
+
+  void _setType(int index, TrackEffectType type) {
+    setState(() {
+      _chain = [..._chain]
+        ..[index] = _chain[index].copyWith(
+          type: type,
+          params: type.defaultParams,
+        );
+    });
+    _pushStructural();
+  }
+
+  void _setStage(int index, TrackEffectStage stage) {
+    if (_chain[index].stage == stage) return;
+    setState(() {
+      _chain = [..._chain]..[index] = _chain[index].copyWith(stage: stage);
+    });
+    _pushStructural();
+  }
+
+  void _setParam(int index, int param, double value) {
+    setState(() {
+      final params = List<double>.of(_chain[index].params)..[param] = value;
+      _chain = [..._chain]..[index] = _chain[index].copyWith(params: params);
     });
     context.read<LooperBloc>().add(
-      LooperTrackFxChanged(widget.channel, slot, type),
+      LooperTrackEffectParamChanged(widget.channel, index, param, value),
     );
   }
 
-  void _setParam(int slot, int index, double value) {
-    setState(() => _params[slot][index] = value);
-    context.read<LooperBloc>().add(
-      LooperTrackFxParamChanged(widget.channel, slot, index, value),
-    );
+  /// Swaps entry [index] with its neighbour on the same lane in direction [dir]
+  /// (-1 earlier, +1 later), reordering the chain within that stage.
+  void _move(int index, int dir) {
+    final stage = _chain[index].stage;
+    for (var j = index + dir; j >= 0 && j < _chain.length; j += dir) {
+      if (_chain[j].stage != stage) continue;
+      setState(() {
+        final next = [..._chain];
+        final tmp = next[index];
+        next[index] = next[j];
+        next[j] = tmp;
+        _chain = next;
+        _selected = j;
+      });
+      _pushStructural();
+      return;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final selected = _selected;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var slot = 0; slot < kTrackEffectSlots; slot++) ...[
-          if (slot > 0) const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _station('In'),
+              ..._laneCards(TrackEffectStage.pre),
+              _addButton(TrackEffectStage.pre),
+              _arrow(),
+              _station('Track ${widget.channel + 1}', emphasized: true),
+              ..._laneCards(TrackEffectStage.post),
+              _addButton(TrackEffectStage.post),
+              _arrow(),
+              _station('Out'),
+            ],
+          ),
+        ),
+        if (selected != null && selected < _chain.length) ...[
+          const SizedBox(height: 12),
+          _editor(selected, _chain[selected]),
+        ] else ...[
+          const SizedBox(height: 8),
+          Text(
+            'Add an effect before the track to record through it, or after the '
+            'track to process playback. Tap a card to edit it.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _laneCards(TrackEffectStage stage) => [
+    for (final index in _lane(stage)) _card(index),
+  ];
+
+  Widget _arrow() => const Padding(
+    padding: EdgeInsets.symmetric(horizontal: 4),
+    child: Icon(Icons.chevron_right, size: 18),
+  );
+
+  Widget _station(String label, {bool emphasized = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: emphasized
+            ? scheme.primary.withValues(alpha: 0.18)
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: emphasized ? scheme.primary : scheme.outlineVariant,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontWeight: emphasized ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _card(int index) {
+    final fx = _chain[index];
+    final scheme = Theme.of(context).colorScheme;
+    final isSelected = _selected == index;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: Key('trackRouting_fx_card_$index'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _selected = isSelected ? null : index),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: scheme.secondaryContainer.withValues(
+                alpha: isSelected ? 1 : 0.55,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isSelected ? scheme.primary : scheme.outlineVariant,
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Text(fx.type.label),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _addButton(TrackEffectStage stage) {
+    final full = _chain.length >= kTrackEffectMax;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: IconButton(
+        key: Key(
+          stage == TrackEffectStage.pre
+              ? 'trackRouting_fx_addPre'
+              : 'trackRouting_fx_addPost',
+        ),
+        icon: const Icon(Icons.add_circle_outline),
+        tooltip: full ? 'Chain is full' : 'Add effect',
+        onPressed: full ? null : () => _add(stage),
+      ),
+    );
+  }
+
+  Widget _editor(int index, TrackEffect fx) {
+    final lane = _lane(fx.stage);
+    final posInLane = lane.indexOf(index);
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Row(
             children: [
-              SizedBox(
-                width: 64,
-                child: Text('Slot ${slot + 1}', style: textTheme.bodyMedium),
-              ),
               Expanded(
                 child: DropdownButton<TrackEffectType>(
-                  key: Key('trackRouting_fx${slot}_type'),
+                  key: const Key('trackRouting_fx_type'),
                   isExpanded: true,
-                  value: _types[slot],
+                  value: fx.type,
                   onChanged: (type) {
-                    if (type != null) _setType(slot, type);
+                    if (type != null && type != TrackEffectType.none) {
+                      _setType(index, type);
+                    }
                   },
                   items: [
                     for (final type in TrackEffectType.values)
-                      DropdownMenuItem(
-                        value: type,
-                        child: Text(type.label),
-                      ),
+                      if (type != TrackEffectType.none)
+                        DropdownMenuItem(value: type, child: Text(type.label)),
                   ],
                 ),
               ),
+              IconButton(
+                key: const Key('trackRouting_fx_moveLeft'),
+                icon: const Icon(Icons.chevron_left),
+                tooltip: 'Move earlier',
+                onPressed: posInLane > 0 ? () => _move(index, -1) : null,
+              ),
+              IconButton(
+                key: const Key('trackRouting_fx_moveRight'),
+                icon: const Icon(Icons.chevron_right),
+                tooltip: 'Move later',
+                onPressed: posInLane < lane.length - 1
+                    ? () => _move(index, 1)
+                    : null,
+              ),
+              IconButton(
+                key: const Key('trackRouting_fx_remove'),
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Remove effect',
+                onPressed: () => _removeAt(index),
+              ),
             ],
           ),
-          for (var i = 0; i < _types[slot].paramLabels.length; i++)
+          const SizedBox(height: 4),
+          SegmentedButton<TrackEffectStage>(
+            segments: const [
+              ButtonSegment(
+                value: TrackEffectStage.pre,
+                label: Text('Before track'),
+                icon: Icon(Icons.fiber_manual_record, size: 14),
+              ),
+              ButtonSegment(
+                value: TrackEffectStage.post,
+                label: Text('After track'),
+                icon: Icon(Icons.volume_up, size: 14),
+              ),
+            ],
+            selected: {fx.stage},
+            onSelectionChanged: (s) => _setStage(index, s.first),
+          ),
+          for (var p = 0; p < fx.type.paramLabels.length; p++)
             Padding(
-              padding: const EdgeInsets.only(left: 8, top: 4),
+              padding: const EdgeInsets.only(top: 4),
               child: Row(
                 children: [
                   SizedBox(
                     width: 80,
                     child: Text(
-                      _types[slot].paramLabels[i],
+                      fx.type.paramLabels[p],
                       style: textTheme.bodySmall,
                     ),
                   ),
                   Expanded(
                     child: Slider(
-                      key: Key('trackRouting_fx${slot}_param$i'),
-                      value: _params[slot][i].clamp(0.0, 1.0),
-                      onChanged: (v) => _setParam(slot, i, v),
+                      key: Key('trackRouting_fx_param$p'),
+                      value: fx.params[p].clamp(0.0, 1.0),
+                      onChanged: (v) => _setParam(index, p, v),
                     ),
                   ),
                 ],
               ),
             ),
         ],
-      ],
+      ),
     );
   }
 }

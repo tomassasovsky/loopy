@@ -96,20 +96,32 @@ typedef enum le_command_code {
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record */
   LE_CMD_SET_MONITOR_INPUT_MASK = 18,  /* arg_i = monitor input bitmask */
   LE_CMD_SET_MONITOR_OUTPUT_MASK = 19, /* arg_i = monitor output bitmask */
-  LE_CMD_SET_FX_TYPE = 20, /* set a track's effect-slot type (and reset that
-                            * slot's DSP state). arg_i = (channel << 8) | slot,
-                            * arg_f = le_fx_type. */
+  LE_CMD_SET_FX = 20, /* set a chain entry's type + stage (and reset its DSP
+                       * state). arg_i = (channel << 16) | (index << 8) | stage,
+                       * arg_f = le_fx_type. */
+  LE_CMD_SET_FX_COUNT = 21, /* set a track's active chain length.
+                             * arg_i = (channel << 8) | count. */
 } le_command_code;
 
-/* Per-track effects: each track has LE_FX_SLOTS insert slots applied in order to
- * its mono output, each with LE_FX_PARAMS normalized (0..1) parameters. The
- * parameter meanings depend on the slot's le_fx_type. */
-#define LE_FX_SLOTS 3
+/* Per-track effects: each track carries an ordered chain of up to LE_FX_MAX
+ * entries, each with a type, a stage (pre/post), and LE_FX_PARAMS normalized
+ * (0..1) parameters. The cap exists only so the audio thread reads a fixed-size,
+ * allocation-free array — it is far beyond musical need, not a CPU limit. */
+#define LE_FX_MAX 8
 #define LE_FX_PARAMS 3
 
-/* Built-in effect types (a slot's processing). Designed so a hosted VST3/CLAP
- * plugin can later slot in as just another type. Each type reads its params from
- * the slot's LE_FX_PARAMS normalized values:
+/* Where a chain entry sits relative to the track's loop buffer:
+ *   POST — applied to playback (the loop stays dry; non-destructive, the
+ *          default). PRE — applied to the live input before it is written, so
+ *          the effect is printed into the recording (record-through-FX). */
+typedef enum le_fx_stage {
+  LE_FX_POST = 0,
+  LE_FX_PRE = 1,
+} le_fx_stage;
+
+/* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
+ * in as just another type. Each type reads its entry's LE_FX_PARAMS normalized
+ * values:
  *   DRIVE:   p0 = drive amount, p1 = output level
  *   FILTER:  p0 = cutoff, p1 = resonance        (resonant low-pass)
  *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
@@ -372,19 +384,26 @@ LE_EXPORT int32_t le_engine_set_monitor_input_mask(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_monitor_output_mask(le_engine* engine,
                                                     int32_t mask);
 
-/* Sets effect [slot] (0..LE_FX_SLOTS-1) on track [channel] to [type]. Switching
- * type resets that slot's DSP state; LE_FX_DELAY lazily allocates the slot's
- * delay line (on this calling thread) and seeds the type's default parameters.
- * Setting LE_FX_NONE bypasses the slot. */
+/* Sets chain entry [index] (0..LE_FX_MAX-1) on track [channel] to [type] at
+ * [stage] (le_fx_stage). Changing the type resets that entry's DSP state;
+ * LE_FX_DELAY lazily allocates the entry's delay line (on this calling thread)
+ * and seeds the type's default parameters. This sets the entry's value only;
+ * use le_engine_set_track_fx_count to make entries active. */
 LE_EXPORT int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
-                                         int32_t slot, int32_t type);
+                                         int32_t index, int32_t type,
+                                         int32_t stage);
 
-/* Sets parameter [index] (0..LE_FX_PARAMS-1) of effect [slot] on track
+/* Sets the active chain length on track [channel] to [count] (0..LE_FX_MAX):
+ * only entries [0, count) are processed, in order. */
+LE_EXPORT int32_t le_engine_set_track_fx_count(le_engine* engine,
+                                               int32_t channel, int32_t count);
+
+/* Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on track
  * [channel] to [value] (clamped to 0..1). The parameter's meaning depends on
- * the slot's le_fx_type. */
+ * the entry's le_fx_type. */
 LE_EXPORT int32_t le_engine_set_track_fx_param(le_engine* engine,
-                                               int32_t channel, int32_t slot,
-                                               int32_t index, float value);
+                                               int32_t channel, int32_t index,
+                                               int32_t param, float value);
 
 #ifdef __cplusplus
 }

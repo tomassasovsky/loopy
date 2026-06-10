@@ -780,21 +780,24 @@ class LoopyEngineBindings {
       _le_engine_set_monitor_output_maskPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
-  /// Sets effect [slot] (0..LE_FX_SLOTS-1) on track [channel] to [type]. Switching
-  /// type resets that slot's DSP state; LE_FX_DELAY lazily allocates the slot's
-  /// delay line (on this calling thread) and seeds the type's default parameters.
-  /// Setting LE_FX_NONE bypasses the slot.
+  /// Sets chain entry [index] (0..LE_FX_MAX-1) on track [channel] to [type] at
+  /// [stage] (le_fx_stage). Changing the type resets that entry's DSP state;
+  /// LE_FX_DELAY lazily allocates the entry's delay line (on this calling thread)
+  /// and seeds the type's default parameters. This sets the entry's value only;
+  /// use le_engine_set_track_fx_count to make entries active.
   int le_engine_set_track_fx(
     ffi.Pointer<le_engine> engine,
     int channel,
-    int slot,
+    int index,
     int type,
+    int stage,
   ) {
     return _le_engine_set_track_fx(
       engine,
       channel,
-      slot,
+      index,
       type,
+      stage,
     );
   }
 
@@ -806,27 +809,51 @@ class LoopyEngineBindings {
             ffi.Int32,
             ffi.Int32,
             ffi.Int32,
+            ffi.Int32,
           )
         >
       >('le_engine_set_track_fx');
   late final _le_engine_set_track_fx = _le_engine_set_track_fxPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
 
-  /// Sets parameter [index] (0..LE_FX_PARAMS-1) of effect [slot] on track
+  /// Sets the active chain length on track [channel] to [count] (0..LE_FX_MAX):
+  /// only entries [0, count) are processed, in order.
+  int le_engine_set_track_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int count,
+  ) {
+    return _le_engine_set_track_fx_count(
+      engine,
+      channel,
+      count,
+    );
+  }
+
+  late final _le_engine_set_track_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_fx_count');
+  late final _le_engine_set_track_fx_count = _le_engine_set_track_fx_countPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on track
   /// [channel] to [value] (clamped to 0..1). The parameter's meaning depends on
-  /// the slot's le_fx_type.
+  /// the entry's le_fx_type.
   int le_engine_set_track_fx_param(
     ffi.Pointer<le_engine> engine,
     int channel,
-    int slot,
     int index,
+    int param,
     double value,
   ) {
     return _le_engine_set_track_fx_param(
       engine,
       channel,
-      slot,
       index,
+      param,
       value,
     );
   }
@@ -1019,10 +1046,14 @@ enum le_command_code {
   /// arg_i = monitor output bitmask
   LE_CMD_SET_MONITOR_OUTPUT_MASK(19),
 
-  /// set a track's effect-slot type (and reset that
-  /// slot's DSP state). arg_i = (channel << 8) | slot,
+  /// set a chain entry's type + stage (and reset its DSP
+  /// state). arg_i = (channel << 16) | (index << 8) | stage,
   /// arg_f = le_fx_type.
-  LE_CMD_SET_FX_TYPE(20);
+  LE_CMD_SET_FX(20),
+
+  /// set a track's active chain length.
+  /// arg_i = (channel << 8) | count.
+  LE_CMD_SET_FX_COUNT(21);
 
   final int value;
   const le_command_code(this.value);
@@ -1044,7 +1075,8 @@ enum le_command_code {
     17 => LE_CMD_DISARM,
     18 => LE_CMD_SET_MONITOR_INPUT_MASK,
     19 => LE_CMD_SET_MONITOR_OUTPUT_MASK,
-    20 => LE_CMD_SET_FX_TYPE,
+    20 => LE_CMD_SET_FX,
+    21 => LE_CMD_SET_FX_COUNT,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -1246,7 +1278,7 @@ final class le_engine extends ffi.Opaque {}
 
 const int LE_MAX_CHANNELS = 32;
 
-const int LE_FX_SLOTS = 3;
+const int LE_FX_MAX = 8;
 
 const int LE_FX_PARAMS = 3;
 
