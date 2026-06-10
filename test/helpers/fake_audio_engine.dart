@@ -281,5 +281,14 @@ class FakeAudioEngine implements AudioEngine {
   Float32List readTrackVisual(int channel) => Float32List(0);
 
   @override
+  Float32List exportTrack(int channel) => Float32List(0);
+
+  @override
+  EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
+
+  @override
+  EngineResult commitSession(int baseFrames) => EngineResult.ok;
+
+  @override
   void dispose() => disposeCalls++;
 }

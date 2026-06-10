@@ -731,6 +731,29 @@ static void apply_command(le_engine* e, const le_command* cmd) {
                 (track >= 0 && track < e->track_count) ? track : -1);
       break;
     }
+    case LE_CMD_COMMIT_SESSION: {
+      const int32_t base = cmd->arg_i;
+      if (base <= 0) break;
+      /* Establish the master loop and start every imported track (EMPTY with a
+       * loaded length) at its whole-loop multiple. The PCM and per-track length
+       * were written by le_engine_import_track before this command was posted,
+       * so they are visible here (the ring publishes them release/acquire). */
+      le_loop_clock_set_length(&e->clock, base);
+      e->loop_iteration = 0;
+      store_i32(&e->a_master_len, base);
+      for (int32_t t = 0; t < e->track_count; ++t) {
+        le_track* tr = &e->tracks[t];
+        if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
+        const int32_t len = load_i32(&tr->a_len);
+        if (len <= 0) continue;
+        int32_t k = len / base;
+        if (k < 1) k = 1;
+        store_i32(&tr->a_multiple, k);
+        tr->start_iter = 0;
+        store_i32(&tr->a_state, LE_TRACK_PLAYING);
+      }
+      break;
+    }
     default:
       break;
   }
@@ -2292,4 +2315,53 @@ int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
    * audio-thread DSP state). Works whether or not the device is running. */
   store_f32(&engine->tracks[channel].a_fx_param[index][param], value);
   return LE_OK;
+}
+
+/* ---- session persistence ---- *
+ * Per-track buffers are mono (one sample per frame), so a stem is just the
+ * track's loop samples; routing to channels is a playback concern, not stored. */
+
+int32_t le_engine_export_track(le_engine* engine, int32_t channel, float* out,
+                               int32_t max_frames) {
+  if (engine == NULL || out == NULL) return 0;
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  if (max_frames <= 0) return 0;
+  le_track* t = &engine->tracks[channel];
+  int32_t n = load_i32(&t->a_len);
+  if (n > max_frames) n = max_frames;
+  if (n <= 0) return 0;
+  const int live = load_i32(&t->a_live);
+  if (t->pool[live] == NULL) return 0;
+  memcpy(out, t->pool[live], (size_t)n * sizeof(float));
+  return n;
+}
+
+int32_t le_engine_import_track(le_engine* engine, int32_t channel,
+                               const float* pcm, int32_t frames) {
+  if (engine == NULL || pcm == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (frames <= 0) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  /* Importing targets an empty track: its buffer is not read by the audio
+   * thread, so the control thread can fill it directly. */
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
+  /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
+   * so a corrupted/foreign loop fails loudly instead of loading clipped. */
+  if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
+  const int live = load_i32(&t->a_live);
+  if (t->pool[live] == NULL) return LE_ERR_INVALID;
+  const size_t span = (size_t)frames;
+  const size_t cap = (size_t)engine->max_loop_frames;
+  memcpy(t->pool[live], pcm, span * sizeof(float));
+  if (span < cap) memset(t->pool[live] + span, 0, (cap - span) * sizeof(float));
+  store_i32(&t->a_len, frames);
+  t->start_iter = 0;
+  return LE_OK;
+}
+
+int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {
+  return le_push(engine, LE_CMD_COMMIT_SESSION, base_frames, 0.0f);
 }

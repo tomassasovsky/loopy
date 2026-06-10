@@ -13,6 +13,7 @@ import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
+import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// How often the main window pushes a waveform frame to the second window.
@@ -31,6 +32,8 @@ class App extends StatelessWidget {
     required this.controllerRepository,
     required this.settings,
     required this.waveformWindow,
+    required this.sessionRepository,
+    required this.sessionDirectory,
     this.needsSetup = false,
     super.key,
   });
@@ -50,6 +53,12 @@ class App extends StatelessWidget {
   /// Whether to show the audio setup flow before the looper (first run).
   final bool needsSetup;
 
+  /// The shared session repository (save/load + export), sharing the engine.
+  final SessionRepository sessionRepository;
+
+  /// Resolves the on-disk session bundle directory.
+  final Future<String> Function() sessionDirectory;
+
   @override
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
@@ -57,6 +66,7 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: repository),
         RepositoryProvider.value(value: controllerRepository),
         RepositoryProvider.value(value: settings),
+        RepositoryProvider.value(value: sessionRepository),
       ],
       child: MultiBlocProvider(
         providers: [
@@ -149,6 +159,7 @@ class App extends StatelessWidget {
         child: _AppView(
           waveformWindow: waveformWindow,
           needsSetup: needsSetup,
+          sessionDirectory: sessionDirectory,
         ),
       ),
     );
@@ -158,10 +169,15 @@ class App extends StatelessWidget {
 /// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
 /// closes the secondary waveform window for big-picture mode.
 class _AppView extends StatefulWidget {
-  const _AppView({required this.waveformWindow, required this.needsSetup});
+  const _AppView({
+    required this.waveformWindow,
+    required this.needsSetup,
+    required this.sessionDirectory,
+  });
 
   final WaveformWindowService waveformWindow;
   final bool needsSetup;
+  final Future<String> Function() sessionDirectory;
 
   @override
   State<_AppView> createState() => _AppViewState();
@@ -316,7 +332,10 @@ class _AppViewState extends State<_AppView> {
                 : AppTheme.desktop,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            home: _RootView(needsSetup: widget.needsSetup),
+            home: _RootView(
+              needsSetup: widget.needsSetup,
+              sessionDirectory: widget.sessionDirectory,
+            ),
             debugShowCheckedModeBanner: false,
           );
           if (defaultTargetPlatform == TargetPlatform.macOS) {
@@ -332,9 +351,10 @@ class _AppViewState extends State<_AppView> {
 /// On a first run, shows the audio setup as the start screen until the engine
 /// connects, then hands off to the looper. Otherwise shows the looper directly.
 class _RootView extends StatefulWidget {
-  const _RootView({required this.needsSetup});
+  const _RootView({required this.needsSetup, required this.sessionDirectory});
 
   final bool needsSetup;
+  final Future<String> Function() sessionDirectory;
 
   @override
   State<_RootView> createState() => _RootViewState();
@@ -345,7 +365,9 @@ class _RootViewState extends State<_RootView> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_inSetup) return const LooperPage();
+    if (!_inSetup) {
+      return LooperPage(sessionDirectory: widget.sessionDirectory);
+    }
     // The AudioSetupCubit is provided at the app shell, so the setup screen
     // listens to the shared instance for the connect → hand-off to the looper.
     return BlocListener<AudioSetupCubit, AudioSetupState>(

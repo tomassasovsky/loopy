@@ -7,7 +7,11 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
+import 'package:loopy/session/session.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
+
+/// Session bundle actions in the looper app bar.
+enum _SessionAction { save, load, exportMixdown, exportStems }
 
 /// The multi-track looper view: a Chewie-2-style grid of channel strips with
 /// transport controls, level meters, volume, and the master loop position.
@@ -25,79 +29,126 @@ class LooperView extends StatelessWidget {
         if (bank.contains(track.channel)) track,
     ];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Loopy'),
-        actions: [
-          if (bank.enabled) ...[
-            for (var i = 0; i < BankState.bankCountMax; i++)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: TextButton(
-                  key: Key('looper_bank_$i'),
-                  onPressed: () => context.read<BankCubit>().selectBank(i),
-                  style: TextButton.styleFrom(
-                    backgroundColor: i == bank.activeBank
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                    foregroundColor: i == bank.activeBank
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : null,
-                    minimumSize: const Size(40, 0),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+    return BlocListener<SessionCubit, SessionState>(
+      listenWhen: (previous, current) =>
+          previous.status != current.status &&
+          (current.status == SessionStatus.success ||
+              current.status == SessionStatus.failure),
+      listener: (context, sessionState) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(sessionState.message ?? '')));
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Loopy'),
+          actions: [
+            PopupMenuButton<_SessionAction>(
+              key: const Key('looper_session_button'),
+              tooltip: 'Session',
+              icon: const Icon(Icons.folder_outlined),
+              onSelected: (action) {
+                final cubit = context.read<SessionCubit>();
+                switch (action) {
+                  case _SessionAction.save:
+                    unawaited(cubit.saveSession());
+                  case _SessionAction.load:
+                    unawaited(cubit.loadSession());
+                  case _SessionAction.exportMixdown:
+                    unawaited(cubit.exportMixdown());
+                  case _SessionAction.exportStems:
+                    unawaited(cubit.exportStems());
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: _SessionAction.save,
+                  child: Text('Save session'),
+                ),
+                PopupMenuItem(
+                  value: _SessionAction.load,
+                  child: Text('Load session'),
+                ),
+                PopupMenuItem(
+                  value: _SessionAction.exportMixdown,
+                  child: Text('Export mixdown'),
+                ),
+                PopupMenuItem(
+                  value: _SessionAction.exportStems,
+                  child: Text('Export stems'),
+                ),
+              ],
+            ),
+            if (bank.enabled) ...[
+              for (var i = 0; i < BankState.bankCountMax; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: TextButton(
+                    key: Key('looper_bank_$i'),
+                    onPressed: () => context.read<BankCubit>().selectBank(i),
+                    style: TextButton.styleFrom(
+                      backgroundColor: i == bank.activeBank
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                      foregroundColor: i == bank.activeBank
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : null,
+                      minimumSize: const Size(40, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    child: Text(String.fromCharCode(0x41 + i)),
                   ),
-                  child: Text(String.fromCharCode(0x41 + i)),
+                ),
+              const SizedBox(width: 8),
+            ],
+            IconButton(
+              key: const Key('looper_playAll_button'),
+              tooltip: 'Play all',
+              icon: const Icon(Icons.playlist_play),
+              onPressed: () => bloc.add(const LooperPlayAllPressed()),
+            ),
+            IconButton(
+              key: const Key('looper_stopAll_button'),
+              tooltip: 'Stop all',
+              icon: const Icon(Icons.stop_circle_outlined),
+              onPressed: () => bloc.add(const LooperStopAllPressed()),
+            ),
+            IconButton(
+              key: const Key('looper_bigPicture_button'),
+              tooltip: 'Big picture',
+              icon: const Icon(Icons.open_in_full),
+              onPressed: () =>
+                  context.read<UiModeCubit>().setMode(UiMode.bigPicture),
+            ),
+            IconButton(
+              key: const Key('looper_openSetup_button'),
+              tooltip: 'Audio setup',
+              icon: const Icon(Icons.settings),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const AudioSetupPage(),
                 ),
               ),
-            const SizedBox(width: 8),
-          ],
-          IconButton(
-            key: const Key('looper_playAll_button'),
-            tooltip: 'Play all',
-            icon: const Icon(Icons.playlist_play),
-            onPressed: () => bloc.add(const LooperPlayAllPressed()),
-          ),
-          IconButton(
-            key: const Key('looper_stopAll_button'),
-            tooltip: 'Stop all',
-            icon: const Icon(Icons.stop_circle_outlined),
-            onPressed: () => bloc.add(const LooperStopAllPressed()),
-          ),
-          IconButton(
-            key: const Key('looper_bigPicture_button'),
-            tooltip: 'Big picture',
-            icon: const Icon(Icons.open_in_full),
-            onPressed: () =>
-                context.read<UiModeCubit>().setMode(UiMode.bigPicture),
-          ),
-          IconButton(
-            key: const Key('looper_openSetup_button'),
-            tooltip: 'Audio setup',
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const AudioSetupPage(),
-              ),
             ),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _MasterLoopBar(transport: state.transport),
-            const SizedBox(height: 12),
-            if (!state.transport.isRunning) const _EngineStoppedBanner(),
-            Expanded(
-              child: ListView.builder(
-                itemCount: tracks.length,
-                itemBuilder: (_, i) => _TrackStrip(track: tracks[i]),
-              ),
-            ),
-            _StatusFooter(status: state.status),
           ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _MasterLoopBar(transport: state.transport),
+              const SizedBox(height: 12),
+              if (!state.transport.isRunning) const _EngineStoppedBanner(),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: tracks.length,
+                  itemBuilder: (_, i) => _TrackStrip(track: tracks[i]),
+                ),
+              ),
+              _StatusFooter(status: state.status),
+            ],
+          ),
         ),
       ),
     );

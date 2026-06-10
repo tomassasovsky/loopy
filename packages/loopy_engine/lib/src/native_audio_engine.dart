@@ -260,6 +260,48 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  Float32List exportTrack(int channel) {
+    _checkAlive();
+    _bindings.le_engine_get_track(_engine, channel, _trackPtr);
+    final frames = _trackPtr.ref.length_frames;
+    // Per-track buffers are mono: one sample per frame.
+    if (frames <= 0) return Float32List(0);
+    final buf = calloc<Float>(frames);
+    try {
+      final n = _bindings.le_engine_export_track(_engine, channel, buf, frames);
+      if (n <= 0) return Float32List(0);
+      return Float32List.fromList(buf.asTypedList(n));
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  EngineResult importTrack(int channel, Float32List pcm) {
+    _checkAlive();
+    // Per-track buffers are mono: one sample per frame.
+    final frames = pcm.length;
+    if (frames <= 0) return EngineResult.invalid;
+    final buf = calloc<Float>(pcm.length);
+    try {
+      buf.asTypedList(pcm.length).setAll(0, pcm);
+      return EngineResult.fromCode(
+        _bindings.le_engine_import_track(_engine, channel, buf, frames),
+      );
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  EngineResult commitSession(int baseFrames) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_commit_session(_engine, baseFrames),
+    );
+  }
+
+  @override
   EngineResult setQuantize({required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(

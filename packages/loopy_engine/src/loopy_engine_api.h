@@ -103,6 +103,8 @@ typedef enum le_command_code {
                              * arg_i = (channel << 8) | count. */
   LE_CMD_SET_MONITOR_FX_TRACK = 22, /* monitor follows a track's pre-FX input.
                                      * arg_i = track index, or -1 for none. */
+  LE_CMD_COMMIT_SESSION = 23,    /* arg_i = base loop length in frames: publish
+                                  * the master loop and start imported tracks */
 } le_command_code;
 
 /* Per-track effects: each track carries an ordered chain of up to LE_FX_MAX
@@ -413,6 +415,33 @@ LE_EXPORT int32_t le_engine_set_track_fx_count(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_track_fx_param(le_engine* engine,
                                                int32_t channel, int32_t index,
                                                int32_t param, float value);
+
+/* ---- session persistence ---- *
+ * Save: read each track's loop PCM with le_engine_export_track. Load: clear the
+ * engine (so every track is EMPTY), le_engine_import_track each stem, then
+ * le_engine_commit_session to establish the master and start playback. Per-track
+ * buffers are mono (one sample per frame). */
+
+/* Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
+ * returns the number of frames written (the track length, clamped to
+ * `max_frames`), or 0 on a bad argument / empty track. Reads the live buffer —
+ * call when the track is not capturing. */
+LE_EXPORT int32_t le_engine_export_track(le_engine* engine, int32_t channel,
+                                         float* out, int32_t max_frames);
+
+/* Loads `frames` mono frames of PCM into track `channel`'s buffer and records
+ * the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
+ * tail is zeroed. The track starts playing on le_engine_commit_session. Returns
+ * LE_OK or an le_result error. */
+LE_EXPORT int32_t le_engine_import_track(le_engine* engine, int32_t channel,
+                                         const float* pcm, int32_t frames);
+
+/* Establishes the master loop at `base_frames` and starts every imported track
+ * (EMPTY with a loaded length) playing at its whole-loop multiple
+ * (length / base_frames). Posts a command; returns LE_OK or an le_result error.
+ */
+LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
+                                           int32_t base_frames);
 
 #ifdef __cplusplus
 }
