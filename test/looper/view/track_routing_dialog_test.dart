@@ -107,7 +107,9 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('trackRouting_quantize_on')));
+      final on = find.byKey(const Key('trackRouting_quantize_on'));
+      await tester.ensureVisible(on);
+      await tester.tap(on);
       await tester.pump();
       verify(
         () => bloc.add(const LooperTrackQuantizeChanged(0, enabled: true)),
@@ -216,7 +218,7 @@ void main() {
       await tester.tap(card);
       await tester.pumpAndSettle();
 
-      final before = find.text('Before track');
+      final before = find.text('Before');
       await tester.ensureVisible(before);
       await tester.tap(before);
       await tester.pumpAndSettle();
@@ -303,11 +305,11 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      final card = find.byKey(const Key('signalFlow_fx_0'));
+      // Drag is initiated from the card's grab handle.
+      final handle = find.byKey(const Key('signalFlow_fx_handle_0'));
       final dropPre = find.byKey(const Key('signalFlow_drop_pre_0'));
-      await tester.ensureVisible(card);
 
-      final gesture = await tester.startGesture(tester.getCenter(card));
+      final gesture = await tester.startGesture(tester.getCenter(handle));
       await tester.pump(const Duration(milliseconds: 120));
       await gesture.moveTo(tester.getCenter(dropPre));
       await tester.pump();
