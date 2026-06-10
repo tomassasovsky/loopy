@@ -226,6 +226,16 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// The last track passed to [setMonitorFxTrack] (-1 = not following).
+  int? lastMonitorFxTrack;
+
+  @override
+  EngineResult setMonitorFxTrack({required int track}) {
+    lastMonitorFxTrack = track;
+    calls.add('setMonitorFxTrack');
+    return EngineResult.ok;
+  }
+
   /// Per-(channel, index) effect type/stage passed to [setTrackFx].
   final Map<(int, int), (TrackEffectType, TrackEffectStage)> trackFx = {};
 

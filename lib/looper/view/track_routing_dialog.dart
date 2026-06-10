@@ -378,7 +378,8 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
           const SizedBox(height: 8),
           Text(
             'Add an effect before the track to record through it, or after the '
-            'track to process playback. Tap a card to edit it.',
+            'track to process playback. Tap a card to edit it. To hear '
+            'before-track effects live, set monitoring to follow this track.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
