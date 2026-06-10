@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/looper/looper.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -17,6 +18,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late AudioSetupCubit cubit;
   late MonitorCubit monitor;
+  late QuantizeCubit quantize;
 
   setUp(() {
     cubit = _MockAudioSetupCubit();
@@ -27,10 +29,12 @@ void main() {
     when(
       () => repository.setMonitorOutputMask(any()),
     ).thenReturn(EngineResult.ok);
-    monitor = MonitorCubit(
-      repository: repository,
-      settings: SettingsRepository(store: FakeKeyValueStore()),
-    );
+    when(
+      () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    monitor = MonitorCubit(repository: repository, settings: settings);
+    quantize = QuantizeCubit(repository: repository, settings: settings);
   });
 
   void seed(AudioSetupState state) {
@@ -47,6 +51,7 @@ void main() {
       providers: [
         BlocProvider<AudioSetupCubit>.value(value: cubit),
         BlocProvider<MonitorCubit>.value(value: monitor),
+        BlocProvider<QuantizeCubit>.value(value: quantize),
       ],
       child: const Material(
         child: SingleChildScrollView(child: AudioSettingsSection()),
@@ -191,6 +196,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(monitor.state.inputMask, 0x3);
+  });
+
+  testWidgets('toggling quantize recording forwards to the quantize cubit', (
+    tester,
+  ) async {
+    seed(runningState);
+    await pumpSection(tester);
+    expect(quantize.state, isFalse);
+
+    final toggle = find.byKey(const Key('audioSettings_quantize_switch'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(quantize.state, isTrue);
   });
 
   testWidgets('choosing a max loop length forwards to the cubit', (

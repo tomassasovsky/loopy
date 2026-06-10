@@ -162,7 +162,10 @@ struct le_engine {
    * an immediate record would) instead of acting now; the audio thread fires it
    * at the next loop top. `arm_snapshotted[ch]` records whether the arm pushed a
    * pre-overdub undo layer, so a cancel can reverse it. */
-  int quantize;
+  int quantize; /* global default */
+  /* Per-track quantize override: -1 inherit the global default, 0 force off,
+   * 1 force on. The effective value drives le_engine_record's arm decision. */
+  int track_quantize[LE_MAX_TRACKS];
   int armed[LE_MAX_TRACKS];
   int arm_snapshotted[LE_MAX_TRACKS];
 
@@ -931,6 +934,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     atomic_store_explicit(&tr->a_output_mask, 0x3u, memory_order_relaxed);
     tr->record_pos = 0;
     tr->start_iter = 0;
+    engine->track_quantize[t] = -1; /* inherit the global quantize default */
   }
 
   engine->sample_rate = sample_rate;
@@ -1627,6 +1631,26 @@ static void le_pop_overdub_snapshot(le_track* t) {
   }
 }
 
+/* The effective quantize state for [channel]: its per-track override, or the
+ * global default when the track inherits (override < 0). */
+static int le_effective_quantize(const le_engine* engine, int32_t channel) {
+  const int ov = engine->track_quantize[channel];
+  return ov < 0 ? engine->quantize : ov;
+}
+
+/* Cancels a pending quantized arm (control thread): disarms, reverses any
+ * pre-overdub snapshot, and tells the audio thread to clear the pending flag.
+ * No-op when the track is not armed. */
+static void le_cancel_arm(le_engine* engine, int32_t channel) {
+  if (!engine->armed[channel]) return;
+  engine->armed[channel] = 0;
+  if (engine->arm_snapshotted[channel]) {
+    le_pop_overdub_snapshot(&engine->tracks[channel]);
+    engine->arm_snapshotted[channel] = 0;
+  }
+  le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+}
+
 int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
@@ -1640,8 +1664,9 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
 
   /* Quantized: defer the action to the next base-loop top instead of acting on
    * the press, so captures align to the grid. The defining recording (no master
-   * yet) always acts immediately — it sets the grid. */
-  if (engine->quantize && has_master) {
+   * yet) always acts immediately — it sets the grid. Per-track overrides win
+   * over the global default. */
+  if (le_effective_quantize(engine, channel) && has_master) {
     /* If we armed this track but the boundary already fired it, the arm is
      * spent (published a_pending cleared); fall through to a fresh decision on
      * the now-current state. */
@@ -1776,18 +1801,20 @@ int32_t le_engine_set_monitor_output_mask(le_engine* engine, int32_t mask) {
 int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
   engine->quantize = enabled ? 1 : 0;
-  if (!engine->quantize) {
-    /* Cancel any pending arms so nothing is stuck waiting for a loop top; a
-     * cancelled overdub arm reverses its pre-overdub snapshot. */
-    for (int32_t c = 0; c < engine->track_count; ++c) {
-      if (!engine->armed[c]) continue;
-      engine->armed[c] = 0;
-      if (engine->arm_snapshotted[c]) {
-        le_pop_overdub_snapshot(&engine->tracks[c]);
-        engine->arm_snapshotted[c] = 0;
-      }
-      le_push(engine, LE_CMD_DISARM, c, 0.0f);
-    }
+  /* Cancel pending arms that are now effective-off so nothing is stuck waiting
+   * for a loop top; tracks that force quantize on keep their arm. */
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    if (!le_effective_quantize(engine, c)) le_cancel_arm(engine, c);
   }
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
+                                     int32_t mode) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  /* mode: < 0 inherit the global default, 0 force off, > 0 force on. */
+  engine->track_quantize[channel] = mode < 0 ? -1 : (mode > 0 ? 1 : 0);
+  if (!le_effective_quantize(engine, channel)) le_cancel_arm(engine, channel);
   return LE_OK;
 }

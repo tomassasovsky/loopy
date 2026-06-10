@@ -309,6 +309,12 @@ LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
  * yet) always acts immediately. Disabling cancels any pending arms. */
 LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
 
+/* Sets track [channel]'s quantize override: a negative [mode] inherits the
+ * global default (le_engine_set_quantize), 0 forces quantize off for the track,
+ * and a positive value forces it on. */
+LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
+                                               int32_t channel, int32_t mode);
+
 /* Sets the monitor input mask: which input channels are averaged (mono) into
  * the live monitor signal. Bits beyond the input range or loopback-excluded are
  * ignored. */

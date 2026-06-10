@@ -61,6 +61,15 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _repository.setOutputMask(channel: event.channel, mask: event.mask);
       unawaited(_settings?.saveTrackOutputMask(event.channel, event.mask));
     });
+    on<LooperTrackQuantizeChanged>((event, _) {
+      _repository.setTrackQuantize(
+        channel: event.channel,
+        enabled: event.enabled,
+      );
+      unawaited(
+        _settings?.saveTrackQuantize(event.channel, enabled: event.enabled),
+      );
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);

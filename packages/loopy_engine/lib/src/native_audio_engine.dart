@@ -267,6 +267,18 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setTrackQuantize({
+    required int channel,
+    required bool? enabled,
+  }) {
+    _checkAlive();
+    final mode = enabled == null ? -1 : (enabled ? 1 : 0);
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_quantize(_engine, channel, mode),
+    );
+  }
+
+  @override
   EngineResult setMonitorInputMask({required int mask}) {
     _checkAlive();
     return EngineResult.fromCode(

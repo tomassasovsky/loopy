@@ -621,6 +621,30 @@ class LoopyEngineBindings {
   late final _le_engine_set_quantize = _le_engine_set_quantizePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Sets track [channel]'s quantize override: a negative [mode] inherits the
+  /// global default (le_engine_set_quantize), 0 forces quantize off for the track,
+  /// and a positive value forces it on.
+  int le_engine_set_track_quantize(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int mode,
+  ) {
+    return _le_engine_set_track_quantize(
+      engine,
+      channel,
+      mode,
+    );
+  }
+
+  late final _le_engine_set_track_quantizePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_quantize');
+  late final _le_engine_set_track_quantize = _le_engine_set_track_quantizePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Sets the monitor input mask: which input channels are averaged (mono) into
   /// the live monitor signal. Bits beyond the input range or loopback-excluded are
   /// ignored.

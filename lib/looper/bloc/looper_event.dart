@@ -109,6 +109,19 @@ final class LooperOutputMaskChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, mask];
 }
 
+/// Track [channel]'s quantize override changed: `null` inherits the global
+/// default, `false` forces it off, `true` forces it on.
+final class LooperTrackQuantizeChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackQuantizeChanged].
+  const LooperTrackQuantizeChanged(super.channel, {required this.enabled});
+
+  /// The override (`null` => inherit the global default).
+  final bool? enabled;
+
+  @override
+  List<Object?> get props => [channel, enabled];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].

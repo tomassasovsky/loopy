@@ -61,6 +61,10 @@ class LooperRepository {
   /// successful (re)start so it survives device changes and reconnects.
   bool _quantize = false;
 
+  /// Per-track quantize overrides (absent => inherit the global default).
+  /// Remembered and re-applied on every successful (re)start.
+  final Map<int, bool> _trackQuantize = {};
+
   /// Monitor routing, re-applied on every successful (re)start. The custom
   /// masks default to input 0 -> outputs 0 + 1 (the engine default); when
   /// [_monitorFollowChannel] is non-null the monitor mirrors that track.
@@ -278,6 +282,10 @@ class LooperRepository {
       // A fresh start resets the engine's quantize flag and monitor masks;
       // re-apply the desired state so it survives device changes / reconnects.
       _engine.setQuantize(enabled: _quantize);
+      _trackQuantize.forEach(
+        (channel, enabled) =>
+            _engine.setTrackQuantize(channel: channel, enabled: enabled),
+      );
       _applyMonitor();
     }
     return result;
@@ -402,6 +410,22 @@ class LooperRepository {
 
   /// Sets the record-offset latency compensation in frames.
   EngineResult setRecordOffset(int frames) => _engine.setRecordOffset(frames);
+
+  /// Overrides quantize for track [channel]: `null` inherits the global
+  /// default, `false` forces it off, `true` forces it on. Remembered and
+  /// re-applied on every (re)start.
+  EngineResult setTrackQuantize({
+    required int channel,
+    required bool? enabled,
+  }) {
+    if (enabled == null) {
+      _trackQuantize.remove(channel);
+    } else {
+      _trackQuantize[channel] = enabled;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackQuantize(channel: channel, enabled: enabled);
+  }
 
   /// Enables or disables quantized recording (captures snap to the loop grid).
   /// The value is remembered and re-applied on every engine (re)start — a fresh

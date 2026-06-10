@@ -350,6 +350,35 @@ void main() {
       expect(engine.lastQuantize, isTrue);
     });
 
+    test('per-track quantize overrides are deferred then re-applied', () {
+      final repo = buildRepo()
+        ..setTrackQuantize(channel: 1, enabled: true)
+        ..setTrackQuantize(channel: 2, enabled: false);
+      expect(engine.trackQuantize, isEmpty); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.trackQuantize[1], isTrue);
+      expect(engine.trackQuantize[2], isFalse);
+    });
+
+    test(
+      'clearing a per-track override (null) inherits the global default',
+      () {
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setTrackQuantize(channel: 1, enabled: true);
+        expect(engine.trackQuantize[1], isTrue);
+
+        repo.setTrackQuantize(channel: 1, enabled: null);
+        expect(engine.trackQuantize[1], isNull);
+
+        // A later restart does not re-apply the cleared override.
+        engine.trackQuantize.clear();
+        repo.startEngine(const EngineConfig());
+        expect(engine.trackQuantize.containsKey(1), isFalse);
+      },
+    );
+
     test('custom monitor masks are deferred until running, then applied', () {
       final repo = buildRepo()
         ..setMonitorInputMask(0x2)

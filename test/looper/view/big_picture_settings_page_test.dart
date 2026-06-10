@@ -175,13 +175,16 @@ void main() {
     ).called(1);
   });
 
-  testWidgets('toggling quantize recording persists it and applies it', (
+  testWidgets('toggling quantize on the Audio tab persists and applies it', (
     tester,
   ) async {
     await pump(tester);
     expect(quantize.state, isFalse);
 
-    final toggle = find.byKey(const Key('bpSettings_quantize_switch'));
+    // Quantize lives in the Audio > Recording group.
+    await tester.tap(find.byKey(const Key('bpSettings_tab_audio')));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const Key('audioSettings_quantize_switch'));
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
     await tester.pumpAndSettle();

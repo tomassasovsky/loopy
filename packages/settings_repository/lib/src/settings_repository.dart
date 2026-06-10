@@ -252,6 +252,23 @@ class SettingsRepository {
   Future<void> saveTrackName(int channel, String name) =>
       _store.setString(_trackNameKey(channel), name);
 
+  String _trackQuantizeKey(int channel) => 'track_quantize.$channel';
+
+  /// Loads track [channel]'s quantize override: `null` (inherit the global
+  /// default), `false` (force off), or `true` (force on).
+  Future<bool?> loadTrackQuantize(int channel) async {
+    final value = await _store.getInt(_trackQuantizeKey(channel));
+    if (value == null || value < 0) return null;
+    return value > 0;
+  }
+
+  /// Saves track [channel]'s quantize override (`null` => inherit).
+  Future<void> saveTrackQuantize(int channel, {required bool? enabled}) =>
+      _store.setInt(
+        _trackQuantizeKey(channel),
+        enabled == null ? -1 : (enabled ? 1 : 0),
+      );
+
   String _trackInputMaskKey(int channel) => 'track_input_mask.$channel';
   String _trackOutputMaskKey(int channel) => 'track_output_mask.$channel';
 

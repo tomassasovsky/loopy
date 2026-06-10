@@ -299,6 +299,22 @@ void main() {
     });
   });
 
+  group('track quantize override', () {
+    test('defaults to null (inherit) when unset', () async {
+      expect(await repository.loadTrackQuantize(0), isNull);
+    });
+
+    test('round-trips force-on, force-off, and inherit', () async {
+      await repository.saveTrackQuantize(0, enabled: true);
+      await repository.saveTrackQuantize(1, enabled: false);
+      expect(await repository.loadTrackQuantize(0), isTrue);
+      expect(await repository.loadTrackQuantize(1), isFalse);
+
+      await repository.saveTrackQuantize(0, enabled: null);
+      expect(await repository.loadTrackQuantize(0), isNull);
+    });
+  });
+
   group('monitor routing', () {
     test('mode is null and masks default when unset', () async {
       expect(await repository.loadMonitorMode(), isNull);
