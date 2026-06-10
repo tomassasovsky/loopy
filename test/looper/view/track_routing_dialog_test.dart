@@ -107,6 +107,10 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
+      // Quantize / loop length live behind the AppBar settings button.
+      await tester.tap(find.byKey(const Key('trackRouting_settings_button')));
+      await tester.pumpAndSettle();
+
       final on = find.byKey(const Key('trackRouting_quantize_on'));
       await tester.ensureVisible(on);
       await tester.tap(on);
@@ -131,6 +135,9 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
+      await tester.tap(find.byKey(const Key('trackRouting_settings_button')));
+      await tester.pumpAndSettle();
+
       expect(find.text('Default (On)'), findsOneWidget);
       expect(find.text('Default (×2)'), findsOneWidget);
     });
@@ -140,6 +147,9 @@ void main() {
     ) async {
       await pumpOpener(tester);
       await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('trackRouting_settings_button')));
       await tester.pumpAndSettle();
 
       final chip = find.byKey(const Key('trackRouting_multiple_2'));
