@@ -159,7 +159,6 @@ void main() {
         sampleRate: 96000,
         bufferFrames: 256,
         monitorInput: false,
-        mergeToMono: false,
       );
       await repository.saveAudioConfig(config);
       expect(await repository.loadAudioConfig(), config);
@@ -170,7 +169,6 @@ void main() {
         sampleRate: 48000,
         bufferFrames: 128,
         monitorInput: true,
-        mergeToMono: false,
         inputChannels: 2,
         outputChannels: 4,
       );
@@ -193,7 +191,6 @@ void main() {
         sampleRate: 48000,
         bufferFrames: 128,
         monitorInput: true,
-        mergeToMono: false,
         playbackDeviceId: 'out-device-1',
         captureDeviceId: 'in-device-2',
       );
@@ -222,11 +219,29 @@ void main() {
             sampleRate: 44100,
             bufferFrames: 64,
             monitorInput: true,
-            mergeToMono: true,
           ),
         );
       },
     );
+
+    test('ignores a legacy audio.merge_to_mono key on load', () async {
+      // The merge-to-mono feature was removed; an old store may still carry the
+      // key. Loading must succeed and simply not read it. monitorInput is set
+      // to false (against the legacy bool's true) so the assertion fails if the
+      // stale key were ever wired back into a real field.
+      await store.setInt('audio.sample_rate', 48000);
+      await store.setInt('audio.buffer_frames', 128);
+      await store.setBool('audio.monitor_input', value: false);
+      await store.setBool('audio.merge_to_mono', value: true);
+      expect(
+        await repository.loadAudioConfig(),
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          monitorInput: false,
+        ),
+      );
+    });
   });
 
   group('waveform window', () {

@@ -37,7 +37,6 @@ void main() {
           sampleRate: 48000,
           bufferFrames: 128,
           monitorInput: true,
-          mergeToMono: true,
         ),
       );
       // Save routing for channel 1 only; channel 0 has none (exercises the
@@ -78,7 +77,6 @@ void main() {
           sampleRate: 96000,
           bufferFrames: 256,
           monitorInput: false,
-          mergeToMono: false,
         ),
       );
 
@@ -92,7 +90,6 @@ void main() {
       expect(engine.lastConfig?.sampleRate, 96000);
       expect(engine.lastConfig?.bufferFrames, 256);
       expect(engine.lastConfig?.passthrough, isFalse);
-      expect(engine.lastConfig?.mergeToMono, isFalse);
       // Channel counts left at 0 (device default) so the interface opens with
       // all its channels; the negotiated counts come back via the snapshot.
       expect(engine.lastConfig?.inputChannels, 0);
@@ -105,7 +102,6 @@ void main() {
           sampleRate: 48000,
           bufferFrames: 128,
           monitorInput: true,
-          mergeToMono: true,
         ),
       );
       // Saved under the profile the running engine reports (the fake's default
@@ -135,7 +131,6 @@ void main() {
             sampleRate: 48000,
             bufferFrames: 128,
             monitorInput: true,
-            mergeToMono: true,
           ),
         );
         // No saved latency offset for this profile.
@@ -170,7 +165,6 @@ void main() {
             sampleRate: 48000,
             bufferFrames: 128,
             monitorInput: true,
-            mergeToMono: true,
           ),
         );
 
@@ -187,7 +181,6 @@ void main() {
           sampleRate: 48000,
           bufferFrames: 128,
           monitorInput: true,
-          mergeToMono: true,
         ),
       );
 

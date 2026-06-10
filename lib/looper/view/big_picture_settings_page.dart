@@ -3,18 +3,22 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
+import 'package:loopy/looper/view/routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
 enum _Section {
   view('View'),
   audio('Audio'),
+  routing('Routing'),
   tracks('Tracks');
 
   const _Section(this.label);
@@ -72,10 +76,10 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
                     color: SetupSurfaceColors.line,
                   ),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(34, 34, 30, 26),
-                      child: SingleChildScrollView(
-                        key: ValueKey(_section),
+                    child: SingleChildScrollView(
+                      key: ValueKey(_section),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(34, 34, 30, 26),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: _sectionChildren(context),
@@ -109,6 +113,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   List<Widget> _sectionChildren(BuildContext context) => switch (_section) {
     _Section.view => _viewSection(context),
     _Section.audio => _audioSection(context),
+    _Section.routing => _routingSection(context),
     _Section.tracks => _tracksSection(context),
   };
 
@@ -152,6 +157,50 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   List<Widget> _audioSection(BuildContext context) => const [
     AudioSettingsSection(),
   ];
+
+  List<Widget> _routingSection(BuildContext context) {
+    // The settings page is pushed above the LooperBloc provider, so the graph
+    // is sourced from — and edits are applied through — the repository (and
+    // persisted via settings, mirroring what the bloc does for the in-view
+    // routing controls).
+    final repository = context.read<LooperRepository>();
+    final settings = context.read<SettingsRepository>();
+    final names = context.watch<BigPictureCubit>().state.names;
+    return [
+      const Text(
+        'How audio is wired: hardware inputs flow into tracks, and tracks '
+        'play out to hardware outputs. Loopback inputs are struck through — '
+        'they are never recorded. Click a track to select it, then click an '
+        'input or output to connect or disconnect it.',
+        style: setupBody,
+      ),
+      const SizedBox(height: 28),
+      const SetupGroupLabel('SIGNAL FLOW'),
+      const SizedBox(height: 16),
+      StreamBuilder<LooperState>(
+        stream: repository.looperState,
+        initialData: repository.state,
+        builder: (context, snapshot) {
+          final state = snapshot.data ?? const LooperState();
+          return RoutingGraphView(
+            tracks: state.tracks,
+            inputChannels: state.status.inputChannels,
+            outputChannels: state.status.outputChannels,
+            excludedInputMask: state.status.excludedInputMask,
+            trackLabels: names,
+            onInputMaskChanged: (channel, mask) {
+              repository.setInputMask(channel: channel, mask: mask);
+              unawaited(settings.saveTrackInputMask(channel, mask));
+            },
+            onOutputMaskChanged: (channel, mask) {
+              repository.setOutputMask(channel: channel, mask: mask);
+              unawaited(settings.saveTrackOutputMask(channel, mask));
+            },
+          );
+        },
+      ),
+    ];
+  }
 
   List<Widget> _tracksSection(BuildContext context) {
     final big = context.watch<BigPictureCubit>();

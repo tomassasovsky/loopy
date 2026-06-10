@@ -162,7 +162,6 @@ struct le_engine {
 
   char device_name[256];
   int passthrough; /* input monitoring */
-  int mono_input;  /* average input channels and feed every output channel */
 
   /* Explicit context + resolved device ids, used when capturing from a detected
    * loopback device (use_loopback_capture) or when a device is pinned by id. */
@@ -506,7 +505,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   for (uint32_t f = 0; f < frames; ++f) {
     float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
     float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
-    float mono = 0.0f;
     for (int c = 0; c < ch_in; ++c) {
       const float s = in ? in[f * ch_in + c] : 0.0f;
       const float a = fabsf(s);
@@ -518,9 +516,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
       if (a > frame_mag) frame_mag = a;
       in_sumsq += s * s;
-      mono += s;
     }
-    mono /= (float)(active_in > 0 ? active_in : 1); /* clip-safe fold-down */
     if (frame_mag > in_peak) in_peak = frame_mag;
 
     /* The latency pulse returns on the loopback channels when the interface has
@@ -627,11 +623,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     for (int t = 0; t < tc; ++t) {
       /* Each track records the average of its selected input channels into its
        * mono buffer. Averaging (not summing) keeps the captured level stable
-       * and clip-safe regardless of how many inputs are armed. */
-      float insample;
-      if (e->mono_input) {
-        insample = mono;
-      } else if (in) {
+       * and clip-safe regardless of how many inputs are armed.
+       *
+       * The per-track input mask is always honored: a single-channel mask
+       * records just that channel, and an empty mask records silence even with
+       * a hot input bus. "Mono vs stereo" is a routing outcome (output mask),
+       * not a capture mode. */
+      float insample = 0.0f;
+      if (in) {
         float sum = 0.0f;
         int cnt = 0;
         for (int c = 0; c < ch_in; ++c) {
@@ -644,8 +643,6 @@ void le_engine_process(le_engine* e, float* output, const float* input,
           }
         }
         insample = cnt > 0 ? sum / (float)cnt : 0.0f;
-      } else {
-        insample = 0.0f;
       }
 
       float loopsample = 0.0f;
@@ -697,8 +694,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       const int shared = ch_in < ch_out ? ch_in : ch_out;
       for (int c = 0; c < shared; ++c) {
         if (excluded & (1u << c)) continue;
-        out[f * ch_out + c] += e->mono_input ? mono : (in ? in[f * ch_in + c]
-                                                          : 0.0f);
+        out[f * ch_out + c] += in ? in[f * ch_in + c] : 0.0f;
       }
     }
 
@@ -1214,7 +1210,6 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   if (in_channels > LE_MAX_CHANNELS) in_channels = LE_MAX_CHANNELS;
   if (out_channels > LE_MAX_CHANNELS) out_channels = LE_MAX_CHANNELS;
   engine->passthrough = config->passthrough ? 1 : 0;
-  engine->mono_input = config->merge_to_mono ? 1 : 0;
   store_i32(&engine->a_monitor, engine->passthrough);
 
   ma_device_config cfg = ma_device_config_init(ma_device_type_duplex);
