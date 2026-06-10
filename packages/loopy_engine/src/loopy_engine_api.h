@@ -92,6 +92,8 @@ typedef enum le_command_code {
                                   * track, arg_i = input bitmask) */
   LE_CMD_SET_OUTPUT_MASK = 15,   /* route a track's playback destinations
                                   * (arg_f = track, arg_i = output bitmask) */
+  LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop top) */
+  LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record */
 } le_command_code;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
@@ -297,6 +299,13 @@ LE_EXPORT int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
 /* Sets the record-offset latency compensation in frames (clamped >= 0). */
 LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,
                                               int32_t frames);
+
+/* Enables or disables quantized recording. When enabled, a record/overdub press
+ * over an existing master loop is deferred to the next base-loop top, so
+ * captures start and finalize aligned to the loop grid; a second press before
+ * the boundary cancels the pending action. The defining recording (no master
+ * yet) always acts immediately. Disabling cancels any pending arms. */
+LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
 
 #ifdef __cplusplus
 }

@@ -288,6 +288,17 @@ void main() {
     });
   });
 
+  group('quantize', () {
+    test('defaults to off when unset', () async {
+      expect(await repository.loadQuantize(), isFalse);
+    });
+
+    test('round-trips a saved preference', () async {
+      await repository.saveQuantize(value: true);
+      expect(await repository.loadQuantize(), isTrue);
+    });
+  });
+
   group('StoredAudioConfig.maxLoopMinutes', () {
     test(
       'defaults to 0 (engine default) and round-trips a saved value',

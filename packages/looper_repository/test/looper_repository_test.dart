@@ -331,6 +331,25 @@ void main() {
       expect(repo.lastEngineConfig, isNull);
     });
 
+    test('setQuantize is deferred until running, then applied', () {
+      // Not running yet: the value is remembered but not pushed to the engine.
+      final repo = buildRepo()..setQuantize(enabled: true);
+      expect(engine.lastQuantize, isNull);
+
+      // A start re-applies the remembered quantize state.
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastQuantize, isTrue);
+    });
+
+    test('setQuantize applies immediately while running', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      // The start re-applied the default (off).
+      expect(engine.lastQuantize, isFalse);
+
+      repo.setQuantize(enabled: true);
+      expect(engine.lastQuantize, isTrue);
+    });
+
     test('engineVersion is forwarded', () {
       final repo = buildRepo();
       expect(repo.engineVersion, 'fake-engine');

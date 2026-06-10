@@ -1115,8 +1115,164 @@ static void test_routing_input_mask_empty_records_silence(void) {
   le_engine_destroy(e);
 }
 
+/* Records the defining loop (1.0 x LOOP_N) and leaves the master PLAYING at
+ * position 0. */
+static void establish_master(le_engine* e, float* out) {
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> master length = LOOP_N */
+  drain(e);
+}
+
+/* Quantized: a new-track record arms and starts/finalizes exactly on the loop
+ * top, so the capture is a full base loop with no silent pre-press slice. */
+static void test_quantize_start_and_finalize_on_grid(void) {
+  printf("test_quantize_start_and_finalize_on_grid\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out);
+  le_engine_set_track_mute(e, 0, 1); /* observe track 1 alone */
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+
+  /* Move the master off the top (pos 0 -> 1), then press record mid-loop. */
+  process_const(e, 0.0f, 1, out);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* armed, not recording */
+
+  /* pos 1 -> 2 -> 3 -> wrap(0): the decoy 9.0 must not be captured; recording
+   * begins exactly at the wrap. */
+  process_const(e, 9.0f, 3, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* Arm the finalize (reconciles the spent start arm), then record one full
+   * loop of 2.0; the finalize fires at the next top -> exactly one base loop. */
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* not finalized yet */
+
+  process_const(e, 2.0f, LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 1);
+  CHECK(s.tracks[1].length_frames == LOOP_N);
+
+  /* The win: a full loop of 2.0, no silent slice (cf. the mid-loop test). */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* A second record press before the boundary cancels the pending capture. */
+static void test_quantize_second_press_disarms(void) {
+  printf("test_quantize_second_press_disarms\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out);
+  le_engine_set_quantize(e, 1);
+  process_const(e, 0.0f, 1, out); /* pos -> 1 */
+
+  le_engine_record(e, 1); /* arm */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  le_engine_record(e, 1); /* second press -> disarm */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  /* Past two boundaries: the cancelled capture never starts. */
+  process_const(e, 2.0f, 2 * LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  le_engine_destroy(e);
+}
+
+/* The defining recording (no master yet) ignores quantize and acts immediately,
+ * since it is what defines the grid. */
+static void test_quantize_defining_track_is_immediate(void) {
+  printf("test_quantize_defining_track_is_immediate\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  le_engine_set_quantize(e, 1);
+  le_engine_record(e, 0); /* no master -> immediate RECORDING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  (void)out;
+  le_engine_destroy(e);
+}
+
+/* An armed overdub takes its pre-overdub undo snapshot at arm time; cancelling
+ * it reverses that snapshot, leaving no phantom undo layer. */
+static void test_quantize_overdub_arm_disarm_reverses_undo(void) {
+  printf("test_quantize_overdub_arm_disarm_reverses_undo\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out); /* track 0 PLAYING, length LOOP_N */
+  le_engine_set_quantize(e, 1);
+  process_const(e, 0.0f, 1, out); /* pos -> 1 */
+
+  le_engine_record(e, 0); /* arm overdub: snapshot pushed */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* armed, not overdubbing */
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  le_engine_record(e, 0); /* second press -> disarm -> reverse snapshot */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].undo_depth == 0); /* no phantom layer */
+
+  le_engine_destroy(e);
+}
+
+/* An armed overdub fires at the next loop top. */
+static void test_quantize_overdub_fires_on_grid(void) {
+  printf("test_quantize_overdub_fires_on_grid\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out);
+  le_engine_set_quantize(e, 1);
+  process_const(e, 0.0f, 1, out); /* pos -> 1 */
+
+  le_engine_record(e, 0); /* arm overdub */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  process_const(e, 0.5f, 3, out); /* pos 1->2->3->wrap: fires at the top */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
+  test_quantize_start_and_finalize_on_grid();
+  test_quantize_second_press_disarms();
+  test_quantize_defining_track_is_immediate();
+  test_quantize_overdub_arm_disarm_reverses_undo();
+  test_quantize_overdub_fires_on_grid();
   test_ring_init_rejects_bad_capacity();
   test_ring_push_pop_fifo();
   test_ring_reports_full();

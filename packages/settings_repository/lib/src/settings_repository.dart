@@ -203,6 +203,17 @@ class SettingsRepository {
   /// Saves the UI snapshot-poll rate in [hz].
   Future<void> saveRefreshHz(int hz) => _store.setInt(_refreshHzKey, hz);
 
+  static const String _quantizeKey = 'looper.quantize';
+
+  /// Whether recording is quantized to the loop grid. Defaults to `false`
+  /// (the free-running behaviour) when unset.
+  Future<bool> loadQuantize() async =>
+      await _store.getBool(_quantizeKey) ?? false;
+
+  /// Saves whether recording is quantized to the loop grid.
+  Future<void> saveQuantize({required bool value}) =>
+      _store.setBool(_quantizeKey, value: value);
+
   String _trackNameKey(int channel) => 'track_name.$channel';
 
   /// Loads the custom display name for track [channel], or `null` if unset.

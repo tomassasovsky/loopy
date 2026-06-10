@@ -80,6 +80,11 @@ typedef struct le_track {
   _Atomic int32_t a_multiple; /* track length in whole base loops (>= 1) */
   _Atomic uint32_t a_input_mask;   /* bitmask of input channels to record from */
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
+  _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
+                              * to fire a quantized record action); read by the
+                              * control thread to reconcile arm vs. fired. */
+  int32_t pending_record; /* audio-thread-local: fire handle_record at the next
+                           * base-loop top (quantized recording). */
   int32_t record_pos; /* audio-thread-local record head. Defining track: linear
                        * frame count. New track over a master: the absolute
                        * phase (segment*base + position), seeded at press so
@@ -147,6 +152,15 @@ struct le_engine {
   /* Audio-thread-local transport. */
   le_loop_clock clock;
   uint64_t loop_iteration; /* free-running count of base-loop wraps */
+
+  /* Quantized recording (control-thread-owned). When `quantize` is set, a record
+   * press over an existing master arms `armed[ch]` (and does the one-time prep
+   * an immediate record would) instead of acting now; the audio thread fires it
+   * at the next loop top. `arm_snapshotted[ch]` records whether the arm pushed a
+   * pre-overdub undo layer, so a cancel can reverse it. */
+  int quantize;
+  int armed[LE_MAX_TRACKS];
+  int arm_snapshotted[LE_MAX_TRACKS];
 
   /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
    * current loop bucket and publish when the playhead crosses into the next. */
@@ -354,6 +368,8 @@ static void handle_clear(le_engine* e, int32_t ch) {
   le_track* t = &e->tracks[ch];
   t->record_pos = 0;
   t->start_iter = 0;
+  t->pending_record = 0;
+  store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   store_i32(&t->a_len, 0);
   store_i32(&t->a_multiple, 1);
@@ -399,7 +415,23 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     case LE_CMD_RECORD:
+      if (valid_channel(e, cmd->arg_i)) {
+        e->tracks[cmd->arg_i].pending_record = 0;
+        store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
+      }
       handle_record(e, cmd->arg_i);
+      break;
+    case LE_CMD_ARM:
+      if (valid_channel(e, cmd->arg_i)) {
+        e->tracks[cmd->arg_i].pending_record = 1;
+        store_i32(&e->tracks[cmd->arg_i].a_pending, 1);
+      }
+      break;
+    case LE_CMD_DISARM:
+      if (valid_channel(e, cmd->arg_i)) {
+        e->tracks[cmd->arg_i].pending_record = 0;
+        store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
+      }
       break;
     case LE_CMD_STOP:
       handle_stop(e, cmd->arg_i);
@@ -761,7 +793,19 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         }
       }
       if (any_active) {
-        if (le_loop_clock_tick(&e->clock)) e->loop_iteration++;
+        if (le_loop_clock_tick(&e->clock)) {
+          e->loop_iteration++;
+          /* The loop just crossed its top (position == 0). Fire any quantized
+           * record actions here so a deferred start/finalize/overdub lands
+           * exactly on the grid. handle_record enforces one-capturer hand-off. */
+          for (int qt = 0; qt < tc; ++qt) {
+            if (e->tracks[qt].pending_record) {
+              e->tracks[qt].pending_record = 0;
+              store_i32(&e->tracks[qt].a_pending, 0);
+              handle_record(e, qt);
+            }
+          }
+        }
       } else {
         /* Nothing is playing or recording: hold the transport at the top so the
          * next play starts from the beginning rather than looping in silence.
@@ -1494,41 +1538,94 @@ static int track_acquire_slot(le_engine* e, le_track* t) {
   return -1;
 }
 
+/* Zeroes a track's live buffer (control thread) before a fresh capture over an
+ * existing master, so any unrecorded tail of a rounded-up multi-loop length
+ * plays as silence. The track is EMPTY, so the audio thread is not reading it.
+ * (Defining recordings — no master yet — use record_pos bounds and need none.) */
+static void le_prepare_new_capture(le_engine* engine, le_track* t) {
+  const int live = load_i32(&t->a_live);
+  if (t->pool[live] != NULL) {
+    const size_t n = (size_t)engine->max_loop_frames; /* mono */
+    memset(t->pool[live], 0, n * sizeof(float));
+  }
+}
+
+/* Snapshots a track's pre-overdub content onto the undo stack (control thread),
+ * clearing redo history; the audio thread treats the live buffer as read-only at
+ * this point. [len] is the track's current length (k * base). */
+static void le_push_overdub_snapshot(le_engine* engine, le_track* t,
+                                     int32_t len) {
+  t->redo_count = 0;
+  const int slot = track_acquire_slot(engine, t);
+  if (slot >= 0) {
+    const int live = load_i32(&t->a_live);
+    const size_t n = (size_t)len; /* mono */
+    memcpy(t->pool[slot], t->pool[live], n * sizeof(float));
+    t->undo_stack[t->undo_count++] = slot;
+    store_i32(&t->a_undo_depth, t->undo_count);
+  }
+  store_i32(&t->a_redo_depth, 0);
+}
+
+/* Reverses the most recent undo layer pushed by le_push_overdub_snapshot, used
+ * when a pending quantized overdub is cancelled. The freed slot returns to the
+ * pool; redo history was already cleared (a new action clears it). */
+static void le_pop_overdub_snapshot(le_track* t) {
+  if (t->undo_count > 0) {
+    t->undo_count--;
+    store_i32(&t->a_undo_depth, t->undo_count);
+  }
+}
+
 int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  /* Starting an overdub? Snapshot the pre-overdub content on this (control)
-   * thread and push it onto the undo stack; a new action clears redo history.
-   * The audio thread treats the live buffer as read-only at this point. */
   le_track* t = &engine->tracks[channel];
   const int32_t st = load_i32(&t->a_state);
   const int32_t len = load_i32(&t->a_len); /* this track's length (k * base) */
-  /* Starting a new-track recording (a fresh capture over an existing loop)?
-   * Zero its live buffer on this (control) thread so any unrecorded tail of a
-   * rounded-up multi-loop length plays as silence. The track is EMPTY, so the
-   * audio thread is not reading the buffer. (Defining recordings — no master yet
-   * — use record_pos bounds instead and need no zeroing.) */
-  if (st == LE_TRACK_EMPTY && load_i32(&engine->a_master_len) > 0) {
-    const int live = load_i32(&t->a_live);
-    if (t->pool[live] != NULL) {
-      const size_t n = (size_t)engine->max_loop_frames; /* mono */
-      memset(t->pool[live], 0, n * sizeof(float));
+  const int has_master = load_i32(&engine->a_master_len) > 0;
+
+  /* Quantized: defer the action to the next base-loop top instead of acting on
+   * the press, so captures align to the grid. The defining recording (no master
+   * yet) always acts immediately — it sets the grid. */
+  if (engine->quantize && has_master) {
+    /* If we armed this track but the boundary already fired it, the arm is
+     * spent (published a_pending cleared); fall through to a fresh decision on
+     * the now-current state. */
+    if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
+      engine->armed[channel] = 0;
+      engine->arm_snapshotted[channel] = 0;
     }
+    if (engine->armed[channel]) {
+      /* Second press before the boundary cancels the pending action. */
+      engine->armed[channel] = 0;
+      if (engine->arm_snapshotted[channel]) {
+        le_pop_overdub_snapshot(t);
+        engine->arm_snapshotted[channel] = 0;
+      }
+      return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+    }
+    /* Arm: do the one-time prep an immediate record would, then defer. */
+    engine->armed[channel] = 1;
+    engine->arm_snapshotted[channel] = 0;
+    if (st == LE_TRACK_EMPTY) {
+      le_prepare_new_capture(engine, t);
+    } else if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
+      le_push_overdub_snapshot(engine, t, len);
+      engine->arm_snapshotted[channel] = 1;
+    }
+    return le_push(engine, LE_CMD_ARM, channel, 0.0f);
+  }
+
+  /* Immediate (quantize off, or the defining recording). */
+  if (st == LE_TRACK_EMPTY && has_master) {
+    le_prepare_new_capture(engine, t);
   }
   if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
-    t->redo_count = 0;
-    const int slot = track_acquire_slot(engine, t);
-    if (slot >= 0) {
-      const int live = load_i32(&t->a_live);
-      const size_t n = (size_t)len; /* mono */
-      memcpy(t->pool[slot], t->pool[live], n * sizeof(float));
-      t->undo_stack[t->undo_count++] = slot;
-      store_i32(&t->a_undo_depth, t->undo_count);
-    }
-    store_i32(&t->a_redo_depth, 0);
+    le_push_overdub_snapshot(engine, t, len);
   }
   return le_push(engine, LE_CMD_RECORD, channel, 0.0f);
 }
@@ -1546,6 +1643,8 @@ int32_t le_engine_clear(le_engine* engine, int32_t channel) {
     t->redo_count = 0;
     store_i32(&t->a_undo_depth, 0);
     store_i32(&t->a_redo_depth, 0);
+    engine->armed[channel] = 0;
+    engine->arm_snapshotted[channel] = 0;
   }
   return le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
 }
@@ -1614,4 +1713,23 @@ int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
 
 int32_t le_engine_set_record_offset(le_engine* engine, int32_t frames) {
   return le_push(engine, LE_CMD_SET_RECORD_OFFSET, frames, 0.0f);
+}
+
+int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  engine->quantize = enabled ? 1 : 0;
+  if (!engine->quantize) {
+    /* Cancel any pending arms so nothing is stuck waiting for a loop top; a
+     * cancelled overdub arm reverses its pre-overdub snapshot. */
+    for (int32_t c = 0; c < engine->track_count; ++c) {
+      if (!engine->armed[c]) continue;
+      engine->armed[c] = 0;
+      if (engine->arm_snapshotted[c]) {
+        le_pop_overdub_snapshot(&engine->tracks[c]);
+        engine->arm_snapshotted[c] = 0;
+      }
+      le_push(engine, LE_CMD_DISARM, c, 0.0f);
+    }
+  }
+  return LE_OK;
 }
