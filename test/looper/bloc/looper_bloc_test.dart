@@ -32,6 +32,8 @@ void main() {
   late LooperRepository repository;
   late StreamController<LooperState> stateController;
 
+  setUpAll(() => registerFallbackValue(TrackEffectType.none));
+
   setUp(() {
     repository = _MockLooperRepository();
     stateController = StreamController<LooperState>.broadcast();
@@ -87,6 +89,21 @@ void main() {
       () => repository.setTrackMultiple(
         channel: any(named: 'channel'),
         multiple: any(named: 'multiple'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackFx(
+        channel: any(named: 'channel'),
+        slot: any(named: 'slot'),
+        type: any(named: 'type'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackFxParam(
+        channel: any(named: 'channel'),
+        slot: any(named: 'slot'),
+        index: any(named: 'index'),
+        value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
   });
@@ -178,6 +195,34 @@ void main() {
     ).called(1),
   );
 
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackFxChanged forwards the slot type to the repository',
+    build: buildBloc,
+    act: (bloc) =>
+        bloc.add(const LooperTrackFxChanged(1, 0, TrackEffectType.delay)),
+    verify: (_) => verify(
+      () => repository.setTrackFx(
+        channel: 1,
+        slot: 0,
+        type: TrackEffectType.delay,
+      ),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackFxParamChanged forwards the param to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackFxParamChanged(2, 1, 0, 0.6)),
+    verify: (_) => verify(
+      () => repository.setTrackFxParam(
+        channel: 2,
+        slot: 1,
+        index: 0,
+        value: 0.6,
+      ),
+    ).called(1),
+  );
+
   group('routing persistence', () {
     late SettingsRepository settings;
 
@@ -188,6 +233,12 @@ void main() {
       ).thenAnswer((_) async {});
       when(
         () => settings.saveTrackOutputMask(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveTrackFxType(any(), any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveTrackFxParam(any(), any(), any(), any()),
       ).thenAnswer((_) async {});
     });
 
@@ -210,6 +261,42 @@ void main() {
       verify: (_) {
         verify(() => repository.setOutputMask(channel: 0, mask: 0x6)).called(1);
         verify(() => settings.saveTrackOutputMask(0, 0x6)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperTrackFxChanged persists the slot type code',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) =>
+          bloc.add(const LooperTrackFxChanged(1, 2, TrackEffectType.filter)),
+      verify: (_) {
+        verify(
+          () => repository.setTrackFx(
+            channel: 1,
+            slot: 2,
+            type: TrackEffectType.filter,
+          ),
+        ).called(1);
+        verify(
+          () => settings.saveTrackFxType(1, 2, TrackEffectType.filter.code),
+        ).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperTrackFxParamChanged persists the param value',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperTrackFxParamChanged(0, 1, 2, 0.25)),
+      verify: (_) {
+        verify(
+          () => repository.setTrackFxParam(
+            channel: 0,
+            slot: 1,
+            index: 2,
+            value: 0.25,
+          ),
+        ).called(1);
+        verify(() => settings.saveTrackFxParam(0, 1, 2, 0.25)).called(1);
       },
     );
   });

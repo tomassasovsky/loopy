@@ -228,6 +228,33 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-(channel, slot) effect type passed to [setTrackFx].
+  final Map<(int, int), TrackEffectType> trackFx = {};
+
+  /// Per-(channel, slot, index) parameter value passed to [setTrackFxParam].
+  final Map<(int, int, int), double> trackFxParam = {};
+
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int slot,
+    required TrackEffectType type,
+  }) {
+    trackFx[(channel, slot)] = type;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int slot,
+    required int index,
+    required double value,
+  }) {
+    trackFxParam[(channel, slot, index)] = value;
+    return EngineResult.ok;
+  }
+
   @override
   Float32List readVisual() => Float32List(0);
 

@@ -79,6 +79,32 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackMultiple(event.channel, event.multiple),
       );
     });
+    on<LooperTrackFxChanged>((event, _) {
+      _repository.setTrackFx(
+        channel: event.channel,
+        slot: event.slot,
+        type: event.type,
+      );
+      unawaited(
+        _settings?.saveTrackFxType(event.channel, event.slot, event.type.code),
+      );
+    });
+    on<LooperTrackFxParamChanged>((event, _) {
+      _repository.setTrackFxParam(
+        channel: event.channel,
+        slot: event.slot,
+        index: event.index,
+        value: event.value,
+      );
+      unawaited(
+        _settings?.saveTrackFxParam(
+          event.channel,
+          event.slot,
+          event.index,
+          event.value,
+        ),
+      );
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);

@@ -1564,6 +1564,167 @@ static void test_auto_record_starts_on_signal(void) {
   le_engine_destroy(e2);
 }
 
+/* ---- per-track effects ---- */
+
+/* Records a LOOP_N loop of constant `value` on track 0 and finalizes it to
+ * PLAYING, so subsequent silent-input blocks play that constant back. */
+static void establish_loop(le_engine* e, float value) {
+  float out[64];
+  le_engine_record(e, 0);
+  process_const(e, value, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+}
+
+static void test_fx_bypass_is_transparent(void) {
+  printf("test_fx_bypass_is_transparent\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  /* No effects: playback is the loop, untouched. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  /* Engaging then bypassing a slot returns to transparent. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_NONE) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_fx_drive_saturates(void) {
+  printf("test_fx_drive_saturates\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  /* drive p0 = 0 -> 1x pre-gain, level p1 = 1 -> out = tanh(1) ~= 0.7616. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
+
+  le_engine_destroy(e);
+}
+
+static void test_fx_filter_attenuates_low_cutoff(void) {
+  printf("test_fx_filter_attenuates_low_cutoff\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  /* A 20 Hz low-pass barely moves over a few samples: the step to 1.0 is
+   * heavily attenuated at the loop start. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_FILTER) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK); /* min cutoff */
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 0.0f) == LE_OK); /* no res */
+  process_const(e, 0.0f, LOOP_N, out);
+  CHECK(out[0] < 0.05f);
+  /* The DC component still passes after the filter settles over many frames. */
+  for (int b = 0; b < 4000; ++b) process_const(e, 0.0f, 12, out);
+  CHECK(out[11] > 0.9f);
+
+  le_engine_destroy(e);
+}
+
+static void test_fx_delay_is_silent_until_time(void) {
+  printf("test_fx_delay_is_silent_until_time\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  /* Fully wet, no feedback, a short delay: the line starts empty, so the first
+   * output samples are silent and the (delayed) signal arrives later. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  /* time ~ 10 frames: 10 / (48000 - 1). */
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 10.0f / 47999.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 0.0f) == LE_OK); /* no fb */
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 2, 1.0f) == LE_OK); /* full wet */
+  process_const(e, 0.0f, 64, out);
+  CHECK(fabsf(out[0]) < 1e-6f);  /* nothing in the line yet */
+  CHECK(out[63] > 0.9f);         /* the delayed signal has arrived */
+
+  le_engine_destroy(e);
+}
+
+static void test_fx_tremolo_modulates_amplitude(void) {
+  printf("test_fx_tremolo_modulates_amplitude\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  /* Full depth, phase reset to 0 at engage: the first sample sees lfo = 0.5, so
+   * out[0] = 1 * (1 - depth * (1 - 0.5)) = 0.5. */
+  CHECK(le_engine_set_track_fx(e, 0, 0, LE_FX_TREMOLO) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f) == LE_OK); /* slow rate */
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f) == LE_OK); /* full depth */
+  process_const(e, 0.0f, LOOP_N, out);
+  CHECK(fabsf(out[0] - 0.5f) < 1e-3f);
+  /* Stays within the modulation bound [0, 1] for a constant 1.0 source. */
+  for (int i = 0; i < LOOP_N; ++i) CHECK(out[i] >= -1e-6f && out[i] <= 1.0f + 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_fx_chain_applies_in_order(void) {
+  printf("test_fx_chain_applies_in_order\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  /* Slot 0 drive (out = tanh(1) ~= 0.7616), slot 1 a unity-level drive feeding
+   * on the previous result: tanh(0.7616) ~= 0.6420. Confirms slots compose. */
+  le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE);
+  le_engine_set_track_fx_param(e, 0, 0, 0, 0.0f);
+  le_engine_set_track_fx_param(e, 0, 0, 1, 1.0f);
+  le_engine_set_track_fx(e, 0, 1, LE_FX_DRIVE);
+  le_engine_set_track_fx_param(e, 0, 1, 0, 0.0f);
+  le_engine_set_track_fx_param(e, 0, 1, 1, 1.0f);
+  process_const(e, 0.0f, LOOP_N, out);
+  const float expected = tanhf(tanhf(1.0f));
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - expected) < 1e-5f);
+
+  le_engine_destroy(e);
+}
+
+static void test_fx_muted_track_is_silent(void) {
+  printf("test_fx_muted_track_is_silent\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f);
+
+  le_engine_set_track_fx(e, 0, 0, LE_FX_DRIVE);
+  le_engine_set_track_mute(e, 0, 1);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_fx_rejects_invalid_args(void) {
+  printf("test_fx_rejects_invalid_args\n");
+  le_engine* e = make_configured_engine();
+
+  CHECK(le_engine_set_track_fx(e, -1, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_fx(e, 0, LE_FX_SLOTS, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_fx(e, 0, 0, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_fx(NULL, 0, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_fx_param(e, 0, -1, 0, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, LE_FX_PARAMS, 0.5f) ==
+        LE_ERR_INVALID);
+
+  /* Out-of-range parameter values clamp to [0, 1] rather than erroring. */
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, 5.0f) == LE_OK);
+  CHECK(le_engine_set_track_fx_param(e, 0, 0, 0, -5.0f) == LE_OK);
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_target_multiple_forces_length();
@@ -1617,6 +1778,14 @@ int main(void) {
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
   test_set_record_offset_publishes_latency();
+  test_fx_bypass_is_transparent();
+  test_fx_drive_saturates();
+  test_fx_filter_attenuates_low_cutoff();
+  test_fx_delay_is_silent_until_time();
+  test_fx_tremolo_modulates_amplitude();
+  test_fx_chain_applies_in_order();
+  test_fx_muted_track_is_silent();
+  test_fx_rejects_invalid_args();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

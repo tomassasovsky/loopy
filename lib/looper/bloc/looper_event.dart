@@ -134,6 +134,46 @@ final class LooperTrackMultipleChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, multiple];
 }
 
+/// Track [channel]'s effect [slot] changed to [type]
+/// ([TrackEffectType.none] bypasses the slot).
+final class LooperTrackFxChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackFxChanged].
+  const LooperTrackFxChanged(super.channel, this.slot, this.type);
+
+  /// The effect slot index (`0..kTrackEffectSlots-1`).
+  final int slot;
+
+  /// The effect type for the slot.
+  final TrackEffectType type;
+
+  @override
+  List<Object?> get props => [channel, slot, type];
+}
+
+/// Parameter [index] of track [channel]'s effect [slot] changed to [value]
+/// (`0..1`).
+final class LooperTrackFxParamChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackFxParamChanged].
+  const LooperTrackFxParamChanged(
+    super.channel,
+    this.slot,
+    this.index,
+    this.value,
+  );
+
+  /// The effect slot index (`0..kTrackEffectSlots-1`).
+  final int slot;
+
+  /// The parameter index (`0..kTrackEffectParams-1`).
+  final int index;
+
+  /// The normalized parameter value (`0..1`).
+  final double value;
+
+  @override
+  List<Object?> get props => [channel, slot, index, value];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].

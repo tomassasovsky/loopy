@@ -96,7 +96,31 @@ typedef enum le_command_code {
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record */
   LE_CMD_SET_MONITOR_INPUT_MASK = 18,  /* arg_i = monitor input bitmask */
   LE_CMD_SET_MONITOR_OUTPUT_MASK = 19, /* arg_i = monitor output bitmask */
+  LE_CMD_SET_FX_TYPE = 20, /* set a track's effect-slot type (and reset that
+                            * slot's DSP state). arg_i = (channel << 8) | slot,
+                            * arg_f = le_fx_type. */
 } le_command_code;
+
+/* Per-track effects: each track has LE_FX_SLOTS insert slots applied in order to
+ * its mono output, each with LE_FX_PARAMS normalized (0..1) parameters. The
+ * parameter meanings depend on the slot's le_fx_type. */
+#define LE_FX_SLOTS 3
+#define LE_FX_PARAMS 3
+
+/* Built-in effect types (a slot's processing). Designed so a hosted VST3/CLAP
+ * plugin can later slot in as just another type. Each type reads its params from
+ * the slot's LE_FX_PARAMS normalized values:
+ *   DRIVE:   p0 = drive amount, p1 = output level
+ *   FILTER:  p0 = cutoff, p1 = resonance        (resonant low-pass)
+ *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
+ *   TREMOLO: p0 = rate, p1 = depth */
+typedef enum le_fx_type {
+  LE_FX_NONE = 0,
+  LE_FX_DRIVE = 1,
+  LE_FX_FILTER = 2,
+  LE_FX_DELAY = 3,
+  LE_FX_TREMOLO = 4,
+} le_fx_type;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
  *
@@ -347,6 +371,20 @@ LE_EXPORT int32_t le_engine_set_monitor_input_mask(le_engine* engine,
  * Bits beyond the output range are ignored. */
 LE_EXPORT int32_t le_engine_set_monitor_output_mask(le_engine* engine,
                                                     int32_t mask);
+
+/* Sets effect [slot] (0..LE_FX_SLOTS-1) on track [channel] to [type]. Switching
+ * type resets that slot's DSP state; LE_FX_DELAY lazily allocates the slot's
+ * delay line (on this calling thread) and seeds the type's default parameters.
+ * Setting LE_FX_NONE bypasses the slot. */
+LE_EXPORT int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
+                                         int32_t slot, int32_t type);
+
+/* Sets parameter [index] (0..LE_FX_PARAMS-1) of effect [slot] on track
+ * [channel] to [value] (clamped to 0..1). The parameter's meaning depends on
+ * the slot's le_fx_type. */
+LE_EXPORT int32_t le_engine_set_track_fx_param(le_engine* engine,
+                                               int32_t channel, int32_t slot,
+                                               int32_t index, float value);
 
 #ifdef __cplusplus
 }

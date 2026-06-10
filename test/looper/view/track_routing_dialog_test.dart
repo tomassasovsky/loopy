@@ -14,6 +14,8 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 void main() {
+  setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
+
   group('showTrackRoutingDialog', () {
     late LooperBloc bloc;
     late SettingsRepository settings;
@@ -142,6 +144,97 @@ void main() {
       verify(
         () => bloc.add(const LooperTrackMultipleChanged(0, 2)),
       ).called(1);
+    });
+
+    testWidgets('choosing an effect type dispatches LooperTrackFxChanged', (
+      tester,
+    ) async {
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final typePicker = find.byKey(const Key('trackRouting_fx0_type'));
+      await tester.ensureVisible(typePicker);
+      await tester.tap(typePicker);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Drive').last);
+      await tester.pumpAndSettle();
+
+      verify(
+        () => bloc.add(
+          const LooperTrackFxChanged(0, 0, TrackEffectType.drive),
+        ),
+      ).called(1);
+    });
+
+    testWidgets('selecting a type reveals its parameter sliders', (
+      tester,
+    ) async {
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // No effect yet -> no parameter sliders.
+      expect(find.byKey(const Key('trackRouting_fx0_param0')), findsNothing);
+
+      final typePicker = find.byKey(const Key('trackRouting_fx0_type'));
+      await tester.ensureVisible(typePicker);
+      await tester.tap(typePicker);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delay').last);
+      await tester.pumpAndSettle();
+
+      // Delay exposes three parameters (Time, Feedback, Mix).
+      expect(find.byKey(const Key('trackRouting_fx0_param0')), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_fx0_param1')), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_fx0_param2')), findsOneWidget);
+    });
+
+    testWidgets(
+      'dragging a param slider dispatches LooperTrackFxParamChanged',
+      (
+        tester,
+      ) async {
+        await pumpOpener(tester);
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        final typePicker = find.byKey(const Key('trackRouting_fx0_type'));
+        await tester.ensureVisible(typePicker);
+        await tester.tap(typePicker);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Drive').last);
+        await tester.pumpAndSettle();
+
+        final slider = find.byKey(const Key('trackRouting_fx0_param0'));
+        await tester.ensureVisible(slider);
+        await tester.drag(slider, const Offset(200, 0));
+        await tester.pump();
+
+        verify(
+          () => bloc.add(
+            any(
+              that: isA<LooperTrackFxParamChanged>()
+                  .having((e) => e.channel, 'channel', 0)
+                  .having((e) => e.slot, 'slot', 0)
+                  .having((e) => e.index, 'index', 0),
+            ),
+          ),
+        ).called(greaterThanOrEqualTo(1));
+      },
+    );
+
+    testWidgets('a saved effect chain is preloaded into the dialog', (
+      tester,
+    ) async {
+      await settings.saveTrackFxType(0, 0, TrackEffectType.tremolo.code);
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      // The saved type's parameter sliders are rendered on open.
+      expect(find.byKey(const Key('trackRouting_fx0_param0')), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_fx0_param1')), findsOneWidget);
     });
   });
 }

@@ -4,6 +4,7 @@ import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/track_effect.dart';
 
 /// Result of an [AudioEngine] lifecycle call.
 ///
@@ -174,6 +175,25 @@ abstract interface class AudioEngine {
   /// is routed to (a bitmask; bit c => hardware output channel c). Bits beyond
   /// the output range are ignored.
   EngineResult setMonitorOutputMask({required int mask});
+
+  /// Sets effect [slot] (`0..kTrackEffectSlots-1`) on track [channel] to
+  /// [type]. Switching type resets that slot's DSP state and seeds the type's
+  /// default parameters; [TrackEffectType.none] bypasses the slot.
+  EngineResult setTrackFx({
+    required int channel,
+    required int slot,
+    required TrackEffectType type,
+  });
+
+  /// Sets parameter [index] (`0..kTrackEffectParams-1`) of effect [slot] on
+  /// track [channel] to [value] (clamped to `0..1`). The parameter's meaning
+  /// depends on the slot's effect type.
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int slot,
+    required int index,
+    required double value,
+  });
 
   /// Reads the loop waveform: peaks of the mixed output indexed by position
   /// across one master loop (index 0 = loop start), each in `0..1`. Pair with

@@ -96,6 +96,20 @@ typedef struct le_track {
   uint64_t start_iter; /* loop_iteration when this track's recording began */
   int32_t record_start; /* record_pos when this capture began, so a fixed-length
                          * track can auto-finalize after exactly K base loops. */
+
+  /* Per-track effects chain. Published config (control writes, audio reads once
+   * per buffer): each slot's type and its LE_FX_PARAMS normalized parameters. */
+  _Atomic int32_t a_fx_type[LE_FX_SLOTS];
+  _Atomic uint32_t a_fx_param[LE_FX_SLOTS][LE_FX_PARAMS]; /* float bits, 0..1 */
+  /* Audio-thread-owned DSP state, reset when a slot's type changes (applied via
+   * LE_CMD_SET_FX_TYPE). svf_* are the state-variable filter integrators; lfo is
+   * the tremolo phase (0..1); delay is a lazily allocated ring (control thread
+   * allocates before posting the type command) of fx_delay_frames samples. */
+  float fx_svf_ic1[LE_FX_SLOTS];
+  float fx_svf_ic2[LE_FX_SLOTS];
+  float fx_lfo[LE_FX_SLOTS];
+  float* fx_delay[LE_FX_SLOTS];
+  int32_t fx_delay_pos[LE_FX_SLOTS];
 } le_track;
 
 struct le_engine {
@@ -158,6 +172,7 @@ struct le_engine {
   int in_channels;  /* hardware capture channels */
   int out_channels; /* hardware playback channels */
   int32_t max_loop_frames;
+  int32_t fx_delay_frames; /* per-slot delay-line capacity (1 s @ sample rate) */
 
   /* Audio-thread-local transport. */
   le_loop_clock clock;
@@ -448,6 +463,105 @@ static void handle_clear(le_engine* e, int32_t ch) {
   }
 }
 
+/* ---- per-track effects DSP ----
+ *
+ * Each helper processes one sample through one slot and advances that slot's
+ * audio-thread-owned state in `t`. All are branch-light and allocation-free
+ * (the delay line is pre-allocated by the control thread), so they are safe in
+ * the audio callback. Parameters arrive normalized (0..1) and are mapped to
+ * musical ranges here. */
+
+#ifndef LE_PI
+#define LE_PI 3.14159265358979323846f
+#endif
+
+/* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
+static float fx_drive(float x, const float* p) {
+  const float drive = 1.0f + p[0] * 29.0f; /* 1x .. 30x pre-gain */
+  const float level = p[1];                /* 0..1 output trim */
+  return tanhf(x * drive) * level;
+}
+
+/* Resonant low-pass: a TPT state-variable filter (Cytomic/Zavalishin form).
+ * p0 = cutoff (20 Hz .. ~18 kHz, log), p1 = resonance. */
+static float fx_filter(le_track* t, int slot, int sr, float x, const float* p) {
+  float fc = 20.0f * powf(900.0f, p[0]); /* 20 * 900 = 18 kHz at p0 = 1 */
+  const float nyq = 0.45f * (float)sr;
+  if (fc > nyq) fc = nyq;
+  const float g = tanf(LE_PI * fc / (float)sr);
+  const float k = 2.0f - 1.8f * p[1]; /* damping: 2 (none) .. 0.2 (resonant) */
+  const float a1 = 1.0f / (1.0f + g * (g + k));
+  const float a2 = g * a1;
+  const float a3 = g * a2;
+  float* ic1 = &t->fx_svf_ic1[slot];
+  float* ic2 = &t->fx_svf_ic2[slot];
+  const float v3 = x - *ic2;
+  const float v1 = a1 * (*ic1) + a2 * v3;
+  const float v2 = *ic2 + a2 * (*ic1) + a3 * v3;
+  *ic1 = 2.0f * v1 - *ic1;
+  *ic2 = 2.0f * v2 - *ic2;
+  return v2; /* low-pass output */
+}
+
+/* Feedback delay: p0 = time (0..1 s), p1 = feedback, p2 = wet mix. The ring is
+ * the control-thread-allocated fx_delay line of e->fx_delay_frames samples. */
+static float fx_delay(le_track* t, int slot, int cap, float x, const float* p) {
+  float* buf = t->fx_delay[slot];
+  if (buf == NULL || cap <= 1) return x;
+  int d = (int)(p[0] * (float)(cap - 1));
+  if (d < 1) d = 1;
+  int pos = t->fx_delay_pos[slot];
+  int rp = pos - d;
+  if (rp < 0) rp += cap;
+  const float delayed = buf[rp];
+  const float fb = p[1] * 0.95f; /* keep the feedback loop stable (< 1) */
+  buf[pos] = x + delayed * fb;
+  pos += 1;
+  if (pos >= cap) pos = 0;
+  t->fx_delay_pos[slot] = pos;
+  const float mix = p[2];
+  return x * (1.0f - mix) + delayed * mix;
+}
+
+/* Tremolo: sine LFO amplitude modulation. p0 = rate (0.1..12 Hz), p1 = depth. */
+static float fx_tremolo(le_track* t, int slot, int sr, float x,
+                        const float* p) {
+  const float rate = 0.1f + p[0] * 11.9f;
+  const float depth = p[1];
+  float ph = t->fx_lfo[slot];
+  const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * ph)); /* 0..1 */
+  ph += rate / (float)sr;
+  if (ph >= 1.0f) ph -= 1.0f;
+  t->fx_lfo[slot] = ph;
+  return x * (1.0f - depth * (1.0f - lfo));
+}
+
+/* Applies track [t]'s effects chain to one sample: each non-bypassed slot in
+ * order. [types]/[params] are the per-buffer snapshot for this track. */
+static float fx_apply_chain(le_track* t, int sr, int cap, float x,
+                            const int32_t* types,
+                            const float params[LE_FX_SLOTS][LE_FX_PARAMS]) {
+  for (int s = 0; s < LE_FX_SLOTS; ++s) {
+    switch (types[s]) {
+      case LE_FX_DRIVE:
+        x = fx_drive(x, params[s]);
+        break;
+      case LE_FX_FILTER:
+        x = fx_filter(t, s, sr, x, params[s]);
+        break;
+      case LE_FX_DELAY:
+        x = fx_delay(t, s, cap, x, params[s]);
+        break;
+      case LE_FX_TREMOLO:
+        x = fx_tremolo(t, s, sr, x, params[s]);
+        break;
+      default:
+        break;
+    }
+  }
+  return x;
+}
+
 static void apply_command(le_engine* e, const le_command* cmd) {
   switch (cmd->code) {
     case LE_CMD_MEASURE_LATENCY: {
@@ -575,6 +689,20 @@ static void apply_command(le_engine* e, const le_command* cmd) {
                             (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
       break;
     }
+    case LE_CMD_SET_FX_TYPE: {
+      const int32_t ch = cmd->arg_i >> 8;
+      const int32_t slot = cmd->arg_i & 0xFF;
+      if (!valid_channel(e, ch) || slot < 0 || slot >= LE_FX_SLOTS) break;
+      le_track* t = &e->tracks[ch];
+      store_i32(&t->a_fx_type[slot], (int32_t)cmd->arg_f);
+      /* Reset the slot's DSP state so a freshly engaged effect starts clean (no
+       * filter blow-up from stale integrators, no delay-read of old content). */
+      t->fx_svf_ic1[slot] = 0.0f;
+      t->fx_svf_ic2[slot] = 0.0f;
+      t->fx_lfo[slot] = 0.0f;
+      t->fx_delay_pos[slot] = 0;
+      break;
+    }
     default:
       break;
   }
@@ -608,6 +736,25 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float out_sumsq = 0.0f;
   float trk_sumsq[LE_MAX_TRACKS] = {0};
   float trk_peak[LE_MAX_TRACKS] = {0};
+
+  /* Per-track effects config, snapshotted once per buffer (control-thread
+   * writes are applied at buffer granularity). has_fx skips the chain entirely
+   * for tracks with every slot bypassed. */
+  int32_t fx_type[LE_MAX_TRACKS][LE_FX_SLOTS];
+  float fx_params[LE_MAX_TRACKS][LE_FX_SLOTS][LE_FX_PARAMS];
+  int has_fx[LE_MAX_TRACKS];
+  for (int t = 0; t < tc; ++t) {
+    has_fx[t] = 0;
+    for (int s = 0; s < LE_FX_SLOTS; ++s) {
+      const int32_t ty = load_i32(&e->tracks[t].a_fx_type[s]);
+      fx_type[t][s] = ty;
+      if (ty != LE_FX_NONE) has_fx[t] = 1;
+      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+        fx_params[t][s][p] = load_f32(&e->tracks[t].a_fx_param[s][p]);
+      }
+    }
+  }
+  const int fx_cap = e->fx_delay_frames;
 
   for (uint32_t f = 0; f < frames; ++f) {
     float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
@@ -797,12 +944,21 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         loopsample = buf[t][seg_base[t] + pos];
       }
 
-      /* Route the track's mono sample to every output channel in its mask. */
-      if ((st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-          !mut[t]) {
-        const float contrib = loopsample * vol[t];
+      /* The track's mono output: its loop content at the playback volume while
+       * it sounds, silence otherwise. The effects chain runs every frame a
+       * track has effects (even silent ones) so delay tails and LFO phase stay
+       * continuous; the wet result is routed only while the track is audible. */
+      const int audible =
+          (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+          !mut[t];
+      const float dry = audible ? loopsample * vol[t] : 0.0f;
+      const float wet =
+          has_fx[t] ? fx_apply_chain(&e->tracks[t], sr, fx_cap, dry,
+                                     fx_type[t], fx_params[t])
+                    : dry;
+      if (audible) {
         for (int c = 0; c < ch_out; ++c) {
-          if (out_mask[t] & (1u << c)) out[f * ch_out + c] += contrib;
+          if (out_mask[t] & (1u << c)) out[f * ch_out + c] += wet;
         }
       }
 
@@ -1009,12 +1165,28 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->start_iter = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
     engine->target_multiple[t] = 0; /* inherit the global default multiple */
+
+    /* Effects: every slot bypassed, DSP state cleared, delay lines released
+     * (they are re-allocated lazily when a slot becomes LE_FX_DELAY). */
+    for (int s = 0; s < LE_FX_SLOTS; ++s) {
+      store_i32(&tr->a_fx_type[s], LE_FX_NONE);
+      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+        store_f32(&tr->a_fx_param[s][p], 0.0f);
+      }
+      tr->fx_svf_ic1[s] = 0.0f;
+      tr->fx_svf_ic2[s] = 0.0f;
+      tr->fx_lfo[s] = 0.0f;
+      free(tr->fx_delay[s]);
+      tr->fx_delay[s] = NULL;
+      tr->fx_delay_pos[s] = 0;
+    }
   }
 
   engine->sample_rate = sample_rate;
   engine->in_channels = input_channels;
   engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
+  engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
 
@@ -1362,6 +1534,9 @@ void le_engine_destroy(le_engine* engine) {
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
       free(engine->tracks[t].pool[i]);
+    }
+    for (int s = 0; s < LE_FX_SLOTS; ++s) {
+      free(engine->tracks[t].fx_delay[s]);
     }
   }
   free(engine);
@@ -1951,5 +2126,85 @@ int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
       if (engine->armed_trigger[c] == 1) le_cancel_arm(engine, c);
     }
   }
+  return LE_OK;
+}
+
+/* Musical default parameters for a freshly engaged effect type (so picking an
+ * effect sounds like something before the user tweaks it). */
+static void le_fx_default_params(int32_t type, float out[LE_FX_PARAMS]) {
+  switch (type) {
+    case LE_FX_DRIVE:
+      out[0] = 0.5f; /* drive */
+      out[1] = 0.8f; /* level */
+      out[2] = 0.0f;
+      break;
+    case LE_FX_FILTER:
+      out[0] = 0.5f; /* cutoff */
+      out[1] = 0.2f; /* resonance */
+      out[2] = 0.0f;
+      break;
+    case LE_FX_DELAY:
+      out[0] = 0.35f; /* time */
+      out[1] = 0.35f; /* feedback */
+      out[2] = 0.35f; /* wet mix */
+      break;
+    case LE_FX_TREMOLO:
+      out[0] = 0.3f; /* rate */
+      out[1] = 0.7f; /* depth */
+      out[2] = 0.0f;
+      break;
+    default:
+      out[0] = out[1] = out[2] = 0.0f;
+      break;
+  }
+}
+
+int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel, int32_t slot,
+                               int32_t type) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (slot < 0 || slot >= LE_FX_SLOTS) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_TREMOLO) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+
+  /* Delay needs a ring buffer; allocate it here (control thread) before the
+   * audio thread can read it, and keep it for reuse once allocated. */
+  if (type == LE_FX_DELAY && t->fx_delay[slot] == NULL) {
+    const int32_t cap =
+        engine->fx_delay_frames > 0 ? engine->fx_delay_frames : 48000;
+    float* line = (float*)calloc((size_t)cap, sizeof(float));
+    if (line == NULL) return LE_ERR_INVALID;
+    t->fx_delay[slot] = line;
+  }
+
+  /* Seed musical defaults only when the type actually changes, so re-selecting
+   * the same effect doesn't wipe the user's tweaks. */
+  if (load_i32(&t->a_fx_type[slot]) != type) {
+    float defaults[LE_FX_PARAMS];
+    le_fx_default_params(type, defaults);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&t->a_fx_param[slot][p], defaults[p]);
+    }
+  }
+
+  /* Publish the type via the ring so the audio thread resets the slot's DSP
+   * state in lockstep. The buffer pointer written above is made visible to the
+   * audio thread by the ring's release/acquire pairing. */
+  return le_push(engine, LE_CMD_SET_FX_TYPE,
+                 (channel << 8) | slot, (float)type);
+}
+
+int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
+                                     int32_t slot, int32_t index, float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (slot < 0 || slot >= LE_FX_SLOTS) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  /* Params are plain published atomics read once per buffer; a direct store is
+   * race-free and needs no ring command (unlike the type, which also resets
+   * audio-thread DSP state). Works whether or not the device is running. */
+  store_f32(&engine->tracks[channel].a_fx_param[slot][index], value);
   return LE_OK;
 }

@@ -10,7 +10,10 @@ export 'package:loopy_engine/loopy_engine.dart'
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
-        TrackState;
+        TrackEffectType,
+        TrackState,
+        kTrackEffectParams,
+        kTrackEffectSlots;
 
 export 'src/looper_repository.dart';
 export 'src/models/engine_status.dart';

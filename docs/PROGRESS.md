@@ -35,7 +35,15 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   /tmp/loopy_core_tests
   ```
 - **Regenerate FFI bindings** after touching `src/loopy_engine_api.h`:
-  `cd packages/loopy_engine && dart run ffigen --config ffigen.yaml`
+  ```sh
+  cd packages/loopy_engine
+  dart run ffigen --config ffigen.yaml
+  dart format lib/src/generated/loopy_engine_bindings.dart
+  ```
+  The `dart format` step is required: ffigen emits legacy short-style code,
+  but the committed bindings are canonical `dart format` (tall) style. Without
+  it, every regen rewrites the whole file and buries the real diff. With it,
+  regens are field-scoped regardless of your local SDK's formatter version.
 - **macOS app run/build:** flavor schemes required.
   `flutter build macos --debug --flavor development -t lib/main_development.dart`
   Run: `flutter run -d macos --flavor development -t lib/main_development.dart`
@@ -165,6 +173,31 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `AudioSetupPage` reads its repositories from context; added the missing test
   coverage. The Big Picture per-track thumbnail is a **level meter**, not a
   waveform.
+- **Functional settings surfaced** — the settings/routing UI now exposes the
+  engine's real knobs: **quantized recording** (snap start/stop to the loop
+  grid, global + per-track override), **configurable input monitoring**
+  (input/output channel masks, or follow-the-selected-track), **rec/dub**
+  second-press mode, **sound-activated** recording, **loop multiples** (global
+  default + per-track `×N`), and **max-loop cap** / **UI refresh rate**. Each
+  is remembered in `LooperRepository` and re-applied on every (re)start, and
+  persisted via `SettingsRepository`. "Default" chips/labels name the resolved
+  global value. The per-track routing dialog reuses the signal-flow graph
+  scoped to one track.
+- **Per-track effects chain** — each track has `LE_FX_SLOTS = 3` insert slots
+  applied in order to its mono output before routing, each `LE_FX_PARAMS = 3`
+  normalized params: **Drive** (tanh saturation), **Filter** (TPT
+  state-variable low-pass), **Delay** (feedback + wet mix, lazily allocated
+  1 s ring per slot on the control thread), **Tremolo** (sine-LFO). All DSP is
+  allocation-free in the callback; type changes route through the command ring
+  so the audio thread resets slot DSP state in lockstep, while params are plain
+  published atoms read once per buffer. Setters `le_engine_set_track_fx` /
+  `le_engine_set_track_fx_param`; `TrackEffectType` carries native codes, param
+  labels, and musical defaults (mirrored from the engine). Configured per track
+  from its routing dialog (type dropdown + a slider per param); remembered and
+  re-applied on (re)start; persisted per `(channel, slot[, paramIndex])`.
+  Designed plugin-ready — a hosted VST3/CLAP plugin is just another slot type
+  (the host/SDK is a gated follow-up; needs the SDK present to compile + a
+  licence to distribute).
 
 ---
 
@@ -229,9 +262,10 @@ end-to-end. User decisions: **full device channels** and **two banks of four**
 ---
 
 ## Test counts (last green)
-native (all C tests, 24 fns: incl. mid-loop record, transport reset single- &
-multi-track, loop multiples, loop-viz) · plugin 26 · controller 14 ·
-looper_repository 14 · settings 13 · app 96 (auto-start/first-run, big-picture
-settings + access, banks + A/B, performance keyboard, review-fix coverage).
-`flutter analyze` clean; macOS app builds end-to-end. `LE_MAX_TRACKS = 8`,
-`LE_MAX_CHANNELS = 2` (raised to 32 in the routing plan).
+native (all C tests, 59 fns: incl. mid-loop record, transport reset single- &
+multi-track, loop multiples, loop-viz, per-track effects DSP) · plugin 38 ·
+controller 14 · looper_repository 37 · settings 39 · app 206 (auto-start/
+first-run, big-picture settings + access, banks + A/B, performance keyboard,
+functional-settings + per-track effects UI, routing-dialog goldens). `flutter
+analyze` clean; macOS app builds end-to-end. `LE_MAX_TRACKS = 8`,
+`LE_MAX_CHANNELS = 32`.

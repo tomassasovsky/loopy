@@ -71,6 +71,43 @@ void main() {
       expect(engine.lastOutputMask, 0x4);
     });
 
+    test('restores saved per-track effects on launch', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          monitorInput: true,
+        ),
+      );
+      // Track 0 slot 1 = delay with a feedback override; track 0 slot 0 has no
+      // saved type (exercises the bypass skip).
+      await settings.saveTrackFxType(0, 1, TrackEffectType.delay.code);
+      await settings.saveTrackFxParam(0, 1, 1, 0.42);
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started, isTrue);
+      expect(engine.trackFx[(0, 1)], TrackEffectType.delay);
+      expect(engine.trackFx.containsKey((0, 0)), isFalse);
+      expect(engine.trackFxParam[(0, 1, 1)], 0.42);
+    });
+
     test('starts the engine with the saved config', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(
