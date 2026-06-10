@@ -208,7 +208,7 @@ class AudioSettingsSection extends StatelessWidget {
           SetupOption(
             value: MonitorMode.followSelected,
             label: 'Follow track',
-            sub: 'Selected track',
+            sub: 'Hear its input FX',
             optionKey: Key('audioSettings_monitorMode_follow'),
           ),
         ],

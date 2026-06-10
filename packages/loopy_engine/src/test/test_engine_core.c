@@ -1803,6 +1803,32 @@ static void test_fx_rejects_invalid_args(void) {
   le_engine_destroy(e);
 }
 
+static void test_monitor_follows_track_fx(void) {
+  printf("test_monitor_follows_track_fx\n");
+  le_engine* e = make_configured_engine();
+  le_engine_set_monitor_for_test(e, 1);
+  float out[64];
+
+  /* Not following: the monitor passes the raw input straight through. */
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  /* A before-track (pre) drive on track 0, monitored by following that track,
+   * is heard live on the input even though nothing is recording yet. */
+  fx_drive_unity(e, 0, LE_FX_PRE);
+  le_engine_set_track_fx_count(e, 0, 1);
+  CHECK(le_engine_set_monitor_fx_track(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
+
+  /* Unfollowing returns to the raw passthrough. */
+  CHECK(le_engine_set_monitor_fx_track(e, -1) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_target_multiple_forces_length();
@@ -1867,6 +1893,7 @@ int main(void) {
   test_fx_post_is_nondestructive();
   test_fx_muted_track_is_silent();
   test_fx_rejects_invalid_args();
+  test_monitor_follows_track_fx();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

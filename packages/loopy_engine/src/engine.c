@@ -156,6 +156,10 @@ struct le_engine {
    * a track) and added to every output the monitor output mask selects. */
   _Atomic uint32_t a_monitor_input_mask;
   _Atomic uint32_t a_monitor_output_mask;
+  /* Track the monitor follows (-1 = none): when set, the monitor plays that
+   * track's pre-stage-processed input instead of the raw masked inputs, so
+   * before-track effects are heard live. */
+  _Atomic int32_t a_monitor_fx_track;
 
   /* Looper transport (master). */
   _Atomic int32_t a_master_len;
@@ -721,6 +725,12 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       store_i32(&e->tracks[ch].a_fx_count, count);
       break;
     }
+    case LE_CMD_SET_MONITOR_FX_TRACK: {
+      const int32_t track = cmd->arg_i;
+      store_i32(&e->a_monitor_fx_track,
+                (track >= 0 && track < e->track_count) ? track : -1);
+      break;
+    }
     default:
       break;
   }
@@ -901,6 +911,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         atomic_load_explicit(&e->a_monitor_input_mask, memory_order_relaxed);
     const uint32_t mon_out_mask =
         atomic_load_explicit(&e->a_monitor_output_mask, memory_order_relaxed);
+    /* When >= 0, the monitor follows this track: instead of re-deriving from raw
+     * inputs it plays that track's pre-stage-processed input, so you hear the
+     * before-track effects on your live input (exactly what gets recorded). */
+    const int32_t mon_fx_track = load_i32(&e->a_monitor_fx_track);
     const int32_t pos = e->clock.position;
 
     /* Per-track read base for this frame: a track of multiple k plays its k-th
@@ -921,6 +935,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
     float frame_out_peak = 0.0f; /* max |output| this frame, for the viz tap */
     float frame_trk_peak[LE_MAX_TRACKS] = {0}; /* per-track, this frame */
+    /* Each track's pre-stage-processed input this frame (what it records and,
+     * when the monitor follows it, what the monitor plays). */
+    float trk_input[LE_MAX_TRACKS] = {0};
 
     /* The looper mix is additive: clear this output frame, then sum each
      * track's mono contribution into the output channels its mask selects. */
@@ -960,6 +977,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                                   fx_count[t], fx_type[t], fx_stage[t],
                                   fx_params[t]);
       }
+      trk_input[t] = insample; /* for the followed-track monitor below */
 
       float loopsample = 0.0f;
       if (st[t] == LE_TRACK_RECORDING) {
@@ -1020,7 +1038,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * familiar passthrough; custom masks pick which inputs you hear and where. */
     if (monitor_on) {
       float msample = 0.0f;
-      if (in) {
+      if (mon_fx_track >= 0 && mon_fx_track < tc) {
+        /* Follow a track: play its pre-processed input (already averaged over
+         * the track's input mask and run through its before-track effects), so
+         * the monitor matches what the track records. */
+        msample = trk_input[mon_fx_track];
+      } else if (in) {
         float sum = 0.0f;
         int cnt = 0;
         for (int c = 0; c < ch_in; ++c) {
@@ -1264,6 +1287,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                         memory_order_relaxed);
   atomic_store_explicit(&engine->a_monitor_output_mask, 0x3u,
                         memory_order_relaxed);
+  store_i32(&engine->a_monitor_fx_track, -1); /* not following a track */
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
@@ -2113,6 +2137,10 @@ int32_t le_engine_set_monitor_input_mask(le_engine* engine, int32_t mask) {
 
 int32_t le_engine_set_monitor_output_mask(le_engine* engine, int32_t mask) {
   return le_push(engine, LE_CMD_SET_MONITOR_OUTPUT_MASK, mask, 0.0f);
+}
+
+int32_t le_engine_set_monitor_fx_track(le_engine* engine, int32_t track) {
+  return le_push(engine, LE_CMD_SET_MONITOR_FX_TRACK, track, 0.0f);
 }
 
 int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {

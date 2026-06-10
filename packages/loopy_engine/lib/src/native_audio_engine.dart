@@ -328,6 +328,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMonitorFxTrack({required int track}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_fx_track(_engine, track),
+    );
+  }
+
+  @override
   EngineResult setTrackFx({
     required int channel,
     required int index,

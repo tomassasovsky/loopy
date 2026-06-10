@@ -176,6 +176,12 @@ abstract interface class AudioEngine {
   /// the output range are ignored.
   EngineResult setMonitorOutputMask({required int mask});
 
+  /// Makes the monitor follow track [track]: the monitored signal becomes that
+  /// track's pre-stage-processed input (its masked input run through its
+  /// before-track effects), so those effects are heard live. Pass `-1` to stop
+  /// following and monitor the raw masked inputs (the default).
+  EngineResult setMonitorFxTrack({required int track});
+
   /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on track [channel] to
   /// [type] at [stage]. Changing the type resets that entry's DSP state and
   /// seeds the type's default parameters. This sets the entry's value only; use

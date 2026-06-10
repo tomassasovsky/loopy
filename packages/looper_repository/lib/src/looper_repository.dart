@@ -411,13 +411,17 @@ class LooperRepository {
       if (follow >= 0 && follow < tracks.length) {
         _engine
           ..setMonitorInputMask(mask: tracks[follow].inputMask)
-          ..setMonitorOutputMask(mask: tracks[follow].outputMask);
+          ..setMonitorOutputMask(mask: tracks[follow].outputMask)
+          // Route the monitor through the followed track's before-track effects
+          // so they are heard live on the input.
+          ..setMonitorFxTrack(track: follow);
       }
       return;
     }
     _engine
       ..setMonitorInputMask(mask: _monitorInputMask)
-      ..setMonitorOutputMask(mask: _monitorOutputMask);
+      ..setMonitorOutputMask(mask: _monitorOutputMask)
+      ..setMonitorFxTrack(track: -1);
   }
 
   /// Reads the loop waveform (peaks indexed by loop position, `0..1`) of the

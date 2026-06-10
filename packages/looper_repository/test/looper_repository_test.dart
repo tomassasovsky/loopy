@@ -487,6 +487,8 @@ void main() {
         ..setMonitorFollowTrack(0);
       expect(engine.lastMonitorInputMask, 0x2);
       expect(engine.lastMonitorOutputMask, 0x2);
+      // The monitor follows the track through its before-track effects.
+      expect(engine.lastMonitorFxTrack, 0);
 
       // Editing the followed track's routing updates the monitor too.
       repo.setInputMask(channel: 0, mask: 0x1);
@@ -508,6 +510,8 @@ void main() {
         ..setMonitorFollowTrack(null);
       expect(engine.lastMonitorInputMask, 0x2);
       expect(engine.lastMonitorOutputMask, 0x1);
+      // Custom mode no longer follows a track for effects.
+      expect(engine.lastMonitorFxTrack, -1);
     });
 
     test('engineVersion is forwarded', () {

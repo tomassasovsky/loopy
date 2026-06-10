@@ -780,6 +780,30 @@ class LoopyEngineBindings {
       _le_engine_set_monitor_output_maskPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Makes the monitor follow track [track] (0..track_count-1): the monitored
+  /// signal becomes that track's pre-stage-processed input (its masked input run
+  /// through its before-track effects), so those effects are heard live. Pass -1
+  /// to stop following and monitor the raw masked inputs (the default).
+  int le_engine_set_monitor_fx_track(
+    ffi.Pointer<le_engine> engine,
+    int track,
+  ) {
+    return _le_engine_set_monitor_fx_track(
+      engine,
+      track,
+    );
+  }
+
+  late final _le_engine_set_monitor_fx_trackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_monitor_fx_track');
+  late final _le_engine_set_monitor_fx_track =
+      _le_engine_set_monitor_fx_trackPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on track [channel] to [type] at
   /// [stage] (le_fx_stage). Changing the type resets that entry's DSP state;
   /// LE_FX_DELAY lazily allocates the entry's delay line (on this calling thread)
@@ -1053,7 +1077,11 @@ enum le_command_code {
 
   /// set a track's active chain length.
   /// arg_i = (channel << 8) | count.
-  LE_CMD_SET_FX_COUNT(21);
+  LE_CMD_SET_FX_COUNT(21),
+
+  /// monitor follows a track's pre-FX input.
+  /// arg_i = track index, or -1 for none.
+  LE_CMD_SET_MONITOR_FX_TRACK(22);
 
   final int value;
   const le_command_code(this.value);
@@ -1077,6 +1105,7 @@ enum le_command_code {
     19 => LE_CMD_SET_MONITOR_OUTPUT_MASK,
     20 => LE_CMD_SET_FX,
     21 => LE_CMD_SET_FX_COUNT,
+    22 => LE_CMD_SET_MONITOR_FX_TRACK,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }

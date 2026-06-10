@@ -101,6 +101,8 @@ typedef enum le_command_code {
                        * arg_f = le_fx_type. */
   LE_CMD_SET_FX_COUNT = 21, /* set a track's active chain length.
                              * arg_i = (channel << 8) | count. */
+  LE_CMD_SET_MONITOR_FX_TRACK = 22, /* monitor follows a track's pre-FX input.
+                                     * arg_i = track index, or -1 for none. */
 } le_command_code;
 
 /* Per-track effects: each track carries an ordered chain of up to LE_FX_MAX
@@ -383,6 +385,13 @@ LE_EXPORT int32_t le_engine_set_monitor_input_mask(le_engine* engine,
  * Bits beyond the output range are ignored. */
 LE_EXPORT int32_t le_engine_set_monitor_output_mask(le_engine* engine,
                                                     int32_t mask);
+
+/* Makes the monitor follow track [track] (0..track_count-1): the monitored
+ * signal becomes that track's pre-stage-processed input (its masked input run
+ * through its before-track effects), so those effects are heard live. Pass -1
+ * to stop following and monitor the raw masked inputs (the default). */
+LE_EXPORT int32_t le_engine_set_monitor_fx_track(le_engine* engine,
+                                                 int32_t track);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on track [channel] to [type] at
  * [stage] (le_fx_stage). Changing the type resets that entry's DSP state;
