@@ -395,6 +395,32 @@ void main() {
       expect(engine.trackMultiple[1], 3);
     });
 
+    test('per-track effects are deferred then re-applied on start', () {
+      final repo = buildRepo()
+        ..setTrackFx(channel: 1, slot: 0, type: TrackEffectType.delay)
+        ..setTrackFxParam(channel: 1, slot: 0, index: 1, value: 0.4);
+      expect(engine.trackFx, isEmpty); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.trackFx[(1, 0)], TrackEffectType.delay);
+      expect(engine.trackFxParam[(1, 0, 1)], 0.4);
+    });
+
+    test('selecting none drops the slot type and its params on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackFx(channel: 0, slot: 0, type: TrackEffectType.drive)
+        ..setTrackFxParam(channel: 0, slot: 0, index: 0, value: 0.7);
+      expect(engine.trackFx[(0, 0)], TrackEffectType.drive);
+
+      repo.setTrackFx(channel: 0, slot: 0, type: TrackEffectType.none);
+      engine.trackFx.clear();
+      engine.trackFxParam.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.trackFx.containsKey((0, 0)), isFalse);
+      expect(engine.trackFxParam.containsKey((0, 0, 0)), isFalse);
+    });
+
     test('clearing a track multiple (0) drops the override', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())

@@ -69,6 +69,30 @@ Future<bool> tryAutoStartEngine({
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
     }
+    // Per-track effects: set each slot's type first (which seeds the engine's
+    // default params), then restore any saved parameter overrides.
+    for (var slot = 0; slot < kTrackEffectSlots; slot++) {
+      final typeCode = await settings.loadTrackFxType(track.channel, slot);
+      if (typeCode == null) continue;
+      final type = TrackEffectType.fromCode(typeCode);
+      if (type == TrackEffectType.none) continue;
+      repository.setTrackFx(channel: track.channel, slot: slot, type: type);
+      for (var index = 0; index < kTrackEffectParams; index++) {
+        final value = await settings.loadTrackFxParam(
+          track.channel,
+          slot,
+          index,
+        );
+        if (value != null) {
+          repository.setTrackFxParam(
+            channel: track.channel,
+            slot: slot,
+            index: index,
+            value: value,
+          );
+        }
+      }
+    }
   }
   return true;
 }

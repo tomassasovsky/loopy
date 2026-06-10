@@ -10,6 +10,7 @@ import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/track_effect.dart';
 
 /// Opens the bundled native engine library for the current platform.
 ///
@@ -323,6 +324,37 @@ class NativeAudioEngine implements AudioEngine {
     _checkAlive();
     return EngineResult.fromCode(
       _bindings.le_engine_set_monitor_output_mask(_engine, mask),
+    );
+  }
+
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int slot,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx(_engine, channel, slot, type.code),
+    );
+  }
+
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int slot,
+    required int index,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_fx_param(
+        _engine,
+        channel,
+        slot,
+        index,
+        value,
+      ),
     );
   }
 

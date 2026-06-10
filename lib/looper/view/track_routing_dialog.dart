@@ -68,6 +68,13 @@ Future<void> showTrackRoutingDialog({
                     ),
                     const SizedBox(height: 8),
                     _TrackMultipleControl(channel: channel, settings: settings),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Effects',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    _TrackEffectsControl(channel: channel, settings: settings),
                   ],
                 );
               },
@@ -216,6 +223,153 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
             selected: _multiple == k,
             onSelected: (_) => _set(k),
           ),
+      ],
+    );
+  }
+}
+
+/// The per-track effects chain: [kTrackEffectSlots] insert slots, each a type
+/// selector plus a slider per parameter the chosen type exposes. Loads the
+/// saved chain from [settings] and dispatches changes through the [LooperBloc].
+class _TrackEffectsControl extends StatefulWidget {
+  const _TrackEffectsControl({required this.channel, required this.settings});
+
+  final int channel;
+  final SettingsRepository settings;
+
+  @override
+  State<_TrackEffectsControl> createState() => _TrackEffectsControlState();
+}
+
+class _TrackEffectsControlState extends State<_TrackEffectsControl> {
+  /// Per-slot effect type and its [kTrackEffectParams] parameter values.
+  final List<TrackEffectType> _types = List.filled(
+    kTrackEffectSlots,
+    TrackEffectType.none,
+  );
+  final List<List<double>> _params = List.generate(
+    kTrackEffectSlots,
+    (_) => List<double>.filled(kTrackEffectParams, 0),
+    growable: false,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final types = List<TrackEffectType>.filled(
+      kTrackEffectSlots,
+      TrackEffectType.none,
+    );
+    final params = List.generate(
+      kTrackEffectSlots,
+      (_) => List<double>.filled(kTrackEffectParams, 0),
+      growable: false,
+    );
+    for (var slot = 0; slot < kTrackEffectSlots; slot++) {
+      final code = await widget.settings.loadTrackFxType(widget.channel, slot);
+      final type = code == null
+          ? TrackEffectType.none
+          : TrackEffectType.fromCode(code);
+      types[slot] = type;
+      for (var i = 0; i < kTrackEffectParams; i++) {
+        final saved = await widget.settings.loadTrackFxParam(
+          widget.channel,
+          slot,
+          i,
+        );
+        params[slot][i] = saved ?? type.defaultParams[i];
+      }
+    }
+    if (mounted) {
+      setState(() {
+        for (var slot = 0; slot < kTrackEffectSlots; slot++) {
+          _types[slot] = types[slot];
+          _params[slot] = params[slot];
+        }
+      });
+    }
+  }
+
+  void _setType(int slot, TrackEffectType type) {
+    setState(() {
+      _types[slot] = type;
+      // Mirror the engine's seeded defaults for the new type so the sliders
+      // start where the engine does (parameters are not dispatched here; the
+      // engine seeds them when the type changes).
+      _params[slot] = List<double>.from(type.defaultParams);
+    });
+    context.read<LooperBloc>().add(
+      LooperTrackFxChanged(widget.channel, slot, type),
+    );
+  }
+
+  void _setParam(int slot, int index, double value) {
+    setState(() => _params[slot][index] = value);
+    context.read<LooperBloc>().add(
+      LooperTrackFxParamChanged(widget.channel, slot, index, value),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var slot = 0; slot < kTrackEffectSlots; slot++) ...[
+          if (slot > 0) const SizedBox(height: 12),
+          Row(
+            children: [
+              SizedBox(
+                width: 64,
+                child: Text('Slot ${slot + 1}', style: textTheme.bodyMedium),
+              ),
+              Expanded(
+                child: DropdownButton<TrackEffectType>(
+                  key: Key('trackRouting_fx${slot}_type'),
+                  isExpanded: true,
+                  value: _types[slot],
+                  onChanged: (type) {
+                    if (type != null) _setType(slot, type);
+                  },
+                  items: [
+                    for (final type in TrackEffectType.values)
+                      DropdownMenuItem(
+                        value: type,
+                        child: Text(type.label),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          for (var i = 0; i < _types[slot].paramLabels.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(left: 8, top: 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 80,
+                    child: Text(
+                      _types[slot].paramLabels[i],
+                      style: textTheme.bodySmall,
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      key: Key('trackRouting_fx${slot}_param$i'),
+                      value: _params[slot][i].clamp(0.0, 1.0),
+                      onChanged: (v) => _setParam(slot, i, v),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ],
     );
   }

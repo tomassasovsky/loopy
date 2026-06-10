@@ -149,6 +149,26 @@ void main() {
     });
   });
 
+  group('track effects', () {
+    test('returns null when nothing is stored', () async {
+      expect(await repository.loadTrackFxType(0, 0), isNull);
+      expect(await repository.loadTrackFxParam(0, 0, 0), isNull);
+    });
+
+    test('round-trips an effect type per (channel, slot)', () async {
+      await repository.saveTrackFxType(1, 2, 3);
+      expect(await repository.loadTrackFxType(1, 2), 3);
+      expect(await repository.loadTrackFxType(1, 0), isNull);
+      expect(await repository.loadTrackFxType(0, 2), isNull);
+    });
+
+    test('round-trips a param value per (channel, slot, index)', () async {
+      await repository.saveTrackFxParam(1, 0, 2, 0.75);
+      expect(await repository.loadTrackFxParam(1, 0, 2), 0.75);
+      expect(await repository.loadTrackFxParam(1, 0, 0), isNull);
+    });
+  });
+
   group('audio config', () {
     test('returns null on a first run (nothing saved)', () async {
       expect(await repository.loadAudioConfig(), isNull);

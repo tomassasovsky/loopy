@@ -12,3 +12,5 @@ export 'src/engine_snapshot.dart'
     show EngineSnapshot, LatencyState, TrackSnapshot, TrackState;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/native_audio_engine.dart' show NativeAudioEngine;
+export 'src/track_effect.dart'
+    show TrackEffectType, kTrackEffectParams, kTrackEffectSlots;

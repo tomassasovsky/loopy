@@ -72,6 +72,12 @@ class LooperRepository {
   bool _recDub = false;
   bool _autoRecord = false;
 
+  /// Per-track effect chains, re-applied on every successful (re)start. Keyed
+  /// by (channel, slot) for the slot's type and (channel, slot, paramIndex)
+  /// for its normalized parameter values. A bypassed (none) slot is absent.
+  final Map<(int, int), TrackEffectType> _trackFxType = {};
+  final Map<(int, int, int), double> _trackFxParam = {};
+
   /// Monitor routing, re-applied on every successful (re)start. The custom
   /// masks default to input 0 -> outputs 0 + 1 (the engine default); when
   /// [_monitorFollowChannel] is non-null the monitor mirrors that track.
@@ -301,6 +307,20 @@ class LooperRepository {
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
       );
+      // Types first (each seeds the engine's default params), then the
+      // remembered parameter values override those defaults.
+      _trackFxType.forEach(
+        (key, type) =>
+            _engine.setTrackFx(channel: key.$1, slot: key.$2, type: type),
+      );
+      _trackFxParam.forEach(
+        (key, value) => _engine.setTrackFxParam(
+          channel: key.$1,
+          slot: key.$2,
+          index: key.$3,
+          value: value,
+        ),
+      );
       _applyMonitor();
     }
     return result;
@@ -454,6 +474,44 @@ class LooperRepository {
     return _engine.setTrackMultiple(
       channel: channel,
       multiple: multiple <= 0 ? 0 : multiple,
+    );
+  }
+
+  /// Sets effect [slot] on track [channel] to [type]. Remembered and re-applied
+  /// on every (re)start; selecting [TrackEffectType.none] also drops the slot's
+  /// remembered parameters.
+  EngineResult setTrackFx({
+    required int channel,
+    required int slot,
+    required TrackEffectType type,
+  }) {
+    if (type == TrackEffectType.none) {
+      _trackFxType.remove((channel, slot));
+      _trackFxParam.removeWhere(
+        (key, _) => key.$1 == channel && key.$2 == slot,
+      );
+    } else {
+      _trackFxType[(channel, slot)] = type;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackFx(channel: channel, slot: slot, type: type);
+  }
+
+  /// Sets parameter [index] of effect [slot] on track [channel] to [value]
+  /// (`0..1`). Remembered and re-applied on every (re)start.
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int slot,
+    required int index,
+    required double value,
+  }) {
+    _trackFxParam[(channel, slot, index)] = value;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackFxParam(
+      channel: channel,
+      slot: slot,
+      index: index,
+      value: value,
     );
   }
 
