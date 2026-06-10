@@ -94,6 +94,8 @@ typedef struct le_track {
                        * phase (segment*base + position), seeded at press so
                        * writes stay phase-locked to the master loop. */
   uint64_t start_iter; /* loop_iteration when this track's recording began */
+  int32_t record_start; /* record_pos when this capture began, so a fixed-length
+                         * track can auto-finalize after exactly K base loops. */
 } le_track;
 
 struct le_engine {
@@ -279,6 +281,13 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
  * loops: rounds its length UP to the nearest whole base loop (the locked #4
  * behaviour), publishes the multiple, and moves it to `end_state`. A track that
  * captured nothing (never reached the loop top) returns to EMPTY. */
+/* Track [ch]'s effective forced loop multiple: its per-track override, or the
+ * global default when it inherits (target 0). 0 means auto (round up on stop). */
+static int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
+  const int32_t ov = e->target_multiple[ch];
+  return ov > 0 ? ov : e->default_multiple;
+}
+
 static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
   const int32_t base = e->clock.length > 0 ? e->clock.length : 1;
   if (t->record_pos <= 0) { /* nothing captured */
@@ -288,11 +297,9 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
     t->record_pos = 0;
     return;
   }
-  /* The effective forced multiple fixes the length to exactly K base loops; a
-   * track inherits the global default (target 0) unless it overrides. 0 (auto)
-   * rounds up to whole base loops based on how much was recorded. */
-  const int32_t ov = e->target_multiple[(int)(t - e->tracks)];
-  const int32_t forced = ov > 0 ? ov : e->default_multiple;
+  /* A forced multiple fixes the length to exactly K base loops; 0 (auto) rounds
+   * up to whole base loops based on how much was recorded. */
+  const int32_t forced = le_effective_multiple(e, (int32_t)(t - e->tracks));
   int32_t k = forced > 0 ? forced : (t->record_pos + base - 1) / base;
   const int32_t maxk = e->max_loop_frames / base;
   if (k < 1) k = 1;
@@ -341,6 +348,7 @@ static void handle_record(le_engine* e, int32_t ch) {
        * distinguished by clock.length. */
       if (e->clock.length == 0) {
         t->record_pos = 0;
+        t->record_start = 0;
         le_loop_clock_reset(&e->clock);
         store_i32(&t->a_state, LE_TRACK_RECORDING);
       } else {
@@ -351,8 +359,9 @@ static void handle_record(le_engine* e, int32_t ch) {
          * writes are therefore phase-locked to the master and the slice before
          * the press in this first segment stays silent (the live buffer was
          * zeroed on the control thread). Spans one or more base loops, rounded
-         * up on stop. */
+         * up on stop — or exactly K with a fixed multiple (auto-finalized). */
         t->record_pos = e->clock.position;
+        t->record_start = t->record_pos;
         t->start_iter = e->loop_iteration;
         store_i32(&t->a_state, LE_TRACK_RECORDING);
       }
@@ -863,9 +872,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
 
-    /* Advance the record heads, then the master transport. New tracks grow
-     * freely (no auto-finalize at the loop boundary — they are rounded up to
-     * whole base loops only when stopped); they cap at the per-track buffer. */
+    /* Advance the record heads, then the master transport. An auto-multiple
+     * track grows freely and is rounded up only when stopped; a fixed-multiple
+     * track auto-finalizes after exactly K base loops, continuing into overdub
+     * or playback per rec/dub. All cap at the per-track buffer. */
+    const int32_t fin_end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
     for (int t = 0; t < tc; ++t) {
       if (st[t] != LE_TRACK_RECORDING) continue;
       le_track* tr = &e->tracks[t];
@@ -876,7 +887,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         }
       } else {
         tr->record_pos++;
-        if (tr->record_pos >= e->max_loop_frames) {
+        const int32_t eff = le_effective_multiple(e, t);
+        const int32_t base = e->clock.length;
+        if (eff >= 1 && tr->record_pos - tr->record_start >= eff * base) {
+          finalize_new_track(e, tr, fin_end);
+        } else if (tr->record_pos >= e->max_loop_frames) {
           finalize_new_track(e, tr, LE_TRACK_PLAYING);
         }
       }

@@ -1465,6 +1465,40 @@ static void test_default_multiple_applies_to_inheriting_tracks(void) {
   le_engine_destroy(e);
 }
 
+/* A fixed-multiple track auto-finalizes after exactly K base loops without a
+ * manual press: into playback by default, or overdub under rec/dub. */
+static void test_fixed_multiple_auto_finalizes(void) {
+  printf("test_fixed_multiple_auto_finalizes\n");
+  float out[64];
+  le_snapshot s;
+
+  /* x1 -> stops and plays after one base loop. */
+  le_engine* e = make_configured_engine();
+  establish_master(e, out); /* base == LOOP_N, master at the loop top */
+  le_engine_set_track_multiple(e, 1, 1);
+  le_engine_record(e, 1);
+  drain(e); /* RECORDING from position 0 */
+  process_const(e, 2.0f, LOOP_N, out); /* exactly one base loop */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* auto-finalized, no press */
+  CHECK(s.tracks[1].multiple == 1);
+  CHECK(s.tracks[1].length_frames == LOOP_N);
+  le_engine_destroy(e);
+
+  /* x2 + rec/dub -> continues into overdub after two base loops. */
+  le_engine* e2 = make_configured_engine();
+  establish_master(e2, out);
+  le_engine_set_rec_dub(e2, 1);
+  le_engine_set_track_multiple(e2, 1, 2);
+  le_engine_record(e2, 1);
+  drain(e2);
+  process_const(e2, 2.0f, 2 * LOOP_N, out); /* two base loops */
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[1].multiple == 2);
+  le_engine_destroy(e2);
+}
+
 /* In rec/dub mode a record press finalizes into overdub; a stop press still
  * ends in stopped. */
 static void test_rec_dub_continues_into_overdub(void) {
@@ -1534,6 +1568,7 @@ int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_target_multiple_forces_length();
   test_default_multiple_applies_to_inheriting_tracks();
+  test_fixed_multiple_auto_finalizes();
   test_rec_dub_continues_into_overdub();
   test_auto_record_starts_on_signal();
   test_quantize_track_override_forces_on();
