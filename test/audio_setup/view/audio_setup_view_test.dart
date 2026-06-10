@@ -153,7 +153,8 @@ void main() {
 
     await tester.tap(picker);
     await tester.pumpAndSettle();
-    expect(find.text('System default'), findsWidgets);
+    // "System default" names the resolved default device.
+    expect(find.text('System default (Scarlett 2i2)'), findsWidgets);
     expect(find.text('Scarlett 2i2'), findsWidgets);
   });
 

@@ -117,6 +117,19 @@ void main() {
       ).called(1);
     });
 
+    testWidgets('the Default chips name the resolved global value', (
+      tester,
+    ) async {
+      await settings.saveQuantize(value: true);
+      await settings.saveDefaultMultiple(2);
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Default (On)'), findsOneWidget);
+      expect(find.text('Default (×2)'), findsOneWidget);
+    });
+
     testWidgets('choosing a loop multiple dispatches the change', (
       tester,
     ) async {
