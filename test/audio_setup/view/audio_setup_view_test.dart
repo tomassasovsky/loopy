@@ -34,34 +34,69 @@ void main() {
     );
   }
 
-  testWidgets('renders device options; measure disabled while stopped', (
+  testWidgets('starts on the engine step with selectable sample rates', (
     tester,
   ) async {
     seed(const AudioSetupState());
     await pumpView(tester);
 
     expect(
-      find.byKey(const Key('audioSetup_sampleRate_dropdown')),
+      find.byKey(const Key('audioSetup_sampleRate_48000')),
       findsOneWidget,
     );
-    expect(find.text('Start engine'), findsOneWidget);
-    final measureButton = tester.widget<OutlinedButton>(
+    expect(find.byKey(const Key('audioSetup_next_button')), findsOneWidget);
+    // Start and measure are not reachable yet (later step / running only).
+    expect(find.byKey(const Key('audioSetup_startStop_button')), findsNothing);
+    expect(
       find.byKey(const Key('audioSetup_measureLatency_button')),
+      findsNothing,
     );
-    expect(measureButton.enabled, isFalse);
   });
 
-  testWidgets('tapping start calls cubit.start', (tester) async {
+  testWidgets('selecting a sample rate forwards to the cubit', (tester) async {
     seed(const AudioSetupState());
     await pumpView(tester);
 
+    await tester.tap(find.byKey(const Key('audioSetup_sampleRate_96000')));
+    verify(() => cubit.setSampleRate(96000)).called(1);
+  });
+
+  testWidgets('the input step forwards the monitor toggle', (tester) async {
+    seed(const AudioSetupState());
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('audioSetup_monitor_switch')));
+    verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
+
+    // Merge-to-mono was removed: its toggle must no longer be rendered.
+    expect(
+      find.byKey(const Key('audioSetup_mergeToMono_switch')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('stepping to the end and starting calls cubit.start', (
+    tester,
+  ) async {
+    seed(const AudioSetupState());
+    await pumpView(tester);
+
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start engine'), findsOneWidget);
     await tester.tap(find.byKey(const Key('audioSetup_startStop_button')));
     await tester.pump();
 
     verify(cubit.start).called(1);
   });
 
-  testWidgets('running state shows stop and enables latency measurement', (
+  testWidgets('running state shows the live panel with stop and measure', (
     tester,
   ) async {
     seed(
@@ -72,15 +107,19 @@ void main() {
     );
     await pumpView(tester);
 
-    expect(find.text('Stop engine'), findsOneWidget);
     expect(find.text('Scarlett'), findsOneWidget);
-    final measureButton = tester.widget<OutlinedButton>(
+    expect(find.text('Stop engine'), findsOneWidget);
+
+    await tester.tap(
       find.byKey(const Key('audioSetup_measureLatency_button')),
     );
-    expect(measureButton.enabled, isTrue);
+    verify(cubit.measureLatency).called(1);
+
+    await tester.tap(find.byKey(const Key('audioSetup_startStop_button')));
+    verify(cubit.stop).called(1);
   });
 
-  testWidgets('error state shows the error text', (tester) async {
+  testWidgets('error state shows the error banner', (tester) async {
     seed(
       const AudioSetupState(
         status: AudioSetupStatus.error,
@@ -90,5 +129,91 @@ void main() {
     await pumpView(tester);
 
     expect(find.byKey(const Key('audioSetup_error_text')), findsOneWidget);
+  });
+
+  testWidgets('the engine step lists output devices and System default', (
+    tester,
+  ) async {
+    seed(
+      const AudioSetupState(
+        devices: [
+          AudioDevice(
+            id: 'out-1',
+            name: 'Scarlett 2i2',
+            isDefault: true,
+            isInput: false,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    final picker = find.byKey(const Key('audioSetup_playbackDevice_picker'));
+    expect(picker, findsOneWidget);
+
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    // "System default" names the resolved default device.
+    expect(find.text('System default (Scarlett 2i2)'), findsWidgets);
+    expect(find.text('Scarlett 2i2'), findsWidgets);
+  });
+
+  testWidgets('selecting an output device forwards to the cubit', (
+    tester,
+  ) async {
+    seed(
+      const AudioSetupState(
+        devices: [
+          AudioDevice(
+            id: 'out-1',
+            name: 'Scarlett 2i2',
+            isDefault: true,
+            isInput: false,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    await tester.tap(
+      find.byKey(const Key('audioSetup_playbackDevice_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scarlett 2i2').last);
+    await tester.pumpAndSettle();
+
+    verify(() => cubit.setPlaybackDevice('out-1')).called(1);
+  });
+
+  testWidgets('the input step lists capture devices and forwards selection', (
+    tester,
+  ) async {
+    seed(
+      const AudioSetupState(
+        devices: [
+          AudioDevice(
+            id: 'in-1',
+            name: 'Built-in Mic',
+            isDefault: true,
+            isInput: true,
+          ),
+        ],
+      ),
+    );
+    await pumpView(tester);
+
+    // Advance the wizard to the Input step.
+    await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+    await tester.pumpAndSettle();
+
+    final picker = find.byKey(const Key('audioSetup_captureDevice_picker'));
+    expect(picker, findsOneWidget);
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    expect(find.text('Built-in Mic'), findsWidgets);
+    await tester.tap(find.text('Built-in Mic').last);
+    await tester.pumpAndSettle();
+
+    verify(() => cubit.setCaptureDevice('in-1')).called(1);
   });
 }

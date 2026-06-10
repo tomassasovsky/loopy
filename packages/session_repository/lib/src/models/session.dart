@@ -1,4 +1,3 @@
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
 
 /// One track's persisted settings within a [Session]. The audio itself lives in
@@ -79,11 +78,6 @@ class Session {
     required this.sampleRate,
     required this.channels,
     required this.baseLengthFrames,
-    required this.tempoBpm,
-    required this.syncLoopToTempo,
-    required this.quantizeMode,
-    required this.metronomeOn,
-    required this.countInEnabled,
     required this.tracks,
   });
 
@@ -100,11 +94,6 @@ class Session {
       sampleRate: (json['sampleRate'] as num).toInt(),
       channels: (json['channels'] as num).toInt(),
       baseLengthFrames: (json['baseLengthFrames'] as num).toInt(),
-      tempoBpm: (json['tempoBpm'] as num).toDouble(),
-      syncLoopToTempo: json['syncLoopToTempo'] as bool,
-      quantizeMode: QuantizeMode.values.byName(json['quantizeMode'] as String),
-      metronomeOn: json['metronomeOn'] as bool,
-      countInEnabled: json['countInEnabled'] as bool,
       tracks: [
         for (final t in json['tracks'] as List<dynamic>)
           SessionTrack.fromJson(t as Map<String, dynamic>),
@@ -127,21 +116,6 @@ class Session {
   /// The base (master) loop length in frames.
   final int baseLengthFrames;
 
-  /// Tempo in beats per minute.
-  final double tempoBpm;
-
-  /// Whether loop-to-tempo sync is enabled.
-  final bool syncLoopToTempo;
-
-  /// Quantize-start resolution.
-  final QuantizeMode quantizeMode;
-
-  /// Whether the metronome is enabled.
-  final bool metronomeOn;
-
-  /// Whether the one-bar count-in is enabled.
-  final bool countInEnabled;
-
   /// The session's tracks (those that hold audio).
   final List<SessionTrack> tracks;
 
@@ -151,11 +125,6 @@ class Session {
     'sampleRate': sampleRate,
     'channels': channels,
     'baseLengthFrames': baseLengthFrames,
-    'tempoBpm': tempoBpm,
-    'syncLoopToTempo': syncLoopToTempo,
-    'quantizeMode': quantizeMode.name,
-    'metronomeOn': metronomeOn,
-    'countInEnabled': countInEnabled,
     'tracks': [for (final t in tracks) t.toJson()],
   };
 
@@ -167,11 +136,6 @@ class Session {
           sampleRate == other.sampleRate &&
           channels == other.channels &&
           baseLengthFrames == other.baseLengthFrames &&
-          tempoBpm == other.tempoBpm &&
-          syncLoopToTempo == other.syncLoopToTempo &&
-          quantizeMode == other.quantizeMode &&
-          metronomeOn == other.metronomeOn &&
-          countInEnabled == other.countInEnabled &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -179,11 +143,6 @@ class Session {
     sampleRate,
     channels,
     baseLengthFrames,
-    tempoBpm,
-    syncLoopToTempo,
-    quantizeMode,
-    metronomeOn,
-    countInEnabled,
     Object.hashAll(tracks),
   );
 }

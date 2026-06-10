@@ -2,190 +2,95 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:loopy/audio_setup/view/audio_device_picker.dart';
+import 'package:loopy/setup/setup_surface.dart';
 
-/// Device configuration: sample rate, buffer size, input monitoring, plus
-/// engine start/stop and round-trip latency measurement.
-class AudioSetupView extends StatelessWidget {
+part 'audio_setup_tokens.dart';
+part 'audio_setup_controls.dart';
+part 'audio_setup_steps.dart';
+
+/// Stepped audio-device setup, laid out as a wide two-pane panel: a left rail
+/// with the brand, context and step list, and a right pane with the controls
+/// and footer actions. Collapses to a live status panel once the device is
+/// open.
+class AudioSetupView extends StatefulWidget {
   /// Creates an [AudioSetupView].
   const AudioSetupView({super.key});
+
+  @override
+  State<AudioSetupView> createState() => _AudioSetupViewState();
+}
+
+class _AudioSetupViewState extends State<AudioSetupView> {
+  static const _steps = ['Audio engine', 'Input', 'Ready to play'];
+  int _step = 0;
+  bool _forward = true;
+
+  void _go(int next) => setState(() {
+    _forward = next > _step;
+    _step = next;
+  });
 
   @override
   Widget build(BuildContext context) {
     final cubit = context.watch<AudioSetupCubit>();
     final state = cubit.state;
-    final isRunning = state.status == AudioSetupStatus.running;
+    final running = state.status == AudioSetupStatus.running;
+    final canPop = Navigator.of(context).canPop();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Audio setup')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _Dropdown(
-              key: const Key('audioSetup_sampleRate_dropdown'),
-              label: 'Sample rate',
-              value: state.sampleRate,
-              items: AudioSetupState.sampleRates,
-              suffix: 'Hz',
-              enabled: !isRunning,
-              onChanged: cubit.setSampleRate,
-            ),
-            const SizedBox(height: 16),
-            _Dropdown(
-              key: const Key('audioSetup_bufferSize_dropdown'),
-              label: 'Buffer size',
-              value: state.bufferFrames,
-              items: AudioSetupState.bufferSizes,
-              suffix: 'frames',
-              enabled: !isRunning,
-              onChanged: cubit.setBufferFrames,
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              key: const Key('audioSetup_monitor_switch'),
-              title: const Text('Monitor input'),
-              value: state.monitorInput,
-              onChanged: isRunning
-                  ? null
-                  : (v) => cubit.setMonitorInput(monitorInput: v),
-            ),
-            SwitchListTile(
-              key: const Key('audioSetup_mergeToMono_switch'),
-              title: const Text('Merge to mono'),
-              subtitle: const Text(
-                'Average inputs and feed both outputs (for a mono source)',
-              ),
-              value: state.mergeToMono,
-              onChanged: isRunning
-                  ? null
-                  : (v) => cubit.setMergeToMono(mergeToMono: v),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              key: const Key('audioSetup_startStop_button'),
-              onPressed: isRunning ? cubit.stop : cubit.start,
-              icon: Icon(isRunning ? Icons.stop : Icons.play_arrow),
-              label: Text(isRunning ? 'Stop engine' : 'Start engine'),
-            ),
-            const SizedBox(height: 16),
-            if (state.status == AudioSetupStatus.error)
-              Text(
-                state.errorMessage ?? 'Unknown error',
-                key: const Key('audioSetup_error_text'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            const Divider(height: 32),
-            _StatusPanel(status: state.engineStatus),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              key: const Key('audioSetup_measureLatency_button'),
-              onPressed: isRunning ? cubit.measureLatency : null,
-              icon: const Icon(Icons.timer_outlined),
-              label: const Text('Measure round-trip latency'),
-            ),
-            if (state.loopback.available)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Text(
-                  _loopbackNote(state.loopback),
-                  key: const Key('audioSetup_loopback_note'),
-                  style: Theme.of(context).textTheme.bodySmall,
+      backgroundColor: _C.bg,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 940, maxHeight: 540),
+          child: SizedBox.expand(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _C.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _C.line),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (running)
+                        _RunningPanel(state: state, cubit: cubit)
+                      else
+                        _Wizard(
+                          steps: _steps,
+                          step: _step,
+                          forward: _forward,
+                          onGo: _go,
+                          state: state,
+                          cubit: cubit,
+                        ),
+                      if (canPop)
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: IconButton(
+                            key: const Key('audioSetup_close_button'),
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(
+                              Icons.close,
+                              size: 18,
+                              color: _C.t2,
+                            ),
+                            onPressed: () => Navigator.of(context).maybePop(),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _loopbackNote(LoopbackInfo loopback) {
-    final where = loopback.deviceName.isNotEmpty
-        ? ' (${loopback.deviceName})'
-        : '';
-    if (loopback.isAutoRoutable) {
-      return 'Loopback detected$where — latency is auto-measured on start as a '
-          'digital-path estimate (excludes converter latency). Use a physical '
-          'loopback cable for the true analog figure.';
-    }
-    return 'A ${loopback.kind.name} loopback is available$where but cannot be '
-        'auto-routed; use a physical loopback cable to measure latency.';
-  }
-}
-
-class _Dropdown extends StatelessWidget {
-  const _Dropdown({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.suffix,
-    required this.enabled,
-    required this.onChanged,
-    super.key,
-  });
-
-  final String label;
-  final int value;
-  final List<int> items;
-  final String suffix;
-  final bool enabled;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<int>(
-          value: value,
-          isExpanded: true,
-          items: [
-            for (final item in items)
-              DropdownMenuItem(value: item, child: Text('$item $suffix')),
-          ],
-          onChanged: enabled ? (v) => v != null ? onChanged(v) : null : null,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusPanel extends StatelessWidget {
-  const _StatusPanel({required this.status});
-
-  final EngineStatus status;
-
-  String get _latency => switch (status.latencyState) {
-    LatencyState.done => '${status.measuredLatencyMs.toStringAsFixed(2)} ms',
-    LatencyState.measuring => 'measuring…',
-    LatencyState.timeout => 'no loopback detected',
-    LatencyState.idle => 'not measured',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = <(String, String)>[
-      ('Device', status.deviceName.isEmpty ? '—' : status.deviceName),
-      ('Connected', status.isConnected ? 'yes' : 'no'),
-      ('Sample rate', '${status.sampleRate} Hz'),
-      ('Buffer', '${status.bufferFrames} frames'),
-      ('Round-trip latency', _latency),
-      ('Record offset', '${status.recordOffsetFrames} frames'),
-    ];
-    return Column(
-      children: [
-        for (final (label, value) in rows)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [Text(label), Text(value)],
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }

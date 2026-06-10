@@ -19,7 +19,8 @@ Future<void> main() async {
       const EngineConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        channels: 2,
+        inputChannels: 2,
+        outputChannels: 2,
         passthrough: true, // <-- matches the app default (monitorInput: true)
       ),
     );

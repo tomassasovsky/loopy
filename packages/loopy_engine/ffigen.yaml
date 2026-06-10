@@ -1,5 +1,10 @@
 # ffigen configuration for the loopy_engine FFI plugin.
-# Regenerate with: dart run ffigen --config ffigen.yaml
+# Regenerate with:
+#   dart run ffigen --config ffigen.yaml
+#   dart format lib/src/generated/loopy_engine_bindings.dart
+# The `dart format` pass is mandatory: ffigen emits legacy short-style code,
+# while the committed bindings are canonical `dart format` (tall) style. Skipping
+# it rewrites the entire file on every regen and hides the real change.
 # (requires libclang; on macOS it ships with Xcode / Command Line Tools).
 name: LoopyEngineBindings
 description: |
@@ -22,6 +27,7 @@ structs:
     - 'le_snapshot'
     - 'le_track_snapshot'
     - 'le_loopback_info'
+    - 'le_device_info'
 enums:
   include:
     - 'le_result'

@@ -16,10 +16,12 @@ extern "C" {
 #endif
 
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
- * device. Used by le_engine_start and by tests. `channels` is clamped to 2 and
- * `max_loop_frames` to a positive value. Returns LE_OK or LE_ERR_INVALID. */
+ * device. Used by le_engine_start and by tests. `input_channels` /
+ * `output_channels` are each clamped to LE_MAX_CHANNELS and `max_loop_frames` to
+ * a positive value. Returns LE_OK or LE_ERR_INVALID. */
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
-                            int32_t channels, int32_t max_loop_frames);
+                            int32_t input_channels, int32_t output_channels,
+                            int32_t max_loop_frames);
 
 /* Processes one interleaved block: drains commands, advances the loop, records/
  * overdubs/mixes, and publishes metering. This is exactly what the miniaudio
@@ -30,6 +32,27 @@ void le_engine_process(le_engine* engine, float* output, const float* input,
 /* Classifies a capture device by name into a loopback kind (name heuristic
  * only; WASAPI detection is context-level). Pure and unit-testable. */
 le_loopback_kind le_classify_capture_device(const char* name);
+
+/* Whether a Core Audio channel label marks a loopback channel (case-insensitive
+ * substring "loopback"). Pure and unit-testable; a NULL/blank label is not a
+ * loopback. */
+int le_label_is_loopback(const char* label);
+
+/* Overrides the excluded-input-channel mask without opening a device, so the
+ * capture-average / monitoring / SET_INPUT_MASK exclusion paths can be tested
+ * deterministically. Not part of the FFI surface. */
+void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
+                                                uint32_t mask);
+
+/* Begins a round-trip latency measurement without a device (configured-gated,
+ * like the looper commands), so the harness's loopback-channel detection can be
+ * tested deterministically. Not part of the FFI surface. */
+int32_t le_engine_begin_latency_for_test(le_engine* engine);
+
+/* Enables or disables input monitoring without opening a device (it is normally
+ * set from le_config.passthrough at start), so the monitor-routing fold can be
+ * tested deterministically. Not part of the FFI surface. */
+void le_engine_set_monitor_for_test(le_engine* engine, int on);
 
 #ifdef __cplusplus
 }

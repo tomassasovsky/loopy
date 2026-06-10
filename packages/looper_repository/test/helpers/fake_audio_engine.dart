@@ -51,6 +51,15 @@ class FakeAudioEngine implements AudioEngine {
     return loopback;
   }
 
+  /// Devices returned by [enumerateDevices].
+  List<AudioDevice> devices = const [];
+
+  @override
+  List<AudioDevice> enumerateDevices() {
+    calls.add('enumerateDevices');
+    return devices;
+  }
+
   @override
   EngineResult measureLatency() {
     calls.add('measureLatency');
@@ -118,50 +127,22 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  double? lastTempo;
-  bool? lastMetronome;
-  bool? lastCountIn;
-  bool? lastSyncTempo;
-  QuantizeMode? lastQuantize;
+  int? lastInputMask;
+  int? lastOutputMask;
 
   @override
-  EngineResult setTempo(double bpm) {
-    lastTempo = bpm;
-    calls.add('setTempo');
+  EngineResult setInputMask({required int channel, required int mask}) {
+    lastChannel = channel;
+    lastInputMask = mask;
+    calls.add('setInputMask');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMetronome({required bool on}) {
-    lastMetronome = on;
-    calls.add('setMetronome');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setCountIn({required bool enabled}) {
-    lastCountIn = enabled;
-    calls.add('setCountIn');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult tapTempo() {
-    calls.add('tapTempo');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setSyncTempo({required bool on}) {
-    lastSyncTempo = on;
-    calls.add('setSyncTempo');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setQuantize(QuantizeMode mode) {
-    lastQuantize = mode;
-    calls.add('setQuantize');
+  EngineResult setOutputMask({required int channel, required int mask}) {
+    lastChannel = channel;
+    lastOutputMask = mask;
+    calls.add('setOutputMask');
     return EngineResult.ok;
   }
 
@@ -171,6 +152,127 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setRecordOffset(int frames) {
     lastRecordOffset = frames;
     calls.add('setRecordOffset');
+    return EngineResult.ok;
+  }
+
+  bool? lastQuantize;
+
+  @override
+  EngineResult setQuantize({required bool enabled}) {
+    lastQuantize = enabled;
+    calls.add('setQuantize');
+    return EngineResult.ok;
+  }
+
+  final Map<int, bool?> trackQuantize = {};
+
+  @override
+  EngineResult setTrackQuantize({
+    required int channel,
+    required bool? enabled,
+  }) {
+    trackQuantize[channel] = enabled;
+    calls.add('setTrackQuantize');
+    return EngineResult.ok;
+  }
+
+  final Map<int, int> trackMultiple = {};
+  int? lastDefaultMultiple;
+  bool? lastRecDub;
+  bool? lastAutoRecord;
+
+  @override
+  EngineResult setTrackMultiple({required int channel, required int multiple}) {
+    trackMultiple[channel] = multiple;
+    calls.add('setTrackMultiple');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setDefaultMultiple({required int multiple}) {
+    lastDefaultMultiple = multiple;
+    calls.add('setDefaultMultiple');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setRecDub({required bool enabled}) {
+    lastRecDub = enabled;
+    calls.add('setRecDub');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAutoRecord({required bool enabled}) {
+    lastAutoRecord = enabled;
+    calls.add('setAutoRecord');
+    return EngineResult.ok;
+  }
+
+  int? lastMonitorInputMask;
+  int? lastMonitorOutputMask;
+
+  @override
+  EngineResult setMonitorInputMask({required int mask}) {
+    lastMonitorInputMask = mask;
+    calls.add('setMonitorInputMask');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorOutputMask({required int mask}) {
+    lastMonitorOutputMask = mask;
+    calls.add('setMonitorOutputMask');
+    return EngineResult.ok;
+  }
+
+  /// The last track passed to [setMonitorFxTrack] (-1 = not following).
+  int? lastMonitorFxTrack;
+
+  @override
+  EngineResult setMonitorFxTrack({required int track}) {
+    lastMonitorFxTrack = track;
+    calls.add('setMonitorFxTrack');
+    return EngineResult.ok;
+  }
+
+  /// Per-(channel, index) effect type/stage passed to [setTrackFx].
+  final Map<(int, int), (TrackEffectType, TrackEffectStage)> trackFx = {};
+
+  /// Per-channel active chain length passed to [setTrackFxCount].
+  final Map<int, int> trackFxCount = {};
+
+  /// Per-(channel, index, param) value passed to [setTrackFxParam].
+  final Map<(int, int, int), double> trackFxParam = {};
+
+  @override
+  EngineResult setTrackFx({
+    required int channel,
+    required int index,
+    required TrackEffectType type,
+    required TrackEffectStage stage,
+  }) {
+    trackFx[(channel, index)] = (type, stage);
+    calls.add('setTrackFx');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxCount({required int channel, required int count}) {
+    trackFxCount[channel] = count;
+    calls.add('setTrackFxCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTrackFxParam({
+    required int channel,
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    trackFxParam[(channel, index, param)] = value;
+    calls.add('setTrackFxParam');
     return EngineResult.ok;
   }
 
@@ -194,4 +296,19 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   void dispose() => calls.add('dispose');
+
+  /// Waveform returned by [readVisual] (mutate in tests).
+  Float32List visual = Float32List(0);
+
+  @override
+  Float32List readVisual() {
+    calls.add('readVisual');
+    return visual;
+  }
+
+  @override
+  Float32List readTrackVisual(int channel) {
+    calls.add('readTrackVisual');
+    return visual;
+  }
 }

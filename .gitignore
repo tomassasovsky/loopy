@@ -4,6 +4,7 @@
 *.pyc
 *.swp
 .DS_Store
+devtools_options.yaml
 .atom/
 .build/
 .buildlog/
@@ -115,3 +116,5 @@ app.*.map.json
 
 # Generated l10n files
 lib/l10n/gen/
+# Flutter golden-test diff artifacts
+test/**/failures/

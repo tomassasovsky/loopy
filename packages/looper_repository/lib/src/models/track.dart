@@ -16,8 +16,9 @@ class Track extends Equatable {
     this.peak = 0,
     this.undoDepth = 0,
     this.redoDepth = 0,
-    this.armed = false,
     this.multiple = 1,
+    this.inputMask = 0x1,
+    this.outputMask = 0x3,
   });
 
   /// Track channel index (always 0 in the single-track phase).
@@ -50,12 +51,15 @@ class Track extends Equatable {
   /// Available redo steps.
   final int redoDepth;
 
-  /// Whether this track is armed for a quantized start, waiting for the next
-  /// grid boundary to begin capturing.
-  final bool armed;
-
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
+
+  /// Bitmask of hardware input channels this track records from (bit c => in
+  /// c); selected inputs are averaged into the track's mono buffer.
+  final int inputMask;
+
+  /// Bitmask of hardware output channels this track plays to (bit c => out c).
+  final int outputMask;
 
   /// Whether this track spans more than one base loop.
   bool get isMultiple => multiple > 1;
@@ -85,7 +89,8 @@ class Track extends Equatable {
     peak,
     undoDepth,
     redoDepth,
-    armed,
     multiple,
+    inputMask,
+    outputMask,
   ];
 }

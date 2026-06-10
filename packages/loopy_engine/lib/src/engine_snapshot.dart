@@ -27,32 +27,6 @@ enum LatencyState {
   };
 }
 
-/// Quantize-start resolution: when a loop exists, a record/overdub press is held
-/// until the next grid boundary of this resolution before capture begins.
-///
-/// Mirrors the native `le_quantize_mode` enum.
-enum QuantizeMode {
-  /// Capture starts immediately.
-  off,
-
-  /// Arm until the next beat.
-  beat,
-
-  /// Arm until the next bar (the default).
-  bar;
-
-  /// Maps a native `le_quantize_mode` integer to a [QuantizeMode].
-  static QuantizeMode fromCode(int code) => switch (code) {
-    0 => QuantizeMode.off,
-    1 => QuantizeMode.beat,
-    2 => QuantizeMode.bar,
-    _ => QuantizeMode.bar,
-  };
-
-  /// The native `le_quantize_mode` integer for this mode.
-  int get code => index;
-}
-
 /// The per-track looper state machine.
 ///
 /// Mirrors the native `le_track_state` enum.
@@ -97,6 +71,8 @@ class TrackSnapshot {
     required this.peak,
     this.redoDepth = 0,
     this.multiple = 1,
+    this.inputMask = 0x1,
+    this.outputMask = 0x3,
   });
 
   /// An empty track.
@@ -109,7 +85,9 @@ class TrackSnapshot {
       redoDepth = 0,
       rms = 0,
       peak = 0,
-      multiple = 1;
+      multiple = 1,
+      inputMask = 0x1,
+      outputMask = 0x3;
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
   factory TrackSnapshot.fromNative(le_track_snapshot native) => TrackSnapshot(
@@ -122,6 +100,8 @@ class TrackSnapshot {
     rms: native.rms,
     peak: native.peak,
     multiple: native.multiple,
+    inputMask: native.input_mask,
+    outputMask: native.output_mask,
   );
 
   /// State-machine phase.
@@ -151,6 +131,13 @@ class TrackSnapshot {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
+  /// Bitmask of hardware input channels this track records from (bit c => in
+  /// c); selected inputs are averaged into the track's mono buffer.
+  final int inputMask;
+
+  /// Bitmask of hardware output channels this track plays to (bit c => out c).
+  final int outputMask;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -164,7 +151,9 @@ class TrackSnapshot {
           undoDepth == other.undoDepth &&
           redoDepth == other.redoDepth &&
           rms == other.rms &&
-          peak == other.peak;
+          peak == other.peak &&
+          inputMask == other.inputMask &&
+          outputMask == other.outputMask;
 
   @override
   int get hashCode => Object.hash(
@@ -177,6 +166,8 @@ class TrackSnapshot {
     redoDepth,
     rms,
     peak,
+    inputMask,
+    outputMask,
   );
 }
 
@@ -191,7 +182,6 @@ class EngineSnapshot {
     required this.isRunning,
     required this.sampleRate,
     required this.bufferFrames,
-    required this.channels,
     required this.framesProcessed,
     required this.xrunCount,
     required this.inputRms,
@@ -199,17 +189,12 @@ class EngineSnapshot {
     required this.outputRms,
     required this.latencyState,
     required this.measuredLatencyMs,
+    this.devicePresent = false,
+    this.inputChannels = 0,
+    this.outputChannels = 0,
+    this.excludedInputMask = 0,
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
-    this.tempoBpm = 120,
-    this.metronomeOn = false,
-    this.countInEnabled = false,
-    this.countingIn = false,
-    this.currentBeat = 0,
-    this.loopBars = 0,
-    this.syncLoopToTempo = true,
-    this.quantizeMode = QuantizeMode.bar,
-    this.armedChannel = -1,
     this.recordOffsetFrames = 0,
     this.tracks = const [],
   });
@@ -217,9 +202,12 @@ class EngineSnapshot {
   /// The snapshot of an engine that has never started.
   const EngineSnapshot.initial()
     : isRunning = false,
+      devicePresent = false,
       sampleRate = 0,
       bufferFrames = 0,
-      channels = 0,
+      inputChannels = 0,
+      outputChannels = 0,
+      excludedInputMask = 0,
       framesProcessed = 0,
       xrunCount = 0,
       inputRms = 0,
@@ -229,15 +217,6 @@ class EngineSnapshot {
       measuredLatencyMs = -1,
       masterLengthFrames = 0,
       masterPositionFrames = 0,
-      tempoBpm = 120,
-      metronomeOn = false,
-      countInEnabled = false,
-      countingIn = false,
-      currentBeat = 0,
-      loopBars = 0,
-      syncLoopToTempo = true,
-      quantizeMode = QuantizeMode.bar,
-      armedChannel = -1,
       recordOffsetFrames = 0,
       tracks = const [];
 
@@ -251,9 +230,12 @@ class EngineSnapshot {
     List<TrackSnapshot> tracks,
   ) => EngineSnapshot(
     isRunning: native.running != 0,
+    devicePresent: native.device_present != 0,
     sampleRate: native.sample_rate,
     bufferFrames: native.buffer_frames,
-    channels: native.channels,
+    inputChannels: native.input_channels,
+    outputChannels: native.output_channels,
+    excludedInputMask: native.excluded_input_mask,
     framesProcessed: native.frames_processed,
     xrunCount: native.xrun_count,
     inputRms: native.input_rms,
@@ -263,15 +245,6 @@ class EngineSnapshot {
     measuredLatencyMs: native.measured_latency_ms,
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
-    tempoBpm: native.tempo_bpm,
-    metronomeOn: native.metronome_on != 0,
-    countInEnabled: native.count_in_enabled != 0,
-    countingIn: native.counting_in != 0,
-    currentBeat: native.current_beat,
-    loopBars: native.loop_bars,
-    syncLoopToTempo: native.sync_loop_to_tempo != 0,
-    quantizeMode: QuantizeMode.fromCode(native.quantize_mode),
-    armedChannel: native.armed_channel,
     recordOffsetFrames: native.record_offset_frames,
     tracks: tracks,
   );
@@ -279,14 +252,28 @@ class EngineSnapshot {
   /// Whether the audio device is open and the callback is running.
   final bool isRunning;
 
+  /// Whether the pinned (or default) device is currently present.
+  ///
+  /// Distinct from [isRunning]: a device can be lost (e.g. unplugged) while the
+  /// engine object still reports running until it is restarted. Flips to
+  /// `false` on a device-lost / rerouted / interrupted notification.
+  final bool devicePresent;
+
   /// Negotiated device sample rate in Hz.
   final int sampleRate;
 
   /// Negotiated device period (buffer) size in frames.
   final int bufferFrames;
 
-  /// Number of channels in the duplex stream.
-  final int channels;
+  /// Negotiated hardware capture channel count.
+  final int inputChannels;
+
+  /// Negotiated hardware playback channel count.
+  final int outputChannels;
+
+  /// Bitmask of input channels excluded as loopback (never recorded, monitored,
+  /// or routable). `0` when nothing is excluded (always so off macOS).
+  final int excludedInputMask;
 
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
@@ -315,38 +302,6 @@ class EngineSnapshot {
 
   /// Current master loop playhead in frames.
   final int masterPositionFrames;
-
-  /// Current tempo in beats per minute.
-  final double tempoBpm;
-
-  /// Whether the metronome click is enabled.
-  final bool metronomeOn;
-
-  /// Whether a count-in precedes the first recording.
-  final bool countInEnabled;
-
-  /// Whether a count-in is currently in progress.
-  final bool countingIn;
-
-  /// The current beat within the bar (`0..3`).
-  final int currentBeat;
-
-  /// Whole bars spanning the master loop; `0` until a loop is defined (or while
-  /// [syncLoopToTempo] is off, when the loop keeps its free-form length).
-  final int loopBars;
-
-  /// Whether the tempo and metronome grid are snapped to the loop. When on
-  /// (the default), finalizing the defining loop rounds it to whole bars and
-  /// snaps [tempoBpm] to fit; the metronome then divides the loop exactly.
-  final bool syncLoopToTempo;
-
-  /// Quantize-start resolution applied to record/overdub presses while a loop
-  /// exists. Defaults to [QuantizeMode.bar].
-  final QuantizeMode quantizeMode;
-
-  /// The track armed for a quantized start (waiting for the next grid
-  /// boundary), or `-1` when nothing is armed.
-  final int armedChannel;
 
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
@@ -387,9 +342,12 @@ class EngineSnapshot {
       other is EngineSnapshot &&
           runtimeType == other.runtimeType &&
           isRunning == other.isRunning &&
+          devicePresent == other.devicePresent &&
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
-          channels == other.channels &&
+          inputChannels == other.inputChannels &&
+          outputChannels == other.outputChannels &&
+          excludedInputMask == other.excludedInputMask &&
           framesProcessed == other.framesProcessed &&
           xrunCount == other.xrunCount &&
           inputRms == other.inputRms &&
@@ -399,24 +357,18 @@ class EngineSnapshot {
           measuredLatencyMs == other.measuredLatencyMs &&
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
-          tempoBpm == other.tempoBpm &&
-          metronomeOn == other.metronomeOn &&
-          countInEnabled == other.countInEnabled &&
-          countingIn == other.countingIn &&
-          currentBeat == other.currentBeat &&
-          loopBars == other.loopBars &&
-          syncLoopToTempo == other.syncLoopToTempo &&
-          quantizeMode == other.quantizeMode &&
-          armedChannel == other.armedChannel &&
           recordOffsetFrames == other.recordOffsetFrames &&
           _listEquals(tracks, other.tracks);
 
   @override
   int get hashCode => Object.hashAll([
     isRunning,
+    devicePresent,
     sampleRate,
     bufferFrames,
-    channels,
+    inputChannels,
+    outputChannels,
+    excludedInputMask,
     framesProcessed,
     xrunCount,
     inputRms,
@@ -426,15 +378,6 @@ class EngineSnapshot {
     measuredLatencyMs,
     masterLengthFrames,
     masterPositionFrames,
-    tempoBpm,
-    metronomeOn,
-    countInEnabled,
-    countingIn,
-    currentBeat,
-    loopBars,
-    syncLoopToTempo,
-    quantizeMode,
-    armedChannel,
     recordOffsetFrames,
     ...tracks,
   ]);
@@ -442,6 +385,7 @@ class EngineSnapshot {
   @override
   String toString() =>
       'EngineSnapshot(running: $isRunning, '
+      'devicePresent: $devicePresent, '
       'sampleRate: $sampleRate, tracks: $trackCount, '
       'master: $masterPositionFrames/$masterLengthFrames, '
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';

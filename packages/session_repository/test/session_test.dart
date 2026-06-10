@@ -1,19 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy_engine/loopy_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
 void main() {
   const session = Session(
     sampleRate: 48000,
-    channels: 2,
+    channels: 1,
     baseLengthFrames: 96000,
-    tempoBpm: 120,
-    syncLoopToTempo: true,
-    quantizeMode: QuantizeMode.beat,
-    metronomeOn: true,
-    countInEnabled: false,
     tracks: [
       SessionTrack(
         channel: 0,
@@ -40,10 +34,10 @@ void main() {
       expect(Session.fromJson(json as Map<String, dynamic>), session);
     });
 
-    test('serializes the version and quantize mode by name', () {
+    test('serializes the manifest version', () {
       final json = session.toJson();
       expect(json['version'], Session.formatVersion);
-      expect(json['quantizeMode'], 'beat');
+      expect(json['baseLengthFrames'], 96000);
     });
 
     test('tracks have value equality', () {

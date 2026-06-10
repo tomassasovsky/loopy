@@ -34,6 +34,7 @@ void main() {
     when(repository.measureLatency).thenReturn(EngineResult.ok);
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
+    when(repository.devices).thenReturn(const []);
   });
 
   tearDown(() => stateController.close());
@@ -47,7 +48,6 @@ void main() {
     expect(cubit.state.sampleRate, 48000);
     expect(cubit.state.bufferFrames, 128);
     expect(cubit.state.monitorInput, isTrue);
-    expect(cubit.state.mergeToMono, isTrue);
     expect(cubit.state.status, AudioSetupStatus.stopped);
   });
 
@@ -76,7 +76,6 @@ void main() {
     expect(cubit.state.sampleRate, 96000);
     expect(cubit.state.bufferFrames, 256);
     expect(cubit.state.monitorInput, isFalse);
-    expect(cubit.state.mergeToMono, isFalse);
     expect(cubit.state.engineStatus.deviceName, 'Scarlett');
   });
 
@@ -86,8 +85,7 @@ void main() {
     act: (cubit) => cubit
       ..setSampleRate(96000)
       ..setBufferFrames(64)
-      ..setMonitorInput(monitorInput: false)
-      ..setMergeToMono(mergeToMono: false),
+      ..setMonitorInput(monitorInput: false),
     expect: () => [
       isA<AudioSetupState>().having((s) => s.sampleRate, 'sampleRate', 96000),
       isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
@@ -96,9 +94,113 @@ void main() {
         'monitorInput',
         false,
       ),
-      isA<AudioSetupState>().having((s) => s.mergeToMono, 'mergeToMono', false),
     ],
   );
+
+  void seedRunning() {
+    when(() => repository.state).thenReturn(
+      const LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+        ),
+      ),
+    );
+    when(() => repository.lastEngineConfig).thenReturn(
+      const EngineConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        passthrough: true,
+      ),
+    );
+  }
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
+    'setMonitorInput while running reopens the device and persists it',
+    setUp: seedRunning,
+    build: buildCubit,
+    act: (cubit) => cubit.setMonitorInput(monitorInput: false),
+    expect: () => [
+      isA<AudioSetupState>().having(
+        (s) => s.monitorInput,
+        'monitorInput',
+        false,
+      ),
+    ],
+    verify: (_) async {
+      verify(repository.stopEngine).called(1);
+      verify(
+        () => repository.startEngine(
+          const EngineConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+          ),
+        ),
+      ).called(1);
+      expect((await settings.loadAudioConfig())?.monitorInput, isFalse);
+    },
+  );
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
+    'start uses the selected max loop length (minutes -> frames)',
+    build: buildCubit,
+    act: (cubit) => cubit
+      ..setMaxLoopMinutes(5)
+      ..start(),
+    expect: () => [
+      isA<AudioSetupState>().having(
+        (s) => s.maxLoopMinutes,
+        'maxLoopMinutes',
+        5,
+      ),
+      isA<AudioSetupState>().having(
+        (s) => s.status,
+        'status',
+        AudioSetupStatus.running,
+      ),
+    ],
+    verify: (_) async {
+      // 5 min * 60 s * 48000 Hz = 14_400_000 frames.
+      verify(
+        () => repository.startEngine(
+          const EngineConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            passthrough: true,
+            maxLoopFrames: 14400000,
+          ),
+        ),
+      ).called(1);
+      expect((await settings.loadAudioConfig())?.maxLoopMinutes, 5);
+    },
+  );
+
+  test('hydrates maxLoopMinutes from the last engine config (frames)', () {
+    when(() => repository.state).thenReturn(
+      const LooperState(
+        status: EngineStatus(
+          deviceName: 'Scarlett',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+        ),
+      ),
+    );
+    when(() => repository.lastEngineConfig).thenReturn(
+      const EngineConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        maxLoopFrames: 14400000, // 5 minutes at 48 kHz
+      ),
+    );
+
+    final cubit = buildCubit();
+    addTearDown(cubit.close);
+
+    expect(cubit.state.maxLoopMinutes, 5);
+  });
 
   blocTest<AudioSetupCubit, AudioSetupState>(
     'start opens the engine with the current options',
@@ -116,9 +218,7 @@ void main() {
         const EngineConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          channels: 2,
           passthrough: true,
-          mergeToMono: true,
         ),
       ),
     ).called(1),
@@ -194,9 +294,7 @@ void main() {
             const EngineConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              channels: 2,
               passthrough: true,
-              mergeToMono: true,
               useLoopbackCapture: true,
             ),
           ),
@@ -210,6 +308,22 @@ void main() {
       build: buildCubit,
       act: (cubit) => cubit.start(),
       verify: (_) => verifyNever(repository.measureLatency),
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'start auto-measures when the device exposes loopback channels',
+      build: () {
+        // No routable loopback device, but the opened interface reports
+        // dedicated loopback channels (e.g. a Scarlett's "Loop 1/2").
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            status: EngineStatus(isConnected: true, excludedInputMask: 0x30),
+          ),
+        );
+        return buildCubit();
+      },
+      act: (cubit) => cubit.start(),
+      verify: (_) => verify(repository.measureLatency).called(1),
     );
   });
 
@@ -267,6 +381,140 @@ void main() {
         ),
         640,
       );
+    });
+  });
+
+  group('device selection', () {
+    test('hydrates devices and selected ids from the repository', () {
+      when(repository.devices).thenReturn(const [
+        AudioDevice(
+          id: 'out-1',
+          name: 'Scarlett',
+          isDefault: true,
+          isInput: false,
+        ),
+        AudioDevice(
+          id: 'in-1',
+          name: 'Built-in Mic',
+          isDefault: true,
+          isInput: true,
+        ),
+      ]);
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1', captureDeviceId: 'in-1'),
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      expect(cubit.state.devices, hasLength(2));
+      expect(cubit.state.playbackDevices, hasLength(1));
+      expect(cubit.state.captureDevices, hasLength(1));
+      expect(cubit.state.playbackDeviceId, 'out-1');
+      expect(cubit.state.captureDeviceId, 'in-1');
+    });
+
+    test('setPlaybackDevice updates state and persists', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit.setPlaybackDevice('out-1');
+      expect(cubit.state.playbackDeviceId, 'out-1');
+      await Future<void>.delayed(Duration.zero);
+      expect((await settings.loadAudioConfig())?.playbackDeviceId, 'out-1');
+    });
+
+    test('setCaptureDevice updates state and persists', () async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      cubit.setCaptureDevice('in-1');
+      expect(cubit.state.captureDeviceId, 'in-1');
+      await Future<void>.delayed(Duration.zero);
+      expect((await settings.loadAudioConfig())?.captureDeviceId, 'in-1');
+    });
+
+    test('selecting a device while running reopens the engine on it', () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(deviceName: 'X', isConnected: true),
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.status, AudioSetupStatus.running);
+
+      cubit.setPlaybackDevice('out-1');
+
+      verify(repository.stopEngine).called(1);
+      final captured =
+          verify(() => repository.startEngine(captureAny())).captured.single
+              as EngineConfig;
+      expect(captured.playbackDeviceId, 'out-1');
+    });
+
+    test('a failed reopen while running surfaces an error', () {
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(deviceName: 'X', isConnected: true),
+        ),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.status, AudioSetupStatus.running);
+
+      when(() => repository.startEngine(any())).thenReturn(EngineResult.device);
+      cubit.setPlaybackDevice('out-1');
+
+      expect(cubit.state.status, AudioSetupStatus.error);
+      expect(cubit.state.errorMessage, contains('Failed to open device'));
+    });
+  });
+
+  group('device connectivity', () {
+    LooperState present({
+      required bool devicePresent,
+      String name = 'Scarlett',
+    }) => LooperState(
+      status: EngineStatus(
+        deviceName: name,
+        isConnected: true,
+        devicePresent: devicePresent,
+      ),
+    );
+
+    test('raises lost then restored for a pinned device', () async {
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(playbackDeviceId: 'out-1'),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+
+      // Device lost (name now empty, but the last-seen name is remembered).
+      stateController.add(present(devicePresent: false, name: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+      expect(cubit.state.connectivityDeviceName, 'Scarlett');
+
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.restored);
+    });
+
+    test('never raises an event for the system default', () async {
+      final cubit = buildCubit(); // no pinned device
+      addTearDown(cubit.close);
+
+      stateController.add(present(devicePresent: true));
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(present(devicePresent: false));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
     });
   });
 }

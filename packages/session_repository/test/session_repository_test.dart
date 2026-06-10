@@ -44,10 +44,6 @@ void main() {
 
   test('save then load reproduces the engine state', () async {
     final source = FakeSessionEngine()
-      ..tempo = 132
-      ..sync = false
-      ..quantize = QuantizeMode.beat
-      ..metronome = true
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
       ..seedTrack(
         1,
@@ -64,10 +60,6 @@ void main() {
     final snap = target.snapshot();
 
     expect(snap.masterLengthFrames, 4);
-    expect(snap.tempoBpm, 132);
-    expect(snap.syncLoopToTempo, isFalse);
-    expect(snap.quantizeMode, QuantizeMode.beat);
-    expect(snap.metronomeOn, isTrue);
 
     expect(snap.tracks[0].state, TrackState.playing);
     expect(snap.tracks[0].multiple, 1);

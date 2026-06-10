@@ -6,8 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:settings_repository/settings_repository.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockSettingsRepository extends Mock implements SettingsRepository {}
 
 class _FakeControllerSource implements ControllerSource {
   final StreamController<RawControllerInput> _controller =
@@ -29,7 +32,7 @@ void main() {
   late LooperRepository repository;
   late StreamController<LooperState> stateController;
 
-  setUpAll(() => registerFallbackValue(QuantizeMode.bar));
+  setUpAll(() => registerFallbackValue(<TrackEffect>[]));
 
   setUp(() {
     repository = _MockLooperRepository();
@@ -64,18 +67,45 @@ void main() {
         channel: any(named: 'channel'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(() => repository.setTempo(any())).thenReturn(EngineResult.ok);
     when(
-      () => repository.setMetronome(on: any(named: 'on')),
+      () => repository.setInputMask(
+        channel: any(named: 'channel'),
+        mask: any(named: 'mask'),
+      ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setCountIn(enabled: any(named: 'enabled')),
+      () => repository.setOutputMask(
+        channel: any(named: 'channel'),
+        mask: any(named: 'mask'),
+      ),
     ).thenReturn(EngineResult.ok);
-    when(repository.tapTempo).thenReturn(EngineResult.ok);
     when(
-      () => repository.setSyncTempo(on: any(named: 'on')),
+      () => repository.setTrackQuantize(
+        channel: any(named: 'channel'),
+        enabled: any(named: 'enabled'),
+      ),
     ).thenReturn(EngineResult.ok);
-    when(() => repository.setQuantize(any())).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackMultiple(
+        channel: any(named: 'channel'),
+        multiple: any(named: 'multiple'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackEffects(
+        channel: any(named: 'channel'),
+        effects: any(named: 'effects'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackEffectParam(
+        channel: any(named: 'channel'),
+        index: any(named: 'index'),
+        param: any(named: 'param'),
+        value: any(named: 'value'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.trackEffects(any())).thenReturn(const []);
   });
 
   tearDown(() => stateController.close());
@@ -132,6 +162,146 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperInputMaskChanged forwards channel and mask to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperInputMaskChanged(2, 0x3)),
+    verify: (_) =>
+        verify(() => repository.setInputMask(channel: 2, mask: 0x3)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperOutputMaskChanged forwards channel and mask to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperOutputMaskChanged(1, 0x5)),
+    verify: (_) =>
+        verify(() => repository.setOutputMask(channel: 1, mask: 0x5)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackQuantizeChanged forwards the override to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackQuantizeChanged(2, enabled: true)),
+    verify: (_) => verify(
+      () => repository.setTrackQuantize(channel: 2, enabled: true),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackMultipleChanged forwards the multiple to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackMultipleChanged(1, 3)),
+    verify: (_) => verify(
+      () => repository.setTrackMultiple(channel: 1, multiple: 3),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackEffectsChanged forwards the chain to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(
+      LooperTrackEffectsChanged(1, [
+        TrackEffect(type: TrackEffectType.delay),
+      ]),
+    ),
+    verify: (_) => verify(
+      () => repository.setTrackEffects(
+        channel: 1,
+        effects: any(named: 'effects'),
+      ),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackEffectParamChanged forwards the param to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackEffectParamChanged(2, 1, 0, 0.6)),
+    verify: (_) => verify(
+      () => repository.setTrackEffectParam(
+        channel: 2,
+        index: 1,
+        param: 0,
+        value: 0.6,
+      ),
+    ).called(1),
+  );
+
+  group('routing persistence', () {
+    late SettingsRepository settings;
+
+    setUp(() {
+      settings = _MockSettingsRepository();
+      when(
+        () => settings.saveTrackInputMask(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveTrackOutputMask(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveTrackEffects(any(), any()),
+      ).thenAnswer((_) async {});
+    });
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperInputMaskChanged persists the input mask',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperInputMaskChanged(3, 0x3)),
+      verify: (_) {
+        verify(
+          () => repository.setInputMask(channel: 3, mask: 0x3),
+        ).called(1);
+        verify(() => settings.saveTrackInputMask(3, 0x3)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperOutputMaskChanged persists the output mask',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperOutputMaskChanged(0, 0x6)),
+      verify: (_) {
+        verify(() => repository.setOutputMask(channel: 0, mask: 0x6)).called(1);
+        verify(() => settings.saveTrackOutputMask(0, 0x6)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperTrackEffectsChanged persists the encoded chain',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(
+        LooperTrackEffectsChanged(1, [
+          TrackEffect(type: TrackEffectType.filter),
+        ]),
+      ),
+      verify: (_) {
+        verify(
+          () => repository.setTrackEffects(
+            channel: 1,
+            effects: any(named: 'effects'),
+          ),
+        ).called(1);
+        verify(() => settings.saveTrackEffects(1, any())).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperTrackEffectParamChanged persists the re-encoded chain',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) =>
+          bloc.add(const LooperTrackEffectParamChanged(0, 1, 2, 0.25)),
+      verify: (_) {
+        verify(
+          () => repository.setTrackEffectParam(
+            channel: 0,
+            index: 1,
+            param: 2,
+            value: 0.25,
+          ),
+        ).called(1);
+        verify(() => settings.saveTrackEffects(0, any())).called(1);
+      },
+    );
+  });
+
+  blocTest<LooperBloc, LooperState>(
     'LooperPlayAllPressed plays every track with content',
     build: buildBloc,
     seed: () => const LooperState(
@@ -150,46 +320,19 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTempoChanged forwards the new tempo',
+    'LooperClearAllPressed clears every track that has content',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTempoChanged(140)),
-    verify: (_) => verify(() => repository.setTempo(140)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperMetronomeToggled enables the metronome from off',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperMetronomeToggled()),
-    verify: (_) => verify(() => repository.setMetronome(on: true)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperCountInToggled enables count-in from off',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperCountInToggled()),
-    verify: (_) => verify(() => repository.setCountIn(enabled: true)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperTapTempo forwards to repository.tapTempo',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTapTempo()),
-    verify: (_) => verify(repository.tapTempo).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperSyncTempoToggled disables loop-to-tempo sync from the default on',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperSyncTempoToggled()),
-    verify: (_) => verify(() => repository.setSyncTempo(on: false)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperQuantizeChanged forwards the mode to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperQuantizeChanged(QuantizeMode.beat)),
-    verify: (_) =>
-        verify(() => repository.setQuantize(QuantizeMode.beat)).called(1),
+    seed: () => const LooperState(
+      tracks: [
+        Track(state: TrackState.playing, lengthFrames: 100),
+        Track(channel: 1), // empty -> skipped
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperClearAllPressed()),
+    verify: (_) {
+      verify(() => repository.clear()).called(1);
+      verifyNever(() => repository.clear(channel: 1));
+    },
   );
 
   group('controller wiring', () {
@@ -213,18 +356,6 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       verify(() => repository.record()).called(1);
-    });
-
-    test('a mapped tap-tempo press drives the repository', () async {
-      final bloc = LooperBloc(repository: repository, controller: controller);
-      addTearDown(bloc.close);
-
-      // Default mapping: CC 84 -> tapTempo.
-      source.press(ControllerSourceKind.midiCc, 84);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      verify(repository.tapTempo).called(1);
     });
   });
 }

@@ -28,8 +28,15 @@
 #include "loopy_engine_api.h"
 #include "miniaudio.h"
 
+#if defined(__APPLE__)
+/* Core Audio is used only to read per-channel hardware labels for loopback
+ * exclusion (see le_compute_excluded_input_mask). The frameworks are already
+ * linked by the macOS build. */
+#include <CoreAudio/CoreAudio.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 #define LE_RING_CAPACITY 256u
-#define LE_MAX_CHANNELS 2
 /* Loopback latency harness. The echo returns only mildly attenuated (~0.9 from
  * a full-scale pulse on a typical interface), so we emit a quiet calibration
  * tone rather than full scale to spare the user's monitors, and detect with a
@@ -41,20 +48,12 @@
 #define LE_LATENCY_RETRY_DIV 10    /* per-attempt = sample_rate / this (~100ms) */
 #define LE_LATENCY_ATTEMPTS 5      /* re-emit this many pulses before timing out */
 
-/* Metronome / tempo. */
-#define LE_BEATS_PER_BAR 4
-#define LE_CLICK_AMP 0.25f
-#define LE_CLICK_MS 30
-#define LE_CLICK_FREQ_BEAT 1000.0f
-#define LE_CLICK_FREQ_DOWNBEAT 1500.0f
-#define LE_TEMPO_MIN 30.0f
-#define LE_TEMPO_MAX 300.0f
-#define LE_TWO_PI 6.28318530717958647692f
-
 /* Per-track buffer pool size: one live buffer plus up to LE_UNDO_SLOTS-1 undo/
  * redo snapshots. Buffers are allocated lazily, so memory grows only as deep as
  * the user actually overdubs. */
 #define LE_UNDO_SLOTS 8
+/* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
+#define LE_AUTO_RECORD_THRESHOLD 0.02f
 
 /* One looper track.
  *
@@ -81,9 +80,40 @@ typedef struct le_track {
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
   _Atomic int32_t a_multiple; /* track length in whole base loops (>= 1) */
-  int32_t record_pos; /* audio-thread-local linear record head; -1 = waiting for
-                       * the loop top before a new-track recording begins */
+  _Atomic uint32_t a_input_mask;   /* bitmask of input channels to record from */
+  _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
+  _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
+                              * to fire a quantized record action); read by the
+                              * control thread to reconcile arm vs. fired. */
+  int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
+  int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
+                            * top (quantize), 1 = input level threshold
+                            * (sound-activated auto-record). */
+  int32_t record_pos; /* audio-thread-local record head. Defining track: linear
+                       * frame count. New track over a master: the absolute
+                       * phase (segment*base + position), seeded at press so
+                       * writes stay phase-locked to the master loop. */
   uint64_t start_iter; /* loop_iteration when this track's recording began */
+  int32_t record_start; /* record_pos when this capture began, so a fixed-length
+                         * track can auto-finalize after exactly K base loops. */
+
+  /* Per-track effects chain. Published config (control writes, audio reads once
+   * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
+   * active. Each entry has a type, a stage (le_fx_stage: PRE on input, POST on
+   * playback), and LE_FX_PARAMS normalized parameters. */
+  _Atomic int32_t a_fx_count;
+  _Atomic int32_t a_fx_type[LE_FX_MAX];
+  _Atomic int32_t a_fx_stage[LE_FX_MAX];
+  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
+  /* Audio-thread-owned DSP state, reset when an entry's type changes (applied
+   * via LE_CMD_SET_FX). svf_* are the state-variable filter integrators; lfo is
+   * the tremolo phase (0..1); delay is a lazily allocated ring (control thread
+   * allocates before posting the command) of fx_delay_frames samples. */
+  float fx_svf_ic1[LE_FX_MAX];
+  float fx_svf_ic2[LE_FX_MAX];
+  float fx_lfo[LE_FX_MAX];
+  float* fx_delay[LE_FX_MAX];
+  int32_t fx_delay_pos[LE_FX_MAX];
 } le_track;
 
 struct le_engine {
@@ -92,33 +122,49 @@ struct le_engine {
 
   /* Snapshot, published as independent atomics. */
   _Atomic int32_t a_running;
+  /* 1 while the device is present, 0 once a device-lost/rerouted/stopped
+   * notification fires. Written only by the RT-adjacent notification callback
+   * (store-only, no work) and the lifecycle calls; read into the snapshot.
+   * The callback stores `relaxed` (it carries no other state and must not block
+   * the audio thread); the lifecycle store and the snapshot load use
+   * release/acquire to match the `a_running` publication they sit beside. The
+   * flag is a single independent value, so plain visibility is all that's
+   * required either way. */
+  _Atomic int32_t a_device_present;
   _Atomic int32_t a_configured;
   _Atomic int32_t a_sample_rate;
   _Atomic int32_t a_buffer_frames;
-  _Atomic int32_t a_channels;
+  _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
+  _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
+  /* Input channels whose Core Audio label marks them as loopback; never
+   * recorded, monitored, or routable. Computed once at device open. */
+  _Atomic uint32_t a_excluded_input_mask;
   _Atomic uint64_t a_frames;
   _Atomic uint32_t a_xruns;
   _Atomic uint32_t a_in_rms_bits;
   _Atomic uint32_t a_in_peak_bits;
   _Atomic uint32_t a_out_rms_bits;
+  /* Loop-indexed visualization (float bits): one peak per loop bucket, spanning
+   * exactly one master loop and refreshed as the playhead sweeps. a_loop_viz is
+   * the mixed output; a_track_viz is each track's own contribution. */
+  _Atomic uint32_t a_loop_viz[LE_VIZ_POINTS];
+  _Atomic uint32_t a_track_viz[LE_MAX_TRACKS][LE_VIZ_POINTS];
   _Atomic int32_t a_latency_state;
   _Atomic uint64_t a_latency_ms_bits;
   _Atomic int32_t a_monitor; /* input monitoring on/off (latency disables it) */
+  /* Monitor routing: the masked, non-excluded inputs are averaged to mono (like
+   * a track) and added to every output the monitor output mask selects. */
+  _Atomic uint32_t a_monitor_input_mask;
+  _Atomic uint32_t a_monitor_output_mask;
+  /* Track the monitor follows (-1 = none): when set, the monitor plays that
+   * track's pre-stage-processed input instead of the raw masked inputs, so
+   * before-track effects are heard live. */
+  _Atomic int32_t a_monitor_fx_track;
 
   /* Looper transport (master). */
   _Atomic int32_t a_master_len;
   _Atomic int32_t a_master_pos;
 
-  /* Tempo / metronome (published). */
-  _Atomic uint32_t a_tempo_bpm_bits;
-  _Atomic int32_t a_metronome_on;
-  _Atomic int32_t a_count_in_enabled;
-  _Atomic int32_t a_counting_in;
-  _Atomic int32_t a_current_beat;
-  _Atomic int32_t a_loop_bars;     /* whole bars in the loop; 0 if none */
-  _Atomic int32_t a_sync_tempo;    /* snap tempo+grid to the loop (default 1) */
-  _Atomic int32_t a_quantize;      /* le_quantize_mode (default BAR) */
-  _Atomic int32_t a_armed_channel; /* track armed for a quantized start, or -1 */
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
   /* Tracks. */
@@ -131,27 +177,54 @@ struct le_engine {
 
   /* Configuration. */
   int sample_rate;
-  int channels;
+  int in_channels;  /* hardware capture channels */
+  int out_channels; /* hardware playback channels */
   int32_t max_loop_frames;
+  int32_t fx_delay_frames; /* per-slot delay-line capacity (1 s @ sample rate) */
 
   /* Audio-thread-local transport. */
   le_loop_clock clock;
   uint64_t loop_iteration; /* free-running count of base-loop wraps */
 
-  /* Audio-thread-local tempo / metronome state. */
-  uint64_t frame_clock;     /* running frame counter (tap timing) */
-  uint64_t last_tap_frame;
-  int has_tap;
-  int32_t metro_frame;      /* frames since the last beat */
-  int32_t metro_beat;       /* 0..LE_BEATS_PER_BAR-1 */
-  int32_t click_remaining;  /* frames left in the current click */
-  int32_t click_len;
-  float click_phase;
-  float click_freq;
-  int32_t count_in_remaining; /* frames left in a count-in */
-  int32_t count_in_channel;
-  int32_t loop_total_beats; /* beats spanning the loop (bars * beats/bar) */
-  int32_t metro_prev_beat;  /* last loop-driven beat index that clicked, or -1 */
+  /* Quantized recording (control-thread-owned). When `quantize` is set, a record
+   * press over an existing master arms `armed[ch]` (and does the one-time prep
+   * an immediate record would) instead of acting now; the audio thread fires it
+   * at the next loop top. `arm_snapshotted[ch]` records whether the arm pushed a
+   * pre-overdub undo layer, so a cancel can reverse it. */
+  int quantize; /* global default */
+  /* Per-track quantize override: -1 inherit the global default, 0 force off,
+   * 1 force on. The effective value drives le_engine_record's arm decision. */
+  int track_quantize[LE_MAX_TRACKS];
+  int armed[LE_MAX_TRACKS];
+  int arm_snapshotted[LE_MAX_TRACKS];
+  /* What each arm is waiting for: 0 = loop top (quantize), 1 = input level
+   * (auto-record). Lets toggling one feature cancel only its own arms. */
+  int armed_trigger[LE_MAX_TRACKS];
+
+  /* Loop length. The global default (0 auto-rounds up to whole base loops on
+   * stop; K >= 1 fixes K base loops) applies to tracks that inherit. A track's
+   * target_multiple is 0 to inherit the global default, or K >= 1 to fix it.
+   * Control-thread-owned. */
+  int default_multiple;
+  int target_multiple[LE_MAX_TRACKS];
+
+  /* When `rec_dub` is set, finalizing a recording with a record press continues
+   * into overdub instead of playback (the second-press "rec/dub" mode). A stop
+   * still ends in playback/stopped. Control-thread default, read on the audio
+   * thread via the finalize end-state. */
+  int rec_dub;
+
+  /* When `auto_record` is set, a record press on an empty track arms a
+   * signal-triggered start: the audio thread begins recording the first frame
+   * the input level crosses LE_AUTO_RECORD_THRESHOLD. Reuses the arm/pending
+   * machinery with a per-track trigger type (see le_track.pending_trigger). */
+  int auto_record;
+
+  /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
+   * current loop bucket and publish when the playhead crosses into the next. */
+  int32_t loop_viz_bucket;
+  float loop_viz_accum;
+  float track_viz_accum[LE_MAX_TRACKS];
 
   /* Latency harness (audio-thread-local + published state). */
   int lat_active;
@@ -161,13 +234,13 @@ struct le_engine {
 
   char device_name[256];
   int passthrough; /* input monitoring */
-  int mono_input;  /* average input channels and feed every output channel */
 
-  /* Explicit context + capture device id, only used when capturing from a
-   * detected loopback device (use_loopback_capture). */
+  /* Explicit context + resolved device ids, used when capturing from a detected
+   * loopback device (use_loopback_capture) or when a device is pinned by id. */
   ma_context context;
   int context_initialised;
   ma_device_id capture_id;
+  ma_device_id playback_id;
 };
 
 /* ---- float/double <-> atomic-bits helpers ---- */
@@ -214,96 +287,30 @@ static int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
   return p;
 }
 
-/* ---- tempo helpers (audio thread) ---- */
-
-static float load_bpm(le_engine* e) {
-  const float bpm = load_f32(&e->a_tempo_bpm_bits);
-  return bpm > 0.0f ? bpm : 120.0f;
-}
-
-static int32_t frames_per_beat(le_engine* e) {
-  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
-  const int32_t fpb = (int32_t)((float)sr * 60.0f / load_bpm(e));
-  return fpb > 0 ? fpb : 1;
-}
-
-static void trigger_click(le_engine* e, int downbeat) {
-  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
-  e->click_len = sr * LE_CLICK_MS / 1000;
-  if (e->click_len < 1) e->click_len = 1;
-  e->click_remaining = e->click_len;
-  e->click_phase = 0.0f;
-  e->click_freq = downbeat ? LE_CLICK_FREQ_DOWNBEAT : LE_CLICK_FREQ_BEAT;
-}
-
-/* The beat index (0-based) the loop is on at `pos`, given a loop of `len`
- * frames divided into `total_beats` beats. Distributes any remainder evenly so
- * the grid divides the loop exactly even when len % total_beats != 0. */
-static int32_t beat_at(int32_t pos, int32_t len, int32_t total_beats) {
-  if (len <= 0 || total_beats <= 0) return 0;
-  return (int32_t)(((int64_t)pos * (int64_t)total_beats) / (int64_t)len);
-}
-
-static void handle_tap(le_engine* e) {
-  const uint64_t now = e->frame_clock;
-  if (e->has_tap) {
-    const uint64_t interval = now - e->last_tap_frame;
-    const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
-    if (interval > 0) {
-      const double bpm = 60.0 * (double)sr / (double)interval;
-      if (bpm >= (double)LE_TEMPO_MIN && bpm <= (double)LE_TEMPO_MAX) {
-        store_f32(&e->a_tempo_bpm_bits, (float)bpm);
-      }
-    }
-  }
-  e->last_tap_frame = now;
-  e->has_tap = 1;
-}
-
 /* ---- command handlers (audio thread) ---- */
 
-/* Establishes the loop<->tempo relationship for a freshly defined master loop.
- * With sync on: round the recorded length to the nearest whole bar at the
- * current tempo, then derive the beat grid back from the loop so it divides the
- * loop exactly, and snap the displayed tempo to match. With sync off: leave the
- * tempo untouched and the loop free-form (no bars, free-running metronome). */
-static void sync_tempo_to_loop(le_engine* e, int32_t len) {
-  e->metro_prev_beat = -1; /* re-arm the loop-driven metronome at pos 0 */
-  if (!load_i32(&e->a_sync_tempo)) {
-    e->loop_total_beats = 0;
-    store_i32(&e->a_loop_bars, 0);
-    return;
-  }
-  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
-  const int32_t fpbar = frames_per_beat(e) * LE_BEATS_PER_BAR;
-  int32_t bars = (len + fpbar / 2) / fpbar; /* round to nearest whole bar */
-  if (bars < 1) bars = 1;
-  const int32_t total_beats = bars * LE_BEATS_PER_BAR;
-  /* framesPerBeat = len / total_beats; tempo = 60 * sr / framesPerBeat. */
-  float bpm = 60.0f * (float)sr * (float)total_beats / (float)len;
-  if (bpm < LE_TEMPO_MIN) bpm = LE_TEMPO_MIN;
-  if (bpm > LE_TEMPO_MAX) bpm = LE_TEMPO_MAX;
-  store_f32(&e->a_tempo_bpm_bits, bpm);
-  store_i32(&e->a_loop_bars, bars);
-  e->loop_total_beats = total_beats;
-}
-
-static void finalize_master(le_engine* e, le_track* t) {
+static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
   const int32_t len = t->record_pos > 0 ? t->record_pos : 1;
   le_loop_clock_set_length(&e->clock, len);
   e->loop_iteration = 0; /* the base loop just (re)started */
   store_i32(&e->a_master_len, len);
   store_i32(&t->a_len, len);
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
-  store_i32(&t->a_state, LE_TRACK_PLAYING);
+  store_i32(&t->a_state, end_state);
   t->start_iter = 0;
-  sync_tempo_to_loop(e, len);
 }
 
 /* Finalizes a non-defining track that recorded freely across one or more base
  * loops: rounds its length UP to the nearest whole base loop (the locked #4
  * behaviour), publishes the multiple, and moves it to `end_state`. A track that
  * captured nothing (never reached the loop top) returns to EMPTY. */
+/* Track [ch]'s effective forced loop multiple: its per-track override, or the
+ * global default when it inherits (target 0). 0 means auto (round up on stop). */
+static int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
+  const int32_t ov = e->target_multiple[ch];
+  return ov > 0 ? ov : e->default_multiple;
+}
+
 static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
   const int32_t base = e->clock.length > 0 ? e->clock.length : 1;
   if (t->record_pos <= 0) { /* nothing captured */
@@ -313,7 +320,10 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
     t->record_pos = 0;
     return;
   }
-  int32_t k = (t->record_pos + base - 1) / base; /* ceil to whole base loops */
+  /* A forced multiple fixes the length to exactly K base loops; 0 (auto) rounds
+   * up to whole base loops based on how much was recorded. */
+  const int32_t forced = le_effective_multiple(e, (int32_t)(t - e->tracks));
+  int32_t k = forced > 0 ? forced : (t->record_pos + base - 1) / base;
   const int32_t maxk = e->max_loop_frames / base;
   if (k < 1) k = 1;
   if (maxk >= 1 && k > maxk) k = maxk;
@@ -338,7 +348,7 @@ static void close_active_capture(le_engine* e, int32_t except_ch) {
     const int32_t st = load_i32(&tr->a_state);
     if (st == LE_TRACK_RECORDING) {
       if (e->clock.length == 0) {
-        finalize_master(e, tr); /* defines the master loop, -> PLAYING */
+        finalize_master(e, tr, LE_TRACK_PLAYING); /* defines the master loop */
       } else {
         finalize_new_track(e, tr, LE_TRACK_PLAYING); /* round up to whole loops */
       }
@@ -348,45 +358,50 @@ static void close_active_capture(le_engine* e, int32_t except_ch) {
   }
 }
 
-/* Acts on a record/overdub press immediately: finalizes any other capture
- * (one-capturer hand-off), then advances this track's state machine. Called
- * directly when quantize is off / no loop exists, and from le_engine_process
- * when a pending quantized arm reaches its grid boundary. */
-static void handle_record_now(le_engine* e, int32_t ch) {
+/* Acts on a record/overdub press: finalizes any other capture (one-capturer
+ * hand-off), then advances this track's state machine. */
+static void handle_record(le_engine* e, int32_t ch) {
+  if (!valid_channel(e, ch)) return;
   close_active_capture(e, ch);
   le_track* t = &e->tracks[ch];
   switch (load_i32(&t->a_state)) {
     case LE_TRACK_EMPTY:
       /* First record overall (no master yet) defines the master loop; otherwise
-       * the new track records by overwriting one master loop. Both are
-       * RECORDING, distinguished by clock.length. */
+       * the new track records freely from the loop top. Both are RECORDING,
+       * distinguished by clock.length. */
       if (e->clock.length == 0) {
-        if (load_i32(&e->a_count_in_enabled) && e->count_in_remaining == 0) {
-          /* Defining recording with count-in: click one bar, then RECORDING. */
-          e->count_in_remaining = frames_per_beat(e) * LE_BEATS_PER_BAR;
-          e->count_in_channel = ch;
-          e->metro_frame = 0;
-          e->metro_beat = 0;
-          store_i32(&e->a_counting_in, 1);
-        } else {
-          t->record_pos = 0;
-          le_loop_clock_reset(&e->clock);
-          store_i32(&t->a_state, LE_TRACK_RECORDING);
-        }
+        t->record_pos = 0;
+        t->record_start = 0;
+        le_loop_clock_reset(&e->clock);
+        store_i32(&t->a_state, LE_TRACK_RECORDING);
       } else {
-        /* New track: record freely from the next loop top across one or more
-         * base loops (record_pos == -1 waits for pos == 0). */
-        t->record_pos = -1;
+        /* New track over an existing master: begin capturing immediately at the
+         * current loop phase — no waiting for the loop top. record_pos seeds to
+         * the master position and start_iter to the current iteration, so it
+         * stays equal to (loop_iteration - start_iter)*base + position; buffer
+         * writes are therefore phase-locked to the master and the slice before
+         * the press in this first segment stays silent (the live buffer was
+         * zeroed on the control thread). Spans one or more base loops, rounded
+         * up on stop — or exactly K with a fixed multiple (auto-finalized). */
+        t->record_pos = e->clock.position;
+        t->record_start = t->record_pos;
+        t->start_iter = e->loop_iteration;
         store_i32(&t->a_state, LE_TRACK_RECORDING);
       }
       break;
-    case LE_TRACK_RECORDING:
+    case LE_TRACK_RECORDING: {
+      /* Second press finalizes. In rec/dub mode it continues into overdub
+       * instead of playback (no undo snapshot for this auto-dub layer — a
+       * later manual overdub snapshots normally). A stop press ends in
+       * playback/stopped (handle_stop), never overdub. */
+      const int32_t end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
       if (e->clock.length == 0) {
-        finalize_master(e, t);
+        finalize_master(e, t, end);
       } else {
-        finalize_new_track(e, t, LE_TRACK_PLAYING); /* toggle: stop + round up */
+        finalize_new_track(e, t, end);
       }
       break;
+    }
     case LE_TRACK_PLAYING:
     case LE_TRACK_STOPPED:
       /* Undo snapshot already taken on the calling thread by le_engine_record. */
@@ -400,41 +415,13 @@ static void handle_record_now(le_engine* e, int32_t ch) {
   }
 }
 
-static void handle_record(le_engine* e, int32_t ch) {
-  if (!valid_channel(e, ch)) return;
-  /* Ignore record presses while a count-in is committing to a track. */
-  if (e->count_in_remaining > 0) return;
-
-  /* A second press on the armed track cancels the pending quantized start. */
-  if (load_i32(&e->a_armed_channel) == ch) {
-    store_i32(&e->a_armed_channel, -1);
-    return;
-  }
-  /* When a loop exists and quantize is on, a press that *starts* a capture
-   * (a new track or an overdub) arms instead of acting now; the capture begins
-   * at the next grid boundary (applied in le_engine_process). Presses that stop
-   * an in-progress capture act immediately. */
-  if (e->clock.length > 0 && load_i32(&e->a_quantize) != LE_QUANTIZE_OFF) {
-    const int32_t st = load_i32(&e->tracks[ch].a_state);
-    if (st == LE_TRACK_EMPTY || st == LE_TRACK_PLAYING ||
-        st == LE_TRACK_STOPPED) {
-      store_i32(&e->a_armed_channel, ch);
-      return;
-    }
-  }
-  handle_record_now(e, ch);
-}
-
 static void handle_stop(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
-  /* A stop press clears any pending quantized arm on this track. */
-  if (load_i32(&e->a_armed_channel) == ch) store_i32(&e->a_armed_channel, -1);
   le_track* t = &e->tracks[ch];
   const int32_t st = load_i32(&t->a_state);
   if (st == LE_TRACK_RECORDING) {
     if (e->clock.length == 0) {
-      finalize_master(e, t);
-      store_i32(&t->a_state, LE_TRACK_STOPPED);
+      finalize_master(e, t, LE_TRACK_STOPPED);
     } else {
       finalize_new_track(e, t, LE_TRACK_STOPPED); /* round up to whole loops */
     }
@@ -453,10 +440,11 @@ static void handle_play(le_engine* e, int32_t ch) {
 
 static void handle_clear(le_engine* e, int32_t ch) {
   if (!valid_channel(e, ch)) return;
-  if (load_i32(&e->a_armed_channel) == ch) store_i32(&e->a_armed_channel, -1);
   le_track* t = &e->tracks[ch];
   t->record_pos = 0;
   t->start_iter = 0;
+  t->pending_record = 0;
+  store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   store_i32(&t->a_len, 0);
   store_i32(&t->a_multiple, 1);
@@ -473,9 +461,116 @@ static void handle_clear(le_engine* e, int32_t ch) {
   e->loop_iteration = 0;
   store_i32(&e->a_master_len, 0);
   store_i32(&e->a_master_pos, 0);
-  store_i32(&e->a_loop_bars, 0);
-  e->loop_total_beats = 0;
-  e->metro_prev_beat = -1;
+  /* Clear the loop waveform so a re-record starts from silence. */
+  e->loop_viz_bucket = -1;
+  for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+    store_f32(&e->a_loop_viz[i], 0.0f);
+    for (int t = 0; t < e->track_count; ++t) {
+      store_f32(&e->a_track_viz[t][i], 0.0f);
+    }
+  }
+}
+
+/* ---- per-track effects DSP ----
+ *
+ * Each helper processes one sample through one slot and advances that slot's
+ * audio-thread-owned state in `t`. All are branch-light and allocation-free
+ * (the delay line is pre-allocated by the control thread), so they are safe in
+ * the audio callback. Parameters arrive normalized (0..1) and are mapped to
+ * musical ranges here. */
+
+#ifndef LE_PI
+#define LE_PI 3.14159265358979323846f
+#endif
+
+/* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
+static float fx_drive(float x, const float* p) {
+  const float drive = 1.0f + p[0] * 29.0f; /* 1x .. 30x pre-gain */
+  const float level = p[1];                /* 0..1 output trim */
+  return tanhf(x * drive) * level;
+}
+
+/* Resonant low-pass: a TPT state-variable filter (Cytomic/Zavalishin form).
+ * p0 = cutoff (20 Hz .. ~18 kHz, log), p1 = resonance. */
+static float fx_filter(le_track* t, int slot, int sr, float x, const float* p) {
+  float fc = 20.0f * powf(900.0f, p[0]); /* 20 * 900 = 18 kHz at p0 = 1 */
+  const float nyq = 0.45f * (float)sr;
+  if (fc > nyq) fc = nyq;
+  const float g = tanf(LE_PI * fc / (float)sr);
+  const float k = 2.0f - 1.8f * p[1]; /* damping: 2 (none) .. 0.2 (resonant) */
+  const float a1 = 1.0f / (1.0f + g * (g + k));
+  const float a2 = g * a1;
+  const float a3 = g * a2;
+  float* ic1 = &t->fx_svf_ic1[slot];
+  float* ic2 = &t->fx_svf_ic2[slot];
+  const float v3 = x - *ic2;
+  const float v1 = a1 * (*ic1) + a2 * v3;
+  const float v2 = *ic2 + a2 * (*ic1) + a3 * v3;
+  *ic1 = 2.0f * v1 - *ic1;
+  *ic2 = 2.0f * v2 - *ic2;
+  return v2; /* low-pass output */
+}
+
+/* Feedback delay: p0 = time (0..1 s), p1 = feedback, p2 = wet mix. The ring is
+ * the control-thread-allocated fx_delay line of e->fx_delay_frames samples. */
+static float fx_delay(le_track* t, int slot, int cap, float x, const float* p) {
+  float* buf = t->fx_delay[slot];
+  if (buf == NULL || cap <= 1) return x;
+  int d = (int)(p[0] * (float)(cap - 1));
+  if (d < 1) d = 1;
+  int pos = t->fx_delay_pos[slot];
+  int rp = pos - d;
+  if (rp < 0) rp += cap;
+  const float delayed = buf[rp];
+  const float fb = p[1] * 0.95f; /* keep the feedback loop stable (< 1) */
+  buf[pos] = x + delayed * fb;
+  pos += 1;
+  if (pos >= cap) pos = 0;
+  t->fx_delay_pos[slot] = pos;
+  const float mix = p[2];
+  return x * (1.0f - mix) + delayed * mix;
+}
+
+/* Tremolo: sine LFO amplitude modulation. p0 = rate (0.1..12 Hz), p1 = depth. */
+static float fx_tremolo(le_track* t, int slot, int sr, float x,
+                        const float* p) {
+  const float rate = 0.1f + p[0] * 11.9f;
+  const float depth = p[1];
+  float ph = t->fx_lfo[slot];
+  const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * ph)); /* 0..1 */
+  ph += rate / (float)sr;
+  if (ph >= 1.0f) ph -= 1.0f;
+  t->fx_lfo[slot] = ph;
+  return x * (1.0f - depth * (1.0f - lfo));
+}
+
+/* Applies the [stage] entries of track [t]'s chain to one sample, in order.
+ * [count] is the active chain length; [types]/[stages]/[params] are the
+ * per-buffer snapshot for this track. */
+static float fx_apply_chain(le_track* t, int sr, int cap, float x, int stage,
+                            int count, const int32_t* types,
+                            const int32_t* stages,
+                            const float params[LE_FX_MAX][LE_FX_PARAMS]) {
+  for (int s = 0; s < count; ++s) {
+    if (stages[s] != stage) continue;
+    switch (types[s]) {
+      case LE_FX_DRIVE:
+        x = fx_drive(x, params[s]);
+        break;
+      case LE_FX_FILTER:
+        x = fx_filter(t, s, sr, x, params[s]);
+        break;
+      case LE_FX_DELAY:
+        x = fx_delay(t, s, cap, x, params[s]);
+        break;
+      case LE_FX_TREMOLO:
+        x = fx_tremolo(t, s, sr, x, params[s]);
+        break;
+      default:
+        break;
+    }
+  }
+  return x;
 }
 
 static void apply_command(le_engine* e, const le_command* cmd) {
@@ -497,7 +592,27 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     case LE_CMD_RECORD:
+      if (valid_channel(e, cmd->arg_i)) {
+        e->tracks[cmd->arg_i].pending_record = 0;
+        store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
+      }
       handle_record(e, cmd->arg_i);
+      break;
+    case LE_CMD_ARM:
+      if (valid_channel(e, cmd->arg_i)) {
+        /* arg_f carries the trigger: 0 = loop-top (quantize), 1 = input level
+         * (sound-activated auto-record). */
+        e->tracks[cmd->arg_i].pending_record = 1;
+        e->tracks[cmd->arg_i].pending_trigger = cmd->arg_f != 0.0f ? 1 : 0;
+        store_i32(&e->tracks[cmd->arg_i].a_pending, 1);
+      }
+      break;
+    case LE_CMD_DISARM:
+      if (valid_channel(e, cmd->arg_i)) {
+        e->tracks[cmd->arg_i].pending_record = 0;
+        e->tracks[cmd->arg_i].pending_trigger = 0;
+        store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
+      }
       break;
     case LE_CMD_STOP:
       handle_stop(e, cmd->arg_i);
@@ -523,35 +638,97 @@ static void apply_command(le_engine* e, const le_command* cmd) {
         store_i32(&e->tracks[cmd->arg_i].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
       }
       break;
-    case LE_CMD_SET_TEMPO: {
-      float bpm = cmd->arg_f;
-      if (bpm < LE_TEMPO_MIN) bpm = LE_TEMPO_MIN;
-      if (bpm > LE_TEMPO_MAX) bpm = LE_TEMPO_MAX;
-      store_f32(&e->a_tempo_bpm_bits, bpm);
+    case LE_CMD_SET_RECORD_OFFSET: {
+      const int32_t frames = cmd->arg_i > 0 ? cmd->arg_i : 0;
+      store_i32(&e->a_record_offset, frames);
+      /* An explicitly set offset (a restored measurement, or a manual override)
+       * is a known round-trip, so publish it as a completed measurement — the
+       * UI then shows the loaded latency instead of "not measured". */
+      if (frames > 0) {
+        const int32_t osr = e->sample_rate > 0 ? e->sample_rate : 48000;
+        atomic_store_explicit(
+            &e->a_latency_ms_bits,
+            f64_to_bits((double)frames * 1000.0 / (double)osr),
+            memory_order_relaxed);
+        store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+      }
       break;
     }
-    case LE_CMD_SET_METRONOME:
-      store_i32(&e->a_metronome_on, cmd->arg_f != 0.0f ? 1 : 0);
+    /* Unlike SET_VOLUME/SET_MUTE (track in arg_i), these two carry the track in
+     * arg_f and the mask in arg_i — so a 32-bit mask round-trips exactly (a
+     * float cannot). See le_engine_set_input_mask/set_output_mask. */
+    case LE_CMD_SET_INPUT_MASK: {
+      const int32_t ch = (int32_t)cmd->arg_f;
+      if (!valid_channel(e, ch)) break;
+      const uint32_t valid = e->in_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->in_channels) - 1u);
+      /* A track can never record from a loopback-excluded channel. */
+      const uint32_t excluded = atomic_load_explicit(
+          &e->a_excluded_input_mask, memory_order_relaxed);
+      atomic_store_explicit(&e->tracks[ch].a_input_mask,
+                            (uint32_t)cmd->arg_i & valid & ~excluded,
+                            memory_order_relaxed);
       break;
-    case LE_CMD_SET_COUNT_IN:
-      store_i32(&e->a_count_in_enabled, cmd->arg_f != 0.0f ? 1 : 0);
+    }
+    case LE_CMD_SET_OUTPUT_MASK: {
+      const int32_t ch = (int32_t)cmd->arg_f;
+      if (!valid_channel(e, ch)) break;
+      const uint32_t valid = e->out_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->out_channels) - 1u);
+      atomic_store_explicit(&e->tracks[ch].a_output_mask,
+                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
       break;
-    case LE_CMD_TAP_TEMPO:
-      handle_tap(e);
+    }
+    case LE_CMD_SET_MONITOR_INPUT_MASK: {
+      const uint32_t valid = e->in_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->in_channels) - 1u);
+      const uint32_t excluded = atomic_load_explicit(
+          &e->a_excluded_input_mask, memory_order_relaxed);
+      atomic_store_explicit(&e->a_monitor_input_mask,
+                            (uint32_t)cmd->arg_i & valid & ~excluded,
+                            memory_order_relaxed);
       break;
-    case LE_CMD_SET_RECORD_OFFSET:
-      store_i32(&e->a_record_offset, cmd->arg_i > 0 ? cmd->arg_i : 0);
+    }
+    case LE_CMD_SET_MONITOR_OUTPUT_MASK: {
+      const uint32_t valid = e->out_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->out_channels) - 1u);
+      atomic_store_explicit(&e->a_monitor_output_mask,
+                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
       break;
-    case LE_CMD_SET_SYNC_TEMPO:
-      store_i32(&e->a_sync_tempo, cmd->arg_f != 0.0f ? 1 : 0);
+    }
+    case LE_CMD_SET_FX: {
+      const int32_t ch = cmd->arg_i >> 16;
+      const int32_t index = (cmd->arg_i >> 8) & 0xFF;
+      const int32_t stage = cmd->arg_i & 0xFF;
+      if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
+      le_track* t = &e->tracks[ch];
+      store_i32(&t->a_fx_type[index], (int32_t)cmd->arg_f);
+      store_i32(&t->a_fx_stage[index], stage);
+      /* Reset the entry's DSP state so a freshly engaged effect starts clean (no
+       * filter blow-up from stale integrators, no delay-read of old content). */
+      t->fx_svf_ic1[index] = 0.0f;
+      t->fx_svf_ic2[index] = 0.0f;
+      t->fx_lfo[index] = 0.0f;
+      t->fx_delay_pos[index] = 0;
       break;
-    case LE_CMD_SET_QUANTIZE: {
-      int32_t m = cmd->arg_i;
-      if (m < LE_QUANTIZE_OFF) m = LE_QUANTIZE_OFF;
-      if (m > LE_QUANTIZE_BAR) m = LE_QUANTIZE_BAR;
-      store_i32(&e->a_quantize, m);
-      /* Disabling quantize drops any pending arm (it would never fire). */
-      if (m == LE_QUANTIZE_OFF) store_i32(&e->a_armed_channel, -1);
+    }
+    case LE_CMD_SET_FX_COUNT: {
+      const int32_t ch = cmd->arg_i >> 8;
+      int32_t count = cmd->arg_i & 0xFF;
+      if (!valid_channel(e, ch)) break;
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->tracks[ch].a_fx_count, count);
+      break;
+    }
+    case LE_CMD_SET_MONITOR_FX_TRACK: {
+      const int32_t track = cmd->arg_i;
+      store_i32(&e->a_monitor_fx_track,
+                (track >= 0 && track < e->track_count) ? track : -1);
       break;
     }
     case LE_CMD_COMMIT_SESSION: {
@@ -564,7 +741,6 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       le_loop_clock_set_length(&e->clock, base);
       e->loop_iteration = 0;
       store_i32(&e->a_master_len, base);
-      sync_tempo_to_loop(e, base);
       for (int32_t t = 0; t < e->track_count; ++t) {
         le_track* tr = &e->tracks[t];
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
@@ -587,7 +763,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
 
 void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
-  const int ch = e->channels;
+  const int ch_in = e->in_channels > 0 ? e->in_channels : 1;
+  const int ch_out = e->out_channels > 0 ? e->out_channels : 1;
   const int tc = e->track_count;
   float* out = output;
   const float* in = input;
@@ -596,6 +773,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  /* Loopback-labelled input channels are never recorded, monitored, or
+   * metered (they carry our own output and would otherwise inflate the meter). */
+  const uint32_t excluded =
+      atomic_load_explicit(&e->a_excluded_input_mask, memory_order_relaxed);
+  int active_in = 0;
+  for (int c = 0; c < ch_in; ++c) {
+    if (!(excluded & (1u << c))) ++active_in;
+  }
 
   float in_sumsq = 0.0f;
   float in_peak = 0.0f;
@@ -603,19 +788,76 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float trk_sumsq[LE_MAX_TRACKS] = {0};
   float trk_peak[LE_MAX_TRACKS] = {0};
 
+  /* Per-track effects chain, snapshotted once per buffer (control-thread writes
+   * are applied at buffer granularity). has_pre/has_post gate the input and
+   * playback passes so tracks with no effects in that stage skip the chain. */
+  int32_t fx_count[LE_MAX_TRACKS];
+  int32_t fx_type[LE_MAX_TRACKS][LE_FX_MAX];
+  int32_t fx_stage[LE_MAX_TRACKS][LE_FX_MAX];
+  float fx_params[LE_MAX_TRACKS][LE_FX_MAX][LE_FX_PARAMS];
+  int has_pre[LE_MAX_TRACKS];
+  int has_post[LE_MAX_TRACKS];
+  for (int t = 0; t < tc; ++t) {
+    has_pre[t] = 0;
+    has_post[t] = 0;
+    int32_t n = load_i32(&e->tracks[t].a_fx_count);
+    if (n < 0) n = 0;
+    if (n > LE_FX_MAX) n = LE_FX_MAX;
+    fx_count[t] = n;
+    for (int s = 0; s < n; ++s) {
+      const int32_t ty = load_i32(&e->tracks[t].a_fx_type[s]);
+      const int32_t stg = load_i32(&e->tracks[t].a_fx_stage[s]);
+      fx_type[t][s] = ty;
+      fx_stage[t][s] = stg;
+      if (ty != LE_FX_NONE) {
+        if (stg == LE_FX_PRE) {
+          has_pre[t] = 1;
+        } else {
+          has_post[t] = 1;
+        }
+      }
+      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+        fx_params[t][s][p] = load_f32(&e->tracks[t].a_fx_param[s][p]);
+      }
+    }
+  }
+  const int fx_cap = e->fx_delay_frames;
+
   for (uint32_t f = 0; f < frames; ++f) {
-    e->frame_clock++;
-    float frame_mag = 0.0f;
-    float mono = 0.0f;
-    for (int c = 0; c < ch; ++c) {
-      const float s = in ? in[f * ch + c] : 0.0f;
+    float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
+    float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
+    for (int c = 0; c < ch_in; ++c) {
+      const float s = in ? in[f * ch_in + c] : 0.0f;
       const float a = fabsf(s);
+      if (excluded & (1u << c)) {
+        /* Loopback channels carry our own output back; not recorded/monitored/
+         * metered, but they are the round-trip path the latency harness times. */
+        if (a > loop_mag) loop_mag = a;
+        continue;
+      }
       if (a > frame_mag) frame_mag = a;
       in_sumsq += s * s;
-      mono += s;
     }
-    mono /= (float)ch; /* clip-safe average fold-down */
     if (frame_mag > in_peak) in_peak = frame_mag;
+
+    /* Sound-activated recording: a track armed for the input-level trigger
+     * starts the moment the input crosses the threshold. Fired here — after the
+     * input magnitude is known but before st[] is sampled below — so this very
+     * frame is captured. */
+    for (int qt = 0; qt < tc; ++qt) {
+      if (e->tracks[qt].pending_record && e->tracks[qt].pending_trigger == 1 &&
+          frame_mag > LE_AUTO_RECORD_THRESHOLD) {
+        e->tracks[qt].pending_record = 0;
+        e->tracks[qt].pending_trigger = 0;
+        store_i32(&e->tracks[qt].a_pending, 0);
+        handle_record(e, qt);
+      }
+    }
+
+    /* The latency pulse returns on the loopback channels when the interface has
+     * them (e.g. a Scarlett's "Loop 1/2"); otherwise (a physical cable, or a
+     * routed loopback capture device) it returns on the normal inputs. */
+    const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
 
     /* Latency harness takes over the output entirely while measuring.
      *
@@ -639,7 +881,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       const uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
       const uint64_t attempt_frames = (uint64_t)(sr / LE_LATENCY_RETRY_DIV);
       if (e->lat_frames_since_emit > dead_frames &&
-          frame_mag >= LE_LATENCY_THRESHOLD) {
+          lat_mag >= LE_LATENCY_THRESHOLD) {
         const double ms = (double)e->lat_frames_since_emit * 1000.0 / (double)sr;
         atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
                               memory_order_relaxed);
@@ -658,8 +900,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
           e->lat_active = 0;
         }
       }
-      for (int c = 0; c < ch; ++c) {
-        out[f * ch + c] = broadcast;
+      for (int c = 0; c < ch_out; ++c) {
+        out[f * ch_out + c] = broadcast;
         out_sumsq += broadcast * broadcast;
       }
       continue;
@@ -671,98 +913,32 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     float* buf[LE_MAX_TRACKS];
     float vol[LE_MAX_TRACKS];
     int mut[LE_MAX_TRACKS];
+    uint32_t in_mask[LE_MAX_TRACKS];
+    uint32_t out_mask[LE_MAX_TRACKS];
     for (int t = 0; t < tc; ++t) {
       st[t] = load_i32(&e->tracks[t].a_state);
       buf[t] = e->tracks[t].pool[load_i32(&e->tracks[t].a_live)];
       vol[t] = load_f32(&e->tracks[t].a_vol_bits);
       mut[t] = load_i32(&e->tracks[t].a_muted);
+      in_mask[t] = atomic_load_explicit(&e->tracks[t].a_input_mask,
+                                        memory_order_relaxed);
+      out_mask[t] = atomic_load_explicit(&e->tracks[t].a_output_mask,
+                                         memory_order_relaxed);
     }
     /* Latency compensation: captured input is recorded this many frames earlier
      * so it aligns with what the player heard. Monitoring stays live (it is no
      * longer folded into the loop buffer at the playhead). */
     const int32_t offset = load_i32(&e->a_record_offset);
     const int monitor_on = load_i32(&e->a_monitor);
+    const uint32_t mon_in_mask =
+        atomic_load_explicit(&e->a_monitor_input_mask, memory_order_relaxed);
+    const uint32_t mon_out_mask =
+        atomic_load_explicit(&e->a_monitor_output_mask, memory_order_relaxed);
+    /* When >= 0, the monitor follows this track: instead of re-deriving from raw
+     * inputs it plays that track's pre-stage-processed input, so you hear the
+     * before-track effects on your live input (exactly what gets recorded). */
+    const int32_t mon_fx_track = load_i32(&e->a_monitor_fx_track);
     const int32_t pos = e->clock.position;
-
-    /* Metronome + count-in. Once a loop exists and sync is on, the beat grid is
-     * locked to the loop: derive the beat from the master position so clicks
-     * divide the loop exactly. Otherwise (no loop yet, e.g. a count-in, or sync
-     * off) the beat phase free-runs at the current tempo. */
-    const int counting = e->count_in_remaining > 0;
-    const int loop_synced =
-        e->clock.length > 0 && e->loop_total_beats > 0 &&
-        load_i32(&e->a_sync_tempo);
-    int beat_boundary = 0; /* a beat started this frame */
-    int bar_boundary = 0;  /* that beat is also a downbeat */
-    if (loop_synced) {
-      const int32_t beat = beat_at(pos, e->clock.length, e->loop_total_beats);
-      if (beat != e->metro_prev_beat) {
-        e->metro_prev_beat = beat;
-        beat_boundary = 1;
-        bar_boundary = (beat % LE_BEATS_PER_BAR) == 0;
-        store_i32(&e->a_current_beat, beat % LE_BEATS_PER_BAR);
-        if (load_i32(&e->a_metronome_on)) trigger_click(e, bar_boundary);
-      }
-    } else {
-      if (e->metro_frame == 0) {
-        beat_boundary = 1;
-        bar_boundary = e->metro_beat == 0;
-        store_i32(&e->a_current_beat, e->metro_beat);
-        if (load_i32(&e->a_metronome_on) || counting) {
-          trigger_click(e, e->metro_beat == 0);
-        }
-      }
-      if (++e->metro_frame >= frames_per_beat(e)) {
-        e->metro_frame = 0;
-        e->metro_beat = (e->metro_beat + 1) % LE_BEATS_PER_BAR;
-      }
-    }
-
-    /* Quantize-start: a press while a loop exists arms a track (a_armed_channel);
-     * begin its capture when the next grid boundary of the active resolution is
-     * reached. Only meaningful with a loop, so the count-in path never arms. */
-    const int32_t armed_ch = load_i32(&e->a_armed_channel);
-    if (armed_ch >= 0) {
-      const int32_t q = load_i32(&e->a_quantize);
-      const int fire = (q == LE_QUANTIZE_BAR && bar_boundary) ||
-                       (q == LE_QUANTIZE_BEAT && beat_boundary);
-      if (fire) {
-        store_i32(&e->a_armed_channel, -1);
-        handle_record_now(e, armed_ch);
-      }
-    }
-    float click = 0.0f;
-    if (e->click_remaining > 0) {
-      const float env = (float)e->click_remaining / (float)e->click_len;
-      click = LE_CLICK_AMP * env * sinf(e->click_phase);
-      e->click_phase += LE_TWO_PI * e->click_freq / (float)sr;
-      if (e->click_phase > LE_TWO_PI) e->click_phase -= LE_TWO_PI;
-      e->click_remaining--;
-    }
-    if (counting) {
-      if (--e->count_in_remaining <= 0) {
-        e->count_in_remaining = 0;
-        store_i32(&e->a_counting_in, 0);
-        le_track* ct = &e->tracks[e->count_in_channel];
-        ct->record_pos = 0;
-        le_loop_clock_reset(&e->clock);
-        store_i32(&ct->a_state, LE_TRACK_RECORDING);
-        e->metro_frame = 0;
-        e->metro_beat = 0;
-      }
-    }
-
-    /* A waiting new-track recording (record_pos == -1) begins at the loop top so
-     * its buffer is phase-locked to the base loop. */
-    if (pos == 0 && e->clock.length > 0) {
-      for (int t = 0; t < tc; ++t) {
-        le_track* tr = &e->tracks[t];
-        if (st[t] == LE_TRACK_RECORDING && tr->record_pos < 0) {
-          tr->record_pos = 0;
-          tr->start_iter = e->loop_iteration;
-        }
-      }
-    }
 
     /* Per-track read base for this frame: a track of multiple k plays its k-th
      * base-loop segment, cycling relative to where its recording began. k == 1
@@ -780,81 +956,242 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
 
-    for (int c = 0; c < ch; ++c) {
-      const float insample =
-          e->mono_input ? mono : (in ? in[f * ch + c] : 0.0f);
-      float mix = 0.0f;
-      for (int t = 0; t < tc; ++t) {
-        float loopsample = 0.0f;
-        if (st[t] == LE_TRACK_RECORDING) {
-          if (e->clock.length == 0) {
-            /* defining track: no reference loop yet, so no compensation */
-            if (e->tracks[t].record_pos < e->max_loop_frames) {
-              buf[t][e->tracks[t].record_pos * ch + c] = insample;
-            }
-          } else {
-            /* new track: linear write head (started at the loop top), spanning
-             * one or more base loops; latency-compensated by dropping the first
-             * `offset` frames so it aligns with what the player heard. */
-            const int32_t rp = e->tracks[t].record_pos;
-            const int32_t w = rp - offset;
-            if (rp >= 0 && w >= 0 && w < e->max_loop_frames) {
-              buf[t][w * ch + c] = insample;
-            }
-          }
-        } else if (st[t] == LE_TRACK_OVERDUBBING) {
-          /* Mix the existing loop (read before write); record the live input at
-           * the compensated position in the current segment for the next pass. */
-          loopsample = buf[t][(seg_base[t] + pos) * ch + c];
-          const int32_t w = seg_base[t] + comp_pos(pos, offset, e->clock.length);
-          buf[t][w * ch + c] += insample;
-        } else if (st[t] == LE_TRACK_PLAYING) {
-          loopsample = buf[t][(seg_base[t] + pos) * ch + c];
-        }
+    float frame_out_peak = 0.0f; /* max |output| this frame, for the viz tap */
+    float frame_trk_peak[LE_MAX_TRACKS] = {0}; /* per-track, this frame */
+    /* Each track's pre-stage-processed input this frame (what it records and,
+     * when the monitor follows it, what the monitor plays). */
+    float trk_input[LE_MAX_TRACKS] = {0};
 
-        if ((st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-            !mut[t]) {
-          mix += loopsample * vol[t];
+    /* The looper mix is additive: clear this output frame, then sum each
+     * track's mono contribution into the output channels its mask selects. */
+    for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] = 0.0f;
+
+    for (int t = 0; t < tc; ++t) {
+      /* Each track records the average of its selected input channels into its
+       * mono buffer. Averaging (not summing) keeps the captured level stable
+       * and clip-safe regardless of how many inputs are armed.
+       *
+       * The per-track input mask is always honored: a single-channel mask
+       * records just that channel, and an empty mask records silence even with
+       * a hot input bus. "Mono vs stereo" is a routing outcome (output mask),
+       * not a capture mode. */
+      float insample = 0.0f;
+      if (in) {
+        float sum = 0.0f;
+        int cnt = 0;
+        for (int c = 0; c < ch_in; ++c) {
+          /* The excluded check is load-bearing, not merely defensive: the
+           * default mask (0x1) is set without going through SET_INPUT_MASK's
+           * clamp, so it can still name an excluded channel here. */
+          if ((in_mask[t] & (1u << c)) && !(excluded & (1u << c))) {
+            sum += in[f * ch_in + c];
+            ++cnt;
+          }
         }
-        const float la = fabsf(loopsample);
-        if (la > trk_peak[t]) trk_peak[t] = la;
-        trk_sumsq[t] += loopsample * loopsample;
+        insample = cnt > 0 ? sum / (float)cnt : 0.0f;
       }
 
-      const float monitor = monitor_on ? insample : 0.0f;
-      const float sample = monitor + mix + click;
-      out[f * ch + c] = sample;
-      out_sumsq += sample * sample;
+      /* Pre-stage effects process the live input before it is written, so they
+       * are printed into the recording (record-through-FX). Run every frame the
+       * track has pre effects so delay tails / LFO phase stay continuous; the
+       * wet value is what RECORDING/OVERDUBBING captures below. */
+      if (has_pre[t]) {
+        insample = fx_apply_chain(&e->tracks[t], sr, fx_cap, insample, LE_FX_PRE,
+                                  fx_count[t], fx_type[t], fx_stage[t],
+                                  fx_params[t]);
+      }
+      trk_input[t] = insample; /* for the followed-track monitor below */
+
+      float loopsample = 0.0f;
+      if (st[t] == LE_TRACK_RECORDING) {
+        if (e->clock.length == 0) {
+          /* defining track: no reference loop yet, so no compensation */
+          if (e->tracks[t].record_pos < e->max_loop_frames) {
+            buf[t][e->tracks[t].record_pos] = insample;
+          }
+        } else {
+          /* new track: phase-locked write head (record_pos == segment*base +
+           * position), spanning one or more base loops; latency-compensated by
+           * dropping the first `offset` frames so it aligns with what the
+           * player heard. */
+          const int32_t w = e->tracks[t].record_pos - offset;
+          if (w >= 0 && w < e->max_loop_frames) {
+            buf[t][w] = insample;
+          }
+        }
+      } else if (st[t] == LE_TRACK_OVERDUBBING) {
+        /* Mix the existing loop (read before write); record the live input at
+         * the compensated position in the current segment for the next pass. */
+        loopsample = buf[t][seg_base[t] + pos];
+        const int32_t w = seg_base[t] + comp_pos(pos, offset, e->clock.length);
+        buf[t][w] += insample;
+      } else if (st[t] == LE_TRACK_PLAYING) {
+        loopsample = buf[t][seg_base[t] + pos];
+      }
+
+      /* The track's mono output: its loop content at the playback volume while
+       * it sounds, silence otherwise. Post-stage effects run every frame a
+       * track has them (even silent ones) so delay tails and LFO phase stay
+       * continuous; the wet result is routed only while the track is audible. */
+      const int audible =
+          (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+          !mut[t];
+      const float dry = audible ? loopsample * vol[t] : 0.0f;
+      const float wet =
+          has_post[t] ? fx_apply_chain(&e->tracks[t], sr, fx_cap, dry,
+                                       LE_FX_POST, fx_count[t], fx_type[t],
+                                       fx_stage[t], fx_params[t])
+                      : dry;
+      if (audible) {
+        for (int c = 0; c < ch_out; ++c) {
+          if (out_mask[t] & (1u << c)) out[f * ch_out + c] += wet;
+        }
+      }
+
+      const float la = fabsf(loopsample);
+      if (la > trk_peak[t]) trk_peak[t] = la;
+      if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
+      trk_sumsq[t] += loopsample * loopsample;
     }
 
-    /* Advance the record heads, then the master transport. New tracks grow
-     * freely (no auto-finalize at the loop boundary — they are rounded up to
-     * whole base loops only when stopped); they cap at the per-track buffer. */
+    /* Input monitoring: average the masked, non-excluded inputs to mono (like a
+     * track's capture) and add that to every output the monitor mask selects.
+     * Empty masks monitor silence; excluded (loopback) channels are never
+     * monitored. With the default masks (input 0 -> outputs 0 + 1) this is the
+     * familiar passthrough; custom masks pick which inputs you hear and where. */
+    if (monitor_on) {
+      float msample = 0.0f;
+      if (mon_fx_track >= 0 && mon_fx_track < tc) {
+        /* Follow a track: play its pre-processed input (already averaged over
+         * the track's input mask and run through its before-track effects), so
+         * the monitor matches what the track records. */
+        msample = trk_input[mon_fx_track];
+      } else if (in) {
+        float sum = 0.0f;
+        int cnt = 0;
+        for (int c = 0; c < ch_in; ++c) {
+          if ((mon_in_mask & (1u << c)) && !(excluded & (1u << c))) {
+            sum += in[f * ch_in + c];
+            ++cnt;
+          }
+        }
+        msample = cnt > 0 ? sum / (float)cnt : 0.0f;
+      }
+      for (int c = 0; c < ch_out; ++c) {
+        if (mon_out_mask & (1u << c)) out[f * ch_out + c] += msample;
+      }
+    }
+
+    /* Output metering for this frame. */
+    for (int c = 0; c < ch_out; ++c) {
+      const float sample = out[f * ch_out + c];
+      out_sumsq += sample * sample;
+      const float sa = fabsf(sample);
+      if (sa > frame_out_peak) frame_out_peak = sa;
+    }
+
+    /* Loop visualization tap: bucket the output (and per-track) peaks by loop
+     * position. When the playhead crosses into a new bucket, publish the peaks
+     * accumulated for the bucket it left, then start the new one — so each
+     * bucket holds the most recent pass over that slice of the loop. RT-safe
+     * (atomics only). Only meaningful once a master loop exists. */
+    if (e->clock.length > 0) {
+      int32_t bucket =
+          (int32_t)((int64_t)pos * LE_VIZ_POINTS / e->clock.length);
+      if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
+      if (bucket != e->loop_viz_bucket) {
+        const int32_t prev = e->loop_viz_bucket;
+        if (prev >= 0 && prev < LE_VIZ_POINTS) {
+          store_f32(&e->a_loop_viz[prev], e->loop_viz_accum);
+          for (int t = 0; t < tc; ++t) {
+            store_f32(&e->a_track_viz[t][prev], e->track_viz_accum[t]);
+          }
+        }
+        e->loop_viz_bucket = bucket;
+        e->loop_viz_accum = 0.0f;
+        for (int t = 0; t < tc; ++t) e->track_viz_accum[t] = 0.0f;
+      }
+      if (frame_out_peak > e->loop_viz_accum) e->loop_viz_accum = frame_out_peak;
+      for (int t = 0; t < tc; ++t) {
+        if (frame_trk_peak[t] > e->track_viz_accum[t]) {
+          e->track_viz_accum[t] = frame_trk_peak[t];
+        }
+      }
+    }
+
+    /* Advance the record heads, then the master transport. An auto-multiple
+     * track grows freely and is rounded up only when stopped; a fixed-multiple
+     * track auto-finalizes after exactly K base loops, continuing into overdub
+     * or playback per rec/dub. All cap at the per-track buffer. */
+    const int32_t fin_end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
     for (int t = 0; t < tc; ++t) {
       if (st[t] != LE_TRACK_RECORDING) continue;
       le_track* tr = &e->tracks[t];
       if (e->clock.length == 0) {
         tr->record_pos++;
-        if (tr->record_pos >= e->max_loop_frames) finalize_master(e, tr);
-      } else if (tr->record_pos >= 0) {
-        tr->record_pos++;
         if (tr->record_pos >= e->max_loop_frames) {
+          finalize_master(e, tr, LE_TRACK_PLAYING);
+        }
+      } else {
+        tr->record_pos++;
+        const int32_t eff = le_effective_multiple(e, t);
+        const int32_t base = e->clock.length;
+        if (eff >= 1 && tr->record_pos - tr->record_start >= eff * base) {
+          finalize_new_track(e, tr, fin_end);
+        } else if (tr->record_pos >= e->max_loop_frames) {
           finalize_new_track(e, tr, LE_TRACK_PLAYING);
         }
       }
     }
     if (e->clock.length > 0) {
-      if (le_loop_clock_tick(&e->clock)) e->loop_iteration++;
+      int any_active = 0;
+      for (int t = 0; t < tc; ++t) {
+        if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_RECORDING ||
+            st[t] == LE_TRACK_OVERDUBBING) {
+          any_active = 1;
+          break;
+        }
+      }
+      if (any_active) {
+        if (le_loop_clock_tick(&e->clock)) {
+          e->loop_iteration++;
+          /* The loop just crossed its top (position == 0). Fire loop-top
+           * (quantize) pending records here so a deferred start/finalize/overdub
+           * lands exactly on the grid. Signal-triggered arms fire above, not
+           * here. handle_record enforces one-capturer hand-off. */
+          for (int qt = 0; qt < tc; ++qt) {
+            if (e->tracks[qt].pending_record &&
+                e->tracks[qt].pending_trigger == 0) {
+              e->tracks[qt].pending_record = 0;
+              store_i32(&e->tracks[qt].a_pending, 0);
+              handle_record(e, qt);
+            }
+          }
+        }
+      } else {
+        /* Nothing is playing or recording: hold the transport at the top so the
+         * next play starts from the beginning rather than looping in silence.
+         * Resetting each track's start_iter keeps multi-loop tracks aligned to
+         * their first segment on the next play. */
+        e->clock.position = 0;
+        e->loop_iteration = 0;
+        for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
+      }
     }
   }
 
-  const uint32_t total = frames * (uint32_t)ch;
-  store_f32(&e->a_in_rms_bits, total ? sqrtf(in_sumsq / (float)total) : 0.0f);
+  /* Input RMS is normalised by the active (non-loopback) channel count only. */
+  const uint32_t total_in = frames * (uint32_t)active_in;
+  const uint32_t total_out = frames * (uint32_t)ch_out;
+  store_f32(&e->a_in_rms_bits,
+            total_in ? sqrtf(in_sumsq / (float)total_in) : 0.0f);
   store_f32(&e->a_in_peak_bits, in_peak);
-  store_f32(&e->a_out_rms_bits, total ? sqrtf(out_sumsq / (float)total) : 0.0f);
+  store_f32(&e->a_out_rms_bits,
+            total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
   for (int t = 0; t < tc; ++t) {
+    /* Track buffers are mono: one loop sample accumulated per frame. */
     store_f32(&e->tracks[t].a_rms_bits,
-              total ? sqrtf(trk_sumsq[t] / (float)total) : 0.0f);
+              frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);
     store_f32(&e->tracks[t].a_peak_bits, trk_peak[t]);
     if (load_i32(&e->tracks[t].a_state) == LE_TRACK_RECORDING) {
       const int32_t rp = e->tracks[t].record_pos; /* -1 while waiting */
@@ -875,16 +1212,20 @@ static void data_callback(ma_device* device, void* output, const void* input,
 /* ---- configuration / lifecycle ---- */
 
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
-                            int32_t channels, int32_t max_loop_frames) {
+                            int32_t input_channels, int32_t output_channels,
+                            int32_t max_loop_frames) {
   if (engine == NULL) return LE_ERR_INVALID;
-  if (channels <= 0) channels = 2;
-  if (channels > LE_MAX_CHANNELS) channels = LE_MAX_CHANNELS;
+  if (input_channels <= 0) input_channels = 2;
+  if (input_channels > LE_MAX_CHANNELS) input_channels = LE_MAX_CHANNELS;
+  if (output_channels <= 0) output_channels = 2;
+  if (output_channels > LE_MAX_CHANNELS) output_channels = LE_MAX_CHANNELS;
   if (sample_rate <= 0) sample_rate = 48000;
   /* Default cap of 30 s/track keeps total memory modest across all tracks
    * (live + undo). Longer loops are configurable; stream-to-disk is deferred. */
   if (max_loop_frames <= 0) max_loop_frames = sample_rate * 30;
 
-  const size_t samples = (size_t)max_loop_frames * (size_t)channels;
+  /* Per-track buffers are mono: one input channel in, routed out via the mask. */
+  const size_t samples = (size_t)max_loop_frames;
   engine->track_count = LE_MAX_TRACKS;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -908,35 +1249,68 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_f32(&tr->a_rms_bits, 0.0f);
     store_f32(&tr->a_peak_bits, 0.0f);
     store_i32(&tr->a_multiple, 1);
+    /* Default routing preserves stereo behaviour: record input 0, play 0 + 1. */
+    atomic_store_explicit(&tr->a_input_mask, 0x1u, memory_order_relaxed);
+    atomic_store_explicit(&tr->a_output_mask, 0x3u, memory_order_relaxed);
     tr->record_pos = 0;
     tr->start_iter = 0;
+    engine->track_quantize[t] = -1; /* inherit the global quantize default */
+    engine->target_multiple[t] = 0; /* inherit the global default multiple */
+
+    /* Effects: empty chain, every entry bypassed, DSP state cleared, delay
+     * lines released (re-allocated lazily when an entry becomes LE_FX_DELAY). */
+    store_i32(&tr->a_fx_count, 0);
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      store_i32(&tr->a_fx_type[s], LE_FX_NONE);
+      store_i32(&tr->a_fx_stage[s], LE_FX_POST);
+      for (int p = 0; p < LE_FX_PARAMS; ++p) {
+        store_f32(&tr->a_fx_param[s][p], 0.0f);
+      }
+      tr->fx_svf_ic1[s] = 0.0f;
+      tr->fx_svf_ic2[s] = 0.0f;
+      tr->fx_lfo[s] = 0.0f;
+      free(tr->fx_delay[s]);
+      tr->fx_delay[s] = NULL;
+      tr->fx_delay_pos[s] = 0;
+    }
   }
 
   engine->sample_rate = sample_rate;
-  engine->channels = channels;
+  engine->in_channels = input_channels;
+  engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
+  engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
 
-  /* Reset per-session tempo timing (tempo/metronome/count-in *settings*
-   * persist across start/stop; only the running state is cleared). */
-  engine->frame_clock = 0;
-  engine->last_tap_frame = 0;
-  engine->has_tap = 0;
-  engine->metro_frame = 0;
-  engine->metro_beat = 0;
-  engine->click_remaining = 0;
-  engine->count_in_remaining = 0;
-  engine->loop_total_beats = 0;
-  engine->metro_prev_beat = -1;
-  store_i32(&engine->a_counting_in, 0);
-  store_i32(&engine->a_current_beat, 0);
-  store_i32(&engine->a_loop_bars, 0);
-  store_i32(&engine->a_armed_channel, -1); /* transient: no pending arm */
-  store_i32(&engine->a_record_offset, 0);  /* re-measured per session */
+  /* Loop visualization: clear the master + per-track loop rings. */
+  engine->loop_viz_bucket = -1;
+  engine->loop_viz_accum = 0.0f;
+  for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+    store_f32(&engine->a_loop_viz[i], 0.0f);
+  }
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    engine->track_viz_accum[t] = 0.0f;
+    for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+      store_f32(&engine->a_track_viz[t][i], 0.0f);
+    }
+  }
+
+  store_i32(&engine->a_record_offset, 0); /* re-measured per session */
 
   store_i32(&engine->a_sample_rate, sample_rate);
-  store_i32(&engine->a_channels, channels);
+  store_i32(&engine->a_in_channels, input_channels);
+  store_i32(&engine->a_out_channels, output_channels);
+  /* Re-derived per device open in le_engine_start; default to none excluded. */
+  atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
+                        memory_order_relaxed);
+  /* Monitor routing defaults to input 0 -> outputs 0 + 1, matching the track
+   * routing default (a mono source on input 1 is heard on both sides). */
+  atomic_store_explicit(&engine->a_monitor_input_mask, 0x1u,
+                        memory_order_relaxed);
+  atomic_store_explicit(&engine->a_monitor_output_mask, 0x3u,
+                        memory_order_relaxed);
+  store_i32(&engine->a_monitor_fx_track, -1); /* not following a track */
   store_i32(&engine->a_master_len, 0);
   store_i32(&engine->a_master_pos, 0);
   atomic_store_explicit(&engine->a_configured, 1, memory_order_release);
@@ -975,6 +1349,14 @@ le_loopback_kind le_classify_capture_device(const char* name) {
     if (contains_ci(name, virtual_names[i])) return LE_LOOPBACK_VIRTUAL;
   }
   return LE_LOOPBACK_NONE;
+}
+
+int le_label_is_loopback(const char* label) {
+  /* Case-insensitive "loop" match. This covers both the generic "Loopback"
+   * label and the Focusrite convention of naming the two loopback inputs
+   * "Loop 1" / "Loop 2" (verified on a Scarlett 4i4). "loop" subsumes
+   * "loopback", so one substring check handles both. */
+  return contains_ci(label, "loop");
 }
 
 static void find_loopback(ma_context* ctx, le_loopback_info* out,
@@ -1024,6 +1406,203 @@ int32_t le_detect_loopback(le_loopback_info* out) {
   return LE_OK;
 }
 
+/* ---- device enumeration & pinning ---- */
+
+/* Serializes a miniaudio device id into a printable, round-trippable token.
+ * On every string-id backend (CoreAudio, ALSA, PulseAudio, sndio, oss) the
+ * union's active member is a NUL-terminated char string at offset 0, so reading
+ * it as a C string is exact and matches byte-for-byte at resolve time. WASAPI
+ * (a wchar string) is not represented here; pinning is a no-op there and the
+ * engine falls back to the default device. */
+static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
+  strncpy(out, (const char*)id, cap - 1);
+  out[cap - 1] = '\0';
+}
+
+static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
+  device_id_to_str(&src->id, dst->id, sizeof(dst->id));
+  strncpy(dst->name, src->name, sizeof(dst->name) - 1);
+  dst->name[sizeof(dst->name) - 1] = '\0';
+  dst->is_default = src->isDefault ? 1 : 0;
+}
+
+/* Fills `out` (room for `max`) with the host's playback or capture devices and
+ * writes the count into *count. Uses a transient context so it never disturbs a
+ * running device. `capture` selects the direction. */
+static int32_t enumerate_devices(le_device_info* out, int32_t max,
+                                 int32_t* count, int capture) {
+  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
+  *count = 0;
+  ma_context ctx;
+  if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) return LE_ERR_INVALID;
+  ma_device_info* playback = NULL;
+  ma_uint32 playback_count = 0;
+  ma_device_info* cap = NULL;
+  ma_uint32 cap_count = 0;
+  if (ma_context_get_devices(&ctx, &playback, &playback_count, &cap,
+                             &cap_count) != MA_SUCCESS) {
+    ma_context_uninit(&ctx);
+    return LE_ERR_INVALID;
+  }
+  ma_device_info* list = capture ? cap : playback;
+  ma_uint32 n = capture ? cap_count : playback_count;
+  int32_t written = 0;
+  for (ma_uint32 i = 0; i < n && written < max; ++i) {
+    device_info_copy(&out[written++], &list[i]);
+  }
+  *count = written;
+  ma_context_uninit(&ctx);
+  return LE_OK;
+}
+
+int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max,
+                                      int32_t* count) {
+  return enumerate_devices(out, max, count, /*capture=*/0);
+}
+
+int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
+                                     int32_t* count) {
+  return enumerate_devices(out, max, count, /*capture=*/1);
+}
+
+/* Looks up the device whose serialized id equals `want` in the already-open
+ * `ctx` and copies its native id into *out_id. Returns 1 on a match (out_id set)
+ * or 0 if `want` is empty / unmatched / enumeration failed. */
+static int resolve_device_id(ma_context* ctx, int capture, const char* want,
+                             ma_device_id* out_id) {
+  if (want == NULL || want[0] == '\0') return 0;
+  ma_device_info* playback = NULL;
+  ma_uint32 playback_count = 0;
+  ma_device_info* cap = NULL;
+  ma_uint32 cap_count = 0;
+  if (ma_context_get_devices(ctx, &playback, &playback_count, &cap,
+                             &cap_count) != MA_SUCCESS) {
+    return 0;
+  }
+  ma_device_info* list = capture ? cap : playback;
+  ma_uint32 n = capture ? cap_count : playback_count;
+  char buf[256];
+  for (ma_uint32 i = 0; i < n; ++i) {
+    device_id_to_str(&list[i].id, buf, sizeof(buf));
+    if (strcmp(buf, want) == 0) {
+      *out_id = list[i].id;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Device-state notifications from miniaudio. RT-adjacent: stores the presence
+ * atomic only — never allocates, locks, or touches the device. A stopped /
+ * rerouted / interrupted device flips presence to 0; (re)start / resume flips it
+ * back to 1. Recovery from a 0 is the Dart layer's job (A2), not native's. */
+static void notification_callback(const ma_device_notification* notification) {
+  if (notification == NULL || notification->pDevice == NULL) return;
+  le_engine* e = (le_engine*)notification->pDevice->pUserData;
+  if (e == NULL) return;
+  switch (notification->type) {
+    case ma_device_notification_type_started:
+    case ma_device_notification_type_interruption_ended:
+      atomic_store_explicit(&e->a_device_present, 1, memory_order_relaxed);
+      break;
+    case ma_device_notification_type_stopped:
+    case ma_device_notification_type_rerouted:
+    case ma_device_notification_type_interruption_began:
+      atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
+      break;
+    default:
+      break;
+  }
+}
+
+/* ---- loopback channel exclusion (Core Audio labels) ---- */
+
+#if defined(__APPLE__)
+/* Resolves the AudioDeviceID for `uid` (a Core Audio device UID string), or the
+ * default input device when `uid` is NULL/empty. Returns kAudioObjectUnknown on
+ * failure. */
+static AudioObjectID le_macos_input_device(const char* uid) {
+  if (uid != NULL && uid[0] != '\0') {
+    CFStringRef cf = CFStringCreateWithCString(NULL, uid, kCFStringEncodingUTF8);
+    if (cf == NULL) return kAudioObjectUnknown;
+    AudioObjectID dev = kAudioObjectUnknown;
+    AudioValueTranslation t = {&cf, sizeof(cf), &dev, sizeof(dev)};
+    UInt32 size = sizeof(t);
+    AudioObjectPropertyAddress addr = {
+        kAudioHardwarePropertyDeviceForUID, kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain};
+    const OSStatus st = AudioObjectGetPropertyData(
+        kAudioObjectSystemObject, &addr, 0, NULL, &size, &t);
+    CFRelease(cf);
+    if (st == noErr && dev != kAudioObjectUnknown) return dev;
+  }
+  AudioObjectID dev = kAudioObjectUnknown;
+  UInt32 size = sizeof(dev);
+  AudioObjectPropertyAddress addr = {kAudioHardwarePropertyDefaultInputDevice,
+                                     kAudioObjectPropertyScopeGlobal,
+                                     kAudioObjectPropertyElementMain};
+  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL, &size,
+                                 &dev) != noErr) {
+    return kAudioObjectUnknown;
+  }
+  return dev;
+}
+
+/* Builds a bitmask of input channels (0..channel_count-1) whose Core Audio
+ * element name matches "loopback". Channels with no label are treated as
+ * not-loopback. */
+static uint32_t le_macos_excluded_mask(const char* uid, int channel_count) {
+  const AudioObjectID dev = le_macos_input_device(uid);
+  if (dev == kAudioObjectUnknown) return 0;
+  uint32_t mask = 0;
+  const int n = channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
+  for (int c = 0; c < n; ++c) {
+    AudioObjectPropertyAddress addr = {kAudioObjectPropertyElementName,
+                                       kAudioObjectPropertyScopeInput,
+                                       (AudioObjectPropertyElement)(c + 1)};
+    CFStringRef name = NULL;
+    UInt32 size = sizeof(name);
+    if (AudioObjectGetPropertyData(dev, &addr, 0, NULL, &size, &name) != noErr ||
+        name == NULL) {
+      continue;
+    }
+    char buf[256];
+    if (CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) &&
+        le_label_is_loopback(buf)) {
+      mask |= (1u << c);
+    }
+    CFRelease(name);
+  }
+  return mask;
+}
+#endif
+
+/* Computes the excluded-input bitmask for the capture device identified by
+ * `uid` (NULL/empty => default input). macOS reads Core Audio channel labels;
+ * every other platform excludes nothing. */
+static uint32_t le_compute_excluded_input_mask(const char* uid,
+                                               int channel_count) {
+#if defined(__APPLE__)
+  return le_macos_excluded_mask(uid, channel_count);
+#else
+  (void)uid;
+  (void)channel_count;
+  return 0;
+#endif
+}
+
+void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
+                                                uint32_t mask) {
+  if (engine == NULL) return;
+  atomic_store_explicit(&engine->a_excluded_input_mask, mask,
+                        memory_order_relaxed);
+}
+
+void le_engine_set_monitor_for_test(le_engine* engine, int on) {
+  if (engine == NULL) return;
+  store_i32(&engine->a_monitor, on ? 1 : 0);
+}
+
 static void le_uninit_context(le_engine* engine) {
   if (engine->context_initialised) {
     ma_context_uninit(&engine->context);
@@ -1036,12 +1615,6 @@ le_engine* le_engine_create(void) {
   if (engine == NULL) return NULL;
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
-  store_f32(&engine->a_tempo_bpm_bits, 120.0f);
-  /* Loop<->tempo sync and quantize are persistent settings (like tempo/
-   * metronome): seeded here, not reset by configure() on each start. */
-  store_i32(&engine->a_sync_tempo, 1);
-  store_i32(&engine->a_quantize, LE_QUANTIZE_BAR);
-  store_i32(&engine->a_armed_channel, -1);
   return engine;
 }
 
@@ -1056,6 +1629,9 @@ void le_engine_destroy(le_engine* engine) {
     for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
       free(engine->tracks[t].pool[i]);
     }
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      free(engine->tracks[t].fx_delay[s]);
+    }
   }
   free(engine);
 }
@@ -1066,37 +1642,61 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     return LE_ERR_ALREADY_RUNNING;
   }
 
-  int channels = config->channels > 0 ? config->channels : 2;
-  if (channels > LE_MAX_CHANNELS) channels = LE_MAX_CHANNELS;
+  /* Capture and playback widths may differ (e.g. 2-in / 4-out). An unset (0)
+   * count tells miniaudio to open the device's native channel count, so a
+   * multichannel interface comes up with all its channels; the negotiated
+   * counts are read back after init. */
+  int in_channels = config->input_channels > 0 ? config->input_channels : 0;
+  int out_channels = config->output_channels > 0 ? config->output_channels : 0;
+  if (in_channels > LE_MAX_CHANNELS) in_channels = LE_MAX_CHANNELS;
+  if (out_channels > LE_MAX_CHANNELS) out_channels = LE_MAX_CHANNELS;
   engine->passthrough = config->passthrough ? 1 : 0;
-  engine->mono_input = config->merge_to_mono ? 1 : 0;
   store_i32(&engine->a_monitor, engine->passthrough);
 
   ma_device_config cfg = ma_device_config_init(ma_device_type_duplex);
   cfg.capture.format = ma_format_f32;
-  cfg.capture.channels = (ma_uint32)channels;
+  cfg.capture.channels = (ma_uint32)in_channels;
   cfg.playback.format = ma_format_f32;
-  cfg.playback.channels = (ma_uint32)channels;
+  cfg.playback.channels = (ma_uint32)out_channels;
   cfg.sampleRate = config->sample_rate > 0 ? (ma_uint32)config->sample_rate : 0;
   if (config->buffer_frames > 0) {
     cfg.periodSizeInFrames = (ma_uint32)config->buffer_frames;
     cfg.periods = 2;
   }
   cfg.dataCallback = data_callback;
+  cfg.notificationCallback = notification_callback;
   cfg.pUserData = engine;
 
-  /* When requested, capture from a detected loopback device so latency can be
-   * measured without a physical cable. Requires an explicit context (for both
-   * enumeration and the matching device id). Playback stays on the default. */
+  /* An explicit context is needed to capture from a detected loopback device
+   * (use_loopback_capture) or to pin playback/capture to a device by id. When
+   * any of those is requested, open one context and resolve the relevant ids;
+   * otherwise the default device is opened with no context. */
+  const int want_playback_pin = config->playback_device_id[0] != '\0';
+  const int want_capture_pin = config->capture_device_id[0] != '\0';
   ma_context* pContext = NULL;
-  if (config->use_loopback_capture) {
+  if (config->use_loopback_capture || want_playback_pin || want_capture_pin) {
     if (ma_context_init(NULL, 0, NULL, &engine->context) == MA_SUCCESS) {
       engine->context_initialised = 1;
       pContext = &engine->context;
-      le_loopback_info info;
-      find_loopback(&engine->context, &info, &engine->capture_id);
-      if (info.available && info.device_name[0] != '\0') {
-        cfg.capture.pDeviceID = &engine->capture_id;
+      if (config->use_loopback_capture) {
+        /* Loopback capture overrides an explicit capture device id. */
+        le_loopback_info info;
+        find_loopback(&engine->context, &info, &engine->capture_id);
+        if (info.available && info.device_name[0] != '\0') {
+          cfg.capture.pDeviceID = &engine->capture_id;
+        }
+      } else if (want_capture_pin) {
+        if (resolve_device_id(&engine->context, /*capture=*/1,
+                              config->capture_device_id, &engine->capture_id)) {
+          cfg.capture.pDeviceID = &engine->capture_id;
+        }
+      }
+      if (want_playback_pin) {
+        if (resolve_device_id(&engine->context, /*capture=*/0,
+                              config->playback_device_id,
+                              &engine->playback_id)) {
+          cfg.playback.pDeviceID = &engine->playback_id;
+        }
       }
     }
   }
@@ -1108,8 +1708,11 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   engine->device_initialised = 1;
 
   const int32_t sr = (int32_t)engine->device.sampleRate;
-  if (le_engine_configure(engine, sr, channels, config->max_loop_frames) !=
-      LE_OK) {
+  /* Use the device-negotiated channel counts (they may differ from requested). */
+  const int32_t neg_in = (int32_t)engine->device.capture.channels;
+  const int32_t neg_out = (int32_t)engine->device.playback.channels;
+  if (le_engine_configure(engine, sr, neg_in, neg_out,
+                          config->max_loop_frames) != LE_OK) {
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
     le_uninit_context(engine);
@@ -1126,12 +1729,24 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
+  /* Exclude any loopback-labelled capture channels. The capture device's UID is
+   * our explicit capture id when one was pinned/loopback-routed, else the system
+   * default input. On string-id backends the id union is the UID string. */
+  const char* capture_uid =
+      cfg.capture.pDeviceID != NULL ? (const char*)&engine->capture_id : NULL;
+  /* relaxed: a lone published value, matching the other configuration atomics
+   * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
+  atomic_store_explicit(&engine->a_excluded_input_mask,
+                        le_compute_excluded_input_mask(capture_uid, neg_in),
+                        memory_order_relaxed);
+
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
     le_uninit_context(engine);
     return LE_ERR_DEVICE;
   }
+  atomic_store_explicit(&engine->a_device_present, 1, memory_order_release);
   atomic_store_explicit(&engine->a_running, 1, memory_order_release);
   return LE_OK;
 }
@@ -1145,6 +1760,7 @@ int32_t le_engine_stop(le_engine* engine) {
   engine->device_initialised = 0;
   le_uninit_context(engine);
   engine->device_name[0] = '\0';
+  atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
   return LE_OK;
 }
@@ -1152,9 +1768,14 @@ int32_t le_engine_stop(le_engine* engine) {
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
+  out->device_present =
+      atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
   out->sample_rate = load_i32(&engine->a_sample_rate);
   out->buffer_frames = load_i32(&engine->a_buffer_frames);
-  out->channels = load_i32(&engine->a_channels);
+  out->input_channels = load_i32(&engine->a_in_channels);
+  out->output_channels = load_i32(&engine->a_out_channels);
+  out->excluded_input_mask =
+      atomic_load_explicit(&engine->a_excluded_input_mask, memory_order_relaxed);
   out->frames_processed =
       atomic_load_explicit(&engine->a_frames, memory_order_relaxed);
   out->xrun_count = atomic_load_explicit(&engine->a_xruns, memory_order_relaxed);
@@ -1166,15 +1787,6 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
       atomic_load_explicit(&engine->a_latency_ms_bits, memory_order_relaxed));
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
-  out->tempo_bpm = load_bpm(engine);
-  out->metronome_on = load_i32(&engine->a_metronome_on);
-  out->count_in_enabled = load_i32(&engine->a_count_in_enabled);
-  out->counting_in = load_i32(&engine->a_counting_in);
-  out->current_beat = load_i32(&engine->a_current_beat);
-  out->loop_bars = load_i32(&engine->a_loop_bars);
-  out->sync_loop_to_tempo = load_i32(&engine->a_sync_tempo);
-  out->quantize_mode = load_i32(&engine->a_quantize);
-  out->armed_channel = load_i32(&engine->a_armed_channel);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
@@ -1189,6 +1801,10 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     out->tracks[t].redo_depth = load_i32(&tr->a_redo_depth);
     out->tracks[t].rms = load_f32(&tr->a_rms_bits);
     out->tracks[t].peak = load_f32(&tr->a_peak_bits);
+    out->tracks[t].input_mask =
+        atomic_load_explicit(&tr->a_input_mask, memory_order_relaxed);
+    out->tracks[t].output_mask =
+        atomic_load_explicit(&tr->a_output_mask, memory_order_relaxed);
   }
 }
 
@@ -1205,6 +1821,8 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->redo_depth = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;
+    out->input_mask = 0x1u;
+    out->output_mask = 0x3u;
     return;
   }
   le_track* tr = &engine->tracks[channel];
@@ -1217,6 +1835,33 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
   out->redo_depth = load_i32(&tr->a_redo_depth);
   out->rms = load_f32(&tr->a_rms_bits);
   out->peak = load_f32(&tr->a_peak_bits);
+  out->input_mask =
+      atomic_load_explicit(&tr->a_input_mask, memory_order_relaxed);
+  out->output_mask =
+      atomic_load_explicit(&tr->a_output_mask, memory_order_relaxed);
+}
+
+int32_t le_engine_read_visual(le_engine* engine, float* out,
+                              int32_t max_points) {
+  if (engine == NULL || out == NULL || max_points <= 0) return 0;
+  const int32_t n = max_points < LE_VIZ_POINTS ? max_points : LE_VIZ_POINTS;
+  /* Loop-indexed, bucket 0 = loop start. A bucket updated concurrently is
+   * benign for a waveform. */
+  for (int32_t i = 0; i < n; ++i) {
+    out[i] = load_f32(&engine->a_loop_viz[i]);
+  }
+  return n;
+}
+
+int32_t le_engine_read_track_visual(le_engine* engine, int32_t channel,
+                                    float* out, int32_t max_points) {
+  if (engine == NULL || out == NULL || max_points <= 0) return 0;
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  const int32_t n = max_points < LE_VIZ_POINTS ? max_points : LE_VIZ_POINTS;
+  for (int32_t i = 0; i < n; ++i) {
+    out[i] = load_f32(&engine->a_track_viz[channel][i]);
+  }
+  return n;
 }
 
 const char* le_engine_device_name(le_engine* engine) {
@@ -1250,6 +1895,12 @@ static int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i,
   return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
 }
 
+int32_t le_engine_begin_latency_for_test(le_engine* engine) {
+  /* Configured-gated (like the looper commands) so the harness's loopback
+   * detection can be driven without opening a device. */
+  return le_push(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
+}
+
 /* Returns a pool slot that is neither live nor referenced by either stack,
  * allocating its buffer lazily. If the pool is full, evicts the oldest undo
  * entry and reuses its slot. Returns -1 only on allocation failure. */
@@ -1266,7 +1917,7 @@ static int track_acquire_slot(le_engine* e, le_track* t) {
     }
     if (used) continue;
     if (t->pool[i] == NULL) {
-      const size_t samples = (size_t)e->max_loop_frames * (size_t)e->channels;
+      const size_t samples = (size_t)e->max_loop_frames; /* mono */
       t->pool[i] = (float*)calloc(samples, sizeof(float));
       if (t->pool[i] == NULL) return -1;
     }
@@ -1284,49 +1935,136 @@ static int track_acquire_slot(le_engine* e, le_track* t) {
   return -1;
 }
 
+/* Zeroes a track's live buffer (control thread) before a fresh capture over an
+ * existing master, so any unrecorded tail of a rounded-up multi-loop length
+ * plays as silence. The track is EMPTY, so the audio thread is not reading it.
+ * (Defining recordings — no master yet — use record_pos bounds and need none.) */
+static void le_prepare_new_capture(le_engine* engine, le_track* t) {
+  const int live = load_i32(&t->a_live);
+  if (t->pool[live] != NULL) {
+    const size_t n = (size_t)engine->max_loop_frames; /* mono */
+    memset(t->pool[live], 0, n * sizeof(float));
+  }
+}
+
+/* Snapshots a track's pre-overdub content onto the undo stack (control thread),
+ * clearing redo history; the audio thread treats the live buffer as read-only at
+ * this point. [len] is the track's current length (k * base). */
+static void le_push_overdub_snapshot(le_engine* engine, le_track* t,
+                                     int32_t len) {
+  t->redo_count = 0;
+  const int slot = track_acquire_slot(engine, t);
+  if (slot >= 0) {
+    const int live = load_i32(&t->a_live);
+    const size_t n = (size_t)len; /* mono */
+    memcpy(t->pool[slot], t->pool[live], n * sizeof(float));
+    t->undo_stack[t->undo_count++] = slot;
+    store_i32(&t->a_undo_depth, t->undo_count);
+  }
+  store_i32(&t->a_redo_depth, 0);
+}
+
+/* Reverses the most recent undo layer pushed by le_push_overdub_snapshot, used
+ * when a pending quantized overdub is cancelled. The freed slot returns to the
+ * pool; redo history was already cleared (a new action clears it). */
+static void le_pop_overdub_snapshot(le_track* t) {
+  if (t->undo_count > 0) {
+    t->undo_count--;
+    store_i32(&t->a_undo_depth, t->undo_count);
+  }
+}
+
+/* The effective quantize state for [channel]: its per-track override, or the
+ * global default when the track inherits (override < 0). */
+static int le_effective_quantize(const le_engine* engine, int32_t channel) {
+  const int ov = engine->track_quantize[channel];
+  return ov < 0 ? engine->quantize : ov;
+}
+
+/* Cancels a pending quantized arm (control thread): disarms, reverses any
+ * pre-overdub snapshot, and tells the audio thread to clear the pending flag.
+ * No-op when the track is not armed. */
+static void le_cancel_arm(le_engine* engine, int32_t channel) {
+  if (!engine->armed[channel]) return;
+  engine->armed[channel] = 0;
+  if (engine->arm_snapshotted[channel]) {
+    le_pop_overdub_snapshot(&engine->tracks[channel]);
+    engine->arm_snapshotted[channel] = 0;
+  }
+  le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+}
+
 int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  /* Starting an overdub? Snapshot the pre-overdub content on this (control)
-   * thread and push it onto the undo stack; a new action clears redo history.
-   * The audio thread treats the live buffer as read-only at this point. With
-   * quantize, the press merely arms — but the buffer stays read-only until the
-   * boundary fires, so taking the snapshot now is still correct. We skip it only
-   * when this press *cancels* an existing arm (a_armed_channel == channel), so
-   * cancelling does not push a spurious undo layer. */
   le_track* t = &engine->tracks[channel];
   const int32_t st = load_i32(&t->a_state);
   const int32_t len = load_i32(&t->a_len); /* this track's length (k * base) */
-  const int cancelling = load_i32(&engine->a_armed_channel) == channel;
-  /* Starting a new-track recording (a fresh capture over an existing loop)?
-   * Zero its live buffer on this (control) thread so any unrecorded tail of a
-   * rounded-up multi-loop length plays as silence. The track is EMPTY, so the
-   * audio thread is not reading the buffer. (Defining recordings — no master yet
-   * — use record_pos bounds instead and need no zeroing.) */
-  if (!cancelling && st == LE_TRACK_EMPTY &&
-      load_i32(&engine->a_master_len) > 0) {
-    const int live = load_i32(&t->a_live);
-    if (t->pool[live] != NULL) {
-      const size_t n =
-          (size_t)engine->max_loop_frames * (size_t)engine->channels;
-      memset(t->pool[live], 0, n * sizeof(float));
+  const int has_master = load_i32(&engine->a_master_len) > 0;
+
+  /* Sound-activated: a record press on an empty track arms a signal-triggered
+   * start (LE_CMD_ARM with trigger 1); the audio thread begins recording the
+   * first frame the input crosses the threshold. A second press cancels. Takes
+   * precedence over quantize for the start — finalize/overdub presses (the
+   * track is no longer EMPTY) fall through to the quantize/immediate paths. */
+  if (engine->auto_record && st == LE_TRACK_EMPTY) {
+    if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
+      engine->armed[channel] = 0; /* spent: the signal already fired it */
     }
+    if (engine->armed[channel]) {
+      engine->armed[channel] = 0;
+      return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+    }
+    engine->armed[channel] = 1;
+    engine->arm_snapshotted[channel] = 0;
+    engine->armed_trigger[channel] = 1; /* input-level trigger */
+    le_prepare_new_capture(engine, t);
+    return le_push(engine, LE_CMD_ARM, channel, 1.0f);
   }
-  if (!cancelling && (st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) &&
-      len > 0) {
-    t->redo_count = 0;
-    const int slot = track_acquire_slot(engine, t);
-    if (slot >= 0) {
-      const int live = load_i32(&t->a_live);
-      const size_t n = (size_t)len * (size_t)engine->channels;
-      memcpy(t->pool[slot], t->pool[live], n * sizeof(float));
-      t->undo_stack[t->undo_count++] = slot;
-      store_i32(&t->a_undo_depth, t->undo_count);
+
+  /* Quantized: defer the action to the next base-loop top instead of acting on
+   * the press, so captures align to the grid. The defining recording (no master
+   * yet) always acts immediately — it sets the grid. Per-track overrides win
+   * over the global default. */
+  if (le_effective_quantize(engine, channel) && has_master) {
+    /* If we armed this track but the boundary already fired it, the arm is
+     * spent (published a_pending cleared); fall through to a fresh decision on
+     * the now-current state. */
+    if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
+      engine->armed[channel] = 0;
+      engine->arm_snapshotted[channel] = 0;
     }
-    store_i32(&t->a_redo_depth, 0);
+    if (engine->armed[channel]) {
+      /* Second press before the boundary cancels the pending action. */
+      engine->armed[channel] = 0;
+      if (engine->arm_snapshotted[channel]) {
+        le_pop_overdub_snapshot(t);
+        engine->arm_snapshotted[channel] = 0;
+      }
+      return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+    }
+    /* Arm: do the one-time prep an immediate record would, then defer. */
+    engine->armed[channel] = 1;
+    engine->arm_snapshotted[channel] = 0;
+    engine->armed_trigger[channel] = 0; /* loop-top trigger */
+    if (st == LE_TRACK_EMPTY) {
+      le_prepare_new_capture(engine, t);
+    } else if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
+      le_push_overdub_snapshot(engine, t, len);
+      engine->arm_snapshotted[channel] = 1;
+    }
+    return le_push(engine, LE_CMD_ARM, channel, 0.0f);
+  }
+
+  /* Immediate (quantize off, or the defining recording). */
+  if (st == LE_TRACK_EMPTY && has_master) {
+    le_prepare_new_capture(engine, t);
+  }
+  if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
+    le_push_overdub_snapshot(engine, t, len);
   }
   return le_push(engine, LE_CMD_RECORD, channel, 0.0f);
 }
@@ -1344,6 +2082,8 @@ int32_t le_engine_clear(le_engine* engine, int32_t channel) {
     t->redo_count = 0;
     store_i32(&t->a_undo_depth, 0);
     store_i32(&t->a_redo_depth, 0);
+    engine->armed[channel] = 0;
+    engine->arm_snapshotted[channel] = 0;
   }
   return le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
 }
@@ -1399,29 +2139,187 @@ int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
   return le_push(engine, LE_CMD_SET_MUTE, channel, muted ? 1.0f : 0.0f);
 }
 
-int32_t le_engine_set_tempo(le_engine* engine, float bpm) {
-  return le_push(engine, LE_CMD_SET_TEMPO, 0, bpm);
+/* Track index travels in arg_f (small, exact in float); the value/mask travels
+ * in arg_i so a 32-bit mask round-trips exactly (a float cannot). */
+int32_t le_engine_set_input_mask(le_engine* engine, int32_t channel,
+                                 int32_t mask) {
+  return le_push(engine, LE_CMD_SET_INPUT_MASK, mask, (float)channel);
 }
-int32_t le_engine_set_metronome(le_engine* engine, int32_t on) {
-  return le_push(engine, LE_CMD_SET_METRONOME, 0, on ? 1.0f : 0.0f);
+int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
+                                  int32_t mask) {
+  return le_push(engine, LE_CMD_SET_OUTPUT_MASK, mask, (float)channel);
 }
-int32_t le_engine_set_count_in(le_engine* engine, int32_t on) {
-  return le_push(engine, LE_CMD_SET_COUNT_IN, 0, on ? 1.0f : 0.0f);
-}
-int32_t le_engine_tap_tempo(le_engine* engine) {
-  return le_push(engine, LE_CMD_TAP_TEMPO, 0, 0.0f);
-}
-int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on) {
-  return le_push(engine, LE_CMD_SET_SYNC_TEMPO, 0, on ? 1.0f : 0.0f);
-}
-int32_t le_engine_set_quantize(le_engine* engine, int32_t mode) {
-  return le_push(engine, LE_CMD_SET_QUANTIZE, mode, 0.0f);
-}
+
 int32_t le_engine_set_record_offset(le_engine* engine, int32_t frames) {
   return le_push(engine, LE_CMD_SET_RECORD_OFFSET, frames, 0.0f);
 }
 
-/* ---- session persistence ---- */
+int32_t le_engine_set_monitor_input_mask(le_engine* engine, int32_t mask) {
+  return le_push(engine, LE_CMD_SET_MONITOR_INPUT_MASK, mask, 0.0f);
+}
+
+int32_t le_engine_set_monitor_output_mask(le_engine* engine, int32_t mask) {
+  return le_push(engine, LE_CMD_SET_MONITOR_OUTPUT_MASK, mask, 0.0f);
+}
+
+int32_t le_engine_set_monitor_fx_track(le_engine* engine, int32_t track) {
+  return le_push(engine, LE_CMD_SET_MONITOR_FX_TRACK, track, 0.0f);
+}
+
+int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  engine->quantize = enabled ? 1 : 0;
+  /* Cancel loop-top arms that are now effective-off so nothing is stuck waiting
+   * for a loop top; force-on tracks and signal arms keep their arm. */
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    if (engine->armed_trigger[c] == 0 && !le_effective_quantize(engine, c)) {
+      le_cancel_arm(engine, c);
+    }
+  }
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
+                                     int32_t mode) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  /* mode: < 0 inherit the global default, 0 force off, > 0 force on. */
+  engine->track_quantize[channel] = mode < 0 ? -1 : (mode > 0 ? 1 : 0);
+  if (engine->armed_trigger[channel] == 0 &&
+      !le_effective_quantize(engine, channel)) {
+    le_cancel_arm(engine, channel);
+  }
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_multiple(le_engine* engine, int32_t channel,
+                                     int32_t multiple) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  /* 0 = inherit the global default; >= 1 fixes the next recording to that many
+   * base loops. Applies to the next finalize; existing content is unchanged. */
+  engine->target_multiple[channel] = multiple < 0 ? 0 : multiple;
+  return LE_OK;
+}
+
+int32_t le_engine_set_default_multiple(le_engine* engine, int32_t multiple) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* 0 = auto (round up on stop); >= 1 fixes inheriting tracks to K base loops. */
+  engine->default_multiple = multiple < 0 ? 0 : multiple;
+  return LE_OK;
+}
+
+int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  engine->rec_dub = enabled ? 1 : 0;
+  return LE_OK;
+}
+
+int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  engine->auto_record = enabled ? 1 : 0;
+  /* Turning it off cancels any tracks still waiting for an input-level start. */
+  if (!engine->auto_record) {
+    for (int32_t c = 0; c < engine->track_count; ++c) {
+      if (engine->armed_trigger[c] == 1) le_cancel_arm(engine, c);
+    }
+  }
+  return LE_OK;
+}
+
+/* Musical default parameters for a freshly engaged effect type (so picking an
+ * effect sounds like something before the user tweaks it). */
+static void le_fx_default_params(int32_t type, float out[LE_FX_PARAMS]) {
+  switch (type) {
+    case LE_FX_DRIVE:
+      out[0] = 0.5f; /* drive */
+      out[1] = 0.8f; /* level */
+      out[2] = 0.0f;
+      break;
+    case LE_FX_FILTER:
+      out[0] = 0.5f; /* cutoff */
+      out[1] = 0.2f; /* resonance */
+      out[2] = 0.0f;
+      break;
+    case LE_FX_DELAY:
+      out[0] = 0.35f; /* time */
+      out[1] = 0.35f; /* feedback */
+      out[2] = 0.35f; /* wet mix */
+      break;
+    case LE_FX_TREMOLO:
+      out[0] = 0.3f; /* rate */
+      out[1] = 0.7f; /* depth */
+      out[2] = 0.0f;
+      break;
+    default:
+      out[0] = out[1] = out[2] = 0.0f;
+      break;
+  }
+}
+
+int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
+                               int32_t index, int32_t type, int32_t stage) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_TREMOLO) return LE_ERR_INVALID;
+  const int32_t stg = stage == LE_FX_PRE ? LE_FX_PRE : LE_FX_POST;
+  le_track* t = &engine->tracks[channel];
+
+  /* Delay needs a ring buffer; allocate it here (control thread) before the
+   * audio thread can read it, and keep it for reuse once allocated. */
+  if (type == LE_FX_DELAY && t->fx_delay[index] == NULL) {
+    const int32_t cap =
+        engine->fx_delay_frames > 0 ? engine->fx_delay_frames : 48000;
+    float* line = (float*)calloc((size_t)cap, sizeof(float));
+    if (line == NULL) return LE_ERR_INVALID;
+    t->fx_delay[index] = line;
+  }
+
+  /* Seed musical defaults only when the type actually changes, so re-selecting
+   * the same effect (e.g. on reorder) doesn't wipe the user's tweaks. */
+  if (load_i32(&t->a_fx_type[index]) != type) {
+    float defaults[LE_FX_PARAMS];
+    le_fx_default_params(type, defaults);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&t->a_fx_param[index][p], defaults[p]);
+    }
+  }
+
+  /* Publish type + stage via the ring so the audio thread resets the entry's
+   * DSP state in lockstep. The buffer pointer written above is made visible to
+   * the audio thread by the ring's release/acquire pairing. */
+  return le_push(engine, LE_CMD_SET_FX,
+                 (channel << 16) | (index << 8) | stg, (float)type);
+}
+
+int32_t le_engine_set_track_fx_count(le_engine* engine, int32_t channel,
+                                     int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (count < 0) count = 0;
+  if (count > LE_FX_MAX) count = LE_FX_MAX;
+  return le_push(engine, LE_CMD_SET_FX_COUNT, (channel << 8) | count, 0.0f);
+}
+
+int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
+                                     int32_t index, int32_t param, float value) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
+  if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  /* Params are plain published atomics read once per buffer; a direct store is
+   * race-free and needs no ring command (unlike the type, which also resets
+   * audio-thread DSP state). Works whether or not the device is running. */
+  store_f32(&engine->tracks[channel].a_fx_param[index][param], value);
+  return LE_OK;
+}
+
+/* ---- session persistence ---- *
+ * Per-track buffers are mono (one sample per frame), so a stem is just the
+ * track's loop samples; routing to channels is a playback concern, not stored. */
 
 int32_t le_engine_export_track(le_engine* engine, int32_t channel, float* out,
                                int32_t max_frames) {
@@ -1434,8 +2332,7 @@ int32_t le_engine_export_track(le_engine* engine, int32_t channel, float* out,
   if (n <= 0) return 0;
   const int live = load_i32(&t->a_live);
   if (t->pool[live] == NULL) return 0;
-  memcpy(out, t->pool[live],
-         (size_t)n * (size_t)engine->channels * sizeof(float));
+  memcpy(out, t->pool[live], (size_t)n * sizeof(float));
   return n;
 }
 
@@ -1456,9 +2353,8 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
   const int live = load_i32(&t->a_live);
   if (t->pool[live] == NULL) return LE_ERR_INVALID;
-  const size_t span = (size_t)frames * (size_t)engine->channels;
-  const size_t cap =
-      (size_t)engine->max_loop_frames * (size_t)engine->channels;
+  const size_t span = (size_t)frames;
+  const size_t cap = (size_t)engine->max_loop_frames;
   memcpy(t->pool[live], pcm, span * sizeof(float));
   if (span < cap) memset(t->pool[live] + span, 0, (cap - span) * sizeof(float));
   store_i32(&t->a_len, frames);

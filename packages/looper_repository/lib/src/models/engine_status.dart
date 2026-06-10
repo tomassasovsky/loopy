@@ -8,11 +8,14 @@ class EngineStatus extends Equatable {
     this.deviceName = '',
     this.sampleRate = 0,
     this.bufferFrames = 0,
-    this.channels = 0,
+    this.inputChannels = 0,
+    this.outputChannels = 0,
     this.latencyState = LatencyState.idle,
     this.measuredLatencyMs = -1,
     this.xrunCount = 0,
     this.isConnected = false,
+    this.devicePresent = false,
+    this.excludedInputMask = 0,
     this.recordOffsetFrames = 0,
   });
 
@@ -25,8 +28,11 @@ class EngineStatus extends Equatable {
   /// Negotiated buffer (period) size in frames.
   final int bufferFrames;
 
-  /// Channel count of the duplex stream.
-  final int channels;
+  /// Negotiated hardware capture channel count.
+  final int inputChannels;
+
+  /// Negotiated hardware playback channel count.
+  final int outputChannels;
 
   /// Phase of the latency harness.
   final LatencyState latencyState;
@@ -41,6 +47,17 @@ class EngineStatus extends Equatable {
   /// Whether the audio device is open and running.
   final bool isConnected;
 
+  /// Whether the pinned (or default) device is currently present.
+  ///
+  /// Distinct from [isConnected]: a pinned device can be lost (unplugged) while
+  /// the engine object still reports running until it is restarted. The
+  /// disconnect signal the reconnect supervisor and the banner are driven from.
+  final bool devicePresent;
+
+  /// Bitmask of input channels excluded as loopback (never recorded, monitored,
+  /// or routable). `0` when nothing is excluded (always so off macOS).
+  final int excludedInputMask;
+
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
@@ -52,11 +69,14 @@ class EngineStatus extends Equatable {
     deviceName,
     sampleRate,
     bufferFrames,
-    channels,
+    inputChannels,
+    outputChannels,
     latencyState,
     measuredLatencyMs,
     xrunCount,
     isConnected,
+    devicePresent,
+    excludedInputMask,
     recordOffsetFrames,
   ];
 }
