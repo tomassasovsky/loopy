@@ -26,6 +26,7 @@ void main() {
   late BankCubit bank;
   late AudioSetupCubit audioSetup;
   late RefreshRateCubit refreshRate;
+  late QuantizeCubit quantize;
   late LooperRepository repository;
 
   setUp(() {
@@ -47,6 +48,10 @@ void main() {
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
+    quantize = QuantizeCubit(repository: repository, settings: settings);
+    when(
+      () => repository.setQuantize(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -64,6 +69,7 @@ void main() {
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
+            BlocProvider<QuantizeCubit>.value(value: quantize),
           ],
           child: const BigPictureSettingsPage(),
         ),
@@ -160,6 +166,22 @@ void main() {
     ).called(1);
   });
 
+  testWidgets('toggling quantize recording persists it and applies it', (
+    tester,
+  ) async {
+    await pump(tester);
+    expect(quantize.state, isFalse);
+
+    final toggle = find.byKey(const Key('bpSettings_quantize_switch'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(quantize.state, isTrue);
+    expect(await settings.loadQuantize(), isTrue);
+    verify(() => repository.setQuantize(enabled: true)).called(1);
+  });
+
   testWidgets('the Big Picture switch reflects the current mode', (
     tester,
   ) async {
@@ -234,6 +256,7 @@ void main() {
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
+            BlocProvider<QuantizeCubit>.value(value: quantize),
           ],
           child: MaterialApp(
             home: Builder(

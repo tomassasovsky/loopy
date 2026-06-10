@@ -157,6 +157,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// The last value passed to [setQuantize].
+  bool? lastQuantize;
+
+  @override
+  EngineResult setQuantize({required bool enabled}) {
+    lastQuantize = enabled;
+    return EngineResult.ok;
+  }
+
   @override
   Float32List readVisual() => Float32List(0);
 

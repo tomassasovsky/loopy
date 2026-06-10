@@ -136,6 +136,13 @@ abstract interface class AudioEngine {
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
 
+  /// Enables or disables quantized recording. When enabled, a record/overdub
+  /// press over an existing master loop is deferred to the next loop top so
+  /// captures align to the grid; a second press before the boundary cancels the
+  /// pending action. The defining recording (no master yet) always acts
+  /// immediately.
+  EngineResult setQuantize({required bool enabled});
+
   /// Reads the loop waveform: peaks of the mixed output indexed by position
   /// across one master loop (index 0 = loop start), each in `0..1`. Pair with
   /// [EngineSnapshot.masterPositionFrames]/[EngineSnapshot.masterLengthFrames]

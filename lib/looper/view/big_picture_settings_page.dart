@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/routing_graph_view.dart';
@@ -123,6 +124,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
     final waveformEnabled = context.watch<WaveformWindowCubit>().state;
     final defaultMode = context.watch<BigPictureCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
+    final quantize = context.watch<QuantizeCubit>().state;
     return [
       const Text(
         'Switch layouts, tune performance defaults, and toggle the secondary '
@@ -209,6 +211,17 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
               optionKey: Key('bpSettings_refreshRate_$hz'),
             ),
         ],
+      ),
+      const SizedBox(height: 20),
+      SetupToggleRow(
+        toggleKey: const Key('bpSettings_quantize_switch'),
+        title: 'Quantize recording',
+        subtitle:
+            'Snap record start/stop to the loop — captures begin and end '
+            'on the loop top once a base loop exists',
+        value: quantize,
+        onChanged: (on) =>
+            unawaited(context.read<QuantizeCubit>().setEnabled(value: on)),
       ),
     ];
   }

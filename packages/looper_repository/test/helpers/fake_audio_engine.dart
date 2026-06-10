@@ -155,6 +155,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  bool? lastQuantize;
+
+  @override
+  EngineResult setQuantize({required bool enabled}) {
+    lastQuantize = enabled;
+    calls.add('setQuantize');
+    return EngineResult.ok;
+  }
+
   @override
   void dispose() => calls.add('dispose');
 

@@ -259,6 +259,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setQuantize({required bool enabled}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_quantize(_engine, enabled ? 1 : 0),
+    );
+  }
+
+  @override
   Float32List readVisual() {
     _checkAlive();
     final n = _bindings.le_engine_read_visual(_engine, _vizPtr, LE_VIZ_POINTS);

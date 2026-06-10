@@ -596,6 +596,30 @@ class LoopyEngineBindings {
       >('le_engine_set_record_offset');
   late final _le_engine_set_record_offset = _le_engine_set_record_offsetPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Enables or disables quantized recording. When enabled, a record/overdub press
+  /// over an existing master loop is deferred to the next base-loop top, so
+  /// captures start and finalize aligned to the loop grid; a second press before
+  /// the boundary cancels the pending action. The defining recording (no master
+  /// yet) always acts immediately. Disabling cancels any pending arms.
+  int le_engine_set_quantize(
+    ffi.Pointer<le_engine> engine,
+    int enabled,
+  ) {
+    return _le_engine_set_quantize(
+      engine,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_quantizePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_quantize');
+  late final _le_engine_set_quantize = _le_engine_set_quantizePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -754,7 +778,13 @@ enum le_command_code {
 
   /// route a track's playback destinations
   /// (arg_f = track, arg_i = output bitmask)
-  LE_CMD_SET_OUTPUT_MASK(15);
+  LE_CMD_SET_OUTPUT_MASK(15),
+
+  /// arg_i = track: arm a quantized record (fire at loop top)
+  LE_CMD_ARM(16),
+
+  /// arg_i = track: cancel a pending quantized record
+  LE_CMD_DISARM(17);
 
   final int value;
   const le_command_code(this.value);
@@ -772,6 +802,8 @@ enum le_command_code {
     13 => LE_CMD_SET_RECORD_OFFSET,
     14 => LE_CMD_SET_INPUT_MASK,
     15 => LE_CMD_SET_OUTPUT_MASK,
+    16 => LE_CMD_ARM,
+    17 => LE_CMD_DISARM,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }

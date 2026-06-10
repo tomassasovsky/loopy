@@ -57,6 +57,10 @@ class LooperRepository {
   /// recovers a device the user did not deliberately stop.
   bool _intendRunning = false;
 
+  /// The desired quantize-recording state, re-applied to the engine on every
+  /// successful (re)start so it survives device changes and reconnects.
+  bool _quantize = false;
+
   /// Reconnect supervision: while these are non-null a pinned device is absent
   /// and we are polling enumeration to reopen it. Their presence *is* the
   /// "awaiting reconnect" state, so there is no separate flag to keep in sync.
@@ -264,6 +268,9 @@ class LooperRepository {
     if (result.isOk) {
       _lastEngineConfig = config;
       _intendRunning = true;
+      // A fresh start resets the engine's quantize flag; re-apply the desired
+      // state so it survives device changes and reconnects.
+      _engine.setQuantize(enabled: _quantize);
     }
     return result;
   }
@@ -327,6 +334,16 @@ class LooperRepository {
 
   /// Sets the record-offset latency compensation in frames.
   EngineResult setRecordOffset(int frames) => _engine.setRecordOffset(frames);
+
+  /// Enables or disables quantized recording (captures snap to the loop grid).
+  /// The value is remembered and re-applied on every engine (re)start — a fresh
+  /// start (device change, reconnect) resets the engine's flag — so it survives
+  /// restarts. Applied to the live engine only while running.
+  EngineResult setQuantize({required bool enabled}) {
+    _quantize = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setQuantize(enabled: enabled);
+  }
 
   /// Releases the repository and the underlying engine.
   Future<void> dispose() async {
