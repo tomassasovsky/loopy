@@ -1584,6 +1584,13 @@ static void fx_drive_unity(le_engine* e, int idx, int stage) {
   le_engine_set_track_fx_param(e, 0, idx, 1, 1.0f); /* level: unity */
 }
 
+/* The monitor-bus equivalent: a unity tanh drive at entry [idx]. */
+static void monitor_drive_unity(le_engine* e, int idx) {
+  le_engine_set_monitor_fx(e, idx, LE_FX_DRIVE);
+  le_engine_set_monitor_fx_param(e, idx, 0, 0.0f); /* drive: 1x pre-gain */
+  le_engine_set_monitor_fx_param(e, idx, 1, 1.0f); /* level: unity */
+}
+
 static void test_fx_bypass_is_transparent(void) {
   printf("test_fx_bypass_is_transparent\n");
   le_engine* e = make_configured_engine();
@@ -1852,6 +1859,50 @@ static void test_monitor_ignores_post_fx(void) {
   le_engine_destroy(e);
 }
 
+static void test_monitor_fx_bus_colors_any_mode(void) {
+  printf("test_monitor_fx_bus_colors_any_mode\n");
+  le_engine* e = make_configured_engine();
+  le_engine_set_monitor_for_test(e, 1);
+  float out[64];
+
+  /* Custom-mask monitoring, not following any track: raw passthrough. */
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  /* A unity drive on the monitor-FX bus colors the monitor with no track
+   * follow at all — input effects work in any mode. */
+  monitor_drive_unity(e, 0);
+  CHECK(le_engine_set_monitor_fx_count(e, 1) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
+
+  /* Count 0 bypasses the whole bus -> back to raw passthrough. */
+  CHECK(le_engine_set_monitor_fx_count(e, 0) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_monitor_fx_rejects_invalid_args(void) {
+  printf("test_monitor_fx_rejects_invalid_args\n");
+  le_engine* e = make_configured_engine();
+
+  CHECK(le_engine_set_monitor_fx(NULL, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_fx(e, -1, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_fx(e, LE_FX_MAX, LE_FX_DRIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_fx(e, 0, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_fx_param(e, -1, 0, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_fx_param(e, 0, LE_FX_PARAMS, 0.5f) ==
+        LE_ERR_INVALID);
+
+  /* Over-range values clamp; an over-large count clamps to LE_FX_MAX. */
+  CHECK(le_engine_set_monitor_fx_param(e, 0, 0, 5.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_fx_count(e, 999) == LE_OK);
+
+  le_engine_destroy(e);
+}
+
 /* ---- session persistence ---- */
 
 static void test_session_export_import_roundtrip(void) {
@@ -1979,6 +2030,8 @@ int main(void) {
   test_fx_chain_applies_in_order();
   test_fx_pre_is_nondestructive_and_colors_playback();
   test_monitor_ignores_post_fx();
+  test_monitor_fx_bus_colors_any_mode();
+  test_monitor_fx_rejects_invalid_args();
   test_fx_post_is_nondestructive();
   test_fx_muted_track_is_silent();
   test_fx_rejects_invalid_args();

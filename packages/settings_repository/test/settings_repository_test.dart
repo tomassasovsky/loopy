@@ -161,6 +161,17 @@ void main() {
     });
   });
 
+  group('monitor effects', () {
+    test('returns null when nothing is stored', () async {
+      expect(await repository.loadMonitorEffects(), isNull);
+    });
+
+    test('round-trips the encoded monitor-FX bus chain', () async {
+      await repository.saveMonitorEffects('[{"type":1}]');
+      expect(await repository.loadMonitorEffects(), '[{"type":1}]');
+    });
+  });
+
   group('audio config', () {
     test('returns null on a first run (nothing saved)', () async {
       expect(await repository.loadAudioConfig(), isNull);

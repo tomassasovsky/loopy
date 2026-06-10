@@ -455,6 +455,56 @@ void main() {
       expect(engine.trackFx.containsKey((0, 0)), isFalse);
     });
 
+    test('the monitor-FX bus is deferred then re-applied on start', () {
+      final repo = buildRepo()
+        ..setMonitorEffects(
+          effects: [
+            TrackEffect(
+              type: TrackEffectType.delay,
+              params: const [0.3, 0.4, 0.5],
+            ),
+          ],
+        );
+      expect(engine.monitorFx, isEmpty); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorFx[0], TrackEffectType.delay);
+      expect(engine.monitorFxParam[(0, 1)], 0.4);
+      expect(engine.monitorFxCount, 1);
+    });
+
+    test('a monitor-FX param tweak updates the entry without resetting it', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          effects: [TrackEffect(type: TrackEffectType.drive)],
+        );
+      engine.calls.clear();
+
+      repo.setMonitorEffectParam(index: 0, param: 0, value: 0.9);
+      expect(engine.monitorFxParam[(0, 0)], 0.9);
+      // No setMonitorFx (which would reset DSP) — only the granular call.
+      expect(engine.calls, isNot(contains('setMonitorFx')));
+      expect(engine.calls, contains('setMonitorFxParam'));
+
+      // The tweak is remembered and re-applied on restart.
+      engine.monitorFxParam.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorFxParam[(0, 0)], 0.9);
+    });
+
+    test('an empty monitor-FX chain zeroes the bus count on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          effects: [TrackEffect(type: TrackEffectType.drive)],
+        );
+      expect(engine.monitorFx[0], TrackEffectType.drive);
+
+      repo.setMonitorEffects(effects: const []);
+      expect(engine.monitorFxCount, 0);
+    });
+
     test('clearing a track multiple (0) drops the override', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
