@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/setup/setup_surface.dart';
 
 /// A single-track signal-flow graph with the track's effects as cards on the
 /// path itself:
 ///
 ///   In → before-track effects → Track → after-track effects → Out
 ///
-/// The whole canvas is zoom/pan-able (InteractiveViewer) and fits to width on
+/// The whole canvas is zoom/pan-able (InteractiveViewer) and fits to view on
 /// load. Channels are clicked to connect/disconnect routing. An effect card is
 /// dragged by its handle to reorder within a lane or across the track (which
 /// flips its stage), and tapped to expand its settings inline (type + params).
@@ -25,10 +26,10 @@ class TrackSignalFlowView extends StatefulWidget {
     required this.onMoveEffect,
     required this.onSelectEffect,
     required this.onSetType,
-    required this.onSetStage,
     required this.onSetParam,
     required this.onRemoveEffect,
     this.excludedInputMask = 0,
+    this.height = 320,
     super.key,
   });
 
@@ -63,21 +64,23 @@ class TrackSignalFlowView extends StatefulWidget {
 
   /// Edits the selected card.
   final void Function(int index, TrackEffectType type) onSetType;
-  final void Function(int index, TrackEffectStage stage) onSetStage;
   final void Function(int index, int param, double value) onSetParam;
   final void Function(int index) onRemoveEffect;
 
+  /// The fixed viewport height the graph fits/centers into.
+  final double height;
+
   // ---- geometry ----
-  static const double _chW = 58;
-  static const double _chH = 26;
-  static const double _rowH = 40;
-  static const double _compactW = 120;
-  static const double _compactH = 40;
-  static const double _exW = 248;
-  static const double _trkW = 80;
+  static const double _chW = 60;
+  static const double _chH = 28;
+  static const double _rowH = 44;
+  static const double _compactW = 124;
+  static const double _compactH = 42;
+  static const double _exW = 250;
+  static const double _trkW = 84;
   static const double _trkH = 44;
-  static const double _gap = 18;
-  static const double _fanGap = 64;
+  static const double _gap = 20;
+  static const double _fanGap = 72;
   static const double _addW = 30;
   static const double _pad = 12;
 
@@ -108,7 +111,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
   double _cardHeight(int index) {
     if (index != widget.selectedEffect) return TrackSignalFlowView._compactH;
     final params = widget.effects[index].type.paramLabels.length;
-    return 96 + params * 38; // padding + header + stage toggle + param rows
+    return 60 + params * 40; // padding + header + param rows
   }
 
   @override
@@ -125,7 +128,6 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     const trkW = TrackSignalFlowView._trkW;
     const inX = TrackSignalFlowView._pad;
 
-    // Lay the centerline stations out left-to-right, accumulating widths.
     const preStartX = inX + chW + fan;
     var x = preStartX;
     final preXs = <double>[];
@@ -146,7 +148,6 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     final outX = addPostX + addW + fan;
     final canvasW = outX + chW + TrackSignalFlowView._pad;
 
-    // Tall enough for the channels and the tallest (expanded) card.
     final channelsH =
         [inCount, outCount].reduce((a, b) => a > b ? a : b) *
         TrackSignalFlowView._rowH;
@@ -180,78 +181,84 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
       canvasH: canvasH,
     );
 
-    final scheme = Theme.of(context).colorScheme;
-
-    // Box height tracks the content (clamped) so there is no dead space; the
-    // graph fits-and-centers into it on load and can be zoomed past that.
-    final boxH = (canvasH + 24).clamp(150.0, 300.0);
     return SizedBox(
-      height: boxH,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          _maybeFit(constraints.maxWidth, boxH, canvasW, canvasH);
-          return ClipRect(
-            child: InteractiveViewer(
-              transformationController: _tc,
-              constrained: false,
-              boundaryMargin: const EdgeInsets.all(140),
-              minScale: 0.4,
-              maxScale: 3,
-              child: SizedBox(
-                width: canvasW,
-                height: canvasH,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: _PathPainter(edges, scheme.primary),
+      height: widget.height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: SetupSurfaceColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: SetupSurfaceColors.line),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            _maybeFit(constraints.maxWidth, widget.height, canvasW, canvasH);
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: InteractiveViewer(
+                transformationController: _tc,
+                constrained: false,
+                boundaryMargin: const EdgeInsets.all(160),
+                minScale: 0.4,
+                maxScale: 3,
+                child: SizedBox(
+                  width: canvasW,
+                  height: canvasH,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CustomPaint(painter: _PathPainter(edges)),
                       ),
-                    ),
-                    for (var c = 0; c < inCount; c++)
-                      _channel(
-                        key: 'signalFlow_input_$c',
-                        label: 'In ${c + 1}',
-                        x: inX,
-                        y: _rowY(c, inCount, canvasH),
-                        connected: widget.track.inputMask & (1 << c) != 0,
-                        excluded: widget.excludedInputMask & (1 << c) != 0,
-                        onTap: () => widget.onInputMaskChanged(
-                          widget.track.inputMask ^ (1 << c),
+                      for (var c = 0; c < inCount; c++)
+                        _channel(
+                          key: 'signalFlow_input_$c',
+                          label: 'In ${c + 1}',
+                          x: inX,
+                          y: _rowY(c, inCount, canvasH),
+                          connected: widget.track.inputMask & (1 << c) != 0,
+                          excluded: widget.excludedInputMask & (1 << c) != 0,
+                          onTap: () => widget.onInputMaskChanged(
+                            widget.track.inputMask ^ (1 << c),
+                          ),
                         ),
-                      ),
-                    for (var c = 0; c < outCount; c++)
-                      _channel(
-                        key: 'signalFlow_output_$c',
-                        label: 'Out ${c + 1}',
-                        x: outX,
-                        y: _rowY(c, outCount, canvasH),
-                        connected: widget.track.outputMask & (1 << c) != 0,
-                        excluded: false,
-                        onTap: () => widget.onOutputMaskChanged(
-                          widget.track.outputMask ^ (1 << c),
+                      for (var c = 0; c < outCount; c++)
+                        _channel(
+                          key: 'signalFlow_output_$c',
+                          label: 'Out ${c + 1}',
+                          x: outX,
+                          y: _rowY(c, outCount, canvasH),
+                          connected: widget.track.outputMask & (1 << c) != 0,
+                          excluded: false,
+                          onTap: () => widget.onOutputMaskChanged(
+                            widget.track.outputMask ^ (1 << c),
+                          ),
                         ),
+                      Positioned(
+                        left: trackX,
+                        top: centerY - TrackSignalFlowView._trkH / 2,
+                        width: trkW,
+                        height: TrackSignalFlowView._trkH,
+                        child: _trackNode(),
                       ),
-                    Positioned(
-                      left: trackX,
-                      top: centerY - TrackSignalFlowView._trkH / 2,
-                      width: trkW,
-                      height: TrackSignalFlowView._trkH,
-                      child: _trackNode(),
-                    ),
-                    ..._dropZones(TrackEffectStage.pre, pre, preXs, centerY),
-                    ..._dropZones(TrackEffectStage.post, post, postXs, centerY),
-                    for (var k = 0; k < pre.length; k++)
-                      _card(pre[k], preXs[k], centerY),
-                    for (var k = 0; k < post.length; k++)
-                      _card(post[k], postXs[k], centerY),
-                    _addButton(TrackEffectStage.pre, addPreX, centerY),
-                    _addButton(TrackEffectStage.post, addPostX, centerY),
-                  ],
+                      ..._dropZones(TrackEffectStage.pre, pre, preXs, centerY),
+                      ..._dropZones(
+                        TrackEffectStage.post,
+                        post,
+                        postXs,
+                        centerY,
+                      ),
+                      for (var k = 0; k < pre.length; k++)
+                        _card(pre[k], preXs[k], centerY),
+                      for (var k = 0; k < post.length; k++)
+                        _card(post[k], postXs[k], centerY),
+                      _addButton(TrackEffectStage.pre, addPreX, centerY),
+                      _addButton(TrackEffectStage.post, addPostX, centerY),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -296,15 +303,13 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     required double canvasH,
   }) {
     final edges = <_Edge>[];
-    // Inputs fan into the first centerline station, spread vertically and kept
-    // in source order so the lines don't cross.
     final routedIns = [
       for (var c = 0; c < inCount; c++)
         if (widget.track.inputMask & (1 << c) != 0 &&
             widget.excludedInputMask & (1 << c) == 0)
           c,
     ];
-    final inBand = routedIns.length <= 1 ? 0.0 : routedIns.length * 13.0;
+    final inBand = routedIns.length <= 1 ? 0.0 : routedIns.length * 14.0;
     for (var k = 0; k < routedIns.length; k++) {
       final c = routedIns[k];
       final ty = routedIns.length <= 1
@@ -317,7 +322,6 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
         ),
       );
     }
-    // Pre chain -> track.
     for (var k = 0; k < pre.length; k++) {
       final from = Offset(preXs[k] + _cardWidth(pre[k]), centerY);
       final to = k + 1 < pre.length
@@ -325,7 +329,6 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
           : Offset(trackX, centerY);
       edges.add(_Edge(from, to));
     }
-    // Track -> post chain.
     if (post.isNotEmpty) {
       edges.add(
         _Edge(
@@ -342,12 +345,11 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
         );
       }
     }
-    // Last station fans out to the outputs.
     final routedOuts = [
       for (var c = 0; c < outCount; c++)
         if (widget.track.outputMask & (1 << c) != 0) c,
     ];
-    final outBand = routedOuts.length <= 1 ? 0.0 : routedOuts.length * 13.0;
+    final outBand = routedOuts.length <= 1 ? 0.0 : routedOuts.length * 14.0;
     for (var k = 0; k < routedOuts.length; k++) {
       final c = routedOuts[k];
       final fy = routedOuts.length <= 1
@@ -372,7 +374,6 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     required bool excluded,
     required VoidCallback onTap,
   }) {
-    final scheme = Theme.of(context).colorScheme;
     return Positioned(
       left: x,
       top: y - TrackSignalFlowView._chH / 2,
@@ -384,19 +385,29 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
         child: Container(
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: connected
-                ? scheme.primary.withValues(alpha: 0.28)
-                : scheme.surfaceContainerHighest,
+            color: excluded
+                ? SetupSurfaceColors.cardHi
+                : connected
+                ? SetupSurfaceColors.accent.withValues(alpha: 0.30)
+                : SetupSurfaceColors.card,
             borderRadius: BorderRadius.circular(7),
             border: Border.all(
-              color: connected ? scheme.primary : scheme.outlineVariant,
+              color: connected
+                  ? SetupSurfaceColors.accent
+                  : SetupSurfaceColors.line,
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
               fontSize: 12,
+              color: excluded
+                  ? SetupSurfaceColors.t3
+                  : connected
+                  ? SetupSurfaceColors.t1
+                  : SetupSurfaceColors.t2,
               decoration: excluded ? TextDecoration.lineThrough : null,
+              decorationColor: SetupSurfaceColors.t3,
             ),
           ),
         ),
@@ -405,17 +416,20 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
   }
 
   Widget _trackNode() {
-    final scheme = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.2),
+        color: SetupSurfaceColors.accent.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.primary, width: 2),
+        border: Border.all(color: SetupSurfaceColors.accent, width: 2),
       ),
       child: Center(
         child: Text(
           'Track ${widget.track.channel + 1}',
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            color: SetupSurfaceColors.t1,
+          ),
         ),
       ),
     );
@@ -423,7 +437,6 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
 
   Widget _card(int index, double x, double centerY) {
     final fx = widget.effects[index];
-    final scheme = Theme.of(context).colorScheme;
     final selected = widget.selectedEffect == index;
     final dragging = _dragging == index;
     final w = _cardWidth(index);
@@ -434,13 +447,14 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
       data: index,
       onDragStarted: () => setState(() => _dragging = index),
       onDragEnd: (_) => setState(() => _dragging = -1),
-      feedback: Material(
-        color: Colors.transparent,
-        child: _chip(fx, scheme, ghost: true),
-      ),
-      child: MouseRegion(
+      feedback: Material(color: Colors.transparent, child: _chip(fx)),
+      child: const MouseRegion(
         cursor: SystemMouseCursors.grab,
-        child: Icon(Icons.drag_indicator, size: 16, color: scheme.outline),
+        child: Icon(
+          Icons.drag_indicator,
+          size: 16,
+          color: SetupSurfaceColors.t3,
+        ),
       ),
     );
 
@@ -457,6 +471,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
                   child: Text(
                     fx.type.label,
                     overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: SetupSurfaceColors.t1),
                   ),
                 ),
               ),
@@ -472,12 +487,14 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
         key: Key('signalFlow_fx_$index'),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
-          color: scheme.secondaryContainer.withValues(
+          color: SetupSurfaceColors.cardHi.withValues(
             alpha: dragging ? 0.4 : 1,
           ),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: selected ? scheme.primary : scheme.outlineVariant,
+            color: selected
+                ? SetupSurfaceColors.accent
+                : SetupSurfaceColors.line,
             width: selected ? 2 : 1,
           ),
         ),
@@ -486,23 +503,26 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     );
   }
 
-  Widget _chip(TrackEffect fx, ColorScheme scheme, {bool ghost = false}) =>
-      Container(
-        width: TrackSignalFlowView._compactW,
-        height: TrackSignalFlowView._compactH,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: scheme.secondaryContainer.withValues(alpha: ghost ? 0.9 : 1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: scheme.primary),
-        ),
-        child: Text(fx.type.label, overflow: TextOverflow.ellipsis),
-      );
+  Widget _chip(TrackEffect fx) => Container(
+    width: TrackSignalFlowView._compactW,
+    height: TrackSignalFlowView._compactH,
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: SetupSurfaceColors.cardHi,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: SetupSurfaceColors.accent),
+    ),
+    child: Text(
+      fx.type.label,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(color: SetupSurfaceColors.t1),
+    ),
+  );
 
-  /// The inline editor shown inside a selected card: type, stage, params.
+  /// The inline editor shown inside a selected card: type + params. Stage is
+  /// changed by dragging the card across the track, not here.
   Widget _cardEditor(int index, TrackEffect fx, Widget handle) {
-    final textTheme = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -516,6 +536,11 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
                 isExpanded: true,
                 isDense: true,
                 value: fx.type,
+                dropdownColor: SetupSurfaceColors.cardHi,
+                style: const TextStyle(
+                  color: SetupSurfaceColors.t1,
+                  fontSize: 14,
+                ),
                 onChanged: (type) {
                   if (type != null && type != TrackEffectType.none) {
                     widget.onSetType(index, type);
@@ -531,50 +556,46 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
             InkWell(
               key: const Key('signalFlow_fx_collapse'),
               onTap: () => widget.onSelectEffect(null),
-              child: const Icon(Icons.expand_less, size: 18),
+              child: const Icon(
+                Icons.expand_less,
+                size: 18,
+                color: SetupSurfaceColors.t2,
+              ),
             ),
             IconButton(
               key: const Key('trackRouting_fx_remove'),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(),
-              icon: const Icon(Icons.delete_outline, size: 18),
+              icon: const Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: SetupSurfaceColors.t2,
+              ),
               tooltip: 'Remove effect',
               onPressed: () => widget.onRemoveEffect(index),
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        SizedBox(
-          height: 30,
-          child: SegmentedButton<TrackEffectStage>(
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(value: TrackEffectStage.pre, label: Text('Before')),
-              ButtonSegment(value: TrackEffectStage.post, label: Text('After')),
-            ],
-            selected: {fx.stage},
-            onSelectionChanged: (s) => widget.onSetStage(index, s.first),
-          ),
-        ),
         for (var p = 0; p < fx.type.paramLabels.length; p++)
           SizedBox(
-            height: 38,
+            height: 40,
             child: Row(
               children: [
                 SizedBox(
                   width: 64,
                   child: Text(
                     fx.type.paramLabels[p],
-                    style: textTheme.bodySmall,
+                    style: const TextStyle(
+                      color: SetupSurfaceColors.t2,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 Expanded(
                   child: Slider(
                     key: Key('trackRouting_fx_param$p'),
+                    activeColor: SetupSurfaceColors.accent,
                     value: fx.params[p].clamp(0.0, 1.0),
                     onChanged: (v) => widget.onSetParam(index, p, v),
                   ),
@@ -594,17 +615,14 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
   ) {
     const g = TrackSignalFlowView._gap;
     final laneName = stage == TrackEffectStage.pre ? 'pre' : 'post';
-    // A drop zone sits in the gap before each card and after the last one.
     final spots = <double>[];
     if (lane.isEmpty) {
       spots.add(
         stage == TrackEffectStage.pre
-            ? (xs.isEmpty
-                  ? TrackSignalFlowView._pad +
-                        TrackSignalFlowView._chW +
-                        TrackSignalFlowView._fanGap -
-                        g
-                  : xs.first - g)
+            ? TrackSignalFlowView._pad +
+                  TrackSignalFlowView._chW +
+                  TrackSignalFlowView._fanGap -
+                  g
             : (xs.isEmpty ? centerY : xs.first),
       );
     }
@@ -631,7 +649,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
                       child: Container(
                         width: 3,
                         height: TrackSignalFlowView._compactH,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: SetupSurfaceColors.accent,
                       ),
                     ),
             ),
@@ -654,7 +672,8 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
               : 'signalFlow_addPost',
         ),
         padding: EdgeInsets.zero,
-        iconSize: 22,
+        iconSize: 24,
+        color: SetupSurfaceColors.accent,
         tooltip: full ? 'Chain is full' : 'Add effect',
         icon: const Icon(Icons.add_circle_outline),
         onPressed: full ? null : () => widget.onAddEffect(stage),
@@ -694,17 +713,16 @@ class _Edge {
 }
 
 class _PathPainter extends CustomPainter {
-  _PathPainter(this.edges, this.color);
+  _PathPainter(this.edges);
 
   final List<_Edge> edges;
-  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..color = color.withValues(alpha: 0.7);
+      ..strokeWidth = 1.8
+      ..color = SetupSurfaceColors.accent.withValues(alpha: 0.75);
     for (final e in edges) {
       final dx = (e.to.dx - e.from.dx) / 2;
       final path = Path()
@@ -722,6 +740,5 @@ class _PathPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_PathPainter old) =>
-      old.edges != edges || old.color != color;
+  bool shouldRepaint(_PathPainter old) => old.edges != edges;
 }
