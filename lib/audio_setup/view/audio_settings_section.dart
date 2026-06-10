@@ -117,6 +117,42 @@ class AudioSettingsSection extends StatelessWidget {
             context.read<RecordOptionsCubit>().setAutoRecord(value: on),
           ),
         ),
+        const SizedBox(height: 16),
+        const Text(
+          'Default loop length for new recordings. Auto rounds up to whole '
+          'base loops; a fixed length records exactly that many. Override it '
+          'per track from its routing dialog.',
+          style: setupBody,
+        ),
+        const SizedBox(height: 12),
+        SetupOptionRow<int>(
+          selected: context.watch<RecordOptionsCubit>().state.defaultMultiple,
+          onSelected: (m) => unawaited(
+            context.read<RecordOptionsCubit>().setDefaultMultiple(m),
+          ),
+          options: const [
+            SetupOption(
+              value: 0,
+              label: 'Auto',
+              optionKey: Key('audioSettings_defaultMultiple_0'),
+            ),
+            SetupOption(
+              value: 1,
+              label: '×1',
+              optionKey: Key('audioSettings_defaultMultiple_1'),
+            ),
+            SetupOption(
+              value: 2,
+              label: '×2',
+              optionKey: Key('audioSettings_defaultMultiple_2'),
+            ),
+            SetupOption(
+              value: 3,
+              label: '×3',
+              optionKey: Key('audioSettings_defaultMultiple_3'),
+            ),
+          ],
+        ),
         const SizedBox(height: 28),
         const SetupGroupLabel('STATUS'),
         const SizedBox(height: 12),

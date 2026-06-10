@@ -149,8 +149,13 @@ abstract interface class AudioEngine {
   EngineResult setTrackQuantize({required int channel, required bool? enabled});
 
   /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`
-  /// to auto-round-up on stop. Applies to the next recording.
+  /// to inherit the global default ([setDefaultMultiple]). Applies to the next
+  /// recording.
   EngineResult setTrackMultiple({required int channel, required int multiple});
+
+  /// Sets the global default loop length (used by tracks that inherit):
+  /// [multiple] whole base loops, or `0` to auto-round-up on stop.
+  EngineResult setDefaultMultiple({required int multiple});
 
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback.

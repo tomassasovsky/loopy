@@ -318,6 +318,14 @@ void main() {
     });
   });
 
+  group('default multiple', () {
+    test('defaults to 0 (auto) and round-trips a fixed value', () async {
+      expect(await repository.loadDefaultMultiple(), 0);
+      await repository.saveDefaultMultiple(2);
+      expect(await repository.loadDefaultMultiple(), 2);
+    });
+  });
+
   group('track quantize override', () {
     test('defaults to null (inherit) when unset', () async {
       expect(await repository.loadTrackQuantize(0), isNull);

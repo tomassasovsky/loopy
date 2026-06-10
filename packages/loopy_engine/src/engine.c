@@ -176,8 +176,11 @@ struct le_engine {
    * (auto-record). Lets toggling one feature cancel only its own arms. */
   int armed_trigger[LE_MAX_TRACKS];
 
-  /* Per-track forced loop length: 0 auto-rounds up to whole base loops on stop;
-   * K >= 1 fixes the track to exactly K base loops. Control-thread-owned. */
+  /* Loop length. The global default (0 auto-rounds up to whole base loops on
+   * stop; K >= 1 fixes K base loops) applies to tracks that inherit. A track's
+   * target_multiple is 0 to inherit the global default, or K >= 1 to fix it.
+   * Control-thread-owned. */
+  int default_multiple;
   int target_multiple[LE_MAX_TRACKS];
 
   /* When `rec_dub` is set, finalizing a recording with a record press continues
@@ -285,9 +288,11 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
     t->record_pos = 0;
     return;
   }
-  /* A per-track forced multiple fixes the length to exactly K base loops; 0
-   * auto-rounds up to whole base loops based on how much was recorded. */
-  const int32_t forced = e->target_multiple[(int)(t - e->tracks)];
+  /* The effective forced multiple fixes the length to exactly K base loops; a
+   * track inherits the global default (target 0) unless it overrides. 0 (auto)
+   * rounds up to whole base loops based on how much was recorded. */
+  const int32_t ov = e->target_multiple[(int)(t - e->tracks)];
+  const int32_t forced = ov > 0 ? ov : e->default_multiple;
   int32_t k = forced > 0 ? forced : (t->record_pos + base - 1) / base;
   const int32_t maxk = e->max_loop_frames / base;
   if (k < 1) k = 1;
@@ -988,7 +993,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->record_pos = 0;
     tr->start_iter = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
-    engine->target_multiple[t] = 0; /* auto: round up to whole base loops */
+    engine->target_multiple[t] = 0; /* inherit the global default multiple */
   }
 
   engine->sample_rate = sample_rate;
@@ -1903,9 +1908,16 @@ int32_t le_engine_set_track_multiple(le_engine* engine, int32_t channel,
                                      int32_t multiple) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  /* 0 = auto (round up on stop); >= 1 fixes the next recording to that many
+  /* 0 = inherit the global default; >= 1 fixes the next recording to that many
    * base loops. Applies to the next finalize; existing content is unchanged. */
   engine->target_multiple[channel] = multiple < 0 ? 0 : multiple;
+  return LE_OK;
+}
+
+int32_t le_engine_set_default_multiple(le_engine* engine, int32_t multiple) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* 0 = auto (round up on stop); >= 1 fixes inheriting tracks to K base loops. */
+  engine->default_multiple = multiple < 0 ? 0 : multiple;
   return LE_OK;
 }
 

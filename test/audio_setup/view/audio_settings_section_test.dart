@@ -39,6 +39,9 @@ void main() {
     when(
       () => repository.setAutoRecord(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setDefaultMultiple(multiple: any(named: 'multiple')),
+    ).thenReturn(EngineResult.ok);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
@@ -246,6 +249,21 @@ void main() {
     await tester.tap(autoRecord);
     await tester.pumpAndSettle();
     expect(recordOptions.state.autoRecord, isTrue);
+  });
+
+  testWidgets('choosing a default loop length forwards to the cubit', (
+    tester,
+  ) async {
+    seed(runningState);
+    await pumpSection(tester);
+    expect(recordOptions.state.defaultMultiple, 0);
+
+    final x2 = find.byKey(const Key('audioSettings_defaultMultiple_2'));
+    await tester.ensureVisible(x2);
+    await tester.tap(x2);
+    await tester.pumpAndSettle();
+
+    expect(recordOptions.state.defaultMultiple, 2);
   });
 
   testWidgets('choosing a max loop length forwards to the cubit', (

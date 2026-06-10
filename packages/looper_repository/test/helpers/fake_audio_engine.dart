@@ -177,6 +177,7 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   final Map<int, int> trackMultiple = {};
+  int? lastDefaultMultiple;
   bool? lastRecDub;
   bool? lastAutoRecord;
 
@@ -184,6 +185,13 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult setTrackMultiple({required int channel, required int multiple}) {
     trackMultiple[channel] = multiple;
     calls.add('setTrackMultiple');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setDefaultMultiple({required int multiple}) {
+    lastDefaultMultiple = multiple;
+    calls.add('setDefaultMultiple');
     return EngineResult.ok;
   }
 

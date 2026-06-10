@@ -287,6 +287,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setDefaultMultiple({required int multiple}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_default_multiple(_engine, multiple),
+    );
+  }
+
+  @override
   EngineResult setRecDub({required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(

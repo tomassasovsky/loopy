@@ -68,6 +68,7 @@ class LooperRepository {
   /// Per-track forced loop multiples (absent => auto). The global rec/dub and
   /// auto-record (sound-activated) flags. All re-applied on every (re)start.
   final Map<int, int> _trackMultiple = {};
+  int _defaultMultiple = 0;
   bool _recDub = false;
   bool _autoRecord = false;
 
@@ -294,7 +295,8 @@ class LooperRepository {
       );
       _engine
         ..setRecDub(enabled: _recDub)
-        ..setAutoRecord(enabled: _autoRecord);
+        ..setAutoRecord(enabled: _autoRecord)
+        ..setDefaultMultiple(multiple: _defaultMultiple);
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
@@ -453,6 +455,14 @@ class LooperRepository {
       channel: channel,
       multiple: multiple <= 0 ? 0 : multiple,
     );
+  }
+
+  /// Sets the global default loop length for inheriting tracks (`0` = auto).
+  /// Remembered and re-applied on every (re)start.
+  EngineResult setDefaultMultiple({required int multiple}) {
+    _defaultMultiple = multiple < 0 ? 0 : multiple;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setDefaultMultiple(multiple: _defaultMultiple);
   }
 
   /// Sets the global rec/dub second-press mode. Remembered and re-applied on

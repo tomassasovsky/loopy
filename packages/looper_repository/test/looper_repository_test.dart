@@ -379,18 +379,20 @@ void main() {
       },
     );
 
-    test('rec/dub, auto-record and track multiples re-apply on start', () {
+    test('rec/dub, auto-record and multiples re-apply on start', () {
       final repo = buildRepo()
         ..setRecDub(enabled: true)
         ..setAutoRecord(enabled: true)
-        ..setTrackMultiple(channel: 1, multiple: 2);
+        ..setDefaultMultiple(multiple: 2)
+        ..setTrackMultiple(channel: 1, multiple: 3);
       expect(engine.lastRecDub, isNull); // not running yet
       expect(engine.trackMultiple, isEmpty);
 
       repo.startEngine(const EngineConfig());
       expect(engine.lastRecDub, isTrue);
       expect(engine.lastAutoRecord, isTrue);
-      expect(engine.trackMultiple[1], 2);
+      expect(engine.lastDefaultMultiple, 2);
+      expect(engine.trackMultiple[1], 3);
     });
 
     test('clearing a track multiple (0) drops the override', () {
