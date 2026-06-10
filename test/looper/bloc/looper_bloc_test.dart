@@ -83,6 +83,12 @@ void main() {
         enabled: any(named: 'enabled'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setTrackMultiple(
+        channel: any(named: 'channel'),
+        multiple: any(named: 'multiple'),
+      ),
+    ).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => stateController.close());
@@ -160,6 +166,15 @@ void main() {
     act: (bloc) => bloc.add(const LooperTrackQuantizeChanged(2, enabled: true)),
     verify: (_) => verify(
       () => repository.setTrackQuantize(channel: 2, enabled: true),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackMultipleChanged forwards the multiple to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackMultipleChanged(1, 3)),
+    verify: (_) => verify(
+      () => repository.setTrackMultiple(channel: 1, multiple: 3),
     ).called(1),
   );
 

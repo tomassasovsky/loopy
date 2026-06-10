@@ -28,6 +28,7 @@ void main() {
   late RefreshRateCubit refreshRate;
   late QuantizeCubit quantize;
   late MonitorCubit monitor;
+  late RecordOptionsCubit recordOptions;
   late LooperRepository repository;
 
   setUp(() {
@@ -60,6 +61,16 @@ void main() {
     when(
       () => repository.setMonitorOutputMask(any()),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    recordOptions = RecordOptionsCubit(
+      repository: repository,
+      settings: settings,
+    );
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -79,6 +90,7 @@ void main() {
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
+            BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
           ],
           child: const BigPictureSettingsPage(),
         ),
@@ -270,6 +282,7 @@ void main() {
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
+            BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
           ],
           child: MaterialApp(
             home: Builder(

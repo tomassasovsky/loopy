@@ -65,6 +65,12 @@ class LooperRepository {
   /// Remembered and re-applied on every successful (re)start.
   final Map<int, bool> _trackQuantize = {};
 
+  /// Per-track forced loop multiples (absent => auto). The global rec/dub and
+  /// auto-record (sound-activated) flags. All re-applied on every (re)start.
+  final Map<int, int> _trackMultiple = {};
+  bool _recDub = false;
+  bool _autoRecord = false;
+
   /// Monitor routing, re-applied on every successful (re)start. The custom
   /// masks default to input 0 -> outputs 0 + 1 (the engine default); when
   /// [_monitorFollowChannel] is non-null the monitor mirrors that track.
@@ -286,6 +292,13 @@ class LooperRepository {
         (channel, enabled) =>
             _engine.setTrackQuantize(channel: channel, enabled: enabled),
       );
+      _engine
+        ..setRecDub(enabled: _recDub)
+        ..setAutoRecord(enabled: _autoRecord);
+      _trackMultiple.forEach(
+        (channel, multiple) =>
+            _engine.setTrackMultiple(channel: channel, multiple: multiple),
+      );
       _applyMonitor();
     }
     return result;
@@ -425,6 +438,37 @@ class LooperRepository {
     }
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setTrackQuantize(channel: channel, enabled: enabled);
+  }
+
+  /// Fixes track [channel]'s loop length to [multiple] base loops (`0` = auto).
+  /// Remembered and re-applied on every (re)start.
+  EngineResult setTrackMultiple({required int channel, required int multiple}) {
+    if (multiple <= 0) {
+      _trackMultiple.remove(channel);
+    } else {
+      _trackMultiple[channel] = multiple;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackMultiple(
+      channel: channel,
+      multiple: multiple <= 0 ? 0 : multiple,
+    );
+  }
+
+  /// Sets the global rec/dub second-press mode. Remembered and re-applied on
+  /// every (re)start.
+  EngineResult setRecDub({required bool enabled}) {
+    _recDub = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setRecDub(enabled: enabled);
+  }
+
+  /// Enables global sound-activated recording. Remembered and re-applied on
+  /// every (re)start.
+  EngineResult setAutoRecord({required bool enabled}) {
+    _autoRecord = enabled;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setAutoRecord(enabled: enabled);
   }
 
   /// Enables or disables quantized recording (captures snap to the loop grid).

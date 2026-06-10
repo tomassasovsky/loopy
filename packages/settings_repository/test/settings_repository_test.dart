@@ -299,6 +299,25 @@ void main() {
     });
   });
 
+  group('record options', () {
+    test('rec/dub and auto-record default off and round-trip', () async {
+      expect(await repository.loadRecDub(), isFalse);
+      expect(await repository.loadAutoRecord(), isFalse);
+      await repository.saveRecDub(value: true);
+      await repository.saveAutoRecord(value: true);
+      expect(await repository.loadRecDub(), isTrue);
+      expect(await repository.loadAutoRecord(), isTrue);
+    });
+  });
+
+  group('track multiple', () {
+    test('defaults to 0 (auto) and round-trips a fixed value', () async {
+      expect(await repository.loadTrackMultiple(0), 0);
+      await repository.saveTrackMultiple(0, 3);
+      expect(await repository.loadTrackMultiple(0), 3);
+    });
+  });
+
   group('track quantize override', () {
     test('defaults to null (inherit) when unset', () async {
       expect(await repository.loadTrackQuantize(0), isNull);

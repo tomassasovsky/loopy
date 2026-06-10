@@ -126,6 +126,16 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
+          BlocProvider(
+            create: (context) {
+              final cubit = RecordOptionsCubit(
+                repository: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           // Provided at the shell (not just the setup screen) so the device
           // picker, the persisted selection, and the connect/disconnect banner
           // stay live during normal looping, not only during first-run setup.

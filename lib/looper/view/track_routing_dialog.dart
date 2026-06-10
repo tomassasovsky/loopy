@@ -61,6 +61,13 @@ Future<void> showTrackRoutingDialog({
                     ),
                     const SizedBox(height: 8),
                     _TrackQuantizeControl(channel: channel, settings: settings),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Loop length',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    _TrackMultipleControl(channel: channel, settings: settings),
                   ],
                 );
               },
@@ -136,6 +143,64 @@ class _TrackQuantizeControlState extends State<_TrackQuantizeControl> {
           selected: _override == false,
           onSelected: (_) => _set(false),
         ),
+      ],
+    );
+  }
+}
+
+/// A loop-length selector for one track: Auto (round up on stop) or a fixed
+/// number of base loops (×1 / ×2 / ×3). Loads the current value from [settings]
+/// and dispatches changes through the [LooperBloc].
+class _TrackMultipleControl extends StatefulWidget {
+  const _TrackMultipleControl({required this.channel, required this.settings});
+
+  final int channel;
+  final SettingsRepository settings;
+
+  @override
+  State<_TrackMultipleControl> createState() => _TrackMultipleControlState();
+}
+
+class _TrackMultipleControlState extends State<_TrackMultipleControl> {
+  /// 0 = auto; 1/2/3 = fixed.
+  int _multiple = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final value = await widget.settings.loadTrackMultiple(widget.channel);
+    if (mounted) setState(() => _multiple = value);
+  }
+
+  void _set(int value) {
+    setState(() => _multiple = value);
+    context.read<LooperBloc>().add(
+      LooperTrackMultipleChanged(widget.channel, value),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      children: [
+        ChoiceChip(
+          key: const Key('trackRouting_multiple_auto'),
+          label: const Text('Auto'),
+          selected: _multiple == 0,
+          onSelected: (_) => _set(0),
+        ),
+        for (final k in const [1, 2, 3])
+          ChoiceChip(
+            key: Key('trackRouting_multiple_$k'),
+            label: Text('×$k'),
+            selected: _multiple == k,
+            onSelected: (_) => _set(k),
+          ),
       ],
     );
   }

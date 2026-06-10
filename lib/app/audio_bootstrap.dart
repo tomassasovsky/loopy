@@ -65,6 +65,10 @@ Future<bool> tryAutoStartEngine({
     if (quantize != null) {
       repository.setTrackQuantize(channel: track.channel, enabled: quantize);
     }
+    final multiple = await settings.loadTrackMultiple(track.channel);
+    if (multiple > 0) {
+      repository.setTrackMultiple(channel: track.channel, multiple: multiple);
+    }
   }
   return true;
 }

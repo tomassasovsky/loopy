@@ -1410,8 +1410,99 @@ static void test_quantize_track_override_inherits(void) {
   le_engine_destroy(e);
 }
 
+/* A forced per-track multiple fixes the finalized length to exactly K base
+ * loops, regardless of how much was recorded. */
+static void test_target_multiple_forces_length(void) {
+  printf("test_target_multiple_forces_length\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  establish_master(e, out); /* base loop length == LOOP_N */
+  CHECK(le_engine_set_track_multiple(e, 1, 2) == LE_OK);
+
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N, out); /* record ~one base loop */
+  le_engine_record(e, 1); /* finalize */
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].length_frames == 2 * LOOP_N);
+
+  le_engine_destroy(e);
+}
+
+/* In rec/dub mode a record press finalizes into overdub; a stop press still
+ * ends in stopped. */
+static void test_rec_dub_continues_into_overdub(void) {
+  printf("test_rec_dub_continues_into_overdub\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+
+  /* Defining track: record then a record press finalizes -> OVERDUBBING. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize via record press */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  /* A new track stopped with a stop press ends STOPPED, never overdub. */
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N, out);
+  le_engine_stop_track(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+
+  le_engine_destroy(e);
+}
+
+/* Sound-activated recording arms on the press and starts only once the input
+ * crosses the threshold; a second press cancels the arm. */
+static void test_auto_record_starts_on_signal(void) {
+  printf("test_auto_record_starts_on_signal\n");
+  float out[64];
+  le_snapshot s;
+
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  le_engine_record(e, 0); /* arms; waits for signal */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  process_const(e, 0.0f, LOOP_N, out); /* below threshold: still waiting */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  process_const(e, 0.5f, LOOP_N, out); /* crosses threshold: starts now */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  le_engine_destroy(e);
+
+  /* A second press before the signal cancels the arm. */
+  le_engine* e2 = make_configured_engine();
+  le_engine_set_auto_record(e2, 1);
+  le_engine_record(e2, 0); /* arm */
+  drain(e2);
+  le_engine_record(e2, 0); /* cancel */
+  drain(e2);
+  process_const(e2, 0.5f, LOOP_N, out); /* loud, but cancelled */
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  le_engine_destroy(e2);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
+  test_target_multiple_forces_length();
+  test_rec_dub_continues_into_overdub();
+  test_auto_record_starts_on_signal();
   test_quantize_track_override_forces_on();
   test_quantize_track_override_forces_off();
   test_quantize_track_override_inherits();

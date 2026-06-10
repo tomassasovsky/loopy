@@ -19,6 +19,7 @@ void main() {
   late AudioSetupCubit cubit;
   late MonitorCubit monitor;
   late QuantizeCubit quantize;
+  late RecordOptionsCubit recordOptions;
 
   setUp(() {
     cubit = _MockAudioSetupCubit();
@@ -32,9 +33,19 @@ void main() {
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setRecDub(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setAutoRecord(enabled: any(named: 'enabled')),
+    ).thenReturn(EngineResult.ok);
     final settings = SettingsRepository(store: FakeKeyValueStore());
     monitor = MonitorCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
+    recordOptions = RecordOptionsCubit(
+      repository: repository,
+      settings: settings,
+    );
   });
 
   void seed(AudioSetupState state) {
@@ -52,6 +63,7 @@ void main() {
         BlocProvider<AudioSetupCubit>.value(value: cubit),
         BlocProvider<MonitorCubit>.value(value: monitor),
         BlocProvider<QuantizeCubit>.value(value: quantize),
+        BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
       ],
       child: const Material(
         child: SingleChildScrollView(child: AudioSettingsSection()),
@@ -211,6 +223,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(quantize.state, isTrue);
+  });
+
+  testWidgets('the rec/dub and sound-activated toggles forward to the cubit', (
+    tester,
+  ) async {
+    seed(runningState);
+    await pumpSection(tester);
+    expect(recordOptions.state.recDub, isFalse);
+    expect(recordOptions.state.autoRecord, isFalse);
+
+    final recDub = find.byKey(const Key('audioSettings_recDub_switch'));
+    await tester.ensureVisible(recDub);
+    await tester.tap(recDub);
+    await tester.pumpAndSettle();
+    expect(recordOptions.state.recDub, isTrue);
+
+    final autoRecord = find.byKey(
+      const Key('audioSettings_autoRecord_switch'),
+    );
+    await tester.ensureVisible(autoRecord);
+    await tester.tap(autoRecord);
+    await tester.pumpAndSettle();
+    expect(recordOptions.state.autoRecord, isTrue);
   });
 
   testWidgets('choosing a max loop length forwards to the cubit', (

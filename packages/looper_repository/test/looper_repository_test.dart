@@ -379,6 +379,34 @@ void main() {
       },
     );
 
+    test('rec/dub, auto-record and track multiples re-apply on start', () {
+      final repo = buildRepo()
+        ..setRecDub(enabled: true)
+        ..setAutoRecord(enabled: true)
+        ..setTrackMultiple(channel: 1, multiple: 2);
+      expect(engine.lastRecDub, isNull); // not running yet
+      expect(engine.trackMultiple, isEmpty);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastRecDub, isTrue);
+      expect(engine.lastAutoRecord, isTrue);
+      expect(engine.trackMultiple[1], 2);
+    });
+
+    test('clearing a track multiple (0) drops the override', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackMultiple(channel: 1, multiple: 2);
+      expect(engine.trackMultiple[1], 2);
+
+      repo.setTrackMultiple(channel: 1, multiple: 0);
+      expect(engine.trackMultiple[1], 0);
+
+      engine.trackMultiple.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.trackMultiple.containsKey(1), isFalse);
+    });
+
     test('custom monitor masks are deferred until running, then applied', () {
       final repo = buildRepo()
         ..setMonitorInputMask(0x2)

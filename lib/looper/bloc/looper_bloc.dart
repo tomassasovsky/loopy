@@ -70,6 +70,15 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackQuantize(event.channel, enabled: event.enabled),
       );
     });
+    on<LooperTrackMultipleChanged>((event, _) {
+      _repository.setTrackMultiple(
+        channel: event.channel,
+        multiple: event.multiple,
+      );
+      unawaited(
+        _settings?.saveTrackMultiple(event.channel, event.multiple),
+      );
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);

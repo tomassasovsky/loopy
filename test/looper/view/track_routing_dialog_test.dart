@@ -116,5 +116,19 @@ void main() {
         () => bloc.add(const LooperTrackQuantizeChanged(0, enabled: false)),
       ).called(1);
     });
+
+    testWidgets('choosing a loop multiple dispatches the change', (
+      tester,
+    ) async {
+      await pumpOpener(tester);
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('trackRouting_multiple_2')));
+      await tester.pump();
+      verify(
+        () => bloc.add(const LooperTrackMultipleChanged(0, 2)),
+      ).called(1);
+    });
   });
 }
