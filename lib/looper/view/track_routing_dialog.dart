@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/routing_graph_view.dart';
+import 'package:loopy/looper/view/track_signal_flow_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Opens the per-track I/O routing dialog for [channel]: the signal-flow graph
@@ -27,7 +27,7 @@ Future<void> showTrackRoutingDialog({
         key: const Key('trackRouting_dialog'),
         title: Text('Track ${channel + 1} routing'),
         content: SizedBox(
-          width: 460,
+          width: 560,
           child: SingleChildScrollView(
             child: BlocBuilder<LooperBloc, LooperState>(
               builder: (context, state) {
@@ -39,20 +39,19 @@ Future<void> showTrackRoutingDialog({
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Click an input or output to connect or disconnect it.',
+                      'Click a channel to connect it. Add effects with +, then '
+                      'drag a card to reorder it or across the track to switch '
+                      'before/after. Tap a card to edit it.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 12),
-                    RoutingGraphView(
-                      tracks: [current],
+                    _TrackSignalFlowControl(
+                      channel: channel,
+                      settings: settings,
+                      track: current,
                       inputChannels: state.status.inputChannels,
                       outputChannels: state.status.outputChannels,
                       excludedInputMask: state.status.excludedInputMask,
-                      initialArmed: 0,
-                      onInputMaskChanged: (ch, mask) =>
-                          bloc.add(LooperInputMaskChanged(ch, mask)),
-                      onOutputMaskChanged: (ch, mask) =>
-                          bloc.add(LooperOutputMaskChanged(ch, mask)),
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -68,13 +67,6 @@ Future<void> showTrackRoutingDialog({
                     ),
                     const SizedBox(height: 8),
                     _TrackMultipleControl(channel: channel, settings: settings),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Effects',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    _TrackEffectsControl(channel: channel, settings: settings),
                   ],
                 );
               },
@@ -239,17 +231,33 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
 /// and dispatches changes through the [LooperBloc]: structural edits as a whole
 /// [LooperTrackEffectsChanged], live slider tweaks as a granular
 /// [LooperTrackEffectParamChanged].
-class _TrackEffectsControl extends StatefulWidget {
-  const _TrackEffectsControl({required this.channel, required this.settings});
+/// The integrated single-track signal-flow graph: channel routing plus the
+/// effects chain as draggable cards on the path. Loads the saved chain from
+/// [settings], dispatches routing + structural changes as [LooperBloc] events,
+/// and shows an inline editor for the selected card.
+class _TrackSignalFlowControl extends StatefulWidget {
+  const _TrackSignalFlowControl({
+    required this.channel,
+    required this.settings,
+    required this.track,
+    required this.inputChannels,
+    required this.outputChannels,
+    required this.excludedInputMask,
+  });
 
   final int channel;
   final SettingsRepository settings;
+  final Track track;
+  final int inputChannels;
+  final int outputChannels;
+  final int excludedInputMask;
 
   @override
-  State<_TrackEffectsControl> createState() => _TrackEffectsControlState();
+  State<_TrackSignalFlowControl> createState() =>
+      _TrackSignalFlowControlState();
 }
 
-class _TrackEffectsControlState extends State<_TrackEffectsControl> {
+class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
   /// The chain in engine order. Pre-stage entries process the input; post-stage
   /// entries process playback. The split into lanes is derived for display.
   List<TrackEffect> _chain = [];
@@ -269,14 +277,10 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
     if (mounted) setState(() => _chain = chain);
   }
 
-  /// Indices in [_chain] of entries on [stage], in chain (processing) order.
-  List<int> _lane(TrackEffectStage stage) => [
-    for (var i = 0; i < _chain.length; i++)
-      if (_chain[i].stage == stage) i,
-  ];
+  LooperBloc get _bloc => context.read<LooperBloc>();
 
   void _pushStructural() {
-    context.read<LooperBloc>().add(
+    _bloc.add(
       LooperTrackEffectsChanged(widget.channel, List<TrackEffect>.of(_chain)),
     );
   }
@@ -325,28 +329,28 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
       final params = List<double>.of(_chain[index].params)..[param] = value;
       _chain = [..._chain]..[index] = _chain[index].copyWith(params: params);
     });
-    context.read<LooperBloc>().add(
+    _bloc.add(
       LooperTrackEffectParamChanged(widget.channel, index, param, value),
     );
   }
 
-  /// Swaps entry [index] with its neighbour on the same lane in direction [dir]
-  /// (-1 earlier, +1 later), reordering the chain within that stage.
-  void _move(int index, int dir) {
-    final stage = _chain[index].stage;
-    for (var j = index + dir; j >= 0 && j < _chain.length; j += dir) {
-      if (_chain[j].stage != stage) continue;
-      setState(() {
-        final next = [..._chain];
-        final tmp = next[index];
-        next[index] = next[j];
-        next[j] = tmp;
-        _chain = next;
-        _selected = j;
-      });
-      _pushStructural();
-      return;
-    }
+  /// Drag-and-drop: move chain entry [from] to lane [stage] at position [toPos]
+  /// within that lane (reorder, or restage by dropping across the track).
+  void _move(int from, TrackEffectStage stage, int toPos) {
+    final moved = _chain[from];
+    final without = [..._chain]..removeAt(from);
+    final laneFlat = [
+      for (var i = 0; i < without.length; i++)
+        if (without[i].stage == stage) i,
+    ];
+    final insert = toPos >= laneFlat.length
+        ? (laneFlat.isEmpty ? without.length : laneFlat.last + 1)
+        : laneFlat[toPos];
+    setState(() {
+      _chain = without..insert(insert, moved.copyWith(stage: stage));
+      _selected = insert;
+    });
+    _pushStructural();
   }
 
   @override
@@ -355,21 +359,20 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _station('In'),
-              ..._laneCards(TrackEffectStage.pre),
-              _addButton(TrackEffectStage.pre),
-              _arrow(),
-              _station('Track ${widget.channel + 1}', emphasized: true),
-              ..._laneCards(TrackEffectStage.post),
-              _addButton(TrackEffectStage.post),
-              _arrow(),
-              _station('Out'),
-            ],
-          ),
+        TrackSignalFlowView(
+          track: widget.track,
+          inputChannels: widget.inputChannels,
+          outputChannels: widget.outputChannels,
+          excludedInputMask: widget.excludedInputMask,
+          effects: _chain,
+          onInputMaskChanged: (mask) =>
+              _bloc.add(LooperInputMaskChanged(widget.channel, mask)),
+          onOutputMaskChanged: (mask) =>
+              _bloc.add(LooperOutputMaskChanged(widget.channel, mask)),
+          onAddEffect: _add,
+          onMoveEffect: _move,
+          selectedEffect: selected,
+          onSelectEffect: (i) => setState(() => _selected = i),
         ),
         if (selected != null && selected < _chain.length) ...[
           const SizedBox(height: 12),
@@ -378,8 +381,8 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
           const SizedBox(height: 8),
           Text(
             'Add an effect before the track to record through it, or after the '
-            'track to process playback. Tap a card to edit it. To hear '
-            'before-track effects live, set monitoring to follow this track.',
+            'track to process playback. To hear before-track effects live, set '
+            'monitoring to follow this track.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -387,91 +390,10 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
     );
   }
 
-  List<Widget> _laneCards(TrackEffectStage stage) => [
-    for (final index in _lane(stage)) _card(index),
-  ];
-
-  Widget _arrow() => const Padding(
-    padding: EdgeInsets.symmetric(horizontal: 4),
-    child: Icon(Icons.chevron_right, size: 18),
-  );
-
-  Widget _station(String label, {bool emphasized = false}) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: emphasized
-            ? scheme.primary.withValues(alpha: 0.18)
-            : scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: emphasized ? scheme.primary : scheme.outlineVariant,
-        ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontWeight: emphasized ? FontWeight.w600 : FontWeight.w500,
-        ),
-      ),
-    );
-  }
-
-  Widget _card(int index) {
-    final fx = _chain[index];
-    final scheme = Theme.of(context).colorScheme;
-    final isSelected = _selected == index;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          key: Key('trackRouting_fx_card_$index'),
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => setState(() => _selected = isSelected ? null : index),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: scheme.secondaryContainer.withValues(
-                alpha: isSelected ? 1 : 0.55,
-              ),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: isSelected ? scheme.primary : scheme.outlineVariant,
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: Text(fx.type.label),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _addButton(TrackEffectStage stage) {
-    final full = _chain.length >= kTrackEffectMax;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: IconButton(
-        key: Key(
-          stage == TrackEffectStage.pre
-              ? 'trackRouting_fx_addPre'
-              : 'trackRouting_fx_addPost',
-        ),
-        icon: const Icon(Icons.add_circle_outline),
-        tooltip: full ? 'Chain is full' : 'Add effect',
-        onPressed: full ? null : () => _add(stage),
-      ),
-    );
-  }
-
   Widget _editor(int index, TrackEffect fx) {
-    final lane = _lane(fx.stage);
-    final posInLane = lane.indexOf(index);
     final textTheme = Theme.of(context).textTheme;
     return Container(
+      key: const Key('trackRouting_fx_editor'),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -500,20 +422,6 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
                 ),
               ),
               IconButton(
-                key: const Key('trackRouting_fx_moveLeft'),
-                icon: const Icon(Icons.chevron_left),
-                tooltip: 'Move earlier',
-                onPressed: posInLane > 0 ? () => _move(index, -1) : null,
-              ),
-              IconButton(
-                key: const Key('trackRouting_fx_moveRight'),
-                icon: const Icon(Icons.chevron_right),
-                tooltip: 'Move later',
-                onPressed: posInLane < lane.length - 1
-                    ? () => _move(index, 1)
-                    : null,
-              ),
-              IconButton(
                 key: const Key('trackRouting_fx_remove'),
                 icon: const Icon(Icons.delete_outline),
                 tooltip: 'Remove effect',
@@ -522,6 +430,8 @@ class _TrackEffectsControlState extends State<_TrackEffectsControl> {
             ],
           ),
           const SizedBox(height: 4),
+          // Drag a card across the track to restage; this is the same action
+          // for keyboard/non-drag use.
           SegmentedButton<TrackEffectStage>(
             segments: const [
               ButtonSegment(
