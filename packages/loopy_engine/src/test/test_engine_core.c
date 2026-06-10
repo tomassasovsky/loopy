@@ -1723,22 +1723,28 @@ static void test_fx_chain_applies_in_order(void) {
   le_engine_destroy(e);
 }
 
-static void test_fx_pre_prints_into_recording(void) {
-  printf("test_fx_pre_prints_into_recording\n");
+static void test_fx_pre_is_nondestructive_and_colors_playback(void) {
+  printf("test_fx_pre_is_nondestructive_and_colors_playback\n");
   le_engine* e = make_configured_engine();
   float out[64];
 
-  /* A pre-stage drive wets the live input, so it is baked into the loop. */
+  /* A before-track (pre) drive is NEVER printed into the recording: the buffer
+   * stays dry. It does color playback, like any effect. */
   fx_drive_unity(e, 0, LE_FX_PRE);
   le_engine_set_track_fx_count(e, 0, 1);
   drain(e);
-  establish_loop(e, 1.0f); /* records tanh(1.0) into the buffer */
+  establish_loop(e, 1.0f); /* records the DRY input (1.0), not tanh(1.0) */
 
-  /* Remove every effect: the recording is still wet -> it was printed in. */
+  /* With the effect engaged, playback runs it: out = tanh(loop) = tanh(1). */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
+
+  /* Remove every effect: the loop now plays back dry (1.0), proving the
+   * recording was never wet-printed. */
   le_engine_set_track_fx_count(e, 0, 0);
   drain(e);
   process_const(e, 0.0f, LOOP_N, out);
-  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - tanhf(1.0f)) < 1e-5f);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
   le_engine_destroy(e);
 }
@@ -1823,6 +1829,23 @@ static void test_monitor_follows_track_fx(void) {
 
   /* Unfollowing returns to the raw passthrough. */
   CHECK(le_engine_set_monitor_fx_track(e, -1) == LE_OK);
+  process_const(e, 1.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_monitor_ignores_post_fx(void) {
+  printf("test_monitor_ignores_post_fx\n");
+  le_engine* e = make_configured_engine();
+  le_engine_set_monitor_for_test(e, 1);
+  float out[64];
+
+  /* An after-track (post) drive is playback-only: following the track still
+   * monitors the raw live input, the effect is not heard on the monitor. */
+  fx_drive_unity(e, 0, LE_FX_POST);
+  le_engine_set_track_fx_count(e, 0, 1);
+  CHECK(le_engine_set_monitor_fx_track(e, 0) == LE_OK);
   process_const(e, 1.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
@@ -1954,7 +1977,8 @@ int main(void) {
   test_fx_delay_is_silent_until_time();
   test_fx_tremolo_modulates_amplitude();
   test_fx_chain_applies_in_order();
-  test_fx_pre_prints_into_recording();
+  test_fx_pre_is_nondestructive_and_colors_playback();
+  test_monitor_ignores_post_fx();
   test_fx_post_is_nondestructive();
   test_fx_muted_track_is_silent();
   test_fx_rejects_invalid_args();

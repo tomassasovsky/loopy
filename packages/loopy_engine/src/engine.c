@@ -61,6 +61,22 @@
  * overdubbing). All undo/redo bookkeeping — the pool, the stacks, and a_live
  * (whose sole writer is the control thread) — lives on the control thread, so
  * undo/redo never races the audio callback. */
+/* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
+ * per entry when its type changes. svf_* are the state-variable filter
+ * integrators; lfo is the tremolo phase (0..1); delay is a lazily allocated ring
+ * (the control thread allocates before posting the command) of fx_delay_frames
+ * samples. A track carries two of these: `fx` runs the whole chain on playback,
+ * and `mon_fx` runs the before-track entries on the live monitored input — they
+ * are independent so an effect can color both paths at once (e.g. while
+ * overdubbing a track whose live input you are monitoring). */
+typedef struct le_fx_state {
+  float svf_ic1[LE_FX_MAX];
+  float svf_ic2[LE_FX_MAX];
+  float lfo[LE_FX_MAX];
+  float* delay[LE_FX_MAX];
+  int32_t delay_pos[LE_FX_MAX];
+} le_fx_state;
+
 typedef struct le_track {
   float* pool[LE_UNDO_SLOTS]; /* lazily allocated loop buffers */
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
@@ -99,21 +115,18 @@ typedef struct le_track {
 
   /* Per-track effects chain. Published config (control writes, audio reads once
    * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
-   * active. Each entry has a type, a stage (le_fx_stage: PRE on input, POST on
-   * playback), and LE_FX_PARAMS normalized parameters. */
+   * active. Each entry has a type, a stage (le_fx_stage: every entry colors
+   * playback; PRE also colors the live input monitor), and LE_FX_PARAMS
+   * normalized parameters. */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic int32_t a_fx_stage[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
-  /* Audio-thread-owned DSP state, reset when an entry's type changes (applied
-   * via LE_CMD_SET_FX). svf_* are the state-variable filter integrators; lfo is
-   * the tremolo phase (0..1); delay is a lazily allocated ring (control thread
-   * allocates before posting the command) of fx_delay_frames samples. */
-  float fx_svf_ic1[LE_FX_MAX];
-  float fx_svf_ic2[LE_FX_MAX];
-  float fx_lfo[LE_FX_MAX];
-  float* fx_delay[LE_FX_MAX];
-  int32_t fx_delay_pos[LE_FX_MAX];
+  /* Two independent DSP-state copies of the chain (see le_fx_state): `fx` runs
+   * the whole chain on playback; `mon_fx` runs the before-track entries on the
+   * live monitored input. */
+  le_fx_state fx;
+  le_fx_state mon_fx;
 } le_track;
 
 struct le_engine {
@@ -492,7 +505,8 @@ static float fx_drive(float x, const float* p) {
 
 /* Resonant low-pass: a TPT state-variable filter (Cytomic/Zavalishin form).
  * p0 = cutoff (20 Hz .. ~18 kHz, log), p1 = resonance. */
-static float fx_filter(le_track* t, int slot, int sr, float x, const float* p) {
+static float fx_filter(le_fx_state* fx, int slot, int sr, float x,
+                       const float* p) {
   float fc = 20.0f * powf(900.0f, p[0]); /* 20 * 900 = 18 kHz at p0 = 1 */
   const float nyq = 0.45f * (float)sr;
   if (fc > nyq) fc = nyq;
@@ -501,8 +515,8 @@ static float fx_filter(le_track* t, int slot, int sr, float x, const float* p) {
   const float a1 = 1.0f / (1.0f + g * (g + k));
   const float a2 = g * a1;
   const float a3 = g * a2;
-  float* ic1 = &t->fx_svf_ic1[slot];
-  float* ic2 = &t->fx_svf_ic2[slot];
+  float* ic1 = &fx->svf_ic1[slot];
+  float* ic2 = &fx->svf_ic2[slot];
   const float v3 = x - *ic2;
   const float v1 = a1 * (*ic1) + a2 * v3;
   const float v2 = *ic2 + a2 * (*ic1) + a3 * v3;
@@ -513,12 +527,13 @@ static float fx_filter(le_track* t, int slot, int sr, float x, const float* p) {
 
 /* Feedback delay: p0 = time (0..1 s), p1 = feedback, p2 = wet mix. The ring is
  * the control-thread-allocated fx_delay line of e->fx_delay_frames samples. */
-static float fx_delay(le_track* t, int slot, int cap, float x, const float* p) {
-  float* buf = t->fx_delay[slot];
+static float fx_delay(le_fx_state* fx, int slot, int cap, float x,
+                      const float* p) {
+  float* buf = fx->delay[slot];
   if (buf == NULL || cap <= 1) return x;
   int d = (int)(p[0] * (float)(cap - 1));
   if (d < 1) d = 1;
-  int pos = t->fx_delay_pos[slot];
+  int pos = fx->delay_pos[slot];
   int rp = pos - d;
   if (rp < 0) rp += cap;
   const float delayed = buf[rp];
@@ -526,28 +541,28 @@ static float fx_delay(le_track* t, int slot, int cap, float x, const float* p) {
   buf[pos] = x + delayed * fb;
   pos += 1;
   if (pos >= cap) pos = 0;
-  t->fx_delay_pos[slot] = pos;
+  fx->delay_pos[slot] = pos;
   const float mix = p[2];
   return x * (1.0f - mix) + delayed * mix;
 }
 
 /* Tremolo: sine LFO amplitude modulation. p0 = rate (0.1..12 Hz), p1 = depth. */
-static float fx_tremolo(le_track* t, int slot, int sr, float x,
+static float fx_tremolo(le_fx_state* fx, int slot, int sr, float x,
                         const float* p) {
   const float rate = 0.1f + p[0] * 11.9f;
   const float depth = p[1];
-  float ph = t->fx_lfo[slot];
+  float ph = fx->lfo[slot];
   const float lfo = 0.5f * (1.0f + sinf(2.0f * LE_PI * ph)); /* 0..1 */
   ph += rate / (float)sr;
   if (ph >= 1.0f) ph -= 1.0f;
-  t->fx_lfo[slot] = ph;
+  fx->lfo[slot] = ph;
   return x * (1.0f - depth * (1.0f - lfo));
 }
 
 /* Applies the [stage] entries of track [t]'s chain to one sample, in order.
  * [count] is the active chain length; [types]/[stages]/[params] are the
  * per-buffer snapshot for this track. */
-static float fx_apply_chain(le_track* t, int sr, int cap, float x, int stage,
+static float fx_apply_chain(le_fx_state* fx, int sr, int cap, float x, int stage,
                             int count, const int32_t* types,
                             const int32_t* stages,
                             const float params[LE_FX_MAX][LE_FX_PARAMS]) {
@@ -558,13 +573,13 @@ static float fx_apply_chain(le_track* t, int sr, int cap, float x, int stage,
         x = fx_drive(x, params[s]);
         break;
       case LE_FX_FILTER:
-        x = fx_filter(t, s, sr, x, params[s]);
+        x = fx_filter(fx, s, sr, x, params[s]);
         break;
       case LE_FX_DELAY:
-        x = fx_delay(t, s, cap, x, params[s]);
+        x = fx_delay(fx, s, cap, x, params[s]);
         break;
       case LE_FX_TREMOLO:
-        x = fx_tremolo(t, s, sr, x, params[s]);
+        x = fx_tremolo(fx, s, sr, x, params[s]);
         break;
       default:
         break;
@@ -708,12 +723,17 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       le_track* t = &e->tracks[ch];
       store_i32(&t->a_fx_type[index], (int32_t)cmd->arg_f);
       store_i32(&t->a_fx_stage[index], stage);
-      /* Reset the entry's DSP state so a freshly engaged effect starts clean (no
-       * filter blow-up from stale integrators, no delay-read of old content). */
-      t->fx_svf_ic1[index] = 0.0f;
-      t->fx_svf_ic2[index] = 0.0f;
-      t->fx_lfo[index] = 0.0f;
-      t->fx_delay_pos[index] = 0;
+      /* Reset the entry's DSP state (both the playback and monitor copies) so a
+       * freshly engaged effect starts clean (no filter blow-up from stale
+       * integrators, no delay-read of old content). */
+      t->fx.svf_ic1[index] = 0.0f;
+      t->fx.svf_ic2[index] = 0.0f;
+      t->fx.lfo[index] = 0.0f;
+      t->fx.delay_pos[index] = 0;
+      t->mon_fx.svf_ic1[index] = 0.0f;
+      t->mon_fx.svf_ic2[index] = 0.0f;
+      t->mon_fx.lfo[index] = 0.0f;
+      t->mon_fx.delay_pos[index] = 0;
       break;
     }
     case LE_CMD_SET_FX_COUNT: {
@@ -958,8 +978,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
     float frame_out_peak = 0.0f; /* max |output| this frame, for the viz tap */
     float frame_trk_peak[LE_MAX_TRACKS] = {0}; /* per-track, this frame */
-    /* Each track's pre-stage-processed input this frame (what it records and,
-     * when the monitor follows it, what the monitor plays). */
+    /* Each track's before-track-processed live input this frame: what the
+     * monitor plays when it follows this track. (The recording itself is dry.) */
     float trk_input[LE_MAX_TRACKS] = {0};
 
     /* The looper mix is additive: clear this output frame, then sum each
@@ -991,16 +1011,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         insample = cnt > 0 ? sum / (float)cnt : 0.0f;
       }
 
-      /* Pre-stage effects process the live input before it is written, so they
-       * are printed into the recording (record-through-FX). Run every frame the
-       * track has pre effects so delay tails / LFO phase stay continuous; the
-       * wet value is what RECORDING/OVERDUBBING captures below. */
-      if (has_pre[t]) {
-        insample = fx_apply_chain(&e->tracks[t], sr, fx_cap, insample, LE_FX_PRE,
-                                  fx_count[t], fx_type[t], fx_stage[t],
-                                  fx_params[t]);
-      }
-      trk_input[t] = insample; /* for the followed-track monitor below */
+      /* The recording is always DRY: no effect is ever printed into the buffer
+       * (`insample` below is captured as-is). Before-track (pre) effects instead
+       * color the live monitored input via the separate `mon_fx` state, so when
+       * the monitor follows this track you hear them live. Run every frame the
+       * track has pre effects so delay tails / LFO phase stay continuous. */
+      trk_input[t] = has_pre[t]
+                         ? fx_apply_chain(&e->tracks[t].mon_fx, sr, fx_cap,
+                                          insample, LE_FX_PRE, fx_count[t],
+                                          fx_type[t], fx_stage[t], fx_params[t])
+                         : insample;
 
       float loopsample = 0.0f;
       if (st[t] == LE_TRACK_RECORDING) {
@@ -1029,19 +1049,25 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         loopsample = buf[t][seg_base[t] + pos];
       }
 
-      /* The track's mono output: its loop content at the playback volume while
-       * it sounds, silence otherwise. Post-stage effects run every frame a
-       * track has them (even silent ones) so delay tails and LFO phase stay
+      /* The track's mono output: its dry loop content at the playback volume
+       * while it sounds, silence otherwise, run through the WHOLE effects chain
+       * (before-track entries first, then after-track) on the `fx` state. Both
+       * stages color playback — the before/after distinction only governs the
+       * live monitor above, not playback. Effects run every frame a track has
+       * them (even silent ones, on dry == 0) so delay tails and LFO phase stay
        * continuous; the wet result is routed only while the track is audible. */
       const int audible =
           (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
           !mut[t];
-      const float dry = audible ? loopsample * vol[t] : 0.0f;
-      const float wet =
-          has_post[t] ? fx_apply_chain(&e->tracks[t], sr, fx_cap, dry,
-                                       LE_FX_POST, fx_count[t], fx_type[t],
-                                       fx_stage[t], fx_params[t])
-                      : dry;
+      float wet = audible ? loopsample * vol[t] : 0.0f;
+      if (has_pre[t]) {
+        wet = fx_apply_chain(&e->tracks[t].fx, sr, fx_cap, wet, LE_FX_PRE,
+                             fx_count[t], fx_type[t], fx_stage[t], fx_params[t]);
+      }
+      if (has_post[t]) {
+        wet = fx_apply_chain(&e->tracks[t].fx, sr, fx_cap, wet, LE_FX_POST,
+                             fx_count[t], fx_type[t], fx_stage[t], fx_params[t]);
+      }
       if (audible) {
         for (int c = 0; c < ch_out; ++c) {
           if (out_mask[t] & (1u << c)) out[f * ch_out + c] += wet;
@@ -1266,12 +1292,18 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
       for (int p = 0; p < LE_FX_PARAMS; ++p) {
         store_f32(&tr->a_fx_param[s][p], 0.0f);
       }
-      tr->fx_svf_ic1[s] = 0.0f;
-      tr->fx_svf_ic2[s] = 0.0f;
-      tr->fx_lfo[s] = 0.0f;
-      free(tr->fx_delay[s]);
-      tr->fx_delay[s] = NULL;
-      tr->fx_delay_pos[s] = 0;
+      tr->fx.svf_ic1[s] = 0.0f;
+      tr->fx.svf_ic2[s] = 0.0f;
+      tr->fx.lfo[s] = 0.0f;
+      free(tr->fx.delay[s]);
+      tr->fx.delay[s] = NULL;
+      tr->fx.delay_pos[s] = 0;
+      tr->mon_fx.svf_ic1[s] = 0.0f;
+      tr->mon_fx.svf_ic2[s] = 0.0f;
+      tr->mon_fx.lfo[s] = 0.0f;
+      free(tr->mon_fx.delay[s]);
+      tr->mon_fx.delay[s] = NULL;
+      tr->mon_fx.delay_pos[s] = 0;
     }
   }
 
@@ -1630,7 +1662,8 @@ void le_engine_destroy(le_engine* engine) {
       free(engine->tracks[t].pool[i]);
     }
     for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->tracks[t].fx_delay[s]);
+      free(engine->tracks[t].fx.delay[s]);
+      free(engine->tracks[t].mon_fx.delay[s]);
     }
   }
   free(engine);
@@ -2267,13 +2300,22 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
   le_track* t = &engine->tracks[channel];
 
   /* Delay needs a ring buffer; allocate it here (control thread) before the
-   * audio thread can read it, and keep it for reuse once allocated. */
-  if (type == LE_FX_DELAY && t->fx_delay[index] == NULL) {
+   * audio thread can read it, and keep it for reuse once allocated. Both the
+   * playback (`fx`) and monitor (`mon_fx`) copies get their own ring, since a
+   * before-track delay runs on both paths at once with independent tails. */
+  if (type == LE_FX_DELAY) {
     const int32_t cap =
         engine->fx_delay_frames > 0 ? engine->fx_delay_frames : 48000;
-    float* line = (float*)calloc((size_t)cap, sizeof(float));
-    if (line == NULL) return LE_ERR_INVALID;
-    t->fx_delay[index] = line;
+    if (t->fx.delay[index] == NULL) {
+      float* line = (float*)calloc((size_t)cap, sizeof(float));
+      if (line == NULL) return LE_ERR_INVALID;
+      t->fx.delay[index] = line;
+    }
+    if (t->mon_fx.delay[index] == NULL) {
+      float* line = (float*)calloc((size_t)cap, sizeof(float));
+      if (line == NULL) return LE_ERR_INVALID;
+      t->mon_fx.delay[index] = line;
+    }
   }
 
   /* Seed musical defaults only when the type actually changes, so re-selecting

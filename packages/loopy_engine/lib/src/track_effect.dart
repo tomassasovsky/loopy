@@ -12,15 +12,17 @@ const int kTrackEffectMax = 8;
 /// the native `LE_FX_PARAMS`.
 const int kTrackEffectParams = 3;
 
-/// Where an effect sits relative to the track's loop buffer. Mirrors the native
-/// `le_fx_stage`.
+/// Whether an effect is also heard on the live input monitor. The recording is
+/// always dry (no effect is ever printed into the loop) and every effect colors
+/// playback in chain order; the stage only governs monitoring. Mirrors the
+/// native `le_fx_stage`.
 enum TrackEffectStage {
-  /// Applied to playback: the loop stays dry and the effect is non-destructive
-  /// (the default).
+  /// After-track: playback only, not heard on the live input monitor (the
+  /// default).
   post(0),
 
-  /// Applied to the live input before it is recorded, so the effect is printed
-  /// into the loop (record-through-FX).
+  /// Before-track: also applied to the live monitored input, so when the
+  /// monitor follows this track you hear the effect while playing.
   pre(1);
 
   const TrackEffectStage(this.code);
