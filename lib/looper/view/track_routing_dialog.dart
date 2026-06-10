@@ -355,7 +355,6 @@ class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
 
   @override
   Widget build(BuildContext context) {
-    final selected = _selected;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -365,113 +364,28 @@ class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
           outputChannels: widget.outputChannels,
           excludedInputMask: widget.excludedInputMask,
           effects: _chain,
+          selectedEffect: _selected,
           onInputMaskChanged: (mask) =>
               _bloc.add(LooperInputMaskChanged(widget.channel, mask)),
           onOutputMaskChanged: (mask) =>
               _bloc.add(LooperOutputMaskChanged(widget.channel, mask)),
           onAddEffect: _add,
           onMoveEffect: _move,
-          selectedEffect: selected,
           onSelectEffect: (i) => setState(() => _selected = i),
+          onSetType: _setType,
+          onSetStage: _setStage,
+          onSetParam: _setParam,
+          onRemoveEffect: _removeAt,
         ),
-        if (selected != null && selected < _chain.length) ...[
-          const SizedBox(height: 12),
-          _editor(selected, _chain[selected]),
-        ] else ...[
-          const SizedBox(height: 8),
-          Text(
-            'Add an effect before the track to record through it, or after the '
-            'track to process playback. To hear before-track effects live, set '
-            'monitoring to follow this track.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+        const SizedBox(height: 8),
+        Text(
+          'Add effects with +, drag cards by the handle to reorder or across '
+          'the track to switch before/after, and tap a card to edit it. Pinch '
+          'or scroll to zoom. To hear before-track effects live, set '
+          'monitoring to follow this track.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       ],
-    );
-  }
-
-  Widget _editor(int index, TrackEffect fx) {
-    final textTheme = Theme.of(context).textTheme;
-    return Container(
-      key: const Key('trackRouting_fx_editor'),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButton<TrackEffectType>(
-                  key: const Key('trackRouting_fx_type'),
-                  isExpanded: true,
-                  value: fx.type,
-                  onChanged: (type) {
-                    if (type != null && type != TrackEffectType.none) {
-                      _setType(index, type);
-                    }
-                  },
-                  items: [
-                    for (final type in TrackEffectType.values)
-                      if (type != TrackEffectType.none)
-                        DropdownMenuItem(value: type, child: Text(type.label)),
-                  ],
-                ),
-              ),
-              IconButton(
-                key: const Key('trackRouting_fx_remove'),
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Remove effect',
-                onPressed: () => _removeAt(index),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          // Drag a card across the track to restage; this is the same action
-          // for keyboard/non-drag use.
-          SegmentedButton<TrackEffectStage>(
-            segments: const [
-              ButtonSegment(
-                value: TrackEffectStage.pre,
-                label: Text('Before track'),
-                icon: Icon(Icons.fiber_manual_record, size: 14),
-              ),
-              ButtonSegment(
-                value: TrackEffectStage.post,
-                label: Text('After track'),
-                icon: Icon(Icons.volume_up, size: 14),
-              ),
-            ],
-            selected: {fx.stage},
-            onSelectionChanged: (s) => _setStage(index, s.first),
-          ),
-          for (var p = 0; p < fx.type.paramLabels.length; p++)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 80,
-                    child: Text(
-                      fx.type.paramLabels[p],
-                      style: textTheme.bodySmall,
-                    ),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      key: Key('trackRouting_fx_param$p'),
-                      value: fx.params[p].clamp(0.0, 1.0),
-                      onChanged: (v) => _setParam(index, p, v),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
     );
   }
 }
