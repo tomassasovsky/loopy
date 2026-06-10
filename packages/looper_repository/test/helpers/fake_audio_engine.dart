@@ -176,6 +176,31 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  final Map<int, int> trackMultiple = {};
+  bool? lastRecDub;
+  bool? lastAutoRecord;
+
+  @override
+  EngineResult setTrackMultiple({required int channel, required int multiple}) {
+    trackMultiple[channel] = multiple;
+    calls.add('setTrackMultiple');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setRecDub({required bool enabled}) {
+    lastRecDub = enabled;
+    calls.add('setRecDub');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setAutoRecord({required bool enabled}) {
+    lastAutoRecord = enabled;
+    calls.add('setAutoRecord');
+    return EngineResult.ok;
+  }
+
   int? lastMonitorInputMask;
   int? lastMonitorOutputMask;
 

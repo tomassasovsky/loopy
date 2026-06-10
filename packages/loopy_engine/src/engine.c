@@ -52,6 +52,8 @@
  * redo snapshots. Buffers are allocated lazily, so memory grows only as deep as
  * the user actually overdubs. */
 #define LE_UNDO_SLOTS 8
+/* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
+#define LE_AUTO_RECORD_THRESHOLD 0.02f
 
 /* One looper track.
  *
@@ -83,8 +85,10 @@ typedef struct le_track {
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the
                               * control thread to reconcile arm vs. fired. */
-  int32_t pending_record; /* audio-thread-local: fire handle_record at the next
-                           * base-loop top (quantized recording). */
+  int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
+  int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
+                            * top (quantize), 1 = input level threshold
+                            * (sound-activated auto-record). */
   int32_t record_pos; /* audio-thread-local record head. Defining track: linear
                        * frame count. New track over a master: the absolute
                        * phase (segment*base + position), seeded at press so
@@ -168,6 +172,25 @@ struct le_engine {
   int track_quantize[LE_MAX_TRACKS];
   int armed[LE_MAX_TRACKS];
   int arm_snapshotted[LE_MAX_TRACKS];
+  /* What each arm is waiting for: 0 = loop top (quantize), 1 = input level
+   * (auto-record). Lets toggling one feature cancel only its own arms. */
+  int armed_trigger[LE_MAX_TRACKS];
+
+  /* Per-track forced loop length: 0 auto-rounds up to whole base loops on stop;
+   * K >= 1 fixes the track to exactly K base loops. Control-thread-owned. */
+  int target_multiple[LE_MAX_TRACKS];
+
+  /* When `rec_dub` is set, finalizing a recording with a record press continues
+   * into overdub instead of playback (the second-press "rec/dub" mode). A stop
+   * still ends in playback/stopped. Control-thread default, read on the audio
+   * thread via the finalize end-state. */
+  int rec_dub;
+
+  /* When `auto_record` is set, a record press on an empty track arms a
+   * signal-triggered start: the audio thread begins recording the first frame
+   * the input level crosses LE_AUTO_RECORD_THRESHOLD. Reuses the arm/pending
+   * machinery with a per-track trigger type (see le_track.pending_trigger). */
+  int auto_record;
 
   /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
    * current loop bucket and publish when the playhead crosses into the next. */
@@ -238,14 +261,14 @@ static int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
 
 /* ---- command handlers (audio thread) ---- */
 
-static void finalize_master(le_engine* e, le_track* t) {
+static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
   const int32_t len = t->record_pos > 0 ? t->record_pos : 1;
   le_loop_clock_set_length(&e->clock, len);
   e->loop_iteration = 0; /* the base loop just (re)started */
   store_i32(&e->a_master_len, len);
   store_i32(&t->a_len, len);
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
-  store_i32(&t->a_state, LE_TRACK_PLAYING);
+  store_i32(&t->a_state, end_state);
   t->start_iter = 0;
 }
 
@@ -262,7 +285,10 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
     t->record_pos = 0;
     return;
   }
-  int32_t k = (t->record_pos + base - 1) / base; /* ceil to whole base loops */
+  /* A per-track forced multiple fixes the length to exactly K base loops; 0
+   * auto-rounds up to whole base loops based on how much was recorded. */
+  const int32_t forced = e->target_multiple[(int)(t - e->tracks)];
+  int32_t k = forced > 0 ? forced : (t->record_pos + base - 1) / base;
   const int32_t maxk = e->max_loop_frames / base;
   if (k < 1) k = 1;
   if (maxk >= 1 && k > maxk) k = maxk;
@@ -287,7 +313,7 @@ static void close_active_capture(le_engine* e, int32_t except_ch) {
     const int32_t st = load_i32(&tr->a_state);
     if (st == LE_TRACK_RECORDING) {
       if (e->clock.length == 0) {
-        finalize_master(e, tr); /* defines the master loop, -> PLAYING */
+        finalize_master(e, tr, LE_TRACK_PLAYING); /* defines the master loop */
       } else {
         finalize_new_track(e, tr, LE_TRACK_PLAYING); /* round up to whole loops */
       }
@@ -326,13 +352,19 @@ static void handle_record(le_engine* e, int32_t ch) {
         store_i32(&t->a_state, LE_TRACK_RECORDING);
       }
       break;
-    case LE_TRACK_RECORDING:
+    case LE_TRACK_RECORDING: {
+      /* Second press finalizes. In rec/dub mode it continues into overdub
+       * instead of playback (no undo snapshot for this auto-dub layer — a
+       * later manual overdub snapshots normally). A stop press ends in
+       * playback/stopped (handle_stop), never overdub. */
+      const int32_t end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
       if (e->clock.length == 0) {
-        finalize_master(e, t);
+        finalize_master(e, t, end);
       } else {
-        finalize_new_track(e, t, LE_TRACK_PLAYING); /* toggle: stop + round up */
+        finalize_new_track(e, t, end);
       }
       break;
+    }
     case LE_TRACK_PLAYING:
     case LE_TRACK_STOPPED:
       /* Undo snapshot already taken on the calling thread by le_engine_record. */
@@ -352,8 +384,7 @@ static void handle_stop(le_engine* e, int32_t ch) {
   const int32_t st = load_i32(&t->a_state);
   if (st == LE_TRACK_RECORDING) {
     if (e->clock.length == 0) {
-      finalize_master(e, t);
-      store_i32(&t->a_state, LE_TRACK_STOPPED);
+      finalize_master(e, t, LE_TRACK_STOPPED);
     } else {
       finalize_new_track(e, t, LE_TRACK_STOPPED); /* round up to whole loops */
     }
@@ -430,13 +461,17 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     case LE_CMD_ARM:
       if (valid_channel(e, cmd->arg_i)) {
+        /* arg_f carries the trigger: 0 = loop-top (quantize), 1 = input level
+         * (sound-activated auto-record). */
         e->tracks[cmd->arg_i].pending_record = 1;
+        e->tracks[cmd->arg_i].pending_trigger = cmd->arg_f != 0.0f ? 1 : 0;
         store_i32(&e->tracks[cmd->arg_i].a_pending, 1);
       }
       break;
     case LE_CMD_DISARM:
       if (valid_channel(e, cmd->arg_i)) {
         e->tracks[cmd->arg_i].pending_record = 0;
+        e->tracks[cmd->arg_i].pending_trigger = 0;
         store_i32(&e->tracks[cmd->arg_i].a_pending, 0);
       }
       break;
@@ -576,6 +611,20 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       in_sumsq += s * s;
     }
     if (frame_mag > in_peak) in_peak = frame_mag;
+
+    /* Sound-activated recording: a track armed for the input-level trigger
+     * starts the moment the input crosses the threshold. Fired here — after the
+     * input magnitude is known but before st[] is sampled below — so this very
+     * frame is captured. */
+    for (int qt = 0; qt < tc; ++qt) {
+      if (e->tracks[qt].pending_record && e->tracks[qt].pending_trigger == 1 &&
+          frame_mag > LE_AUTO_RECORD_THRESHOLD) {
+        e->tracks[qt].pending_record = 0;
+        e->tracks[qt].pending_trigger = 0;
+        store_i32(&e->tracks[qt].a_pending, 0);
+        handle_record(e, qt);
+      }
+    }
 
     /* The latency pulse returns on the loopback channels when the interface has
      * them (e.g. a Scarlett's "Loop 1/2"); otherwise (a physical cable, or a
@@ -817,7 +866,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       le_track* tr = &e->tracks[t];
       if (e->clock.length == 0) {
         tr->record_pos++;
-        if (tr->record_pos >= e->max_loop_frames) finalize_master(e, tr);
+        if (tr->record_pos >= e->max_loop_frames) {
+          finalize_master(e, tr, LE_TRACK_PLAYING);
+        }
       } else {
         tr->record_pos++;
         if (tr->record_pos >= e->max_loop_frames) {
@@ -837,11 +888,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       if (any_active) {
         if (le_loop_clock_tick(&e->clock)) {
           e->loop_iteration++;
-          /* The loop just crossed its top (position == 0). Fire any quantized
-           * record actions here so a deferred start/finalize/overdub lands
-           * exactly on the grid. handle_record enforces one-capturer hand-off. */
+          /* The loop just crossed its top (position == 0). Fire loop-top
+           * (quantize) pending records here so a deferred start/finalize/overdub
+           * lands exactly on the grid. Signal-triggered arms fire above, not
+           * here. handle_record enforces one-capturer hand-off. */
           for (int qt = 0; qt < tc; ++qt) {
-            if (e->tracks[qt].pending_record) {
+            if (e->tracks[qt].pending_record &&
+                e->tracks[qt].pending_trigger == 0) {
               e->tracks[qt].pending_record = 0;
               store_i32(&e->tracks[qt].a_pending, 0);
               handle_record(e, qt);
@@ -935,6 +988,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->record_pos = 0;
     tr->start_iter = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
+    engine->target_multiple[t] = 0; /* auto: round up to whole base loops */
   }
 
   engine->sample_rate = sample_rate;
@@ -1662,6 +1716,26 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
   const int32_t len = load_i32(&t->a_len); /* this track's length (k * base) */
   const int has_master = load_i32(&engine->a_master_len) > 0;
 
+  /* Sound-activated: a record press on an empty track arms a signal-triggered
+   * start (LE_CMD_ARM with trigger 1); the audio thread begins recording the
+   * first frame the input crosses the threshold. A second press cancels. Takes
+   * precedence over quantize for the start — finalize/overdub presses (the
+   * track is no longer EMPTY) fall through to the quantize/immediate paths. */
+  if (engine->auto_record && st == LE_TRACK_EMPTY) {
+    if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
+      engine->armed[channel] = 0; /* spent: the signal already fired it */
+    }
+    if (engine->armed[channel]) {
+      engine->armed[channel] = 0;
+      return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+    }
+    engine->armed[channel] = 1;
+    engine->arm_snapshotted[channel] = 0;
+    engine->armed_trigger[channel] = 1; /* input-level trigger */
+    le_prepare_new_capture(engine, t);
+    return le_push(engine, LE_CMD_ARM, channel, 1.0f);
+  }
+
   /* Quantized: defer the action to the next base-loop top instead of acting on
    * the press, so captures align to the grid. The defining recording (no master
    * yet) always acts immediately — it sets the grid. Per-track overrides win
@@ -1686,6 +1760,7 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
     /* Arm: do the one-time prep an immediate record would, then defer. */
     engine->armed[channel] = 1;
     engine->arm_snapshotted[channel] = 0;
+    engine->armed_trigger[channel] = 0; /* loop-top trigger */
     if (st == LE_TRACK_EMPTY) {
       le_prepare_new_capture(engine, t);
     } else if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
@@ -1801,10 +1876,12 @@ int32_t le_engine_set_monitor_output_mask(le_engine* engine, int32_t mask) {
 int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
   engine->quantize = enabled ? 1 : 0;
-  /* Cancel pending arms that are now effective-off so nothing is stuck waiting
-   * for a loop top; tracks that force quantize on keep their arm. */
+  /* Cancel loop-top arms that are now effective-off so nothing is stuck waiting
+   * for a loop top; force-on tracks and signal arms keep their arm. */
   for (int32_t c = 0; c < engine->track_count; ++c) {
-    if (!le_effective_quantize(engine, c)) le_cancel_arm(engine, c);
+    if (engine->armed_trigger[c] == 0 && !le_effective_quantize(engine, c)) {
+      le_cancel_arm(engine, c);
+    }
   }
   return LE_OK;
 }
@@ -1815,6 +1892,37 @@ int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   /* mode: < 0 inherit the global default, 0 force off, > 0 force on. */
   engine->track_quantize[channel] = mode < 0 ? -1 : (mode > 0 ? 1 : 0);
-  if (!le_effective_quantize(engine, channel)) le_cancel_arm(engine, channel);
+  if (engine->armed_trigger[channel] == 0 &&
+      !le_effective_quantize(engine, channel)) {
+    le_cancel_arm(engine, channel);
+  }
+  return LE_OK;
+}
+
+int32_t le_engine_set_track_multiple(le_engine* engine, int32_t channel,
+                                     int32_t multiple) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  /* 0 = auto (round up on stop); >= 1 fixes the next recording to that many
+   * base loops. Applies to the next finalize; existing content is unchanged. */
+  engine->target_multiple[channel] = multiple < 0 ? 0 : multiple;
+  return LE_OK;
+}
+
+int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  engine->rec_dub = enabled ? 1 : 0;
+  return LE_OK;
+}
+
+int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  engine->auto_record = enabled ? 1 : 0;
+  /* Turning it off cancels any tracks still waiting for an input-level start. */
+  if (!engine->auto_record) {
+    for (int32_t c = 0; c < engine->track_count; ++c) {
+      if (engine->armed_trigger[c] == 1) le_cancel_arm(engine, c);
+    }
+  }
   return LE_OK;
 }

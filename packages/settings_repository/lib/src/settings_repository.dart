@@ -214,6 +214,37 @@ class SettingsRepository {
   Future<void> saveQuantize({required bool value}) =>
       _store.setBool(_quantizeKey, value: value);
 
+  static const String _recDubKey = 'looper.rec_dub';
+
+  /// Whether a record press finalizing a recording continues into overdub
+  /// (rec/dub) instead of playback. Defaults to `false`.
+  Future<bool> loadRecDub() async => await _store.getBool(_recDubKey) ?? false;
+
+  /// Saves the rec/dub second-press mode.
+  Future<void> saveRecDub({required bool value}) =>
+      _store.setBool(_recDubKey, value: value);
+
+  static const String _autoRecordKey = 'looper.auto_record';
+
+  /// Whether recording is sound-activated (starts on input). Defaults to
+  /// `false`.
+  Future<bool> loadAutoRecord() async =>
+      await _store.getBool(_autoRecordKey) ?? false;
+
+  /// Saves the sound-activated recording preference.
+  Future<void> saveAutoRecord({required bool value}) =>
+      _store.setBool(_autoRecordKey, value: value);
+
+  String _trackMultipleKey(int channel) => 'track_multiple.$channel';
+
+  /// Loads track [channel]'s forced loop multiple (`0` = auto; `0` if unset).
+  Future<int> loadTrackMultiple(int channel) async =>
+      await _store.getInt(_trackMultipleKey(channel)) ?? 0;
+
+  /// Saves track [channel]'s forced loop multiple (`0` = auto).
+  Future<void> saveTrackMultiple(int channel, int multiple) =>
+      _store.setInt(_trackMultipleKey(channel), multiple);
+
   static const String _monitorModeKey = 'monitor.mode';
   static const String _monitorInputMaskKey = 'monitor.input_mask';
   static const String _monitorOutputMaskKey = 'monitor.output_mask';

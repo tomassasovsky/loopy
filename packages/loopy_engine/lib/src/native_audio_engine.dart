@@ -279,6 +279,30 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setTrackMultiple({required int channel, required int multiple}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_multiple(_engine, channel, multiple),
+    );
+  }
+
+  @override
+  EngineResult setRecDub({required bool enabled}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_rec_dub(_engine, enabled ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setAutoRecord({required bool enabled}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_auto_record(_engine, enabled ? 1 : 0),
+    );
+  }
+
+  @override
   EngineResult setMonitorInputMask({required int mask}) {
     _checkAlive();
     return EngineResult.fromCode(

@@ -148,6 +148,18 @@ abstract interface class AudioEngine {
   /// `true` forces it on.
   EngineResult setTrackQuantize({required int channel, required bool? enabled});
 
+  /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`
+  /// to auto-round-up on stop. Applies to the next recording.
+  EngineResult setTrackMultiple({required int channel, required int multiple});
+
+  /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
+  /// with a record press continues into overdub instead of playback.
+  EngineResult setRecDub({required bool enabled});
+
+  /// Enables sound-activated recording: a record press on an empty track waits
+  /// and begins capturing once the input level crosses the threshold.
+  EngineResult setAutoRecord({required bool enabled});
+
   /// Sets the monitor input mask: which input channels are averaged (mono) into
   /// the live monitor signal (a bitmask; bit c => hardware input channel c).
   /// Bits beyond the input range or loopback-excluded are ignored.

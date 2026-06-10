@@ -645,6 +645,74 @@ class LoopyEngineBindings {
   late final _le_engine_set_track_quantize = _le_engine_set_track_quantizePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
+  /// 0 to auto-round-up on stop. Applies to the next recording; existing content
+  /// is unchanged.
+  int le_engine_set_track_multiple(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int multiple,
+  ) {
+    return _le_engine_set_track_multiple(
+      engine,
+      channel,
+      multiple,
+    );
+  }
+
+  late final _le_engine_set_track_multiplePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_multiple');
+  late final _le_engine_set_track_multiple = _le_engine_set_track_multiplePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
+  /// with a record press continues into overdub instead of playback. A stop press
+  /// always ends in playback/stopped.
+  int le_engine_set_rec_dub(
+    ffi.Pointer<le_engine> engine,
+    int enabled,
+  ) {
+    return _le_engine_set_rec_dub(
+      engine,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_rec_dubPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_rec_dub');
+  late final _le_engine_set_rec_dub = _le_engine_set_rec_dubPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Enables sound-activated recording: a record press on an empty track waits and
+  /// begins capturing the first frame the input level crosses the threshold. A
+  /// second press before then cancels. Disabling cancels tracks still waiting.
+  int le_engine_set_auto_record(
+    ffi.Pointer<le_engine> engine,
+    int enabled,
+  ) {
+    return _le_engine_set_auto_record(
+      engine,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_auto_recordPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_auto_record');
+  late final _le_engine_set_auto_record = _le_engine_set_auto_recordPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the monitor input mask: which input channels are averaged (mono) into
   /// the live monitor signal. Bits beyond the input range or loopback-excluded are
   /// ignored.

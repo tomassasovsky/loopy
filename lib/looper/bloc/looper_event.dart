@@ -122,6 +122,18 @@ final class LooperTrackQuantizeChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, enabled];
 }
 
+/// Track [channel]'s forced loop multiple changed (`0` = auto-round-up).
+final class LooperTrackMultipleChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackMultipleChanged].
+  const LooperTrackMultipleChanged(super.channel, this.multiple);
+
+  /// The forced loop length in whole base loops, or `0` for auto.
+  final int multiple;
+
+  @override
+  List<Object?> get props => [channel, multiple];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].

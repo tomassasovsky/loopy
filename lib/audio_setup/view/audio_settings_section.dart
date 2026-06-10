@@ -7,6 +7,7 @@ import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
+import 'package:loopy/looper/cubit/record_options_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 
 /// The audio controls embedded in the Big Picture settings "Audio" section,
@@ -91,6 +92,30 @@ class AudioSettingsSection extends StatelessWidget {
           value: context.watch<QuantizeCubit>().state,
           onChanged: (on) =>
               unawaited(context.read<QuantizeCubit>().setEnabled(value: on)),
+        ),
+        const SizedBox(height: 12),
+        SetupToggleRow(
+          toggleKey: const Key('audioSettings_recDub_switch'),
+          title: 'Overdub on second press',
+          subtitle:
+              'A second record press keeps layering (rec/dub) instead of '
+              'stopping and playing back',
+          value: context.watch<RecordOptionsCubit>().state.recDub,
+          onChanged: (on) => unawaited(
+            context.read<RecordOptionsCubit>().setRecDub(value: on),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SetupToggleRow(
+          toggleKey: const Key('audioSettings_autoRecord_switch'),
+          title: 'Sound-activated recording',
+          subtitle:
+              'After pressing record, capture starts when the input '
+              'signal begins, instead of immediately',
+          value: context.watch<RecordOptionsCubit>().state.autoRecord,
+          onChanged: (on) => unawaited(
+            context.read<RecordOptionsCubit>().setAutoRecord(value: on),
+          ),
         ),
         const SizedBox(height: 28),
         const SetupGroupLabel('STATUS'),

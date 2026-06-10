@@ -315,6 +315,23 @@ LE_EXPORT int32_t le_engine_set_quantize(le_engine* engine, int32_t enabled);
 LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
                                                int32_t channel, int32_t mode);
 
+/* Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
+ * 0 to auto-round-up on stop. Applies to the next recording; existing content
+ * is unchanged. */
+LE_EXPORT int32_t le_engine_set_track_multiple(le_engine* engine,
+                                               int32_t channel,
+                                               int32_t multiple);
+
+/* Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
+ * with a record press continues into overdub instead of playback. A stop press
+ * always ends in playback/stopped. */
+LE_EXPORT int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled);
+
+/* Enables sound-activated recording: a record press on an empty track waits and
+ * begins capturing the first frame the input level crosses the threshold. A
+ * second press before then cancels. Disabling cancels tracks still waiting. */
+LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
+
 /* Sets the monitor input mask: which input channels are averaged (mono) into
  * the live monitor signal. Bits beyond the input range or loopback-excluded are
  * ignored. */
