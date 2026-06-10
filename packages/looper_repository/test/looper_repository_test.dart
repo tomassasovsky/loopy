@@ -350,6 +350,47 @@ void main() {
       expect(engine.lastQuantize, isTrue);
     });
 
+    test('custom monitor masks are deferred until running, then applied', () {
+      final repo = buildRepo()
+        ..setMonitorInputMask(0x2)
+        ..setMonitorOutputMask(0x1);
+      expect(engine.lastMonitorInputMask, isNull);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastMonitorInputMask, 0x2);
+      expect(engine.lastMonitorOutputMask, 0x1);
+    });
+
+    test("following a track mirrors that track's masks to the monitor", () {
+      engine.nextSnapshot = _playingSnapshot; // track 0 mask 0x2 in / 0x2 out
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorFollowTrack(0);
+      expect(engine.lastMonitorInputMask, 0x2);
+      expect(engine.lastMonitorOutputMask, 0x2);
+
+      // Editing the followed track's routing updates the monitor too.
+      repo.setInputMask(channel: 0, mask: 0x1);
+      expect(engine.lastMonitorInputMask, 0x1);
+      repo.setOutputMask(channel: 0, mask: 0x3);
+      expect(engine.lastMonitorOutputMask, 0x3);
+
+      // A non-followed track's edits do not touch the monitor.
+      repo.setInputMask(channel: 1, mask: 0x2);
+      expect(engine.lastMonitorInputMask, 0x1); // unchanged
+    });
+
+    test('switching back to custom restores the custom masks', () {
+      buildRepo()
+        ..setMonitorInputMask(0x2)
+        ..setMonitorOutputMask(0x1)
+        ..startEngine(const EngineConfig())
+        ..setMonitorFollowTrack(0)
+        ..setMonitorFollowTrack(null);
+      expect(engine.lastMonitorInputMask, 0x2);
+      expect(engine.lastMonitorOutputMask, 0x1);
+    });
+
     test('engineVersion is forwarded', () {
       final repo = buildRepo();
       expect(repo.engineVersion, 'fake-engine');

@@ -143,6 +143,16 @@ abstract interface class AudioEngine {
   /// immediately.
   EngineResult setQuantize({required bool enabled});
 
+  /// Sets the monitor input mask: which input channels are averaged (mono) into
+  /// the live monitor signal (a bitmask; bit c => hardware input channel c).
+  /// Bits beyond the input range or loopback-excluded are ignored.
+  EngineResult setMonitorInputMask({required int mask});
+
+  /// Sets the monitor output mask: which output channels the monitored signal
+  /// is routed to (a bitmask; bit c => hardware output channel c). Bits beyond
+  /// the output range are ignored.
+  EngineResult setMonitorOutputMask({required int mask});
+
   /// Reads the loop waveform: peaks of the mixed output indexed by position
   /// across one master loop (index 0 = loop start), each in `0..1`. Pair with
   /// [EngineSnapshot.masterPositionFrames]/[EngineSnapshot.masterLengthFrames]

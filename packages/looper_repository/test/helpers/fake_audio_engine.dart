@@ -164,6 +164,23 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  int? lastMonitorInputMask;
+  int? lastMonitorOutputMask;
+
+  @override
+  EngineResult setMonitorInputMask({required int mask}) {
+    lastMonitorInputMask = mask;
+    calls.add('setMonitorInputMask');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMonitorOutputMask({required int mask}) {
+    lastMonitorOutputMask = mask;
+    calls.add('setMonitorOutputMask');
+    return EngineResult.ok;
+  }
+
   @override
   void dispose() => calls.add('dispose');
 

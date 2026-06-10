@@ -299,6 +299,93 @@ class _OptionCard<T> extends StatelessWidget {
   }
 }
 
+/// A row of toggle chips for selecting a channel bitmask (bit c => channel c,
+/// labelled 1-based). Tapping a chip flips that channel in the mask.
+class SetupChannelChips extends StatelessWidget {
+  /// Creates [SetupChannelChips] over [channelCount] channels, highlighting the
+  /// channels set in [mask] and reporting the new mask through [onChanged].
+  const SetupChannelChips({
+    required this.channelCount,
+    required this.mask,
+    required this.onChanged,
+    this.keyPrefix,
+    super.key,
+  });
+
+  /// Number of hardware channels to show.
+  final int channelCount;
+
+  /// The current bitmask (bit c => channel c selected).
+  final int mask;
+
+  /// Called with the toggled mask when a chip is tapped.
+  final ValueChanged<int> onChanged;
+
+  /// Optional key prefix; chip c gets `Key('<prefix>_<c>')`.
+  final String? keyPrefix;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (var c = 0; c < channelCount; c++)
+          _ChannelChip(
+            key: keyPrefix == null ? null : Key('${keyPrefix}_$c'),
+            label: '${c + 1}',
+            selected: (mask & (1 << c)) != 0,
+            onTap: () => onChanged(mask ^ (1 << c)),
+          ),
+      ],
+    );
+  }
+}
+
+class _ChannelChip extends StatelessWidget {
+  const _ChannelChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 42,
+        height: 38,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? SetupSurfaceColors.cardHi : SetupSurfaceColors.card,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected
+                ? SetupSurfaceColors.accent
+                : SetupSurfaceColors.line,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? SetupSurfaceColors.accent : SetupSurfaceColors.t2,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            fontFeatures: _setupNumerals,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Tappable settings row with chevron, for navigation actions.
 class SetupNavRow extends StatelessWidget {
   const SetupNavRow({

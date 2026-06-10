@@ -61,6 +61,13 @@ class LooperRepository {
   /// successful (re)start so it survives device changes and reconnects.
   bool _quantize = false;
 
+  /// Monitor routing, re-applied on every successful (re)start. The custom
+  /// masks default to input 0 -> outputs 0 + 1 (the engine default); when
+  /// [_monitorFollowChannel] is non-null the monitor mirrors that track.
+  int _monitorInputMask = 0x1;
+  int _monitorOutputMask = 0x3;
+  int? _monitorFollowChannel;
+
   /// Reconnect supervision: while these are non-null a pinned device is absent
   /// and we are polling enumeration to reopen it. Their presence *is* the
   /// "awaiting reconnect" state, so there is no separate flag to keep in sync.
@@ -268,9 +275,10 @@ class LooperRepository {
     if (result.isOk) {
       _lastEngineConfig = config;
       _intendRunning = true;
-      // A fresh start resets the engine's quantize flag; re-apply the desired
-      // state so it survives device changes and reconnects.
+      // A fresh start resets the engine's quantize flag and monitor masks;
+      // re-apply the desired state so it survives device changes / reconnects.
       _engine.setQuantize(enabled: _quantize);
+      _applyMonitor();
     }
     return result;
   }
@@ -317,12 +325,72 @@ class LooperRepository {
       _engine.setTrackMute(muted: muted, channel: channel);
 
   /// Routes track [channel]'s record sources to the input channels in [mask].
-  EngineResult setInputMask({required int channel, required int mask}) =>
-      _engine.setInputMask(channel: channel, mask: mask);
+  /// When monitoring follows this track, the monitor input mask tracks it.
+  EngineResult setInputMask({required int channel, required int mask}) {
+    final result = _engine.setInputMask(channel: channel, mask: mask);
+    if (_intendRunning && _monitorFollowChannel == channel) {
+      _engine.setMonitorInputMask(mask: mask);
+    }
+    return result;
+  }
 
   /// Routes track [channel]'s playback to the output channels set in [mask].
-  EngineResult setOutputMask({required int channel, required int mask}) =>
-      _engine.setOutputMask(channel: channel, mask: mask);
+  /// When monitoring follows this track, the monitor output mask tracks it.
+  EngineResult setOutputMask({required int channel, required int mask}) {
+    final result = _engine.setOutputMask(channel: channel, mask: mask);
+    if (_intendRunning && _monitorFollowChannel == channel) {
+      _engine.setMonitorOutputMask(mask: mask);
+    }
+    return result;
+  }
+
+  /// Sets the monitor input mask (custom mode): which input channels are
+  /// averaged into the live monitor. Remembered and re-applied on start; takes
+  /// effect immediately only while running and not following a track.
+  EngineResult setMonitorInputMask(int mask) {
+    _monitorInputMask = mask;
+    if (_intendRunning && _monitorFollowChannel == null) {
+      return _engine.setMonitorInputMask(mask: mask);
+    }
+    return EngineResult.ok;
+  }
+
+  /// Sets the monitor output mask (custom mode): which output channels the
+  /// monitor is routed to. Remembered and re-applied on start.
+  EngineResult setMonitorOutputMask(int mask) {
+    _monitorOutputMask = mask;
+    if (_intendRunning && _monitorFollowChannel == null) {
+      return _engine.setMonitorOutputMask(mask: mask);
+    }
+    return EngineResult.ok;
+  }
+
+  /// Selects what the monitor routes: a track [channel] to mirror that track's
+  /// input/output routing, or `null` for the custom monitor masks. Remembered
+  /// and re-applied on start.
+  void setMonitorFollowTrack(int? channel) {
+    _monitorFollowChannel = channel;
+    _applyMonitor();
+  }
+
+  /// Pushes the effective monitor masks to the engine: the followed track's
+  /// masks, or the custom masks. No-op while not running.
+  void _applyMonitor() {
+    if (!_intendRunning) return;
+    final follow = _monitorFollowChannel;
+    if (follow != null) {
+      final tracks = _engine.snapshot().tracks;
+      if (follow >= 0 && follow < tracks.length) {
+        _engine
+          ..setMonitorInputMask(mask: tracks[follow].inputMask)
+          ..setMonitorOutputMask(mask: tracks[follow].outputMask);
+      }
+      return;
+    }
+    _engine
+      ..setMonitorInputMask(mask: _monitorInputMask)
+      ..setMonitorOutputMask(mask: _monitorOutputMask);
+  }
 
   /// Reads the loop waveform (peaks indexed by loop position, `0..1`) of the
   /// mixed output for the visualizer.

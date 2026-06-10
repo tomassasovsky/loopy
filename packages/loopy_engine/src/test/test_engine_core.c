@@ -1266,8 +1266,88 @@ static void test_quantize_overdub_fires_on_grid(void) {
   le_engine_destroy(e);
 }
 
+/* Monitoring averages the masked, non-excluded inputs to mono and routes that
+ * to the masked outputs (mirroring a track's capture + output routing). */
+static void test_monitor_routing_masks(void) {
+  printf("test_monitor_routing_masks\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  le_engine_set_monitor_for_test(e, 1);
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f; /* channel 0 */
+    in[i * 2 + 1] = 9.0f; /* channel 1 */
+  }
+
+  /* Default masks: input 0x1 (ch0) -> outputs 0x3 (both). mono == 1.0. */
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+
+  /* Custom: monitor channel 1 only, routed to output 1 only. */
+  CHECK(le_engine_set_monitor_input_mask(e, 0x2) == LE_OK);
+  CHECK(le_engine_set_monitor_output_mask(e, 0x2) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);        /* out 0 silent */
+    CHECK(fabsf(out[i * 2 + 1] - 9.0f) < 1e-6f); /* ch1 on out 1 */
+  }
+
+  /* Averaging: both inputs -> mono (1 + 9) / 2 == 5.0, on both outputs. */
+  le_engine_set_monitor_input_mask(e, 0x3);
+  le_engine_set_monitor_output_mask(e, 0x3);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 5.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 5.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Excluded (loopback) channels are never monitored, and monitoring off is
+ * silent regardless of the masks. */
+static void test_monitor_excluded_and_off(void) {
+  printf("test_monitor_excluded_and_off\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_engine_set_monitor_for_test(e, 1);
+  le_engine_set_excluded_input_mask_for_test(e, 0x1); /* channel 0 excluded */
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 9.0f;
+  }
+
+  /* Request both inputs; the excluded channel 0 is dropped, so only ch1 (9.0)
+   * is monitored, on both outputs. */
+  le_engine_set_monitor_input_mask(e, 0x3);
+  le_engine_set_monitor_output_mask(e, 0x3);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 9.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 9.0f) < 1e-6f);
+  }
+
+  /* Monitoring off: silent. */
+  le_engine_set_monitor_for_test(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
+  test_monitor_routing_masks();
+  test_monitor_excluded_and_off();
   test_quantize_start_and_finalize_on_grid();
   test_quantize_second_press_disarms();
   test_quantize_defining_track_is_immediate();
