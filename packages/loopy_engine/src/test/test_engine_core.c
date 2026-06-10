@@ -1091,6 +1091,30 @@ static void test_loopback_latency_uses_loopback_channel(void) {
   le_engine_destroy(e2);
 }
 
+/* Regression: an empty input mask records silence even with a hot input bus.
+ * (The single-channel-only case is covered by test_routing_input_mask.) */
+static void test_routing_input_mask_empty_records_silence(void) {
+  printf("test_routing_input_mask_empty_records_silence\n");
+  float out[64];
+  float zin[2 * LOOP_N] = {0};
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 9.0f; /* hot bus on both channels */
+    in[i * 2 + 1] = 2.0f;
+  }
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  CHECK(le_engine_set_input_mask(e, 0, 0x0) == LE_OK);
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_ring_init_rejects_bad_capacity();
@@ -1116,6 +1140,7 @@ int main(void) {
   test_transport_runs_until_last_track_stops();
   test_routing_input_mask();
   test_routing_input_mask_averages();
+  test_routing_input_mask_empty_records_silence();
   test_routing_output_mask();
   test_routing_default_stereo();
   test_routing_input_mask_clamped();

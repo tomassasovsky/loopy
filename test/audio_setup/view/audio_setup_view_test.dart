@@ -61,9 +61,7 @@ void main() {
     verify(() => cubit.setSampleRate(96000)).called(1);
   });
 
-  testWidgets('the input step forwards monitor and mono toggles', (
-    tester,
-  ) async {
+  testWidgets('the input step forwards the monitor toggle', (tester) async {
     seed(const AudioSetupState());
     await pumpView(tester);
 
@@ -73,8 +71,11 @@ void main() {
     await tester.tap(find.byKey(const Key('audioSetup_monitor_switch')));
     verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
 
-    await tester.tap(find.byKey(const Key('audioSetup_mergeToMono_switch')));
-    verify(() => cubit.setMergeToMono(mergeToMono: false)).called(1);
+    // Merge-to-mono was removed: its toggle must no longer be rendered.
+    expect(
+      find.byKey(const Key('audioSetup_mergeToMono_switch')),
+      findsNothing,
+    );
   });
 
   testWidgets('stepping to the end and starting calls cubit.start', (

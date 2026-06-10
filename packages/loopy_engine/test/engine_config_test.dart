@@ -15,7 +15,6 @@ void main() {
       expect(config.inputChannels, 0);
       expect(config.outputChannels, 0);
       expect(config.passthrough, isFalse);
-      expect(config.mergeToMono, isFalse);
       expect(config.playbackDeviceId, '');
       expect(config.captureDeviceId, '');
     });
@@ -30,7 +29,6 @@ void main() {
         outputChannels: 4,
         passthrough: true,
         maxLoopFrames: 480000,
-        mergeToMono: true,
         useLoopbackCapture: true,
         playbackDeviceId: 'out-device-1',
         captureDeviceId: 'in-device-2',
@@ -44,7 +42,6 @@ void main() {
         expect(ptr.ref.output_channels, 4);
         expect(ptr.ref.passthrough, 1);
         expect(ptr.ref.max_loop_frames, 480000);
-        expect(ptr.ref.merge_to_mono, 1);
         expect(ptr.ref.use_loopback_capture, 1);
         expect(readNativeString(ptr.ref.playback_device_id), 'out-device-1');
         expect(readNativeString(ptr.ref.capture_device_id), 'in-device-2');

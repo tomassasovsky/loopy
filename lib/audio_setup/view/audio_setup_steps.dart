@@ -225,14 +225,6 @@ class _InputStep extends StatelessWidget {
           value: state.monitorInput,
           onChanged: (v) => cubit.setMonitorInput(monitorInput: v),
         ),
-        const SizedBox(height: 12),
-        _Toggle(
-          toggleKey: 'audioSetup_mergeToMono_switch',
-          title: 'Merge to mono',
-          subtitle: 'Sum the inputs and feed both sides — for a mono source.',
-          value: state.mergeToMono,
-          onChanged: (v) => cubit.setMergeToMono(mergeToMono: v),
-        ),
       ],
     );
   }
@@ -257,7 +249,6 @@ class _ReadyStep extends StatelessWidget {
               '${_latencyMs(state.bufferFrames, state.sampleRate)} ms',
             ),
             ('Monitor input', state.monitorInput ? 'On' : 'Off'),
-            ('Merge to mono', state.mergeToMono ? 'On' : 'Off'),
           ],
         ),
         if (state.loopback.available) ...[
