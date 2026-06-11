@@ -249,11 +249,13 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
             trackLabels: names,
             onInputMaskChanged: (channel, mask) {
               repository.setInputMask(channel: channel, mask: mask);
-              unawaited(settings.saveTrackInputMask(channel, mask));
+              unawaited(
+                settings.saveLaneInput(channel, 0, maskToInputChannel(mask)),
+              );
             },
             onOutputMaskChanged: (channel, mask) {
               repository.setOutputMask(channel: channel, mask: mask);
-              unawaited(settings.saveTrackOutputMask(channel, mask));
+              unawaited(settings.saveLaneOutput(channel, 0, mask));
             },
           );
         },

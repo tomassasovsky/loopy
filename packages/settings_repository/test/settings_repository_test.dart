@@ -130,45 +130,69 @@ void main() {
     });
   });
 
-  group('track routing', () {
-    test('returns null when nothing is stored', () async {
-      expect(await repository.loadTrackInputMask(0), isNull);
-      expect(await repository.loadTrackOutputMask(0), isNull);
+  group('lane routing', () {
+    test('returns sensible defaults when nothing is stored', () async {
+      expect(await repository.loadLaneCount(0), 1);
+      expect(await repository.loadLaneInput(0, 0), isNull);
+      expect(await repository.loadLaneOutput(0, 0), isNull);
+      expect(await repository.loadLaneVolume(0, 0), isNull);
+      expect(await repository.loadLaneMute(0, 0), isNull);
     });
 
-    test('round-trips a saved input mask per track', () async {
-      await repository.saveTrackInputMask(1, 0x3);
-      expect(await repository.loadTrackInputMask(1), 0x3);
-      expect(await repository.loadTrackInputMask(0), isNull);
+    test('round-trips a saved lane count per track', () async {
+      await repository.saveLaneCount(1, 3);
+      expect(await repository.loadLaneCount(1), 3);
+      expect(await repository.loadLaneCount(0), 1);
     });
 
-    test('round-trips a saved output mask per track', () async {
-      await repository.saveTrackOutputMask(2, 0x5);
-      expect(await repository.loadTrackOutputMask(2), 0x5);
-      expect(await repository.loadTrackOutputMask(0), isNull);
-    });
-  });
-
-  group('track effects', () {
-    test('returns null when nothing is stored', () async {
-      expect(await repository.loadTrackEffects(0), isNull);
-    });
-
-    test('round-trips an encoded chain per channel', () async {
-      await repository.saveTrackEffects(1, '[{"type":3}]');
-      expect(await repository.loadTrackEffects(1), '[{"type":3}]');
-      expect(await repository.loadTrackEffects(0), isNull);
+    test('round-trips per-lane input / output / volume / mute', () async {
+      await repository.saveLaneInput(1, 0, 2);
+      await repository.saveLaneOutput(1, 0, 0x5);
+      await repository.saveLaneVolume(1, 0, 0.6);
+      await repository.saveLaneMute(1, 0, muted: true);
+      expect(await repository.loadLaneInput(1, 0), 2);
+      expect(await repository.loadLaneOutput(1, 0), 0x5);
+      expect(await repository.loadLaneVolume(1, 0), closeTo(0.6, 1e-6));
+      expect(await repository.loadLaneMute(1, 0), isTrue);
+      // A different lane is independent.
+      expect(await repository.loadLaneInput(1, 1), isNull);
     });
   });
 
-  group('monitor effects', () {
+  group('lane effects', () {
     test('returns null when nothing is stored', () async {
-      expect(await repository.loadMonitorEffects(), isNull);
+      expect(await repository.loadLaneEffects(0, 0), isNull);
     });
 
-    test('round-trips the encoded monitor-FX bus chain', () async {
-      await repository.saveMonitorEffects('[{"type":1}]');
-      expect(await repository.loadMonitorEffects(), '[{"type":1}]');
+    test('round-trips an encoded chain per (channel, lane)', () async {
+      await repository.saveLaneEffects(1, 0, '[{"type":3}]');
+      expect(await repository.loadLaneEffects(1, 0), '[{"type":3}]');
+      expect(await repository.loadLaneEffects(1, 1), isNull);
+      expect(await repository.loadLaneEffects(0, 0), isNull);
+    });
+  });
+
+  group('monitor inputs', () {
+    test('returns null when nothing is stored', () async {
+      expect(await repository.loadMonitorInput(0), isNull);
+      expect(await repository.loadMonitorInputEffects(0), isNull);
+    });
+
+    test('round-trips an enabled monitor routing', () async {
+      await repository.saveMonitorInput(0, enabled: true, outputMask: 0x2);
+      expect(await repository.loadMonitorInput(0), (true, 0x2));
+    });
+
+    test('a disabled monitor decodes back as disabled', () async {
+      await repository.saveMonitorInput(1, enabled: false, outputMask: 0x3);
+      final routing = await repository.loadMonitorInput(1);
+      expect(routing?.$1, isFalse);
+    });
+
+    test('round-trips the encoded monitor chain per input', () async {
+      await repository.saveMonitorInputEffects(0, '[{"type":1}]');
+      expect(await repository.loadMonitorInputEffects(0), '[{"type":1}]');
+      expect(await repository.loadMonitorInputEffects(1), isNull);
     });
   });
 
@@ -362,23 +386,6 @@ void main() {
 
       await repository.saveTrackQuantize(0, enabled: null);
       expect(await repository.loadTrackQuantize(0), isNull);
-    });
-  });
-
-  group('monitor routing', () {
-    test('mode is null and masks default when unset', () async {
-      expect(await repository.loadMonitorMode(), isNull);
-      expect(await repository.loadMonitorInputMask(), 0x1);
-      expect(await repository.loadMonitorOutputMask(), 0x3);
-    });
-
-    test('round-trips mode and masks', () async {
-      await repository.saveMonitorMode('followSelected');
-      await repository.saveMonitorInputMask(0x2);
-      await repository.saveMonitorOutputMask(0x5);
-      expect(await repository.loadMonitorMode(), 'followSelected');
-      expect(await repository.loadMonitorInputMask(), 0x2);
-      expect(await repository.loadMonitorOutputMask(), 0x5);
     });
   });
 

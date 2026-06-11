@@ -25,10 +25,11 @@ void main() {
     cubit = _MockAudioSetupCubit();
     final repository = _MockLooperRepository();
     when(
-      () => repository.setMonitorInputMask(any()),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setMonitorOutputMask(any()),
+      () => repository.setMonitorInput(
+        input: any(named: 'input'),
+        enabled: any(named: 'enabled'),
+        outputMask: any(named: 'outputMask'),
+      ),
     ).thenReturn(EngineResult.ok);
     when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
@@ -172,22 +173,7 @@ void main() {
     verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
   });
 
-  testWidgets('switching the monitor to follow-track updates the cubit', (
-    tester,
-  ) async {
-    seed(runningState); // monitorInput on, custom mode by default
-    await pumpSection(tester);
-    expect(monitor.state.mode, MonitorMode.custom);
-
-    final follow = find.byKey(const Key('audioSettings_monitorMode_follow'));
-    await tester.ensureVisible(follow);
-    await tester.tap(follow);
-    await tester.pumpAndSettle();
-
-    expect(monitor.state.mode, MonitorMode.followSelected);
-  });
-
-  testWidgets('custom monitor input chips toggle the mask', (tester) async {
+  testWidgets('enabling a per-input monitor updates the cubit', (tester) async {
     seed(
       const AudioSetupState(
         status: AudioSetupStatus.running,
@@ -202,15 +188,46 @@ void main() {
       ),
     );
     await pumpSection(tester);
-    expect(monitor.state.inputMask, 0x1); // default: channel 0 only
+    expect(monitor.state.forInput(0).enabled, isFalse);
 
-    // Tap input channel 2 (index 1) to add it: 0x1 | (1 << 1) == 0x3.
-    final inChannel2 = find.byKey(const Key('audioSettings_monitorIn_1'));
-    await tester.ensureVisible(inChannel2);
-    await tester.tap(inChannel2);
+    final sw = find.byKey(const Key('audioSettings_monitorInput_switch_0'));
+    await tester.ensureVisible(sw);
+    await tester.tap(sw);
     await tester.pumpAndSettle();
 
-    expect(monitor.state.inputMask, 0x3);
+    expect(monitor.state.forInput(0).enabled, isTrue);
+  });
+
+  testWidgets("a monitor input's output chips toggle its mask", (tester) async {
+    seed(
+      const AudioSetupState(
+        status: AudioSetupStatus.running,
+        engineStatus: EngineStatus(
+          deviceName: 'Scarlett 4i4',
+          sampleRate: 48000,
+          bufferFrames: 128,
+          isConnected: true,
+          inputChannels: 2,
+          outputChannels: 2,
+        ),
+      ),
+    );
+    await pumpSection(tester);
+
+    // Enable input 0's monitor to reveal its output chips.
+    final sw = find.byKey(const Key('audioSettings_monitorInput_switch_0'));
+    await tester.ensureVisible(sw);
+    await tester.tap(sw);
+    await tester.pumpAndSettle();
+    expect(monitor.state.forInput(0).outputMask, 0x3); // default outs 0 + 1
+
+    // Tap output channel 2 (index 1) to remove it: 0x3 ^ (1 << 1) == 0x1.
+    final outChip = find.byKey(const Key('audioSettings_monitorOut_0_1'));
+    await tester.ensureVisible(outChip);
+    await tester.tap(outChip);
+    await tester.pumpAndSettle();
+
+    expect(monitor.state.forInput(0).outputMask, 0x1);
   });
 
   testWidgets('toggling quantize recording forwards to the quantize cubit', (

@@ -11,7 +11,6 @@ export 'package:loopy_engine/loopy_engine.dart'
         LoopbackInfo,
         LoopbackKind,
         TrackEffect,
-        TrackEffectStage,
         TrackEffectType,
         TrackState,
         decodeTrackEffects,
@@ -21,6 +20,8 @@ export 'package:loopy_engine/loopy_engine.dart'
 
 export 'src/looper_repository.dart';
 export 'src/models/engine_status.dart';
+export 'src/models/input_monitor.dart';
+export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
 export 'src/models/track.dart';
 export 'src/models/transport_state.dart';

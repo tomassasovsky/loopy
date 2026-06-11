@@ -50,16 +50,26 @@ Future<bool> tryAutoStartEngine({
     repository.measureLatency();
   }
 
-  // Restore per-track I/O routing and quantize overrides so saved settings are
-  // reapplied on launch (mirroring the latency-offset restore above).
+  // Restore per-lane I/O routing and quantize overrides so saved settings are
+  // reapplied on launch (mirroring the latency-offset restore above). Lane-0
+  // only for now; the full per-lane restore lands with the lane UI in a later
+  // PR.
   for (final track in repository.state.tracks) {
-    final inputMask = await settings.loadTrackInputMask(track.channel);
-    if (inputMask != null) {
-      repository.setInputMask(channel: track.channel, mask: inputMask);
+    final inputChannel = await settings.loadLaneInput(track.channel, 0);
+    if (inputChannel != null) {
+      repository.setLaneInput(
+        channel: track.channel,
+        lane: 0,
+        inputChannel: inputChannel,
+      );
     }
-    final mask = await settings.loadTrackOutputMask(track.channel);
-    if (mask != null) {
-      repository.setOutputMask(channel: track.channel, mask: mask);
+    final outputMask = await settings.loadLaneOutput(track.channel, 0);
+    if (outputMask != null) {
+      repository.setLaneOutput(
+        channel: track.channel,
+        lane: 0,
+        mask: outputMask,
+      );
     }
     final quantize = await settings.loadTrackQuantize(track.channel);
     if (quantize != null) {
@@ -69,12 +79,19 @@ Future<bool> tryAutoStartEngine({
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
     }
-    // Per-track effects chain: restore the saved ordered chain in one shot.
-    final encoded = await settings.loadTrackEffects(track.channel);
+    // Lane-0 effect chain: restore the saved ordered chain in one shot.
+    final encoded = await settings.loadLaneEffects(track.channel, 0);
     final effects = decodeTrackEffects(encoded);
     if (effects.isNotEmpty) {
-      repository.setTrackEffects(channel: track.channel, effects: effects);
+      repository.setLaneEffects(
+        channel: track.channel,
+        lane: 0,
+        effects: effects,
+      );
     }
   }
+
+  // Per-input live monitors are restored by MonitorCubit.load() (the shell
+  // creates and loads it on every launch), so they are not re-applied here.
   return true;
 }

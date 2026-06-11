@@ -5,13 +5,13 @@ import 'package:loopy/setup/setup_surface.dart';
 /// A single-track signal-flow graph with the track's effects as cards on the
 /// path itself:
 ///
-///   In → before-track effects → Track → after-track effects → Out
+///   In → Track → effects → Out
 ///
 /// The whole canvas is zoom/pan-able (InteractiveViewer) and fits to view on
 /// load. Channels are clicked to connect/disconnect routing. An effect card is
-/// dragged by its handle to reorder within a lane or across the track (which
-/// flips its stage), and tapped to expand its settings inline (type + params).
-/// Connection paths fan out vertically so they stay legible.
+/// dragged by its handle to reorder the (single, stageless) chain, and tapped
+/// to expand its settings inline (type + params). Connection paths fan out
+/// vertically so they stay legible.
 class TrackSignalFlowView extends StatefulWidget {
   /// Creates a [TrackSignalFlowView].
   const TrackSignalFlowView({
@@ -52,11 +52,11 @@ class TrackSignalFlowView extends StatefulWidget {
   final void Function(int mask) onInputMaskChanged;
   final void Function(int mask) onOutputMaskChanged;
 
-  /// Appends a default effect to the given lane.
-  final void Function(TrackEffectStage stage) onAddEffect;
+  /// Appends a default effect to the chain.
+  final VoidCallback onAddEffect;
 
-  /// Moves a chain entry to the given lane stage at the given lane position.
-  final void Function(int from, TrackEffectStage stage, int toPos) onMoveEffect;
+  /// Moves a chain entry from index `from` to position `toPos` in the chain.
+  final void Function(int from, int toPos) onMoveEffect;
 
   /// Selects (expands) or deselects an effect card.
   final void Function(int? index) onSelectEffect;
@@ -95,10 +95,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     super.dispose();
   }
 
-  List<int> _lane(TrackEffectStage stage) => [
-    for (var i = 0; i < widget.effects.length; i++)
-      if (widget.effects[i].stage == stage) i,
-  ];
+  List<int> get _chain => [for (var i = 0; i < widget.effects.length; i++) i];
 
   double _cardWidth(int index) => index == widget.selectedEffect
       ? TrackSignalFlowView._exW
@@ -112,8 +109,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
 
   @override
   Widget build(BuildContext context) {
-    final pre = _lane(TrackEffectStage.pre);
-    final post = _lane(TrackEffectStage.post);
+    final chain = _chain;
     final inCount = widget.inputChannels > 0 ? widget.inputChannels : 4;
     final outCount = widget.outputChannels > 0 ? widget.outputChannels : 2;
 
@@ -124,24 +120,18 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     const trkW = TrackSignalFlowView._trkW;
     const inX = TrackSignalFlowView._pad;
 
-    const preStartX = inX + chW + fan;
-    var x = preStartX;
-    final preXs = <double>[];
-    for (final i in pre) {
-      preXs.add(x);
-      x += _cardWidth(i) + g;
-    }
-    final addPreX = x;
-    final trackX = addPreX + addW + g;
-    final postStartX = trackX + trkW + g;
-    x = postStartX;
-    final postXs = <double>[];
-    for (final j in post) {
-      postXs.add(x);
+    // In → Track → [chain cards] → add → Out. The chain is a single stageless
+    // list to the right of the track node.
+    const trackX = inX + chW + fan;
+    const chainStartX = trackX + trkW + g;
+    var x = chainStartX;
+    final chainXs = <double>[];
+    for (final j in chain) {
+      chainXs.add(x);
       x += _cardWidth(j) + g;
     }
-    final addPostX = x;
-    final outX = addPostX + addW + fan;
+    final addX = x;
+    final outX = addX + addW + fan;
     final canvasW = outX + chW + TrackSignalFlowView._pad;
 
     final channelsH =
@@ -156,22 +146,18 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
         TrackSignalFlowView._pad * 2;
     final centerY = canvasH / 2;
 
-    final firstX = pre.isNotEmpty ? preXs.first : trackX;
-    final lastRightX = post.isNotEmpty
-        ? postXs.last + _cardWidth(post.last)
+    final lastRightX = chain.isNotEmpty
+        ? chainXs.last + _cardWidth(chain.last)
         : trackX + trkW;
 
     final edges = _buildEdges(
-      pre: pre,
-      post: post,
-      preXs: preXs,
-      postXs: postXs,
+      chain: chain,
+      chainXs: chainXs,
       inCount: inCount,
       outCount: outCount,
       inX: inX,
       outX: outX,
       trackX: trackX,
-      firstX: firstX,
       lastRightX: lastRightX,
       centerY: centerY,
       canvasH: canvasH,
@@ -237,19 +223,10 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
                       height: TrackSignalFlowView._trkH,
                       child: _trackNode(),
                     ),
-                    ..._dropZones(TrackEffectStage.pre, pre, preXs, centerY),
-                    ..._dropZones(
-                      TrackEffectStage.post,
-                      post,
-                      postXs,
-                      centerY,
-                    ),
-                    for (var k = 0; k < pre.length; k++)
-                      _card(pre[k], preXs[k], centerY),
-                    for (var k = 0; k < post.length; k++)
-                      _card(post[k], postXs[k], centerY),
-                    _addButton(TrackEffectStage.pre, addPreX, centerY),
-                    _addButton(TrackEffectStage.post, addPostX, centerY),
+                    ..._dropZones(chain, chainXs, centerY),
+                    for (var k = 0; k < chain.length; k++)
+                      _card(chain[k], chainXs[k], centerY),
+                    _addButton(addX, centerY),
                   ],
                 ),
               ),
@@ -285,16 +262,13 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
       height / count * (index + 0.5);
 
   List<_Edge> _buildEdges({
-    required List<int> pre,
-    required List<int> post,
-    required List<double> preXs,
-    required List<double> postXs,
+    required List<int> chain,
+    required List<double> chainXs,
     required int inCount,
     required int outCount,
     required double inX,
     required double outX,
     required double trackX,
-    required double firstX,
     required double lastRightX,
     required double centerY,
     required double canvasH,
@@ -315,29 +289,22 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
       edges.add(
         _Edge(
           Offset(inX + TrackSignalFlowView._chW, _rowY(c, inCount, canvasH)),
-          Offset(firstX, ty),
+          Offset(trackX, ty),
         ),
       );
     }
-    for (var k = 0; k < pre.length; k++) {
-      final from = Offset(preXs[k] + _cardWidth(pre[k]), centerY);
-      final to = k + 1 < pre.length
-          ? Offset(preXs[k + 1], centerY)
-          : Offset(trackX, centerY);
-      edges.add(_Edge(from, to));
-    }
-    if (post.isNotEmpty) {
+    if (chain.isNotEmpty) {
       edges.add(
         _Edge(
           Offset(trackX + TrackSignalFlowView._trkW, centerY),
-          Offset(postXs.first, centerY),
+          Offset(chainXs.first, centerY),
         ),
       );
-      for (var k = 0; k < post.length - 1; k++) {
+      for (var k = 0; k < chain.length - 1; k++) {
         edges.add(
           _Edge(
-            Offset(postXs[k] + _cardWidth(post[k]), centerY),
-            Offset(postXs[k + 1], centerY),
+            Offset(chainXs[k] + _cardWidth(chain[k]), centerY),
+            Offset(chainXs[k + 1], centerY),
           ),
         );
       }
@@ -520,8 +487,8 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     ),
   );
 
-  /// The inline editor shown inside a selected card: type + params. Stage is
-  /// changed by dragging the card across the track, not here.
+  /// The inline editor shown inside a selected card: type + params. The card is
+  /// reordered by dragging its handle, not here.
   Widget _cardEditor(int index, TrackEffect fx, Widget handle) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -614,30 +581,17 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     );
   }
 
-  List<Widget> _dropZones(
-    TrackEffectStage stage,
-    List<int> lane,
-    List<double> xs,
-    double centerY,
-  ) {
+  List<Widget> _dropZones(List<int> chain, List<double> xs, double centerY) {
     const g = TrackSignalFlowView._gap;
-    final laneName = stage == TrackEffectStage.pre ? 'pre' : 'post';
     final spots = <double>[];
-    if (lane.isEmpty) {
-      spots.add(
-        stage == TrackEffectStage.pre
-            ? TrackSignalFlowView._pad +
-                  TrackSignalFlowView._chW +
-                  TrackSignalFlowView._fanGap -
-                  g
-            : (xs.isEmpty ? centerY : xs.first),
-      );
+    if (chain.isEmpty) {
+      spots.add(xs.isEmpty ? centerY : xs.first);
     }
-    for (var pos = 0; pos < lane.length; pos++) {
+    for (var pos = 0; pos < chain.length; pos++) {
       spots.add(xs[pos] - g);
     }
-    if (lane.isNotEmpty) {
-      spots.add(xs.last + _cardWidth(lane.last));
+    if (chain.isNotEmpty) {
+      spots.add(xs.last + _cardWidth(chain.last));
     }
     return [
       for (var pos = 0; pos < spots.length; pos++)
@@ -647,9 +601,9 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
           width: g + 10,
           height: TrackSignalFlowView._compactH + 12,
           child: DragTarget<int>(
-            onAcceptWithDetails: (d) => widget.onMoveEffect(d.data, stage, pos),
+            onAcceptWithDetails: (d) => widget.onMoveEffect(d.data, pos),
             builder: (_, candidate, _) => SizedBox.expand(
-              key: Key('signalFlow_drop_${laneName}_$pos'),
+              key: Key('signalFlow_drop_$pos'),
               child: candidate.isEmpty
                   ? null
                   : Center(
@@ -665,7 +619,7 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
     ];
   }
 
-  Widget _addButton(TrackEffectStage stage, double x, double centerY) {
+  Widget _addButton(double x, double centerY) {
     final full = widget.effects.length >= kTrackEffectMax;
     return Positioned(
       left: x,
@@ -673,17 +627,13 @@ class _TrackSignalFlowViewState extends State<TrackSignalFlowView> {
       width: TrackSignalFlowView._addW,
       height: TrackSignalFlowView._addW,
       child: IconButton(
-        key: Key(
-          stage == TrackEffectStage.pre
-              ? 'signalFlow_addPre'
-              : 'signalFlow_addPost',
-        ),
+        key: const Key('signalFlow_add'),
         padding: EdgeInsets.zero,
         iconSize: 24,
         color: SetupSurfaceColors.accent,
         tooltip: full ? 'Chain is full' : 'Add effect',
         icon: const Icon(Icons.add_circle_outline),
-        onPressed: full ? null : () => widget.onAddEffect(stage),
+        onPressed: full ? null : () => widget.onAddEffect(),
       ),
     );
   }
