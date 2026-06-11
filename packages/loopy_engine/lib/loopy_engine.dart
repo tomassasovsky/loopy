@@ -9,7 +9,13 @@ export 'src/audio_device.dart' show AudioDevice;
 export 'src/audio_engine.dart' show AudioEngine, EngineException, EngineResult;
 export 'src/engine_config.dart' show EngineConfig;
 export 'src/engine_snapshot.dart'
-    show EngineSnapshot, LaneSnapshot, LatencyState, TrackSnapshot, TrackState;
+    show
+        EngineSnapshot,
+        LaneSnapshot,
+        LatencyState,
+        TrackSnapshot,
+        TrackState,
+        kMaxLanes;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/native_audio_engine.dart' show NativeAudioEngine;
 export 'src/track_effect.dart'

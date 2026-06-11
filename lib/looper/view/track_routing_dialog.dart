@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/track_signal_flow_view.dart';
+import 'package:loopy/looper/view/lane_strip_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Opens the per-track I/O routing page for [channel]: the signal-flow graph
@@ -52,13 +52,13 @@ class _TrackRoutingPage extends StatelessWidget {
           ),
         ],
       ),
-      // The signal-flow graph fills the whole page.
+      // The stacked per-lane signal-flow strips fill the whole page.
       body: BlocBuilder<LooperBloc, LooperState>(
         builder: (context, state) {
           final current = channel < state.tracks.length
               ? state.tracks[channel]
               : Track(channel: channel);
-          return _TrackSignalFlowControl(
+          return _LaneList(
             channel: channel,
             settings: settings,
             track: current,
@@ -258,18 +258,17 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
   }
 }
 
-/// The integrated single-track signal-flow graph: channel routing plus the
-/// effects chain as draggable cards on the path:
+/// The stacked per-lane routing + effects editor for one track [channel]. Each
+/// lane is a [LaneStripView] (`In ▸ Lane ▸ effects ▸ Out`); a track may add or
+/// remove lanes, and each lane records its own clean input and plays back
+/// through its own non-destructive chain.
 ///
-///   In ▸ Track ▸ effects ▸ Out
-///
-/// The recording is always dry and every effect colors playback in chain order
-/// (a single, stageless chain). Cards are added, reordered by dragging, and
-/// edited inline. Loads the saved chain from [settings], dispatches routing +
-/// structural changes as [LooperBloc] events, and shows an inline editor for
-/// the selected card.
-class _TrackSignalFlowControl extends StatefulWidget {
-  const _TrackSignalFlowControl({
+/// Routing, mix, and lane-count edits are dispatched to the [LooperBloc]; the
+/// per-lane effect chains are held locally for snappy editing (seeded from
+/// [settings]) and mirrored to the engine as [LooperLaneEffectsChanged] /
+/// [LooperLaneEffectParamChanged] events.
+class _LaneList extends StatefulWidget {
+  const _LaneList({
     required this.channel,
     required this.settings,
     required this.track,
@@ -286,16 +285,25 @@ class _TrackSignalFlowControl extends StatefulWidget {
   final int excludedInputMask;
 
   @override
-  State<_TrackSignalFlowControl> createState() =>
-      _TrackSignalFlowControlState();
+  State<_LaneList> createState() => _LaneListState();
 }
 
-class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
-  /// The single, stageless chain in engine order; every entry colors playback.
-  List<TrackEffect> _chain = [];
+class _LaneListState extends State<_LaneList> {
+  /// Active lane count (seeded from settings, edited by add/remove).
+  int _laneCount = 1;
 
-  /// The index in [_chain] of the card being edited, or null.
-  int? _selected;
+  /// Per-lane effect chains in engine order; every entry colors playback.
+  ///
+  /// These are the working copy for snappy editing: routing / mix (input,
+  /// output, volume, mute) come live from the bloc state via [_laneFor], but
+  /// the effect chain is held here and mirrored to the engine through
+  /// [LooperLaneEffectsChanged] / [LooperLaneEffectParamChanged]. [_laneFor]
+  /// deliberately never reads the state lane's `effects`, so these two keyed
+  /// sources never compete: this map owns effects, the state owns the rest.
+  final Map<int, List<TrackEffect>> _chains = {};
+
+  /// The currently expanded effect card, as `(lane, index)`, or null.
+  ({int lane, int index})? _selected;
 
   @override
   void initState() {
@@ -304,88 +312,183 @@ class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
   }
 
   Future<void> _load() async {
-    final encoded = await widget.settings.loadLaneEffects(widget.channel, 0);
-    final chain = decodeTrackEffects(encoded);
-    if (mounted) setState(() => _chain = chain);
+    final count = (await widget.settings.loadLaneCount(widget.channel)).clamp(
+      1,
+      kMaxLanes,
+    );
+    final chains = <int, List<TrackEffect>>{};
+    for (var l = 0; l < count; l++) {
+      chains[l] = decodeTrackEffects(
+        await widget.settings.loadLaneEffects(widget.channel, l),
+      );
+    }
+    if (mounted) {
+      setState(() {
+        _laneCount = count;
+        _chains
+          ..clear()
+          ..addAll(chains);
+      });
+    }
   }
 
   LooperBloc get _bloc => context.read<LooperBloc>();
 
-  void _pushStructural() {
-    _bloc.add(
-      LooperTrackEffectsChanged(widget.channel, List<TrackEffect>.of(_chain)),
+  List<TrackEffect> _chainOf(int lane) => _chains[lane] ?? const [];
+
+  /// The lane handed to the strip: routing / mix come live from the bloc state,
+  /// the effect chain from the local working copy.
+  Lane _laneFor(int lane) {
+    final lanes = widget.track.lanes;
+    final base = lane < lanes.length ? lanes[lane] : const Lane();
+    return Lane(
+      inputChannel: base.inputChannel,
+      outputMask: base.outputMask,
+      volume: base.volume,
+      muted: base.muted,
+      effects: _chainOf(lane),
     );
   }
 
-  void _add() {
-    if (_chain.length >= kTrackEffectMax) return;
+  void _addLane() {
+    if (_laneCount >= kMaxLanes) return;
     setState(() {
-      _chain = [..._chain, TrackEffect(type: TrackEffectType.drive)];
-      _selected = _chain.length - 1;
+      _chains[_laneCount] = [];
+      _laneCount += 1;
     });
-    _pushStructural();
+    _bloc.add(LooperLaneCountChanged(widget.channel, _laneCount));
   }
 
-  void _removeAt(int index) {
+  /// Removes [lane]. Lanes are a stack, so only the last lane is ever
+  /// removable (enforced by `canRemove` on the strip): dropping its [_chains]
+  /// key and decrementing the count keeps the local state and the engine's
+  /// `lane_count` in lockstep.
+  void _removeLane(int lane) {
+    if (_laneCount <= 1 || lane != _laneCount - 1) return;
     setState(() {
-      _chain = [..._chain]..removeAt(index);
+      _laneCount -= 1;
+      _chains.remove(lane);
+      if (_selected?.lane == lane) _selected = null;
+    });
+    _bloc.add(LooperLaneCountChanged(widget.channel, _laneCount));
+  }
+
+  void _pushChain(int lane) {
+    _bloc.add(
+      LooperLaneEffectsChanged(
+        widget.channel,
+        lane,
+        List<TrackEffect>.of(_chainOf(lane)),
+      ),
+    );
+  }
+
+  void _addEffect(int lane) {
+    final chain = _chainOf(lane);
+    if (chain.length >= kTrackEffectMax) return;
+    setState(() {
+      _chains[lane] = [...chain, TrackEffect(type: TrackEffectType.drive)];
+      _selected = (lane: lane, index: chain.length);
+    });
+    _pushChain(lane);
+  }
+
+  void _removeEffect(int lane, int index) {
+    final chain = _chainOf(lane);
+    setState(() {
+      _chains[lane] = [...chain]..removeAt(index);
       _selected = null;
     });
-    _pushStructural();
+    _pushChain(lane);
   }
 
-  void _setType(int index, TrackEffectType type) {
+  void _setType(int lane, int index, TrackEffectType type) {
+    final chain = _chainOf(lane);
     setState(() {
-      _chain = [..._chain]
-        ..[index] = _chain[index].copyWith(
+      _chains[lane] = [...chain]
+        ..[index] = chain[index].copyWith(
           type: type,
           params: type.defaultParams,
         );
     });
-    _pushStructural();
+    _pushChain(lane);
   }
 
-  void _setParam(int index, int param, double value) {
+  void _setParam(int lane, int index, int param, double value) {
+    final chain = _chainOf(lane);
     setState(() {
-      final params = List<double>.of(_chain[index].params)..[param] = value;
-      _chain = [..._chain]..[index] = _chain[index].copyWith(params: params);
+      final params = List<double>.of(chain[index].params)..[param] = value;
+      _chains[lane] = [...chain]
+        ..[index] = chain[index].copyWith(params: params);
     });
     _bloc.add(
-      LooperTrackEffectParamChanged(widget.channel, index, param, value),
+      LooperLaneEffectParamChanged(widget.channel, lane, index, param, value),
     );
   }
 
-  /// Drag-and-drop: move chain entry [from] to position [toPos] in the chain.
-  void _move(int from, int toPos) {
-    final moved = _chain[from];
-    final without = [..._chain]..removeAt(from);
-    final insert = toPos > without.length ? without.length : toPos;
+  /// Drag-and-drop: move lane [lane]'s chain entry [from] to position [to].
+  void _move(int lane, int from, int to) {
+    final chain = _chainOf(lane);
+    if (from < 0 || from >= chain.length) return;
+    final target = to.clamp(0, chain.length - 1);
+    if (from == target) return;
+    final next = [...chain];
+    next.insert(target, next.removeAt(from));
     setState(() {
-      _chain = without..insert(insert, moved);
-      _selected = insert;
+      _chains[lane] = next;
+      _selected = (lane: lane, index: target);
     });
-    _pushStructural();
+    _pushChain(lane);
+  }
+
+  void _select(int lane, int? index) {
+    setState(
+      () => _selected = index == null ? null : (lane: lane, index: index),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return TrackSignalFlowView(
-      track: widget.track,
-      inputChannels: widget.inputChannels,
-      outputChannels: widget.outputChannels,
-      excludedInputMask: widget.excludedInputMask,
-      effects: _chain,
-      selectedEffect: _selected,
-      onInputMaskChanged: (mask) =>
-          _bloc.add(LooperInputMaskChanged(widget.channel, mask)),
-      onOutputMaskChanged: (mask) =>
-          _bloc.add(LooperOutputMaskChanged(widget.channel, mask)),
-      onAddEffect: _add,
-      onMoveEffect: _move,
-      onSelectEffect: (i) => setState(() => _selected = i),
-      onSetType: _setType,
-      onSetParam: _setParam,
-      onRemoveEffect: _removeAt,
+    final channel = widget.channel;
+    return ListView(
+      key: const Key('trackRouting_laneList'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (var l = 0; l < _laneCount; l++)
+          LaneStripView(
+            key: ValueKey('trackRouting_lane_$l'),
+            laneIndex: l,
+            lane: _laneFor(l),
+            inputChannels: widget.inputChannels,
+            outputChannels: widget.outputChannels,
+            excludedInputMask: widget.excludedInputMask,
+            selectedEffect: _selected?.lane == l ? _selected!.index : null,
+            canRemove: _laneCount > 1 && l == _laneCount - 1,
+            onInputChanged: (c) =>
+                _bloc.add(LooperLaneInputChanged(channel, l, c)),
+            onOutputMaskChanged: (m) =>
+                _bloc.add(LooperLaneOutputChanged(channel, l, m)),
+            onVolumeChanged: (v) =>
+                _bloc.add(LooperLaneVolumeChanged(channel, l, v)),
+            onMuteToggled: () => _bloc.add(LooperLaneMuteToggled(channel, l)),
+            onAddEffect: () => _addEffect(l),
+            onSelectEffect: (i) => _select(l, i),
+            onMoveEffect: (f, t) => _move(l, f, t),
+            onSetType: (i, t) => _setType(l, i, t),
+            onSetParam: (i, p, v) => _setParam(l, i, p, v),
+            onRemoveEffect: (i) => _removeEffect(l, i),
+            onRemoveLane: () => _removeLane(l),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            key: const Key('trackRouting_addLane'),
+            onPressed: _laneCount >= kMaxLanes ? null : _addLane,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add lane'),
+          ),
+        ),
+      ],
     );
   }
 }

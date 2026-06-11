@@ -223,18 +223,7 @@ class _MonitorFxCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3,
-                        activeTrackColor: SetupSurfaceColors.accent,
-                        inactiveTrackColor: SetupSurfaceColors.line,
-                        thumbColor: SetupSurfaceColors.accent,
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 12,
-                        ),
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7,
-                        ),
-                      ),
+                      data: setupSliderTheme,
                       child: Slider(
                         key: Key(
                           'audioSettings_monitorFx_param_${input}_${index}_$p',

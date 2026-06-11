@@ -1,6 +1,10 @@
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:meta/meta.dart';
 
+/// The maximum number of lanes a single track can hold, mirroring the native
+/// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
+const int kMaxLanes = LE_MAX_LANES;
+
 /// Phase of the loopback round-trip latency harness.
 ///
 /// Mirrors the native `le_latency_state` enum.

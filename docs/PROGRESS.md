@@ -111,9 +111,18 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   `MonitorMode`/follow-track and the global monitor-FX bus are gone. Persistence
   moved to `lane_*` / `monitor_input*` keys (old `track_*mask`/`track_effects`/
   `monitor.*` keys dropped, drop-and-default — no migration). Session export
-  stays **lane-0 only** (documented follow-up). The routing/effects UI was
-  collapsed to a single **stageless** chain to compile + function; the polished
-  per-lane *dual-route* routing view + lane-specific bloc events are **PR 5**.
+  stays **lane-0 only** (documented follow-up).
+- **Multi-lane routing UI (PR 5) is landed.** The per-track routing page is now a
+  **stacked list of lane strips** (`lane_strip_view.dart`): each lane is an
+  `In ▸ Lane (vol/mute) ▸ effects ▸ Out` strip with a single-input dropdown,
+  per-lane output chips, a drag-reorderable effect chain (tap a chip to edit its
+  type + params inline), and add/remove-lane controls (lanes are a stack — only
+  the last is removable, capped at `LE_MAX_LANES`). New **lane-addressed**
+  `LooperBloc` events (`LooperLane{Count,Input,Output,Volume,Mute,Effects,
+  EffectParam}Changed`) replace the lane-0-only mask/track-effect events; each
+  forwards to the matching `setLane*` repo method and persists the per-lane
+  `lane_*` key. The per-input live-monitor section (audio settings) and the
+  stageless chain were already in place from PR 4.
 - RT contract: no malloc/lock/syscall/unbounded-loop in `le_engine_process`.
   Commands arrive via an SPSC ring; state published via per-field atomics.
 - `le_engine_process` / `le_engine_configure` are exposed for **device-free
