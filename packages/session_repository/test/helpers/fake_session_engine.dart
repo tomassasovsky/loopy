@@ -113,13 +113,21 @@ class FakeSessionEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setTrackVolume(double volume, {int channel = 0}) {
+  EngineResult setLaneCount({required int channel, required int count}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0}) {
     _tracks[channel].volume = volume;
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setTrackMute({required bool muted, int channel = 0}) {
+  EngineResult setLaneMute({
+    required bool muted,
+    int channel = 0,
+    int lane = 0,
+  }) {
     _tracks[channel].muted = muted;
     return EngineResult.ok;
   }
@@ -152,11 +160,17 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setRecordOffset(int frames) => EngineResult.ok;
   @override
-  EngineResult setInputMask({required int channel, required int mask}) =>
-      EngineResult.ok;
+  EngineResult setLaneInput({
+    required int channel,
+    required int lane,
+    required int inputChannel,
+  }) => EngineResult.ok;
   @override
-  EngineResult setOutputMask({required int channel, required int mask}) =>
-      EngineResult.ok;
+  EngineResult setLaneOutput({
+    required int channel,
+    required int lane,
+    required int mask,
+  }) => EngineResult.ok;
   @override
   EngineResult setQuantize({required bool enabled}) => EngineResult.ok;
   @override
@@ -176,37 +190,46 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
   @override
-  EngineResult setMonitorInputMask({required int mask}) => EngineResult.ok;
-  @override
-  EngineResult setMonitorOutputMask({required int mask}) => EngineResult.ok;
-  @override
-  EngineResult setMonitorFxTrack({required int track}) => EngineResult.ok;
-  @override
-  EngineResult setTrackFx({
+  EngineResult setLaneFx({
     required int channel,
+    required int lane,
     required int index,
     required TrackEffectType type,
-    required TrackEffectStage stage,
   }) => EngineResult.ok;
   @override
-  EngineResult setTrackFxCount({required int channel, required int count}) =>
-      EngineResult.ok;
-  @override
-  EngineResult setTrackFxParam({
+  EngineResult setLaneFxCount({
     required int channel,
+    required int lane,
+    required int count,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setLaneFxParam({
+    required int channel,
+    required int lane,
     required int index,
     required int param,
     required double value,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorFx({
+  EngineResult setMonitorInput({
+    required int input,
+    required bool enabled,
+    required int outputMask,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputFx({
+    required int input,
     required int index,
     required TrackEffectType type,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorFxCount({required int count}) => EngineResult.ok;
+  EngineResult setMonitorInputFxCount({
+    required int input,
+    required int count,
+  }) => EngineResult.ok;
   @override
-  EngineResult setMonitorFxParam({
+  EngineResult setMonitorInputFxParam({
+    required int input,
     required int index,
     required int param,
     required double value,
