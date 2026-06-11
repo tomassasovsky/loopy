@@ -103,8 +103,8 @@ class _TrackRoutingPage extends StatelessWidget {
                   _TrackMultipleControl(channel: channel, settings: settings),
                   const SizedBox(height: 16),
                   Text(
-                    'To hear before-track effects live, set monitoring to '
-                    'follow this track.',
+                    'Track effects color playback only. To hear effects live '
+                    'on an input, enable its monitor in audio settings.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -261,15 +261,13 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
 /// The integrated single-track signal-flow graph: channel routing plus the
 /// effects chain as draggable cards on the path:
 ///
-///   In ▸ [before-track effects] ▸ Track ▸ [after-track effects] ▸ Out
+///   In ▸ Track ▸ effects ▸ Out
 ///
-/// The recording is always dry and every effect colors playback in chain order;
-/// the lane only governs monitoring — "before-track" effects are also heard on
-/// the live input monitor (when it follows this track), "after-track" effects
-/// are playback only. Cards are added per lane, reordered within a lane, and
-/// moved across the track (which flips the stage). Loads the saved chain from
-/// [settings], dispatches routing + structural changes as [LooperBloc] events,
-/// and shows an inline editor for the selected card.
+/// The recording is always dry and every effect colors playback in chain order
+/// (a single, stageless chain). Cards are added, reordered by dragging, and
+/// edited inline. Loads the saved chain from [settings], dispatches routing +
+/// structural changes as [LooperBloc] events, and shows an inline editor for
+/// the selected card.
 class _TrackSignalFlowControl extends StatefulWidget {
   const _TrackSignalFlowControl({
     required this.channel,
@@ -293,9 +291,7 @@ class _TrackSignalFlowControl extends StatefulWidget {
 }
 
 class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
-  /// The chain in engine order; every entry colors playback. Before-track
-  /// entries are additionally heard on the live monitor. The split into lanes
-  /// is derived for display.
+  /// The single, stageless chain in engine order; every entry colors playback.
   List<TrackEffect> _chain = [];
 
   /// The index in [_chain] of the card being edited, or null.
@@ -308,7 +304,7 @@ class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
   }
 
   Future<void> _load() async {
-    final encoded = await widget.settings.loadTrackEffects(widget.channel);
+    final encoded = await widget.settings.loadLaneEffects(widget.channel, 0);
     final chain = decodeTrackEffects(encoded);
     if (mounted) setState(() => _chain = chain);
   }
@@ -321,13 +317,10 @@ class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
     );
   }
 
-  void _add(TrackEffectStage stage) {
+  void _add() {
     if (_chain.length >= kTrackEffectMax) return;
     setState(() {
-      _chain = [
-        ..._chain,
-        TrackEffect(type: TrackEffectType.drive, stage: stage),
-      ];
+      _chain = [..._chain, TrackEffect(type: TrackEffectType.drive)];
       _selected = _chain.length - 1;
     });
     _pushStructural();
@@ -362,20 +355,13 @@ class _TrackSignalFlowControlState extends State<_TrackSignalFlowControl> {
     );
   }
 
-  /// Drag-and-drop: move chain entry [from] to lane [stage] at position [toPos]
-  /// within that lane (reorder, or restage by dropping across the track).
-  void _move(int from, TrackEffectStage stage, int toPos) {
+  /// Drag-and-drop: move chain entry [from] to position [toPos] in the chain.
+  void _move(int from, int toPos) {
     final moved = _chain[from];
     final without = [..._chain]..removeAt(from);
-    final laneFlat = [
-      for (var i = 0; i < without.length; i++)
-        if (without[i].stage == stage) i,
-    ];
-    final insert = toPos >= laneFlat.length
-        ? (laneFlat.isEmpty ? without.length : laneFlat.last + 1)
-        : laneFlat[toPos];
+    final insert = toPos > without.length ? without.length : toPos;
     setState(() {
-      _chain = without..insert(insert, moved.copyWith(stage: stage));
+      _chain = without..insert(insert, moved);
       _selected = insert;
     });
     _pushStructural();

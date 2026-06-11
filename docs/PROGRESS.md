@@ -99,9 +99,21 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   monitor-follow-track, and monitor masks. `le_engine_set_monitor_input(input,
   enabled,output)` / `…_fx` / `…_fx_count` / `…_fx_param`. A loopback
   measurement clears all monitor enables (cable-feedback safety); `passthrough`
-  enables input 0 at start. The typed Dart API for lanes/monitors lands in the
-  following PRs (the legacy global-monitor Dart methods are temporary
-  `UnimplementedError` stubs until then).
+  enables input 0 at start.
+- **Dart domain layer (PR 4) is landed.** `looper_repository` exposes per-lane
+  setters (`setLane{Input,Output,Volume,Mute,Count}`, `setLaneEffects`/`…Param`)
+  with **lane-0 convenience wrappers** (`setVolume`/`setMute`/`setInputMask`/
+  `setOutputMask`/`setTrackEffects` map to lane 0; a selection mask collapses to
+  its lowest input via `maskToInputChannel`) and **per-input monitor** methods
+  (`setMonitorInput`, `setMonitorEffects`/`…Param`). New domain models `Lane`,
+  `InputMonitor`, and `Track.lanes`; `_project()` fills lanes from the snapshot.
+  `MonitorCubit` is now a **per-input** list (`Map<int, InputMonitor>`) —
+  `MonitorMode`/follow-track and the global monitor-FX bus are gone. Persistence
+  moved to `lane_*` / `monitor_input*` keys (old `track_*mask`/`track_effects`/
+  `monitor.*` keys dropped, drop-and-default — no migration). Session export
+  stays **lane-0 only** (documented follow-up). The routing/effects UI was
+  collapsed to a single **stageless** chain to compile + function; the polished
+  per-lane *dual-route* routing view + lane-specific bloc events are **PR 5**.
 - RT contract: no malloc/lock/syscall/unbounded-loop in `le_engine_process`.
   Commands arrive via an SPSC ring; state published via per-field atomics.
 - `le_engine_process` / `le_engine_configure` are exposed for **device-free

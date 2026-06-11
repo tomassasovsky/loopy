@@ -312,15 +312,6 @@ class _AppViewState extends State<_AppView> {
               previous.deviceConnectivity != current.deviceConnectivity,
           listener: (_, state) => _showConnectivityBanner(state),
         ),
-        // Feed the selected track to the monitor so "follow selected" mirrors
-        // its routing as the selection changes.
-        BlocListener<BigPictureCubit, BigPictureState>(
-          listenWhen: (previous, current) =>
-              previous.selectedChannel != current.selectedChannel,
-          listener: (context, state) => context
-              .read<MonitorCubit>()
-              .setSelectedChannel(state.selectedChannel),
-        ),
       ],
       child: BlocBuilder<UiModeCubit, UiMode>(
         builder: (context, mode) {

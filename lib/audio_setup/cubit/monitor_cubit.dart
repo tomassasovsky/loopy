@@ -5,70 +5,33 @@ import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// What the live monitor routes.
-enum MonitorMode {
-  /// Use the custom monitor input/output masks.
-  custom,
-
-  /// Mirror the currently-selected track's input/output routing.
-  followSelected;
-
-  /// The persisted token for this mode.
-  String get token => name;
-
-  /// Parses a persisted [token], defaulting to [custom].
-  static MonitorMode fromToken(String? token) => MonitorMode.values.firstWhere(
-    (m) => m.name == token,
-    orElse: () => MonitorMode.custom,
-  );
-}
-
-/// Monitor-routing configuration: the [mode], the custom input/output masks,
-/// and the global monitor-FX bus [effects] (applied to the monitor in every
-/// mode).
+/// Per-hardware-input live-monitor configuration.
+///
+/// Each monitored input routes its live signal — through its own effect chain —
+/// to chosen outputs, independent of any track. Replaces the old global
+/// monitor-FX bus and "monitor follows a track" model.
 class MonitorState extends Equatable {
-  /// Creates a [MonitorState].
-  const MonitorState({
-    this.mode = MonitorMode.custom,
-    this.inputMask = 0x1,
-    this.outputMask = 0x3,
-    this.effects = const [],
-  });
+  /// Creates a [MonitorState] from a map of input index to its [InputMonitor].
+  const MonitorState({this.inputs = const {}});
 
-  /// What the monitor routes (custom masks vs. the selected track).
-  final MonitorMode mode;
+  /// The configured monitors, keyed by hardware input index. Inputs absent from
+  /// the map are not monitored (a default, disabled [InputMonitor]).
+  final Map<int, InputMonitor> inputs;
 
-  /// Custom monitor input bitmask (which inputs are folded into the monitor).
-  final int inputMask;
+  /// The monitor for [input], or a disabled default when none is configured.
+  InputMonitor forInput(int input) =>
+      inputs[input] ?? InputMonitor(input: input);
 
-  /// Custom monitor output bitmask (which outputs the monitor plays to).
-  final int outputMask;
-
-  /// The monitor-FX bus chain (ordered). Applied to the monitored signal in
-  /// every mode; entries have no pre/post (the `stage` field is unused).
-  final List<TrackEffect> effects;
-
-  /// Returns a copy with the given overrides.
-  MonitorState copyWith({
-    MonitorMode? mode,
-    int? inputMask,
-    int? outputMask,
-    List<TrackEffect>? effects,
-  }) => MonitorState(
-    mode: mode ?? this.mode,
-    inputMask: inputMask ?? this.inputMask,
-    outputMask: outputMask ?? this.outputMask,
-    effects: effects ?? this.effects,
-  );
+  /// Returns a copy with [monitor] replacing its input's entry.
+  MonitorState withInput(InputMonitor monitor) =>
+      MonitorState(inputs: {...inputs, monitor.input: monitor});
 
   @override
-  List<Object?> get props => [mode, inputMask, outputMask, effects];
+  List<Object?> get props => [inputs];
 }
 
-/// Owns the live monitor routing: applies it to the [LooperRepository] and
-/// persists it via [SettingsRepository]. In [MonitorMode.followSelected] the
-/// monitor mirrors the selected track; the app feeds the selection through
-/// [setSelectedChannel].
+/// Owns the per-input live monitors: applies them to the [LooperRepository] and
+/// persists them via [SettingsRepository].
 class MonitorCubit extends Cubit<MonitorState> {
   /// Creates a [MonitorCubit] driving [repository], persisted through
   /// [settings].
@@ -82,80 +45,77 @@ class MonitorCubit extends Cubit<MonitorState> {
   final LooperRepository _repository;
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
-  int _selectedChannel = 0;
 
-  /// Restores the persisted routing and applies it to the repository.
+  /// Hardware-input ceiling scanned on restore (matches the engine's
+  /// `LE_MAX_INPUTS`). Only inputs with saved state populate the map.
+  static const int _maxInputs = 8;
+
+  /// Restores the persisted per-input monitors and applies them to the
+  /// repository.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
-    final mode = MonitorMode.fromToken(await _settings.loadMonitorMode());
-    final inputMask = await _settings.loadMonitorInputMask();
-    final outputMask = await _settings.loadMonitorOutputMask();
-    final effects = decodeTrackEffects(await _settings.loadMonitorEffects());
-    if (isClosed) return;
-    emit(
-      MonitorState(
-        mode: mode,
-        inputMask: inputMask,
-        outputMask: outputMask,
+    final restored = <int, InputMonitor>{};
+    for (var input = 0; input < _maxInputs; input++) {
+      final routing = await _settings.loadMonitorInput(input);
+      final effects = decodeTrackEffects(
+        await _settings.loadMonitorInputEffects(input),
+      );
+      if (routing == null && effects.isEmpty) continue;
+      restored[input] = InputMonitor(
+        input: input,
+        enabled: routing?.$1 ?? false,
+        outputMask: routing?.$2 ?? 0x3,
         effects: effects,
-      ),
-    );
-    _repository.setMonitorEffects(effects: effects);
-    _apply();
-  }
-
-  /// Records the currently-selected track; when following the selection, the
-  /// monitor mirrors it now.
-  void setSelectedChannel(int channel) {
-    _selectedChannel = channel;
-    if (state.mode == MonitorMode.followSelected) {
-      _repository.setMonitorFollowTrack(channel);
+      );
+    }
+    if (isClosed) return;
+    emit(MonitorState(inputs: restored));
+    for (final monitor in restored.values) {
+      _applyRouting(monitor);
+      _repository.setMonitorEffects(
+        input: monitor.input,
+        effects: monitor.effects,
+      );
     }
   }
 
-  /// Sets and persists the monitor [mode], applying it now.
-  Future<void> setMode(MonitorMode mode) async {
-    if (mode != state.mode) {
-      emit(state.copyWith(mode: mode));
-      _apply();
-    }
-    await _settings.saveMonitorMode(mode.token);
+  /// Enables or disables monitoring of hardware [input], applying and
+  /// persisting the change.
+  Future<void> setEnabled(int input, {required bool enabled}) async {
+    final monitor = state.forInput(input).copyWith(enabled: enabled);
+    emit(state.withInput(monitor));
+    _applyRouting(monitor);
+    await _persistRouting(monitor);
   }
 
-  /// Sets and persists the custom monitor input [mask], applying it if custom.
-  Future<void> setInputMask(int mask) async {
-    emit(state.copyWith(inputMask: mask));
-    if (state.mode == MonitorMode.custom) {
-      _repository.setMonitorInputMask(mask);
-    }
-    await _settings.saveMonitorInputMask(mask);
+  /// Sets and persists hardware [input]'s monitor output bitmask.
+  Future<void> setOutputMask(int input, int mask) async {
+    final monitor = state.forInput(input).copyWith(outputMask: mask);
+    emit(state.withInput(monitor));
+    _applyRouting(monitor);
+    await _persistRouting(monitor);
   }
 
-  /// Sets and persists the custom monitor output [mask], applying it if custom.
-  Future<void> setOutputMask(int mask) async {
-    emit(state.copyWith(outputMask: mask));
-    if (state.mode == MonitorMode.custom) {
-      _repository.setMonitorOutputMask(mask);
-    }
-    await _settings.saveMonitorOutputMask(mask);
+  /// Appends a default effect (drive) to hardware [input]'s monitor chain.
+  void addEffect(int input) {
+    final effects = state.forInput(input).effects;
+    _pushEffects(input, [
+      ...effects,
+      TrackEffect(type: TrackEffectType.drive),
+    ]);
   }
 
-  /// Appends a default effect (drive) to the monitor-FX bus.
-  void addEffect() => _pushEffects([
-    ...state.effects,
-    TrackEffect(type: TrackEffectType.drive),
-  ]);
-
-  /// Removes the monitor-FX bus entry at [index].
-  void removeEffect(int index) {
-    if (index < 0 || index >= state.effects.length) return;
-    _pushEffects([...state.effects]..removeAt(index));
+  /// Removes hardware [input]'s monitor chain entry at [index].
+  void removeEffect(int input, int index) {
+    final effects = state.forInput(input).effects;
+    if (index < 0 || index >= effects.length) return;
+    _pushEffects(input, [...effects]..removeAt(index));
   }
 
-  /// Reorders the monitor-FX bus, moving the entry at [from] to [to].
-  void moveEffect(int from, int to) {
-    final effects = state.effects;
+  /// Reorders hardware [input]'s monitor chain, moving entry [from] to [to].
+  void moveEffect(int input, int from, int to) {
+    final effects = state.forInput(input).effects;
     if (from < 0 || from >= effects.length) return;
     var target = to;
     if (target < 0) target = 0;
@@ -163,45 +123,58 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (from == target) return;
     final next = [...effects];
     next.insert(target, next.removeAt(from));
-    _pushEffects(next);
+    _pushEffects(input, next);
   }
 
-  /// Sets the type of monitor-FX bus entry [index] (resets its DSP state).
-  void setEffectType(int index, TrackEffectType type) {
-    if (index < 0 || index >= state.effects.length) return;
-    final next = [...state.effects]
-      ..[index] = TrackEffect(type: type); // type change seeds default params
-    _pushEffects(next);
+  /// Sets the type of hardware [input]'s monitor chain entry [index] (resets
+  /// its DSP state and seeds default params).
+  void setEffectType(int input, int index, TrackEffectType type) {
+    final effects = state.forInput(input).effects;
+    if (index < 0 || index >= effects.length) return;
+    final next = [...effects]..[index] = TrackEffect(type: type);
+    _pushEffects(input, next);
   }
 
-  /// Sets parameter [param] of monitor-FX bus entry [index] to [value] without
-  /// resetting DSP state.
-  void setEffectParam(int index, int param, double value) {
-    if (index < 0 || index >= state.effects.length) return;
-    final fx = state.effects[index];
+  /// Sets parameter [param] of hardware [input]'s monitor chain entry [index]
+  /// to [value] without resetting DSP state.
+  void setEffectParam(int input, int index, int param, double value) {
+    final monitor = state.forInput(input);
+    if (index < 0 || index >= monitor.effects.length) return;
+    final fx = monitor.effects[index];
     if (param < 0 || param >= fx.params.length) return;
     final params = List<double>.of(fx.params)..[param] = value;
-    final next = [...state.effects]..[index] = fx.copyWith(params: params);
-    emit(state.copyWith(effects: next));
-    _repository.setMonitorEffectParam(index: index, param: param, value: value);
-    unawaited(_settings.saveMonitorEffects(encodeTrackEffects(next)));
+    final next = [...monitor.effects]..[index] = fx.copyWith(params: params);
+    emit(state.withInput(monitor.copyWith(effects: next)));
+    _repository.setMonitorEffectParam(
+      input: input,
+      index: index,
+      param: param,
+      value: value,
+    );
+    unawaited(
+      _settings.saveMonitorInputEffects(input, encodeTrackEffects(next)),
+    );
   }
 
-  /// Emits, applies (structural — resets DSP), and persists [effects].
-  void _pushEffects(List<TrackEffect> effects) {
-    emit(state.copyWith(effects: effects));
-    _repository.setMonitorEffects(effects: effects);
-    unawaited(_settings.saveMonitorEffects(encodeTrackEffects(effects)));
+  void _pushEffects(int input, List<TrackEffect> effects) {
+    final monitor = state.forInput(input).copyWith(effects: effects);
+    emit(state.withInput(monitor));
+    _repository.setMonitorEffects(input: input, effects: effects);
+    unawaited(
+      _settings.saveMonitorInputEffects(input, encodeTrackEffects(effects)),
+    );
   }
 
-  void _apply() {
-    if (state.mode == MonitorMode.followSelected) {
-      _repository.setMonitorFollowTrack(_selectedChannel);
-    } else {
-      _repository
-        ..setMonitorFollowTrack(null)
-        ..setMonitorInputMask(state.inputMask)
-        ..setMonitorOutputMask(state.outputMask);
-    }
-  }
+  void _applyRouting(InputMonitor monitor) => _repository.setMonitorInput(
+    input: monitor.input,
+    enabled: monitor.enabled,
+    outputMask: monitor.outputMask,
+  );
+
+  Future<void> _persistRouting(InputMonitor monitor) =>
+      _settings.saveMonitorInput(
+        monitor.input,
+        enabled: monitor.enabled,
+        outputMask: monitor.outputMask,
+      );
 }

@@ -161,30 +161,23 @@ void main() {
       ).called(1);
     });
 
-    testWidgets('adding an after-track effect dispatches the chain', (
-      tester,
-    ) async {
+    testWidgets('adding an effect dispatches the chain', (tester) async {
       await pumpOpener(tester);
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      final add = find.byKey(const Key('signalFlow_addPost'));
+      final add = find.byKey(const Key('signalFlow_add'));
       await tester.ensureVisible(add);
       await tester.tap(add);
       await tester.pumpAndSettle();
 
-      // A default (drive, post) effect is appended and its editor opens.
+      // A default (drive) effect is appended and its editor opens.
       verify(
         () => bloc.add(
           any(
             that: isA<LooperTrackEffectsChanged>()
                 .having((e) => e.channel, 'channel', 0)
-                .having((e) => e.effects.length, 'length', 1)
-                .having(
-                  (e) => e.effects.first.stage,
-                  'stage',
-                  TrackEffectStage.post,
-                ),
+                .having((e) => e.effects.length, 'length', 1),
           ),
         ),
       ).called(1);
@@ -200,7 +193,7 @@ void main() {
 
       expect(find.byKey(const Key('trackRouting_fx_type')), findsNothing);
 
-      final add = find.byKey(const Key('signalFlow_addPre'));
+      final add = find.byKey(const Key('signalFlow_add'));
       await tester.ensureVisible(add);
       await tester.tap(add);
       await tester.pumpAndSettle();
@@ -214,7 +207,8 @@ void main() {
     testWidgets('dragging a param slider dispatches the granular param event', (
       tester,
     ) async {
-      await settings.saveTrackEffects(
+      await settings.saveLaneEffects(
+        0,
         0,
         encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
       );
@@ -247,13 +241,11 @@ void main() {
     testWidgets('a saved effect chain is preloaded into the dialog', (
       tester,
     ) async {
-      await settings.saveTrackEffects(
+      await settings.saveLaneEffects(
+        0,
         0,
         encodeTrackEffects([
-          TrackEffect(
-            type: TrackEffectType.tremolo,
-            stage: TrackEffectStage.pre,
-          ),
+          TrackEffect(type: TrackEffectType.tremolo),
           TrackEffect(type: TrackEffectType.delay),
         ]),
       );
@@ -268,25 +260,26 @@ void main() {
       expect(find.text('Delay'), findsWidgets);
     });
 
-    testWidgets('dragging a card across the track flips its stage', (
-      tester,
-    ) async {
-      // One after-track effect; dragging it to the before-track lane restages.
-      await settings.saveTrackEffects(
+    testWidgets('dragging a card reorders the chain', (tester) async {
+      await settings.saveLaneEffects(
         0,
-        encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
+        0,
+        encodeTrackEffects([
+          TrackEffect(type: TrackEffectType.drive),
+          TrackEffect(type: TrackEffectType.delay),
+        ]),
       );
       await pumpOpener(tester);
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      // Drag is initiated from the card's grab handle.
+      // Drag card 0 (drive) past the end, so the chain becomes [delay, drive].
       final handle = find.byKey(const Key('signalFlow_fx_handle_0'));
-      final dropPre = find.byKey(const Key('signalFlow_drop_pre_0'));
+      final dropEnd = find.byKey(const Key('signalFlow_drop_2'));
 
       final gesture = await tester.startGesture(tester.getCenter(handle));
       await tester.pump(const Duration(milliseconds: 120));
-      await gesture.moveTo(tester.getCenter(dropPre));
+      await gesture.moveTo(tester.getCenter(dropEnd));
       await tester.pump();
       await gesture.up();
       await tester.pumpAndSettle();
@@ -295,9 +288,9 @@ void main() {
         () => bloc.add(
           any(
             that: isA<LooperTrackEffectsChanged>().having(
-              (e) => e.effects.first.stage,
-              'stage',
-              TrackEffectStage.pre,
+              (e) => e.effects.map((f) => f.type).toList(),
+              'order',
+              [TrackEffectType.delay, TrackEffectType.drive],
             ),
           ),
         ),

@@ -114,10 +114,12 @@ class SessionRepository {
       throw StateError('failed to start the session: ${committed.name}');
     }
 
+    // Session stems are lane-0-only for now (full multi-lane stems are a
+    // follow-up), so restore mix settings onto lane 0.
     for (final track in session.tracks) {
       _engine
-        ..setTrackVolume(track.volume, channel: track.channel)
-        ..setTrackMute(muted: track.muted, channel: track.channel);
+        ..setLaneVolume(track.volume, channel: track.channel)
+        ..setLaneMute(muted: track.muted, channel: track.channel);
     }
     return session;
   }
@@ -151,6 +153,10 @@ class SessionRepository {
   }
 
   /// Reads the engine snapshot and each non-empty track's PCM once.
+  ///
+  /// Export is **lane-0 only** for this pass: `exportTrack` returns the track's
+  /// primary lane PCM and the per-track [SessionTrack] mix mirrors lane 0. Full
+  /// multi-lane stems are a documented follow-up.
   _Capture _capture() {
     final snapshot = _engine.snapshot();
     final stems = <int, Float32List>{};

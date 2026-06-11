@@ -56,10 +56,11 @@ void main() {
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setMonitorInputMask(any()),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setMonitorOutputMask(any()),
+      () => repository.setMonitorInput(
+        input: any(named: 'input'),
+        enabled: any(named: 'enabled'),
+        outputMask: any(named: 'outputMask'),
+      ),
     ).thenReturn(EngineResult.ok);
     when(
       () => repository.setRecDub(enabled: any(named: 'enabled')),
