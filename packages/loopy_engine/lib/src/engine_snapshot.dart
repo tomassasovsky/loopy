@@ -57,7 +57,97 @@ enum TrackState {
   };
 }
 
+/// An immutable per-lane projection of the native `le_lane_snapshot`.
+///
+/// A lane is a track's fundamental recordable unit: it records one hardware
+/// input ([inputChannel], `-1` = none) into its own clean mono buffer and plays
+/// that buffer — through its own effect chain — to the outputs in [outputMask].
+@immutable
+class LaneSnapshot {
+  /// Creates a [LaneSnapshot].
+  const LaneSnapshot({
+    required this.inputChannel,
+    required this.outputMask,
+    required this.volume,
+    required this.muted,
+    required this.lengthFrames,
+    required this.rms,
+    required this.peak,
+  });
+
+  /// An empty lane recording no input.
+  const LaneSnapshot.empty()
+    : inputChannel = -1,
+      outputMask = 0x3,
+      volume = 1,
+      muted = false,
+      lengthFrames = 0,
+      rms = 0,
+      peak = 0;
+
+  /// Projects a native `le_lane_snapshot` into a [LaneSnapshot].
+  factory LaneSnapshot.fromNative(le_lane_snapshot native) => LaneSnapshot(
+    inputChannel: native.input_channel,
+    outputMask: native.output_mask,
+    volume: native.volume,
+    muted: native.muted != 0,
+    lengthFrames: native.length_frames,
+    rms: native.rms,
+    peak: native.peak,
+  );
+
+  /// Hardware input channel this lane records (`-1` = none).
+  final int inputChannel;
+
+  /// Bitmask of hardware output channels this lane plays to (bit c => out c).
+  final int outputMask;
+
+  /// Playback gain in `0..1`.
+  final double volume;
+
+  /// Whether the lane is muted.
+  final bool muted;
+
+  /// Captured length of this lane's buffer in frames.
+  final int lengthFrames;
+
+  /// RMS level for the most recent block, in `0..1`.
+  final double rms;
+
+  /// Peak level for the most recent block, in `0..1`.
+  final double peak;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LaneSnapshot &&
+          runtimeType == other.runtimeType &&
+          inputChannel == other.inputChannel &&
+          outputMask == other.outputMask &&
+          volume == other.volume &&
+          muted == other.muted &&
+          lengthFrames == other.lengthFrames &&
+          rms == other.rms &&
+          peak == other.peak;
+
+  @override
+  int get hashCode => Object.hash(
+    inputChannel,
+    outputMask,
+    volume,
+    muted,
+    lengthFrames,
+    rms,
+    peak,
+  );
+}
+
 /// An immutable per-track projection of the native `le_track_snapshot`.
+///
+/// A track is a multi-lane container: it owns the transport (state, multiple,
+/// undo/redo depth) and its [lanes]. The scalar [volume]/[muted]/[lengthFrames]/
+/// [rms]/[peak]/[inputMask]/[outputMask] fields mirror lane 0 for back-compat
+/// single-lane accessors; per-lane state lives in [lanes].
 @immutable
 class TrackSnapshot {
   /// Creates a [TrackSnapshot].
@@ -73,6 +163,7 @@ class TrackSnapshot {
     this.multiple = 1,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
+    this.lanes = const <LaneSnapshot>[],
   });
 
   /// An empty track.
@@ -87,10 +178,18 @@ class TrackSnapshot {
       peak = 0,
       multiple = 1,
       inputMask = 0x1,
-      outputMask = 0x3;
+      outputMask = 0x3,
+      lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
-  factory TrackSnapshot.fromNative(le_track_snapshot native) => TrackSnapshot(
+  ///
+  /// [lanes] are read separately (via `le_engine_get_lane`, one per active
+  /// lane) because this ffi version cannot index a native struct array; their
+  /// length is `native.lane_count`.
+  factory TrackSnapshot.fromNative(
+    le_track_snapshot native, [
+    List<LaneSnapshot> lanes = const [],
+  ]) => TrackSnapshot(
     state: TrackState.fromCode(native.state),
     volume: native.volume,
     muted: native.muted != 0,
@@ -102,6 +201,7 @@ class TrackSnapshot {
     multiple: native.multiple,
     inputMask: native.input_mask,
     outputMask: native.output_mask,
+    lanes: lanes,
   );
 
   /// State-machine phase.
@@ -131,12 +231,23 @@ class TrackSnapshot {
   /// Peak level for the most recent block, in `0..1`.
   final double peak;
 
-  /// Bitmask of hardware input channels this track records from (bit c => in
-  /// c); selected inputs are averaged into the track's mono buffer.
+  /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when
+  /// lane 0 records no input). Mirrors lane 0; per-lane inputs are in [lanes].
   final int inputMask;
 
   /// Bitmask of hardware output channels this track plays to (bit c => out c).
+  /// Mirrors lane 0.
   final int outputMask;
+
+  /// Per-lane snapshots, in lane order.
+  ///
+  /// Populated by the native engine's `snapshot()` with one entry per active
+  /// lane (read via `le_engine_get_lane`); empty in synthetic snapshots such as
+  /// [TrackSnapshot.empty].
+  final List<LaneSnapshot> lanes;
+
+  /// The number of active lanes (equals [lanes] length).
+  int get laneCount => lanes.length;
 
   @override
   bool operator ==(Object other) =>
@@ -153,7 +264,8 @@ class TrackSnapshot {
           rms == other.rms &&
           peak == other.peak &&
           inputMask == other.inputMask &&
-          outputMask == other.outputMask;
+          outputMask == other.outputMask &&
+          _listEquals(lanes, other.lanes);
 
   @override
   int get hashCode => Object.hash(
@@ -168,6 +280,7 @@ class TrackSnapshot {
     peak,
     inputMask,
     outputMask,
+    Object.hashAll(lanes),
   );
 }
 
@@ -391,7 +504,7 @@ class EngineSnapshot {
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';
 }
 
-bool _listEquals(List<TrackSnapshot> a, List<TrackSnapshot> b) {
+bool _listEquals<T>(List<T> a, List<T> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {
     if (a[i] != b[i]) return false;

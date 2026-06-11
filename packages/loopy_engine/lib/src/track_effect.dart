@@ -12,30 +12,7 @@ const int kTrackEffectMax = 8;
 /// the native `LE_FX_PARAMS`.
 const int kTrackEffectParams = 3;
 
-/// Whether an effect is also heard on the live input monitor. The recording is
-/// always dry (no effect is ever printed into the loop) and every effect colors
-/// playback in chain order; the stage only governs monitoring. Mirrors the
-/// native `le_fx_stage`.
-enum TrackEffectStage {
-  /// After-track: playback only, not heard on the live input monitor (the
-  /// default).
-  post(0),
-
-  /// Before-track: also applied to the live monitored input, so when the
-  /// monitor follows this track you hear the effect while playing.
-  pre(1);
-
-  const TrackEffectStage(this.code);
-
-  /// The native `le_fx_stage` integer.
-  final int code;
-
-  /// Maps a native `le_fx_stage` integer back to a stage; unknown values fall
-  /// back to [TrackEffectStage.post].
-  static TrackEffectStage fromCode(int code) => code == pre.code ? pre : post;
-}
-
-/// A built-in per-track effect type. The integer [code] matches the native
+/// A built-in effect type. The integer [code] matches the native
 /// `le_fx_type` enum, and each type interprets its [kTrackEffectParams]
 /// normalized parameters differently (see [paramLabels]).
 enum TrackEffectType {
@@ -90,20 +67,22 @@ enum TrackEffectType {
   };
 }
 
-/// One entry in a track's effects chain: a [type] at a [stage] with its
-/// [params] (normalized `0..1`, length [kTrackEffectParams]).
+/// One entry in an effects chain: a [type] with its [params] (normalized
+/// `0..1`, length [kTrackEffectParams]).
+///
+/// The chain is non-destructive and stageless — the recording is always dry and
+/// every active entry colors playback in order. The same model backs a lane's
+/// record-route chain and a hardware input's live-monitor chain.
 @immutable
 class TrackEffect {
   /// Creates a [TrackEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  TrackEffect({
-    required this.type,
-    this.stage = TrackEffectStage.post,
-    List<double>? params,
-  }) : params = List<double>.unmodifiable(params ?? type.defaultParams);
+  TrackEffect({required this.type, List<double>? params})
+    : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// Rebuilds a [TrackEffect] from [toJson] output; unknown codes fall back to
-  /// safe defaults.
+  /// safe defaults. A legacy `stage` key (from the removed pre/post model) is
+  /// ignored, so older persisted chains still decode.
   factory TrackEffect.fromJson(Map<String, dynamic> json) {
     final rawParams = json['params'];
     final params = rawParams is List
@@ -111,7 +90,6 @@ class TrackEffect {
         : null;
     return TrackEffect(
       type: TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0),
-      stage: TrackEffectStage.fromCode((json['stage'] as num?)?.toInt() ?? 0),
       params: params,
     );
   }
@@ -119,39 +97,24 @@ class TrackEffect {
   /// The effect type.
   final TrackEffectType type;
 
-  /// Whether it processes the input (pre) or playback (post).
-  final TrackEffectStage stage;
-
   /// The normalized parameter values (length [kTrackEffectParams]).
   final List<double> params;
 
   /// Returns a copy with the given fields replaced. [params] is copied.
-  TrackEffect copyWith({
-    TrackEffectType? type,
-    TrackEffectStage? stage,
-    List<double>? params,
-  }) => TrackEffect(
-    type: type ?? this.type,
-    stage: stage ?? this.stage,
-    params: params ?? this.params,
-  );
+  TrackEffect copyWith({TrackEffectType? type, List<double>? params}) =>
+      TrackEffect(type: type ?? this.type, params: params ?? this.params);
 
   /// A JSON-friendly map for persistence (codes, not enum names).
-  Map<String, dynamic> toJson() => {
-    'type': type.code,
-    'stage': stage.code,
-    'params': params,
-  };
+  Map<String, dynamic> toJson() => {'type': type.code, 'params': params};
 
   @override
   bool operator ==(Object other) =>
       other is TrackEffect &&
       other.type == type &&
-      other.stage == stage &&
       _listEquals(other.params, params);
 
   @override
-  int get hashCode => Object.hash(type, stage, Object.hashAll(params));
+  int get hashCode => Object.hash(type, Object.hashAll(params));
 
   static bool _listEquals(List<double> a, List<double> b) {
     if (a.length != b.length) return false;
