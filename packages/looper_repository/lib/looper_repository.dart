@@ -15,6 +15,7 @@ export 'package:loopy_engine/loopy_engine.dart'
         TrackState,
         decodeTrackEffects,
         encodeTrackEffects,
+        kMaxLanes,
         kTrackEffectMax,
         kTrackEffectParams;
 
