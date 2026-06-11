@@ -22,6 +22,16 @@ void main() {
     when(
       () => repository.setMonitorOutputMask(any()),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorEffects(effects: any(named: 'effects')),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setMonitorEffectParam(
+        index: any(named: 'index'),
+        param: any(named: 'param'),
+        value: any(named: 'value'),
+      ),
+    ).thenReturn(EngineResult.ok);
   });
 
   MonitorCubit build() =>
@@ -130,5 +140,77 @@ void main() {
         expect(await settings.loadMonitorInputMask(), 0x3);
       },
     );
+
+    group('monitor-FX bus', () {
+      blocTest<MonitorCubit, MonitorState>(
+        'addEffect appends a default drive, applies it, and persists',
+        build: build,
+        act: (cubit) => cubit.addEffect(),
+        expect: () => [
+          isA<MonitorState>().having(
+            (s) => s.effects.single.type,
+            'type',
+            TrackEffectType.drive,
+          ),
+        ],
+        verify: (_) async {
+          verify(
+            () => repository.setMonitorEffects(
+              effects: any(named: 'effects'),
+            ),
+          ).called(1);
+          expect(await settings.loadMonitorEffects(), isNotNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'setEffectParam tweaks the entry without a structural reset',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect()
+            ..setEffectParam(0, 0, 0.9);
+        },
+        verify: (cubit) {
+          expect(cubit.state.effects.single.params[0], 0.9);
+          // The granular param path, not the structural setMonitorEffects.
+          verify(
+            () => repository.setMonitorEffectParam(
+              index: 0,
+              param: 0,
+              value: 0.9,
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'removeEffect drops the entry',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect()
+            ..removeEffect(0);
+        },
+        verify: (cubit) => expect(cubit.state.effects, isEmpty),
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'load restores a persisted monitor-FX chain',
+        setUp: () => settings.saveMonitorEffects(
+          encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
+        ),
+        build: build,
+        act: (cubit) => cubit.load(),
+        verify: (cubit) {
+          expect(cubit.state.effects.single.type, TrackEffectType.delay);
+          verify(
+            () => repository.setMonitorEffects(
+              effects: any(named: 'effects'),
+            ),
+          ).called(1);
+        },
+      );
+    });
   });
 }

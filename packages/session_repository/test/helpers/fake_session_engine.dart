@@ -199,6 +199,19 @@ class FakeSessionEngine implements AudioEngine {
     required double value,
   }) => EngineResult.ok;
   @override
+  EngineResult setMonitorFx({
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorFxCount({required int count}) => EngineResult.ok;
+  @override
+  EngineResult setMonitorFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) => EngineResult.ok;
+  @override
   Float32List readVisual() => Float32List(0);
   @override
   Float32List readTrackVisual(int channel) => Float32List(0);

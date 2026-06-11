@@ -343,6 +343,16 @@ class SettingsRepository {
   Future<void> saveTrackEffects(int channel, String encoded) =>
       _store.setString(_trackEffectsKey(channel), encoded);
 
+  static const String _monitorEffectsKey = 'monitor.fx';
+
+  /// Loads the persisted monitor-FX bus chain as an opaque encoded string (see
+  /// `encodeTrackEffects`), or `null` if none is saved.
+  Future<String?> loadMonitorEffects() => _store.getString(_monitorEffectsKey);
+
+  /// Saves the [encoded] monitor-FX bus chain (see `encodeTrackEffects`).
+  Future<void> saveMonitorEffects(String encoded) =>
+      _store.setString(_monitorEffectsKey, encoded);
+
   /// Clears all settings.
   Future<void> clear() => _store.clear();
 }

@@ -899,6 +899,84 @@ class LoopyEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, int, double)
       >();
 
+  /// Sets monitor-bus chain entry [index] (0..LE_FX_MAX-1) to [type]. Changing the
+  /// type resets that entry's DSP state; LE_FX_DELAY lazily allocates its delay
+  /// line (on this calling thread) and seeds the type's default parameters. Use
+  /// le_engine_set_monitor_fx_count to make entries active.
+  int le_engine_set_monitor_fx(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int type,
+  ) {
+    return _le_engine_set_monitor_fx(
+      engine,
+      index,
+      type,
+    );
+  }
+
+  late final _le_engine_set_monitor_fxPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_monitor_fx');
+  late final _le_engine_set_monitor_fx = _le_engine_set_monitor_fxPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets the monitor bus's active chain length to [count] (0..LE_FX_MAX): only
+  /// entries [0, count) are processed, in order.
+  int le_engine_set_monitor_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int count,
+  ) {
+    return _le_engine_set_monitor_fx_count(
+      engine,
+      count,
+    );
+  }
+
+  late final _le_engine_set_monitor_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_monitor_fx_count');
+  late final _le_engine_set_monitor_fx_count =
+      _le_engine_set_monitor_fx_countPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor-bus entry [index] to
+  /// [value] (clamped to 0..1). Its meaning depends on the entry's le_fx_type.
+  int le_engine_set_monitor_fx_param(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_monitor_fx_param(
+      engine,
+      index,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_monitor_fx_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_monitor_fx_param');
+  late final _le_engine_set_monitor_fx_param =
+      _le_engine_set_monitor_fx_paramPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
   /// Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
   /// returns the number of frames written (the track length, clamped to
   /// `max_frames`), or 0 on a bad argument / empty track. Reads the live buffer —
@@ -1175,7 +1253,16 @@ enum le_command_code {
 
   /// arg_i = base loop length in frames: publish
   /// the master loop and start imported tracks
-  LE_CMD_COMMIT_SESSION(23);
+  LE_CMD_COMMIT_SESSION(23),
+
+  /// set a monitor-bus chain entry's type (and reset
+  /// its DSP state). arg_i = index, arg_f =
+  /// le_fx_type.
+  LE_CMD_SET_MONITOR_FX(24),
+
+  /// set the monitor bus's active chain length.
+  /// arg_i = count (0..LE_FX_MAX).
+  LE_CMD_SET_MONITOR_FX_COUNT(25);
 
   final int value;
   const le_command_code(this.value);
@@ -1201,6 +1288,8 @@ enum le_command_code {
     21 => LE_CMD_SET_FX_COUNT,
     22 => LE_CMD_SET_MONITOR_FX_TRACK,
     23 => LE_CMD_COMMIT_SESSION,
+    24 => LE_CMD_SET_MONITOR_FX,
+    25 => LE_CMD_SET_MONITOR_FX_COUNT,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }

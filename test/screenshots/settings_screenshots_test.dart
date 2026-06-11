@@ -197,10 +197,20 @@ void main() {
 
   testWidgets('Per-track routing dialog', (tester) async {
     tester.view
-      ..physicalSize = const Size(1200, 1500)
+      ..physicalSize = const Size(1480, 1500)
       ..devicePixelRatio = 2;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+
+    // A before-track Filter and an after-track Delay so the graph shows cards
+    // on the signal path.
+    await settings.saveTrackEffects(
+      1,
+      encodeTrackEffects([
+        TrackEffect(type: TrackEffectType.filter, stage: TrackEffectStage.pre),
+        TrackEffect(type: TrackEffectType.delay),
+      ]),
+    );
 
     final bloc = _ScreenshotLooperBloc();
     whenListen(
@@ -245,7 +255,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await expectLater(
-      find.byKey(const Key('trackRouting_dialog')),
+      find.byKey(const Key('trackRouting_page')),
       matchesGoldenFile('goldens/track_routing_dialog.png'),
     );
   });

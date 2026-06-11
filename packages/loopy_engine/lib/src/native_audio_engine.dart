@@ -424,6 +424,37 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMonitorFx({
+    required int index,
+    required TrackEffectType type,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_fx(_engine, index, type.code),
+    );
+  }
+
+  @override
+  EngineResult setMonitorFxCount({required int count}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_fx_count(_engine, count),
+    );
+  }
+
+  @override
+  EngineResult setMonitorFxParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_fx_param(_engine, index, param, value),
+    );
+  }
+
+  @override
   Float32List readVisual() {
     _checkAlive();
     final n = _bindings.le_engine_read_visual(_engine, _vizPtr, LE_VIZ_POINTS);
