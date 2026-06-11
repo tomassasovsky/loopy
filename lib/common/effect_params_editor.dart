@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 
 /// The inline editor for one effect: a type dropdown and a slider per
@@ -37,6 +38,7 @@ class EffectParamsEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     final sliderTheme = SliderThemeData(
       trackHeight: 3,
@@ -76,7 +78,10 @@ class EffectParamsEditor extends StatelessWidget {
                   items: [
                     for (final type in TrackEffectType.values)
                       if (type != TrackEffectType.none)
-                        DropdownMenuItem(value: type, child: Text(type.label)),
+                        DropdownMenuItem(
+                          value: type,
+                          child: Text(l10n.effectTypeLabel(type)),
+                        ),
                   ],
                 ),
               ),
@@ -85,7 +90,7 @@ class EffectParamsEditor extends StatelessWidget {
                 key: Key('${keyPrefix}_fxRemove'),
                 iconSize: 18,
                 color: surface.textSecondary,
-                tooltip: 'Remove effect',
+                tooltip: l10n.removeEffectTooltip,
                 icon: const Icon(Icons.delete_outline),
                 onPressed: onRemove,
               ),
@@ -128,11 +133,19 @@ class _ParamRow extends StatelessWidget {
   final SliderThemeData sliderTheme;
   final ValueChanged<double> onChanged;
 
+  String? _readout(AppLocalizations l10n, double clamped) {
+    if (spec.format != null) {
+      return l10n.formatLocalizedPitchShift(clamped);
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     final clamped = value.clamp(0.0, 1.0);
-    final readout = spec.format?.call(clamped);
+    final readout = _readout(l10n, clamped);
     return SizedBox(
       height: 38,
       child: Row(
@@ -140,7 +153,7 @@ class _ParamRow extends StatelessWidget {
           SizedBox(
             width: 64,
             child: Text(
-              spec.label,
+              l10n.effectParamLabel(spec.label),
               style: TextStyle(color: surface.textSecondary, fontSize: 12),
             ),
           ),

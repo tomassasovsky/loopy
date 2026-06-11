@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/gen/app_localizations.dart';
 
 /// Which column of the routing graph a node belongs to.
 enum RoutingNodeKind {
@@ -93,6 +94,7 @@ class RoutingGraph {
     required int outputChannels,
     int excludedInputMask = 0,
     List<String>? trackLabels,
+    AppLocalizations? l10n,
   }) {
     final inCount = inputChannels > 0
         ? inputChannels
@@ -106,7 +108,7 @@ class RoutingGraph {
         RoutingNode(
           kind: RoutingNodeKind.input,
           index: c,
-          label: 'In ${c + 1}',
+          label: l10n?.inputChannelLabel(c + 1) ?? 'In ${c + 1}',
           excluded: excludedInputMask & (1 << c) != 0,
         ),
     ];
@@ -115,7 +117,7 @@ class RoutingGraph {
         RoutingNode(
           kind: RoutingNodeKind.output,
           index: c,
-          label: 'Out ${c + 1}',
+          label: l10n?.outputChannelLabel(c + 1) ?? 'Out ${c + 1}',
         ),
     ];
     final trackNodes = [
@@ -127,7 +129,8 @@ class RoutingGraph {
           // by the track's channel rather than its position in the list.
           label: trackLabels != null && tracks[i].channel < trackLabels.length
               ? trackLabels[tracks[i].channel]
-              : 'Track ${tracks[i].channel + 1}',
+              : l10n?.trackNumberLabel(tracks[i].channel + 1) ??
+                    'Track ${tracks[i].channel + 1}',
         ),
     ];
 

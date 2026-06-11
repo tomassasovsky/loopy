@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -36,6 +38,7 @@ class LaneNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -68,7 +71,7 @@ class LaneNode extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'Lane ${index + 1}',
+                    l10n.laneNumberLabel(index + 1),
                     style: TextStyle(
                       color: surface.textPrimary,
                       fontSize: 12,

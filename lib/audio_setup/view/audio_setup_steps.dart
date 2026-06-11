@@ -21,9 +21,10 @@ class _Wizard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final isLast = step == steps.length - 1;
     final showError =
-        state.status == AudioSetupStatus.error && state.errorMessage != null;
+        state.status == AudioSetupStatus.error && state.error != null;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -51,7 +52,7 @@ class _Wizard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(_blurb(step), style: _body),
+                          Text(_blurb(l10n, step), style: _body),
                           const SizedBox(height: 24),
                           switch (step) {
                             0 => _EngineStep(state: state, cubit: cubit),
@@ -65,25 +66,31 @@ class _Wizard extends StatelessWidget {
                 ),
                 if (showError) ...[
                   const SizedBox(height: 16),
-                  _ErrorBanner(state.errorMessage!),
+                  _ErrorBanner(
+                    error: state.error!,
+                    detail: state.errorDetail ?? '',
+                  ),
                 ],
                 const SizedBox(height: 20),
                 Row(
                   children: [
                     if (step > 0)
-                      _Ghost(label: 'Back', onTap: () => onGo(step - 1)),
+                      _Ghost(
+                        label: l10n.back,
+                        onTap: () => onGo(step - 1),
+                      ),
                     const Spacer(),
                     if (isLast)
                       _Primary(
                         key: const Key('audioSetup_startStop_button'),
-                        label: 'Start engine',
+                        label: l10n.startEngine,
                         icon: Icons.play_arrow_rounded,
                         onTap: cubit.start,
                       )
                     else
                       _Primary(
                         key: const Key('audioSetup_next_button'),
-                        label: 'Continue',
+                        label: l10n.continueButton,
                         icon: Icons.arrow_forward_rounded,
                         iconTrailing: true,
                         onTap: () => onGo(step + 1),
@@ -108,6 +115,7 @@ class _Rail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.fromLTRB(30, 32, 22, 30),
       child: Column(
@@ -124,16 +132,16 @@ class _Rail extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 9),
-              Text('AUDIO SETUP', style: _kicker.copyWith(color: _C.t2)),
+              Text(
+                l10n.audioSetupKicker,
+                style: _kicker.copyWith(color: _C.t2),
+              ),
             ],
           ),
           const SizedBox(height: 28),
-          const Text('Audio device', style: _title),
+          Text(l10n.audioDeviceTitle, style: _title),
           const SizedBox(height: 10),
-          const Text(
-            'Configure your interface for low-latency looping.',
-            style: _body,
-          ),
+          Text(l10n.audioSetupRailIntro, style: _body),
           const Spacer(),
           _StepList(steps: steps, current: current),
         ],
@@ -150,10 +158,11 @@ class _EngineStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _GroupLabel('Output device'),
+        _GroupLabel(l10n.outputDeviceGroup),
         const SizedBox(height: 12),
         AudioDevicePicker(
           pickerKey: 'audioSetup_playbackDevice_picker',
@@ -162,22 +171,22 @@ class _EngineStep extends StatelessWidget {
           onSelected: cubit.setPlaybackDevice,
         ),
         const SizedBox(height: 26),
-        const _GroupLabel('Sample rate'),
+        _GroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),
         _OptionRow(
           children: [
             for (final rate in AudioSetupState.sampleRates)
               _Option(
                 optionKey: 'audioSetup_sampleRate_$rate',
-                headline: _khz(rate),
-                sub: _rateNote(rate),
+                headline: _khz(l10n, rate),
+                sub: _rateNote(l10n, rate),
                 selected: state.sampleRate == rate,
                 onTap: () => cubit.setSampleRate(rate),
               ),
           ],
         ),
         const SizedBox(height: 26),
-        const _GroupLabel('Buffer size'),
+        _GroupLabel(l10n.bufferSizeGroup),
         const SizedBox(height: 12),
         _OptionRow(
           children: [
@@ -185,14 +194,14 @@ class _EngineStep extends StatelessWidget {
               _Option(
                 optionKey: 'audioSetup_bufferSize_$size',
                 headline: '$size',
-                sub: '${_latencyMs(size, state.sampleRate)} ms',
+                sub: _latencyMs(l10n, size, state.sampleRate),
                 selected: state.bufferFrames == size,
                 onTap: () => cubit.setBufferFrames(size),
               ),
           ],
         ),
         const SizedBox(height: 14),
-        _Hint(_bufferHint(state.bufferFrames)),
+        _Hint(_bufferHint(l10n, state.bufferFrames)),
       ],
     );
   }
@@ -206,10 +215,11 @@ class _InputStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _GroupLabel('Input device'),
+        _GroupLabel(l10n.inputDeviceGroup),
         const SizedBox(height: 12),
         AudioDevicePicker(
           pickerKey: 'audioSetup_captureDevice_picker',
@@ -220,8 +230,8 @@ class _InputStep extends StatelessWidget {
         const SizedBox(height: 26),
         _Toggle(
           toggleKey: 'audioSetup_monitor_switch',
-          title: 'Monitor input',
-          subtitle: 'Hear the live input through the outputs.',
+          title: l10n.monitorInputTitle,
+          subtitle: l10n.monitorInputSubtitle,
           value: state.monitorInput,
           onChanged: (v) => cubit.setMonitorInput(monitorInput: v),
         ),
@@ -237,24 +247,31 @@ class _ReadyStep extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SetupInfoTable(
           rows: [
-            ('Sample rate', _khz(state.sampleRate)),
-            ('Buffer', '${state.bufferFrames} frames'),
+            (l10n.sampleRateLabel, _khz(l10n, state.sampleRate)),
             (
-              'Estimated latency',
-              '${_latencyMs(state.bufferFrames, state.sampleRate)} ms',
+              l10n.bufferLabel,
+              l10n.bufferFrames(state.bufferFrames),
             ),
-            ('Monitor input', state.monitorInput ? 'On' : 'Off'),
+            (
+              l10n.estimatedLatencyLabel,
+              _latencyMs(l10n, state.bufferFrames, state.sampleRate),
+            ),
+            (
+              l10n.monitorInputLabel,
+              state.monitorInput ? l10n.toggleOn : l10n.toggleOff,
+            ),
           ],
         ),
         if (state.loopback.available) ...[
           const SizedBox(height: 14),
           _Hint(
-            _loopbackNote(state.loopback),
+            _loopbackNote(l10n, state.loopback),
             key: const Key('audioSetup_loopback_note'),
             icon: Icons.cable_outlined,
           ),
@@ -274,8 +291,9 @@ class _RunningPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final s = state.engineStatus;
-    final device = s.deviceName.isEmpty ? 'Default device' : s.deviceName;
+    final device = s.deviceName.isEmpty ? l10n.defaultDevice : s.deviceName;
     final measuring = s.latencyState == LatencyState.measuring;
 
     return Row(
@@ -292,7 +310,10 @@ class _RunningPanel extends StatelessWidget {
                   children: [
                     const _Pulse(),
                     const SizedBox(width: 10),
-                    Text('LIVE', style: _kicker.copyWith(color: _C.accent)),
+                    Text(
+                      l10n.liveKicker,
+                      style: _kicker.copyWith(color: _C.accent),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 18),
@@ -303,10 +324,7 @@ class _RunningPanel extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'The engine is open and ready. Stop it to reconfigure.',
-                  style: _body,
-                ),
+                Text(l10n.engineRunningHint, style: _body),
                 const Spacer(),
               ],
             ),
@@ -322,18 +340,30 @@ class _RunningPanel extends StatelessWidget {
               children: [
                 SetupInfoTable(
                   rows: [
-                    ('Sample rate', '${s.sampleRate} Hz'),
-                    ('Buffer', '${s.bufferFrames} frames'),
-                    ('Round-trip latency', _latencyLabel(s)),
-                    ('Record offset', '${s.recordOffsetFrames} frames'),
+                    (
+                      l10n.sampleRateLabel,
+                      l10n.sampleRateHz(s.sampleRate),
+                    ),
+                    (
+                      l10n.bufferLabel,
+                      l10n.bufferFrames(s.bufferFrames),
+                    ),
+                    (
+                      l10n.roundTripLatencyLabel,
+                      _latencyLabel(l10n, s),
+                    ),
+                    (
+                      l10n.recordOffsetLabel,
+                      l10n.bufferFrames(s.recordOffsetFrames),
+                    ),
                   ],
                 ),
                 const Spacer(),
                 _Ghost(
                   key: const Key('audioSetup_measureLatency_button'),
                   label: measuring
-                      ? 'Measuring…'
-                      : 'Measure round-trip latency',
+                      ? l10n.measuringEllipsis
+                      : l10n.measureRoundTripLatency,
                   icon: Icons.timer_outlined,
                   stretch: true,
                   onTap: cubit.measureLatency,
@@ -341,7 +371,7 @@ class _RunningPanel extends StatelessWidget {
                 const SizedBox(height: 12),
                 _Primary(
                   key: const Key('audioSetup_startStop_button'),
-                  label: 'Stop engine',
+                  label: l10n.stopEngine,
                   icon: Icons.stop_rounded,
                   stretch: true,
                   danger: true,

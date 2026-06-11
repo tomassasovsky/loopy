@@ -1,6 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/route_legend.dart';
 import 'package:loopy/common/effect_params_editor.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -43,6 +45,7 @@ class RoutePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     final m = monitor;
     final focused = m?.enabled ?? false;
@@ -59,14 +62,14 @@ class RoutePanel extends StatelessWidget {
         children: [
           if (!focused || m == null)
             Text(
-              'Tap an input to monitor it, then tap outputs to send it there.',
+              l10n.monitorGraphHint,
               style: TextStyle(color: surface.textSecondary, fontSize: 13),
             )
           else
             Row(
               children: [
                 Text(
-                  'In ${m.input + 1} monitor',
+                  l10n.inputMonitorLabel(m.input + 1),
                   style: TextStyle(
                     color: surface.textPrimary,
                     fontWeight: FontWeight.w600,
@@ -75,16 +78,16 @@ class RoutePanel extends StatelessWidget {
                 const SizedBox(width: 12),
                 SegmentedButton<bool>(
                   key: const Key('monitorGraph_routeToggle'),
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: false,
-                      label: Text('Effected'),
-                      icon: Icon(Icons.graphic_eq, size: 16),
+                      label: Text(l10n.effectedSegment),
+                      icon: const Icon(Icons.graphic_eq, size: 16),
                     ),
                     ButtonSegment(
                       value: true,
-                      label: Text('Dry'),
-                      icon: Icon(Icons.water_drop_outlined, size: 16),
+                      label: Text(l10n.drySegment),
+                      icon: const Icon(Icons.water_drop_outlined, size: 16),
                     ),
                   ],
                   selected: {wireDry},
@@ -96,7 +99,7 @@ class RoutePanel extends StatelessWidget {
                   key: const Key('monitorGraph_stop'),
                   onPressed: onStop,
                   icon: const Icon(Icons.stop_circle_outlined, size: 18),
-                  label: const Text('Stop'),
+                  label: Text(l10n.stopButton),
                   style: TextButton.styleFrom(
                     foregroundColor: surface.textSecondary,
                   ),

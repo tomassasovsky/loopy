@@ -1,5 +1,14 @@
 part of 'audio_setup_cubit.dart';
 
+/// A categorized audio-setup failure surfaced in the wizard error banner.
+enum AudioSetupError {
+  /// The engine failed to open or reopen the device.
+  openDeviceFailed,
+
+  /// The engine failed to start audio.
+  startAudioFailed,
+}
+
 /// Whether the audio device is currently open.
 enum AudioSetupStatus {
   /// The engine is stopped; the device is closed.
@@ -43,7 +52,8 @@ class AudioSetupState extends Equatable {
     this.captureDeviceId = '',
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
-    this.errorMessage,
+    this.error,
+    this.errorDetail,
   });
 
   /// Requested sample rate in Hz.
@@ -84,8 +94,11 @@ class AudioSetupState extends Equatable {
   /// Name of the device involved in the latest [deviceConnectivity] transition.
   final String connectivityDeviceName;
 
-  /// A human-readable error when [status] is [AudioSetupStatus.error].
-  final String? errorMessage;
+  /// The categorized error when [status] is [AudioSetupStatus.error].
+  final AudioSetupError? error;
+
+  /// Engine error detail (e.g. result name) for [error].
+  final String? errorDetail;
 
   /// Playback (output) devices from [devices].
   List<AudioDevice> get playbackDevices =>
@@ -118,7 +131,8 @@ class AudioSetupState extends Equatable {
     String? captureDeviceId,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
-    String? errorMessage,
+    AudioSetupError? error,
+    String? errorDetail,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
@@ -134,7 +148,8 @@ class AudioSetupState extends Equatable {
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
-      errorMessage: errorMessage ?? this.errorMessage,
+      error: error ?? this.error,
+      errorDetail: errorDetail ?? this.errorDetail,
     );
   }
 
@@ -152,6 +167,7 @@ class AudioSetupState extends Equatable {
     captureDeviceId,
     deviceConnectivity,
     connectivityDeviceName,
-    errorMessage,
+    error,
+    errorDetail,
   ];
 }

@@ -6,6 +6,7 @@ import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_layout.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_node.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/route_panel.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -25,7 +26,7 @@ Future<void> showMonitorRoutingPage({
         value: cubit,
         child: Scaffold(
           key: const Key('monitorRouting_page'),
-          appBar: AppBar(title: const Text('Input monitoring')),
+          appBar: AppBar(title: Text(context.l10n.inputMonitoringTitle)),
           body: MonitorGraphView(
             inputChannels: inputChannels,
             outputChannels: outputChannels,
@@ -92,6 +93,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     final state = context.watch<MonitorCubit>().state;
     final layout = MonitorGraphLayout.compute(
@@ -126,7 +128,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                   height: MonitorGraphLayout.channelChipHeight,
                   child: ChannelChip(
                     key: Key('monitorGraph_in_$c'),
-                    label: 'In ${c + 1}',
+                    label: l10n.inputChannelLabel(c + 1),
                     color: surface.wetRoute,
                     strong: _focused == c,
                     wired: state.forInput(c).enabled && !layout.excluded(c),
@@ -152,7 +154,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                   height: MonitorGraphLayout.channelChipHeight,
                   child: ChannelChip(
                     key: Key('monitorGraph_out_$c'),
-                    label: 'Out ${c + 1}',
+                    label: l10n.outputChannelLabel(c + 1),
                     color: outChips[c].color,
                     strong: outChips[c].strong,
                     wired: outChips[c].wired,
@@ -216,7 +218,9 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                     height: kRoutingCardHeight,
                     child: EffectChainCard(
                       keyPrefix: 'monitorGraph',
-                      label: state.forInput(c).effects[k].type.label,
+                      label: l10n.effectTypeLabel(
+                        state.forInput(c).effects[k].type,
+                      ),
                       accentColor: surface.wetRoute,
                       selected: _selected?.input == c && _selected?.index == k,
                       dragging: _dragging?.rowId == c && _dragging?.index == k,
@@ -247,7 +251,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                     buttonKey: Key('monitorGraph_addFx_$c'),
                     accentColor: surface.wetRoute,
                     full: state.forInput(c).effects.length >= kTrackEffectMax,
-                    tooltip: 'Add effect to input ${c + 1}',
+                    tooltip: l10n.addEffectToInputTooltip(c + 1),
                     onAdd: () {
                       setState(() => _focused = c);
                       _cubit.addEffect(c);

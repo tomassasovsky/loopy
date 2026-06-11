@@ -224,7 +224,9 @@ class _AppViewState extends State<_AppView> {
     final enabled = context.read<WaveformWindowCubit>().state;
     final shouldOpen = mode == UiMode.bigPicture && enabled;
     if (shouldOpen) {
-      await widget.waveformWindow.open();
+      await widget.waveformWindow.open(
+        title: context.l10n.outputWaveformWindowTitle,
+      );
       _pushTimer ??= Timer.periodic(_waveformFrame, (_) {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
@@ -244,24 +246,25 @@ class _AppViewState extends State<_AppView> {
   /// pinned device is lost, and replaces it with a transient "reconnected"
   /// snackbar when it returns. Driven from [AudioSetupCubit] connectivity
   /// transitions; mounted on the shell messenger so it persists across layouts.
-  void _showConnectivityBanner(AudioSetupState state) {
+  void _showConnectivityBanner(BuildContext context, AudioSetupState state) {
     final messenger = _messengerKey.currentState;
     if (messenger == null) return;
+    final l10n = context.l10n;
     messenger.clearMaterialBanners();
     final name = state.connectivityDeviceName.isEmpty
-        ? 'Audio device'
+        ? l10n.audioDeviceFallbackName
         : state.connectivityDeviceName;
     switch (state.deviceConnectivity) {
       case DeviceConnectivity.lost:
         messenger.showMaterialBanner(
           MaterialBanner(
             key: const Key('app_deviceLost_banner'),
-            content: Text('$name disconnected — trying to reconnect…'),
+            content: Text(l10n.deviceDisconnectedBanner(name)),
             leading: const Icon(Icons.warning_amber_rounded),
             actions: [
               TextButton(
                 onPressed: messenger.clearMaterialBanners,
-                child: const Text('Dismiss'),
+                child: Text(l10n.dismiss),
               ),
             ],
           ),
@@ -272,7 +275,7 @@ class _AppViewState extends State<_AppView> {
           ..showSnackBar(
             SnackBar(
               key: const Key('app_deviceRestored_snackbar'),
-              content: Text('$name reconnected'),
+              content: Text(l10n.deviceReconnectedSnackbar(name)),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -281,16 +284,16 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
-  List<PlatformMenuItem> _menus() => const [
+  List<PlatformMenuItem> _menus(BuildContext context) => [
     PlatformMenu(
-      label: 'Loopy',
+      label: context.l10n.appMenuLabel,
       menus: [
         PlatformMenuItem(
-          label: 'Settings…',
-          shortcut: SingleActivator(LogicalKeyboardKey.comma, meta: true),
+          label: context.l10n.settingsMenuItem,
+          shortcut: const SingleActivator(LogicalKeyboardKey.comma, meta: true),
           onSelected: openLoopySettings,
         ),
-        PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit),
+        const PlatformProvidedMenuItem(type: PlatformProvidedMenuItemType.quit),
       ],
     ),
   ];
@@ -310,7 +313,7 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioSetupCubit, AudioSetupState>(
           listenWhen: (previous, current) =>
               previous.deviceConnectivity != current.deviceConnectivity,
-          listener: (_, state) => _showConnectivityBanner(state),
+          listener: (_, state) => _showConnectivityBanner(context, state),
         ),
       ],
       child: BlocBuilder<UiModeCubit, UiMode>(
@@ -330,7 +333,7 @@ class _AppViewState extends State<_AppView> {
             debugShowCheckedModeBanner: false,
           );
           if (defaultTargetPlatform == TargetPlatform.macOS) {
-            app = PlatformMenuBar(menus: _menus(), child: app);
+            app = PlatformMenuBar(menus: _menus(context), child: app);
           }
           return app;
         },

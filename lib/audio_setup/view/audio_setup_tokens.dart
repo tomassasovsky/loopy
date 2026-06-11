@@ -36,57 +36,26 @@ const _body = TextStyle(color: _C.t2, fontSize: 14, height: 1.45);
 
 const _num = [FontFeature.tabularFigures()];
 
-String _blurb(int step) => switch (step) {
-  0 => 'Pick the resolution and the latency / stability trade-off.',
-  1 => 'Choose how your incoming signal is monitored and routed.',
-  _ => 'Review your settings and open the device.',
-};
+String _blurb(AppLocalizations l10n, int step) => l10n.setupBlurb(step);
 
-String _khz(int rate) {
-  final khz = rate / 1000;
-  final text = khz == khz.roundToDouble()
-      ? khz.toStringAsFixed(0)
-      : khz.toStringAsFixed(1);
-  return '$text kHz';
+String _khz(AppLocalizations l10n, int rate) => l10n.sampleRateKhzLabel(rate);
+
+String _latencyMs(AppLocalizations l10n, int frames, int sampleRate) {
+  if (sampleRate <= 0) return l10n.emDash;
+  final ms = (1000 * frames / sampleRate).toStringAsFixed(1);
+  return l10n.latencyMs(ms);
 }
 
-String _latencyMs(int frames, int sampleRate) {
-  if (sampleRate <= 0) return '—';
-  return (1000 * frames / sampleRate).toStringAsFixed(1);
-}
+String _rateNote(AppLocalizations l10n, int rate) => l10n.sampleRateNote(rate);
 
-String _rateNote(int rate) => switch (rate) {
-  44100 => 'CD',
-  48000 => 'Studio',
-  96000 => 'Hi-res',
-  _ => '',
-};
+String _bufferHint(AppLocalizations l10n, int frames) =>
+    l10n.bufferHint(frames);
 
-String _bufferHint(int frames) => switch (frames) {
-  <= 64 => 'Tightest timing — best feel, highest CPU and dropout risk.',
-  128 => 'Low latency — a solid default for most interfaces.',
-  256 => 'Balanced — safe headroom with still-tight timing.',
-  _ => 'Most stable — pick this if you hear clicks or dropouts.',
-};
+String _latencyLabel(AppLocalizations l10n, EngineStatus s) =>
+    l10n.latencyStateLabel(s);
 
-String _latencyLabel(EngineStatus s) => switch (s.latencyState) {
-  LatencyState.done => '${s.measuredLatencyMs.toStringAsFixed(2)} ms',
-  LatencyState.measuring => 'measuring…',
-  LatencyState.timeout => 'no loopback',
-  LatencyState.idle => 'not measured',
-};
-
-String _loopbackNote(LoopbackInfo loopback) {
-  final where = loopback.deviceName.isNotEmpty
-      ? ' (${loopback.deviceName})'
-      : '';
-  if (loopback.isAutoRoutable) {
-    return 'Loopback detected$where — latency is auto-measured on start as a '
-        'digital-path estimate. Use a cable for the true analog figure.';
-  }
-  return 'A ${loopback.kind.name} loopback is available$where but cannot be '
-      'auto-routed; use a physical loopback cable to measure latency.';
-}
+String _loopbackNote(AppLocalizations l10n, LoopbackInfo loopback) =>
+    l10n.loopbackNote(loopback);
 
 /// Shared directional slide-and-fade for the step [AnimatedSwitcher]: the
 /// entering step (whose key matches the current [step]) slides in from the

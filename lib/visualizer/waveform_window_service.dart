@@ -12,7 +12,9 @@ abstract interface class WaveformWindowService {
   bool get isOpen;
 
   /// Opens the waveform window (idempotent).
-  Future<void> open();
+  ///
+  /// [title] sets the OS window title; defaults to English when omitted.
+  Future<void> open({String title = 'Loopy — Output'});
 
   /// Closes the waveform window (idempotent).
   Future<void> close();
@@ -40,7 +42,7 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   bool get isOpen => _windowId != null;
 
   @override
-  Future<void> open() async {
+  Future<void> open({String title = 'Loopy — Output'}) async {
     if (_windowId != null) return;
     await closeOrphanWindows();
     final controller = await DesktopMultiWindow.createWindow(
@@ -48,7 +50,7 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     );
     _windowId = controller.windowId;
     await controller.setFrame(const Offset(120, 120) & const Size(960, 320));
-    await controller.setTitle('Loopy — Output');
+    await controller.setTitle(title);
     await controller.show();
   }
 
@@ -79,7 +81,7 @@ class NoopWaveformWindowService implements WaveformWindowService {
   bool get isOpen => false;
 
   @override
-  Future<void> open() async {}
+  Future<void> open({String title = 'Loopy — Output'}) async {}
 
   @override
   Future<void> close() async {}

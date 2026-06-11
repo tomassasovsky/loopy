@@ -119,7 +119,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         emit(
           state.copyWith(
             status: AudioSetupStatus.error,
-            errorMessage: 'Failed to open device: ${result.name}',
+            error: AudioSetupError.openDeviceFailed,
+            errorDetail: result.name,
           ),
         );
       }
@@ -181,7 +182,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       emit(
         state.copyWith(
           status: AudioSetupStatus.error,
-          errorMessage: 'Failed to start audio: ${result.name}',
+          error: AudioSetupError.startAudioFailed,
+          errorDetail: result.name,
         ),
       );
     }

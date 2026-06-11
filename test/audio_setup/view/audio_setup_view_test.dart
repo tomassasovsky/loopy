@@ -123,7 +123,8 @@ void main() {
     seed(
       const AudioSetupState(
         status: AudioSetupStatus.error,
-        errorMessage: 'Failed to start audio: device',
+        error: AudioSetupError.startAudioFailed,
+        errorDetail: 'device',
       ),
     );
     await pumpView(tester);

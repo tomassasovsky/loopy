@@ -1,7 +1,436 @@
 {
     "@@locale": "en",
-    "counterAppBarTitle": "Counter",
-    "@counterAppBarTitle": {
-        "description": "Text shown in the AppBar of the Counter Page"
-    }
+    "appMenuLabel": "Loopy",
+    "settingsMenuItem": "Settings…",
+    "audioDeviceFallbackName": "Audio device",
+    "deviceDisconnectedBanner": "{deviceName} disconnected — trying to reconnect…",
+    "@deviceDisconnectedBanner": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "deviceReconnectedSnackbar": "{deviceName} reconnected",
+    "@deviceReconnectedSnackbar": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "dismiss": "Dismiss",
+    "sessionSaved": "Session saved",
+    "sessionLoaded": "Session loaded",
+    "mixdownExported": "Mixdown exported",
+    "stemsExported": "Stems exported",
+    "looperAppBarTitle": "Loopy",
+    "sessionTooltip": "Session",
+    "saveSession": "Save session",
+    "loadSession": "Load session",
+    "exportMixdown": "Export mixdown",
+    "exportStems": "Export stems",
+    "playAllTooltip": "Play all",
+    "stopAllTooltip": "Stop all",
+    "bigPictureTooltip": "Big picture",
+    "audioSetupTooltip": "Audio setup",
+    "masterLoopLabel": "Master loop",
+    "engineStoppedBanner": "Audio engine stopped — open setup to start.",
+    "trackNumberLabel": "Track {trackNumber}",
+    "@trackNumberLabel": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "loopMultipleLabel": "×{multiple}",
+    "@loopMultipleLabel": {
+        "placeholders": {
+            "multiple": {
+                "type": "int"
+            }
+        }
+    },
+    "ioRoutingTooltip": "I/O routing",
+    "recordButton": "Record",
+    "finishButton": "Finish",
+    "stopDubButton": "Stop dub",
+    "overdubButton": "Overdub",
+    "stopButton": "Stop",
+    "playButton": "Play",
+    "undoButton": "Undo",
+    "redoButton": "Redo",
+    "clearButton": "Clear",
+    "muteTooltip": "Mute",
+    "unmuteTooltip": "Unmute",
+    "trackStateEmpty": "empty",
+    "trackStateRecording": "recording",
+    "trackStateOverdubbing": "overdubbing",
+    "trackStatePlaying": "playing",
+    "trackStateStopped": "stopped",
+    "noDevice": "no device",
+    "measuringLowercase": "measuring…",
+    "noLoopback": "no loopback",
+    "emDash": "—",
+    "engineStatusFooter": "{deviceName} · {sampleRate} Hz · {bufferFrames} frames · {inputChannels} in / {outputChannels} out · latency {latency}",
+    "@engineStatusFooter": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            },
+            "sampleRate": {
+                "type": "int"
+            },
+            "bufferFrames": {
+                "type": "int"
+            },
+            "inputChannels": {
+                "type": "int"
+            },
+            "outputChannels": {
+                "type": "int"
+            },
+            "latency": {
+                "type": "String"
+            }
+        }
+    },
+    "performanceModeRec": "REC",
+    "performanceModePlay": "PLAY",
+    "renameTrackTitle": "Rename track {trackNumber}",
+    "@renameTrackTitle": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "cancel": "Cancel",
+    "save": "Save",
+    "trackRoutingTitle": "{trackName} routing",
+    "@trackRoutingTitle": {
+        "placeholders": {
+            "trackName": {
+                "type": "String"
+            }
+        }
+    },
+    "trackSettingsTooltip": "Track settings",
+    "trackSettingsDialogTitle": "Track {trackNumber} settings",
+    "@trackSettingsDialogTitle": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "quantizeRecording": "Quantize recording",
+    "loopLength": "Loop length",
+    "trackEffectsPlaybackOnlyHint": "Track effects color playback only. To hear effects live on an input, enable its monitor in audio settings.",
+    "done": "Done",
+    "defaultWithState": "Default ({state})",
+    "@defaultWithState": {
+        "placeholders": {
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "toggleOn": "On",
+    "toggleOff": "Off",
+    "auto": "Auto",
+    "settingsSectionView": "View",
+    "settingsSectionAudio": "Audio",
+    "settingsSectionRouting": "Routing",
+    "settingsSectionTracks": "Tracks",
+    "settingsKicker": "SETTINGS",
+    "bigPictureTitle": "Big Picture",
+    "bpSettingsViewIntro": "Switch layouts, tune performance defaults, and toggle the secondary output-waveform window.",
+    "viewGroupLabel": "VIEW",
+    "bigPictureModeTitle": "Big Picture mode",
+    "bigPictureModeSubtitle": "Full-screen performance layout",
+    "waveformWindowTitle": "Output waveform window",
+    "waveformWindowSubtitle": "Open a second window showing the whole-loop output waveform",
+    "performanceGroupLabel": "PERFORMANCE",
+    "bpDefaultModeIntro": "Mode the Big Picture view starts in. Number keys select tracks; in Record mode R/P arm and play the selection, in Play mode they mute / unmute.",
+    "recordModeLabel": "Record",
+    "recordModeSub": "Arm & capture",
+    "playModeLabel": "Play",
+    "playModeSub": "Mute / unmute",
+    "refreshRateIntro": "UI refresh rate — how often the waveforms and meters update. Higher is smoother but uses more CPU.",
+    "refreshRateHz": "{hz} Hz",
+    "@refreshRateHz": {
+        "placeholders": {
+            "hz": {
+                "type": "int"
+            }
+        }
+    },
+    "refreshRateLowCpu": "Low CPU",
+    "refreshRateSmoothest": "Smoothest",
+    "defaultLabel": "Default",
+    "routingIntro": "How audio is wired: hardware inputs flow into tracks, and tracks play out to hardware outputs. Loopback inputs are struck through — they are never recorded. Click a track to select it, then click an input or output to connect or disconnect it.",
+    "signalFlowGroupLabel": "SIGNAL FLOW",
+    "tracksIntro": "Enable the second bank and rename tracks.",
+    "tracksGroupLabel": "TRACKS",
+    "secondBankTitle": "Second bank (8 tracks)",
+    "secondBankSubtitle": "Adds a second bank of four tracks, switchable as A / B",
+    "inputChannelLabel": "In {channelNumber}",
+    "@inputChannelLabel": {
+        "placeholders": {
+            "channelNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "outputChannelLabel": "Out {channelNumber}",
+    "@outputChannelLabel": {
+        "placeholders": {
+            "channelNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "laneNumberLabel": "Lane {laneNumber}",
+    "@laneNumberLabel": {
+        "placeholders": {
+            "laneNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "inputMonitorLabel": "In {inputNumber} monitor",
+    "@inputMonitorLabel": {
+        "placeholders": {
+            "inputNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "liveNotRecorded": "live · not recorded",
+    "unmuteLaneTooltip": "Unmute lane",
+    "muteLaneTooltip": "Mute lane",
+    "removeLaneTooltip": "Remove lane",
+    "laneGraphHint": "Tap a lane to focus it, then tap inputs/outputs to wire it.",
+    "addLane": "Add lane",
+    "addEffectToLaneTooltip": "Add effect to lane {laneNumber}",
+    "@addEffectToLaneTooltip": {
+        "placeholders": {
+            "laneNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "addEffectToInputTooltip": "Add effect to input {inputNumber}",
+    "@addEffectToInputTooltip": {
+        "placeholders": {
+            "inputNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "removeEffectTooltip": "Remove effect",
+    "inputMonitoringTitle": "Input monitoring",
+    "monitorGraphHint": "Tap an input to monitor it, then tap outputs to send it there.",
+    "effectedSegment": "Effected",
+    "drySegment": "Dry",
+    "legendEffectedWet": "effected (wet) → outs",
+    "legendCleanDry": "clean (dry) → outs",
+    "configureInputMonitoring": "Configure input monitoring",
+    "monitorRoutingIntro": "Monitor inputs live through their own effects (wet) and/or as a clean dry send — routed to the outputs you pick. Never recorded.",
+    "startEngineForMonitorChannels": "Start the engine to choose monitor channels.",
+    "setupStepAudioEngine": "Audio engine",
+    "setupStepInput": "Input",
+    "setupStepReady": "Ready to play",
+    "audioSetupKicker": "AUDIO SETUP",
+    "audioDeviceTitle": "Audio device",
+    "audioSetupRailIntro": "Configure your interface for low-latency looping.",
+    "back": "Back",
+    "startEngine": "Start engine",
+    "continueButton": "Continue",
+    "outputDeviceGroup": "Output device",
+    "sampleRateGroup": "Sample rate",
+    "bufferSizeGroup": "Buffer size",
+    "inputDeviceGroup": "Input device",
+    "monitorInputTitle": "Monitor input",
+    "monitorInputSubtitle": "Hear the live input through the outputs.",
+    "sampleRateLabel": "Sample rate",
+    "bufferLabel": "Buffer",
+    "estimatedLatencyLabel": "Estimated latency",
+    "monitorInputLabel": "Monitor input",
+    "defaultDevice": "Default device",
+    "liveKicker": "LIVE",
+    "engineRunningHint": "The engine is open and ready. Stop it to reconfigure.",
+    "roundTripLatencyLabel": "Round-trip latency",
+    "recordOffsetLabel": "Record offset",
+    "measuringEllipsis": "Measuring…",
+    "measureRoundTripLatency": "Measure round-trip latency",
+    "stopEngine": "Stop engine",
+    "setupBlurbEngine": "Pick the resolution and the latency / stability trade-off.",
+    "setupBlurbInput": "Choose how your incoming signal is monitored and routed.",
+    "setupBlurbReady": "Review your settings and open the device.",
+    "sampleRateKhz": "{rate} kHz",
+    "@sampleRateKhz": {
+        "placeholders": {
+            "rate": {
+                "type": "String"
+            }
+        }
+    },
+    "sampleRateNoteCd": "CD",
+    "sampleRateNoteStudio": "Studio",
+    "sampleRateNoteHiRes": "Hi-res",
+    "bufferHint64": "Tightest timing — best feel, highest CPU and dropout risk.",
+    "bufferHint128": "Low latency — a solid default for most interfaces.",
+    "bufferHint256": "Balanced — safe headroom with still-tight timing.",
+    "bufferHint512": "Most stable — pick this if you hear clicks or dropouts.",
+    "notMeasured": "Not measured",
+    "noSignalDetected": "No signal detected",
+    "latencyMs": "{milliseconds} ms",
+    "@latencyMs": {
+        "placeholders": {
+            "milliseconds": {
+                "type": "String"
+            }
+        }
+    },
+    "bufferFrames": "{frames} frames",
+    "@bufferFrames": {
+        "placeholders": {
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
+    "sampleRateHz": "{rate} Hz",
+    "@sampleRateHz": {
+        "placeholders": {
+            "rate": {
+                "type": "int"
+            }
+        }
+    },
+    "loopbackDetectedNote": "Loopback detected{deviceClause} — latency is auto-measured on start as a digital-path estimate. Use a cable for the true analog figure.",
+    "@loopbackDetectedNote": {
+        "placeholders": {
+            "deviceClause": {
+                "type": "String"
+            }
+        }
+    },
+    "loopbackAvailableNote": "A {kind} loopback is available{deviceClause} but cannot be auto-routed; use a physical loopback cable to measure latency.",
+    "@loopbackAvailableNote": {
+        "placeholders": {
+            "kind": {
+                "type": "String"
+            },
+            "deviceClause": {
+                "type": "String"
+            }
+        }
+    },
+    "loopbackKindWasapi": "WASAPI",
+    "loopbackKindMonitor": "monitor",
+    "loopbackKindVirtualDevice": "virtual",
+    "failedToOpenDevice": "Failed to open device: {errorName}",
+    "@failedToOpenDevice": {
+        "placeholders": {
+            "errorName": {
+                "type": "String"
+            }
+        }
+    },
+    "failedToStartAudio": "Failed to start audio: {errorName}",
+    "@failedToStartAudio": {
+        "placeholders": {
+            "errorName": {
+                "type": "String"
+            }
+        }
+    },
+    "audioSettingsIntro": "Choose the audio device and check the measured round-trip latency.",
+    "outputDeviceGroupUpper": "OUTPUT DEVICE",
+    "inputDeviceGroupUpper": "INPUT DEVICE",
+    "monitoringGroupLabel": "MONITORING",
+    "recordingGroupLabel": "RECORDING",
+    "maxLoopLengthIntro": "Maximum loop length per track. A higher cap reserves more memory per track. Changing it reopens the device.",
+    "maxLoopDefault30s": "Default (30 s)",
+    "maxLoopMinutes": "{minutes} min",
+    "@maxLoopMinutes": {
+        "placeholders": {
+            "minutes": {
+                "type": "int"
+            }
+        }
+    },
+    "quantizeRecordingSubtitle": "Snap record start/stop to the loop grid. The default for all tracks; override per track from its routing dialog.",
+    "overdubOnSecondPressTitle": "Overdub on second press",
+    "overdubOnSecondPressSubtitle": "A second record press keeps layering (rec/dub) instead of stopping and playing back",
+    "soundActivatedRecordingTitle": "Sound-activated recording",
+    "soundActivatedRecordingSubtitle": "After pressing record, capture starts when the input signal begins, instead of immediately",
+    "defaultLoopLengthIntro": "Default loop length for new recordings. Auto rounds up to whole base loops; a fixed length records exactly that many. Override it per track from its routing dialog.",
+    "statusGroupLabel": "STATUS",
+    "deviceLabel": "Device",
+    "notRunning": "Not running",
+    "measureLatencySubtitle": "Re-run the loopback latency measurement",
+    "systemDefault": "System default",
+    "systemDefaultNamed": "System default ({deviceName})",
+    "@systemDefaultNamed": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "effectNone": "None",
+    "effectDrive": "Drive",
+    "effectFilter": "Filter",
+    "effectDelay": "Delay",
+    "effectTremolo": "Tremolo",
+    "effectOctaver": "Octaver",
+    "effectEcho": "Echo",
+    "paramDrive": "Drive",
+    "paramLevel": "Level",
+    "paramCutoff": "Cutoff",
+    "paramResonance": "Resonance",
+    "paramTime": "Time",
+    "paramFeedback": "Feedback",
+    "paramMix": "Mix",
+    "paramRate": "Rate",
+    "paramDepth": "Depth",
+    "paramShift": "Shift",
+    "paramTone": "Tone",
+    "pitchUnison": "Unison",
+    "pitchOctaves": "{sign}{count} oct",
+    "@pitchOctaves": {
+        "placeholders": {
+            "sign": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "pitchSemitones": "{sign}{count} st",
+    "@pitchSemitones": {
+        "placeholders": {
+            "sign": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "defaultTrackName": "TRACK {trackNumber}",
+    "@defaultTrackName": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "outputWaveformWindowTitle": "Loopy — Output"
 }

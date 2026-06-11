@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/common/effect_params_editor.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -49,6 +51,7 @@ class LanePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     final f = focused;
     final sel = selectedEffect;
@@ -67,7 +70,7 @@ class LanePanel extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  'Lane ${f + 1}',
+                  l10n.laneNumberLabel(f + 1),
                   style: TextStyle(
                     color: surface.textPrimary,
                     fontWeight: FontWeight.w600,
@@ -85,7 +88,9 @@ class LanePanel extends StatelessWidget {
                   color: lanes[f].muted
                       ? surface.accent
                       : surface.textSecondary,
-                  tooltip: lanes[f].muted ? 'Unmute lane' : 'Mute lane',
+                  tooltip: lanes[f].muted
+                      ? l10n.unmuteLaneTooltip
+                      : l10n.muteLaneTooltip,
                   icon: Icon(
                     lanes[f].muted ? Icons.volume_off : Icons.volume_up,
                   ),
@@ -117,7 +122,7 @@ class LanePanel extends StatelessWidget {
                     key: const Key('laneGraph_removeLane'),
                     iconSize: 18,
                     color: surface.textSecondary,
-                    tooltip: 'Remove lane',
+                    tooltip: l10n.removeLaneTooltip,
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () => onRemoveLane(f),
                   ),
@@ -125,7 +130,7 @@ class LanePanel extends StatelessWidget {
             )
           else
             Text(
-              'Tap a lane to focus it, then tap inputs/outputs to wire it.',
+              l10n.laneGraphHint,
               style: TextStyle(color: surface.textSecondary, fontSize: 13),
             ),
           if (sel != null &&
@@ -148,7 +153,7 @@ class LanePanel extends StatelessWidget {
               key: const Key('laneGraph_addLane'),
               onPressed: laneCount >= kMaxLanes ? null : onAddLane,
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add lane'),
+              label: Text(l10n.addLane),
             ),
           ),
         ],

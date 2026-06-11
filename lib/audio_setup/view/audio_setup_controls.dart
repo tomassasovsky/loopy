@@ -278,12 +278,18 @@ class _Hint extends StatelessWidget {
 }
 
 class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner(this.message);
+  const _ErrorBanner({required this.error, required this.detail});
 
-  final String message;
+  final AudioSetupError error;
+  final String detail;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final message = switch (error) {
+      AudioSetupError.openDeviceFailed => l10n.failedToOpenDevice(detail),
+      AudioSetupError.startAudioFailed => l10n.failedToStartAudio(detail),
+    };
     return Container(
       key: const Key('audioSetup_error_text'),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

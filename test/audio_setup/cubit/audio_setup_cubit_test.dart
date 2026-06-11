@@ -234,7 +234,8 @@ void main() {
     expect: () => [
       isA<AudioSetupState>()
           .having((s) => s.status, 'status', AudioSetupStatus.error)
-          .having((s) => s.errorMessage, 'errorMessage', contains('device')),
+          .having((s) => s.error, 'error', AudioSetupError.startAudioFailed)
+          .having((s) => s.errorDetail, 'errorDetail', isNotNull),
     ],
   );
 
@@ -467,7 +468,8 @@ void main() {
       cubit.setPlaybackDevice('out-1');
 
       expect(cubit.state.status, AudioSetupStatus.error);
-      expect(cubit.state.errorMessage, contains('Failed to open device'));
+      expect(cubit.state.error, AudioSetupError.openDeviceFailed);
+      expect(cubit.state.errorDetail, isNotNull);
     });
   });
 

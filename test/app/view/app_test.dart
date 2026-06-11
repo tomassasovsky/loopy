@@ -27,7 +27,7 @@ class _RecordingWindowService implements WaveformWindowService {
   bool get isOpen => _open;
 
   @override
-  Future<void> open() async {
+  Future<void> open({String title = 'Loopy — Output'}) async {
     openCalls++;
     _open = true;
   }

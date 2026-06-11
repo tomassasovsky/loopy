@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/setup/setup_surface.dart';
 
 part 'audio_setup_tokens.dart';
@@ -22,7 +23,6 @@ class AudioSetupView extends StatefulWidget {
 }
 
 class _AudioSetupViewState extends State<AudioSetupView> {
-  static const _steps = ['Audio engine', 'Input', 'Ready to play'];
   int _step = 0;
   bool _forward = true;
 
@@ -33,6 +33,12 @@ class _AudioSetupViewState extends State<AudioSetupView> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final steps = [
+      l10n.setupStepAudioEngine,
+      l10n.setupStepInput,
+      l10n.setupStepReady,
+    ];
     final cubit = context.watch<AudioSetupCubit>();
     final state = cubit.state;
     final running = state.status == AudioSetupStatus.running;
@@ -61,7 +67,7 @@ class _AudioSetupViewState extends State<AudioSetupView> {
                         _RunningPanel(state: state, cubit: cubit)
                       else
                         _Wizard(
-                          steps: _steps,
+                          steps: steps,
                           step: _step,
                           forward: _forward,
                           onGo: _go,
