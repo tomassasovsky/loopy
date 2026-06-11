@@ -11,6 +11,7 @@ export 'package:loopy_engine/loopy_engine.dart'
         LoopbackInfo,
         LoopbackKind,
         TrackEffect,
+        TrackEffectParam,
         TrackEffectType,
         TrackState,
         decodeTrackEffects,

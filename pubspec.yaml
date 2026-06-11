@@ -24,6 +24,8 @@ dependencies:
   loopy_engine:
     path: packages/loopy_engine
   path_provider: ^2.1.4
+  routing_graph:
+    path: packages/routing_graph
   session_repository:
     path: packages/session_repository
   settings_repository:

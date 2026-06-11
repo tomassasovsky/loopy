@@ -63,16 +63,22 @@
  * undo/redo never races the audio callback. */
 /* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
  * per entry when its type changes. svf_* are the state-variable filter
- * integrators; lfo is the tremolo phase (0..1); delay is a lazily allocated ring
+ * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
+ * lazily allocated ring
  * (the control thread allocates before posting the command) of fx_delay_frames
- * samples. Each lane and each live monitor input owns one of these, running its
- * own non-destructive chain. */
+ * samples (shared by DELAY, ECHO, and the OCTAVER's grain ring); fx_lp is a
+ * generic one-pole low-pass memory (ECHO feedback damping, OCTAVER tone);
+ * grain_phase is the OCTAVER pitch-shifter's read phase within a grain. A slot
+ * is only ever one type at a time, so these reuse freely. Each lane and each
+ * live monitor input owns one of these, running its own non-destructive chain. */
 typedef struct le_fx_state {
   float svf_ic1[LE_FX_MAX];
   float svf_ic2[LE_FX_MAX];
   float lfo[LE_FX_MAX];
   float* delay[LE_FX_MAX];
   int32_t delay_pos[LE_FX_MAX];
+  float fx_lp[LE_FX_MAX];
+  float grain_phase[LE_FX_MAX];
 } le_fx_state;
 
 /* One recordable input lane — the fundamental unit of captured audio.
@@ -623,6 +629,111 @@ static float fx_tremolo(le_fx_state* fx, int slot, int sr, float x,
   return x * (1.0f - depth * (1.0f - lfo));
 }
 
+/* Linearly interpolated read from a ring of [cap] samples, [d] samples behind
+ * the head [head] (the index of the most recently written sample). [d] may be
+ * fractional and is assumed in [0, cap). */
+static float fx_read_frac(const float* buf, int cap, int head, float d) {
+  float rp = (float)head - d;
+  while (rp < 0.0f) rp += (float)cap;
+  while (rp >= (float)cap) rp -= (float)cap;
+  const int i0 = (int)rp;
+  const float frac = rp - (float)i0;
+  int i1 = i0 + 1;
+  if (i1 >= cap) i1 = 0;
+  return buf[i0] + frac * (buf[i1] - buf[i0]);
+}
+
+/* Octaver: a time-domain pitch shifter. Two read taps a half-grain apart walk
+ * the input ring at rate (1 - ratio) and are Hann-crossfaded (the two windows
+ * sum to 1, so the wrap is silent), turning input frequency f into ratio * f.
+ * p0 = shift (0 = two octaves down, 0.5 = unison, 1 = two octaves up — so it
+ * covers up and down, one or many octaves, and the intervals between), p1 = tone
+ * (low-pass on the shifted voice), p2 = dry/wet mix. The grain ring is the
+ * control-thread-allocated fx_delay line; grain_phase is the read phase and
+ * fx_lp the tone memory. */
+static float fx_octaver(le_fx_state* fx, int slot, int cap, float x,
+                        const float* p) {
+  float* buf = fx->delay[slot];
+  if (buf == NULL || cap <= 4) return x;
+  int w = cap / 32; /* grain window: ~30 ms of the 1 s ring */
+  if (w < 2) w = 2;
+  const float wf = (float)w;
+
+  /* Write the dry input at the head, then advance. */
+  const int head = fx->delay_pos[slot];
+  buf[head] = x;
+  int npos = head + 1;
+  if (npos >= cap) npos = 0;
+  fx->delay_pos[slot] = npos;
+
+  /* Pitch ratio over +-2 octaves, unison at p0 = 0.5. The read phase walks at
+   * (1 - ratio) per sample so the playback rate becomes the ratio. */
+  const float semis = (p[0] - 0.5f) * 48.0f;
+  const float ratio = powf(2.0f, semis / 12.0f);
+  float ph = fx->grain_phase[slot] + (1.0f - ratio);
+  while (ph >= wf) ph -= wf;
+  while (ph < 0.0f) ph += wf;
+  fx->grain_phase[slot] = ph;
+
+  const float ph2 = ph >= wf * 0.5f ? ph - wf * 0.5f : ph + wf * 0.5f;
+  const float g1 = 0.5f * (1.0f - cosf(2.0f * LE_PI * ph / wf));
+  const float g2 = 0.5f * (1.0f - cosf(2.0f * LE_PI * ph2 / wf));
+  const float wet = g1 * fx_read_frac(buf, cap, head, ph) +
+                    g2 * fx_read_frac(buf, cap, head, ph2);
+
+  /* Tone: a one-pole low-pass that opens up as p1 rises. */
+  const float a = 0.05f + 0.9f * p[1];
+  float lp = fx->fx_lp[slot];
+  lp += a * (wet - lp);
+  fx->fx_lp[slot] = lp;
+
+  const float mix = p[2];
+  return x * (1.0f - mix) + lp * mix;
+}
+
+/* Tape-style echo. Three things set it apart from the clean digital delay: a
+ * slow wow LFO wobbles the read time (tape pitch flutter, read fractionally), a
+ * heavy one-pole low-pass darkens the loop so each repeat loses highs, and the
+ * fed-back signal is softly saturated (tape compression, which also self-limits
+ * the feedback). The wet tap is that processed signal, so even the first repeat
+ * is coloured rather than a clean copy. p0 = time (0..1 s), p1 = feedback,
+ * p2 = wet mix. Shares the fx_delay ring; lfo is the wow phase, fx_lp the loop
+ * low-pass. */
+static float fx_echo(le_fx_state* fx, int slot, int sr, int cap, float x,
+                     const float* p) {
+  float* buf = fx->delay[slot];
+  if (buf == NULL || cap <= 1) return x;
+
+  /* Wow/flutter: a slow LFO wobbles the read time a few ms for tape wobble. */
+  float ph = fx->lfo[slot];
+  const float wow = sinf(2.0f * LE_PI * ph);
+  ph += 0.7f / (float)sr; /* ~0.7 Hz wow */
+  if (ph >= 1.0f) ph -= 1.0f;
+  fx->lfo[slot] = ph;
+  const float wob = 0.004f * (float)sr; /* ~4 ms wobble depth */
+  float d = p[0] * (float)(cap - 1) + wow * wob;
+  if (d < 1.0f) d = 1.0f;
+  if (d > (float)(cap - 1)) d = (float)(cap - 1);
+
+  const int pos = fx->delay_pos[slot];
+  const float delayed = fx_read_frac(buf, cap, pos, d);
+
+  /* Darken the loop (~1.4 kHz one-pole) then soft-saturate the repeats. */
+  float lp = fx->fx_lp[slot];
+  lp += 0.18f * (delayed - lp);
+  fx->fx_lp[slot] = lp;
+  const float wet = tanhf(lp);
+  const float fb = p[1] * 0.97f;
+
+  buf[pos] = x + wet * fb;
+  int npos = pos + 1;
+  if (npos >= cap) npos = 0;
+  fx->delay_pos[slot] = npos;
+
+  const float mix = p[2];
+  return x * (1.0f - mix) + wet * mix;
+}
+
 /* Applies a chain to one sample, in chain order. The chain is stageless: every
  * active entry processes the sample. [count] is the active chain length;
  * [types]/[params] are the per-buffer snapshot. */
@@ -642,6 +753,12 @@ static float fx_apply_chain(le_fx_state* fx, int sr, int cap, float x, int count
         break;
       case LE_FX_TREMOLO:
         x = fx_tremolo(fx, s, sr, x, params[s]);
+        break;
+      case LE_FX_OCTAVER:
+        x = fx_octaver(fx, s, cap, x, params[s]);
+        break;
+      case LE_FX_ECHO:
+        x = fx_echo(fx, s, sr, cap, x, params[s]);
         break;
       default:
         break;
@@ -785,6 +902,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       ln->fx.svf_ic2[index] = 0.0f;
       ln->fx.lfo[index] = 0.0f;
       ln->fx.delay_pos[index] = 0;
+      ln->fx.fx_lp[index] = 0.0f;
+      ln->fx.grain_phase[index] = 0.0f;
       break;
     }
     case LE_CMD_SET_LANE_FX_COUNT: {
@@ -896,6 +1015,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       m->fx.svf_ic2[index] = 0.0f;
       m->fx.lfo[index] = 0.0f;
       m->fx.delay_pos[index] = 0;
+      m->fx.fx_lp[index] = 0.0f;
+      m->fx.grain_phase[index] = 0.0f;
       break;
     }
     case LE_CMD_SET_MONITOR_INPUT_FX_COUNT: {
@@ -1414,6 +1535,8 @@ static void le_lane_reset(le_lane* ln, int32_t input_channel) {
     free(ln->fx.delay[s]);
     ln->fx.delay[s] = NULL;
     ln->fx.delay_pos[s] = 0;
+    ln->fx.fx_lp[s] = 0.0f;
+    ln->fx.grain_phase[s] = 0.0f;
   }
 }
 
@@ -1435,6 +1558,8 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     free(m->fx.delay[s]);
     m->fx.delay[s] = NULL;
     m->fx.delay_pos[s] = 0;
+    m->fx.fx_lp[s] = 0.0f;
+    m->fx.grain_phase[s] = 0.0f;
   }
 }
 
@@ -2527,21 +2652,33 @@ static void le_fx_default_params(int32_t type, float out[LE_FX_PARAMS]) {
       out[1] = 0.7f; /* depth */
       out[2] = 0.0f;
       break;
+    case LE_FX_OCTAVER:
+      out[0] = 0.25f; /* shift: one octave down */
+      out[1] = 0.5f;  /* tone */
+      out[2] = 0.5f;  /* mix */
+      break;
+    case LE_FX_ECHO:
+      out[0] = 0.45f; /* time */
+      out[1] = 0.5f;  /* feedback */
+      out[2] = 0.35f; /* wet mix */
+      break;
     default:
       out[0] = out[1] = out[2] = 0.0f;
       break;
   }
 }
 
-/* Allocates the delay ring for a chain entry (control thread) when its type is
- * LE_FX_DELAY, keeping it for reuse once allocated, and seeds the type's musical
- * defaults only when the type actually changes (so a reorder doesn't wipe the
- * user's tweaks). Returns LE_OK, or LE_ERR_INVALID on allocation failure. */
+/* Allocates the delay ring for a chain entry (control thread) when its type
+ * needs one (LE_FX_DELAY, LE_FX_ECHO, or the LE_FX_OCTAVER grain ring), keeping
+ * it for reuse once allocated, and seeds the type's musical defaults only when
+ * the type actually changes (so a reorder doesn't wipe the user's tweaks).
+ * Returns LE_OK, or LE_ERR_INVALID on allocation failure. */
 static int32_t le_fx_prepare_entry(le_fx_state* fx, _Atomic int32_t* a_type,
                                    _Atomic uint32_t a_param[][LE_FX_PARAMS],
                                    int32_t index, int32_t type,
                                    int32_t delay_cap) {
-  if (type == LE_FX_DELAY && fx->delay[index] == NULL) {
+  if ((type == LE_FX_DELAY || type == LE_FX_ECHO || type == LE_FX_OCTAVER) &&
+      fx->delay[index] == NULL) {
     const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
     float* line = (float*)calloc((size_t)cap, sizeof(float));
     if (line == NULL) return LE_ERR_INVALID;
@@ -2563,7 +2700,7 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (type < LE_FX_NONE || type > LE_FX_TREMOLO) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_ECHO) return LE_ERR_INVALID;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
   if (le_fx_prepare_entry(&ln->fx, ln->a_fx_type, ln->a_fx_param, index, type,
                           engine->fx_delay_frames) != LE_OK) {
@@ -2626,7 +2763,7 @@ int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
-  if (type < LE_FX_NONE || type > LE_FX_TREMOLO) return LE_ERR_INVALID;
+  if (type < LE_FX_NONE || type > LE_FX_ECHO) return LE_ERR_INVALID;
   le_monitor_input* m = &engine->monitors[input];
   if (le_fx_prepare_entry(&m->fx, m->a_fx_type, m->a_fx_param, index, type,
                           engine->fx_delay_frames) != LE_OK) {

@@ -1,6 +1,25 @@
-import 'package:flutter/material.dart';
-import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/looper_theme.dart';
+import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/routing_graph.dart';
+
+/// Maps the app's neutral [SurfaceTheme] tokens onto the structural tokens the
+/// `routing_graph` package reads via `context.routingGraph`, so the graphs
+/// share the setup surface's palette without the package depending on the app.
+///
+/// The single source of truth for the mapping — both [AppTheme] variants and
+/// the golden tests register the result of this, so the two themes can never
+/// drift apart.
+RoutingGraphTheme routingGraphThemeFromSurface(SurfaceTheme s) =>
+    RoutingGraphTheme(
+      background: s.background,
+      surface: s.surface,
+      card: s.card,
+      cardHigh: s.cardHigh,
+      line: s.line,
+      textPrimary: s.textPrimary,
+      textSecondary: s.textSecondary,
+      textTertiary: s.textTertiary,
+    );
 
 /// Track meter (peak bar) color per meter state while in **record** mode.
 const _recordMeterColors = <LooperMeterState, Color>{
@@ -35,8 +54,8 @@ abstract final class AppTheme {
       brightness: Brightness.dark,
     );
     return _base(scheme).copyWith(
-      extensions: const [
-        LooperTheme(
+      extensions: [
+        const LooperTheme(
           tileBackground: Color(0xFF1B1E24),
           tileBorder: Color(0xFF2C313A),
           waveformColor: Color(0xFF35D6C4),
@@ -45,6 +64,8 @@ abstract final class AppTheme {
           recordMeterColors: _recordMeterColors,
           playMeterColors: _playMeterColors,
         ),
+        SurfaceTheme.dark,
+        routingGraphThemeFromSurface(SurfaceTheme.dark),
       ],
     );
   }
@@ -52,9 +73,9 @@ abstract final class AppTheme {
   /// Neon-on-near-black performance theme (Chewie-Monsta vibe).
   static ThemeData get bigPicture {
     const scheme = ColorScheme.dark(
-      primary: SetupSurfaceColors.t1,
-      secondary: SetupSurfaceColors.accent,
-      surface: SetupSurfaceColors.surface,
+      primary: Color(0xFFF3F4F7), // SurfaceTheme.dark.textPrimary
+      secondary: Color(0xFF3B82F6), // SurfaceTheme.dark.accent
+      surface: Color(0xFF0D0D11), // SurfaceTheme.dark.surface
     );
     return _base(scheme).copyWith(
       scaffoldBackgroundColor: const Color(0xFF06060A),
@@ -66,8 +87,8 @@ abstract final class AppTheme {
         secondaryLabelStyle: TextStyle(color: scheme.onSecondary),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       ),
-      extensions: const [
-        LooperTheme(
+      extensions: [
+        const LooperTheme(
           tileBackground: Color(0xFF101019),
           tileBorder: Color(0xFF22222E),
           waveformColor: Color(0xFF00E5FF),
@@ -76,6 +97,8 @@ abstract final class AppTheme {
           recordMeterColors: _recordMeterColors,
           playMeterColors: _playMeterColors,
         ),
+        SurfaceTheme.dark,
+        routingGraphThemeFromSurface(SurfaceTheme.dark),
       ],
     );
   }
