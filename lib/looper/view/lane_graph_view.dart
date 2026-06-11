@@ -290,10 +290,21 @@ class _LaneGraphViewState extends State<LaneGraphView> {
         }
         rightX = xs.last + cardW;
       }
-      // last -> outputs
-      for (var o = 0; o < _outCount; o++) {
-        if (lane.outputMask & (1 << o) != 0) {
-          edges.add(_Edge(Offset(rightX, y), Offset(outX, chY(o, _outCount))));
+      // last -> shared output rail -> outputs. The wire runs along this lane's
+      // own (card-free) row to a rail just left of the output column, then fans
+      // out in the empty gutter — so it never passes behind another lane's
+      // cards, however short this lane's chain is.
+      final outs = [
+        for (var o = 0; o < _outCount; o++)
+          if (lane.outputMask & (1 << o) != 0) o,
+      ];
+      if (outs.isNotEmpty) {
+        final railX = outX - LaneGraphView._fan;
+        if (railX > rightX + 0.5) {
+          edges.add(_Edge(Offset(rightX, y), Offset(railX, y)));
+        }
+        for (final o in outs) {
+          edges.add(_Edge(Offset(railX, y), Offset(outX, chY(o, _outCount))));
         }
       }
     }
