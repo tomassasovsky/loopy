@@ -116,6 +116,54 @@ void main() {
       expect(engine.laneFxParam[(0, 0, 1, 1)], 0.42);
     });
 
+    test('restores a saved multi-lane setup on launch', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          monitorInput: true,
+        ),
+      );
+      // Track 0 has two lanes; lane 1 carries its own input, output, mix, and
+      // effect chain that must be restored alongside lane 0.
+      await settings.saveLaneCount(0, 2);
+      await settings.saveLaneInput(0, 1, 2);
+      await settings.saveLaneOutput(0, 1, 0x2);
+      await settings.saveLaneVolume(0, 1, 0.4);
+      await settings.saveLaneMute(0, 1, muted: true);
+      await settings.saveLaneEffects(
+        0,
+        1,
+        encodeTrackEffects([TrackEffect(type: TrackEffectType.tremolo)]),
+      );
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started, isTrue);
+      expect(engine.laneCount[0], 2);
+      expect(engine.laneInput[(0, 1)], 2);
+      expect(engine.laneOutput[(0, 1)], 0x2);
+      expect(engine.laneVol[(0, 1)], 0.4);
+      expect(engine.laneMute[(0, 1)], isTrue);
+      expect(engine.laneFx[(0, 1, 0)], TrackEffectType.tremolo);
+    });
+
     test('starts the engine with the saved config', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(
