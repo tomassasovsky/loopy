@@ -77,7 +77,7 @@ void main() {
     });
   });
 
-  group('RoutingGraphView', () {
+  group('TracksRoutingGraphView', () {
     Future<void> pump(WidgetTester tester, Widget child) => tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.bigPicture,
@@ -88,7 +88,7 @@ void main() {
     testWidgets('renders a CustomPaint for the diagram', (tester) async {
       await pump(
         tester,
-        const RoutingGraphView(
+        const TracksRoutingGraphView(
           tracks: [Track()],
           inputChannels: 2,
           outputChannels: 2,
@@ -111,7 +111,7 @@ void main() {
       // Exercises the dimmed/struck-through excluded-node paint path.
       await pump(
         tester,
-        const RoutingGraphView(
+        const TracksRoutingGraphView(
           tracks: [Track()],
           inputChannels: 4,
           outputChannels: 2,
@@ -130,7 +130,7 @@ void main() {
       int? mask;
       await pump(
         tester,
-        RoutingGraphView(
+        TracksRoutingGraphView(
           tracks: const [Track()], // inputMask 0x1
           inputChannels: 2,
           outputChannels: 2,
@@ -162,7 +162,7 @@ void main() {
       int? mask;
       await pump(
         tester,
-        RoutingGraphView(
+        TracksRoutingGraphView(
           tracks: const [Track()], // inputMask 0x1 (input 1 wired)
           inputChannels: 2,
           outputChannels: 2,
@@ -185,7 +185,7 @@ void main() {
       int? mask;
       await pump(
         tester,
-        RoutingGraphView(
+        TracksRoutingGraphView(
           tracks: const [Track()], // outputMask 0x3 (out 1 & 2)
           inputChannels: 2,
           outputChannels: 2,
@@ -209,7 +209,7 @@ void main() {
       var called = false;
       await pump(
         tester,
-        RoutingGraphView(
+        TracksRoutingGraphView(
           tracks: const [Track()],
           inputChannels: 2,
           outputChannels: 2,
@@ -233,7 +233,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        const RoutingGraphView(
+        const TracksRoutingGraphView(
           tracks: [Track()],
           inputChannels: 2,
           outputChannels: 2,
@@ -244,7 +244,7 @@ void main() {
     });
   });
 
-  group('RoutingGraphView.editForTarget', () {
+  group('TracksRoutingGraphView.editForTarget', () {
     const track = Track(); // inputMask 0x1, outputMask 0x3
     const in0 = RoutingNode(
       kind: RoutingNodeKind.input,
@@ -264,21 +264,21 @@ void main() {
 
     test('adds an unset input bit', () {
       expect(
-        RoutingGraphView.editForTarget(track, in1),
+        TracksRoutingGraphView.editForTarget(track, in1),
         const RoutingEdit(isInput: true, channel: 0, mask: 0x3),
       );
     });
 
     test('clears an already-set input bit', () {
       expect(
-        RoutingGraphView.editForTarget(track, in0),
+        TracksRoutingGraphView.editForTarget(track, in0),
         const RoutingEdit(isInput: true, channel: 0, mask: 0x0),
       );
     });
 
     test('toggles an output bit', () {
       expect(
-        RoutingGraphView.editForTarget(track, out1),
+        TracksRoutingGraphView.editForTarget(track, out1),
         const RoutingEdit(isInput: false, channel: 0, mask: 0x1),
       );
     });
@@ -290,7 +290,7 @@ void main() {
         label: 'In 2',
         excluded: true,
       );
-      expect(RoutingGraphView.editForTarget(track, excluded), isNull);
+      expect(TracksRoutingGraphView.editForTarget(track, excluded), isNull);
     });
 
     test('a track target resolves to nothing', () {
@@ -299,7 +299,7 @@ void main() {
         index: 0,
         label: 'Track 1',
       );
-      expect(RoutingGraphView.editForTarget(track, trackNode), isNull);
+      expect(TracksRoutingGraphView.editForTarget(track, trackNode), isNull);
     });
   });
 }

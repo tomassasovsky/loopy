@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/common/routing_graph/graph_edge.dart';
+import 'package:loopy/common/routing_graph/graph_edge_painter.dart';
 import 'package:loopy/setup/setup_surface.dart';
 
 /// Which column of the routing graph a node belongs to.
@@ -234,18 +236,23 @@ class RoutingEdit {
   int get hashCode => Object.hash(isInput, channel, mask);
 }
 
-/// A diagram of the current audio routing: hardware inputs on the left, tracks
-/// in the middle, hardware outputs on the right, with an edge for every wired
-/// input→track and track→output connection. Loopback inputs are shown dimmed
-/// and never wired.
+/// A whole-system diagram of the current audio routing: hardware inputs on the
+/// left, tracks in the middle, hardware outputs on the right, with an edge for
+/// every wired input→track and track→output connection. Loopback inputs are
+/// shown dimmed and never wired.
+///
+/// The wires are drawn by the shared routing-graph kit's [GraphEdgePainter];
+/// this view keeps its own all-tracks node model, responsive column layout, and
+/// arm/hover/target interaction (a different graph from the per-track lane and
+/// monitor views, so its rich affordances stay here).
 ///
 /// Read-only by default. Pass [onInputMaskChanged] / [onOutputMaskChanged] to
 /// make it editable: click a track to arm it (its connections light up and the
 /// channels become targets), then click an input or output to connect or
 /// disconnect it. Hovering a node highlights its connections.
-class RoutingGraphView extends StatefulWidget {
-  /// Creates a [RoutingGraphView].
-  const RoutingGraphView({
+class TracksRoutingGraphView extends StatefulWidget {
+  /// Creates a [TracksRoutingGraphView].
+  const TracksRoutingGraphView({
     required this.tracks,
     required this.inputChannels,
     required this.outputChannels,
@@ -335,11 +342,11 @@ class RoutingGraphView extends StatefulWidget {
   }
 
   @override
-  State<RoutingGraphView> createState() => _RoutingGraphViewState();
+  State<TracksRoutingGraphView> createState() => _TracksRoutingGraphViewState();
 }
 
-class _RoutingGraphViewState extends State<RoutingGraphView> {
-  /// The armed track's index in [RoutingGraphView.tracks], or null.
+class _TracksRoutingGraphViewState extends State<TracksRoutingGraphView> {
+  /// The armed track's index in [TracksRoutingGraphView.tracks], or null.
   int? _armed;
 
   @override
@@ -362,7 +369,10 @@ class _RoutingGraphViewState extends State<RoutingGraphView> {
     final armed = _armed;
     if (armed == null || armed >= widget.tracks.length) return;
     if (node.excluded) return;
-    final edit = RoutingGraphView.editForTarget(widget.tracks[armed], node);
+    final edit = TracksRoutingGraphView.editForTarget(
+      widget.tracks[armed],
+      node,
+    );
     if (edit == null) return;
     if (edit.isInput) {
       widget.onInputMaskChanged?.call(edit.channel, edit.mask);
@@ -386,8 +396,8 @@ class _RoutingGraphViewState extends State<RoutingGraphView> {
       trackLabels: widget.trackLabels,
     );
     final height =
-        graph.maxColumnLength * RoutingGraphView._rowHeight +
-        RoutingGraphView._topPad * 2;
+        graph.maxColumnLength * TracksRoutingGraphView._rowHeight +
+        TracksRoutingGraphView._topPad * 2;
 
     final armed = _armed;
     final armedNode = (armed != null && armed < graph.tracks.length)
@@ -411,7 +421,7 @@ class _RoutingGraphViewState extends State<RoutingGraphView> {
             children: [
               Positioned.fill(
                 child: CustomPaint(
-                  painter: _EdgePainter(graph: graph, highlighted: highlighted),
+                  painter: GraphEdgePainter(_wires(graph, size, highlighted)),
                 ),
               ),
               for (final node in [
@@ -427,13 +437,34 @@ class _RoutingGraphViewState extends State<RoutingGraphView> {
     );
   }
 
+  /// Translates the graph's directed connections into kit [GraphEdge]s, fading
+  /// any edge that is not in [highlighted] (when a node is armed/hovered).
+  List<GraphEdge> _wires(
+    RoutingGraph graph,
+    Size size,
+    Set<RoutingEdge>? highlighted,
+  ) {
+    Offset center(RoutingNode node) =>
+        TracksRoutingGraphView.nodeCenter(node, size, graph);
+    const half = TracksRoutingGraphView.nodeWidth / 2;
+    return [
+      for (final edge in graph.edges)
+        GraphEdge(
+          Offset(center(edge.from).dx + half, center(edge.from).dy),
+          Offset(center(edge.to).dx - half, center(edge.to).dy),
+          color: SetupSurfaceColors.accent,
+          faded: highlighted != null && !highlighted.contains(edge),
+        ),
+    ];
+  }
+
   Widget _positionedNode(
     RoutingNode node,
     Size size,
     RoutingGraph graph,
     int? armed,
   ) {
-    final center = RoutingGraphView.nodeCenter(node, size, graph);
+    final center = TracksRoutingGraphView.nodeCenter(node, size, graph);
     final isTrack = node.kind == RoutingNodeKind.track;
     final isArmedTrack = isTrack && node.index == armed;
 
@@ -450,10 +481,10 @@ class _RoutingGraphViewState extends State<RoutingGraphView> {
     }
 
     return Positioned(
-      left: center.dx - RoutingGraphView.nodeWidth / 2,
-      top: center.dy - RoutingGraphView.nodeHeight / 2,
-      width: RoutingGraphView.nodeWidth,
-      height: RoutingGraphView.nodeHeight,
+      left: center.dx - TracksRoutingGraphView.nodeWidth / 2,
+      top: center.dy - TracksRoutingGraphView.nodeHeight / 2,
+      width: TracksRoutingGraphView.nodeWidth,
+      height: TracksRoutingGraphView.nodeHeight,
       child: _GraphNode(
         node: node,
         interactive: _editable,
@@ -580,50 +611,4 @@ class _GraphNode extends StatelessWidget {
       ),
     );
   }
-}
-
-class _EdgePainter extends CustomPainter {
-  _EdgePainter({required this.graph, this.highlighted});
-
-  final RoutingGraph graph;
-
-  /// When non-null, only these edges are drawn bright and the rest are dimmed;
-  /// when null, every edge is drawn at the normal weight.
-  final Set<RoutingEdge>? highlighted;
-
-  static const double _nodeWidth = RoutingGraphView.nodeWidth;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    Offset center(RoutingNode node) =>
-        RoutingGraphView.nodeCenter(node, size, graph);
-
-    for (final edge in graph.edges) {
-      final bright = highlighted == null || highlighted!.contains(edge);
-      final alpha = highlighted == null
-          ? 0.65
-          : bright
-          ? 1.0
-          : 0.16;
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = bright && highlighted != null ? 2 : 1.5
-        ..color = SetupSurfaceColors.accent.withValues(alpha: alpha);
-
-      final from = center(edge.from);
-      final to = center(edge.to);
-      final start = Offset(from.dx + _nodeWidth / 2, from.dy);
-      final end = Offset(to.dx - _nodeWidth / 2, to.dy);
-      final dx = (end.dx - start.dx) / 2;
-      final path = Path()
-        ..moveTo(start.dx, start.dy)
-        ..cubicTo(start.dx + dx, start.dy, end.dx - dx, end.dy, end.dx, end.dy);
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_EdgePainter oldDelegate) =>
-      oldDelegate.graph != graph ||
-      !setEquals(oldDelegate.highlighted, highlighted);
 }
