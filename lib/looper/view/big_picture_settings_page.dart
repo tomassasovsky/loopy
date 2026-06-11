@@ -9,7 +9,7 @@ import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/tracks_routing_graph_view.dart';
+import 'package:loopy/looper/view/tracks_routing_graph/tracks_routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
