@@ -117,22 +117,45 @@ abstract interface class AudioEngine {
   /// Re-applies the most recently undone overdub layer on track [channel].
   EngineResult redo({int channel = 0});
 
-  /// Sets track [channel]'s playback gain, clamped to `0..1`.
-  EngineResult setTrackVolume(double volume, {int channel = 0});
+  /// Sets track [channel]'s active lane count to [count] (clamped by the engine
+  /// to `1..` the native lane ceiling) on the control thread, lazily allocating
+  /// the loop buffers for any newly added lanes before the audio thread reads
+  /// them. Shrinking leaves dropped lanes' buffers allocated for reuse but
+  /// stops playing/recording them.
+  EngineResult setLaneCount({required int channel, required int count});
 
-  /// Mutes or unmutes track [channel].
-  EngineResult setTrackMute({required bool muted, int channel = 0});
+  /// Sets lane [lane] of track [channel]'s playback gain, clamped to `0..1`.
+  EngineResult setLaneVolume(
+    double volume, {
+    int channel = 0,
+    int lane = 0,
+  });
 
-  /// Routes track [channel]'s record sources to the input channels set in
-  /// [mask] (a bitmask; bit c => hardware input channel c). Selected inputs are
-  /// averaged into the track's mono buffer. Bits beyond the negotiated
-  /// input-channel range are ignored.
-  EngineResult setInputMask({required int channel, required int mask});
+  /// Mutes or unmutes lane [lane] of track [channel].
+  EngineResult setLaneMute({
+    required bool muted,
+    int channel = 0,
+    int lane = 0,
+  });
 
-  /// Routes track [channel]'s playback to the output channels set in [mask] (a
-  /// bitmask; bit c => hardware output channel c). Bits beyond the negotiated
-  /// output-channel range are ignored.
-  EngineResult setOutputMask({required int channel, required int mask});
+  /// Routes lane [lane] of track [channel] to record from hardware input
+  /// [inputChannel] (`-1` = record nothing). Each lane records exactly one
+  /// input into its own clean mono buffer (no averaging). Inputs beyond the
+  /// negotiated range or loopback-excluded record silence.
+  EngineResult setLaneInput({
+    required int channel,
+    required int lane,
+    required int inputChannel,
+  });
+
+  /// Routes lane [lane] of track [channel]'s playback to the output channels
+  /// set in [mask] (a bitmask; bit c => hardware output channel c). Bits beyond
+  /// the negotiated output-channel range are ignored.
+  EngineResult setLaneOutput({
+    required int channel,
+    required int lane,
+    required int mask,
+  });
 
   /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
   EngineResult setRecordOffset(int frames);
@@ -166,65 +189,71 @@ abstract interface class AudioEngine {
   /// and begins capturing once the input level crosses the threshold.
   EngineResult setAutoRecord({required bool enabled});
 
-  /// Sets the monitor input mask: which input channels are averaged (mono) into
-  /// the live monitor signal (a bitmask; bit c => hardware input channel c).
-  /// Bits beyond the input range or loopback-excluded are ignored.
-  EngineResult setMonitorInputMask({required int mask});
-
-  /// Sets the monitor output mask: which output channels the monitored signal
-  /// is routed to (a bitmask; bit c => hardware output channel c). Bits beyond
-  /// the output range are ignored.
-  EngineResult setMonitorOutputMask({required int mask});
-
-  /// Makes the monitor follow track [track]: the monitored signal becomes that
-  /// track's pre-stage-processed input (its masked input run through its
-  /// before-track effects), so those effects are heard live. Pass `-1` to stop
-  /// following and monitor the raw masked inputs (the default).
-  EngineResult setMonitorFxTrack({required int track});
-
-  /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on track [channel] to
-  /// [type] at [stage]. Changing the type resets that entry's DSP state and
-  /// seeds the type's default parameters. This sets the entry's value only; use
-  /// [setTrackFxCount] to control how many entries are active.
-  EngineResult setTrackFx({
+  /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on lane [lane] of track
+  /// [channel] to [type]. Changing the type resets that entry's DSP state and
+  /// seeds the type's default parameters. The chain is non-destructive and
+  /// stageless — every active entry colors playback in order. This sets the
+  /// entry's value only; use [setLaneFxCount] to control how many are active.
+  EngineResult setLaneFx({
     required int channel,
+    required int lane,
     required int index,
     required TrackEffectType type,
-    required TrackEffectStage stage,
   });
 
-  /// Sets the active chain length on track [channel] to [count]
+  /// Sets the active chain length on lane [lane] of track [channel] to [count]
   /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
-  EngineResult setTrackFxCount({required int channel, required int count});
+  EngineResult setLaneFxCount({
+    required int channel,
+    required int lane,
+    required int count,
+  });
 
   /// Sets parameter [param] (`0..kTrackEffectParams-1`) of chain entry [index]
-  /// on track [channel] to [value] (clamped to `0..1`). The parameter's meaning
-  /// depends on the entry's effect type.
-  EngineResult setTrackFxParam({
+  /// on lane [lane] of track [channel] to [value] (clamped to `0..1`). The
+  /// parameter's meaning depends on the entry's effect type.
+  EngineResult setLaneFxParam({
     required int channel,
+    required int lane,
     required int index,
     required int param,
     required double value,
   });
 
-  /// Sets monitor-bus chain entry [index] (`0..kTrackEffectMax-1`) to [type].
-  /// The monitor bus is a single global chain applied to the live monitored
-  /// signal in every mode (it has no pre/post). Changing the type resets that
-  /// entry's DSP state and seeds the type's default parameters; use
-  /// [setMonitorFxCount] to control how many entries are active.
-  EngineResult setMonitorFx({
+  /// Enables or disables live monitoring of hardware input [input], routing it
+  /// to the output channels set in [outputMask] (bit c => hardware output
+  /// channel c). The monitored signal runs through input [input]'s own effect
+  /// chain (see [setMonitorInputFx]) and is never recorded; it is independent
+  /// of any track's record/playback state. A loopback-excluded input is never
+  /// monitored.
+  EngineResult setMonitorInput({
+    required int input,
+    required bool enabled,
+    required int outputMask,
+  });
+
+  /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on monitor input [input]
+  /// to [type]. Changing the type resets that entry's DSP state and seeds the
+  /// type's default parameters; use [setMonitorInputFxCount] to control how
+  /// many entries are active.
+  EngineResult setMonitorInputFx({
+    required int input,
     required int index,
     required TrackEffectType type,
   });
 
-  /// Sets the monitor bus's active chain length to [count]
+  /// Sets monitor input [input]'s active chain length to [count]
   /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
-  EngineResult setMonitorFxCount({required int count});
+  EngineResult setMonitorInputFxCount({
+    required int input,
+    required int count,
+  });
 
-  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of monitor-bus entry
-  /// [index] to [value] (clamped to `0..1`). Its meaning depends on the entry's
-  /// effect type.
-  EngineResult setMonitorFxParam({
+  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of monitor input
+  /// [input]'s chain entry [index] to [value] (clamped to `0..1`). Its meaning
+  /// depends on the entry's effect type.
+  EngineResult setMonitorInputFxParam({
+    required int input,
     required int index,
     required int param,
     required double value,
@@ -236,8 +265,9 @@ abstract interface class AudioEngine {
   /// for the playhead. Empty until a loop exists.
   Float32List readVisual();
 
-  /// Like [readVisual] but for a single track's own contribution, for
-  /// per-track waveform thumbnails.
+  /// Like [readVisual] but for a single track's own contribution (its active
+  /// lanes summed), for per-track waveform thumbnails. Per-lane waveforms are
+  /// not exposed yet.
   Float32List readTrackVisual(int channel);
 
   /// Copies track [channel]'s recorded mono loop PCM out for session export, or

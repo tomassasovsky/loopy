@@ -61,6 +61,44 @@ void main() {
         expect(track.peak, closeTo(0.6, 1e-6));
         expect(track.inputMask, 0x2);
         expect(track.outputMask, 0x5);
+        // No lanes supplied => empty list, so the derived count is 0.
+        expect(track.lanes, isEmpty);
+        expect(track.laneCount, 0);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('carries the lanes passed alongside the native struct', () {
+      final ptr = calloc<le_track_snapshot>();
+      try {
+        const lanes = [
+          LaneSnapshot(
+            inputChannel: 0,
+            outputMask: 0x3,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            rms: 0.2,
+            peak: 0.3,
+          ),
+          LaneSnapshot(
+            inputChannel: 1,
+            outputMask: 0x1,
+            volume: 0.5,
+            muted: true,
+            lengthFrames: 48000,
+            rms: 0,
+            peak: 0,
+          ),
+        ];
+
+        final track = TrackSnapshot.fromNative(ptr.ref, lanes);
+        expect(track.lanes, lanes);
+        expect(track.lanes.first.inputChannel, 0);
+        expect(track.lanes[1].muted, isTrue);
+        // laneCount derives from the supplied lanes.
+        expect(track.laneCount, 2);
       } finally {
         calloc.free(ptr);
       }
@@ -98,6 +136,100 @@ void main() {
     test('a differing input or output mask breaks equality', () {
       expect(build(), isNot(equals(build(inputMask: 0x2))));
       expect(build(), isNot(equals(build(outputMask: 0x1))));
+    });
+
+    TrackSnapshot withLanes(List<LaneSnapshot> lanes) => TrackSnapshot(
+      state: TrackState.playing,
+      volume: 0.5,
+      muted: false,
+      lengthFrames: 100,
+      undoDepth: 0,
+      rms: 0.1,
+      peak: 0.2,
+      lanes: lanes,
+    );
+
+    test('a differing lane count breaks equality', () {
+      expect(build(), isNot(equals(withLanes(const [LaneSnapshot.empty()]))));
+    });
+
+    test('same-length lanes with differing content break equality', () {
+      final a = withLanes(const [LaneSnapshot.empty()]);
+      final b = withLanes(const [
+        LaneSnapshot(
+          inputChannel: 1,
+          outputMask: 0x1,
+          volume: 1,
+          muted: false,
+          lengthFrames: 0,
+          rms: 0,
+          peak: 0,
+        ),
+      ]);
+      expect(a, isNot(equals(b)));
+    });
+  });
+
+  group('LaneSnapshot', () {
+    test('fromNative projects every native lane field', () {
+      final ptr = calloc<le_lane_snapshot>();
+      try {
+        ptr.ref
+          ..input_channel = 1
+          ..output_mask = 0x5
+          ..volume = 0.6
+          ..muted = 1
+          ..length_frames = 48000
+          ..rms = 0.3
+          ..peak = 0.45;
+
+        final lane = LaneSnapshot.fromNative(ptr.ref);
+        expect(lane.inputChannel, 1);
+        expect(lane.outputMask, 0x5);
+        expect(lane.volume, closeTo(0.6, 1e-6));
+        expect(lane.muted, isTrue);
+        expect(lane.lengthFrames, 48000);
+        expect(lane.rms, closeTo(0.3, 1e-6));
+        expect(lane.peak, closeTo(0.45, 1e-6));
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('empty lane records no input', () {
+      const lane = LaneSnapshot.empty();
+      expect(lane.inputChannel, -1);
+      expect(lane.lengthFrames, 0);
+      expect(lane.muted, isFalse);
+    });
+
+    LaneSnapshot build({
+      int inputChannel = 0,
+      int outputMask = 0x3,
+      double volume = 1,
+      bool muted = false,
+      double peak = 0.2,
+    }) => LaneSnapshot(
+      inputChannel: inputChannel,
+      outputMask: outputMask,
+      volume: volume,
+      muted: muted,
+      lengthFrames: 100,
+      rms: 0.1,
+      peak: peak,
+    );
+
+    test('equal lanes are equal and share a hashCode', () {
+      expect(build(), equals(build()));
+      expect(build().hashCode, build().hashCode);
+    });
+
+    test('any differing field breaks equality', () {
+      expect(build(), isNot(equals(build(inputChannel: 1))));
+      expect(build(), isNot(equals(build(outputMask: 0x1))));
+      expect(build(), isNot(equals(build(volume: 0.5))));
+      expect(build(), isNot(equals(build(muted: true))));
+      expect(build(), isNot(equals(build(peak: 0.9))));
     });
   });
 

@@ -111,38 +111,71 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-channel active lane count passed to [setLaneCount].
+  final Map<int, int> laneCount = {};
+
   @override
-  EngineResult setTrackVolume(double volume, {int channel = 0}) {
+  EngineResult setLaneCount({required int channel, required int count}) {
+    laneCount[channel] = count;
+    calls.add('setLaneCount');
+    return EngineResult.ok;
+  }
+
+  /// Per-(channel, lane) volume passed to [setLaneVolume].
+  final Map<(int, int), double> laneVol = {};
+
+  @override
+  EngineResult setLaneVolume(double volume, {int channel = 0, int lane = 0}) {
+    laneVol[(channel, lane)] = volume;
     lastVolume = volume;
     lastChannel = channel;
-    calls.add('setTrackVolume');
+    calls.add('setLaneVolume');
     return EngineResult.ok;
   }
 
+  /// Per-(channel, lane) mute passed to [setLaneMute].
+  final Map<(int, int), bool> laneMute = {};
+
   @override
-  EngineResult setTrackMute({required bool muted, int channel = 0}) {
+  EngineResult setLaneMute({
+    required bool muted,
+    int channel = 0,
+    int lane = 0,
+  }) {
+    laneMute[(channel, lane)] = muted;
     lastMuted = muted;
     lastChannel = channel;
-    calls.add('setTrackMute');
+    calls.add('setLaneMute');
     return EngineResult.ok;
   }
 
-  int? lastInputMask;
-  int? lastOutputMask;
+  /// Per-(channel, lane) recorded input channel passed to [setLaneInput].
+  final Map<(int, int), int> laneInput = {};
 
   @override
-  EngineResult setInputMask({required int channel, required int mask}) {
+  EngineResult setLaneInput({
+    required int channel,
+    required int lane,
+    required int inputChannel,
+  }) {
+    laneInput[(channel, lane)] = inputChannel;
     lastChannel = channel;
-    lastInputMask = mask;
-    calls.add('setInputMask');
+    calls.add('setLaneInput');
     return EngineResult.ok;
   }
 
+  /// Per-(channel, lane) output mask passed to [setLaneOutput].
+  final Map<(int, int), int> laneOutput = {};
+
   @override
-  EngineResult setOutputMask({required int channel, required int mask}) {
+  EngineResult setLaneOutput({
+    required int channel,
+    required int lane,
+    required int mask,
+  }) {
+    laneOutput[(channel, lane)] = mask;
     lastChannel = channel;
-    lastOutputMask = mask;
-    calls.add('setOutputMask');
+    calls.add('setLaneOutput');
     return EngineResult.ok;
   }
 
@@ -209,107 +242,104 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  int? lastMonitorInputMask;
-  int? lastMonitorOutputMask;
+  /// Per-(channel, lane, index) effect type passed to [setLaneFx].
+  final Map<(int, int, int), TrackEffectType> laneFx = {};
+
+  /// Per-(channel, lane) active chain length passed to [setLaneFxCount].
+  final Map<(int, int), int> laneFxCount = {};
+
+  /// Per-(channel, lane, index, param) value passed to [setLaneFxParam].
+  final Map<(int, int, int, int), double> laneFxParam = {};
 
   @override
-  EngineResult setMonitorInputMask({required int mask}) {
-    lastMonitorInputMask = mask;
-    calls.add('setMonitorInputMask');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setMonitorOutputMask({required int mask}) {
-    lastMonitorOutputMask = mask;
-    calls.add('setMonitorOutputMask');
-    return EngineResult.ok;
-  }
-
-  /// The last track passed to [setMonitorFxTrack] (-1 = not following).
-  int? lastMonitorFxTrack;
-
-  @override
-  EngineResult setMonitorFxTrack({required int track}) {
-    lastMonitorFxTrack = track;
-    calls.add('setMonitorFxTrack');
-    return EngineResult.ok;
-  }
-
-  /// Per-(channel, index) effect type/stage passed to [setTrackFx].
-  final Map<(int, int), (TrackEffectType, TrackEffectStage)> trackFx = {};
-
-  /// Per-channel active chain length passed to [setTrackFxCount].
-  final Map<int, int> trackFxCount = {};
-
-  /// Per-(channel, index, param) value passed to [setTrackFxParam].
-  final Map<(int, int, int), double> trackFxParam = {};
-
-  @override
-  EngineResult setTrackFx({
+  EngineResult setLaneFx({
     required int channel,
+    required int lane,
     required int index,
     required TrackEffectType type,
-    required TrackEffectStage stage,
   }) {
-    trackFx[(channel, index)] = (type, stage);
-    calls.add('setTrackFx');
+    laneFx[(channel, lane, index)] = type;
+    calls.add('setLaneFx');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setTrackFxCount({required int channel, required int count}) {
-    trackFxCount[channel] = count;
-    calls.add('setTrackFxCount');
-    return EngineResult.ok;
-  }
-
-  @override
-  EngineResult setTrackFxParam({
+  EngineResult setLaneFxCount({
     required int channel,
+    required int lane,
+    required int count,
+  }) {
+    laneFxCount[(channel, lane)] = count;
+    calls.add('setLaneFxCount');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setLaneFxParam({
+    required int channel,
+    required int lane,
     required int index,
     required int param,
     required double value,
   }) {
-    trackFxParam[(channel, index, param)] = value;
-    calls.add('setTrackFxParam');
+    laneFxParam[(channel, lane, index, param)] = value;
+    calls.add('setLaneFxParam');
     return EngineResult.ok;
   }
 
-  /// Per-index monitor-bus effect type passed to [setMonitorFx].
-  final Map<int, TrackEffectType> monitorFx = {};
-
-  /// The active monitor-bus chain length passed to [setMonitorFxCount].
-  int? monitorFxCount;
-
-  /// Per-(index, param) value passed to [setMonitorFxParam].
-  final Map<(int, int), double> monitorFxParam = {};
+  /// Per-input (enabled, outputMask) passed to [setMonitorInput].
+  final Map<int, (bool, int)> monitorInput = {};
 
   @override
-  EngineResult setMonitorFx({
+  EngineResult setMonitorInput({
+    required int input,
+    required bool enabled,
+    required int outputMask,
+  }) {
+    monitorInput[input] = (enabled, outputMask);
+    calls.add('setMonitorInput');
+    return EngineResult.ok;
+  }
+
+  /// Per-(input, index) effect type passed to [setMonitorInputFx].
+  final Map<(int, int), TrackEffectType> monitorInputFx = {};
+
+  /// Per-input active chain length passed to [setMonitorInputFxCount].
+  final Map<int, int> monitorInputFxCount = {};
+
+  /// Per-(input, index, param) value passed to [setMonitorInputFxParam].
+  final Map<(int, int, int), double> monitorInputFxParam = {};
+
+  @override
+  EngineResult setMonitorInputFx({
+    required int input,
     required int index,
     required TrackEffectType type,
   }) {
-    monitorFx[index] = type;
-    calls.add('setMonitorFx');
+    monitorInputFx[(input, index)] = type;
+    calls.add('setMonitorInputFx');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMonitorFxCount({required int count}) {
-    monitorFxCount = count;
-    calls.add('setMonitorFxCount');
+  EngineResult setMonitorInputFxCount({
+    required int input,
+    required int count,
+  }) {
+    monitorInputFxCount[input] = count;
+    calls.add('setMonitorInputFxCount');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMonitorFxParam({
+  EngineResult setMonitorInputFxParam({
+    required int input,
     required int index,
     required int param,
     required double value,
   }) {
-    monitorFxParam[(index, param)] = value;
-    calls.add('setMonitorFxParam');
+    monitorInputFxParam[(input, index, param)] = value;
+    calls.add('setMonitorInputFxParam');
     return EngineResult.ok;
   }
 
