@@ -179,7 +179,7 @@ void main() {
     verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
   });
 
-  testWidgets('shows the input-monitoring graph when monitoring is on', (
+  testWidgets('opens the input-monitoring graph as a full page', (
     tester,
   ) async {
     seed(
@@ -197,7 +197,13 @@ void main() {
     );
     await pumpSection(tester);
 
-    // The per-input routing graph replaces the old per-input chip tiles.
+    final open = find.byKey(const Key('audioSettings_openMonitorGraph'));
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+
+    // The full-page routing graph opens (replacing the old chip tiles).
+    expect(find.byKey(const Key('monitorRouting_page')), findsOneWidget);
     expect(find.byKey(const Key('monitorGraph_in_0')), findsOneWidget);
     expect(find.byKey(const Key('monitorGraph_out_0')), findsOneWidget);
   });

@@ -205,12 +205,20 @@ class AudioSettingsSection extends StatelessWidget {
         style: setupBody,
       ),
       const SizedBox(height: 12),
-      SizedBox(
-        height: 380,
-        child: MonitorGraphView(
-          inputChannels: status.inputChannels,
-          outputChannels: status.outputChannels,
-          excludedInputMask: status.excludedInputMask,
+      Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton.tonalIcon(
+          key: const Key('audioSettings_openMonitorGraph'),
+          onPressed: () => unawaited(
+            showMonitorRoutingPage(
+              context: context,
+              inputChannels: status.inputChannels,
+              outputChannels: status.outputChannels,
+              excludedInputMask: status.excludedInputMask,
+            ),
+          ),
+          icon: const Icon(Icons.account_tree_outlined, size: 18),
+          label: const Text('Configure input monitoring'),
         ),
       ),
     ];
