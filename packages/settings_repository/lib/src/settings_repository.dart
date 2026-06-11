@@ -256,6 +256,7 @@ class SettingsRepository {
       _store.setInt(_trackMultipleKey(channel), multiple);
 
   String _monitorInputKey(int input) => 'monitor_input.$input';
+  String _monitorInputDryKey(int input) => 'monitor_input_dry.$input';
   String _monitorInputFxKey(int input) => 'monitor_input_fx.$input';
 
   /// Loads hardware [input]'s live-monitor routing as `(enabled, outputMask)`,
@@ -275,6 +276,15 @@ class SettingsRepository {
     required bool enabled,
     required int outputMask,
   }) => _store.setInt(_monitorInputKey(input), enabled ? outputMask : -1);
+
+  /// Loads hardware [input]'s monitor dry-send output bitmask (`0` = off, the
+  /// default when never saved).
+  Future<int> loadMonitorInputDry(int input) async =>
+      await _store.getInt(_monitorInputDryKey(input)) ?? 0;
+
+  /// Saves hardware [input]'s monitor dry-send output bitmask.
+  Future<void> saveMonitorInputDry(int input, int dryOutputMask) =>
+      _store.setInt(_monitorInputDryKey(input), dryOutputMask);
 
   /// Loads hardware [input]'s persisted monitor effect chain as an opaque
   /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.

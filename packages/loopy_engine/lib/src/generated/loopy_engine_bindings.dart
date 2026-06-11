@@ -1057,6 +1057,34 @@ class LoopyEngineBindings {
   late final _le_engine_set_monitor_input = _le_engine_set_monitor_inputPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
+  /// Routes monitor input [input]'s CLEAN (pre-effects) signal to the output
+  /// channels set in [dry_output_mask], independent of its effected route (see
+  /// le_engine_set_monitor_input). This is a parallel dry send: the clean input
+  /// goes to these outputs while the effected signal goes to its own outputs, so
+  /// an input can be heard dry and wet at once on different outputs. `0` disables
+  /// the dry send (the default). The dry signal is never recorded.
+  int le_engine_set_monitor_input_dry(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int dry_output_mask,
+  ) {
+    return _le_engine_set_monitor_input_dry(
+      engine,
+      input,
+      dry_output_mask,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_dryPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_monitor_input_dry');
+  late final _le_engine_set_monitor_input_dry =
+      _le_engine_set_monitor_input_dryPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input] to [type].
   /// Changing the type resets that entry's DSP state; LE_FX_DELAY lazily allocates
   /// the entry's delay line (on this calling thread) and seeds the type's default
@@ -1452,7 +1480,12 @@ enum le_command_code {
 
   /// set a monitor input's active chain
   /// length. arg_i = (input<<8)|count.
-  LE_CMD_SET_MONITOR_INPUT_FX_COUNT(32);
+  LE_CMD_SET_MONITOR_INPUT_FX_COUNT(32),
+
+  /// route a monitor input's CLEAN (pre-FX)
+  /// signal to a second set of outputs.
+  /// arg_f = input, arg_i = dry bitmask.
+  LE_CMD_SET_MONITOR_INPUT_DRY(33);
 
   final int value;
   const le_command_code(this.value);
@@ -1482,6 +1515,7 @@ enum le_command_code {
     30 => LE_CMD_SET_MONITOR_INPUT,
     31 => LE_CMD_SET_MONITOR_INPUT_FX,
     32 => LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
+    33 => LE_CMD_SET_MONITOR_INPUT_DRY,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }

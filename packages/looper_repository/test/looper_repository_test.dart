@@ -560,6 +560,25 @@ void main() {
       expect(engine.monitorInputFxParam[(0, 0, 0)], 0.9);
     });
 
+    test('setMonitorDry routes the clean signal and reapplies on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorDry(input: 0, dryOutputMask: 0x2);
+      expect(engine.monitorInputDry[0], 0x2);
+
+      // Remembered and re-applied on the next start.
+      engine.monitorInputDry.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorInputDry[0], 0x2);
+    });
+
+    test('setMonitorDry is remembered before the engine starts', () {
+      final repo = buildRepo()..setMonitorDry(input: 1, dryOutputMask: 0x1);
+      expect(engine.monitorInputDry, isEmpty); // not running yet
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorInputDry[1], 0x1);
+    });
+
     test('an empty monitor chain zeroes the input count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
