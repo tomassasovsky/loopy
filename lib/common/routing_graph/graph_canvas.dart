@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// A zoom/pan canvas for a routing graph: a fixed-size [width]×[height] stack of
 /// positioned [children] inside an [InteractiveViewer], clipped and centred on
@@ -68,7 +68,7 @@ class _GraphCanvasState extends State<GraphCanvas> {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: SetupSurfaceColors.surface,
+      color: context.surface.surface,
       child: LayoutBuilder(
         builder: (context, constraints) {
           _maybeFit(constraints.maxWidth, constraints.maxHeight);

@@ -309,7 +309,7 @@ void main() {
       await pumpOpener(tester);
       await open(tester, focus: false);
 
-      final handle = find.byKey(const Key('laneGraph_fx_handle_0_0'));
+      final handle = find.byKey(const Key('laneGraph_fxHandle_0_0'));
       final target = find.byKey(const Key('laneGraph_drop_0_2'));
       final gesture = await tester.startGesture(tester.getCenter(handle));
       await tester.pump(const Duration(milliseconds: 150));

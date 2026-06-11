@@ -12,6 +12,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
+import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
@@ -108,6 +109,7 @@ void main() {
         theme: ThemeData(
           fontFamily: 'Roboto',
           brightness: Brightness.dark,
+          extensions: const [SurfaceTheme.dark],
         ),
         home: MultiRepositoryProvider(
           providers: [
@@ -229,7 +231,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(fontFamily: 'Roboto', brightness: Brightness.dark),
+        theme: ThemeData(
+          fontFamily: 'Roboto',
+          brightness: Brightness.dark,
+          extensions: const [SurfaceTheme.dark],
+        ),
         home: MultiRepositoryProvider(
           providers: [
             RepositoryProvider<SettingsRepository>.value(value: settings),
