@@ -88,10 +88,20 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 - Lane buffer pools + undo/redo stacks are owned by the **control thread** (sole
   writer of each lane's atomic `a_live`). The **audio thread only reads
   `lane.pool[a_live]`** — no allocation/locks/stack-access on the callback.
-- *Carried one PR longer (removed in the FX-relocation PR):* the live-monitor
-  subsystem (global monitor-FX bus, monitor-follow-track, monitor masks) and the
-  per-lane `mon_fx` / `a_fx_stage` fields, kept so the existing FX/monitor tests
-  stay green while the lane data model lands.
+- **Effects are per-lane** (one **stageless**, non-destructive chain on each
+  lane's own `fx` state — the pre/post `stage` and the per-lane `mon_fx` are
+  gone): `le_engine_set_lane_fx(channel,lane,index,type)` / `…_fx_count` /
+  `…_fx_param`. Track-addressed FX setters map to **lane 0** for back-compat.
+- **Live monitoring is per hardware input** (`le_monitor_input monitors[LE_MAX_INPUTS]`,
+  one slot per input, ≤ `LE_MAX_INPUTS`=8): each enabled input is summed live
+  through **its own** stageless chain into its output mask, **never recorded**,
+  independent of all track state — replacing the old global monitor-FX bus,
+  monitor-follow-track, and monitor masks. `le_engine_set_monitor_input(input,
+  enabled,output)` / `…_fx` / `…_fx_count` / `…_fx_param`. A loopback
+  measurement clears all monitor enables (cable-feedback safety); `passthrough`
+  enables input 0 at start. The typed Dart API for lanes/monitors lands in the
+  following PRs (the legacy global-monitor Dart methods are temporary
+  `UnimplementedError` stubs until then).
 - RT contract: no malloc/lock/syscall/unbounded-loop in `le_engine_process`.
   Commands arrive via an SPSC ring; state published via per-field atomics.
 - `le_engine_process` / `le_engine_configure` are exposed for **device-free
@@ -201,11 +211,15 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   persisted via `SettingsRepository`. "Default" chips/labels name the resolved
   global value. The per-track routing dialog reuses the signal-flow graph
   scoped to one track.
-- **Per-track effects chain** — each track carries an ordered chain of up to
+- **Effects chain** — *(engine reworked: the chain is now **per-lane** and
+  **stageless** — one non-destructive chain per lane via
+  `le_engine_set_lane_fx*`; the pre/post `stage` and the global monitor-FX bus
+  are gone, replaced by per-input live monitors, see the multi-lane section
+  above. The Dart `TrackEffect.stage` model + the card-strip UI below still
+  describe the pre-rework PR #11 shape and are reworked in the Dart/UI PRs.)*
+  Each chain carries up to
   `LE_FX_MAX = 8` effects (the cap is for a fixed, allocation-free audio-thread
-  array, not a CPU limit), each with a **stage** (`le_fx_stage`: PRE processes
-  the live input so it is printed into the recording — record-through-FX; POST
-  processes playback, non-destructive) and `LE_FX_PARAMS = 3` normalized params:
+  array, not a CPU limit), each with `LE_FX_PARAMS = 3` normalized params:
   **Drive** (tanh saturation), **Filter** (TPT state-variable low-pass),
   **Delay** (feedback + wet mix, lazily allocated 1 s ring per entry on the
   control thread), **Tremolo** (sine-LFO). All DSP is allocation-free in the

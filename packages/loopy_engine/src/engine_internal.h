@@ -49,11 +49,6 @@ void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
  * tested deterministically. Not part of the FFI surface. */
 int32_t le_engine_begin_latency_for_test(le_engine* engine);
 
-/* Enables or disables input monitoring without opening a device (it is normally
- * set from le_config.passthrough at start), so the monitor-routing fold can be
- * tested deterministically. Not part of the FFI surface. */
-void le_engine_set_monitor_for_test(le_engine* engine, int on);
-
 /* Whether lane [lane] of track [channel] has its live loop buffer allocated.
  * Lets a test assert lazy lane allocation (idle lanes stay unallocated). Returns
  * 0 for out-of-range indices. Not part of the FFI surface. */
