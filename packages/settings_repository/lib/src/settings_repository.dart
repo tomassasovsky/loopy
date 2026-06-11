@@ -255,33 +255,35 @@ class SettingsRepository {
   Future<void> saveTrackMultiple(int channel, int multiple) =>
       _store.setInt(_trackMultipleKey(channel), multiple);
 
-  static const String _monitorModeKey = 'monitor.mode';
-  static const String _monitorInputMaskKey = 'monitor.input_mask';
-  static const String _monitorOutputMaskKey = 'monitor.output_mask';
+  String _monitorInputKey(int input) => 'monitor_input.$input';
+  String _monitorInputFxKey(int input) => 'monitor_input_fx.$input';
 
-  /// Loads the monitor-routing mode token (`'custom'` / `'followSelected'`), or
-  /// `null` if unset. The presentation layer maps it to its mode enum.
-  Future<String?> loadMonitorMode() => _store.getString(_monitorModeKey);
+  /// Loads hardware [input]'s live-monitor routing as `(enabled, outputMask)`,
+  /// or `null` if it was never saved.
+  ///
+  /// Packed into one int: a negative value means disabled; a non-negative value
+  /// is the output bitmask of an enabled monitor.
+  Future<(bool enabled, int outputMask)?> loadMonitorInput(int input) async {
+    final value = await _store.getInt(_monitorInputKey(input));
+    if (value == null) return null;
+    return value < 0 ? (false, 0x3) : (true, value);
+  }
 
-  /// Saves the monitor-routing [mode] token.
-  Future<void> saveMonitorMode(String mode) =>
-      _store.setString(_monitorModeKey, mode);
+  /// Saves hardware [input]'s live-monitor routing (enabled + output bitmask).
+  Future<void> saveMonitorInput(
+    int input, {
+    required bool enabled,
+    required int outputMask,
+  }) => _store.setInt(_monitorInputKey(input), enabled ? outputMask : -1);
 
-  /// Loads the custom monitor input bitmask. Defaults to `0x1` (input 0).
-  Future<int> loadMonitorInputMask() async =>
-      await _store.getInt(_monitorInputMaskKey) ?? 0x1;
+  /// Loads hardware [input]'s persisted monitor effect chain as an opaque
+  /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.
+  Future<String?> loadMonitorInputEffects(int input) =>
+      _store.getString(_monitorInputFxKey(input));
 
-  /// Saves the custom monitor input bitmask.
-  Future<void> saveMonitorInputMask(int mask) =>
-      _store.setInt(_monitorInputMaskKey, mask);
-
-  /// Loads the custom monitor output bitmask. Defaults to `0x3` (outs 0 + 1).
-  Future<int> loadMonitorOutputMask() async =>
-      await _store.getInt(_monitorOutputMaskKey) ?? 0x3;
-
-  /// Saves the custom monitor output bitmask.
-  Future<void> saveMonitorOutputMask(int mask) =>
-      _store.setInt(_monitorOutputMaskKey, mask);
+  /// Saves hardware [input]'s [encoded] monitor effect chain.
+  Future<void> saveMonitorInputEffects(int input, String encoded) =>
+      _store.setString(_monitorInputFxKey(input), encoded);
 
   String _trackNameKey(int channel) => 'track_name.$channel';
 
@@ -310,48 +312,64 @@ class SettingsRepository {
         enabled == null ? -1 : (enabled ? 1 : 0),
       );
 
-  String _trackInputMaskKey(int channel) => 'track_input_mask.$channel';
-  String _trackOutputMaskKey(int channel) => 'track_output_mask.$channel';
+  String _laneCountKey(int channel) => 'lane_count.$channel';
+  String _laneInputKey(int channel, int lane) => 'lane_input.$channel.$lane';
+  String _laneOutputKey(int channel, int lane) => 'lane_output.$channel.$lane';
+  String _laneVolKey(int channel, int lane) => 'lane_vol.$channel.$lane';
+  String _laneMuteKey(int channel, int lane) => 'lane_mute.$channel.$lane';
+  String _laneEffectsKey(int channel, int lane) =>
+      'lane_effects.$channel.$lane';
 
-  /// Loads the saved record-source input bitmask for track [channel], or `null`
-  /// if unset.
-  Future<int?> loadTrackInputMask(int channel) =>
-      _store.getInt(_trackInputMaskKey(channel));
+  /// Loads track [channel]'s saved active lane count, or `1` if unset.
+  Future<int> loadLaneCount(int channel) async =>
+      await _store.getInt(_laneCountKey(channel)) ?? 1;
 
-  /// Saves the record-source input [mask] for track [channel].
-  Future<void> saveTrackInputMask(int channel, int mask) =>
-      _store.setInt(_trackInputMaskKey(channel), mask);
+  /// Saves track [channel]'s active lane [count].
+  Future<void> saveLaneCount(int channel, int count) =>
+      _store.setInt(_laneCountKey(channel), count);
 
-  /// Loads the saved output-routing bitmask for track [channel], or `null` if
+  /// Loads lane [lane] of track [channel]'s recorded input channel (`-1` =
+  /// none), or `null` if unset.
+  Future<int?> loadLaneInput(int channel, int lane) =>
+      _store.getInt(_laneInputKey(channel, lane));
+
+  /// Saves lane [lane] of track [channel]'s recorded [inputChannel].
+  Future<void> saveLaneInput(int channel, int lane, int inputChannel) =>
+      _store.setInt(_laneInputKey(channel, lane), inputChannel);
+
+  /// Loads lane [lane] of track [channel]'s output bitmask, or `null` if unset.
+  Future<int?> loadLaneOutput(int channel, int lane) =>
+      _store.getInt(_laneOutputKey(channel, lane));
+
+  /// Saves lane [lane] of track [channel]'s output [mask].
+  Future<void> saveLaneOutput(int channel, int lane, int mask) =>
+      _store.setInt(_laneOutputKey(channel, lane), mask);
+
+  /// Loads lane [lane] of track [channel]'s playback volume, or `null` if
   /// unset.
-  Future<int?> loadTrackOutputMask(int channel) =>
-      _store.getInt(_trackOutputMaskKey(channel));
+  Future<double?> loadLaneVolume(int channel, int lane) =>
+      _store.getDouble(_laneVolKey(channel, lane));
 
-  /// Saves the output-routing [mask] for track [channel].
-  Future<void> saveTrackOutputMask(int channel, int mask) =>
-      _store.setInt(_trackOutputMaskKey(channel), mask);
+  /// Saves lane [lane] of track [channel]'s playback [volume].
+  Future<void> saveLaneVolume(int channel, int lane, double volume) =>
+      _store.setDouble(_laneVolKey(channel, lane), volume);
 
-  String _trackEffectsKey(int channel) => 'track_effects.$channel';
+  /// Loads lane [lane] of track [channel]'s mute state, or `null` if unset.
+  Future<bool?> loadLaneMute(int channel, int lane) =>
+      _store.getBool(_laneMuteKey(channel, lane));
 
-  /// Loads track [channel]'s persisted effects chain as an opaque encoded
-  /// string (see `encodeTrackEffects`), or `null` if none is saved.
-  Future<String?> loadTrackEffects(int channel) =>
-      _store.getString(_trackEffectsKey(channel));
+  /// Saves lane [lane] of track [channel]'s [muted] state.
+  Future<void> saveLaneMute(int channel, int lane, {required bool muted}) =>
+      _store.setBool(_laneMuteKey(channel, lane), value: muted);
 
-  /// Saves track [channel]'s [encoded] effects chain (see
-  /// `encodeTrackEffects`).
-  Future<void> saveTrackEffects(int channel, String encoded) =>
-      _store.setString(_trackEffectsKey(channel), encoded);
+  /// Loads lane [lane] of track [channel]'s persisted effect chain as an opaque
+  /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.
+  Future<String?> loadLaneEffects(int channel, int lane) =>
+      _store.getString(_laneEffectsKey(channel, lane));
 
-  static const String _monitorEffectsKey = 'monitor.fx';
-
-  /// Loads the persisted monitor-FX bus chain as an opaque encoded string (see
-  /// `encodeTrackEffects`), or `null` if none is saved.
-  Future<String?> loadMonitorEffects() => _store.getString(_monitorEffectsKey);
-
-  /// Saves the [encoded] monitor-FX bus chain (see `encodeTrackEffects`).
-  Future<void> saveMonitorEffects(String encoded) =>
-      _store.setString(_monitorEffectsKey, encoded);
+  /// Saves lane [lane] of track [channel]'s [encoded] effect chain.
+  Future<void> saveLaneEffects(int channel, int lane, String encoded) =>
+      _store.setString(_laneEffectsKey(channel, lane), encoded);
 
   /// Clears all settings.
   Future<void> clear() => _store.clear();

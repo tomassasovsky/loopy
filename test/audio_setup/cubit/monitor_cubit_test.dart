@@ -13,20 +13,27 @@ void main() {
   late SettingsRepository settings;
   late LooperRepository repository;
 
+  setUpAll(() => registerFallbackValue(<TrackEffect>[]));
+
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     repository = _MockLooperRepository();
     when(
-      () => repository.setMonitorInputMask(any()),
+      () => repository.setMonitorInput(
+        input: any(named: 'input'),
+        enabled: any(named: 'enabled'),
+        outputMask: any(named: 'outputMask'),
+      ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setMonitorOutputMask(any()),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setMonitorEffects(effects: any(named: 'effects')),
+      () => repository.setMonitorEffects(
+        input: any(named: 'input'),
+        effects: any(named: 'effects'),
+      ),
     ).thenReturn(EngineResult.ok);
     when(
       () => repository.setMonitorEffectParam(
+        input: any(named: 'input'),
         index: any(named: 'index'),
         param: any(named: 'param'),
         value: any(named: 'value'),
@@ -38,117 +45,110 @@ void main() {
       MonitorCubit(repository: repository, settings: settings);
 
   group('MonitorCubit', () {
-    test('defaults to custom mode with input 0x1 / output 0x3', () {
+    test('defaults to no configured inputs (disabled)', () {
       final cubit = build();
-      expect(cubit.state.mode, MonitorMode.custom);
-      expect(cubit.state.inputMask, 0x1);
-      expect(cubit.state.outputMask, 0x3);
+      expect(cubit.state.inputs, isEmpty);
+      expect(cubit.state.forInput(0).enabled, isFalse);
+      expect(cubit.state.forInput(0).outputMask, 0x3);
     });
 
     blocTest<MonitorCubit, MonitorState>(
-      'load restores custom masks and applies them to the repository',
-      setUp: () async {
-        await settings.saveMonitorMode(MonitorMode.custom.token);
-        await settings.saveMonitorInputMask(0x2);
-        await settings.saveMonitorOutputMask(0x1);
-      },
+      'setEnabled enables an input, applies it, and persists',
       build: build,
-      act: (cubit) => cubit.load(),
-      expect: () => [
-        const MonitorState(
-          inputMask: 0x2,
-          outputMask: 0x1,
-        ),
-      ],
-      verify: (_) {
-        verify(() => repository.setMonitorFollowTrack(null)).called(1);
-        verify(() => repository.setMonitorInputMask(0x2)).called(1);
-        verify(() => repository.setMonitorOutputMask(0x1)).called(1);
-      },
-    );
-
-    blocTest<MonitorCubit, MonitorState>(
-      'load in follow mode follows the (default) selected track',
-      setUp: () => settings.saveMonitorMode(MonitorMode.followSelected.token),
-      build: build,
-      act: (cubit) => cubit.load(),
+      act: (cubit) => cubit.setEnabled(0, enabled: true),
       expect: () => [
         isA<MonitorState>().having(
-          (s) => s.mode,
-          'mode',
-          MonitorMode.followSelected,
-        ),
-      ],
-      verify: (_) =>
-          verify(() => repository.setMonitorFollowTrack(0)).called(1),
-    );
-
-    blocTest<MonitorCubit, MonitorState>(
-      'setMode(followSelected) follows the selected track and persists',
-      build: build,
-      act: (cubit) async {
-        cubit.setSelectedChannel(2);
-        await cubit.setMode(MonitorMode.followSelected);
-      },
-      expect: () => [
-        isA<MonitorState>().having(
-          (s) => s.mode,
-          'mode',
-          MonitorMode.followSelected,
+          (s) => s.forInput(0).enabled,
+          'enabled',
+          isTrue,
         ),
       ],
       verify: (_) async {
-        verify(() => repository.setMonitorFollowTrack(2)).called(1);
-        expect(
-          await settings.loadMonitorMode(),
-          MonitorMode.followSelected.token,
+        verify(
+          () => repository.setMonitorInput(
+            input: 0,
+            enabled: true,
+            outputMask: 0x3,
+          ),
+        ).called(1);
+        expect(await settings.loadMonitorInput(0), (true, 0x3));
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'setOutputMask updates and persists a per-input output mask',
+      build: build,
+      act: (cubit) async {
+        await cubit.setEnabled(1, enabled: true);
+        await cubit.setOutputMask(1, 0x2);
+      },
+      verify: (cubit) async {
+        expect(cubit.state.forInput(1).outputMask, 0x2);
+        verify(
+          () => repository.setMonitorInput(
+            input: 1,
+            enabled: true,
+            outputMask: 0x2,
+          ),
+        ).called(1);
+        expect(await settings.loadMonitorInput(1), (true, 0x2));
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'inputs are independent of one another',
+      build: build,
+      act: (cubit) async {
+        await cubit.setEnabled(0, enabled: true);
+        await cubit.setEnabled(1, enabled: true);
+        await cubit.setEnabled(0, enabled: false);
+      },
+      verify: (cubit) {
+        expect(cubit.state.forInput(0).enabled, isFalse);
+        expect(cubit.state.forInput(1).enabled, isTrue);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
+      'load restores per-input routing and effects, applying them',
+      setUp: () async {
+        await settings.saveMonitorInput(0, enabled: true, outputMask: 0x2);
+        await settings.saveMonitorInputEffects(
+          0,
+          encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
         );
       },
-    );
-
-    blocTest<MonitorCubit, MonitorState>(
-      'setSelectedChannel only re-follows while in follow mode',
       build: build,
-      act: (cubit) => cubit.setSelectedChannel(3), // still custom mode
-      expect: () => <MonitorState>[],
-      verify: (_) => verifyNever(() => repository.setMonitorFollowTrack(any())),
-    );
-
-    blocTest<MonitorCubit, MonitorState>(
-      'setInputMask persists and applies while custom',
-      build: build,
-      act: (cubit) => cubit.setInputMask(0x3),
-      expect: () => [
-        isA<MonitorState>().having((s) => s.inputMask, 'inputMask', 0x3),
-      ],
-      verify: (_) async {
-        verify(() => repository.setMonitorInputMask(0x3)).called(1);
-        expect(await settings.loadMonitorInputMask(), 0x3);
+      act: (cubit) => cubit.load(),
+      verify: (cubit) {
+        final monitor = cubit.state.forInput(0);
+        expect(monitor.enabled, isTrue);
+        expect(monitor.outputMask, 0x2);
+        expect(monitor.effects.single.type, TrackEffectType.delay);
+        verify(
+          () => repository.setMonitorInput(
+            input: 0,
+            enabled: true,
+            outputMask: 0x2,
+          ),
+        ).called(1);
+        verify(
+          () => repository.setMonitorEffects(
+            input: 0,
+            effects: any(named: 'effects'),
+          ),
+        ).called(1);
       },
     );
 
-    blocTest<MonitorCubit, MonitorState>(
-      'setInputMask persists but does not apply while following a track',
-      build: build,
-      act: (cubit) async {
-        await cubit.setMode(MonitorMode.followSelected);
-        await cubit.setInputMask(0x3);
-      },
-      verify: (_) async {
-        // The mask is saved but not pushed to the engine (follow overrides it).
-        verifyNever(() => repository.setMonitorInputMask(any()));
-        expect(await settings.loadMonitorInputMask(), 0x3);
-      },
-    );
-
-    group('monitor-FX bus', () {
+    group('per-input monitor effects', () {
       blocTest<MonitorCubit, MonitorState>(
         'addEffect appends a default drive, applies it, and persists',
         build: build,
-        act: (cubit) => cubit.addEffect(),
+        act: (cubit) => cubit.addEffect(0),
         expect: () => [
           isA<MonitorState>().having(
-            (s) => s.effects.single.type,
+            (s) => s.forInput(0).effects.single.type,
             'type',
             TrackEffectType.drive,
           ),
@@ -156,10 +156,11 @@ void main() {
         verify: (_) async {
           verify(
             () => repository.setMonitorEffects(
+              input: 0,
               effects: any(named: 'effects'),
             ),
           ).called(1);
-          expect(await settings.loadMonitorEffects(), isNotNull);
+          expect(await settings.loadMonitorInputEffects(0), isNotNull);
         },
       );
 
@@ -168,14 +169,14 @@ void main() {
         build: build,
         act: (cubit) {
           cubit
-            ..addEffect()
-            ..setEffectParam(0, 0, 0.9);
+            ..addEffect(0)
+            ..setEffectParam(0, 0, 0, 0.9);
         },
         verify: (cubit) {
-          expect(cubit.state.effects.single.params[0], 0.9);
-          // The granular param path, not the structural setMonitorEffects.
+          expect(cubit.state.forInput(0).effects.single.params[0], 0.9);
           verify(
             () => repository.setMonitorEffectParam(
+              input: 0,
               index: 0,
               param: 0,
               value: 0.9,
@@ -189,27 +190,10 @@ void main() {
         build: build,
         act: (cubit) {
           cubit
-            ..addEffect()
-            ..removeEffect(0);
+            ..addEffect(0)
+            ..removeEffect(0, 0);
         },
-        verify: (cubit) => expect(cubit.state.effects, isEmpty),
-      );
-
-      blocTest<MonitorCubit, MonitorState>(
-        'load restores a persisted monitor-FX chain',
-        setUp: () => settings.saveMonitorEffects(
-          encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
-        ),
-        build: build,
-        act: (cubit) => cubit.load(),
-        verify: (cubit) {
-          expect(cubit.state.effects.single.type, TrackEffectType.delay);
-          verify(
-            () => repository.setMonitorEffects(
-              effects: any(named: 'effects'),
-            ),
-          ).called(1);
-        },
+        verify: (cubit) => expect(cubit.state.forInput(0).effects, isEmpty),
       );
     });
   });

@@ -9,7 +9,7 @@ import 'package:settings_repository/settings_repository.dart';
 import '../../helpers/helpers.dart';
 
 void main() {
-  group('MonitorFxEditor', () {
+  group('InputMonitorTile', () {
     late SettingsRepository settings;
     late LooperRepository repository;
     late MonitorCubit cubit;
@@ -30,69 +30,90 @@ void main() {
         home: Scaffold(
           body: BlocProvider<MonitorCubit>.value(
             value: cubit,
-            child: const SingleChildScrollView(child: MonitorFxEditor()),
+            child: const SingleChildScrollView(
+              child: InputMonitorTile(input: 0, outputChannels: 2),
+            ),
           ),
         ),
       ),
     );
 
-    testWidgets('shows the empty hint when the bus is empty', (tester) async {
+    testWidgets('hides the effect controls until the monitor is enabled', (
+      tester,
+    ) async {
       await pump(tester);
       expect(
-        find.byKey(const Key('audioSettings_monitorFx_empty')),
+        find.byKey(const Key('audioSettings_monitorFx_add_0')),
+        findsNothing,
+      );
+
+      await tester.tap(
+        find.byKey(const Key('audioSettings_monitorInput_switch_0')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('audioSettings_monitorFx_empty_0')),
         findsOneWidget,
       );
     });
 
     testWidgets('Add appends an editable effect card', (tester) async {
+      await cubit.setEnabled(0, enabled: true);
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('audioSettings_monitorFx_add')));
+      await tester.tap(find.byKey(const Key('audioSettings_monitorFx_add_0')));
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const Key('audioSettings_monitorFx_card_0')),
+        find.byKey(const Key('audioSettings_monitorFx_card_0_0')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const Key('audioSettings_monitorFx_type_0')),
+        find.byKey(const Key('audioSettings_monitorFx_type_0_0')),
         findsOneWidget,
       );
       // The default effect is a drive (two params).
-      expect(cubit.state.effects.single.type, TrackEffectType.drive);
+      expect(
+        cubit.state.forInput(0).effects.single.type,
+        TrackEffectType.drive,
+      );
     });
 
     testWidgets('Remove drops the card back to the empty hint', (tester) async {
+      await cubit.setEnabled(0, enabled: true);
       await pump(tester);
-      await tester.tap(find.byKey(const Key('audioSettings_monitorFx_add')));
+      await tester.tap(find.byKey(const Key('audioSettings_monitorFx_add_0')));
       await tester.pumpAndSettle();
 
       await tester.tap(
-        find.byKey(const Key('audioSettings_monitorFx_remove_0')),
+        find.byKey(const Key('audioSettings_monitorFx_remove_0_0')),
       );
       await tester.pumpAndSettle();
 
-      expect(cubit.state.effects, isEmpty);
+      expect(cubit.state.forInput(0).effects, isEmpty);
       expect(
-        find.byKey(const Key('audioSettings_monitorFx_empty')),
+        find.byKey(const Key('audioSettings_monitorFx_empty_0')),
         findsOneWidget,
       );
     });
 
     testWidgets('dragging a param slider forwards the value', (tester) async {
-      await settings.saveMonitorEffects(
+      await settings.saveMonitorInput(0, enabled: true, outputMask: 0x3);
+      await settings.saveMonitorInputEffects(
+        0,
         encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
       );
       await cubit.load();
       await pump(tester);
 
       await tester.drag(
-        find.byKey(const Key('audioSettings_monitorFx_param_0_0')),
+        find.byKey(const Key('audioSettings_monitorFx_param_0_0_0')),
         const Offset(200, 0),
       );
       await tester.pump();
 
-      expect(cubit.state.effects.single.params[0], greaterThan(0));
+      expect(cubit.state.forInput(0).effects.single.params[0], greaterThan(0));
     });
   });
 }

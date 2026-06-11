@@ -1,22 +1,78 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 
-/// The monitor-FX bus editor: a compact, ordered list of effect cards applied
-/// to the live monitored signal in every mode (custom masks or follow-track).
-/// Unlike the per-track routing graph there is no pre/post — the bus is a single
-/// flat chain — so this is a simple vertical, drag-reorderable list rather than
-/// a signal-flow graph.
-class MonitorFxEditor extends StatelessWidget {
-  /// Creates a [MonitorFxEditor].
-  const MonitorFxEditor({super.key});
+/// The per-input live-monitor controls for one hardware [input]: an enable
+/// toggle, output routing, and a flat, drag-reorderable effect chain. The
+/// monitored signal runs live through its own chain and is never recorded;
+/// monitoring is independent of any track's record/playback state.
+class InputMonitorTile extends StatelessWidget {
+  /// Creates an [InputMonitorTile] for hardware [input].
+  const InputMonitorTile({
+    required this.input,
+    required this.outputChannels,
+    super.key,
+  });
+
+  /// The hardware input channel this tile configures.
+  final int input;
+
+  /// The number of hardware output channels available for routing.
+  final int outputChannels;
 
   @override
   Widget build(BuildContext context) {
-    final cubit = context.watch<MonitorCubit>();
-    final effects = cubit.state.effects;
+    final monitor = context.watch<MonitorCubit>().state.forInput(input);
+    return Container(
+      key: Key('audioSettings_monitorInput_$input'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SetupToggleRow(
+            toggleKey: Key('audioSettings_monitorInput_switch_$input'),
+            title: 'Input ${input + 1}',
+            subtitle: 'Monitor this input live through its own effects',
+            value: monitor.enabled,
+            onChanged: (on) => unawaited(
+              context.read<MonitorCubit>().setEnabled(input, enabled: on),
+            ),
+          ),
+          if (monitor.enabled) ...[
+            const SizedBox(height: 12),
+            const Text('Route to these outputs', style: setupBody),
+            const SizedBox(height: 8),
+            SetupChannelChips(
+              keyPrefix: 'audioSettings_monitorOut_$input',
+              channelCount: outputChannels,
+              mask: monitor.outputMask,
+              onChanged: (m) => unawaited(
+                context.read<MonitorCubit>().setOutputMask(input, m),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _MonitorFxList(input: input),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The flat, drag-reorderable monitor-FX chain for one hardware [input].
+class _MonitorFxList extends StatelessWidget {
+  const _MonitorFxList({required this.input});
+
+  final int input;
+
+  @override
+  Widget build(BuildContext context) {
+    final effects = context.watch<MonitorCubit>().state.forInput(input).effects;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -24,8 +80,8 @@ class MonitorFxEditor extends StatelessWidget {
           children: [
             const Expanded(child: Text('Monitor FX', style: setupBody)),
             TextButton.icon(
-              key: const Key('audioSettings_monitorFx_add'),
-              onPressed: context.read<MonitorCubit>().addEffect,
+              key: Key('audioSettings_monitorFx_add_$input'),
+              onPressed: () => context.read<MonitorCubit>().addEffect(input),
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Add'),
               style: TextButton.styleFrom(
@@ -35,12 +91,12 @@ class MonitorFxEditor extends StatelessWidget {
           ],
         ),
         if (effects.isEmpty)
-          const Padding(
-            key: Key('audioSettings_monitorFx_empty'),
-            padding: EdgeInsets.only(top: 4, bottom: 4),
-            child: Text(
-              'No monitor effects. Add one to color your live input — heard '
-              'in every monitor mode, never recorded.',
+          Padding(
+            key: Key('audioSettings_monitorFx_empty_$input'),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: const Text(
+              'No monitor effects. Add one to color this input live — '
+              'never recorded.',
               style: TextStyle(color: SetupSurfaceColors.t2, fontSize: 13),
             ),
           )
@@ -51,9 +107,12 @@ class MonitorFxEditor extends StatelessWidget {
             buildDefaultDragHandles: false,
             itemCount: effects.length,
             onReorderItem: (from, to) =>
-                context.read<MonitorCubit>().moveEffect(from, to),
-            itemBuilder: (context, i) =>
-                _MonitorFxCard(key: ValueKey('monitorFx_$i'), index: i),
+                context.read<MonitorCubit>().moveEffect(input, from, to),
+            itemBuilder: (context, i) => _MonitorFxCard(
+              key: ValueKey('monitorFx_${input}_$i'),
+              input: input,
+              index: i,
+            ),
           ),
       ],
     );
@@ -61,16 +120,21 @@ class MonitorFxEditor extends StatelessWidget {
 }
 
 class _MonitorFxCard extends StatelessWidget {
-  const _MonitorFxCard({required this.index, super.key});
+  const _MonitorFxCard({
+    required this.input,
+    required this.index,
+    super.key,
+  });
 
+  final int input;
   final int index;
 
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<MonitorCubit>();
-    final fx = cubit.state.effects[index];
+    final fx = cubit.state.forInput(input).effects[index];
     return Container(
-      key: Key('audioSettings_monitorFx_card_$index'),
+      key: Key('audioSettings_monitorFx_card_${input}_$index'),
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
       decoration: BoxDecoration(
@@ -97,7 +161,7 @@ class _MonitorFxCard extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: DropdownButton<TrackEffectType>(
-                  key: Key('audioSettings_monitorFx_type_$index'),
+                  key: Key('audioSettings_monitorFx_type_${input}_$index'),
                   isExpanded: true,
                   isDense: true,
                   value: fx.type,
@@ -108,7 +172,7 @@ class _MonitorFxCard extends StatelessWidget {
                   ),
                   onChanged: (type) {
                     if (type != null && type != TrackEffectType.none) {
-                      cubit.setEffectType(index, type);
+                      cubit.setEffectType(input, index, type);
                     }
                   },
                   items: [
@@ -125,8 +189,8 @@ class _MonitorFxCard extends StatelessWidget {
               Tooltip(
                 message: 'Remove effect',
                 child: InkResponse(
-                  key: Key('audioSettings_monitorFx_remove_$index'),
-                  onTap: () => cubit.removeEffect(index),
+                  key: Key('audioSettings_monitorFx_remove_${input}_$index'),
+                  onTap: () => cubit.removeEffect(input, index),
                   radius: 18,
                   child: const SizedBox(
                     width: 28,
@@ -172,9 +236,12 @@ class _MonitorFxCard extends StatelessWidget {
                         ),
                       ),
                       child: Slider(
-                        key: Key('audioSettings_monitorFx_param_${index}_$p'),
+                        key: Key(
+                          'audioSettings_monitorFx_param_${input}_${index}_$p',
+                        ),
                         value: fx.params[p].clamp(0.0, 1.0),
-                        onChanged: (v) => cubit.setEffectParam(index, p, v),
+                        onChanged: (v) =>
+                            cubit.setEffectParam(input, index, p, v),
                       ),
                     ),
                   ),

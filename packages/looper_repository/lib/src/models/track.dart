@@ -1,8 +1,13 @@
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/src/models/lane.dart';
 import 'package:loopy_engine/loopy_engine.dart';
 
-/// A single looper track: its state-machine phase, mix settings, and live
-/// metering, as projected from the engine snapshot.
+/// A single looper track: a multi-lane container that owns the transport
+/// (state, loop multiple, undo/redo depth) and its [lanes].
+///
+/// The scalar [volume]/[muted]/[inputMask]/[outputMask]/[rms]/[peak] fields
+/// mirror lane 0 so existing single-lane callers (the channel strip, the
+/// routing graph) keep working; full per-lane state lives in [lanes].
 class Track extends Equatable {
   /// Creates a [Track].
   const Track({
@@ -19,6 +24,7 @@ class Track extends Equatable {
     this.multiple = 1,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
+    this.lanes = const [],
   });
 
   /// Track channel index (always 0 in the single-track phase).
@@ -54,12 +60,17 @@ class Track extends Equatable {
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
 
-  /// Bitmask of hardware input channels this track records from (bit c => in
-  /// c); selected inputs are averaged into the track's mono buffer.
+  /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when
+  /// lane 0 records no input). Mirrors lane 0; per-lane inputs are in [lanes].
   final int inputMask;
 
   /// Bitmask of hardware output channels this track plays to (bit c => out c).
+  /// Mirrors lane 0.
   final int outputMask;
+
+  /// The track's lanes, in lane order. Each records one input into its own
+  /// clean buffer; empty in synthetic/default tracks.
+  final List<Lane> lanes;
 
   /// Whether this track spans more than one base loop.
   bool get isMultiple => multiple > 1;
@@ -92,5 +103,6 @@ class Track extends Equatable {
     multiple,
     inputMask,
     outputMask,
+    lanes,
   ];
 }
