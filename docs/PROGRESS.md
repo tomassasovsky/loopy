@@ -71,14 +71,32 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
 ### Native engine model (`packages/loopy_engine/src/engine.c`)
 - One **master loop clock** (`le_loop_clock`: length + position). First finalized
   track sets the length; all tracks index the same `position` → phase-locked.
-- **Per-track** `le_track`: a lazily-allocated **buffer pool** (`pool[LE_UNDO_SLOTS]`)
-  + undo/redo stacks, all owned by the **control thread** (sole writer of the
-  atomic `a_live`). The **audio thread only reads `pool[a_live]`** and overdubs
-  into it — no allocation/locks/stack-access on the callback.
+- **Multi-lane tracks** (PR 1 of the multi-lane/dual-route rework). A `le_track`
+  is a container that owns the **transport** (state / multiple / pending-arm),
+  one **shared latency-compensated write head** (`record_pos`), and **one undo
+  span** (`undo_stack`/`redo_stack`, the same slot index in every lane). Each
+  `le_lane` (`lanes[LE_MAX_LANES]`, `LE_MAX_LANES == LE_MAX_INPUTS == 8`) records
+  **one** hardware input (`a_input_channel`, -1 = none) into its **own clean mono
+  buffer** — sibling lanes are **never merged/averaged** — with per-lane output
+  mask / volume / mute / effects. Recording is **track-addressed** and fans out
+  to every active lane; playback **sums** all lanes; undo swaps every lane's
+  `a_live` in lockstep. **Lazy lane allocation**: only lane 0 of each track is
+  allocated at configure; `le_engine_set_lane_count` allocates added lanes on the
+  control thread, and a **real-time null-guard** keeps the audio thread from
+  dereferencing an unallocated lane buffer. Track-addressed setters (volume /
+  mute / input / output / fx) map to **lane 0** for backward compatibility.
+- Lane buffer pools + undo/redo stacks are owned by the **control thread** (sole
+  writer of each lane's atomic `a_live`). The **audio thread only reads
+  `lane.pool[a_live]`** — no allocation/locks/stack-access on the callback.
+- *Carried one PR longer (removed in the FX-relocation PR):* the live-monitor
+  subsystem (global monitor-FX bus, monitor-follow-track, monitor masks) and the
+  per-lane `mon_fx` / `a_fx_stage` fields, kept so the existing FX/monitor tests
+  stay green while the lane data model lands.
 - RT contract: no malloc/lock/syscall/unbounded-loop in `le_engine_process`.
   Commands arrive via an SPSC ring; state published via per-field atomics.
 - `le_engine_process` / `le_engine_configure` are exposed for **device-free
-  deterministic tests** (`src/test/test_engine_core.c`).
+  deterministic tests** (`src/test/test_engine_core.c`); per-lane state is read
+  with `le_engine_get_lane` (legacy per-track view mirrors lane 0).
 
 ---
 

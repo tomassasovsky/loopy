@@ -6,9 +6,12 @@
  * this API performs no allocation, locking, or I/O (see engine.c).
  *
  * Scope: device lifecycle, duplex passthrough, level metering, a loopback
- * round-trip latency harness, the lock-free command ring, and a multi-track
- * looper (LE_MAX_TRACKS tracks: record / master-loop length / overdub / loop
- * playback / loop multiples / mix / volume / mute / clear / multi-level undo).
+ * round-trip latency harness, the lock-free command ring, and a multi-track,
+ * multi-lane looper. Each track owns up to LE_MAX_LANES lanes; a lane records
+ * one hardware input into its own clean mono buffer (never merged with sibling
+ * lanes) with per-lane routing / volume / mute / effects, while the track owns
+ * the shared transport (record / master-loop length / overdub / loop playback /
+ * loop multiples / clear) and one undo span across all its lanes.
  */
 #ifndef LOOPY_ENGINE_API_H
 #define LOOPY_ENGINE_API_H
@@ -110,6 +113,25 @@ typedef enum le_command_code {
                                * le_fx_type. */
   LE_CMD_SET_MONITOR_FX_COUNT = 25, /* set the monitor bus's active chain length.
                                      * arg_i = count (0..LE_FX_MAX). */
+  /* ---- multi-lane recording (a track owns an array of lanes) ----
+   * Each lane records one hardware input into its own clean mono buffer; all
+   * lanes of a track share one transport and one undo span. The lane *count* is
+   * a control-thread plain int (le_engine_set_lane_count), not a ring command;
+   * these RT-concurrent lane edits go through the ring. arg packing differs per
+   * command so a 32-bit mask / a negative channel / a float volume each
+   * round-trips exactly (see the lane setters). */
+  LE_CMD_SET_LANE_INPUT = 26,  /* lane records this input channel (-1 = none).
+                                * arg_f = channel*LE_MAX_LANES + lane,
+                                * arg_i = input channel (or -1). */
+  LE_CMD_SET_LANE_OUTPUT = 27, /* lane playback destinations.
+                                * arg_f = channel*LE_MAX_LANES + lane,
+                                * arg_i = output bitmask. */
+  LE_CMD_SET_LANE_VOLUME = 28, /* lane playback gain.
+                                * arg_i = channel*LE_MAX_LANES + lane,
+                                * arg_f = 0..1. */
+  LE_CMD_SET_LANE_MUTE = 29,   /* lane mute.
+                                * arg_i = channel*LE_MAX_LANES + lane,
+                                * arg_f = 0/1. */
 } le_command_code;
 
 /* Per-track effects: each track carries an ordered chain of up to LE_FX_MAX
@@ -179,24 +201,55 @@ typedef struct le_config {
 /* Maximum number of simultaneous looper tracks (two banks of four). */
 #define LE_MAX_TRACKS 8
 
+/* Maximum hardware input channels a single track can fan out across lanes, and
+ * therefore the maximum number of lanes per track: one lane per input. A lane
+ * is the fundamental recordable unit — one clean mono buffer fed by one input —
+ * and a track owns up to this many, all sharing one transport and undo span.
+ * Lane buffers are allocated lazily (only recorded/counted lanes), so the
+ * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory. */
+#define LE_MAX_INPUTS 8
+#define LE_MAX_LANES LE_MAX_INPUTS
+
 /* Number of points in the loop visualization buffer (le_engine_read_visual):
  * one peak per loop position, spanning exactly one master loop. */
 #define LE_VIZ_POINTS 512
 
-/* Per-track state published in le_snapshot.tracks. */
-typedef struct le_track_snapshot {
-  int32_t state;         /* le_track_state */
+/* Per-lane state published via le_engine_get_lane: one recordable input lane of
+ * a track. A lane records exactly one hardware input (input_channel, -1 = none)
+ * into its own clean mono buffer and plays back to the outputs in output_mask,
+ * scaled by volume and gated by muted. length_frames is the lane's recorded
+ * length (all lanes of a track share the same length via the one transport). */
+typedef struct le_lane_snapshot {
+  int32_t input_channel; /* hardware input this lane records (-1 = none) */
+  uint32_t output_mask;  /* bitmask of output channels this lane plays to */
   float volume;          /* 0..1 */
   int32_t muted;         /* 0/1 */
+  int32_t length_frames; /* frames captured into this lane's buffer */
+  float rms;             /* 0..1 */
+  float peak;            /* 0..1 */
+} le_lane_snapshot;
+
+/* Per-track state published in le_snapshot.tracks.
+ *
+ * A track is a multi-lane container: it owns the transport (state, multiple,
+ * undo/redo depth) and up to lane_count lanes. The volume/muted/length/
+ * input_mask/output_mask/rms/peak fields mirror lane 0 for backward
+ * compatibility (a track always has at least one lane); per-lane state is read
+ * with le_engine_get_lane. */
+typedef struct le_track_snapshot {
+  int32_t state;         /* le_track_state */
+  float volume;          /* lane 0 volume, 0..1 */
+  int32_t muted;         /* lane 0 mute, 0/1 */
   int32_t length_frames; /* frames captured (== multiple * master length) */
   int32_t multiple;      /* track length in whole base loops (>= 1) */
   int32_t undo_depth;    /* available undo steps (overdub layers) */
   int32_t redo_depth;    /* available redo steps */
-  float rms;             /* 0..1 */
-  float peak;            /* 0..1 */
-  uint32_t input_mask;   /* bitmask of input channels this track records from
-                          * (selected inputs are averaged into its mono buffer) */
-  uint32_t output_mask;  /* bitmask of output channels this track plays to */
+  float rms;             /* lane 0 RMS, 0..1 */
+  float peak;            /* lane 0 peak, 0..1 */
+  uint32_t input_mask;   /* lane 0 input as a bitmask (1 << input_channel, or 0
+                          * when lane 0 records no input) */
+  uint32_t output_mask;  /* lane 0 output mask */
+  int32_t lane_count;    /* number of active lanes (1..LE_MAX_LANES) */
 } le_track_snapshot;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -345,6 +398,49 @@ LE_EXPORT int32_t le_engine_set_input_mask(le_engine* engine, int32_t channel,
  * output-channel range are ignored. */
 LE_EXPORT int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
                                             int32_t mask);
+
+/* ---- multi-lane recording ---- *
+ * A track owns up to LE_MAX_LANES lanes; each records one hardware input into
+ * its own clean mono buffer (never merged with sibling lanes) and plays back
+ * through its own routing/volume/mute. All lanes of a track share one
+ * transport (record/stop/play/clear/undo are track-addressed and fan out to
+ * every active lane) and one undo span. The track-addressed setters above
+ * (volume/mute/input/output mask) operate on lane 0 for backward
+ * compatibility. */
+
+/* Sets track [channel]'s active lane count to [count] (clamped 1..LE_MAX_LANES)
+ * on the calling (control) thread, lazily allocating the loop buffers for any
+ * newly added lanes before the audio thread can read them. New lanes default to
+ * recording input channel == their lane index, full stereo output, unity
+ * volume, unmuted. Shrinking the count leaves the dropped lanes' buffers
+ * allocated for reuse but stops playing/recording them. */
+LE_EXPORT int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
+                                           int32_t count);
+
+/* Routes lane [lane] of track [channel] to record from hardware input
+ * [input_channel] (-1 = record nothing). Bits beyond the negotiated input range
+ * or loopback-excluded channels record silence. */
+LE_EXPORT int32_t le_engine_set_lane_input(le_engine* engine, int32_t channel,
+                                           int32_t lane, int32_t input_channel);
+
+/* Routes lane [lane] of track [channel]'s playback to the output channels set
+ * in [mask] (bit c => output channel c). Bits beyond the output range are
+ * ignored. */
+LE_EXPORT int32_t le_engine_set_lane_output(le_engine* engine, int32_t channel,
+                                            int32_t lane, int32_t mask);
+
+/* Sets lane [lane] of track [channel]'s playback gain, clamped to 0..1. */
+LE_EXPORT int32_t le_engine_set_lane_volume(le_engine* engine, int32_t channel,
+                                            int32_t lane, float volume);
+
+/* Mutes or unmutes lane [lane] of track [channel]. */
+LE_EXPORT int32_t le_engine_set_lane_mute(le_engine* engine, int32_t channel,
+                                          int32_t lane, int32_t muted);
+
+/* Copies lane [lane] of track [channel]'s snapshot into *out. Out-of-range
+ * channels/lanes yield an empty lane. No-op if either pointer is NULL. */
+LE_EXPORT void le_engine_get_lane(le_engine* engine, int32_t channel,
+                                  int32_t lane, le_lane_snapshot* out);
 
 /* Sets the record-offset latency compensation in frames (clamped >= 0). */
 LE_EXPORT int32_t le_engine_set_record_offset(le_engine* engine,

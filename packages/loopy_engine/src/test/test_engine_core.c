@@ -722,9 +722,11 @@ static void test_routing_input_mask(void) {
   le_engine_destroy(e);
 }
 
-/* Selecting multiple inputs records their average into the mono track buffer. */
-static void test_routing_input_mask_averages(void) {
-  printf("test_routing_input_mask_averages\n");
+/* A legacy multi-bit track input mask collapses to lane 0's single input
+ * channel: the lowest valid bit. (Multi-input capture is now per-lane and
+ * un-merged — see the multi-lane tests — not an average into one buffer.) */
+static void test_routing_input_mask_collapses_to_lowest(void) {
+  printf("test_routing_input_mask_collapses_to_lowest\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
   float out[64];
@@ -734,7 +736,7 @@ static void test_routing_input_mask_averages(void) {
   le_engine_record(e, 0);
   float in[2 * LOOP_N];
   for (int i = 0; i < LOOP_N; ++i) {
-    in[i * 2 + 0] = 2.0f;
+    in[i * 2 + 0] = 2.0f; /* lowest selected bit -> lane 0 records this */
     in[i * 2 + 1] = 4.0f;
   }
   le_engine_process(e, out, in, LOOP_N);
@@ -742,14 +744,14 @@ static void test_routing_input_mask_averages(void) {
   drain(e);
 
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].input_mask == 0x3u);
+  CHECK(s.tracks[0].input_mask == 0x1u); /* collapsed to channel 0 */
 
-  /* The mono buffer holds the average (2.0 + 4.0) / 2 == 3.0, on outputs 0+1. */
+  /* Lane 0 recorded channel 0 (2.0) cleanly — never an average — on outputs 0+1. */
   float zin[2 * LOOP_N] = {0};
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
-    CHECK(fabsf(out[i * 2 + 1] - 3.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
   }
 
   le_engine_destroy(e);
@@ -820,7 +822,8 @@ static void test_routing_default_stereo(void) {
   le_engine_destroy(e);
 }
 
-/* Input-mask bits beyond the available input channels are dropped. */
+/* Input-mask bits beyond the available input channels are dropped before the
+ * mask collapses to lane 0's single input channel (the lowest valid bit). */
 static void test_routing_input_mask_clamped(void) {
   printf("test_routing_input_mask_clamped\n");
   le_engine* e = le_engine_create();
@@ -830,7 +833,8 @@ static void test_routing_input_mask_clamped(void) {
   CHECK(le_engine_set_input_mask(e, 0, 0xF) == LE_OK); /* request 4 inputs */
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].input_mask == 0x3u); /* only inputs 0 and 1 exist */
+  /* Bits 2,3 don't exist; the remaining 0x3 collapses to channel 0 (0x1). */
+  CHECK(s.tracks[0].input_mask == 0x1u);
 
   le_engine_destroy(e);
 }
@@ -1967,8 +1971,501 @@ static void test_session_export_import_roundtrip(void) {
   le_engine_destroy(e);
 }
 
+/* ---- multi-lane tracks ---- */
+
+/* Configures a 2-in/2-out engine, gives track 0 two lanes recording inputs 0
+ * and 1, and routes BOTH lanes to output channel 0 only (so the un-merged sum
+ * is observable on out 0 while out 1 stays clear). */
+static le_engine* make_two_lane_engine(void) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_engine_set_lane_count(e, 0, 2);
+  le_engine_set_lane_input(e, 0, 0, 0);  /* lane 0 records input 0 */
+  le_engine_set_lane_input(e, 0, 1, 1);  /* lane 1 records input 1 */
+  le_engine_set_lane_output(e, 0, 0, 0x1);
+  le_engine_set_lane_output(e, 0, 1, 0x1);
+  drain(e);
+  return e;
+}
+
+/* Records LOOP_N frames into track 0 with ch0 = `a`, ch1 = `b`, then finalizes
+ * the loop to PLAYING. */
+static void record_two_lane(le_engine* e, float a, float b) {
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = a;
+    in[i * 2 + 1] = b;
+  }
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+}
+
+/* Two inputs assigned to one track record as two separate clean lanes; both
+ * play back and are summed (never merged/averaged) on the shared output. */
+static void test_two_lanes_unmerged_both_play(void) {
+  printf("test_two_lanes_unmerged_both_play\n");
+  le_engine* e = make_two_lane_engine();
+  float out[2 * LOOP_N];
+  le_snapshot s;
+
+  record_two_lane(e, 1.0f, 2.0f);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].lane_count == 2);
+
+  le_lane_snapshot ls0, ls1;
+  le_engine_get_lane(e, 0, 0, &ls0);
+  le_engine_get_lane(e, 0, 1, &ls1);
+  CHECK(ls0.input_channel == 0);
+  CHECK(ls1.input_channel == 1);
+  CHECK(ls0.length_frames == LOOP_N);
+  CHECK(ls1.length_frames == LOOP_N);
+
+  /* Playback over silence: lane 0 (1.0) + lane 1 (2.0) summed on out 0 == 3.0
+   * (an average would be 1.5); out 1 is silent (both lanes route to out 0). */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Per-lane volume and mute act independently on each lane's contribution. */
+static void test_lane_volume_and_mute(void) {
+  printf("test_lane_volume_and_mute\n");
+  le_engine* e = make_two_lane_engine();
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+
+  record_two_lane(e, 1.0f, 2.0f); /* lane0 = 1.0, lane1 = 2.0 */
+
+  /* Halve lane 1 only: out 0 == 1.0 + 2.0*0.5 == 2.0. */
+  CHECK(le_engine_set_lane_volume(e, 0, 1, 0.5f) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+
+  /* Mute lane 0: only the halved lane 1 remains, out 0 == 1.0. */
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+
+  le_lane_snapshot ls1;
+  le_engine_get_lane(e, 0, 1, &ls1);
+  CHECK(fabsf(ls1.volume - 0.5f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* One undo on the track removes the last overdub pass across ALL its lanes
+ * consistently (the one shared undo span drives every lane in lockstep). */
+static void test_undo_across_lanes(void) {
+  printf("test_undo_across_lanes\n");
+  le_engine* e = make_two_lane_engine();
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  le_snapshot s;
+
+  /* Route the lanes to SEPARATE outputs so each lane's undo is observed alone
+   * (a lane-aliasing bug would surface as one output taking the other's value),
+   * and overdub with ASYMMETRIC per-lane deltas so the two lanes never share a
+   * value the undo could accidentally satisfy. */
+  CHECK(le_engine_set_lane_output(e, 0, 1, 0x2) == LE_OK); /* lane 1 -> out 1 */
+  drain(e);
+  record_two_lane(e, 1.0f, 2.0f); /* lane0 = 1.0 (out0), lane1 = 2.0 (out1) */
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+
+  /* Overdub +0.25 on input 0, +0.5 on input 1: lane0 -> 1.25, lane1 -> 2.5. */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* -> OVERDUBBING (snapshot taken) */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 0.25f;
+    in[i * 2 + 1] = 0.5f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.25f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.5f) < 1e-6f);
+  }
+
+  /* Undo reverts BOTH lanes' last pass at once, each back to its own value. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 1);
+
+  /* Redo restores both lanes to their own overdubbed values. */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.25f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.5f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Idle lanes stay unallocated; growing the lane count lazily allocates the new
+ * lanes' buffers on the control thread (keeping idle memory flat). */
+static void test_lazy_lane_allocation(void) {
+  printf("test_lazy_lane_allocation\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+
+  /* Fresh: only lane 0 of each track is allocated. */
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 0) == 1);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 1) == 0);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 3, 0) == 1);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 3, 1) == 0);
+
+  /* Growing track 0 to three lanes allocates lanes 1 and 2 (and only those). */
+  CHECK(le_engine_set_lane_count(e, 0, 3) == LE_OK);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 1) == 1);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 2) == 1);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 3) == 0);
+  /* Untouched tracks keep just lane 0. */
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 1, 1) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Each lane's phase-locked write head matches the single-buffer baseline: a new
+ * two-lane track recorded mid-loop captures the silent pre-press slice and the
+ * post-press signal identically on every lane (cf. the single-lane
+ * test_new_track_records_mid_loop). */
+static void test_lane_phase_lock_matches_baseline(void) {
+  printf("test_lane_phase_lock_matches_baseline\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float out[2 * 64];
+  le_snapshot s;
+
+  /* Track 0 (single lane) defines the master loop, then is muted. */
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> master == LOOP_N */
+  drain(e);
+  le_engine_set_lane_mute(e, 0, 0, 1);
+
+  /* Track 1 gets two lanes (in0 -> out0, in1 -> out1). */
+  le_engine_set_lane_count(e, 1, 2);
+  le_engine_set_lane_input(e, 1, 0, 0);
+  le_engine_set_lane_input(e, 1, 1, 1);
+  le_engine_set_lane_output(e, 1, 0, 0x1);
+  le_engine_set_lane_output(e, 1, 1, 0x2);
+  drain(e);
+
+  /* Advance one frame past the loop top, then record mid-loop. */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, 1);
+  le_engine_record(e, 1);
+  for (int i = 0; i < LOOP_N - 1; ++i) {
+    in[i * 2 + 0] = 2.0f;
+    in[i * 2 + 1] = 3.0f;
+  }
+  le_engine_process(e, out, in, LOOP_N - 1); /* pos 1,2,3 -> wraps to the top */
+  le_engine_record(e, 1);                    /* finalize -> PLAYING */
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].lane_count == 2);
+
+  /* One full loop from the top: each lane is phase-locked — pos 0 silent (the
+   * pre-press slice), pos 1..3 its recorded signal — identically. */
+  le_engine_process(e, out, zin, LOOP_N);
+  CHECK(fabsf(out[0]) < 1e-6f);     /* lane 0 -> out 0, pos 0 silent */
+  CHECK(fabsf(out[1]) < 1e-6f);     /* lane 1 -> out 1, pos 0 silent */
+  for (int i = 1; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 3.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Real-time null-guard: when the active lane count claims more lanes than are
+ * allocated (the lazy-alloc window, forced here), the audio thread plays/records
+ * the allocated lanes and leaves the unallocated ones silent — never
+ * dereferencing a NULL pool. */
+static void test_lane_null_guard(void) {
+  printf("test_lane_null_guard\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float out[2 * LOOP_N];
+
+  /* Force three lanes without allocating lanes 1 and 2. */
+  le_engine_set_lane_count_unsafe_for_test(e, 0, 3);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 1) == 0);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 2) == 0);
+
+  /* Record and play with a hot bus on every input: lane 0 (allocated) captures
+   * input 0; lanes 1 and 2 (NULL buffers) record/play nothing, no crash. */
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 1.0f;
+  }
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  /* Lane 0 plays its 1.0 to the default output pair; the guarded lanes add
+   * nothing (out == lane 0 alone, not 2.0/3.0 from the would-be NULL lanes). */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+
+  /* The OVERDUBBING path does a read-before-write on each lane's buffer — drive
+   * it with the guarded NULL lanes present to prove that path is guarded too. */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* -> OVERDUBBING */
+  le_engine_process(e, out, in, LOOP_N);  /* overdubs lane 0, skips NULL lanes */
+  le_engine_record(e, 0);                 /* -> PLAYING */
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    /* lane 0 now holds 1.0 + 1.0 == 2.0; the guarded lanes still contribute 0. */
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Shrinking the lane count stops the dropped lanes; re-growing reactivates them
+ * cleanly (a clean buffer, not stale content) without re-allocating from
+ * scratch — the lazy buffers are retained for reuse. */
+static void test_lane_count_shrink_then_regrow(void) {
+  printf("test_lane_count_shrink_then_regrow\n");
+  le_engine* e = make_two_lane_engine();
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  le_snapshot s;
+
+  record_two_lane(e, 1.0f, 2.0f); /* lane0 -> out0, lane1 -> out0; sum 3.0 */
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+
+  /* Shrink to one lane: lane 1 stops contributing, only lane 0 (1.0) plays. Its
+   * buffer is retained for reuse (still allocated). */
+  CHECK(le_engine_set_lane_count(e, 0, 1) == LE_OK);
+  CHECK(le_engine_lane_buffer_allocated_for_test(e, 0, 1) == 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].lane_count == 1);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+
+  /* Re-grow to two lanes: lane 1 comes back reset (default input 1, clean buffer
+   * — NOT the stale 2.0), so it plays silence until recorded again. */
+  CHECK(le_engine_set_lane_count(e, 0, 2) == LE_OK);
+  drain(e);
+  le_lane_snapshot ls1;
+  le_engine_get_lane(e, 0, 1, &ls1);
+  CHECK(ls1.input_channel == 1);
+  CHECK(ls1.length_frames == 0);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* A quantized overdub on a multi-lane track takes its pre-overdub snapshot
+ * across ALL active lanes at arm time, fires on the grid, and a later undo
+ * reverts every lane in lockstep. */
+static void test_multi_lane_quantize_overdub_arm(void) {
+  printf("test_multi_lane_quantize_overdub_arm\n");
+  le_engine* e = make_two_lane_engine();
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  le_snapshot s;
+
+  le_engine_set_lane_output(e, 0, 1, 0x2); /* lane 1 -> out 1 (observe alone) */
+  drain(e);
+  record_two_lane(e, 1.0f, 2.0f); /* master LOOP_N; lane0=1.0, lane1=2.0 */
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+
+  /* Move off the loop top, then arm the overdub: the snapshot is pushed now,
+   * across both lanes (one shared undo span). */
+  le_engine_process(e, out, zin, 1); /* pos -> 1 */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* armed, not overdubbing yet */
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  /* pos 1 -> 2 -> 3 -> wrap: the overdub fires at the loop top. */
+  le_engine_process(e, out, zin, 3);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  /* Overdub one full loop with asymmetric per-lane deltas, then finalize. */
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 0.25f;
+    in[i * 2 + 1] = 0.5f;
+  }
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
+  drain(e);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.25f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.5f) < 1e-6f);
+  }
+
+  /* Undo reverts both lanes' quantized overdub at once. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* A multi-lane track with a fixed 2-base-loop length plays each lane's two
+ * segments in lockstep: the shared segment base applies identically to every
+ * lane. */
+static void test_multi_lane_loop_multiple(void) {
+  printf("test_multi_lane_loop_multiple\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float out[2 * LOOP_N];
+  float zin[2 * LOOP_N] = {0};
+  float in[2 * LOOP_N];
+  le_snapshot s;
+
+  /* Track 0 (single lane) defines the master loop, then muted. */
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> master == LOOP_N */
+  drain(e);
+  le_engine_set_lane_mute(e, 0, 0, 1);
+
+  /* Track 1: two lanes (in0 -> out0, in1 -> out1), fixed to two base loops. */
+  le_engine_set_lane_count(e, 1, 2);
+  le_engine_set_lane_input(e, 1, 0, 0);
+  le_engine_set_lane_input(e, 1, 1, 1);
+  le_engine_set_lane_output(e, 1, 0, 0x1);
+  le_engine_set_lane_output(e, 1, 1, 0x2);
+  le_engine_set_track_multiple(e, 1, 2);
+  drain(e);
+
+  /* Record two base loops: segment 0 (ch0=2, ch1=5), segment 1 (ch0=3, ch1=6).
+   * Pressed at the loop top, it auto-finalizes after exactly two base loops. */
+  le_engine_record(e, 1);
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 2.0f;
+    in[i * 2 + 1] = 5.0f;
+  }
+  le_engine_process(e, out, in, LOOP_N); /* segment 0 */
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 3.0f;
+    in[i * 2 + 1] = 6.0f;
+  }
+  le_engine_process(e, out, in, LOOP_N); /* segment 1 -> auto-finalize */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].lane_count == 2);
+
+  /* Playback: both lanes alternate their two segments together. */
+  le_engine_process(e, out, zin, LOOP_N); /* segment 0 */
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 5.0f) < 1e-6f);
+  }
+  le_engine_process(e, out, zin, LOOP_N); /* segment 1 */
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 6.0f) < 1e-6f);
+  }
+  le_engine_process(e, out, zin, LOOP_N); /* wraps back to segment 0 */
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 5.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* The lane setters reject a null engine, an out-of-range lane, and (for the
+ * count) an out-of-range channel; the count clamps rather than erroring. */
+static void test_lane_setters_reject_invalid_args(void) {
+  printf("test_lane_setters_reject_invalid_args\n");
+  le_engine* e = make_configured_engine(); /* configured, device-free */
+
+  CHECK(le_engine_set_lane_count(NULL, 0, 2) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_count(e, -1, 2) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_count(e, 99, 2) == LE_ERR_INVALID);
+
+  CHECK(le_engine_set_lane_input(e, 0, -1, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_input(e, 0, LE_MAX_LANES, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_output(e, 0, LE_MAX_LANES, 0x1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_volume(e, 0, -1, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_lane_mute(e, 0, LE_MAX_LANES, 1) == LE_ERR_INVALID);
+
+  /* Count clamps to [1, LE_MAX_LANES] rather than erroring. */
+  CHECK(le_engine_set_lane_count(e, 0, 999) == LE_OK);
+  CHECK(le_engine_set_lane_count(e, 0, 0) == LE_OK);
+
+  /* get_lane on out-of-range indices yields an empty (input -1) lane. */
+  le_lane_snapshot ls;
+  le_engine_get_lane(e, 0, LE_MAX_LANES, &ls);
+  CHECK(ls.input_channel == -1);
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
+  test_lane_setters_reject_invalid_args();
+  test_two_lanes_unmerged_both_play();
+  test_lane_volume_and_mute();
+  test_undo_across_lanes();
+  test_lazy_lane_allocation();
+  test_lane_phase_lock_matches_baseline();
+  test_lane_null_guard();
+  test_lane_count_shrink_then_regrow();
+  test_multi_lane_quantize_overdub_arm();
+  test_multi_lane_loop_multiple();
   test_session_export_import_roundtrip();
   test_target_multiple_forces_length();
   test_default_multiple_applies_to_inheriting_tracks();
@@ -2007,7 +2504,7 @@ int main(void) {
   test_transport_resets_when_all_stopped();
   test_transport_runs_until_last_track_stops();
   test_routing_input_mask();
-  test_routing_input_mask_averages();
+  test_routing_input_mask_collapses_to_lowest();
   test_routing_input_mask_empty_records_silence();
   test_routing_output_mask();
   test_routing_default_stereo();
