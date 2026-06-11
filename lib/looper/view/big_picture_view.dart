@@ -112,6 +112,16 @@ class _BigPictureViewState extends State<BigPictureView> {
     final bloc = context.read<LooperBloc>();
     final big = context.read<BigPictureCubit>();
     final selected = big.state.selectedChannel;
+    final playing = bloc.state.tracks
+        .map((t) => t.state)
+        .toList()
+        .any(
+          (t) => [
+            TrackState.playing,
+            TrackState.overdubbing,
+            TrackState.recording,
+          ].contains(t),
+        );
 
     if (keyboard.isMetaPressed || keyboard.isControlPressed) {
       if (key == LogicalKeyboardKey.keyZ) {
@@ -139,10 +149,6 @@ class _BigPictureViewState extends State<BigPictureView> {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {
-      final playing = bloc.state.tracks.any(
-        (t) =>
-            t.state == TrackState.playing || t.state == TrackState.overdubbing,
-      );
       bloc.add(
         playing ? const LooperStopAllPressed() : const LooperPlayAllPressed(),
       );
@@ -150,6 +156,20 @@ class _BigPictureViewState extends State<BigPictureView> {
     }
     if (key == LogicalKeyboardKey.keyC) {
       bloc.add(const LooperClearAllPressed());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyB) {
+      final currentBank = context.read<BankCubit>().state.activeBank;
+      context.read<BankCubit>().selectBank(currentBank == 0 ? 1 : 0);
+      context.read<BigPictureCubit>().select(currentBank == 0 ? 4 : 0);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyU) {
+      context.read<LooperBloc>().add(LooperUndoPressed(selected));
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyR) {
+      context.read<LooperBloc>().add(LooperRedoPressed(selected));
       return KeyEventResult.handled;
     }
 
