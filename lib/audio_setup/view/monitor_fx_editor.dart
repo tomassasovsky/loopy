@@ -45,7 +45,7 @@ class InputMonitorTile extends StatelessWidget {
           ),
           if (monitor.enabled) ...[
             const SizedBox(height: 12),
-            const Text('Route to these outputs', style: setupBody),
+            const Text('Effected signal to these outputs', style: setupBody),
             const SizedBox(height: 8),
             SetupChannelChips(
               keyPrefix: 'audioSettings_monitorOut_$input',
@@ -57,6 +57,26 @@ class InputMonitorTile extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _MonitorFxList(input: input),
+            const SizedBox(height: 12),
+            const Text(
+              'Dry (clean) signal to these outputs',
+              style: setupBody,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'A parallel send of the unprocessed input — hear it clean and '
+              'effected at once.',
+              style: TextStyle(color: SetupSurfaceColors.t3, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            SetupChannelChips(
+              keyPrefix: 'audioSettings_monitorDry_$input',
+              channelCount: outputChannels,
+              mask: monitor.dryOutputMask,
+              onChanged: (m) => unawaited(
+                context.read<MonitorCubit>().setDryOutputMask(input, m),
+              ),
+            ),
           ],
         ],
       ),

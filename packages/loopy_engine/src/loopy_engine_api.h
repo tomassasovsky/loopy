@@ -136,6 +136,9 @@ typedef enum le_command_code {
                                      * (input << 8) | index, arg_f = le_fx_type. */
   LE_CMD_SET_MONITOR_INPUT_FX_COUNT = 32, /* set a monitor input's active chain
                                            * length. arg_i = (input<<8)|count. */
+  LE_CMD_SET_MONITOR_INPUT_DRY = 33, /* route a monitor input's CLEAN (pre-FX)
+                                      * signal to a second set of outputs.
+                                      * arg_f = input, arg_i = dry bitmask. */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -520,6 +523,16 @@ LE_EXPORT int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel
 LE_EXPORT int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
                                               int32_t enabled,
                                               int32_t output_mask);
+
+/* Routes monitor input [input]'s CLEAN (pre-effects) signal to the output
+ * channels set in [dry_output_mask], independent of its effected route (see
+ * le_engine_set_monitor_input). This is a parallel dry send: the clean input
+ * goes to these outputs while the effected signal goes to its own outputs, so
+ * an input can be heard dry and wet at once on different outputs. `0` disables
+ * the dry send (the default). The dry signal is never recorded. */
+LE_EXPORT int32_t le_engine_set_monitor_input_dry(le_engine* engine,
+                                                  int32_t input,
+                                                  int32_t dry_output_mask);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input] to [type].
  * Changing the type resets that entry's DSP state; LE_FX_DELAY lazily allocates

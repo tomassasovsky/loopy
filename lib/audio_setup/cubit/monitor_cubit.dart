@@ -66,6 +66,7 @@ class MonitorCubit extends Cubit<MonitorState> {
         input: input,
         enabled: routing?.$1 ?? false,
         outputMask: routing?.$2 ?? 0x3,
+        dryOutputMask: await _settings.loadMonitorInputDry(input),
         effects: effects,
       );
     }
@@ -89,9 +90,18 @@ class MonitorCubit extends Cubit<MonitorState> {
     await _persistRouting(monitor);
   }
 
-  /// Sets and persists hardware [input]'s monitor output bitmask.
+  /// Sets and persists hardware [input]'s monitor (effected) output bitmask.
   Future<void> setOutputMask(int input, int mask) async {
     final monitor = state.forInput(input).copyWith(outputMask: mask);
+    emit(state.withInput(monitor));
+    _applyRouting(monitor);
+    await _persistRouting(monitor);
+  }
+
+  /// Sets and persists hardware [input]'s monitor dry-send output bitmask — the
+  /// CLEAN signal's outputs, in parallel with the effected route (`0` = off).
+  Future<void> setDryOutputMask(int input, int mask) async {
+    final monitor = state.forInput(input).copyWith(dryOutputMask: mask);
     emit(state.withInput(monitor));
     _applyRouting(monitor);
     await _persistRouting(monitor);
@@ -165,16 +175,25 @@ class MonitorCubit extends Cubit<MonitorState> {
     );
   }
 
-  void _applyRouting(InputMonitor monitor) => _repository.setMonitorInput(
-    input: monitor.input,
-    enabled: monitor.enabled,
-    outputMask: monitor.outputMask,
-  );
-
-  Future<void> _persistRouting(InputMonitor monitor) =>
-      _settings.saveMonitorInput(
-        monitor.input,
+  void _applyRouting(InputMonitor monitor) {
+    _repository
+      ..setMonitorInput(
+        input: monitor.input,
         enabled: monitor.enabled,
         outputMask: monitor.outputMask,
+      )
+      ..setMonitorDry(
+        input: monitor.input,
+        dryOutputMask: monitor.dryOutputMask,
       );
+  }
+
+  Future<void> _persistRouting(InputMonitor monitor) async {
+    await _settings.saveMonitorInput(
+      monitor.input,
+      enabled: monitor.enabled,
+      outputMask: monitor.outputMask,
+    );
+    await _settings.saveMonitorInputDry(monitor.input, monitor.dryOutputMask);
+  }
 }

@@ -100,6 +100,15 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   enabled,output)` / `…_fx` / `…_fx_count` / `…_fx_param`. A loopback
   measurement clears all monitor enables (cable-feedback safety); `passthrough`
   enables input 0 at start.
+- **Dry + wet monitoring (independent routing).** Each monitor input also has a
+  **parallel dry send** (`a_dry_output_mask`, `LE_CMD_SET_MONITOR_INPUT_DRY=33`,
+  `le_engine_set_monitor_input_dry(input,dry_mask)`): the CLEAN (pre-FX) sample
+  is summed to its own outputs alongside the effected route, so an input can be
+  heard clean on one set of outputs and effected on another at once (`0` = off,
+  the default; never recorded). Threaded through `InputMonitor.dryOutputMask`,
+  `LooperRepository.setMonitorDry` (remembered + reapplied on restart),
+  `MonitorCubit.setDryOutputMask`, the `monitor_input_dry.$input` settings key,
+  and a "Dry (clean) signal to these outputs" chip row in the monitor editor.
 - **Dart domain layer (PR 4) is landed.** `looper_repository` exposes per-lane
   setters (`setLane{Input,Output,Volume,Mute,Count}`, `setLaneEffects`/`…Param`)
   with **lane-0 convenience wrappers** (`setVolume`/`setMute`/`setInputMask`/

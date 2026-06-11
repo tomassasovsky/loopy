@@ -115,5 +115,20 @@ void main() {
 
       expect(cubit.state.forInput(0).effects.single.params[0], greaterThan(0));
     });
+
+    testWidgets('the dry-send chips set the monitor dry output mask', (
+      tester,
+    ) async {
+      await cubit.setEnabled(0, enabled: true);
+      await pump(tester);
+
+      // The dry send starts off (mask 0); tap output 2's dry chip -> 0x2.
+      final chip = find.byKey(const Key('audioSettings_monitorDry_0_1'));
+      await tester.ensureVisible(chip);
+      await tester.tap(chip);
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.forInput(0).dryOutputMask, 0x2);
+    });
   });
 }
