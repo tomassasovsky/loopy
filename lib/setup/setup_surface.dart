@@ -37,6 +37,17 @@ const setupBody = TextStyle(
   height: 1.45,
 );
 
+/// The accent-tinted slider styling shared by the effect-chain editors (lane
+/// strips and per-input monitors) — a thin track with a small accent thumb.
+const setupSliderTheme = SliderThemeData(
+  trackHeight: 3,
+  activeTrackColor: SetupSurfaceColors.accent,
+  inactiveTrackColor: SetupSurfaceColors.line,
+  thumbColor: SetupSurfaceColors.accent,
+  overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
+  thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
+);
+
 /// A centered, bordered panel used by onboarding and settings flows.
 class SetupSurfacePanel extends StatelessWidget {
   const SetupSurfacePanel({
