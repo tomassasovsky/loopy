@@ -149,8 +149,10 @@ void main() {
         ..setEffectType(0, 1, TrackEffectType.delay);
       await pump(tester);
 
+      // Reordering uses the gap-index drop zones (the unified convention):
+      // drop the first card into the gap after the last one.
       final handle = find.byKey(const Key('monitorGraph_fxHandle_0_0'));
-      final target = find.byKey(const Key('monitorGraph_fx_0_1'));
+      final target = find.byKey(const Key('monitorGraph_drop_0_2'));
       final gesture = await tester.startGesture(tester.getCenter(handle));
       await tester.pump(const Duration(milliseconds: 150));
       await gesture.moveTo(tester.getCenter(target));
