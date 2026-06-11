@@ -577,6 +577,190 @@ class LoopyEngineBindings {
   late final _le_engine_set_output_mask = _le_engine_set_output_maskPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets track [channel]'s active lane count to [count] (clamped 1..LE_MAX_LANES)
+  /// on the calling (control) thread, lazily allocating the loop buffers for any
+  /// newly added lanes before the audio thread can read them. New lanes default to
+  /// recording input channel == their lane index, full stereo output, unity
+  /// volume, unmuted. Shrinking the count leaves the dropped lanes' buffers
+  /// allocated for reuse but stops playing/recording them.
+  int le_engine_set_lane_count(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int count,
+  ) {
+    return _le_engine_set_lane_count(
+      engine,
+      channel,
+      count,
+    );
+  }
+
+  late final _le_engine_set_lane_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_lane_count');
+  late final _le_engine_set_lane_count = _le_engine_set_lane_countPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Routes lane [lane] of track [channel] to record from hardware input
+  /// [input_channel] (-1 = record nothing). Bits beyond the negotiated input range
+  /// or loopback-excluded channels record silence.
+  int le_engine_set_lane_input(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int input_channel,
+  ) {
+    return _le_engine_set_lane_input(
+      engine,
+      channel,
+      lane,
+      input_channel,
+    );
+  }
+
+  late final _le_engine_set_lane_inputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_lane_input');
+  late final _le_engine_set_lane_input = _le_engine_set_lane_inputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Routes lane [lane] of track [channel]'s playback to the output channels set
+  /// in [mask] (bit c => output channel c). Bits beyond the output range are
+  /// ignored.
+  int le_engine_set_lane_output(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int mask,
+  ) {
+    return _le_engine_set_lane_output(
+      engine,
+      channel,
+      lane,
+      mask,
+    );
+  }
+
+  late final _le_engine_set_lane_outputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_lane_output');
+  late final _le_engine_set_lane_output = _le_engine_set_lane_outputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Sets lane [lane] of track [channel]'s playback gain, clamped to 0..1.
+  int le_engine_set_lane_volume(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    double volume,
+  ) {
+    return _le_engine_set_lane_volume(
+      engine,
+      channel,
+      lane,
+      volume,
+    );
+  }
+
+  late final _le_engine_set_lane_volumePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_lane_volume');
+  late final _le_engine_set_lane_volume = _le_engine_set_lane_volumePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
+  /// Mutes or unmutes lane [lane] of track [channel].
+  int le_engine_set_lane_mute(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int muted,
+  ) {
+    return _le_engine_set_lane_mute(
+      engine,
+      channel,
+      lane,
+      muted,
+    );
+  }
+
+  late final _le_engine_set_lane_mutePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_lane_mute');
+  late final _le_engine_set_lane_mute = _le_engine_set_lane_mutePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Copies lane [lane] of track [channel]'s snapshot into *out. Out-of-range
+  /// channels/lanes yield an empty lane. No-op if either pointer is NULL.
+  void le_engine_get_lane(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    ffi.Pointer<le_lane_snapshot> out,
+  ) {
+    return _le_engine_get_lane(
+      engine,
+      channel,
+      lane,
+      out,
+    );
+  }
+
+  late final _le_engine_get_lanePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<le_lane_snapshot>,
+          )
+        >
+      >('le_engine_get_lane');
+  late final _le_engine_get_lane = _le_engine_get_lanePtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          ffi.Pointer<le_lane_snapshot>,
+        )
+      >();
+
   /// Sets the record-offset latency compensation in frames (clamped >= 0).
   int le_engine_set_record_offset(
     ffi.Pointer<le_engine> engine,
@@ -1262,7 +1446,27 @@ enum le_command_code {
 
   /// set the monitor bus's active chain length.
   /// arg_i = count (0..LE_FX_MAX).
-  LE_CMD_SET_MONITOR_FX_COUNT(25);
+  LE_CMD_SET_MONITOR_FX_COUNT(25),
+
+  /// lane records this input channel (-1 = none).
+  /// arg_f = channel*LE_MAX_LANES + lane,
+  /// arg_i = input channel (or -1).
+  LE_CMD_SET_LANE_INPUT(26),
+
+  /// lane playback destinations.
+  /// arg_f = channel*LE_MAX_LANES + lane,
+  /// arg_i = output bitmask.
+  LE_CMD_SET_LANE_OUTPUT(27),
+
+  /// lane playback gain.
+  /// arg_i = channel*LE_MAX_LANES + lane,
+  /// arg_f = 0..1.
+  LE_CMD_SET_LANE_VOLUME(28),
+
+  /// lane mute.
+  /// arg_i = channel*LE_MAX_LANES + lane,
+  /// arg_f = 0/1.
+  LE_CMD_SET_LANE_MUTE(29);
 
   final int value;
   const le_command_code(this.value);
@@ -1290,6 +1494,10 @@ enum le_command_code {
     23 => LE_CMD_COMMIT_SESSION,
     24 => LE_CMD_SET_MONITOR_FX,
     25 => LE_CMD_SET_MONITOR_FX_COUNT,
+    26 => LE_CMD_SET_LANE_INPUT,
+    27 => LE_CMD_SET_LANE_OUTPUT,
+    28 => LE_CMD_SET_LANE_VOLUME,
+    29 => LE_CMD_SET_LANE_MUTE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -1352,17 +1560,58 @@ final class le_config extends ffi.Struct {
   external ffi.Array<ffi.Char> capture_device_id;
 }
 
-/// Per-track state published in le_snapshot.tracks.
-final class le_track_snapshot extends ffi.Struct {
-  /// le_track_state
+/// Per-lane state published via le_engine_get_lane: one recordable input lane of
+/// a track. A lane records exactly one hardware input (input_channel, -1 = none)
+/// into its own clean mono buffer and plays back to the outputs in output_mask,
+/// scaled by volume and gated by muted. length_frames is the lane's recorded
+/// length (all lanes of a track share the same length via the one transport).
+final class le_lane_snapshot extends ffi.Struct {
+  /// hardware input this lane records (-1 = none)
   @ffi.Int32()
-  external int state;
+  external int input_channel;
+
+  /// bitmask of output channels this lane plays to
+  @ffi.Uint32()
+  external int output_mask;
 
   /// 0..1
   @ffi.Float()
   external double volume;
 
   /// 0/1
+  @ffi.Int32()
+  external int muted;
+
+  /// frames captured into this lane's buffer
+  @ffi.Int32()
+  external int length_frames;
+
+  /// 0..1
+  @ffi.Float()
+  external double rms;
+
+  /// 0..1
+  @ffi.Float()
+  external double peak;
+}
+
+/// Per-track state published in le_snapshot.tracks.
+///
+/// A track is a multi-lane container: it owns the transport (state, multiple,
+/// undo/redo depth) and up to lane_count lanes. The volume/muted/length/
+/// input_mask/output_mask/rms/peak fields mirror lane 0 for backward
+/// compatibility (a track always has at least one lane); per-lane state is read
+/// with le_engine_get_lane.
+final class le_track_snapshot extends ffi.Struct {
+  /// le_track_state
+  @ffi.Int32()
+  external int state;
+
+  /// lane 0 volume, 0..1
+  @ffi.Float()
+  external double volume;
+
+  /// lane 0 mute, 0/1
   @ffi.Int32()
   external int muted;
 
@@ -1382,22 +1631,26 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int redo_depth;
 
-  /// 0..1
+  /// lane 0 RMS, 0..1
   @ffi.Float()
   external double rms;
 
-  /// 0..1
+  /// lane 0 peak, 0..1
   @ffi.Float()
   external double peak;
 
-  /// bitmask of input channels this track records from
-  /// (selected inputs are averaged into its mono buffer)
+  /// lane 0 input as a bitmask (1 << input_channel, or 0
+  /// when lane 0 records no input)
   @ffi.Uint32()
   external int input_mask;
 
-  /// bitmask of output channels this track plays to
+  /// lane 0 output mask
   @ffi.Uint32()
   external int output_mask;
+
+  /// number of active lanes (1..LE_MAX_LANES)
+  @ffi.Int32()
+  external int lane_count;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -1496,5 +1749,9 @@ const int LE_FX_MAX = 8;
 const int LE_FX_PARAMS = 3;
 
 const int LE_MAX_TRACKS = 8;
+
+const int LE_MAX_INPUTS = 8;
+
+const int LE_MAX_LANES = 8;
 
 const int LE_VIZ_POINTS = 512;
