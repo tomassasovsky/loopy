@@ -77,43 +77,32 @@ typedef struct le_fx_state {
   int32_t delay_pos[LE_FX_MAX];
 } le_fx_state;
 
-typedef struct le_track {
+/* One recordable input lane — the fundamental unit of captured audio.
+ *
+ * A lane records exactly one hardware input (a_input_channel, -1 = none) into
+ * its own clean mono buffer (pool[a_live]); sibling lanes are NEVER merged.
+ * Lanes own only their audio content + per-lane routing/volume/mute + their
+ * effects DSP state. The owning track (le_track) drives the shared write head,
+ * the one undo span (lanes use the same slot indices in lockstep), and a_live
+ * (whose sole writer is the control thread), so undo/redo never races the audio
+ * callback.
+ *
+ * The effects fields are the per-lane record-route chain. (In this engine
+ * revision the track-addressed effect setters operate on lane 0; per-lane FX
+ * dispatch and the removal of a_fx_stage/mon_fx land in a later revision.) */
+typedef struct le_lane {
+  _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
+  _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
+  _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
+  _Atomic int32_t a_muted;         /* per-lane mute */
+
   float* pool[LE_UNDO_SLOTS]; /* lazily allocated loop buffers */
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
-
-  /* Control-thread-owned undo/redo stacks of pool indices. */
-  int32_t undo_stack[LE_UNDO_SLOTS];
-  int undo_count;
-  int32_t redo_stack[LE_UNDO_SLOTS];
-  int redo_count;
-
-  _Atomic int32_t a_state;
-  _Atomic uint32_t a_vol_bits;
-  _Atomic int32_t a_muted;
-  _Atomic int32_t a_len;
-  _Atomic int32_t a_undo_depth; /* published undo_count */
-  _Atomic int32_t a_redo_depth; /* published redo_count */
+  _Atomic int32_t a_len;      /* recorded length (== the track's length) */
   _Atomic uint32_t a_rms_bits;
   _Atomic uint32_t a_peak_bits;
-  _Atomic int32_t a_multiple; /* track length in whole base loops (>= 1) */
-  _Atomic uint32_t a_input_mask;   /* bitmask of input channels to record from */
-  _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
-  _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
-                              * to fire a quantized record action); read by the
-                              * control thread to reconcile arm vs. fired. */
-  int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
-  int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
-                            * top (quantize), 1 = input level threshold
-                            * (sound-activated auto-record). */
-  int32_t record_pos; /* audio-thread-local record head. Defining track: linear
-                       * frame count. New track over a master: the absolute
-                       * phase (segment*base + position), seeded at press so
-                       * writes stay phase-locked to the master loop. */
-  uint64_t start_iter; /* loop_iteration when this track's recording began */
-  int32_t record_start; /* record_pos when this capture began, so a fixed-length
-                         * track can auto-finalize after exactly K base loops. */
 
-  /* Per-track effects chain. Published config (control writes, audio reads once
+  /* Per-lane effects chain. Published config (control writes, audio reads once
    * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
    * active. Each entry has a type, a stage (le_fx_stage: every entry colors
    * playback; PRE also colors the live input monitor), and LE_FX_PARAMS
@@ -127,6 +116,47 @@ typedef struct le_track {
    * live monitored input. */
   le_fx_state fx;
   le_fx_state mon_fx;
+} le_lane;
+
+/* One looper track: a multi-lane container that owns the transport, the shared
+ * latency-compensated write head, and one undo span across all its lanes.
+ *
+ * Recording is track-addressed and fans out to every active lane (each captures
+ * its own input clean); playback sums all active lanes. The undo span uses the
+ * SAME pool slot indices across every lane in lockstep, so the track owns the
+ * stacks and the lanes own only the buffers. */
+typedef struct le_track {
+  le_lane lanes[LE_MAX_LANES];
+  int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
+                       * int, like track_count — not an atomic, not a ring
+                       * command (set before the first record into a new lane). */
+
+  /* Control-thread-owned undo/redo stacks of pool indices, shared by all lanes
+   * (the same slot index names the snapshot in every lane). */
+  int32_t undo_stack[LE_UNDO_SLOTS];
+  int undo_count;
+  int32_t redo_stack[LE_UNDO_SLOTS];
+  int redo_count;
+
+  _Atomic int32_t a_state;
+  _Atomic int32_t a_undo_depth; /* published undo_count */
+  _Atomic int32_t a_redo_depth; /* published redo_count */
+  _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
+  _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
+                              * to fire a quantized record action); read by the
+                              * control thread to reconcile arm vs. fired. */
+  int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
+  int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
+                            * top (quantize), 1 = input level threshold
+                            * (sound-activated auto-record). */
+  int32_t record_pos; /* audio-thread-local shared write head, driving every
+                       * active lane. Defining track: linear frame count. New
+                       * track over a master: the absolute phase (segment*base +
+                       * position), seeded at press so writes stay phase-locked
+                       * to the master loop. */
+  uint64_t start_iter; /* loop_iteration when this track's recording began */
+  int32_t record_start; /* record_pos when this capture began, so a fixed-length
+                         * track can auto-finalize after exactly K base loops. */
 } le_track;
 
 struct le_engine {
@@ -309,6 +339,34 @@ static int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
   return p;
 }
 
+/* A track's active lane count, clamped to a usable range (a track always has at
+ * least one lane). */
+static int32_t le_lanes_active(const le_track* t) {
+  int32_t n = t->lane_count;
+  if (n < 1) n = 1;
+  if (n > LE_MAX_LANES) n = LE_MAX_LANES;
+  return n;
+}
+
+/* Publishes a recorded length onto every active lane of a track (all lanes of a
+ * track share the one transport, so they share the length). */
+static void le_track_set_len(le_track* t, int32_t len) {
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) store_i32(&t->lanes[l].a_len, len);
+}
+
+/* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
+ * collapse a legacy track input bitmask into lane 0's single input channel. */
+static int32_t le_mask_to_channel(uint32_t mask) {
+  if (mask == 0u) return -1;
+  int32_t c = 0;
+  while (!(mask & 1u)) {
+    mask >>= 1;
+    ++c;
+  }
+  return c;
+}
+
 /* ---- command handlers (audio thread) ---- */
 
 static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
@@ -316,7 +374,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
   le_loop_clock_set_length(&e->clock, len);
   e->loop_iteration = 0; /* the base loop just (re)started */
   store_i32(&e->a_master_len, len);
-  store_i32(&t->a_len, len);
+  le_track_set_len(t, len);
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
   store_i32(&t->a_state, end_state);
   t->start_iter = 0;
@@ -337,7 +395,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
   const int32_t base = e->clock.length > 0 ? e->clock.length : 1;
   if (t->record_pos <= 0) { /* nothing captured */
     store_i32(&t->a_state, LE_TRACK_EMPTY);
-    store_i32(&t->a_len, 0);
+    le_track_set_len(t, 0);
     store_i32(&t->a_multiple, 1);
     t->record_pos = 0;
     return;
@@ -350,7 +408,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
   if (k < 1) k = 1;
   if (maxk >= 1 && k > maxk) k = maxk;
   store_i32(&t->a_multiple, k);
-  store_i32(&t->a_len, k * base);
+  le_track_set_len(t, k * base);
   store_i32(&t->a_state, end_state);
   t->record_pos = 0;
 }
@@ -468,10 +526,10 @@ static void handle_clear(le_engine* e, int32_t ch) {
   t->pending_record = 0;
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
-  store_i32(&t->a_len, 0);
+  le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
-  /* Undo/redo stacks and a_live are reset by le_engine_clear on the control
-   * thread; the audio thread only resets the state/transport here. */
+  /* Undo/redo stacks and each lane's a_live are reset by le_engine_clear on the
+   * control thread; the audio thread only resets the state/transport here. */
 
   /* If every track is now empty, reset the master so a new loop can be defined.
    * Buffers are not zeroed here (RT-unsafe); a re-record overwrites a full loop
@@ -656,12 +714,14 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       float v = cmd->arg_f;
       if (v < 0.0f) v = 0.0f;
       if (v > 1.0f) v = 1.0f;
-      store_f32(&e->tracks[cmd->arg_i].a_vol_bits, v);
+      /* Track-addressed volume maps to lane 0 (backward compatibility). */
+      store_f32(&e->tracks[cmd->arg_i].lanes[0].a_vol_bits, v);
       break;
     }
     case LE_CMD_SET_MUTE:
       if (valid_channel(e, cmd->arg_i)) {
-        store_i32(&e->tracks[cmd->arg_i].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
+        store_i32(&e->tracks[cmd->arg_i].lanes[0].a_muted,
+                  cmd->arg_f != 0.0f ? 1 : 0);
       }
       break;
     case LE_CMD_SET_RECORD_OFFSET: {
@@ -689,12 +749,13 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       const uint32_t valid = e->in_channels >= 32
                                  ? 0xFFFFFFFFu
                                  : ((1u << e->in_channels) - 1u);
-      /* A track can never record from a loopback-excluded channel. */
+      /* A lane can never record from a loopback-excluded channel. The legacy
+       * track input mask collapses to lane 0's single input channel: the lowest
+       * valid, non-excluded bit (or -1 when none remain). */
       const uint32_t excluded = atomic_load_explicit(
           &e->a_excluded_input_mask, memory_order_relaxed);
-      atomic_store_explicit(&e->tracks[ch].a_input_mask,
-                            (uint32_t)cmd->arg_i & valid & ~excluded,
-                            memory_order_relaxed);
+      const uint32_t m = (uint32_t)cmd->arg_i & valid & ~excluded;
+      store_i32(&e->tracks[ch].lanes[0].a_input_channel, le_mask_to_channel(m));
       break;
     }
     case LE_CMD_SET_OUTPUT_MASK: {
@@ -703,7 +764,7 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       const uint32_t valid = e->out_channels >= 32
                                  ? 0xFFFFFFFFu
                                  : ((1u << e->out_channels) - 1u);
-      atomic_store_explicit(&e->tracks[ch].a_output_mask,
+      atomic_store_explicit(&e->tracks[ch].lanes[0].a_output_mask,
                             (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
       break;
     }
@@ -731,20 +792,21 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       const int32_t index = (cmd->arg_i >> 8) & 0xFF;
       const int32_t stage = cmd->arg_i & 0xFF;
       if (!valid_channel(e, ch) || index < 0 || index >= LE_FX_MAX) break;
-      le_track* t = &e->tracks[ch];
-      store_i32(&t->a_fx_type[index], (int32_t)cmd->arg_f);
-      store_i32(&t->a_fx_stage[index], stage);
+      /* Track-addressed FX maps to lane 0 (backward compatibility). */
+      le_lane* ln = &e->tracks[ch].lanes[0];
+      store_i32(&ln->a_fx_type[index], (int32_t)cmd->arg_f);
+      store_i32(&ln->a_fx_stage[index], stage);
       /* Reset the entry's DSP state (both the playback and monitor copies) so a
        * freshly engaged effect starts clean (no filter blow-up from stale
        * integrators, no delay-read of old content). */
-      t->fx.svf_ic1[index] = 0.0f;
-      t->fx.svf_ic2[index] = 0.0f;
-      t->fx.lfo[index] = 0.0f;
-      t->fx.delay_pos[index] = 0;
-      t->mon_fx.svf_ic1[index] = 0.0f;
-      t->mon_fx.svf_ic2[index] = 0.0f;
-      t->mon_fx.lfo[index] = 0.0f;
-      t->mon_fx.delay_pos[index] = 0;
+      ln->fx.svf_ic1[index] = 0.0f;
+      ln->fx.svf_ic2[index] = 0.0f;
+      ln->fx.lfo[index] = 0.0f;
+      ln->fx.delay_pos[index] = 0;
+      ln->mon_fx.svf_ic1[index] = 0.0f;
+      ln->mon_fx.svf_ic2[index] = 0.0f;
+      ln->mon_fx.lfo[index] = 0.0f;
+      ln->mon_fx.delay_pos[index] = 0;
       break;
     }
     case LE_CMD_SET_FX_COUNT: {
@@ -753,7 +815,59 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       if (!valid_channel(e, ch)) break;
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
-      store_i32(&e->tracks[ch].a_fx_count, count);
+      store_i32(&e->tracks[ch].lanes[0].a_fx_count, count);
+      break;
+    }
+    /* ---- multi-lane routing commands ----
+     * Every lane command addresses its lane by the same packed index
+     * `channel * LE_MAX_LANES + lane`. SET_LANE_INPUT/OUTPUT carry that index in
+     * arg_f and an int value (channel / 32-bit mask) in arg_i, so a 32-bit mask
+     * and a -1 channel round-trip exactly; SET_LANE_VOLUME/MUTE carry the index
+     * in arg_i and the float value in arg_f. */
+    case LE_CMD_SET_LANE_INPUT: {
+      const int32_t idx = (int32_t)cmd->arg_f;
+      const int32_t ch = idx / LE_MAX_LANES;
+      const int32_t lane = idx % LE_MAX_LANES;
+      if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
+      int32_t in_ch = cmd->arg_i;
+      const uint32_t excluded = atomic_load_explicit(
+          &e->a_excluded_input_mask, memory_order_relaxed);
+      /* Reject an out-of-range or loopback-excluded channel by recording
+       * nothing, so a lane never captures our own output. */
+      if (in_ch < 0 || in_ch >= e->in_channels ||
+          (excluded & (1u << in_ch))) {
+        in_ch = -1;
+      }
+      store_i32(&e->tracks[ch].lanes[lane].a_input_channel, in_ch);
+      break;
+    }
+    case LE_CMD_SET_LANE_OUTPUT: {
+      const int32_t idx = (int32_t)cmd->arg_f;
+      const int32_t ch = idx / LE_MAX_LANES;
+      const int32_t lane = idx % LE_MAX_LANES;
+      if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
+      const uint32_t valid = e->out_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->out_channels) - 1u);
+      atomic_store_explicit(&e->tracks[ch].lanes[lane].a_output_mask,
+                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+      break;
+    }
+    case LE_CMD_SET_LANE_VOLUME: {
+      const int32_t ch = cmd->arg_i / LE_MAX_LANES;
+      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
+      float v = cmd->arg_f;
+      if (v < 0.0f) v = 0.0f;
+      if (v > 1.0f) v = 1.0f;
+      store_f32(&e->tracks[ch].lanes[lane].a_vol_bits, v);
+      break;
+    }
+    case LE_CMD_SET_LANE_MUTE: {
+      const int32_t ch = cmd->arg_i / LE_MAX_LANES;
+      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
+      store_i32(&e->tracks[ch].lanes[lane].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
       break;
     }
     case LE_CMD_SET_MONITOR_FX_TRACK: {
@@ -793,7 +907,7 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       for (int32_t t = 0; t < e->track_count; ++t) {
         le_track* tr = &e->tracks[t];
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
-        const int32_t len = load_i32(&tr->a_len);
+        const int32_t len = load_i32(&tr->lanes[0].a_len);
         if (len <= 0) continue;
         int32_t k = len / base;
         if (k < 1) k = 1;
@@ -834,39 +948,47 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   float in_sumsq = 0.0f;
   float in_peak = 0.0f;
   float out_sumsq = 0.0f;
-  float trk_sumsq[LE_MAX_TRACKS] = {0};
-  float trk_peak[LE_MAX_TRACKS] = {0};
+  /* Per-lane metering accumulators (each track's snapshot mirrors lane 0). */
+  float lane_sumsq[LE_MAX_TRACKS][LE_MAX_LANES] = {{0}};
+  float lane_peak[LE_MAX_TRACKS][LE_MAX_LANES] = {{0}};
 
-  /* Per-track effects chain, snapshotted once per buffer (control-thread writes
+  /* Active lane count per track (control-thread plain int; clamped once). */
+  int32_t lane_n[LE_MAX_TRACKS];
+  for (int t = 0; t < tc; ++t) lane_n[t] = le_lanes_active(&e->tracks[t]);
+
+  /* Per-lane effects chain, snapshotted once per buffer (control-thread writes
    * are applied at buffer granularity). has_pre/has_post gate the input and
-   * playback passes so tracks with no effects in that stage skip the chain. */
-  int32_t fx_count[LE_MAX_TRACKS];
-  int32_t fx_type[LE_MAX_TRACKS][LE_FX_MAX];
-  int32_t fx_stage[LE_MAX_TRACKS][LE_FX_MAX];
-  float fx_params[LE_MAX_TRACKS][LE_FX_MAX][LE_FX_PARAMS];
-  int has_pre[LE_MAX_TRACKS];
-  int has_post[LE_MAX_TRACKS];
+   * playback passes so lanes with no effects in that stage skip the chain. */
+  int32_t fx_count[LE_MAX_TRACKS][LE_MAX_LANES];
+  int32_t fx_type[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
+  int32_t fx_stage[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
+  float fx_params[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS];
+  int has_pre[LE_MAX_TRACKS][LE_MAX_LANES];
+  int has_post[LE_MAX_TRACKS][LE_MAX_LANES];
   for (int t = 0; t < tc; ++t) {
-    has_pre[t] = 0;
-    has_post[t] = 0;
-    int32_t n = load_i32(&e->tracks[t].a_fx_count);
-    if (n < 0) n = 0;
-    if (n > LE_FX_MAX) n = LE_FX_MAX;
-    fx_count[t] = n;
-    for (int s = 0; s < n; ++s) {
-      const int32_t ty = load_i32(&e->tracks[t].a_fx_type[s]);
-      const int32_t stg = load_i32(&e->tracks[t].a_fx_stage[s]);
-      fx_type[t][s] = ty;
-      fx_stage[t][s] = stg;
-      if (ty != LE_FX_NONE) {
-        if (stg == LE_FX_PRE) {
-          has_pre[t] = 1;
-        } else {
-          has_post[t] = 1;
+    for (int l = 0; l < lane_n[t]; ++l) {
+      le_lane* ln = &e->tracks[t].lanes[l];
+      has_pre[t][l] = 0;
+      has_post[t][l] = 0;
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n < 0) n = 0;
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      fx_count[t][l] = n;
+      for (int s = 0; s < n; ++s) {
+        const int32_t ty = load_i32(&ln->a_fx_type[s]);
+        const int32_t stg = load_i32(&ln->a_fx_stage[s]);
+        fx_type[t][l][s] = ty;
+        fx_stage[t][l][s] = stg;
+        if (ty != LE_FX_NONE) {
+          if (stg == LE_FX_PRE) {
+            has_pre[t][l] = 1;
+          } else {
+            has_post[t][l] = 1;
+          }
         }
-      }
-      for (int p = 0; p < LE_FX_PARAMS; ++p) {
-        fx_params[t][s][p] = load_f32(&e->tracks[t].a_fx_param[s][p]);
+        for (int p = 0; p < LE_FX_PARAMS; ++p) {
+          fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
+        }
       }
     }
   }
@@ -971,23 +1093,26 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       continue;
     }
 
-    /* Snapshot per-track playback state once per frame (the live index can flip
-     * only at a loop boundary, i.e. at the end of a frame). */
+    /* Snapshot per-lane playback state once per frame. The track state can flip
+     * only between blocks; re-reading per frame is cheap and keeps undo's
+     * control-thread a_live swap visible at frame granularity. */
     int32_t st[LE_MAX_TRACKS];
-    float* buf[LE_MAX_TRACKS];
-    float vol[LE_MAX_TRACKS];
-    int mut[LE_MAX_TRACKS];
-    uint32_t in_mask[LE_MAX_TRACKS];
-    uint32_t out_mask[LE_MAX_TRACKS];
+    float* buf[LE_MAX_TRACKS][LE_MAX_LANES];
+    float vol[LE_MAX_TRACKS][LE_MAX_LANES];
+    int mut[LE_MAX_TRACKS][LE_MAX_LANES];
+    int32_t lane_in[LE_MAX_TRACKS][LE_MAX_LANES];
+    uint32_t out_mask[LE_MAX_TRACKS][LE_MAX_LANES];
     for (int t = 0; t < tc; ++t) {
       st[t] = load_i32(&e->tracks[t].a_state);
-      buf[t] = e->tracks[t].pool[load_i32(&e->tracks[t].a_live)];
-      vol[t] = load_f32(&e->tracks[t].a_vol_bits);
-      mut[t] = load_i32(&e->tracks[t].a_muted);
-      in_mask[t] = atomic_load_explicit(&e->tracks[t].a_input_mask,
-                                        memory_order_relaxed);
-      out_mask[t] = atomic_load_explicit(&e->tracks[t].a_output_mask,
-                                         memory_order_relaxed);
+      for (int l = 0; l < lane_n[t]; ++l) {
+        le_lane* ln = &e->tracks[t].lanes[l];
+        buf[t][l] = ln->pool[load_i32(&ln->a_live)];
+        vol[t][l] = load_f32(&ln->a_vol_bits);
+        mut[t][l] = load_i32(&ln->a_muted);
+        lane_in[t][l] = load_i32(&ln->a_input_channel);
+        out_mask[t][l] =
+            atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
+      }
     }
     /* Latency compensation: captured input is recorded this many frames earlier
      * so it aligns with what the player heard. Monitoring stays live (it is no
@@ -1022,106 +1147,105 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
     float frame_out_peak = 0.0f; /* max |output| this frame, for the viz tap */
     float frame_trk_peak[LE_MAX_TRACKS] = {0}; /* per-track, this frame */
-    /* Each track's before-track-processed live input this frame: what the
+    /* Each track's lane-0 before-track-processed live input this frame: what the
      * monitor plays when it follows this track. (The recording itself is dry.) */
     float trk_input[LE_MAX_TRACKS] = {0};
 
-    /* The looper mix is additive: clear this output frame, then sum each
-     * track's mono contribution into the output channels its mask selects. */
+    /* The looper mix is additive: clear this output frame, then sum every active
+     * lane's mono contribution into the output channels its mask selects. */
     for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] = 0.0f;
 
     for (int t = 0; t < tc; ++t) {
-      /* Each track records the average of its selected input channels into its
-       * mono buffer. Averaging (not summing) keeps the captured level stable
-       * and clip-safe regardless of how many inputs are armed.
-       *
-       * The per-track input mask is always honored: a single-channel mask
-       * records just that channel, and an empty mask records silence even with
-       * a hot input bus. "Mono vs stereo" is a routing outcome (output mask),
-       * not a capture mode. */
-      float insample = 0.0f;
-      if (in) {
-        float sum = 0.0f;
-        int cnt = 0;
-        for (int c = 0; c < ch_in; ++c) {
-          /* The excluded check is load-bearing, not merely defensive: the
-           * default mask (0x1) is set without going through SET_INPUT_MASK's
-           * clamp, so it can still name an excluded channel here. */
-          if ((in_mask[t] & (1u << c)) && !(excluded & (1u << c))) {
-            sum += in[f * ch_in + c];
-            ++cnt;
+      for (int l = 0; l < lane_n[t]; ++l) {
+        /* Clean single-input capture: a lane records exactly its assigned
+         * hardware input — never an average of several — or silence when it has
+         * no input, an out-of-range/loopback-excluded channel, or no allocated
+         * buffer. Sibling lanes are never merged. */
+        const int32_t ic = lane_in[t][l];
+        float insample = 0.0f;
+        if (in && ic >= 0 && ic < ch_in && !(excluded & (1u << ic))) {
+          insample = in[f * ch_in + ic];
+        }
+
+        /* Lane 0 feeds the live monitor-follow path: its before-track (pre)
+         * effects are heard live via the separate `mon_fx` state, run every
+         * frame so delay tails / LFO phase stay continuous. The recording
+         * itself is always DRY (insample is written as-is below). */
+        if (l == 0) {
+          le_lane* l0 = &e->tracks[t].lanes[0];
+          trk_input[t] =
+              has_pre[t][0]
+                  ? fx_apply_chain(&l0->mon_fx, sr, fx_cap, insample, LE_FX_PRE,
+                                   fx_count[t][0], fx_type[t][0], fx_stage[t][0],
+                                   fx_params[t][0])
+                  : insample;
+        }
+
+        /* Real-time null-guard: a lane whose buffer is not yet allocated (the
+         * lazy-alloc window, or a count/alloc mismatch) records and plays
+         * nothing rather than dereferencing a NULL pool. */
+        float* lbuf = buf[t][l];
+        if (lbuf == NULL) continue;
+
+        float loopsample = 0.0f;
+        if (st[t] == LE_TRACK_RECORDING) {
+          if (e->clock.length == 0) {
+            /* defining track: no reference loop yet, so no compensation */
+            if (e->tracks[t].record_pos < e->max_loop_frames) {
+              lbuf[e->tracks[t].record_pos] = insample;
+            }
+          } else {
+            /* new track: phase-locked shared write head (record_pos ==
+             * segment*base + position), latency-compensated by dropping the
+             * first `offset` frames so it aligns with what the player heard. */
+            const int32_t w = e->tracks[t].record_pos - offset;
+            if (w >= 0 && w < e->max_loop_frames) {
+              lbuf[w] = insample;
+            }
+          }
+        } else if (st[t] == LE_TRACK_OVERDUBBING) {
+          /* Mix the existing loop (read before write); record the live input at
+           * the compensated position in the current segment for the next pass. */
+          loopsample = lbuf[seg_base[t] + pos];
+          const int32_t w =
+              seg_base[t] + comp_pos(pos, offset, e->clock.length);
+          lbuf[w] += insample;
+        } else if (st[t] == LE_TRACK_PLAYING) {
+          loopsample = lbuf[seg_base[t] + pos];
+        }
+
+        /* The lane's mono output: its dry loop content at the lane's playback
+         * volume while it sounds, silence otherwise, run through the WHOLE
+         * effects chain (before-track entries first, then after-track) on the
+         * lane's `fx` state. Effects run every frame the lane has them (even on
+         * silence) so delay tails and LFO phase stay continuous; the wet result
+         * is routed only while the lane is audible. */
+        const int audible =
+            (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+            !mut[t][l];
+        float wet = audible ? loopsample * vol[t][l] : 0.0f;
+        le_lane* ln = &e->tracks[t].lanes[l];
+        if (has_pre[t][l]) {
+          wet = fx_apply_chain(&ln->fx, sr, fx_cap, wet, LE_FX_PRE,
+                               fx_count[t][l], fx_type[t][l], fx_stage[t][l],
+                               fx_params[t][l]);
+        }
+        if (has_post[t][l]) {
+          wet = fx_apply_chain(&ln->fx, sr, fx_cap, wet, LE_FX_POST,
+                               fx_count[t][l], fx_type[t][l], fx_stage[t][l],
+                               fx_params[t][l]);
+        }
+        if (audible) {
+          for (int c = 0; c < ch_out; ++c) {
+            if (out_mask[t][l] & (1u << c)) out[f * ch_out + c] += wet;
           }
         }
-        insample = cnt > 0 ? sum / (float)cnt : 0.0f;
-      }
 
-      /* The recording is always DRY: no effect is ever printed into the buffer
-       * (`insample` below is captured as-is). Before-track (pre) effects instead
-       * color the live monitored input via the separate `mon_fx` state, so when
-       * the monitor follows this track you hear them live. Run every frame the
-       * track has pre effects so delay tails / LFO phase stay continuous. */
-      trk_input[t] = has_pre[t]
-                         ? fx_apply_chain(&e->tracks[t].mon_fx, sr, fx_cap,
-                                          insample, LE_FX_PRE, fx_count[t],
-                                          fx_type[t], fx_stage[t], fx_params[t])
-                         : insample;
-
-      float loopsample = 0.0f;
-      if (st[t] == LE_TRACK_RECORDING) {
-        if (e->clock.length == 0) {
-          /* defining track: no reference loop yet, so no compensation */
-          if (e->tracks[t].record_pos < e->max_loop_frames) {
-            buf[t][e->tracks[t].record_pos] = insample;
-          }
-        } else {
-          /* new track: phase-locked write head (record_pos == segment*base +
-           * position), spanning one or more base loops; latency-compensated by
-           * dropping the first `offset` frames so it aligns with what the
-           * player heard. */
-          const int32_t w = e->tracks[t].record_pos - offset;
-          if (w >= 0 && w < e->max_loop_frames) {
-            buf[t][w] = insample;
-          }
-        }
-      } else if (st[t] == LE_TRACK_OVERDUBBING) {
-        /* Mix the existing loop (read before write); record the live input at
-         * the compensated position in the current segment for the next pass. */
-        loopsample = buf[t][seg_base[t] + pos];
-        const int32_t w = seg_base[t] + comp_pos(pos, offset, e->clock.length);
-        buf[t][w] += insample;
-      } else if (st[t] == LE_TRACK_PLAYING) {
-        loopsample = buf[t][seg_base[t] + pos];
+        const float la = fabsf(loopsample);
+        if (la > lane_peak[t][l]) lane_peak[t][l] = la;
+        if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
+        lane_sumsq[t][l] += loopsample * loopsample;
       }
-
-      /* The track's mono output: its dry loop content at the playback volume
-       * while it sounds, silence otherwise, run through the WHOLE effects chain
-       * (before-track entries first, then after-track) on the `fx` state. Both
-       * stages color playback — the before/after distinction only governs the
-       * live monitor above, not playback. Effects run every frame a track has
-       * them (even silent ones, on dry == 0) so delay tails and LFO phase stay
-       * continuous; the wet result is routed only while the track is audible. */
-      const int audible =
-          (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-          !mut[t];
-      float wet = audible ? loopsample * vol[t] : 0.0f;
-      if (has_pre[t]) {
-        wet = fx_apply_chain(&e->tracks[t].fx, sr, fx_cap, wet, LE_FX_PRE,
-                             fx_count[t], fx_type[t], fx_stage[t], fx_params[t]);
-      }
-      if (has_post[t]) {
-        wet = fx_apply_chain(&e->tracks[t].fx, sr, fx_cap, wet, LE_FX_POST,
-                             fx_count[t], fx_type[t], fx_stage[t], fx_params[t]);
-      }
-      if (audible) {
-        for (int c = 0; c < ch_out; ++c) {
-          if (out_mask[t] & (1u << c)) out[f * ch_out + c] += wet;
-        }
-      }
-
-      const float la = fabsf(loopsample);
-      if (la > trk_peak[t]) trk_peak[t] = la;
-      if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
-      trk_sumsq[t] += loopsample * loopsample;
     }
 
     /* Input monitoring: average the masked, non-excluded inputs to mono (like a
@@ -1266,13 +1390,17 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_f32(&e->a_out_rms_bits,
             total_out ? sqrtf(out_sumsq / (float)total_out) : 0.0f);
   for (int t = 0; t < tc; ++t) {
-    /* Track buffers are mono: one loop sample accumulated per frame. */
-    store_f32(&e->tracks[t].a_rms_bits,
-              frames ? sqrtf(trk_sumsq[t] / (float)frames) : 0.0f);
-    store_f32(&e->tracks[t].a_peak_bits, trk_peak[t]);
-    if (load_i32(&e->tracks[t].a_state) == LE_TRACK_RECORDING) {
-      const int32_t rp = e->tracks[t].record_pos; /* -1 while waiting */
-      store_i32(&e->tracks[t].a_len, rp > 0 ? rp : 0);
+    /* Lane buffers are mono: one loop sample accumulated per frame. The shared
+     * write head publishes the same growing length onto every active lane. */
+    const int recording =
+        load_i32(&e->tracks[t].a_state) == LE_TRACK_RECORDING;
+    const int32_t rp = e->tracks[t].record_pos;
+    for (int l = 0; l < lane_n[t]; ++l) {
+      le_lane* ln = &e->tracks[t].lanes[l];
+      store_f32(&ln->a_rms_bits,
+                frames ? sqrtf(lane_sumsq[t][l] / (float)frames) : 0.0f);
+      store_f32(&ln->a_peak_bits, lane_peak[t][l]);
+      if (recording) store_i32(&ln->a_len, rp > 0 ? rp : 0);
     }
   }
   store_i32(&e->a_master_pos, e->clock.position);
@@ -1288,6 +1416,43 @@ static void data_callback(ma_device* device, void* output, const void* input,
 
 /* ---- configuration / lifecycle ---- */
 
+/* Resets a lane's routing/volume/mute/effects/metering to defaults (recording
+ * hardware input [input_channel]), clearing its effect DSP state and releasing
+ * its delay lines. Does NOT touch the pool buffers — the caller owns
+ * allocation. Used at configure and when a lane is (re)activated by a growing
+ * lane count. */
+static void le_lane_reset(le_lane* ln, int32_t input_channel) {
+  atomic_store_explicit(&ln->a_input_channel, input_channel,
+                        memory_order_relaxed);
+  atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
+  store_f32(&ln->a_vol_bits, 1.0f);
+  store_i32(&ln->a_muted, 0);
+  store_i32(&ln->a_live, 0);
+  store_i32(&ln->a_len, 0);
+  store_f32(&ln->a_rms_bits, 0.0f);
+  store_f32(&ln->a_peak_bits, 0.0f);
+  store_i32(&ln->a_fx_count, 0);
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    store_i32(&ln->a_fx_type[s], LE_FX_NONE);
+    store_i32(&ln->a_fx_stage[s], LE_FX_POST);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&ln->a_fx_param[s][p], 0.0f);
+    }
+    ln->fx.svf_ic1[s] = 0.0f;
+    ln->fx.svf_ic2[s] = 0.0f;
+    ln->fx.lfo[s] = 0.0f;
+    free(ln->fx.delay[s]);
+    ln->fx.delay[s] = NULL;
+    ln->fx.delay_pos[s] = 0;
+    ln->mon_fx.svf_ic1[s] = 0.0f;
+    ln->mon_fx.svf_ic2[s] = 0.0f;
+    ln->mon_fx.lfo[s] = 0.0f;
+    free(ln->mon_fx.delay[s]);
+    ln->mon_fx.delay[s] = NULL;
+    ln->mon_fx.delay_pos[s] = 0;
+  }
+}
+
 int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                             int32_t input_channels, int32_t output_channels,
                             int32_t max_loop_frames) {
@@ -1301,61 +1466,44 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * (live + undo). Longer loops are configurable; stream-to-disk is deferred. */
   if (max_loop_frames <= 0) max_loop_frames = sample_rate * 30;
 
-  /* Per-track buffers are mono: one input channel in, routed out via the mask. */
+  /* Lane buffers are mono: one input channel in, routed out via the mask. */
   const size_t samples = (size_t)max_loop_frames;
   engine->track_count = LE_MAX_TRACKS;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
-    /* Free any buffers from a previous configuration; allocate only the base
-     * (live) buffer now — undo snapshots are allocated lazily on demand. */
-    for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
-      free(tr->pool[i]);
-      tr->pool[i] = NULL;
-    }
-    tr->pool[0] = (float*)calloc(samples, sizeof(float));
-    if (tr->pool[0] == NULL) return LE_ERR_INVALID;
+    /* Track transport: one lane active by default, empty, one base loop. */
+    tr->lane_count = 1;
     tr->undo_count = 0;
     tr->redo_count = 0;
-    store_i32(&tr->a_live, 0);
     store_i32(&tr->a_state, LE_TRACK_EMPTY);
-    store_f32(&tr->a_vol_bits, 1.0f);
-    store_i32(&tr->a_muted, 0);
-    store_i32(&tr->a_len, 0);
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_redo_depth, 0);
-    store_f32(&tr->a_rms_bits, 0.0f);
-    store_f32(&tr->a_peak_bits, 0.0f);
     store_i32(&tr->a_multiple, 1);
-    /* Default routing preserves stereo behaviour: record input 0, play 0 + 1. */
-    atomic_store_explicit(&tr->a_input_mask, 0x1u, memory_order_relaxed);
-    atomic_store_explicit(&tr->a_output_mask, 0x3u, memory_order_relaxed);
+    store_i32(&tr->a_pending, 0);
+    tr->pending_record = 0;
+    tr->pending_trigger = 0;
     tr->record_pos = 0;
+    tr->record_start = 0;
     tr->start_iter = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
     engine->target_multiple[t] = 0; /* inherit the global default multiple */
 
-    /* Effects: empty chain, every entry bypassed, DSP state cleared, delay
-     * lines released (re-allocated lazily when an entry becomes LE_FX_DELAY). */
-    store_i32(&tr->a_fx_count, 0);
-    for (int s = 0; s < LE_FX_MAX; ++s) {
-      store_i32(&tr->a_fx_type[s], LE_FX_NONE);
-      store_i32(&tr->a_fx_stage[s], LE_FX_POST);
-      for (int p = 0; p < LE_FX_PARAMS; ++p) {
-        store_f32(&tr->a_fx_param[s][p], 0.0f);
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_lane* ln = &tr->lanes[l];
+      /* Free any buffers from a previous configuration. */
+      for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+        free(ln->pool[i]);
+        ln->pool[i] = NULL;
       }
-      tr->fx.svf_ic1[s] = 0.0f;
-      tr->fx.svf_ic2[s] = 0.0f;
-      tr->fx.lfo[s] = 0.0f;
-      free(tr->fx.delay[s]);
-      tr->fx.delay[s] = NULL;
-      tr->fx.delay_pos[s] = 0;
-      tr->mon_fx.svf_ic1[s] = 0.0f;
-      tr->mon_fx.svf_ic2[s] = 0.0f;
-      tr->mon_fx.lfo[s] = 0.0f;
-      free(tr->mon_fx.delay[s]);
-      tr->mon_fx.delay[s] = NULL;
-      tr->mon_fx.delay_pos[s] = 0;
+      /* Lane l defaults to recording hardware input channel l; lane 0 thus
+       * records input 0 and plays 0 + 1, preserving the prior single-track
+       * stereo behaviour. */
+      le_lane_reset(ln, l);
     }
+    /* Only lane 0 is active by default; allocate its live buffer now (further
+     * lanes' buffers and all undo snapshots allocate lazily). */
+    tr->lanes[0].pool[0] = (float*)calloc(samples, sizeof(float));
+    if (tr->lanes[0].pool[0] == NULL) return LE_ERR_INVALID;
   }
 
   engine->sample_rate = sample_rate;
@@ -1703,6 +1851,24 @@ void le_engine_set_monitor_for_test(le_engine* engine, int on) {
   store_i32(&engine->a_monitor, on ? 1 : 0);
 }
 
+int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
+                                             int32_t lane) {
+  if (engine == NULL) return 0;
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  if (lane < 0 || lane >= LE_MAX_LANES) return 0;
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  return ln->pool[load_i32(&ln->a_live)] != NULL ? 1 : 0;
+}
+
+void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
+                                              int32_t channel, int32_t count) {
+  if (engine == NULL) return;
+  if (channel < 0 || channel >= engine->track_count) return;
+  if (count < 1) count = 1;
+  if (count > LE_MAX_LANES) count = LE_MAX_LANES;
+  engine->tracks[channel].lane_count = count; /* no buffer allocation */
+}
+
 static void le_uninit_context(le_engine* engine) {
   if (engine->context_initialised) {
     ma_context_uninit(&engine->context);
@@ -1726,12 +1892,15 @@ void le_engine_destroy(le_engine* engine) {
   }
   le_uninit_context(engine);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
-    for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
-      free(engine->tracks[t].pool[i]);
-    }
-    for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->tracks[t].fx.delay[s]);
-      free(engine->tracks[t].mon_fx.delay[s]);
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      le_lane* ln = &engine->tracks[t].lanes[l];
+      for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+        free(ln->pool[i]);
+      }
+      for (int s = 0; s < LE_FX_MAX; ++s) {
+        free(ln->fx.delay[s]);
+        free(ln->mon_fx.delay[s]);
+      }
     }
   }
   for (int s = 0; s < LE_FX_MAX; ++s) {
@@ -1869,6 +2038,34 @@ int32_t le_engine_stop(le_engine* engine) {
   return LE_OK;
 }
 
+/* Lane 0's input channel as a legacy track input bitmask (1 << channel, or 0
+ * when lane 0 records no input). */
+static uint32_t le_lane_input_bits(le_lane* ln) {
+  const int32_t ic = load_i32(&ln->a_input_channel);
+  return ic >= 0 ? (1u << ic) : 0u;
+}
+
+/* Fills a track snapshot from the track's transport plus lane 0's content (the
+ * backward-compatible per-track view). When [active] is false the track index
+ * is past track_count; report an empty track. */
+static void le_fill_track_snapshot(le_track* tr, int active,
+                                   le_track_snapshot* out) {
+  le_lane* l0 = &tr->lanes[0];
+  out->state = active ? load_i32(&tr->a_state) : LE_TRACK_EMPTY;
+  out->volume = load_f32(&l0->a_vol_bits);
+  out->muted = load_i32(&l0->a_muted);
+  out->length_frames = load_i32(&l0->a_len);
+  out->multiple = load_i32(&tr->a_multiple);
+  out->undo_depth = load_i32(&tr->a_undo_depth);
+  out->redo_depth = load_i32(&tr->a_redo_depth);
+  out->rms = load_f32(&l0->a_rms_bits);
+  out->peak = load_f32(&l0->a_peak_bits);
+  out->input_mask = le_lane_input_bits(l0);
+  out->output_mask =
+      atomic_load_explicit(&l0->a_output_mask, memory_order_relaxed);
+  out->lane_count = le_lanes_active(tr);
+}
+
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
@@ -1894,21 +2091,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->record_offset_frames = load_i32(&engine->a_record_offset);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
-    le_track* tr = &engine->tracks[t];
-    out->tracks[t].state =
-        t < engine->track_count ? load_i32(&tr->a_state) : LE_TRACK_EMPTY;
-    out->tracks[t].volume = load_f32(&tr->a_vol_bits);
-    out->tracks[t].muted = load_i32(&tr->a_muted);
-    out->tracks[t].length_frames = load_i32(&tr->a_len);
-    out->tracks[t].multiple = load_i32(&tr->a_multiple);
-    out->tracks[t].undo_depth = load_i32(&tr->a_undo_depth);
-    out->tracks[t].redo_depth = load_i32(&tr->a_redo_depth);
-    out->tracks[t].rms = load_f32(&tr->a_rms_bits);
-    out->tracks[t].peak = load_f32(&tr->a_peak_bits);
-    out->tracks[t].input_mask =
-        atomic_load_explicit(&tr->a_input_mask, memory_order_relaxed);
-    out->tracks[t].output_mask =
-        atomic_load_explicit(&tr->a_output_mask, memory_order_relaxed);
+    le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,
+                           &out->tracks[t]);
   }
 }
 
@@ -1927,22 +2111,35 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->peak = 0.0f;
     out->input_mask = 0x1u;
     out->output_mask = 0x3u;
+    out->lane_count = 1;
     return;
   }
-  le_track* tr = &engine->tracks[channel];
-  out->state = load_i32(&tr->a_state);
-  out->volume = load_f32(&tr->a_vol_bits);
-  out->muted = load_i32(&tr->a_muted);
-  out->length_frames = load_i32(&tr->a_len);
-  out->multiple = load_i32(&tr->a_multiple);
-  out->undo_depth = load_i32(&tr->a_undo_depth);
-  out->redo_depth = load_i32(&tr->a_redo_depth);
-  out->rms = load_f32(&tr->a_rms_bits);
-  out->peak = load_f32(&tr->a_peak_bits);
-  out->input_mask =
-      atomic_load_explicit(&tr->a_input_mask, memory_order_relaxed);
+  le_fill_track_snapshot(&engine->tracks[channel], 1, out);
+}
+
+void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
+                        le_lane_snapshot* out) {
+  if (engine == NULL || out == NULL) return;
+  if (channel < 0 || channel >= engine->track_count || lane < 0 ||
+      lane >= LE_MAX_LANES) {
+    out->input_channel = -1;
+    out->output_mask = 0x3u;
+    out->volume = 1.0f;
+    out->muted = 0;
+    out->length_frames = 0;
+    out->rms = 0.0f;
+    out->peak = 0.0f;
+    return;
+  }
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  out->input_channel = load_i32(&ln->a_input_channel);
   out->output_mask =
-      atomic_load_explicit(&tr->a_output_mask, memory_order_relaxed);
+      atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
+  out->volume = load_f32(&ln->a_vol_bits);
+  out->muted = load_i32(&ln->a_muted);
+  out->length_frames = load_i32(&ln->a_len);
+  out->rms = load_f32(&ln->a_rms_bits);
+  out->peak = load_f32(&ln->a_peak_bits);
 }
 
 int32_t le_engine_read_visual(le_engine* engine, float* out,
@@ -2005,11 +2202,15 @@ int32_t le_engine_begin_latency_for_test(le_engine* engine) {
   return le_push(engine, LE_CMD_MEASURE_LATENCY, 0, 0.0f);
 }
 
-/* Returns a pool slot that is neither live nor referenced by either stack,
- * allocating its buffer lazily. If the pool is full, evicts the oldest undo
- * entry and reuses its slot. Returns -1 only on allocation failure. */
-static int track_acquire_slot(le_engine* e, le_track* t) {
-  const int live = load_i32(&t->a_live);
+/* Returns a pool slot INDEX that is neither the (shared) live index nor
+ * referenced by either undo/redo stack. The same index names the snapshot in
+ * every lane — the undo span is lockstep across lanes — so this works on the
+ * track-level stacks plus lane 0's live index (all lanes share it). If the pool
+ * is full, evicts the oldest undo entry and reuses its slot. Returns -1 only if
+ * nothing can be freed. Allocation of the slot's buffer happens per lane in
+ * le_push_overdub_snapshot. */
+static int track_acquire_slot(le_track* t) {
+  const int live = load_i32(&t->lanes[0].a_live);
   for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
     if (i == live) continue;
     int used = 0;
@@ -2019,13 +2220,7 @@ static int track_acquire_slot(le_engine* e, le_track* t) {
     for (int k = 0; k < t->redo_count && !used; ++k) {
       if (t->redo_stack[k] == i) used = 1;
     }
-    if (used) continue;
-    if (t->pool[i] == NULL) {
-      const size_t samples = (size_t)e->max_loop_frames; /* mono */
-      t->pool[i] = (float*)calloc(samples, sizeof(float));
-      if (t->pool[i] == NULL) return -1;
-    }
-    return i;
+    if (!used) return i;
   }
   /* Pool full: evict the oldest undo entry (bottom of the stack). */
   if (t->undo_count > 0) {
@@ -2039,29 +2234,44 @@ static int track_acquire_slot(le_engine* e, le_track* t) {
   return -1;
 }
 
-/* Zeroes a track's live buffer (control thread) before a fresh capture over an
- * existing master, so any unrecorded tail of a rounded-up multi-loop length
- * plays as silence. The track is EMPTY, so the audio thread is not reading it.
- * (Defining recordings — no master yet — use record_pos bounds and need none.) */
+/* Zeroes every active lane's live buffer (control thread) before a fresh capture
+ * over an existing master, so any unrecorded tail of a rounded-up multi-loop
+ * length plays as silence. The track is EMPTY, so the audio thread is not
+ * reading it. (Defining recordings — no master yet — use record_pos bounds and
+ * need none.) */
 static void le_prepare_new_capture(le_engine* engine, le_track* t) {
-  const int live = load_i32(&t->a_live);
-  if (t->pool[live] != NULL) {
-    const size_t n = (size_t)engine->max_loop_frames; /* mono */
-    memset(t->pool[live], 0, n * sizeof(float));
+  const size_t n = (size_t)engine->max_loop_frames; /* mono */
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < lanes; ++l) {
+    le_lane* ln = &t->lanes[l];
+    const int live = load_i32(&ln->a_live);
+    if (ln->pool[live] != NULL) memset(ln->pool[live], 0, n * sizeof(float));
   }
 }
 
-/* Snapshots a track's pre-overdub content onto the undo stack (control thread),
- * clearing redo history; the audio thread treats the live buffer as read-only at
- * this point. [len] is the track's current length (k * base). */
+/* Snapshots a track's pre-overdub content onto the one undo span (control
+ * thread), clearing redo history; the audio thread treats the live buffers as
+ * read-only at this point. The same slot index holds the snapshot in every
+ * active lane (lockstep), each lane's buffer lazily allocated here. [len] is the
+ * track's current length (k * base). */
 static void le_push_overdub_snapshot(le_engine* engine, le_track* t,
                                      int32_t len) {
   t->redo_count = 0;
-  const int slot = track_acquire_slot(engine, t);
+  const int slot = track_acquire_slot(t);
   if (slot >= 0) {
-    const int live = load_i32(&t->a_live);
-    const size_t n = (size_t)len; /* mono */
-    memcpy(t->pool[slot], t->pool[live], n * sizeof(float));
+    const size_t n = (size_t)len;                          /* mono */
+    const size_t cap = (size_t)engine->max_loop_frames;
+    const int32_t lanes = le_lanes_active(t);
+    for (int32_t l = 0; l < lanes; ++l) {
+      le_lane* ln = &t->lanes[l];
+      const int live = load_i32(&ln->a_live);
+      if (ln->pool[live] == NULL) continue; /* lane has no content yet */
+      if (ln->pool[slot] == NULL) {
+        ln->pool[slot] = (float*)calloc(cap, sizeof(float));
+        if (ln->pool[slot] == NULL) continue; /* OOM: skip this lane */
+      }
+      memcpy(ln->pool[slot], ln->pool[live], n * sizeof(float));
+    }
     t->undo_stack[t->undo_count++] = slot;
     store_i32(&t->a_undo_depth, t->undo_count);
   }
@@ -2106,7 +2316,8 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   const int32_t st = load_i32(&t->a_state);
-  const int32_t len = load_i32(&t->a_len); /* this track's length (k * base) */
+  /* The track's length (k * base) — all lanes share it, so lane 0 is canonical. */
+  const int32_t len = load_i32(&t->lanes[0].a_len);
   const int has_master = load_i32(&engine->a_master_len) > 0;
 
   /* Sound-activated: a record press on an empty track arms a signal-triggered
@@ -2192,9 +2403,10 @@ int32_t le_engine_clear(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
 }
 
-/* Undo/redo run entirely on the control thread: they swap the track's live pool
- * index (atomic; the audio thread's only window into the buffers). Allowed only
- * when the track is not capturing, so the audio thread sees a stable a_live. */
+/* Undo/redo run entirely on the control thread: they swap the live pool index
+ * (atomic; the audio thread's only window into the buffers) on EVERY active lane
+ * in lockstep, so the one undo span moves all lanes together. Allowed only when
+ * the track is not capturing, so the audio thread sees a stable a_live. */
 int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
@@ -2208,8 +2420,9 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   }
   if (t->undo_count == 0) return LE_ERR_INVALID;
   const int32_t prev = t->undo_stack[--t->undo_count];
-  t->redo_stack[t->redo_count++] = load_i32(&t->a_live);
-  store_i32(&t->a_live, prev);
+  const int32_t lanes = le_lanes_active(t);
+  t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
+  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
   store_i32(&t->a_undo_depth, t->undo_count);
   store_i32(&t->a_redo_depth, t->redo_count);
   return LE_OK;
@@ -2228,8 +2441,9 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   }
   if (t->redo_count == 0) return LE_ERR_INVALID;
   const int32_t next = t->redo_stack[--t->redo_count];
-  t->undo_stack[t->undo_count++] = load_i32(&t->a_live);
-  store_i32(&t->a_live, next);
+  const int32_t lanes = le_lanes_active(t);
+  t->undo_stack[t->undo_count++] = load_i32(&t->lanes[0].a_live);
+  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
   store_i32(&t->a_undo_depth, t->undo_count);
   store_i32(&t->a_redo_depth, t->redo_count);
   return LE_OK;
@@ -2368,7 +2582,8 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_TREMOLO) return LE_ERR_INVALID;
   const int32_t stg = stage == LE_FX_PRE ? LE_FX_PRE : LE_FX_POST;
-  le_track* t = &engine->tracks[channel];
+  /* Track-addressed FX maps to lane 0 (backward compatibility). */
+  le_lane* ln = &engine->tracks[channel].lanes[0];
 
   /* Delay needs a ring buffer; allocate it here (control thread) before the
    * audio thread can read it, and keep it for reuse once allocated. Both the
@@ -2377,25 +2592,25 @@ int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
   if (type == LE_FX_DELAY) {
     const int32_t cap =
         engine->fx_delay_frames > 0 ? engine->fx_delay_frames : 48000;
-    if (t->fx.delay[index] == NULL) {
+    if (ln->fx.delay[index] == NULL) {
       float* line = (float*)calloc((size_t)cap, sizeof(float));
       if (line == NULL) return LE_ERR_INVALID;
-      t->fx.delay[index] = line;
+      ln->fx.delay[index] = line;
     }
-    if (t->mon_fx.delay[index] == NULL) {
+    if (ln->mon_fx.delay[index] == NULL) {
       float* line = (float*)calloc((size_t)cap, sizeof(float));
       if (line == NULL) return LE_ERR_INVALID;
-      t->mon_fx.delay[index] = line;
+      ln->mon_fx.delay[index] = line;
     }
   }
 
   /* Seed musical defaults only when the type actually changes, so re-selecting
    * the same effect (e.g. on reorder) doesn't wipe the user's tweaks. */
-  if (load_i32(&t->a_fx_type[index]) != type) {
+  if (load_i32(&ln->a_fx_type[index]) != type) {
     float defaults[LE_FX_PARAMS];
     le_fx_default_params(type, defaults);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      store_f32(&t->a_fx_param[index][p], defaults[p]);
+      store_f32(&ln->a_fx_param[index][p], defaults[p]);
     }
   }
 
@@ -2425,8 +2640,9 @@ int32_t le_engine_set_track_fx_param(le_engine* engine, int32_t channel,
   if (value > 1.0f) value = 1.0f;
   /* Params are plain published atomics read once per buffer; a direct store is
    * race-free and needs no ring command (unlike the type, which also resets
-   * audio-thread DSP state). Works whether or not the device is running. */
-  store_f32(&engine->tracks[channel].a_fx_param[index][param], value);
+   * audio-thread DSP state). Works whether or not the device is running.
+   * Track-addressed params map to lane 0 (backward compatibility). */
+  store_f32(&engine->tracks[channel].lanes[0].a_fx_param[index][param], value);
   return LE_OK;
 }
 
@@ -2481,21 +2697,22 @@ int32_t le_engine_set_monitor_fx_param(le_engine* engine, int32_t index,
 }
 
 /* ---- session persistence ---- *
- * Per-track buffers are mono (one sample per frame), so a stem is just the
- * track's loop samples; routing to channels is a playback concern, not stored. */
+ * Lane buffers are mono (one sample per frame), so a stem is just the loop
+ * samples; routing to channels is a playback concern, not stored. Export/import
+ * operate on lane 0 — multi-lane stems are a later revision. */
 
 int32_t le_engine_export_track(le_engine* engine, int32_t channel, float* out,
                                int32_t max_frames) {
   if (engine == NULL || out == NULL) return 0;
   if (channel < 0 || channel >= engine->track_count) return 0;
   if (max_frames <= 0) return 0;
-  le_track* t = &engine->tracks[channel];
-  int32_t n = load_i32(&t->a_len);
+  le_lane* ln = &engine->tracks[channel].lanes[0];
+  int32_t n = load_i32(&ln->a_len);
   if (n > max_frames) n = max_frames;
   if (n <= 0) return 0;
-  const int live = load_i32(&t->a_live);
-  if (t->pool[live] == NULL) return 0;
-  memcpy(out, t->pool[live], (size_t)n * sizeof(float));
+  const int live = load_i32(&ln->a_live);
+  if (ln->pool[live] == NULL) return 0;
+  memcpy(out, ln->pool[live], (size_t)n * sizeof(float));
   return n;
 }
 
@@ -2508,23 +2725,93 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
   if (frames <= 0) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
-  /* Importing targets an empty track: its buffer is not read by the audio
-   * thread, so the control thread can fill it directly. */
+  /* Importing targets an empty track: its buffers are not read by the audio
+   * thread, so the control thread can fill lane 0 directly. */
   if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
   /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
    * so a corrupted/foreign loop fails loudly instead of loading clipped. */
   if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
-  const int live = load_i32(&t->a_live);
-  if (t->pool[live] == NULL) return LE_ERR_INVALID;
+  le_lane* ln = &t->lanes[0];
+  const int live = load_i32(&ln->a_live);
+  if (ln->pool[live] == NULL) return LE_ERR_INVALID;
   const size_t span = (size_t)frames;
   const size_t cap = (size_t)engine->max_loop_frames;
-  memcpy(t->pool[live], pcm, span * sizeof(float));
-  if (span < cap) memset(t->pool[live] + span, 0, (cap - span) * sizeof(float));
-  store_i32(&t->a_len, frames);
+  memcpy(ln->pool[live], pcm, span * sizeof(float));
+  if (span < cap) {
+    memset(ln->pool[live] + span, 0, (cap - span) * sizeof(float));
+  }
+  store_i32(&ln->a_len, frames);
   t->start_iter = 0;
   return LE_OK;
 }
 
 int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {
   return le_push(engine, LE_CMD_COMMIT_SESSION, base_frames, 0.0f);
+}
+
+/* ---- multi-lane control ---- */
+
+int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
+                                 int32_t count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (count < 1) count = 1;
+  if (count > LE_MAX_LANES) count = LE_MAX_LANES;
+  le_track* t = &engine->tracks[channel];
+  const int32_t old = le_lanes_active(t);
+  /* Lazily allocate the live buffer of each newly activated lane on this
+   * (control) thread, before the audio thread reads it, and reset the lane to a
+   * clean state so no stale content from a prior grow/shrink plays back. */
+  if (count > old) {
+    const size_t cap = (size_t)engine->max_loop_frames;
+    for (int32_t l = old; l < count; ++l) {
+      le_lane* ln = &t->lanes[l];
+      le_lane_reset(ln, l); /* defaults to recording hardware input channel l */
+      if (ln->pool[0] == NULL) {
+        ln->pool[0] = (float*)calloc(cap, sizeof(float));
+        if (ln->pool[0] == NULL) return LE_ERR_INVALID;
+      } else {
+        memset(ln->pool[0], 0, cap * sizeof(float));
+      }
+    }
+  }
+  t->lane_count = count;
+  return LE_OK;
+}
+
+/* All four lane setters address the lane by the same packed index
+ * `channel * LE_MAX_LANES + lane`. For input/output the index travels in arg_f
+ * (small, exact in float) so the 32-bit input channel / output mask in arg_i
+ * round-trips exactly; for volume/mute the index travels in arg_i so the float
+ * value can ride in arg_f. The handlers validate channel/lane, so the setters
+ * only range-check lane (to keep the packed index well-formed). */
+int32_t le_engine_set_lane_input(le_engine* engine, int32_t channel,
+                                 int32_t lane, int32_t input_channel) {
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_LANE_INPUT, input_channel,
+                 (float)(channel * LE_MAX_LANES + lane));
+}
+
+int32_t le_engine_set_lane_output(le_engine* engine, int32_t channel,
+                                  int32_t lane, int32_t mask) {
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_LANE_OUTPUT, mask,
+                 (float)(channel * LE_MAX_LANES + lane));
+}
+
+int32_t le_engine_set_lane_volume(le_engine* engine, int32_t channel,
+                                  int32_t lane, float volume) {
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_LANE_VOLUME, channel * LE_MAX_LANES + lane,
+                 volume);
+}
+
+int32_t le_engine_set_lane_mute(le_engine* engine, int32_t channel, int32_t lane,
+                                int32_t muted) {
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_LANE_MUTE, channel * LE_MAX_LANES + lane,
+                 muted ? 1.0f : 0.0f);
 }
