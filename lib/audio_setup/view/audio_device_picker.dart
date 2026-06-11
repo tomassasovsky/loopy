@@ -43,6 +43,7 @@ class AudioDevicePicker extends StatelessWidget {
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
+          focusColor: Colors.transparent,
           key: Key(pickerKey),
           value: value,
           isExpanded: true,
