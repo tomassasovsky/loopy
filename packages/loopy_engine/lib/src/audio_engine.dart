@@ -207,6 +207,29 @@ abstract interface class AudioEngine {
     required double value,
   });
 
+  /// Sets monitor-bus chain entry [index] (`0..kTrackEffectMax-1`) to [type].
+  /// The monitor bus is a single global chain applied to the live monitored
+  /// signal in every mode (it has no pre/post). Changing the type resets that
+  /// entry's DSP state and seeds the type's default parameters; use
+  /// [setMonitorFxCount] to control how many entries are active.
+  EngineResult setMonitorFx({
+    required int index,
+    required TrackEffectType type,
+  });
+
+  /// Sets the monitor bus's active chain length to [count]
+  /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
+  EngineResult setMonitorFxCount({required int count});
+
+  /// Sets parameter [param] (`0..kTrackEffectParams-1`) of monitor-bus entry
+  /// [index] to [value] (clamped to `0..1`). Its meaning depends on the entry's
+  /// effect type.
+  EngineResult setMonitorFxParam({
+    required int index,
+    required int param,
+    required double value,
+  });
+
   /// Reads the loop waveform: peaks of the mixed output indexed by position
   /// across one master loop (index 0 = loop start), each in `0..1`. Pair with
   /// [EngineSnapshot.masterPositionFrames]/[EngineSnapshot.masterLengthFrames]

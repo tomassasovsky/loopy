@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/looper_theme.dart';
 
 /// Track meter (peak bar) color per meter state while in **record** mode.
@@ -51,12 +52,20 @@ abstract final class AppTheme {
   /// Neon-on-near-black performance theme (Chewie-Monsta vibe).
   static ThemeData get bigPicture {
     const scheme = ColorScheme.dark(
-      primary: Color(0xFF00E5FF),
-      secondary: Color(0xFFFF2D95),
-      surface: Color(0xFF0C0C12),
+      primary: SetupSurfaceColors.t1,
+      secondary: SetupSurfaceColors.accent,
+      surface: SetupSurfaceColors.surface,
     );
     return _base(scheme).copyWith(
       scaffoldBackgroundColor: const Color(0xFF06060A),
+      chipTheme: ChipThemeData(
+        backgroundColor: scheme.surfaceContainerHighest,
+        selectedColor: scheme.primary,
+        secondarySelectedColor: scheme.secondary,
+        labelStyle: TextStyle(color: scheme.onSurface),
+        secondaryLabelStyle: TextStyle(color: scheme.onSecondary),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      ),
       extensions: const [
         LooperTheme(
           tileBackground: Color(0xFF101019),

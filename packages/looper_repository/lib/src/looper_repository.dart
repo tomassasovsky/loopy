@@ -76,6 +76,12 @@ class LooperRepository {
   /// (re)start. Absent / empty means no effects on that track.
   final Map<int, List<TrackEffect>> _trackEffects = {};
 
+  /// The monitor-FX bus: a single global effect chain applied to the live
+  /// monitored signal in every mode. Re-applied on every successful (re)start.
+  /// Entries reuse [TrackEffect] for model/UI parity; the bus has no pre/post,
+  /// so each entry's `stage` is ignored.
+  List<TrackEffect> _monitorEffects = const [];
+
   /// Monitor routing, re-applied on every successful (re)start. The custom
   /// masks default to input 0 -> outputs 0 + 1 (the engine default); when
   /// [_monitorFollowChannel] is non-null the monitor mirrors that track.
@@ -306,6 +312,7 @@ class LooperRepository {
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
       );
       _trackEffects.keys.forEach(_applyTrackEffects);
+      _applyMonitorEffects();
       _applyMonitor();
     }
     return result;
@@ -542,6 +549,56 @@ class LooperRepository {
       }
     }
     return _engine.setTrackFxCount(channel: channel, count: effects.length);
+  }
+
+  /// Replaces the monitor-FX bus chain (clamped to [kTrackEffectMax]).
+  /// Remembered and re-applied on every (re)start. Use this for structural
+  /// edits (add / remove / reorder / type); it resets the affected entries' DSP
+  /// state. For a live parameter tweak use [setMonitorEffectParam].
+  EngineResult setMonitorEffects({required List<TrackEffect> effects}) {
+    _monitorEffects = effects.length > kTrackEffectMax
+        ? effects.sublist(0, kTrackEffectMax)
+        : List<TrackEffect>.of(effects);
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyMonitorEffects();
+  }
+
+  /// Sets parameter [param] of monitor-bus entry [index] to [value] (`0..1`)
+  /// without resetting DSP state. Remembered and re-applied on (re)start. No-op
+  /// if [index] is out of range for the remembered chain.
+  EngineResult setMonitorEffectParam({
+    required int index,
+    required int param,
+    required double value,
+  }) {
+    if (index < 0 || index >= _monitorEffects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = _monitorEffects[index];
+    if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
+    final params = List<double>.of(fx.params)..[param] = value;
+    _monitorEffects = List<TrackEffect>.of(_monitorEffects)
+      ..[index] = fx.copyWith(params: params);
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMonitorFxParam(index: index, param: param, value: value);
+  }
+
+  /// The remembered monitor-FX bus chain (empty if none), in processing order.
+  List<TrackEffect> monitorEffects() =>
+      List<TrackEffect>.unmodifiable(_monitorEffects);
+
+  /// Pushes the remembered monitor-FX chain to the engine: each entry's type
+  /// (which seeds default params), then its parameter values, then the active
+  /// count. Called on (re)start and after a structural edit.
+  EngineResult _applyMonitorEffects() {
+    for (var i = 0; i < _monitorEffects.length; i++) {
+      final fx = _monitorEffects[i];
+      _engine.setMonitorFx(index: i, type: fx.type);
+      for (var p = 0; p < fx.params.length; p++) {
+        _engine.setMonitorFxParam(index: i, param: p, value: fx.params[p]);
+      }
+    }
+    return _engine.setMonitorFxCount(count: _monitorEffects.length);
   }
 
   /// Sets the global default loop length for inheriting tracks (`0` = auto).
