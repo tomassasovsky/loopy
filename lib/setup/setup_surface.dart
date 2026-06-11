@@ -1,38 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// Tabular figures keep numeric values vertically aligned in status tables.
 const _setupNumerals = [FontFeature.tabularFigures()];
 
-/// Shared palette for stepped setup surfaces (audio onboarding, settings).
-class SetupSurfaceColors {
-  static const bg = Color(0xFF08080A);
-  static const surface = Color(0xFF0D0D11);
-  static const card = Color(0xFF16161B);
-  static const cardHi = Color(0xFF1C1C22);
-  static const line = Color(0xFF272730);
-  static const accent = Color(0xFF3B82F6);
-  static const onAccent = Color(0xFFFFFFFF);
-  static const t1 = Color(0xFFF3F4F7);
-  static const t2 = Color(0xFF989AA4);
-  static const t3 = Color(0xFF5B5D67);
-}
-
+/// Shared typography for stepped setup surfaces (audio onboarding, settings).
+/// These `const` tokens are used in `const` call sites; their colours mirror
+/// [SurfaceTheme.dark]'s `text*` tokens.
 const setupKicker = TextStyle(
   fontSize: 11,
   fontWeight: FontWeight.w700,
   letterSpacing: 1.8,
-  color: SetupSurfaceColors.t3,
+  color: Color(0xFF5B5D67), // SurfaceTheme.dark.textTertiary
 );
 
 const setupTitle = TextStyle(
-  color: SetupSurfaceColors.t1,
+  color: Color(0xFFF3F4F7), // SurfaceTheme.dark.textPrimary
   fontSize: 26,
   fontWeight: FontWeight.w700,
   letterSpacing: -0.5,
 );
 
 const setupBody = TextStyle(
-  color: SetupSurfaceColors.t2,
+  color: Color(0xFF989AA4), // SurfaceTheme.dark.textSecondary
   fontSize: 14,
   height: 1.45,
 );
@@ -41,9 +31,9 @@ const setupBody = TextStyle(
 /// strips and per-input monitors) — a thin track with a small accent thumb.
 const setupSliderTheme = SliderThemeData(
   trackHeight: 3,
-  activeTrackColor: SetupSurfaceColors.accent,
-  inactiveTrackColor: SetupSurfaceColors.line,
-  thumbColor: SetupSurfaceColors.accent,
+  activeTrackColor: Color(0xFF3B82F6), // SurfaceTheme.dark.accent
+  inactiveTrackColor: Color(0xFF272730), // SurfaceTheme.dark.line
+  thumbColor: Color(0xFF3B82F6),
   overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
   thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
 );
@@ -56,16 +46,12 @@ class SetupGroupLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return Row(
       children: [
-        Text(
-          label,
-          style: setupKicker.copyWith(color: SetupSurfaceColors.t2),
-        ),
+        Text(label, style: setupKicker.copyWith(color: surface.textSecondary)),
         const SizedBox(width: 10),
-        const Expanded(
-          child: Divider(color: SetupSurfaceColors.line, height: 1),
-        ),
+        Expanded(child: Divider(color: surface.line, height: 1)),
       ],
     );
   }
@@ -90,12 +76,13 @@ class SetupToggleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
       decoration: BoxDecoration(
-        color: SetupSurfaceColors.card,
+        color: surface.card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: SetupSurfaceColors.line),
+        border: Border.all(color: surface.line),
       ),
       child: Row(
         children: [
@@ -105,8 +92,8 @@ class SetupToggleRow extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: SetupSurfaceColors.t1,
+                  style: TextStyle(
+                    color: surface.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -114,8 +101,8 @@ class SetupToggleRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    color: SetupSurfaceColors.t2,
+                  style: TextStyle(
+                    color: surface.textSecondary,
                     fontSize: 12,
                     height: 1.3,
                   ),
@@ -128,13 +115,11 @@ class SetupToggleRow extends StatelessWidget {
             key: toggleKey,
             value: value,
             onChanged: onChanged,
-            activeThumbColor: SetupSurfaceColors.onAccent,
-            activeTrackColor: SetupSurfaceColors.accent,
-            inactiveThumbColor: SetupSurfaceColors.t2,
-            inactiveTrackColor: SetupSurfaceColors.cardHi,
-            trackOutlineColor: const WidgetStatePropertyAll(
-              SetupSurfaceColors.line,
-            ),
+            activeThumbColor: surface.onAccent,
+            activeTrackColor: surface.accent,
+            inactiveThumbColor: surface.textSecondary,
+            inactiveTrackColor: surface.cardHigh,
+            trackOutlineColor: WidgetStatePropertyAll(surface.line),
           ),
         ],
       ),
@@ -220,6 +205,7 @@ class _OptionCard<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return GestureDetector(
       key: option.optionKey,
       onTap: onTap,
@@ -227,12 +213,10 @@ class _OptionCard<T> extends StatelessWidget {
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
         decoration: BoxDecoration(
-          color: selected ? SetupSurfaceColors.cardHi : SetupSurfaceColors.card,
+          color: selected ? surface.cardHigh : surface.card,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected
-                ? SetupSurfaceColors.accent
-                : SetupSurfaceColors.line,
+            color: selected ? surface.accent : surface.line,
             width: selected ? 1.5 : 1,
           ),
         ),
@@ -244,9 +228,7 @@ class _OptionCard<T> extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: selected
-                    ? SetupSurfaceColors.accent
-                    : SetupSurfaceColors.t1,
+                color: selected ? surface.accent : surface.textPrimary,
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
                 fontFeatures: _setupNumerals,
@@ -260,8 +242,8 @@ class _OptionCard<T> extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: selected
-                      ? SetupSurfaceColors.accent.withValues(alpha: 0.7)
-                      : SetupSurfaceColors.t3,
+                      ? surface.accent.withValues(alpha: 0.7)
+                      : surface.textTertiary,
                   fontSize: 10.5,
                 ),
               ),
@@ -330,6 +312,7 @@ class _ChannelChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -337,19 +320,17 @@ class _ChannelChip extends StatelessWidget {
         height: 38,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? SetupSurfaceColors.cardHi : SetupSurfaceColors.card,
+          color: selected ? surface.cardHigh : surface.card,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected
-                ? SetupSurfaceColors.accent
-                : SetupSurfaceColors.line,
+            color: selected ? surface.accent : surface.line,
             width: selected ? 1.5 : 1,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? SetupSurfaceColors.accent : SetupSurfaceColors.t2,
+            color: selected ? surface.accent : surface.textSecondary,
             fontSize: 14,
             fontWeight: FontWeight.w700,
             fontFeatures: _setupNumerals,
@@ -379,8 +360,9 @@ class SetupNavRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return Material(
-      color: SetupSurfaceColors.card,
+      color: surface.card,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         key: rowKey,
@@ -390,7 +372,7 @@ class SetupNavRow extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: SetupSurfaceColors.line),
+            border: Border.all(color: surface.line),
           ),
           child: Row(
             children: [
@@ -400,8 +382,8 @@ class SetupNavRow extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        color: SetupSurfaceColors.t1,
+                      style: TextStyle(
+                        color: surface.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -409,8 +391,8 @@ class SetupNavRow extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        color: SetupSurfaceColors.t2,
+                      style: TextStyle(
+                        color: surface.textSecondary,
                         fontSize: 12,
                         height: 1.3,
                       ),
@@ -418,7 +400,7 @@ class SetupNavRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(icon, size: 20, color: SetupSurfaceColors.t3),
+              Icon(icon, size: 20, color: surface.textTertiary),
             ],
           ),
         ),
@@ -439,11 +421,12 @@ class SetupInfoTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return Container(
       decoration: BoxDecoration(
-        color: SetupSurfaceColors.card,
+        color: surface.card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: SetupSurfaceColors.line),
+        border: Border.all(color: surface.line),
       ),
       child: Column(
         children: [
@@ -453,9 +436,7 @@ class SetupInfoTable extends StatelessWidget {
               decoration: BoxDecoration(
                 border: i == rows.length - 1
                     ? null
-                    : const Border(
-                        bottom: BorderSide(color: SetupSurfaceColors.line),
-                      ),
+                    : Border(bottom: BorderSide(color: surface.line)),
               ),
               child: Row(
                 children: [
@@ -464,8 +445,8 @@ class SetupInfoTable extends StatelessWidget {
                       rows[i].$1,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: SetupSurfaceColors.t2,
+                      style: TextStyle(
+                        color: surface.textSecondary,
                         fontSize: 13,
                       ),
                     ),
@@ -477,8 +458,8 @@ class SetupInfoTable extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: SetupSurfaceColors.t1,
+                      style: TextStyle(
+                        color: surface.textPrimary,
                         fontSize: 13.5,
                         fontWeight: FontWeight.w600,
                         fontFeatures: _setupNumerals,
@@ -511,8 +492,9 @@ class SetupTrackNameRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return Material(
-      color: SetupSurfaceColors.card,
+      color: surface.card,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         key: rowKey,
@@ -522,7 +504,7 @@ class SetupTrackNameRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: SetupSurfaceColors.line),
+            border: Border.all(color: surface.line),
           ),
           child: Row(
             children: [
@@ -531,14 +513,14 @@ class SetupTrackNameRow extends StatelessWidget {
                 height: 30,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: SetupSurfaceColors.cardHi,
+                  color: surface.cardHigh,
                   shape: BoxShape.circle,
-                  border: Border.all(color: SetupSurfaceColors.line),
+                  border: Border.all(color: surface.line),
                 ),
                 child: Text(
                   '${channel + 1}',
-                  style: const TextStyle(
-                    color: SetupSurfaceColors.t2,
+                  style: TextStyle(
+                    color: surface.textSecondary,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -550,19 +532,15 @@ class SetupTrackNameRow extends StatelessWidget {
                   name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: SetupSurfaceColors.t1,
+                  style: TextStyle(
+                    color: surface.textPrimary,
                     fontSize: 14.5,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.4,
                   ),
                 ),
               ),
-              const Icon(
-                Icons.edit_outlined,
-                size: 16,
-                color: SetupSurfaceColors.t3,
-              ),
+              Icon(Icons.edit_outlined, size: 16, color: surface.textTertiary),
             ],
           ),
         ),
