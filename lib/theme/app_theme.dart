@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/looper_theme.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// Track meter (peak bar) color per meter state while in **record** mode.
 const _recordMeterColors = <LooperMeterState, Color>{
@@ -45,6 +45,7 @@ abstract final class AppTheme {
           recordMeterColors: _recordMeterColors,
           playMeterColors: _playMeterColors,
         ),
+        SurfaceTheme.dark,
       ],
     );
   }
@@ -52,9 +53,9 @@ abstract final class AppTheme {
   /// Neon-on-near-black performance theme (Chewie-Monsta vibe).
   static ThemeData get bigPicture {
     const scheme = ColorScheme.dark(
-      primary: SetupSurfaceColors.t1,
-      secondary: SetupSurfaceColors.accent,
-      surface: SetupSurfaceColors.surface,
+      primary: Color(0xFFF3F4F7), // SurfaceTheme.dark.textPrimary
+      secondary: Color(0xFF3B82F6), // SurfaceTheme.dark.accent
+      surface: Color(0xFF0D0D11), // SurfaceTheme.dark.surface
     );
     return _base(scheme).copyWith(
       scaffoldBackgroundColor: const Color(0xFF06060A),
@@ -76,6 +77,7 @@ abstract final class AppTheme {
           recordMeterColors: _recordMeterColors,
           playMeterColors: _playMeterColors,
         ),
+        SurfaceTheme.dark,
       ],
     );
   }
