@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
-import 'package:loopy/audio_setup/view/monitor_fx_editor.dart';
+import 'package:loopy/audio_setup/view/monitor_graph_view.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
@@ -200,13 +200,19 @@ class AudioSettingsSection extends StatelessWidget {
     return [
       const SizedBox(height: 12),
       const Text(
-        'Monitor each input live through its own effects, routed to the '
-        'outputs you pick. Never recorded.',
+        'Monitor inputs live through their own effects (wet) and/or as a clean '
+        'dry send — routed to the outputs you pick. Never recorded.',
         style: setupBody,
       ),
       const SizedBox(height: 12),
-      for (var input = 0; input < status.inputChannels; input++)
-        InputMonitorTile(input: input, outputChannels: status.outputChannels),
+      SizedBox(
+        height: 380,
+        child: MonitorGraphView(
+          inputChannels: status.inputChannels,
+          outputChannels: status.outputChannels,
+          excludedInputMask: status.excludedInputMask,
+        ),
+      ),
     ];
   }
 

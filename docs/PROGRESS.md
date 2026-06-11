@@ -107,8 +107,15 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   heard clean on one set of outputs and effected on another at once (`0` = off,
   the default; never recorded). Threaded through `InputMonitor.dryOutputMask`,
   `LooperRepository.setMonitorDry` (remembered + reapplied on restart),
-  `MonitorCubit.setDryOutputMask`, the `monitor_input_dry.$input` settings key,
-  and a "Dry (clean) signal to these outputs" chip row in the monitor editor.
+  `MonitorCubit.setDryOutputMask`, and the `monitor_input_dry.$input` key.
+- **Monitor routing graph** (`monitor_graph_view.dart`, replacing the per-input
+  chip tiles that didn't scale on big interfaces): inputs left, each *monitored*
+  input a node + its effect chain in the middle, outputs right, on a zoom/pan
+  canvas. Two colour-coded sends per input — **wet** (blue, through the chain)
+  and **dry** (amber, dashed). Tap an input to monitor + focus it; an Effected/
+  Dry toggle picks which send an output tap wires. Only monitored inputs show as
+  nodes; unused ports dim. `monitor_fx_editor.dart` (the old chip editor) is
+  removed.
 - **Dart domain layer (PR 4) is landed.** `looper_repository` exposes per-lane
   setters (`setLane{Input,Output,Volume,Mute,Count}`, `setLaneEffects`/`…Param`)
   with **lane-0 convenience wrappers** (`setVolume`/`setMute`/`setInputMask`/
