@@ -79,8 +79,8 @@ class LaneGraphView extends StatefulWidget {
   final void Function(int lane) onRemoveLane;
 
   // ---- geometry ----
-  static const double _chW = 58;
-  static const double _chH = 28;
+  static const double _chW = 54;
+  static const double _chH = 24;
   static const double _laneW = 120;
   static const double _laneH = 50;
   static const double _cardW = 96;
@@ -89,8 +89,23 @@ class LaneGraphView extends StatefulWidget {
   static const double _fan = 70;
   static const double _addW = 30;
   static const double _laneRowH = 84;
-  static const double _chRowH = 44;
+  static const double _chRowH = 32;
   static const double _pad = 16;
+
+  /// Distinct hues per lane (cycled past [kMaxLanes]), so a lane's node, cards,
+  /// and wires read as one colour and can be traced through a dense graph.
+  static const List<Color> _laneColors = [
+    Color(0xFF3B82F6), // blue
+    Color(0xFFF59E0B), // amber
+    Color(0xFF2DD4BF), // teal
+    Color(0xFFA78BFA), // violet
+    Color(0xFFF472B6), // pink
+    Color(0xFF34D399), // green
+    Color(0xFFFB923C), // orange
+    Color(0xFF38BDF8), // sky
+  ];
+
+  static Color laneColor(int lane) => _laneColors[lane % _laneColors.length];
 
   @override
   State<LaneGraphView> createState() => _LaneGraphViewState();
@@ -275,18 +290,22 @@ class _LaneGraphViewState extends State<LaneGraphView> {
     for (var l = 0; l < _laneCount; l++) {
       final lane = widget.lanes[l];
       final y = laneY(l);
+      final color = LaneGraphView.laneColor(l);
+      final faded = _focused != null && _focused != l;
+      void add(Offset from, Offset to) =>
+          edges.add(_Edge(from, to, color: color, faded: faded));
       // input -> lane
       final c = lane.inputChannel;
       if (c >= 0 && c < _inCount && widget.excludedInputMask & (1 << c) == 0) {
-        edges.add(_Edge(Offset(inX + chW, chY(c, _inCount)), Offset(laneX, y)));
+        add(Offset(inX + chW, chY(c, _inCount)), Offset(laneX, y));
       }
       // lane -> first card -> ... -> last
       final xs = cardXs[l];
       var rightX = laneX + laneW;
       if (xs.isNotEmpty) {
-        edges.add(_Edge(Offset(laneX + laneW, y), Offset(xs.first, y)));
+        add(Offset(laneX + laneW, y), Offset(xs.first, y));
         for (var k = 0; k < xs.length - 1; k++) {
-          edges.add(_Edge(Offset(xs[k] + cardW, y), Offset(xs[k + 1], y)));
+          add(Offset(xs[k] + cardW, y), Offset(xs[k + 1], y));
         }
         rightX = xs.last + cardW;
       }
@@ -300,11 +319,9 @@ class _LaneGraphViewState extends State<LaneGraphView> {
       ];
       if (outs.isNotEmpty) {
         final railX = outX - LaneGraphView._fan;
-        if (railX > rightX + 0.5) {
-          edges.add(_Edge(Offset(rightX, y), Offset(railX, y)));
-        }
+        if (railX > rightX + 0.5) add(Offset(rightX, y), Offset(railX, y));
         for (final o in outs) {
-          edges.add(_Edge(Offset(railX, y), Offset(outX, chY(o, _outCount))));
+          add(Offset(railX, y), Offset(outX, chY(o, _outCount)));
         }
       }
     }
@@ -313,15 +330,23 @@ class _LaneGraphViewState extends State<LaneGraphView> {
 
   // ---- nodes ----
 
+  /// Lanes recording hardware input [c] / playing to hardware output [c].
+  List<int> _lanesUsing(int c, {required bool output}) => [
+    for (var l = 0; l < _laneCount; l++)
+      if (output
+          ? widget.lanes[l].outputMask & (1 << c) != 0
+          : widget.lanes[l].inputChannel == c)
+        l,
+  ];
+
   Widget _inNode(int c, double x, double y) {
     final excluded = widget.excludedInputMask & (1 << c) != 0;
-    final wired = _focused != null && widget.lanes[_focused!].inputChannel == c;
     return _node(
       key: 'laneGraph_in_$c',
       label: 'In ${c + 1}',
       x: x,
       y: y,
-      highlighted: wired,
+      users: excluded ? const [] : _lanesUsing(c, output: false),
       excluded: excluded,
       onTap: excluded || _focused == null
           ? null
@@ -333,14 +358,12 @@ class _LaneGraphViewState extends State<LaneGraphView> {
   }
 
   Widget _outNode(int c, double x, double y) {
-    final wired =
-        _focused != null && widget.lanes[_focused!].outputMask & (1 << c) != 0;
     return _node(
       key: 'laneGraph_out_$c',
       label: 'Out ${c + 1}',
       x: x,
       y: y,
-      highlighted: wired,
+      users: _lanesUsing(c, output: true),
       excluded: false,
       onTap: _focused == null
           ? null
@@ -356,10 +379,26 @@ class _LaneGraphViewState extends State<LaneGraphView> {
     required String label,
     required double x,
     required double y,
-    required bool highlighted,
+    required List<int> users,
     required bool excluded,
     required VoidCallback? onTap,
   }) {
+    // Strong when the focused lane uses this port; coloured by its single user
+    // (or neutral accent if shared); dim when unused, so the wiring stands out.
+    final strong = _focused != null && users.contains(_focused);
+    final wired = users.isNotEmpty;
+    final color = strong
+        ? LaneGraphView.laneColor(_focused!)
+        : users.length == 1
+        ? LaneGraphView.laneColor(users.first)
+        : SetupSurfaceColors.accent;
+    final border = excluded
+        ? SetupSurfaceColors.line
+        : strong
+        ? color
+        : wired
+        ? color.withValues(alpha: 0.7)
+        : SetupSurfaceColors.line.withValues(alpha: 0.6);
     return Positioned(
       left: x,
       top: y - LaneGraphView._chH / 2,
@@ -371,27 +410,21 @@ class _LaneGraphViewState extends State<LaneGraphView> {
         child: Container(
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: excluded
-                ? SetupSurfaceColors.cardHi
-                : highlighted
-                ? SetupSurfaceColors.accent.withValues(alpha: 0.30)
+            color: !excluded && strong
+                ? color.withValues(alpha: 0.28)
                 : SetupSurfaceColors.card,
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(
-              color: highlighted
-                  ? SetupSurfaceColors.accent
-                  : SetupSurfaceColors.line,
-            ),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: border, width: strong ? 1.6 : 1),
           ),
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: excluded
                   ? SetupSurfaceColors.t3
-                  : highlighted
+                  : wired
                   ? SetupSurfaceColors.t1
-                  : SetupSurfaceColors.t2,
+                  : SetupSurfaceColors.t3,
               decoration: excluded ? TextDecoration.lineThrough : null,
             ),
           ),
@@ -403,6 +436,8 @@ class _LaneGraphViewState extends State<LaneGraphView> {
   Widget _laneNode(int l, double x, double y) {
     final lane = widget.lanes[l];
     final focused = _focused == l;
+    final dim = _focused != null && !focused;
+    final color = LaneGraphView.laneColor(l);
     return Positioned(
       left: x,
       top: y - LaneGraphView._laneH / 2,
@@ -414,12 +449,10 @@ class _LaneGraphViewState extends State<LaneGraphView> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
-            color: SetupSurfaceColors.accent.withValues(
-              alpha: focused ? 0.30 : 0.18,
-            ),
+            color: color.withValues(alpha: focused ? 0.30 : 0.16),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: SetupSurfaceColors.accent,
+              color: dim ? color.withValues(alpha: 0.5) : color,
               width: focused ? 2.5 : 1.5,
             ),
           ),
@@ -456,9 +489,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                   child: LinearProgressIndicator(
                     value: lane.muted ? 0 : lane.volume.clamp(0.0, 1.0),
                     backgroundColor: SetupSurfaceColors.line,
-                    valueColor: const AlwaysStoppedAnimation(
-                      SetupSurfaceColors.accent,
-                    ),
+                    valueColor: AlwaysStoppedAnimation(color),
                   ),
                 ),
               ),
@@ -471,6 +502,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
 
   Widget _fxCard(int l, int k, double x, double y) {
     final fx = widget.lanes[l].effects[k];
+    final color = LaneGraphView.laneColor(l);
     final selected =
         widget.selectedEffect?.lane == l && widget.selectedEffect?.index == k;
     final dragging = _dragging?.lane == l && _dragging?.index == k;
@@ -503,9 +535,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
           ),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: selected
-                ? SetupSurfaceColors.accent
-                : SetupSurfaceColors.line,
+            color: selected ? color : color.withValues(alpha: 0.45),
             width: selected ? 2 : 1,
           ),
         ),
@@ -816,9 +846,14 @@ class _Tappable extends StatelessWidget {
 }
 
 class _Edge {
-  const _Edge(this.from, this.to);
+  const _Edge(this.from, this.to, {required this.color, this.faded = false});
   final Offset from;
   final Offset to;
+  final Color color;
+
+  /// A wire on a lane other than the focused one — drawn thin and dim so the
+  /// focused lane's path stands out.
+  final bool faded;
 }
 
 class _PathPainter extends CustomPainter {
@@ -826,25 +861,33 @@ class _PathPainter extends CustomPainter {
 
   final List<_Edge> edges;
 
-  @override
-  void paint(Canvas canvas, Size size) {
+  void _draw(Canvas canvas, _Edge e) {
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..color = SetupSurfaceColors.accent.withValues(alpha: 0.75);
+      ..strokeWidth = e.faded ? 1.4 : 2.4
+      ..color = e.color.withValues(alpha: e.faded ? 0.22 : 0.95);
+    final dx = (e.to.dx - e.from.dx) / 2;
+    final path = Path()
+      ..moveTo(e.from.dx, e.from.dy)
+      ..cubicTo(
+        e.from.dx + dx,
+        e.from.dy,
+        e.to.dx - dx,
+        e.to.dy,
+        e.to.dx,
+        e.to.dy,
+      );
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Faded wires first so the focused lane's wires sit on top.
     for (final e in edges) {
-      final dx = (e.to.dx - e.from.dx) / 2;
-      final path = Path()
-        ..moveTo(e.from.dx, e.from.dy)
-        ..cubicTo(
-          e.from.dx + dx,
-          e.from.dy,
-          e.to.dx - dx,
-          e.to.dy,
-          e.to.dx,
-          e.to.dy,
-        );
-      canvas.drawPath(path, paint);
+      if (e.faded) _draw(canvas, e);
+    }
+    for (final e in edges) {
+      if (!e.faded) _draw(canvas, e);
     }
   }
 
