@@ -54,6 +54,20 @@ int32_t le_engine_begin_latency_for_test(le_engine* engine);
  * tested deterministically. Not part of the FFI surface. */
 void le_engine_set_monitor_for_test(le_engine* engine, int on);
 
+/* Whether lane [lane] of track [channel] has its live loop buffer allocated.
+ * Lets a test assert lazy lane allocation (idle lanes stay unallocated). Returns
+ * 0 for out-of-range indices. Not part of the FFI surface. */
+int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
+                                             int32_t lane);
+
+/* Forces track [channel]'s active lane count to [count] WITHOUT allocating the
+ * new lanes' buffers, so a test can drive the audio thread into the window where
+ * lane_count claims more lanes than are allocated and assert the real-time
+ * null-guard keeps it silent (never dereferences a NULL pool). Not part of the
+ * FFI surface. */
+void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
+                                              int32_t channel, int32_t count);
+
 #ifdef __cplusplus
 }
 #endif
