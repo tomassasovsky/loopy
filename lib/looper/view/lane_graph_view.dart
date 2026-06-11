@@ -649,25 +649,48 @@ class _LaneGraphViewState extends State<LaneGraphView> {
       top: y - LaneGraphView._addW / 2,
       width: LaneGraphView._addW,
       height: LaneGraphView._addW,
-      child: IconButton(
-        key: Key('laneGraph_addFx_$l'),
-        padding: EdgeInsets.zero,
-        iconSize: 24,
-        color: SetupSurfaceColors.accent,
-        // Opaque canvas-coloured fill so wires don't show behind it.
-        style: IconButton.styleFrom(
-          backgroundColor: SetupSurfaceColors.surface,
-          shape: const CircleBorder(),
-          padding: EdgeInsets.zero,
+      child: Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Opaque disc sized to the icon's ring, so the routing wire is
+              // masked behind the button without any fill showing past it.
+              Container(
+                width: 19,
+                height: 19,
+                decoration: const BoxDecoration(
+                  color: SetupSurfaceColors.surface,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              IconButton(
+                key: Key('laneGraph_addFx_$l'),
+                iconSize: 24,
+                padding: EdgeInsets.zero,
+                color: SetupSurfaceColors.accent,
+                constraints: const BoxConstraints.tightFor(
+                  width: 24,
+                  height: 24,
+                ),
+                style: IconButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                tooltip: full ? 'Chain is full' : 'Add effect to lane ${l + 1}',
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: full
+                    ? null
+                    : () {
+                        setState(() => _focused = l);
+                        widget.onAddEffect(l);
+                      },
+              ),
+            ],
+          ),
         ),
-        tooltip: full ? 'Chain is full' : 'Add effect to lane ${l + 1}',
-        icon: const Icon(Icons.add_circle_outline),
-        onPressed: full
-            ? null
-            : () {
-                setState(() => _focused = l);
-                widget.onAddEffect(l);
-              },
       ),
     );
   }
