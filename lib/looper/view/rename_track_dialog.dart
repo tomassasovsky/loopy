@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 
 /// Shows a dialog to rename track [channel] (current name [current]) and
@@ -10,11 +11,12 @@ Future<void> showRenameTrackDialog({
   required int channel,
   required String current,
 }) async {
+  final l10n = context.l10n;
   final controller = TextEditingController(text: current);
   final result = await showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text('Rename track ${channel + 1}'),
+      title: Text(l10n.renameTrackTitle(channel + 1)),
       content: TextField(
         key: const Key('renameTrack_field'),
         controller: controller,
@@ -25,12 +27,12 @@ Future<void> showRenameTrackDialog({
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Cancel'),
+          child: Text(l10n.cancel),
         ),
         TextButton(
           key: const Key('renameTrack_save'),
           onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-          child: const Text('Save'),
+          child: Text(l10n.save),
         ),
       ],
     ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 
 /// A dark-styled dropdown that picks an audio device by id: "System default"
@@ -31,6 +32,7 @@ class AudioDevicePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final value = devices.any((d) => d.id == selectedId) ? selectedId : '';
     final defaults = devices.where((d) => d.isDefault);
     final defaultName = defaults.isEmpty ? null : defaults.first.name;
@@ -59,8 +61,8 @@ class AudioDevicePicker extends StatelessWidget {
               value: '',
               child: Text(
                 defaultName == null
-                    ? 'System default'
-                    : 'System default ($defaultName)',
+                    ? l10n.systemDefault
+                    : l10n.systemDefaultNamed(defaultName),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),

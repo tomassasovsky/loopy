@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
@@ -17,16 +18,7 @@ import 'package:loopy/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
-enum _Section {
-  view('View'),
-  audio('Audio'),
-  routing('Routing'),
-  tracks('Tracks');
-
-  const _Section(this.label);
-
-  final String label;
-}
+enum _Section { view, audio, routing, tracks }
 
 /// Settings for the Big Picture performance view, reachable from the view via
 /// right-click or the `S` key, and from the system menu bar on macOS.
@@ -124,23 +116,20 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   };
 
   List<Widget> _viewSection(BuildContext context) {
+    final l10n = context.l10n;
     final mode = context.watch<UiModeCubit>().state;
     final waveformEnabled = context.watch<WaveformWindowCubit>().state;
     final defaultMode = context.watch<BigPictureCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
-      const Text(
-        'Switch layouts, tune performance defaults, and toggle the secondary '
-        'output-waveform window.',
-        style: setupBody,
-      ),
+      Text(l10n.bpSettingsViewIntro, style: setupBody),
       const SizedBox(height: 28),
-      const SetupGroupLabel('VIEW'),
+      SetupGroupLabel(l10n.viewGroupLabel),
       const SizedBox(height: 12),
       SetupToggleRow(
         toggleKey: const Key('bpSettings_bigPicture_switch'),
-        title: 'Big Picture mode',
-        subtitle: 'Full-screen performance layout',
+        title: l10n.bigPictureModeTitle,
+        subtitle: l10n.bigPictureModeSubtitle,
         value: mode == UiMode.bigPicture,
         onChanged: (on) {
           unawaited(
@@ -154,48 +143,39 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
       const SizedBox(height: 12),
       SetupToggleRow(
         toggleKey: const Key('bpSettings_waveformWindow_switch'),
-        title: 'Output waveform window',
-        subtitle: 'Open a second window showing the whole-loop output waveform',
+        title: l10n.waveformWindowTitle,
+        subtitle: l10n.waveformWindowSubtitle,
         value: waveformEnabled,
         onChanged: (on) =>
             context.read<WaveformWindowCubit>().setEnabled(value: on),
       ),
       const SizedBox(height: 28),
-      const SetupGroupLabel('PERFORMANCE'),
+      SetupGroupLabel(l10n.performanceGroupLabel),
       const SizedBox(height: 12),
-      const Text(
-        'Mode the Big Picture view starts in. Number keys select tracks; in '
-        'Record mode R/P arm and play the selection, in Play mode they '
-        'mute / unmute.',
-        style: setupBody,
-      ),
+      Text(l10n.bpDefaultModeIntro, style: setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<PerformanceMode>(
         selected: defaultMode,
         onSelected: (m) => unawaited(
           context.read<BigPictureCubit>().setDefaultPerformanceMode(m),
         ),
-        options: const [
+        options: [
           SetupOption(
             value: PerformanceMode.record,
-            label: 'Record',
-            sub: 'Arm & capture',
-            optionKey: Key('bpSettings_defaultMode_record'),
+            label: l10n.recordModeLabel,
+            sub: l10n.recordModeSub,
+            optionKey: const Key('bpSettings_defaultMode_record'),
           ),
           SetupOption(
             value: PerformanceMode.play,
-            label: 'Play',
-            sub: 'Mute / unmute',
-            optionKey: Key('bpSettings_defaultMode_play'),
+            label: l10n.playModeLabel,
+            sub: l10n.playModeSub,
+            optionKey: const Key('bpSettings_defaultMode_play'),
           ),
         ],
       ),
       const SizedBox(height: 20),
-      const Text(
-        'UI refresh rate — how often the waveforms and meters update. Higher '
-        'is smoother but uses more CPU.',
-        style: setupBody,
-      ),
+      Text(l10n.refreshRateIntro, style: setupBody),
       const SizedBox(height: 12),
       SetupOptionRow<int>(
         selected: refreshHz,
@@ -205,11 +185,11 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
           for (final hz in RefreshRateCubit.options)
             SetupOption(
               value: hz,
-              label: '$hz Hz',
+              label: l10n.refreshRateHz(hz),
               sub: switch (hz) {
-                30 => 'Low CPU',
-                120 => 'Smoothest',
-                _ => 'Default',
+                30 => l10n.refreshRateLowCpu,
+                120 => l10n.refreshRateSmoothest,
+                _ => l10n.defaultLabel,
               },
               optionKey: Key('bpSettings_refreshRate_$hz'),
             ),
@@ -223,6 +203,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   ];
 
   List<Widget> _routingSection(BuildContext context) {
+    final l10n = context.l10n;
     // The settings page is pushed above the LooperBloc provider, so the graph
     // is sourced from — and edits are applied through — the repository (and
     // persisted via settings, mirroring what the bloc does for the in-view
@@ -230,16 +211,13 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
     final repository = context.read<LooperRepository>();
     final settings = context.read<SettingsRepository>();
     final names = context.watch<BigPictureCubit>().state.names;
+    final trackLabels = [
+      for (var i = 0; i < names.length; i++) l10n.displayTrackName(names[i], i),
+    ];
     return [
-      const Text(
-        'How audio is wired: hardware inputs flow into tracks, and tracks '
-        'play out to hardware outputs. Loopback inputs are struck through — '
-        'they are never recorded. Click a track to select it, then click an '
-        'input or output to connect or disconnect it.',
-        style: setupBody,
-      ),
+      Text(l10n.routingIntro, style: setupBody),
       const SizedBox(height: 28),
-      const SetupGroupLabel('SIGNAL FLOW'),
+      SetupGroupLabel(l10n.signalFlowGroupLabel),
       const SizedBox(height: 16),
       StreamBuilder<LooperState>(
         stream: repository.looperState,
@@ -251,7 +229,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
             inputChannels: state.status.inputChannels,
             outputChannels: state.status.outputChannels,
             excludedInputMask: state.status.excludedInputMask,
-            trackLabels: names,
+            trackLabels: trackLabels,
             onInputMaskChanged: (channel, mask) {
               repository.setInputMask(channel: channel, mask: mask);
               unawaited(
@@ -269,20 +247,18 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   }
 
   List<Widget> _tracksSection(BuildContext context) {
+    final l10n = context.l10n;
     final big = context.watch<BigPictureCubit>();
     final bankEnabled = context.watch<BankCubit>().state.enabled;
     return [
-      const Text(
-        'Enable the second bank and rename tracks.',
-        style: setupBody,
-      ),
+      Text(l10n.tracksIntro, style: setupBody),
       const SizedBox(height: 28),
-      const SetupGroupLabel('TRACKS'),
+      SetupGroupLabel(l10n.tracksGroupLabel),
       const SizedBox(height: 12),
       SetupToggleRow(
         toggleKey: const Key('bpSettings_bank_switch'),
-        title: 'Second bank (8 tracks)',
-        subtitle: 'Adds a second bank of four tracks, switchable as A / B',
+        title: l10n.secondBankTitle,
+        subtitle: l10n.secondBankSubtitle,
         value: bankEnabled,
         onChanged: (on) => context.read<BankCubit>().setEnabled(value: on),
       ),
@@ -291,7 +267,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
         SetupTrackNameRow(
           rowKey: Key('bpSettings_trackName_$i'),
           channel: i,
-          name: big.state.names[i],
+          name: l10n.displayTrackName(big.state.names[i], i),
           onTap: () => showRenameTrackDialog(
             context: context,
             cubit: context.read<BigPictureCubit>(),
@@ -313,6 +289,7 @@ class _SettingsRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.fromLTRB(30, 32, 22, 30),
       child: Column(
@@ -330,7 +307,7 @@ class _SettingsRail extends StatelessWidget {
               ),
               const SizedBox(width: 9),
               Text(
-                'SETTINGS',
+                l10n.settingsKicker,
                 style: setupKicker.copyWith(
                   color: context.surface.textSecondary,
                 ),
@@ -338,7 +315,7 @@ class _SettingsRail extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 28),
-          const Text('Big Picture', style: setupTitle),
+          Text(l10n.bigPictureTitle, style: setupTitle),
           const SizedBox(height: 20),
           for (final section in _Section.values)
             _SectionTab(
@@ -365,6 +342,13 @@ class _SectionTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final label = switch (section) {
+      _Section.view => l10n.settingsSectionView,
+      _Section.audio => l10n.settingsSectionAudio,
+      _Section.routing => l10n.settingsSectionRouting,
+      _Section.tracks => l10n.settingsSectionTracks,
+    };
     return SizedBox(
       width: double.infinity,
       child: Padding(
@@ -379,7 +363,7 @@ class _SectionTab extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               child: Text(
-                section.label,
+                label,
                 style: TextStyle(
                   color: selected
                       ? context.surface.textPrimary

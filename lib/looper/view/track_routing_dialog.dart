@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/lane_graph/lane_graph_view.dart';
@@ -51,7 +52,11 @@ class _TrackRoutingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trackName = bigPicture.state.names[channel];
+    final l10n = context.l10n;
+    final trackName = l10n.displayTrackName(
+      bigPicture.state.names[channel],
+      channel,
+    );
 
     return CallbackShortcuts(
       bindings: {
@@ -63,12 +68,12 @@ class _TrackRoutingPage extends StatelessWidget {
         child: Scaffold(
           key: const Key('trackRouting_page'),
           appBar: AppBar(
-            title: Text('$trackName routing'),
+            title: Text(l10n.trackRoutingTitle(trackName)),
             actions: [
               IconButton(
                 key: const Key('trackRouting_settings_button'),
                 icon: const Icon(Icons.tune),
-                tooltip: 'Track settings',
+                tooltip: l10n.trackSettingsTooltip,
                 onPressed: () => _openSettings(context),
               ),
             ],
@@ -96,6 +101,7 @@ class _TrackRoutingPage extends StatelessWidget {
 
   /// Opens the secondary settings (quantize + loop length) for this track.
   void _openSettings(BuildContext context) {
+    final l10n = context.l10n;
     final bloc = context.read<LooperBloc>();
     unawaited(
       showDialog<void>(
@@ -104,7 +110,7 @@ class _TrackRoutingPage extends StatelessWidget {
           value: bloc,
           child: AlertDialog(
             key: const Key('trackRouting_settings_dialog'),
-            title: Text('Track ${channel + 1} settings'),
+            title: Text(l10n.trackSettingsDialogTitle(channel + 1)),
             content: SizedBox(
               width: 360,
               child: Column(
@@ -112,22 +118,21 @@ class _TrackRoutingPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Quantize recording',
+                    l10n.quantizeRecording,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 8),
                   _TrackQuantizeControl(channel: channel, settings: settings),
                   const SizedBox(height: 20),
                   Text(
-                    'Loop length',
+                    l10n.loopLength,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 8),
                   _TrackMultipleControl(channel: channel, settings: settings),
                   const SizedBox(height: 16),
                   Text(
-                    'Track effects color playback only. To hear effects live '
-                    'on an input, enable its monitor in audio settings.',
+                    l10n.trackEffectsPlaybackOnlyHint,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -136,7 +141,7 @@ class _TrackRoutingPage extends StatelessWidget {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).maybePop(),
-                child: const Text('Done'),
+                child: Text(l10n.done),
               ),
             ],
           ),
@@ -189,24 +194,26 @@ class _TrackQuantizeControlState extends State<_TrackQuantizeControl> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final defaultState = _globalDefault ? l10n.toggleOn : l10n.toggleOff;
     return Wrap(
       spacing: 8,
       children: [
         ChoiceChip(
           key: const Key('trackRouting_quantize_default'),
-          label: Text('Default (${_globalDefault ? 'On' : 'Off'})'),
+          label: Text(l10n.defaultWithState(defaultState)),
           selected: _override == null,
           onSelected: (_) => _set(null),
         ),
         ChoiceChip(
           key: const Key('trackRouting_quantize_on'),
-          label: const Text('On'),
+          label: Text(l10n.toggleOn),
           selected: _override == true,
           onSelected: (_) => _set(true),
         ),
         ChoiceChip(
           key: const Key('trackRouting_quantize_off'),
-          label: const Text('Off'),
+          label: Text(l10n.toggleOff),
           selected: _override == false,
           onSelected: (_) => _set(false),
         ),
@@ -259,20 +266,23 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
 
   @override
   Widget build(BuildContext context) {
-    final globalLabel = _globalDefault == 0 ? 'Auto' : '×$_globalDefault';
+    final l10n = context.l10n;
+    final globalLabel = _globalDefault == 0
+        ? l10n.auto
+        : l10n.loopMultipleLabel(_globalDefault);
     return Wrap(
       spacing: 8,
       children: [
         ChoiceChip(
           key: const Key('trackRouting_multiple_auto'),
-          label: Text('Default ($globalLabel)'),
+          label: Text(l10n.defaultWithState(globalLabel)),
           selected: _multiple == 0,
           onSelected: (_) => _set(0),
         ),
         for (final k in const [1, 2, 3])
           ChoiceChip(
             key: Key('trackRouting_multiple_$k'),
-            label: Text('×$k'),
+            label: Text(l10n.loopMultipleLabel(k)),
             selected: _multiple == k,
             onSelected: (_) => _set(k),
           ),

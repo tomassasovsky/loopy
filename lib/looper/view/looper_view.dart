@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
 import 'package:loopy/session/session.dart';
+import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 
 /// Session bundle actions in the looper app bar.
@@ -21,6 +23,7 @@ class LooperView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final state = context.watch<LooperBloc>().state;
     final bloc = context.read<LooperBloc>();
     final bank = context.watch<BankCubit>().state;
@@ -35,17 +38,25 @@ class LooperView extends StatelessWidget {
           (current.status == SessionStatus.success ||
               current.status == SessionStatus.failure),
       listener: (context, sessionState) {
+        final message = switch (sessionState.outcome) {
+          SessionOutcome.saved => l10n.sessionSaved,
+          SessionOutcome.loaded => l10n.sessionLoaded,
+          SessionOutcome.mixdownExported => l10n.mixdownExported,
+          SessionOutcome.stemsExported => l10n.stemsExported,
+          null => sessionState.errorMessage,
+        };
+        if (message == null || message.isEmpty) return;
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(SnackBar(content: Text(sessionState.message ?? '')));
+          ..showSnackBar(SnackBar(content: Text(message)));
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Loopy'),
+          title: Text(l10n.looperAppBarTitle),
           actions: [
             PopupMenuButton<_SessionAction>(
               key: const Key('looper_session_button'),
-              tooltip: 'Session',
+              tooltip: l10n.sessionTooltip,
               icon: const Icon(Icons.folder_outlined),
               onSelected: (action) {
                 final cubit = context.read<SessionCubit>();
@@ -60,22 +71,22 @@ class LooperView extends StatelessWidget {
                     unawaited(cubit.exportStems());
                 }
               },
-              itemBuilder: (_) => const [
+              itemBuilder: (_) => [
                 PopupMenuItem(
                   value: _SessionAction.save,
-                  child: Text('Save session'),
+                  child: Text(l10n.saveSession),
                 ),
                 PopupMenuItem(
                   value: _SessionAction.load,
-                  child: Text('Load session'),
+                  child: Text(l10n.loadSession),
                 ),
                 PopupMenuItem(
                   value: _SessionAction.exportMixdown,
-                  child: Text('Export mixdown'),
+                  child: Text(l10n.exportMixdown),
                 ),
                 PopupMenuItem(
                   value: _SessionAction.exportStems,
-                  child: Text('Export stems'),
+                  child: Text(l10n.exportStems),
                 ),
               ],
             ),
@@ -103,26 +114,26 @@ class LooperView extends StatelessWidget {
             ],
             IconButton(
               key: const Key('looper_playAll_button'),
-              tooltip: 'Play all',
+              tooltip: l10n.playAllTooltip,
               icon: const Icon(Icons.playlist_play),
               onPressed: () => bloc.add(const LooperPlayAllPressed()),
             ),
             IconButton(
               key: const Key('looper_stopAll_button'),
-              tooltip: 'Stop all',
+              tooltip: l10n.stopAllTooltip,
               icon: const Icon(Icons.stop_circle_outlined),
               onPressed: () => bloc.add(const LooperStopAllPressed()),
             ),
             IconButton(
               key: const Key('looper_bigPicture_button'),
-              tooltip: 'Big picture',
+              tooltip: l10n.bigPictureTooltip,
               icon: const Icon(Icons.open_in_full),
               onPressed: () =>
                   context.read<UiModeCubit>().setMode(UiMode.bigPicture),
             ),
             IconButton(
               key: const Key('looper_openSetup_button'),
-              tooltip: 'Audio setup',
+              tooltip: l10n.audioSetupTooltip,
               icon: const Icon(Icons.settings),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
@@ -166,7 +177,7 @@ class _MasterLoopBar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Master loop', style: theme.textTheme.labelMedium),
+        Text(context.l10n.masterLoopLabel, style: theme.textTheme.labelMedium),
         const SizedBox(height: 4),
         LinearProgressIndicator(
           key: const Key('looper_masterLoop_progress'),
@@ -192,13 +203,11 @@ class _EngineStoppedBanner extends StatelessWidget {
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.info_outline, size: 18),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text('Audio engine stopped — open setup to start.'),
-          ),
+          const Icon(Icons.info_outline, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(context.l10n.engineStoppedBanner)),
         ],
       ),
     );
@@ -210,16 +219,17 @@ class _TrackStrip extends StatelessWidget {
 
   final Track track;
 
-  String get _recordLabel => switch (track.state) {
-    TrackState.empty => 'Record',
-    TrackState.recording => 'Finish',
-    TrackState.overdubbing => 'Stop dub',
-    TrackState.playing => 'Overdub',
-    TrackState.stopped => 'Overdub',
+  String _recordLabel(AppLocalizations l10n) => switch (track.state) {
+    TrackState.empty => l10n.recordButton,
+    TrackState.recording => l10n.finishButton,
+    TrackState.overdubbing => l10n.stopDubButton,
+    TrackState.playing => l10n.overdubButton,
+    TrackState.stopped => l10n.overdubButton,
   };
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final bloc = context.read<LooperBloc>();
     final theme = Theme.of(context);
     final ch = track.channel;
@@ -235,22 +245,25 @@ class _TrackStrip extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text('Track ${ch + 1}', style: theme.textTheme.titleSmall),
+                Text(
+                  l10n.trackNumberLabel(ch + 1),
+                  style: theme.textTheme.titleSmall,
+                ),
                 const Spacer(),
                 if (track.isMultiple) ...[
                   Chip(
                     key: Key('looper_multiple_chip_$ch'),
-                    label: Text('×${track.multiple}'),
+                    label: Text(l10n.loopMultipleLabel(track.multiple)),
                   ),
                   const SizedBox(width: 8),
                 ],
                 Chip(
                   key: Key('looper_trackState_chip_$ch'),
-                  label: Text(track.state.name),
+                  label: Text(l10n.trackStateLabel(track.state)),
                 ),
                 IconButton(
                   key: Key('looper_routing_button_$ch'),
-                  tooltip: 'I/O routing',
+                  tooltip: l10n.ioRoutingTooltip,
                   icon: const Icon(Icons.alt_route),
                   onPressed: () => unawaited(
                     showTrackRoutingDialog(context: context, channel: ch),
@@ -271,7 +284,7 @@ class _TrackStrip extends StatelessWidget {
                         ? Icons.layers
                         : Icons.fiber_manual_record,
                   ),
-                  label: Text(_recordLabel),
+                  label: Text(_recordLabel(l10n)),
                 ),
                 OutlinedButton.icon(
                   key: Key('looper_stop_button_$ch'),
@@ -279,7 +292,7 @@ class _TrackStrip extends StatelessWidget {
                       ? () => bloc.add(LooperStopPressed(ch))
                       : null,
                   icon: const Icon(Icons.stop),
-                  label: const Text('Stop'),
+                  label: Text(l10n.stopButton),
                 ),
                 OutlinedButton.icon(
                   key: Key('looper_play_button_$ch'),
@@ -287,7 +300,7 @@ class _TrackStrip extends StatelessWidget {
                       ? () => bloc.add(LooperPlayPressed(ch))
                       : null,
                   icon: const Icon(Icons.play_arrow),
-                  label: const Text('Play'),
+                  label: Text(l10n.playButton),
                 ),
                 OutlinedButton.icon(
                   key: Key('looper_undo_button_$ch'),
@@ -295,7 +308,7 @@ class _TrackStrip extends StatelessWidget {
                       ? () => bloc.add(LooperUndoPressed(ch))
                       : null,
                   icon: const Icon(Icons.undo),
-                  label: const Text('Undo'),
+                  label: Text(l10n.undoButton),
                 ),
                 OutlinedButton.icon(
                   key: Key('looper_redo_button_$ch'),
@@ -303,7 +316,7 @@ class _TrackStrip extends StatelessWidget {
                       ? () => bloc.add(LooperRedoPressed(ch))
                       : null,
                   icon: const Icon(Icons.redo),
-                  label: const Text('Redo'),
+                  label: Text(l10n.redoButton),
                 ),
                 OutlinedButton.icon(
                   key: Key('looper_clear_button_$ch'),
@@ -311,7 +324,7 @@ class _TrackStrip extends StatelessWidget {
                       ? () => bloc.add(LooperClearPressed(ch))
                       : null,
                   icon: const Icon(Icons.delete_outline),
-                  label: const Text('Clear'),
+                  label: Text(l10n.clearButton),
                 ),
               ],
             ),
@@ -320,7 +333,7 @@ class _TrackStrip extends StatelessWidget {
               children: [
                 IconButton(
                   key: Key('looper_mute_button_$ch'),
-                  tooltip: track.muted ? 'Unmute' : 'Mute',
+                  tooltip: track.muted ? l10n.unmuteTooltip : l10n.muteTooltip,
                   icon: Icon(track.muted ? Icons.volume_off : Icons.volume_up),
                   onPressed: () => bloc.add(LooperMuteToggled(ch)),
                 ),
@@ -335,7 +348,7 @@ class _TrackStrip extends StatelessWidget {
                 SizedBox(
                   width: 80,
                   child: LinearProgressIndicator(
-                    value: track.peak.clamp(0.0, 1.0),
+                    value: peakMeterFill(track.peak),
                   ),
                 ),
               ],
@@ -352,20 +365,30 @@ class _StatusFooter extends StatelessWidget {
 
   final EngineStatus status;
 
-  String get _latency => switch (status.latencyState) {
-    LatencyState.done => '${status.measuredLatencyMs.toStringAsFixed(2)} ms',
-    LatencyState.measuring => 'measuring…',
-    LatencyState.timeout => 'no loopback',
-    LatencyState.idle => '—',
+  String _latency(AppLocalizations l10n) => switch (status.latencyState) {
+    LatencyState.done => l10n.latencyMs(
+      status.measuredLatencyMs.toStringAsFixed(2),
+    ),
+    LatencyState.measuring => l10n.measuringLowercase,
+    LatencyState.timeout => l10n.noLoopback,
+    LatencyState.idle => l10n.emDash,
   };
 
   @override
   Widget build(BuildContext context) {
-    final device = status.deviceName.isEmpty ? 'no device' : status.deviceName;
+    final l10n = context.l10n;
+    final device = status.deviceName.isEmpty
+        ? l10n.noDevice
+        : status.deviceName;
     return Text(
-      '$device · ${status.sampleRate} Hz · ${status.bufferFrames} frames · '
-      '${status.inputChannels} in / ${status.outputChannels} out · '
-      'latency $_latency',
+      l10n.engineStatusFooter(
+        device,
+        status.sampleRate,
+        status.bufferFrames,
+        status.inputChannels,
+        status.outputChannels,
+        _latency(l10n),
+      ),
       style: Theme.of(context).textTheme.bodySmall,
     );
   }

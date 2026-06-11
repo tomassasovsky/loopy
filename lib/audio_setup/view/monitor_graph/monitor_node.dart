@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -23,6 +25,7 @@ class MonitorNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -45,7 +48,7 @@ class MonitorNode extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'In ${input + 1} monitor',
+                l10n.inputMonitorLabel(input + 1),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: surface.textPrimary,
@@ -55,7 +58,7 @@ class MonitorNode extends StatelessWidget {
                 ),
               ),
               Text(
-                'live · not recorded',
+                l10n.liveNotRecorded,
                 style: TextStyle(
                   color: surface.textSecondary,
                   fontSize: 10,

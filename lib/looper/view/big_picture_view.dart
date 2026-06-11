@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
@@ -77,7 +78,10 @@ class _BigPictureViewState extends State<BigPictureView> {
                                 alignment: Alignment.bottomCenter,
                                 child: _TrackColumn(
                                   track: track,
-                                  name: big.nameOf(track.channel),
+                                  name: context.l10n.displayTrackName(
+                                    big.nameOf(track.channel),
+                                    track.channel,
+                                  ),
                                   selected:
                                       track.channel == big.selectedChannel,
                                   playMode: big.mode == PerformanceMode.play,
@@ -236,6 +240,7 @@ class _ModeIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final recording = mode == PerformanceMode.record;
@@ -261,7 +266,7 @@ class _ModeIndicator extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              recording ? 'REC' : 'PLAY',
+              recording ? l10n.performanceModeRec : l10n.performanceModePlay,
               style: theme.textTheme.labelLarge?.copyWith(
                 color: color,
                 fontWeight: FontWeight.w800,
@@ -342,6 +347,7 @@ class _TrackColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final bloc = context.read<LooperBloc>();
@@ -378,14 +384,14 @@ class _TrackColumn extends StatelessWidget {
               const Spacer(),
               if (track.isMultiple)
                 Text(
-                  '×${track.multiple}',
+                  l10n.loopMultipleLabel(track.multiple),
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: theme.colorScheme.primary,
                   ),
                 ),
               IconButton(
                 key: Key('bigpicture_routing_${track.channel}'),
-                tooltip: 'I/O routing',
+                tooltip: l10n.ioRoutingTooltip,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -463,7 +469,7 @@ class _PeakBar extends StatelessWidget {
       child: FractionallySizedBox(
         // A track with nothing recorded has no bar (height 0); otherwise the
         // bar tracks the live peak.
-        heightFactor: hasContent ? (peak * 10).clamp(0.0, 1.0) : 0.0,
+        heightFactor: hasContent ? peakMeterFill(peak) : 0.0,
         child: Container(color: color),
       ),
     );

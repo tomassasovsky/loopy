@@ -1,9 +1,28 @@
+import 'dart:math' show sqrt;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
 import 'package:loopy/theme/theme.dart';
 
 void main() {
+  group('peakMeterFill', () {
+    test('returns 0 for non-positive peaks', () {
+      expect(peakMeterFill(0), 0);
+      expect(peakMeterFill(-0.5), 0);
+    });
+
+    test('maps full scale to 1 and uses sqrt compression', () {
+      expect(peakMeterFill(1), 1);
+      expect(peakMeterFill(0.25), closeTo(sqrt(0.25), 1e-12));
+      expect(peakMeterFill(0.5), closeTo(sqrt(0.5), 1e-12));
+    });
+
+    test('clamps peaks above 1', () {
+      expect(peakMeterFill(2), 1);
+    });
+  });
+
   group('LooperTheme', () {
     const theme = LooperTheme(
       tileBackground: Color(0xFF111111),

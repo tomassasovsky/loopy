@@ -1,7 +1,436 @@
 {
     "@@locale": "es",
-    "counterAppBarTitle": "Contador",
-    "@counterAppBarTitle": {
-        "description": "Texto mostrado en la AppBar de la página del contador"
+    "appMenuLabel": "Loopy",
+    "settingsMenuItem": "Ajustes…",
+    "audioDeviceFallbackName": "Dispositivo de audio",
+    "deviceDisconnectedBanner": "{deviceName} desconectado — intentando reconectar…",
+    "deviceReconnectedSnackbar": "{deviceName} reconectado",
+    "dismiss": "Descartar",
+    "sessionSaved": "Sesión guardada",
+    "sessionLoaded": "Sesión cargada",
+    "mixdownExported": "Mezcla exportada",
+    "stemsExported": "Pistas exportadas",
+    "looperAppBarTitle": "Loopy",
+    "sessionTooltip": "Sesión",
+    "saveSession": "Guardar sesión",
+    "loadSession": "Cargar sesión",
+    "exportMixdown": "Exportar mezcla",
+    "exportStems": "Exportar pistas",
+    "playAllTooltip": "Reproducir todo",
+    "stopAllTooltip": "Detener todo",
+    "bigPictureTooltip": "Vista general",
+    "audioSetupTooltip": "Configuración de audio",
+    "masterLoopLabel": "Bucle maestro",
+    "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
+    "trackNumberLabel": "Pista {trackNumber}",
+    "loopMultipleLabel": "×{multiple}",
+    "ioRoutingTooltip": "Enrutamiento E/S",
+    "recordButton": "Grabar",
+    "finishButton": "Finalizar",
+    "stopDubButton": "Detener dub",
+    "overdubButton": "Sobregrabar",
+    "stopButton": "Detener",
+    "playButton": "Reproducir",
+    "undoButton": "Deshacer",
+    "redoButton": "Rehacer",
+    "clearButton": "Borrar",
+    "muteTooltip": "Silenciar",
+    "unmuteTooltip": "Activar sonido",
+    "trackStateEmpty": "vacío",
+    "trackStateRecording": "grabando",
+    "trackStateOverdubbing": "sobregrabando",
+    "trackStatePlaying": "reproduciendo",
+    "trackStateStopped": "detenido",
+    "noDevice": "sin dispositivo",
+    "measuringLowercase": "midiendo…",
+    "noLoopback": "sin loopback",
+    "emDash": "—",
+    "engineStatusFooter": "{deviceName} · {sampleRate} Hz · {bufferFrames} fotogramas · {inputChannels} ent / {outputChannels} sal · latencia {latency}",
+    "performanceModeRec": "GRAB",
+    "performanceModePlay": "PLAY",
+    "renameTrackTitle": "Renombrar pista {trackNumber}",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "trackRoutingTitle": "Enrutamiento de {trackName}",
+    "trackSettingsTooltip": "Ajustes de pista",
+    "trackSettingsDialogTitle": "Ajustes de pista {trackNumber}",
+    "quantizeRecording": "Cuantizar grabación",
+    "loopLength": "Duración del bucle",
+    "trackEffectsPlaybackOnlyHint": "Los efectos de pista colorean solo la reproducción. Para oír efectos en vivo en una entrada, activa su monitor en ajustes de audio.",
+    "done": "Listo",
+    "defaultWithState": "Predeterminado ({state})",
+    "toggleOn": "Sí",
+    "toggleOff": "No",
+    "auto": "Auto",
+    "settingsSectionView": "Vista",
+    "settingsSectionAudio": "Audio",
+    "settingsSectionRouting": "Enrutamiento",
+    "settingsSectionTracks": "Pistas",
+    "settingsKicker": "AJUSTES",
+    "bigPictureTitle": "Vista general",
+    "bpSettingsViewIntro": "Cambia diseños, ajusta valores predeterminados de rendimiento y activa la ventana secundaria de forma de onda de salida.",
+    "viewGroupLabel": "VISTA",
+    "bigPictureModeTitle": "Modo Vista general",
+    "bigPictureModeSubtitle": "Diseño de rendimiento a pantalla completa",
+    "waveformWindowTitle": "Ventana de forma de onda de salida",
+    "waveformWindowSubtitle": "Abre una segunda ventana con la forma de onda de salida del bucle completo",
+    "performanceGroupLabel": "RENDIMIENTO",
+    "bpDefaultModeIntro": "Modo en el que inicia la Vista general. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Reproducir silencian / activan sonido.",
+    "recordModeLabel": "Grabar",
+    "recordModeSub": "Armar y capturar",
+    "playModeLabel": "Reproducir",
+    "playModeSub": "Silenciar / activar sonido",
+    "refreshRateIntro": "Frecuencia de actualización de la interfaz — con qué frecuencia se actualizan formas de onda y medidores. Más alto es más fluido pero usa más CPU.",
+    "refreshRateHz": "{hz} Hz",
+    "refreshRateLowCpu": "Bajo CPU",
+    "refreshRateSmoothest": "Más fluido",
+    "defaultLabel": "Predeterminado",
+    "routingIntro": "Cómo se conecta el audio: las entradas de hardware fluyen a las pistas, y las pistas salen a las salidas de hardware. Las entradas loopback están tachadas — nunca se graban. Haz clic en una pista para seleccionarla, luego en una entrada o salida para conectar o desconectar.",
+    "signalFlowGroupLabel": "FLUJO DE SEÑAL",
+    "tracksIntro": "Activa el segundo banco y renombra las pistas.",
+    "tracksGroupLabel": "PISTAS",
+    "secondBankTitle": "Segundo banco (8 pistas)",
+    "secondBankSubtitle": "Añade un segundo banco de cuatro pistas, conmutable como A / B",
+    "inputChannelLabel": "Ent {channelNumber}",
+    "outputChannelLabel": "Sal {channelNumber}",
+    "laneNumberLabel": "Carril {laneNumber}",
+    "inputMonitorLabel": "Monitor Ent {inputNumber}",
+    "liveNotRecorded": "en vivo · no grabado",
+    "unmuteLaneTooltip": "Activar sonido del carril",
+    "muteLaneTooltip": "Silenciar carril",
+    "removeLaneTooltip": "Eliminar carril",
+    "laneGraphHint": "Toca un carril para enfocarlo, luego toca entradas/salidas para conectarlo.",
+    "addLane": "Añadir carril",
+    "addEffectToLaneTooltip": "Añadir efecto al carril {laneNumber}",
+    "addEffectToInputTooltip": "Añadir efecto a la entrada {inputNumber}",
+    "removeEffectTooltip": "Eliminar efecto",
+    "inputMonitoringTitle": "Monitorización de entrada",
+    "monitorGraphHint": "Toca una entrada para monitorizarla, luego toca salidas para enviarla allí.",
+    "effectedSegment": "Con efecto",
+    "drySegment": "Seco",
+    "legendEffectedWet": "con efecto (wet) → salidas",
+    "legendCleanDry": "limpio (dry) → salidas",
+    "configureInputMonitoring": "Configurar monitorización de entrada",
+    "monitorRoutingIntro": "Monitoriza entradas en vivo a través de sus propios efectos (wet) y/o como envío seco limpio — enrutado a las salidas que elijas. Nunca se graba.",
+    "startEngineForMonitorChannels": "Inicia el motor para elegir canales de monitor.",
+    "setupStepAudioEngine": "Motor de audio",
+    "setupStepInput": "Entrada",
+    "setupStepReady": "Listo para tocar",
+    "audioSetupKicker": "CONFIGURACIÓN DE AUDIO",
+    "audioDeviceTitle": "Dispositivo de audio",
+    "audioSetupRailIntro": "Configura tu interfaz para bucles de baja latencia.",
+    "back": "Atrás",
+    "startEngine": "Iniciar motor",
+    "continueButton": "Continuar",
+    "outputDeviceGroup": "Dispositivo de salida",
+    "sampleRateGroup": "Frecuencia de muestreo",
+    "bufferSizeGroup": "Tamaño del búfer",
+    "inputDeviceGroup": "Dispositivo de entrada",
+    "monitorInputTitle": "Monitorizar entrada",
+    "monitorInputSubtitle": "Escucha la entrada en vivo a través de las salidas.",
+    "sampleRateLabel": "Frecuencia de muestreo",
+    "bufferLabel": "Búfer",
+    "estimatedLatencyLabel": "Latencia estimada",
+    "monitorInputLabel": "Monitorizar entrada",
+    "defaultDevice": "Dispositivo predeterminado",
+    "liveKicker": "EN VIVO",
+    "engineRunningHint": "El motor está abierto y listo. Deténlo para reconfigurar.",
+    "roundTripLatencyLabel": "Latencia de ida y vuelta",
+    "recordOffsetLabel": "Desplazamiento de grabación",
+    "measuringEllipsis": "Midiendo…",
+    "measureRoundTripLatency": "Medir latencia de ida y vuelta",
+    "stopEngine": "Detener motor",
+    "setupBlurbEngine": "Elige la resolución y el equilibrio entre latencia y estabilidad.",
+    "setupBlurbInput": "Elige cómo se monitoriza y enruta tu señal entrante.",
+    "setupBlurbReady": "Revisa tu configuración y abre el dispositivo.",
+    "sampleRateKhz": "{rate} kHz",
+    "sampleRateNoteCd": "CD",
+    "sampleRateNoteStudio": "Estudio",
+    "sampleRateNoteHiRes": "Alta res.",
+    "bufferHint64": "Timing más ajustado — mejor sensación, mayor CPU y riesgo de cortes.",
+    "bufferHint128": "Baja latencia — un buen predeterminado para la mayoría de interfaces.",
+    "bufferHint256": "Equilibrado — margen seguro con timing aún ajustado.",
+    "bufferHint512": "Más estable — elige esto si oyes clics o cortes.",
+    "notMeasured": "No medido",
+    "noSignalDetected": "Sin señal detectada",
+    "latencyMs": "{milliseconds} ms",
+    "bufferFrames": "{frames} fotogramas",
+    "sampleRateHz": "{rate} Hz",
+    "loopbackDetectedNote": "Loopback detectado{deviceClause} — la latencia se mide automáticamente al iniciar como estimación de ruta digital. Usa un cable para la cifra analógica real.",
+    "loopbackAvailableNote": "Hay un loopback {kind} disponible{deviceClause} pero no se puede enrutar automáticamente; usa un cable loopback físico para medir la latencia.",
+    "loopbackKindWasapi": "WASAPI",
+    "loopbackKindMonitor": "monitor",
+    "loopbackKindVirtualDevice": "virtual",
+    "failedToOpenDevice": "Error al abrir el dispositivo: {errorName}",
+    "failedToStartAudio": "Error al iniciar el audio: {errorName}",
+    "audioSettingsIntro": "Elige el dispositivo de audio y comprueba la latencia de ida y vuelta medida.",
+    "outputDeviceGroupUpper": "DISPOSITIVO DE SALIDA",
+    "inputDeviceGroupUpper": "DISPOSITIVO DE ENTRADA",
+    "monitoringGroupLabel": "MONITORIZACIÓN",
+    "recordingGroupLabel": "GRABACIÓN",
+    "maxLoopLengthIntro": "Duración máxima del bucle por pista. Un límite mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
+    "maxLoopDefault30s": "Predeterminado (30 s)",
+    "maxLoopMinutes": "{minutes} min",
+    "quantizeRecordingSubtitle": "Ajusta inicio/fin de grabación a la cuadrícula del bucle. El predeterminado para todas las pistas; anúlalo por pista desde su diálogo de enrutamiento.",
+    "overdubOnSecondPressTitle": "Sobregrabar en segunda pulsación",
+    "overdubOnSecondPressSubtitle": "Una segunda pulsación de grabar sigue superponiendo (rec/dub) en lugar de detener y reproducir",
+    "soundActivatedRecordingTitle": "Grabación activada por sonido",
+    "soundActivatedRecordingSubtitle": "Tras pulsar grabar, la captura comienza cuando la señal de entrada empieza, en lugar de inmediatamente",
+    "defaultLoopLengthIntro": "Duración predeterminada del bucle para nuevas grabaciones. Auto redondea a bucles base completos; una duración fija graba exactamente esa cantidad. Anúlalo por pista desde su diálogo de enrutamiento.",
+    "statusGroupLabel": "ESTADO",
+    "deviceLabel": "Dispositivo",
+    "notRunning": "No en ejecución",
+    "measureLatencySubtitle": "Volver a ejecutar la medición de latencia loopback",
+    "systemDefault": "Predeterminado del sistema",
+    "systemDefaultNamed": "Predeterminado del sistema ({deviceName})",
+    "effectNone": "Ninguno",
+    "effectDrive": "Drive",
+    "effectFilter": "Filtro",
+    "effectDelay": "Delay",
+    "effectTremolo": "Trémolo",
+    "effectOctaver": "Octaver",
+    "effectEcho": "Eco",
+    "paramDrive": "Drive",
+    "paramLevel": "Nivel",
+    "paramCutoff": "Corte",
+    "paramResonance": "Resonancia",
+    "paramTime": "Tiempo",
+    "paramFeedback": "Retroalimentación",
+    "paramMix": "Mezcla",
+    "paramRate": "Velocidad",
+    "paramDepth": "Profundidad",
+    "paramShift": "Desplazamiento",
+    "paramTone": "Tono",
+    "pitchUnison": "Unísono",
+    "pitchOctaves": "{sign}{count} oct",
+    "pitchSemitones": "{sign}{count} st",
+    "defaultTrackName": "PISTA {trackNumber}",
+    "outputWaveformWindowTitle": "Loopy — Salida",
+    "@deviceDisconnectedBanner": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "@deviceReconnectedSnackbar": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "@trackNumberLabel": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@loopMultipleLabel": {
+        "placeholders": {
+            "multiple": {
+                "type": "int"
+            }
+        }
+    },
+    "@engineStatusFooter": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            },
+            "sampleRate": {
+                "type": "int"
+            },
+            "bufferFrames": {
+                "type": "int"
+            },
+            "inputChannels": {
+                "type": "int"
+            },
+            "outputChannels": {
+                "type": "int"
+            },
+            "latency": {
+                "type": "String"
+            }
+        }
+    },
+    "@renameTrackTitle": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@trackRoutingTitle": {
+        "placeholders": {
+            "trackName": {
+                "type": "String"
+            }
+        }
+    },
+    "@trackSettingsDialogTitle": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@defaultWithState": {
+        "placeholders": {
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "@refreshRateHz": {
+        "placeholders": {
+            "hz": {
+                "type": "int"
+            }
+        }
+    },
+    "@inputChannelLabel": {
+        "placeholders": {
+            "channelNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@outputChannelLabel": {
+        "placeholders": {
+            "channelNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@laneNumberLabel": {
+        "placeholders": {
+            "laneNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@inputMonitorLabel": {
+        "placeholders": {
+            "inputNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@addEffectToLaneTooltip": {
+        "placeholders": {
+            "laneNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@addEffectToInputTooltip": {
+        "placeholders": {
+            "inputNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "@sampleRateKhz": {
+        "placeholders": {
+            "rate": {
+                "type": "String"
+            }
+        }
+    },
+    "@latencyMs": {
+        "placeholders": {
+            "milliseconds": {
+                "type": "String"
+            }
+        }
+    },
+    "@bufferFrames": {
+        "placeholders": {
+            "frames": {
+                "type": "int"
+            }
+        }
+    },
+    "@sampleRateHz": {
+        "placeholders": {
+            "rate": {
+                "type": "int"
+            }
+        }
+    },
+    "@loopbackDetectedNote": {
+        "placeholders": {
+            "deviceClause": {
+                "type": "String"
+            }
+        }
+    },
+    "@loopbackAvailableNote": {
+        "placeholders": {
+            "kind": {
+                "type": "String"
+            },
+            "deviceClause": {
+                "type": "String"
+            }
+        }
+    },
+    "@failedToOpenDevice": {
+        "placeholders": {
+            "errorName": {
+                "type": "String"
+            }
+        }
+    },
+    "@failedToStartAudio": {
+        "placeholders": {
+            "errorName": {
+                "type": "String"
+            }
+        }
+    },
+    "@maxLoopMinutes": {
+        "placeholders": {
+            "minutes": {
+                "type": "int"
+            }
+        }
+    },
+    "@systemDefaultNamed": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "@pitchOctaves": {
+        "placeholders": {
+            "sign": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "@pitchSemitones": {
+        "placeholders": {
+            "sign": {
+                "type": "String"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "@defaultTrackName": {
+        "placeholders": {
+            "trackNumber": {
+                "type": "int"
+            }
+        }
     }
 }

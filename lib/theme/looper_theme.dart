@@ -1,5 +1,16 @@
+import 'dart:math' show sqrt;
+
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
+
+/// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`).
+///
+/// Square-root compression keeps normal playback levels readable on tall meters
+/// without clipping early; full scale still maps to 100%.
+double peakMeterFill(double peak) {
+  if (peak <= 0) return 0;
+  return sqrt(peak.clamp(0.0, 1.0));
+}
 
 /// The distinct appearances a track meter (peak bar) can take: the track's
 /// [TrackState] plus a `muted` case that overlays any state — collapsed into

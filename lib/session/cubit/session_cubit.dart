@@ -22,35 +22,33 @@ class SessionCubit extends Cubit<SessionState> {
   final Future<String> Function() _directory;
 
   /// Saves the current session (manifest + stems + mixdown).
-  Future<void> saveSession() => _run(_repository.save, 'Session saved');
+  Future<void> saveSession() => _run(_repository.save, SessionOutcome.saved);
 
   /// Loads the saved session back into the engine.
-  Future<void> loadSession() => _run(_repository.load, 'Session loaded');
+  Future<void> loadSession() => _run(_repository.load, SessionOutcome.loaded);
 
   /// Exports a mixed-down WAV of the current session.
   Future<void> exportMixdown() => _run(
     (dir) => _repository.exportMixdown('$dir/${SessionRepository.mixdownName}'),
-    'Mixdown exported',
+    SessionOutcome.mixdownExported,
   );
 
   /// Exports each track as a separate stem WAV under a `stems` folder.
   Future<void> exportStems() => _run(
     (dir) => _repository.exportStems('$dir/stems'),
-    'Stems exported',
+    SessionOutcome.stemsExported,
   );
 
   Future<void> _run(
     Future<void> Function(String directory) action,
-    String successMessage,
+    SessionOutcome outcome,
   ) async {
     emit(const SessionState(status: SessionStatus.working));
     try {
       await action(await _directory());
-      emit(
-        SessionState(status: SessionStatus.success, message: successMessage),
-      );
+      emit(SessionState(status: SessionStatus.success, outcome: outcome));
     } on Object catch (error) {
-      emit(SessionState(status: SessionStatus.failure, message: '$error'));
+      emit(SessionState(status: SessionStatus.failure, errorMessage: '$error'));
     }
   }
 }

@@ -31,7 +31,10 @@ void main() {
       act: (cubit) => cubit.saveSession(),
       expect: () => const [
         SessionState(status: SessionStatus.working),
-        SessionState(status: SessionStatus.success, message: 'Session saved'),
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.saved,
+        ),
       ],
       verify: (_) => verify(() => repository.save('/tmp/x')).called(1),
     );
@@ -45,7 +48,10 @@ void main() {
       act: (cubit) => cubit.loadSession(),
       expect: () => const [
         SessionState(status: SessionStatus.working),
-        SessionState(status: SessionStatus.success, message: 'Session loaded'),
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.loaded,
+        ),
       ],
       verify: (_) => verify(() => repository.load('/tmp/x')).called(1),
     );
@@ -61,7 +67,7 @@ void main() {
         SessionState(status: SessionStatus.working),
         SessionState(
           status: SessionStatus.success,
-          message: 'Mixdown exported',
+          outcome: SessionOutcome.mixdownExported,
         ),
       ],
       verify: (_) => verify(
@@ -78,7 +84,10 @@ void main() {
       act: (cubit) => cubit.exportStems(),
       expect: () => const [
         SessionState(status: SessionStatus.working),
-        SessionState(status: SessionStatus.success, message: 'Stems exported'),
+        SessionState(
+          status: SessionStatus.success,
+          outcome: SessionOutcome.stemsExported,
+        ),
       ],
       verify: (_) =>
           verify(() => repository.exportStems('/tmp/x/stems')).called(1),
@@ -94,7 +103,7 @@ void main() {
         SessionState(status: SessionStatus.working),
         SessionState(
           status: SessionStatus.failure,
-          message: 'Exception: disk full',
+          errorMessage: 'Exception: disk full',
         ),
       ],
     );
@@ -109,7 +118,7 @@ void main() {
         SessionState(status: SessionStatus.working),
         SessionState(
           status: SessionStatus.failure,
-          message: 'Exception: no bundle',
+          errorMessage: 'Exception: no bundle',
         ),
       ],
     );

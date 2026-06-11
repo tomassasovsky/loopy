@@ -1,4 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/view/lane_graph/lane_channel_chip.dart';
 import 'package:loopy/looper/view/lane_graph/lane_graph_layout.dart';
 import 'package:loopy/looper/view/lane_graph/lane_node.dart';
@@ -98,6 +99,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     final layout = LaneGraphLayout.compute(
       lanes: widget.lanes,
@@ -125,7 +127,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                   width: LaneGraphLayout.channelChipWidth,
                   height: LaneGraphLayout.channelChipHeight,
                   child: LaneChannelChip(
-                    label: 'In ${c + 1}',
+                    label: l10n.inputChannelLabel(c + 1),
                     channel: c,
                     lanes: widget.lanes,
                     focused: _focused,
@@ -148,7 +150,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                   width: LaneGraphLayout.channelChipWidth,
                   height: LaneGraphLayout.channelChipHeight,
                   child: LaneChannelChip(
-                    label: 'Out ${c + 1}',
+                    label: l10n.outputChannelLabel(c + 1),
                     channel: c,
                     lanes: widget.lanes,
                     focused: _focused,
@@ -195,7 +197,9 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                     height: kRoutingCardHeight,
                     child: EffectChainCard(
                       keyPrefix: 'laneGraph',
-                      label: widget.lanes[l].effects[k].type.label,
+                      label: l10n.effectTypeLabel(
+                        widget.lanes[l].effects[k].type,
+                      ),
                       accentColor: surface.laneColor(l),
                       selected:
                           widget.selectedEffect?.lane == l &&
@@ -225,7 +229,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                     buttonKey: Key('laneGraph_addFx_$l'),
                     accentColor: surface.accent,
                     full: widget.lanes[l].effects.length >= kTrackEffectMax,
-                    tooltip: 'Add effect to lane ${l + 1}',
+                    tooltip: l10n.addEffectToLaneTooltip(l + 1),
                     onAdd: () {
                       setState(() => _focused = l);
                       widget.onAddEffect(l);

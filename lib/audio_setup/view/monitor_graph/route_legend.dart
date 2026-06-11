@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -9,18 +11,19 @@ class RouteLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     return Row(
       children: [
         _LegendKey(
           color: surface.wetRoute,
-          label: 'effected (wet) → outs',
+          label: l10n.legendEffectedWet,
           dashed: false,
         ),
         const SizedBox(width: 20),
         _LegendKey(
           color: surface.dryRoute,
-          label: 'clean (dry) → outs',
+          label: l10n.legendCleanDry,
           dashed: true,
         ),
       ],

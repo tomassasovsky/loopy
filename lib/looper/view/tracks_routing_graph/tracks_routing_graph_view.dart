@@ -1,4 +1,5 @@
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/view/tracks_routing_graph/graph_node.dart';
 import 'package:loopy/looper/view/tracks_routing_graph/routing_edit.dart';
 import 'package:loopy/looper/view/tracks_routing_graph/routing_graph.dart';
@@ -162,6 +163,7 @@ class _TracksRoutingGraphViewState extends State<TracksRoutingGraphView> {
       outputChannels: widget.outputChannels,
       excludedInputMask: widget.excludedInputMask,
       trackLabels: widget.trackLabels,
+      l10n: context.l10n,
     );
     final height =
         graph.maxColumnLength * TracksRoutingGraphView._rowHeight +
