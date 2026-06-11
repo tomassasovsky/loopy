@@ -41,8 +41,13 @@ void main() {
           providers: [
             RepositoryProvider<SettingsRepository>.value(value: settings),
           ],
-          child: BlocProvider<LooperBloc>.value(
-            value: bloc,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<BigPictureCubit>(
+                create: (_) => BigPictureCubit(settings: settings),
+              ),
+            ],
             child: Builder(
               builder: (context) => Scaffold(
                 body: Center(

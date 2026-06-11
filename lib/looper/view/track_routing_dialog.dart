@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/lane_graph_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -20,11 +21,16 @@ Future<void> showTrackRoutingDialog({
 }) {
   final bloc = context.read<LooperBloc>();
   final settings = context.read<SettingsRepository>();
+  final bigPicture = context.read<BigPictureCubit>();
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => BlocProvider.value(
         value: bloc,
-        child: _TrackRoutingPage(channel: channel, settings: settings),
+        child: _TrackRoutingPage(
+          channel: channel,
+          settings: settings,
+          bigPicture: bigPicture,
+        ),
       ),
     ),
   );
@@ -32,17 +38,24 @@ Future<void> showTrackRoutingDialog({
 
 /// The per-track routing + effects page.
 class _TrackRoutingPage extends StatelessWidget {
-  const _TrackRoutingPage({required this.channel, required this.settings});
+  const _TrackRoutingPage({
+    required this.channel,
+    required this.settings,
+    required this.bigPicture,
+  });
 
   final int channel;
   final SettingsRepository settings;
+  final BigPictureCubit bigPicture;
 
   @override
   Widget build(BuildContext context) {
+    final trackName = bigPicture.state.names[channel];
+
     return Scaffold(
       key: const Key('trackRouting_page'),
       appBar: AppBar(
-        title: Text('Track ${channel + 1} routing'),
+        title: Text('$trackName routing'),
         actions: [
           IconButton(
             key: const Key('trackRouting_settings_button'),
