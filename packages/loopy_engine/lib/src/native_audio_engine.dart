@@ -447,6 +447,17 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMonitorInputDry({
+    required int input,
+    required int dryOutputMask,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_dry(_engine, input, dryOutputMask),
+    );
+  }
+
+  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,

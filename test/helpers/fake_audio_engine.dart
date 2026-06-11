@@ -293,6 +293,18 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-input dry-send output mask passed to [setMonitorInputDry].
+  final Map<int, int> monitorInputDry = {};
+
+  @override
+  EngineResult setMonitorInputDry({
+    required int input,
+    required int dryOutputMask,
+  }) {
+    monitorInputDry[input] = dryOutputMask;
+    return EngineResult.ok;
+  }
+
   /// Per-(input, index) effect type passed to [setMonitorInputFx].
   final Map<(int, int), TrackEffectType> monitorInputFx = {};
 

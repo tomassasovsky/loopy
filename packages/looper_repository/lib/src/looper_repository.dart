@@ -90,6 +90,9 @@ class LooperRepository {
   /// together so they never drift — and effect chains. Absent means the input
   /// is not monitored. Re-applied on every successful (re)start.
   final Map<int, (bool enabled, int outputMask)> _monitorRouting = {};
+
+  /// Per-input monitor dry-send output bitmask (`0`/absent = no dry send).
+  final Map<int, int> _monitorDry = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
 
   /// Reconnect supervision: while these are non-null a pinned device is absent
@@ -363,6 +366,10 @@ class LooperRepository {
           outputMask: routing.$2,
         ),
       );
+      _monitorDry.forEach(
+        (input, mask) =>
+            _engine.setMonitorInputDry(input: input, dryOutputMask: mask),
+      );
       _monitorEffects.keys.forEach(_applyMonitorEffects);
     }
     return result;
@@ -505,6 +512,22 @@ class LooperRepository {
       input: input,
       enabled: enabled,
       outputMask: outputMask,
+    );
+  }
+
+  /// Routes monitor [input]'s CLEAN (pre-effects) signal to the outputs in
+  /// [dryOutputMask] — a parallel dry send alongside [setMonitorInput]'s
+  /// effected route (`0` disables it). Remembered and re-applied on every
+  /// (re)start; takes effect immediately only while running.
+  EngineResult setMonitorDry({
+    required int input,
+    required int dryOutputMask,
+  }) {
+    _monitorDry[input] = dryOutputMask;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMonitorInputDry(
+      input: input,
+      dryOutputMask: dryOutputMask,
     );
   }
 

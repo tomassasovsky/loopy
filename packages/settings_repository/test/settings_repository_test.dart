@@ -194,6 +194,13 @@ void main() {
       expect(await repository.loadMonitorInputEffects(0), '[{"type":1}]');
       expect(await repository.loadMonitorInputEffects(1), isNull);
     });
+
+    test('the dry-send mask defaults to 0 and round-trips per input', () async {
+      expect(await repository.loadMonitorInputDry(0), 0);
+      await repository.saveMonitorInputDry(0, 0x2);
+      expect(await repository.loadMonitorInputDry(0), 0x2);
+      expect(await repository.loadMonitorInputDry(1), 0);
+    });
   });
 
   group('audio config', () {

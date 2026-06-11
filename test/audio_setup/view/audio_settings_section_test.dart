@@ -32,6 +32,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setMonitorDry(
+        input: any(named: 'input'),
+        dryOutputMask: any(named: 'dryOutputMask'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(

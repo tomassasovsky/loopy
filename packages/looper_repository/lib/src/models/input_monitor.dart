@@ -13,6 +13,7 @@ class InputMonitor extends Equatable {
     required this.input,
     this.enabled = false,
     this.outputMask = 0x3,
+    this.dryOutputMask = 0,
     this.effects = const [],
   });
 
@@ -22,8 +23,14 @@ class InputMonitor extends Equatable {
   /// Whether live monitoring of [input] is on.
   final bool enabled;
 
-  /// Bitmask of hardware output channels the monitor plays to (bit c => out c).
+  /// Bitmask of hardware output channels the effected signal plays to
+  /// (bit c => out c).
   final int outputMask;
+
+  /// Bitmask of hardware output channels the CLEAN (pre-effects) signal plays
+  /// to — a parallel dry send (`0` = off), so an input can be heard wet and dry
+  /// at once on different outputs.
+  final int dryOutputMask;
 
   /// The monitor's live effect chain, in processing order. Never recorded.
   final List<TrackEffect> effects;
@@ -32,14 +39,22 @@ class InputMonitor extends Equatable {
   InputMonitor copyWith({
     bool? enabled,
     int? outputMask,
+    int? dryOutputMask,
     List<TrackEffect>? effects,
   }) => InputMonitor(
     input: input,
     enabled: enabled ?? this.enabled,
     outputMask: outputMask ?? this.outputMask,
+    dryOutputMask: dryOutputMask ?? this.dryOutputMask,
     effects: effects ?? this.effects,
   );
 
   @override
-  List<Object?> get props => [input, enabled, outputMask, effects];
+  List<Object?> get props => [
+    input,
+    enabled,
+    outputMask,
+    dryOutputMask,
+    effects,
+  ];
 }

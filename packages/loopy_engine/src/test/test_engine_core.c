@@ -1305,6 +1305,43 @@ static void test_monitor_input_routes_live_through_chain(void) {
   le_engine_destroy(e);
 }
 
+/* A monitor's dry send routes the CLEAN input to its own outputs in parallel
+ * with the effected route, so an input is heard wet and dry at once. */
+static void test_monitor_input_dry_send(void) {
+  printf("test_monitor_input_dry_send\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+
+  /* Monitor input 0: unity drive to out 0 (wet), clean dry send to out 1. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1, 0x1) == LE_OK);
+  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f); /* 1x pre-gain */
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f); /* unity level */
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x2) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f); /* wet on out 0 */
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);        /* dry on out 1 */
+  }
+
+  /* Disabling the dry send (mask 0) silences out 1; out 0 stays wet. */
+  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x0) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
 /* The monitored (effected) live signal is never printed into a recording: a
  * track records its dry input even while that input is being monitored. */
 static void test_monitor_input_not_recorded(void) {
@@ -2526,6 +2563,7 @@ int main(void) {
   test_quantize_track_override_forces_off();
   test_quantize_track_override_inherits();
   test_monitor_input_routes_live_through_chain();
+  test_monitor_input_dry_send();
   test_monitor_input_not_recorded();
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();

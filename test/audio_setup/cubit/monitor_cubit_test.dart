@@ -26,6 +26,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setMonitorDry(
+        input: any(named: 'input'),
+        dryOutputMask: any(named: 'dryOutputMask'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setMonitorEffects(
         input: any(named: 'input'),
         effects: any(named: 'effects'),
@@ -96,6 +102,22 @@ void main() {
     );
 
     blocTest<MonitorCubit, MonitorState>(
+      'setDryOutputMask updates, applies, and persists the dry send',
+      build: build,
+      act: (cubit) async {
+        await cubit.setEnabled(0, enabled: true);
+        await cubit.setDryOutputMask(0, 0x2);
+      },
+      verify: (cubit) async {
+        expect(cubit.state.forInput(0).dryOutputMask, 0x2);
+        verify(
+          () => repository.setMonitorDry(input: 0, dryOutputMask: 0x2),
+        ).called(greaterThanOrEqualTo(1));
+        expect(await settings.loadMonitorInputDry(0), 0x2);
+      },
+    );
+
+    blocTest<MonitorCubit, MonitorState>(
       'inputs are independent of one another',
       build: build,
       act: (cubit) async {
@@ -110,9 +132,10 @@ void main() {
     );
 
     blocTest<MonitorCubit, MonitorState>(
-      'load restores per-input routing and effects, applying them',
+      'load restores per-input routing, dry send and effects, applying them',
       setUp: () async {
         await settings.saveMonitorInput(0, enabled: true, outputMask: 0x2);
+        await settings.saveMonitorInputDry(0, 0x1);
         await settings.saveMonitorInputEffects(
           0,
           encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
@@ -124,6 +147,7 @@ void main() {
         final monitor = cubit.state.forInput(0);
         expect(monitor.enabled, isTrue);
         expect(monitor.outputMask, 0x2);
+        expect(monitor.dryOutputMask, 0x1);
         expect(monitor.effects.single.type, TrackEffectType.delay);
         verify(
           () => repository.setMonitorInput(
@@ -131,6 +155,9 @@ void main() {
             enabled: true,
             outputMask: 0x2,
           ),
+        ).called(1);
+        verify(
+          () => repository.setMonitorDry(input: 0, dryOutputMask: 0x1),
         ).called(1);
         verify(
           () => repository.setMonitorEffects(

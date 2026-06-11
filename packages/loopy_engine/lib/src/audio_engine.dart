@@ -232,6 +232,15 @@ abstract interface class AudioEngine {
     required int outputMask,
   });
 
+  /// Routes monitor [input]'s CLEAN (pre-effects) signal to the outputs in
+  /// [dryOutputMask] — a parallel dry send running alongside the effected route
+  /// (see [setMonitorInput]), so the input can be heard wet and dry at once on
+  /// different outputs. `0` disables the dry send. Never recorded.
+  EngineResult setMonitorInputDry({
+    required int input,
+    required int dryOutputMask,
+  });
+
   /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on monitor input [input]
   /// to [type]. Changing the type resets that entry's DSP state and seeds the
   /// type's default parameters; use [setMonitorInputFxCount] to control how
