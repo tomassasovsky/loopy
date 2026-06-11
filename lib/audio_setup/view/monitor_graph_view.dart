@@ -9,11 +9,10 @@ import 'package:loopy/common/routing_graph/channel_chip.dart';
 import 'package:loopy/common/routing_graph/effect_chain_card.dart';
 import 'package:loopy/common/routing_graph/effect_params_editor.dart';
 import 'package:loopy/common/routing_graph/graph_canvas.dart';
-import 'package:loopy/common/routing_graph/graph_colors.dart';
 import 'package:loopy/common/routing_graph/graph_edge.dart';
 import 'package:loopy/common/routing_graph/graph_edge_painter.dart';
 import 'package:loopy/common/routing_graph/graph_geometry.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// Opens the input-monitoring routing graph as a full-screen page (so it has
 /// room instead of a cramped panel). Re-provides the [MonitorCubit] into the
@@ -42,10 +41,6 @@ Future<void> showMonitorRoutingPage({
     ),
   );
 }
-
-/// Send-role colours, from the shared kit. Wet = effected, dry = clean.
-const Color _wet = kWetRouteColor;
-const Color _dry = kDryRouteColor;
 
 /// The live input-monitoring configuration as one wired graph: hardware inputs
 /// on the left, each *monitored* input as a node with its own effect chain in
@@ -102,6 +97,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     final state = context.watch<MonitorCubit>().state;
     final layout = _GraphLayout.compute(
       state: state,
@@ -109,10 +105,12 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
       outCount: _outCount,
       excludedMask: widget.excludedInputMask,
       focused: _focused,
+      wetColor: surface.wetRoute,
+      dryColor: surface.dryRoute,
     );
     return Column(
       children: [
-        Expanded(child: _canvas(state, layout)),
+        Expanded(child: _canvas(state, layout, surface)),
         _RoutePanel(
           monitor: _focused == null ? null : state.forInput(_focused!),
           wireDry: _wireDry,
@@ -149,7 +147,11 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
 
   // ---- canvas ----
 
-  Widget _canvas(MonitorState state, _GraphLayout layout) {
+  Widget _canvas(
+    MonitorState state,
+    _GraphLayout layout,
+    SurfaceTheme surface,
+  ) {
     return GraphCanvas(
       width: layout.canvasW,
       height: layout.canvasH,
@@ -158,9 +160,9 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
         Positioned.fill(
           child: CustomPaint(painter: GraphEdgePainter(layout.edges)),
         ),
-        for (var c = 0; c < _inCount; c++) _inNode(state, layout, c),
-        for (var c = 0; c < _outCount; c++) _outNode(state, layout, c),
-        for (final c in layout.rows) ..._monitorRow(state, layout, c),
+        for (var c = 0; c < _inCount; c++) _inNode(state, layout, c, surface),
+        for (var c = 0; c < _outCount; c++) _outNode(state, layout, c, surface),
+        for (final c in layout.rows) ..._monitorRow(state, layout, c, surface),
       ],
     );
   }
@@ -169,14 +171,15 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     MonitorState state,
     _GraphLayout layout,
     int c,
+    SurfaceTheme surface,
   ) sync* {
     final y = layout.rowY(c);
-    yield _positioned(
-      layout.nodeX,
-      y,
-      _GraphLayout.nodeW,
-      _GraphLayout.nodeH,
-      _MonitorNode(
+    yield positionedNode(
+      left: layout.nodeX,
+      centerY: y,
+      width: _GraphLayout.nodeW,
+      height: _GraphLayout.nodeH,
+      child: _MonitorNode(
         input: c,
         focused: _focused == c,
         onTap: () => setState(() {
@@ -186,31 +189,34 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
       ),
     );
     final xs = layout.cardXs[c]!;
-    // Insertion drop zones in the gaps before/after each card (the cards
-    // themselves are the drag sources) — the same gap-index convention as the
-    // lane graph, so a reorder behaves identically in both views.
-    for (final zone in _dropZones(layout, c, xs, y)) {
-      yield zone;
-    }
+    // Insertion drop zones in the gaps before/after each card (the cards are
+    // the drag sources) — the gap-index convention shared with the lane graph.
+    yield* buildEffectDropZones(
+      keyPrefix: 'monitorGraph',
+      rowId: c,
+      cardXs: xs,
+      emptyStartX: _GraphLayout.cardStartX,
+      rowCenterY: y,
+      accentColor: surface.wetRoute,
+      onMove: (from, gap) {
+        _cubit.moveEffect(c, from, gap);
+        setState(() => _selected = null);
+      },
+    );
     for (var k = 0; k < xs.length; k++) {
-      yield _positioned(
-        xs[k],
-        y,
-        _GraphLayout.cardW,
-        _GraphLayout.cardH,
-        EffectChainCard(
-          cardKey: Key('monitorGraph_fx_${c}_$k'),
-          handleKey: Key('monitorGraph_fxHandle_${c}_$k'),
-          labelKey: Key('monitorGraph_fxLabel_${c}_$k'),
-          deleteKey: Key('monitorGraph_fxDelete_${c}_$k'),
+      yield positionedNode(
+        left: xs[k],
+        centerY: y,
+        width: kRoutingCardWidth,
+        height: kRoutingCardHeight,
+        child: EffectChainCard(
+          keyPrefix: 'monitorGraph',
           label: state.forInput(c).effects[k].type.label,
-          accentColor: _wet,
+          accentColor: surface.wetRoute,
           selected: _selected?.input == c && _selected?.index == k,
           dragging: _dragging?.rowId == c && _dragging?.index == k,
           rowId: c,
           index: k,
-          cardW: _GraphLayout.cardW,
-          cardH: _GraphLayout.cardH,
           onTap: () => setState(() {
             _focused = c;
             _selected = (_selected?.input == c && _selected?.index == k)
@@ -226,17 +232,16 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
         ),
       );
     }
-    yield _positioned(
-      layout.addFxX(c),
-      y,
-      _GraphLayout.addW,
-      _GraphLayout.addW,
-      AddEffectButton(
+    yield positionedNode(
+      left: layout.addFxX(c),
+      centerY: y,
+      width: kRoutingAddSlot,
+      height: kRoutingAddSlot,
+      child: AddEffectButton(
         buttonKey: Key('monitorGraph_addFx_$c'),
-        accentColor: _wet,
+        accentColor: surface.wetRoute,
         full: state.forInput(c).effects.length >= kTrackEffectMax,
         tooltip: 'Add effect to input ${c + 1}',
-        iconSize: 22,
         onAdd: () {
           setState(() => _focused = c);
           _cubit.addEffect(c);
@@ -245,66 +250,23 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     );
   }
 
-  /// Drop targets in the gaps around input [c]'s cards. The gap index is the
-  /// insertion slot passed to [MonitorCubit.moveEffect] (which clamps it), so
-  /// it matches the lane graph's convention exactly.
-  Iterable<Widget> _dropZones(
+  Widget _inNode(
+    MonitorState state,
     _GraphLayout layout,
     int c,
-    List<double> xs,
-    double y,
-  ) sync* {
-    const gap = _GraphLayout.gap;
-    const cardW = _GraphLayout.cardW;
-    final spots = <double>[];
-    if (xs.isEmpty) {
-      spots.add(_GraphLayout.cardStartX);
-    } else {
-      for (final x in xs) {
-        spots.add(x - gap);
-      }
-      spots.add(xs.last + cardW);
-    }
-    for (var pos = 0; pos < spots.length; pos++) {
-      yield Positioned(
-        left: spots[pos],
-        top: y - _GraphLayout.cardH / 2 - 6,
-        width: gap + 10,
-        height: _GraphLayout.cardH + 12,
-        child: EffectDropZone(
-          dropKey: Key('monitorGraph_drop_${c}_$pos'),
-          rowId: c,
-          accentColor: _wet,
-          caretHeight: _GraphLayout.cardH,
-          onAccept: (from) {
-            _cubit.moveEffect(c, from, pos);
-            setState(() => _selected = null);
-          },
-        ),
-      );
-    }
-  }
-
-  Positioned _positioned(
-    double x,
-    double y,
-    double w,
-    double h,
-    Widget child,
-  ) => Positioned(left: x, top: y - h / 2, width: w, height: h, child: child);
-
-  Widget _inNode(MonitorState state, _GraphLayout layout, int c) {
+    SurfaceTheme surface,
+  ) {
     final excluded = layout.excluded(c);
     final monitored = state.forInput(c).enabled && !excluded;
-    return _positioned(
-      layout.inX,
-      layout.inY(c),
-      _GraphLayout.chW,
-      _GraphLayout.chH,
-      ChannelChip(
+    return positionedNode(
+      left: layout.inX,
+      centerY: layout.inY(c),
+      width: _GraphLayout.chW,
+      height: _GraphLayout.chH,
+      child: ChannelChip(
         key: Key('monitorGraph_in_$c'),
         label: 'In ${c + 1}',
-        color: _wet,
+        color: surface.wetRoute,
         strong: _focused == c,
         wired: monitored,
         excluded: excluded,
@@ -321,7 +283,12 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     );
   }
 
-  Widget _outNode(MonitorState state, _GraphLayout layout, int c) {
+  Widget _outNode(
+    MonitorState state,
+    _GraphLayout layout,
+    int c,
+    SurfaceTheme surface,
+  ) {
     final bit = 1 << c;
     final wiredWet = layout.wetUnion & bit != 0;
     final wiredDry = layout.dryUnion & bit != 0;
@@ -330,14 +297,14 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     final focusDry = f != null && state.forInput(f).dryOutputMask & bit != 0;
     // Colour by the focused input's send, else amber when only dry uses it.
     final color = focusDry || (f == null && wiredDry && !wiredWet)
-        ? _dry
-        : _wet;
-    return _positioned(
-      layout.outX,
-      layout.outY(c),
-      _GraphLayout.chW,
-      _GraphLayout.chH,
-      ChannelChip(
+        ? surface.dryRoute
+        : surface.wetRoute;
+    return positionedNode(
+      left: layout.outX,
+      centerY: layout.outY(c),
+      width: _GraphLayout.chW,
+      height: _GraphLayout.chH,
+      child: ChannelChip(
         key: Key('monitorGraph_out_$c'),
         label: 'Out ${c + 1}',
         color: color,
@@ -393,6 +360,8 @@ class _GraphLayout {
     required int outCount,
     required int excludedMask,
     required int? focused,
+    required Color wetColor,
+    required Color dryColor,
   }) {
     bool isExcluded(int c) => excludedMask & (1 << c) != 0;
     final rows = [
@@ -446,7 +415,7 @@ class _GraphLayout {
           GraphEdge(
             Offset(inX + chW, chYAt(c, inCount)),
             Offset(nodeX, y),
-            color: _wet,
+            color: wetColor,
             faded: faded,
           ),
         );
@@ -459,7 +428,7 @@ class _GraphLayout {
           y: y,
           cardXs: xs,
           cardW: cardW,
-          color: _wet,
+          color: wetColor,
           faded: faded,
         ),
       );
@@ -473,13 +442,13 @@ class _GraphLayout {
               originX: rightX,
               originY: y,
               mask: m.outputMask,
-              color: _wet,
+              color: wetColor,
             ),
             GraphSend(
               originX: nodeX + nodeW,
               originY: y + dryDrop,
               mask: m.dryOutputMask,
-              color: _dry,
+              color: dryColor,
               dashed: true,
             ),
           ],
@@ -511,21 +480,21 @@ class _GraphLayout {
   }
 
   // Geometry constants. Inputs/outputs are small "channel" chips; a monitored
-  // input is a wider node feeding a horizontal chain of effect cards.
+  // input is a wider node feeding a horizontal chain of effect cards. The card
+  // footprint comes from the shared kit metrics (kRoutingCard*).
   static const double chW = 54; // channel chip width
   static const double chH = 24; // channel chip height
   static const double chRowH = 32; // vertical pitch between channel chips
   static const double nodeW = 128; // monitor node width
   static const double nodeH = 50; // monitor node height
   static const double rowH = 80; // vertical pitch between monitor rows
-  static const double cardW = 110; // effect card width
-  static const double cardH = 38; // effect card height
-  static const double gap = 16; // between effect cards
+  static const double cardW = kRoutingCardWidth;
+  static const double gap = kRoutingCardGap;
   static const double fanGap = 100; // input→node / rail→output gutter width
-  static const double addW = 28; // add-effect button
+  static const double addW = kRoutingAddSlot; // add-effect button slot
   static const double pad = 16; // canvas padding
   // The dry edge leaves below the node so it clears the cards.
-  static const double dryDrop = cardH / 2 + 10;
+  static const double dryDrop = kRoutingCardHeight / 2 + 10;
 
   /// The x of the first effect card (also the empty-chain drop spot).
   static const double cardStartX = pad + chW + fanGap + nodeW + gap;
@@ -591,6 +560,7 @@ class _MonitorNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -600,9 +570,12 @@ class _MonitorNode extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
-            color: _wet.withValues(alpha: focused ? 0.3 : 0.16),
+            color: surface.wetRoute.withValues(alpha: focused ? 0.3 : 0.16),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _wet, width: focused ? 2.5 : 1.5),
+            border: Border.all(
+              color: surface.wetRoute,
+              width: focused ? 2.5 : 1.5,
+            ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -611,17 +584,17 @@ class _MonitorNode extends StatelessWidget {
               Text(
                 'In ${input + 1} monitor',
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: SetupSurfaceColors.t1,
+                style: TextStyle(
+                  color: surface.textPrimary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   height: 1.1,
                 ),
               ),
-              const Text(
+              Text(
                 'live · not recorded',
                 style: TextStyle(
-                  color: SetupSurfaceColors.t2,
+                  color: surface.textSecondary,
                   fontSize: 10,
                   height: 1.2,
                 ),
@@ -660,34 +633,32 @@ class _RoutePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     final focused = monitor?.enabled ?? false;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: const BoxDecoration(
-        color: SetupSurfaceColors.card,
-        border: Border(top: BorderSide(color: SetupSurfaceColors.line)),
+      decoration: BoxDecoration(
+        color: surface.card,
+        border: Border(top: BorderSide(color: surface.line)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           if (!focused)
-            const Text(
+            Text(
               'Tap an input to monitor it, then tap outputs to send it there.',
-              style: TextStyle(color: SetupSurfaceColors.t2, fontSize: 13),
+              style: TextStyle(color: surface.textSecondary, fontSize: 13),
             )
           else
-            _focusControls(monitor!),
+            _focusControls(context, monitor!, surface),
           if (focused && selectedFx != null) ...[
             const SizedBox(height: 10),
             EffectParamsEditor(
-              editorKey: const Key('monitorGraph_fxEditor'),
-              typeKey: const Key('monitorGraph_fxType'),
-              removeKey: const Key('monitorGraph_fxRemove'),
-              paramKey: (p) => Key('monitorGraph_fxParam$p'),
+              keyPrefix: 'monitorGraph',
               fx: selectedFx!,
-              accentColor: _wet,
+              accentColor: surface.wetRoute,
               onSetType: onSetType,
               onSetParam: onSetParam,
               onRemove: onRemove,
@@ -700,13 +671,17 @@ class _RoutePanel extends StatelessWidget {
     );
   }
 
-  Widget _focusControls(InputMonitor m) {
+  Widget _focusControls(
+    BuildContext context,
+    InputMonitor m,
+    SurfaceTheme surface,
+  ) {
     return Row(
       children: [
         Text(
           'In ${m.input + 1} monitor',
-          style: const TextStyle(
-            color: SetupSurfaceColors.t1,
+          style: TextStyle(
+            color: surface.textPrimary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -735,7 +710,7 @@ class _RoutePanel extends StatelessWidget {
           onPressed: onStop,
           icon: const Icon(Icons.stop_circle_outlined, size: 18),
           label: const Text('Stop'),
-          style: TextButton.styleFrom(foregroundColor: SetupSurfaceColors.t2),
+          style: TextButton.styleFrom(foregroundColor: surface.textSecondary),
         ),
       ],
     );
@@ -748,11 +723,20 @@ class _Legend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    final surface = context.surface;
+    return Row(
       children: [
-        _LegendKey(color: _wet, label: 'effected (wet) → outs', dashed: false),
-        SizedBox(width: 20),
-        _LegendKey(color: _dry, label: 'clean (dry) → outs', dashed: true),
+        _LegendKey(
+          color: surface.wetRoute,
+          label: 'effected (wet) → outs',
+          dashed: false,
+        ),
+        const SizedBox(width: 20),
+        _LegendKey(
+          color: surface.dryRoute,
+          label: 'clean (dry) → outs',
+          dashed: true,
+        ),
       ],
     );
   }
@@ -784,7 +768,7 @@ class _LegendKey extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           label,
-          style: const TextStyle(color: SetupSurfaceColors.t2, fontSize: 12),
+          style: TextStyle(color: context.surface.textSecondary, fontSize: 12),
         ),
       ],
     );

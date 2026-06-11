@@ -4,11 +4,10 @@ import 'package:loopy/common/routing_graph/channel_chip.dart';
 import 'package:loopy/common/routing_graph/effect_chain_card.dart';
 import 'package:loopy/common/routing_graph/effect_params_editor.dart';
 import 'package:loopy/common/routing_graph/graph_canvas.dart';
-import 'package:loopy/common/routing_graph/graph_colors.dart';
 import 'package:loopy/common/routing_graph/graph_edge.dart';
 import 'package:loopy/common/routing_graph/graph_edge_painter.dart';
 import 'package:loopy/common/routing_graph/graph_geometry.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// The whole track as one wired graph: hardware inputs on the left, the track's
 /// **lanes** stacked in the middle (each a node + its own effect chain), and
@@ -16,10 +15,10 @@ import 'package:loopy/setup/setup_surface.dart';
 ///
 /// Drawing, cards, chips, and the zoom/pan canvas come from the shared routing
 /// graph kit (`lib/common/routing_graph`); this view owns only the lane-specific
-/// assembly: the layout geometry, the lane node body (with its vol/mute), the
-/// add/remove-lane controls, the per-port colour rule, and the bottom panel.
-/// Selection is **parent-owned** ([selectedEffect] + [onSelectEffect]); the
-/// widget holds only view-local state (zoom, focus). Every edit is a callback.
+/// assembly: the layout geometry ([_LaneLayout]), the lane node body
+/// ([_LaneNode]), and the bottom panel ([_LanePanel]). Selection is
+/// **parent-owned** ([selectedEffect] + [onSelectEffect]); the widget holds
+/// only view-local state (zoom, focus). Every edit is a callback.
 class LaneGraphView extends StatefulWidget {
   /// Creates a [LaneGraphView].
   const LaneGraphView({
@@ -78,20 +77,6 @@ class LaneGraphView extends StatefulWidget {
   final VoidCallback onAddLane;
   final void Function(int lane) onRemoveLane;
 
-  // ---- geometry ----
-  static const double _chW = 54;
-  static const double _chH = 24;
-  static const double _laneW = 120;
-  static const double _laneH = 50;
-  static const double _cardW = 116;
-  static const double _cardH = 40;
-  static const double _gap = 16;
-  static const double _fan = 92;
-  static const double _addW = 30;
-  static const double _laneRowH = 84;
-  static const double _chRowH = 32;
-  static const double _pad = 16;
-
   @override
   State<LaneGraphView> createState() => _LaneGraphViewState();
 }
@@ -115,188 +100,90 @@ class _LaneGraphViewState extends State<LaneGraphView> {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
+    final layout = _LaneLayout.compute(
+      lanes: widget.lanes,
+      inCount: _inCount,
+      outCount: _outCount,
+      excludedMask: widget.excludedInputMask,
+      focused: _focused,
+      palette: surface.lanePalette,
+    );
     return Column(
       children: [
-        Expanded(child: _canvas()),
-        _panel(context),
+        Expanded(child: _canvas(layout, surface)),
+        _LanePanel(
+          laneCount: _laneCount,
+          focused: _focused,
+          lanes: widget.lanes,
+          selectedEffect: widget.selectedEffect,
+          onMuteToggled: widget.onMuteToggled,
+          onVolumeChanged: widget.onVolumeChanged,
+          onRemoveLane: widget.onRemoveLane,
+          onAddLane: widget.onAddLane,
+          onSetType: widget.onSetType,
+          onSetParam: widget.onSetParam,
+          onRemoveEffect: widget.onRemoveEffect,
+        ),
       ],
     );
   }
 
   // ---- canvas ----
 
-  Widget _canvas() {
-    const g = LaneGraphView._gap;
-    const chW = LaneGraphView._chW;
-    const laneW = LaneGraphView._laneW;
-    const cardW = LaneGraphView._cardW;
-    const addW = LaneGraphView._addW;
-    const inX = LaneGraphView._pad;
-    const laneX = inX + chW + LaneGraphView._fan;
-    const cardStartX = laneX + laneW + g;
-
-    final cardXs = [
-      for (final lane in widget.lanes)
-        cardColumnXs(
-          startX: cardStartX,
-          count: lane.effects.length,
-          cardW: cardW,
-          gap: g,
-        ),
-    ];
-    double addBtnX(int l) =>
-        cardXs[l].isEmpty ? cardStartX : cardXs[l].last + cardW + g;
-    var widestRight = cardStartX;
-    for (var l = 0; l < _laneCount; l++) {
-      if (addBtnX(l) + addW > widestRight) widestRight = addBtnX(l) + addW;
-    }
-    final outX = widestRight + LaneGraphView._fan;
-    final railX = outX - LaneGraphView._fan;
-    final canvasW = outX + chW + LaneGraphView._pad;
-
-    final lanesBlockH = _laneCount * LaneGraphView._laneRowH;
-    final channelsH =
-        (_inCount > _outCount ? _inCount : _outCount) * LaneGraphView._chRowH;
-    final canvasH =
-        (lanesBlockH > channelsH ? lanesBlockH : channelsH) +
-        LaneGraphView._pad * 2;
-    final lanesTop = (canvasH - lanesBlockH) / 2;
-
-    double laneY(int l) =>
-        lanesTop + l * LaneGraphView._laneRowH + LaneGraphView._laneRowH / 2;
-    double chY(int i, int count) => canvasH / count * (i + 0.5);
-
-    final edges = _edges(
-      laneX: laneX,
-      cardXs: cardXs,
-      railX: railX,
-      outX: outX,
-      inX: inX,
-      laneY: laneY,
-      chY: chY,
-    );
-
+  Widget _canvas(_LaneLayout layout, SurfaceTheme surface) {
     return GraphCanvas(
-      width: canvasW,
-      height: canvasH,
-      fitIdentity: [
-        _laneCount,
-        for (final l in widget.lanes) l.effects.length,
-        _inCount,
-        _outCount,
-      ],
+      width: layout.canvasW,
+      height: layout.canvasH,
+      fitIdentity: layout.fitIdentity,
       children: [
-        Positioned.fill(child: CustomPaint(painter: GraphEdgePainter(edges))),
-        for (var c = 0; c < _inCount; c++)
-          _positioned(
-            inX,
-            chY(c, _inCount),
-            chW,
-            LaneGraphView._chH,
-            _inChip(c),
-          ),
-        for (var c = 0; c < _outCount; c++)
-          _positioned(
-            outX,
-            chY(c, _outCount),
-            chW,
-            LaneGraphView._chH,
-            _outChip(c),
-          ),
+        Positioned.fill(
+          child: CustomPaint(painter: GraphEdgePainter(layout.edges)),
+        ),
+        for (var c = 0; c < _inCount; c++) _inChip(layout, c, surface),
+        for (var c = 0; c < _outCount; c++) _outChip(layout, c, surface),
         for (var l = 0; l < _laneCount; l++) ...[
-          _positioned(
-            laneX,
-            laneY(l),
-            laneW,
-            LaneGraphView._laneH,
-            _laneBody(l),
-          ),
-          ..._dropZones(l, cardXs[l], cardStartX, laneY(l)),
-          for (var k = 0; k < cardXs[l].length; k++)
-            _positioned(
-              cardXs[l][k],
-              laneY(l),
-              cardW,
-              LaneGraphView._cardH,
-              _card(l, k),
+          positionedNode(
+            left: layout.laneX,
+            centerY: layout.laneY(l),
+            width: _LaneLayout.laneW,
+            height: _LaneLayout.laneH,
+            child: _LaneNode(
+              index: l,
+              lane: widget.lanes[l],
+              color: surface.laneColor(l),
+              focused: _focused == l,
+              dim: _focused != null && _focused != l,
+              onTap: () => setState(() => _focused = _focused == l ? null : l),
             ),
-          _positioned(addBtnX(l), laneY(l), addW, addW, _addBtn(l)),
+          ),
+          ...buildEffectDropZones(
+            keyPrefix: 'laneGraph',
+            rowId: l,
+            cardXs: layout.cardXs[l],
+            emptyStartX: _LaneLayout.cardStartX,
+            rowCenterY: layout.laneY(l),
+            accentColor: surface.accent,
+            onMove: (from, gap) => widget.onMoveEffect(l, from, gap),
+          ),
+          for (var k = 0; k < layout.cardXs[l].length; k++)
+            positionedNode(
+              left: layout.cardXs[l][k],
+              centerY: layout.laneY(l),
+              width: kRoutingCardWidth,
+              height: kRoutingCardHeight,
+              child: _card(l, k, surface),
+            ),
+          positionedNode(
+            left: layout.addBtnX(l),
+            centerY: layout.laneY(l),
+            width: kRoutingAddSlot,
+            height: kRoutingAddSlot,
+            child: _addBtn(l, surface),
+          ),
         ],
       ],
     );
-  }
-
-  Positioned _positioned(
-    double x,
-    double y,
-    double w,
-    double h,
-    Widget child,
-  ) => Positioned(left: x, top: y - h / 2, width: w, height: h, child: child);
-
-  List<GraphEdge> _edges({
-    required double laneX,
-    required List<List<double>> cardXs,
-    required double railX,
-    required double outX,
-    required double inX,
-    required double Function(int) laneY,
-    required double Function(int, int) chY,
-  }) {
-    const chW = LaneGraphView._chW;
-    const laneW = LaneGraphView._laneW;
-    const cardW = LaneGraphView._cardW;
-    final edges = <GraphEdge>[];
-    for (var l = 0; l < _laneCount; l++) {
-      final lane = widget.lanes[l];
-      final y = laneY(l);
-      final color = laneColor(l);
-      final faded = _focused != null && _focused != l;
-      // input -> lane
-      final c = lane.inputChannel;
-      if (c >= 0 && c < _inCount && widget.excludedInputMask & (1 << c) == 0) {
-        edges.add(
-          GraphEdge(
-            Offset(inX + chW, chY(c, _inCount)),
-            Offset(laneX, y),
-            color: color,
-            faded: faded,
-          ),
-        );
-      }
-      // lane -> first card -> ... -> last
-      final xs = cardXs[l];
-      edges.addAll(
-        chainEdges(
-          nodeRight: laneX + laneW,
-          y: y,
-          cardXs: xs,
-          cardW: cardW,
-          color: color,
-          faded: faded,
-        ),
-      );
-      final rightX = xs.isEmpty ? laneX + laneW : xs.last + cardW;
-      // last -> shared output rail -> outputs (one send per lane).
-      edges.addAll(
-        fanEdges(
-          sends: [
-            GraphSend(
-              originX: rightX,
-              originY: y,
-              mask: lane.outputMask,
-              color: color,
-            ),
-          ],
-          railX: railX,
-          outX: outX,
-          outCount: _outCount,
-          outY: chY,
-          faded: faded,
-        ),
-      );
-    }
-    return edges;
   }
 
   // ---- nodes ----
@@ -312,61 +199,316 @@ class _LaneGraphViewState extends State<LaneGraphView> {
 
   /// Strong when the focused lane uses this port; coloured by its single user
   /// (or neutral accent if shared); dim when unused.
-  Color _portColor(List<int> users, {required bool strong}) => strong
-      ? laneColor(_focused!)
+  Color _portColor(
+    List<int> users,
+    SurfaceTheme surface, {
+    required bool strong,
+  }) => strong
+      ? surface.laneColor(_focused!)
       : users.length == 1
-      ? laneColor(users.first)
-      : SetupSurfaceColors.accent;
+      ? surface.laneColor(users.first)
+      : surface.accent;
 
-  Widget _inChip(int c) {
+  Widget _inChip(_LaneLayout layout, int c, SurfaceTheme surface) {
     final excluded = widget.excludedInputMask & (1 << c) != 0;
     final users = excluded ? const <int>[] : _lanesUsing(c, output: false);
     final strong = _focused != null && users.contains(_focused);
-    return ChannelChip(
-      key: Key('laneGraph_in_$c'),
-      label: 'In ${c + 1}',
-      color: _portColor(users, strong: strong),
-      strong: strong,
-      wired: users.isNotEmpty,
-      excluded: excluded,
-      onTap: excluded || _focused == null
-          ? null
-          : () {
-              final cur = widget.lanes[_focused!].inputChannel;
-              widget.onInputChanged(_focused!, cur == c ? -1 : c);
-            },
+    return positionedNode(
+      left: layout.inX,
+      centerY: layout.inY(c),
+      width: _LaneLayout.chW,
+      height: _LaneLayout.chH,
+      child: ChannelChip(
+        key: Key('laneGraph_in_$c'),
+        label: 'In ${c + 1}',
+        color: _portColor(users, surface, strong: strong),
+        strong: strong,
+        wired: users.isNotEmpty,
+        excluded: excluded,
+        onTap: excluded || _focused == null
+            ? null
+            : () {
+                final cur = widget.lanes[_focused!].inputChannel;
+                widget.onInputChanged(_focused!, cur == c ? -1 : c);
+              },
+      ),
     );
   }
 
-  Widget _outChip(int c) {
+  Widget _outChip(_LaneLayout layout, int c, SurfaceTheme surface) {
     final users = _lanesUsing(c, output: true);
     final strong = _focused != null && users.contains(_focused);
-    return ChannelChip(
-      key: Key('laneGraph_out_$c'),
-      label: 'Out ${c + 1}',
-      color: _portColor(users, strong: strong),
-      strong: strong,
-      wired: users.isNotEmpty,
-      excluded: false,
-      onTap: _focused == null
-          ? null
-          : () => widget.onOutputMaskChanged(
-              _focused!,
-              widget.lanes[_focused!].outputMask ^ (1 << c),
-            ),
+    return positionedNode(
+      left: layout.outX,
+      centerY: layout.outY(c),
+      width: _LaneLayout.chW,
+      height: _LaneLayout.chH,
+      child: ChannelChip(
+        key: Key('laneGraph_out_$c'),
+        label: 'Out ${c + 1}',
+        color: _portColor(users, surface, strong: strong),
+        strong: strong,
+        wired: users.isNotEmpty,
+        excluded: false,
+        onTap: _focused == null
+            ? null
+            : () => widget.onOutputMaskChanged(
+                _focused!,
+                widget.lanes[_focused!].outputMask ^ (1 << c),
+              ),
+      ),
     );
   }
 
-  Widget _laneBody(int l) {
-    final lane = widget.lanes[l];
-    final focused = _focused == l;
-    final dim = _focused != null && !focused;
-    final color = laneColor(l);
+  Widget _card(int l, int k, SurfaceTheme surface) {
+    final fx = widget.lanes[l].effects[k];
+    final selected =
+        widget.selectedEffect?.lane == l && widget.selectedEffect?.index == k;
+    return EffectChainCard(
+      keyPrefix: 'laneGraph',
+      label: fx.type.label,
+      accentColor: surface.laneColor(l),
+      selected: selected,
+      dragging: _dragging?.rowId == l && _dragging?.index == k,
+      rowId: l,
+      index: k,
+      onTap: () {
+        setState(() => _focused = l);
+        widget.onSelectEffect(l, selected ? null : k);
+      },
+      onDelete: () => widget.onRemoveEffect(l, k),
+      onDragStart: () => setState(() => _dragging = GraphCardRef(l, k)),
+      onDragEnd: () => setState(() => _dragging = null),
+    );
+  }
+
+  Widget _addBtn(int l, SurfaceTheme surface) {
+    return AddEffectButton(
+      buttonKey: Key('laneGraph_addFx_$l'),
+      accentColor: surface.accent,
+      full: widget.lanes[l].effects.length >= kTrackEffectMax,
+      tooltip: 'Add effect to lane ${l + 1}',
+      onAdd: () {
+        setState(() => _focused = l);
+        widget.onAddEffect(l);
+      },
+    );
+  }
+}
+
+// ===========================================================================
+// Layout
+// ===========================================================================
+
+/// Pure geometry for one frame of the lane graph: node positions, card
+/// positions, and the wires — computed once per build so the widget tree is
+/// plain assembly.
+@immutable
+class _LaneLayout {
+  const _LaneLayout._({
+    required this.cardXs,
+    required this.edges,
+    required this.canvasW,
+    required this.canvasH,
+    required this.inX,
+    required this.laneX,
+    required this.outX,
+    required int inCount,
+    required int outCount,
+    required int laneCount,
+    required double lanesTop,
+  }) : _inCount = inCount,
+       _outCount = outCount,
+       _laneCount = laneCount,
+       _lanesTop = lanesTop;
+
+  factory _LaneLayout.compute({
+    required List<Lane> lanes,
+    required int inCount,
+    required int outCount,
+    required int excludedMask,
+    required int? focused,
+    required List<Color> palette,
+  }) {
+    const inX = pad;
+    const laneX = inX + chW + fan;
+    const cardStartX = laneX + laneW + gap;
+    final laneCount = lanes.length;
+
+    final cardXs = [
+      for (final lane in lanes)
+        cardColumnXs(
+          startX: cardStartX,
+          count: lane.effects.length,
+          cardW: cardW,
+          gap: gap,
+        ),
+    ];
+    double addBtnXFor(int l) =>
+        cardXs[l].isEmpty ? cardStartX : cardXs[l].last + cardW + gap;
+    var widestRight = cardStartX;
+    for (var l = 0; l < laneCount; l++) {
+      widestRight = widestRight > addBtnXFor(l) + addW
+          ? widestRight
+          : addBtnXFor(l) + addW;
+    }
+    final outX = widestRight + fan;
+    final railX = outX - fan;
+    final canvasW = outX + chW + pad;
+
+    final lanesBlockH = laneCount * laneRowH;
+    final channelsH = (inCount > outCount ? inCount : outCount) * chRowH;
+    final canvasH =
+        (lanesBlockH > channelsH ? lanesBlockH : channelsH) + pad * 2;
+    final lanesTop = (canvasH - lanesBlockH) / 2;
+
+    double laneYAt(int l) => lanesTop + l * laneRowH + laneRowH / 2;
+    double chYAt(int i, int count) => canvasH / count * (i + 0.5);
+    Color laneColorAt(int l) => palette[l % palette.length];
+
+    final edges = <GraphEdge>[];
+    for (var l = 0; l < laneCount; l++) {
+      final lane = lanes[l];
+      final y = laneYAt(l);
+      final color = laneColorAt(l);
+      final faded = focused != null && focused != l;
+      // input -> lane
+      final c = lane.inputChannel;
+      if (c >= 0 && c < inCount && excludedMask & (1 << c) == 0) {
+        edges.add(
+          GraphEdge(
+            Offset(inX + chW, chYAt(c, inCount)),
+            Offset(laneX, y),
+            color: color,
+            faded: faded,
+          ),
+        );
+      }
+      final xs = cardXs[l];
+      edges.addAll(
+        chainEdges(
+          nodeRight: laneX + laneW,
+          y: y,
+          cardXs: xs,
+          cardW: cardW,
+          color: color,
+          faded: faded,
+        ),
+      );
+      final rightX = xs.isEmpty ? laneX + laneW : xs.last + cardW;
+      edges.addAll(
+        fanEdges(
+          sends: [
+            GraphSend(
+              originX: rightX,
+              originY: y,
+              mask: lane.outputMask,
+              color: color,
+            ),
+          ],
+          railX: railX,
+          outX: outX,
+          outCount: outCount,
+          outY: chYAt,
+          faded: faded,
+        ),
+      );
+    }
+
+    return _LaneLayout._(
+      cardXs: cardXs,
+      edges: edges,
+      canvasW: canvasW,
+      canvasH: canvasH,
+      inX: inX,
+      laneX: laneX,
+      outX: outX,
+      inCount: inCount,
+      outCount: outCount,
+      laneCount: laneCount,
+      lanesTop: lanesTop,
+    );
+  }
+
+  // Geometry constants. The card footprint comes from the shared kit metrics.
+  static const double chW = 54;
+  static const double chH = 24;
+  static const double laneW = 120;
+  static const double laneH = 50;
+  static const double cardW = kRoutingCardWidth;
+  static const double gap = kRoutingCardGap;
+  static const double fan = 92;
+  static const double addW = kRoutingAddSlot;
+  static const double laneRowH = 84;
+  static const double chRowH = 32;
+  static const double pad = 16;
+
+  /// The x of the first effect card (also the empty-chain drop spot).
+  static const double cardStartX = pad + chW + fan + laneW + gap;
+
+  /// Per lane: the x of each effect card.
+  final List<List<double>> cardXs;
+
+  /// The wires to paint.
+  final List<GraphEdge> edges;
+
+  final double canvasW;
+  final double canvasH;
+  final double inX;
+  final double laneX;
+  final double outX;
+
+  final int _inCount;
+  final int _outCount;
+  final int _laneCount;
+  final double _lanesTop;
+
+  double laneY(int l) => _lanesTop + l * laneRowH + laneRowH / 2;
+  double inY(int c) => canvasH / _inCount * (c + 0.5);
+  double outY(int c) => canvasH / _outCount * (c + 0.5);
+  double addBtnX(int l) =>
+      cardXs[l].isEmpty ? cardStartX : cardXs[l].last + cardW + gap;
+
+  /// Re-fit identity: a structural value list (compared with `listEquals`).
+  List<Object?> get fitIdentity => [
+    _laneCount,
+    for (final xs in cardXs) xs.length,
+    _inCount,
+    _outCount,
+  ];
+}
+
+// ===========================================================================
+// Lane node + bottom panel
+// ===========================================================================
+
+/// A lane's node: its name, mute icon, and a read-only volume level. Tapping it
+/// focuses the lane (so inputs/outputs become wirable).
+class _LaneNode extends StatelessWidget {
+  const _LaneNode({
+    required this.index,
+    required this.lane,
+    required this.color,
+    required this.focused,
+    required this.dim,
+    required this.onTap,
+  });
+
+  final int index;
+  final Lane lane;
+  final Color color;
+  final bool focused;
+  final bool dim;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        key: Key('laneGraph_laneNode_$l'),
-        onTap: () => setState(() => _focused = focused ? null : l),
+        key: Key('laneGraph_laneNode_$index'),
+        onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -388,14 +530,14 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                     lane.muted ? Icons.volume_off : Icons.volume_up,
                     size: 13,
                     color: lane.muted
-                        ? SetupSurfaceColors.t3
-                        : SetupSurfaceColors.t2,
+                        ? surface.textTertiary
+                        : surface.textSecondary,
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'Lane ${l + 1}',
-                    style: const TextStyle(
-                      color: SetupSurfaceColors.t1,
+                    'Lane ${index + 1}',
+                    style: TextStyle(
+                      color: surface.textPrimary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -403,14 +545,13 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                 ],
               ),
               const SizedBox(height: 5),
-              // Read-only volume level; editing is in the panel below.
               ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: SizedBox(
                   height: 4,
                   child: LinearProgressIndicator(
                     value: lane.muted ? 0 : lane.volume.clamp(0.0, 1.0),
-                    backgroundColor: SetupSurfaceColors.line,
+                    backgroundColor: surface.line,
                     valueColor: AlwaysStoppedAnimation(color),
                   ),
                 ),
@@ -421,118 +562,71 @@ class _LaneGraphViewState extends State<LaneGraphView> {
       ),
     );
   }
+}
 
-  Widget _card(int l, int k) {
-    final fx = widget.lanes[l].effects[k];
-    final selected =
-        widget.selectedEffect?.lane == l && widget.selectedEffect?.index == k;
-    return EffectChainCard(
-      cardKey: Key('laneGraph_fx_${l}_$k'),
-      handleKey: Key('laneGraph_fx_handle_${l}_$k'),
-      labelKey: Key('laneGraph_fxLabel_${l}_$k'),
-      deleteKey: Key('laneGraph_fxDelete_${l}_$k'),
-      label: fx.type.label,
-      accentColor: laneColor(l),
-      selected: selected,
-      dragging: _dragging?.rowId == l && _dragging?.index == k,
-      rowId: l,
-      index: k,
-      cardW: LaneGraphView._cardW,
-      cardH: LaneGraphView._cardH,
-      onTap: () {
-        setState(() => _focused = l);
-        widget.onSelectEffect(l, selected ? null : k);
-      },
-      onDelete: () => widget.onRemoveEffect(l, k),
-      onDragStart: () => setState(() => _dragging = GraphCardRef(l, k)),
-      onDragEnd: () => setState(() => _dragging = null),
-    );
-  }
+/// The docked controls below the canvas: the focused lane's vol/mute/remove,
+/// the selected effect's editor, and the add-lane button.
+class _LanePanel extends StatelessWidget {
+  const _LanePanel({
+    required this.laneCount,
+    required this.focused,
+    required this.lanes,
+    required this.selectedEffect,
+    required this.onMuteToggled,
+    required this.onVolumeChanged,
+    required this.onRemoveLane,
+    required this.onAddLane,
+    required this.onSetType,
+    required this.onSetParam,
+    required this.onRemoveEffect,
+  });
 
-  /// Drop targets between/around lane `l`'s cards, accepting only that lane's
-  /// effects (so a card never jumps lanes). The gap index is the insertion 
-  /// slot.
-  List<Widget> _dropZones(int l, List<double> xs, double startX, double y) {
-    const g = LaneGraphView._gap;
-    const cardW = LaneGraphView._cardW;
-    final spots = <double>[];
-    if (xs.isEmpty) {
-      spots.add(startX);
-    } else {
-      for (final x in xs) {
-        spots.add(x - g);
-      }
-      spots.add(xs.last + cardW);
-    }
-    return [
-      for (var pos = 0; pos < spots.length; pos++)
-        Positioned(
-          left: spots[pos],
-          top: y - LaneGraphView._cardH / 2 - 6,
-          width: g + 10,
-          height: LaneGraphView._cardH + 12,
-          child: EffectDropZone(
-            dropKey: Key('laneGraph_drop_${l}_$pos'),
-            rowId: l,
-            accentColor: SetupSurfaceColors.accent,
-            caretHeight: LaneGraphView._cardH,
-            onAccept: (from) => widget.onMoveEffect(l, from, pos),
-          ),
-        ),
-    ];
-  }
+  final int laneCount;
+  final int? focused;
+  final List<Lane> lanes;
+  final ({int lane, int index})? selectedEffect;
+  final void Function(int lane) onMuteToggled;
+  final void Function(int lane, double volume) onVolumeChanged;
+  final void Function(int lane) onRemoveLane;
+  final VoidCallback onAddLane;
+  final void Function(int lane, int index, TrackEffectType type) onSetType;
+  final void Function(int lane, int index, int param, double value) onSetParam;
+  final void Function(int lane, int index) onRemoveEffect;
 
-  Widget _addBtn(int l) {
-    return AddEffectButton(
-      buttonKey: Key('laneGraph_addFx_$l'),
-      accentColor: SetupSurfaceColors.accent,
-      full: widget.lanes[l].effects.length >= kTrackEffectMax,
-      tooltip: 'Add effect to lane ${l + 1}',
-      onAdd: () {
-        setState(() => _focused = l);
-        widget.onAddEffect(l);
-      },
-    );
-  }
-
-  // ---- bottom panel ----
-
-  Widget _panel(BuildContext context) {
-    final focused = _focused;
-    final sel = widget.selectedEffect;
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final f = focused;
+    final sel = selectedEffect;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: const BoxDecoration(
-        color: SetupSurfaceColors.card,
-        border: Border(top: BorderSide(color: SetupSurfaceColors.line)),
+      decoration: BoxDecoration(
+        color: surface.card,
+        border: Border(top: BorderSide(color: surface.line)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (focused != null && focused < _laneCount)
-            _laneControls(focused)
+          if (f != null && f < laneCount)
+            _laneControls(f, surface)
           else
-            const Text(
+            Text(
               'Tap a lane to focus it, then tap inputs/outputs to wire it.',
-              style: TextStyle(color: SetupSurfaceColors.t2, fontSize: 13),
+              style: TextStyle(color: surface.textSecondary, fontSize: 13),
             ),
           if (sel != null &&
-              sel.lane < _laneCount &&
-              sel.index < widget.lanes[sel.lane].effects.length) ...[
+              sel.lane < laneCount &&
+              sel.index < lanes[sel.lane].effects.length) ...[
             const SizedBox(height: 10),
             EffectParamsEditor(
-              editorKey: const Key('laneGraph_fxEditor'),
-              typeKey: const Key('laneGraph_fxType'),
-              removeKey: const Key('laneGraph_fxRemove'),
-              paramKey: (p) => Key('laneGraph_fxParam$p'),
-              fx: widget.lanes[sel.lane].effects[sel.index],
-              accentColor: SetupSurfaceColors.accent,
-              onSetType: (t) => widget.onSetType(sel.lane, sel.index, t),
-              onSetParam: (p, v) =>
-                  widget.onSetParam(sel.lane, sel.index, p, v),
-              onRemove: () => widget.onRemoveEffect(sel.lane, sel.index),
+              keyPrefix: 'laneGraph',
+              fx: lanes[sel.lane].effects[sel.index],
+              accentColor: surface.accent,
+              onSetType: (t) => onSetType(sel.lane, sel.index, t),
+              onSetParam: (p, v) => onSetParam(sel.lane, sel.index, p, v),
+              onRemove: () => onRemoveEffect(sel.lane, sel.index),
             ),
           ],
           const SizedBox(height: 10),
@@ -540,7 +634,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               key: const Key('laneGraph_addLane'),
-              onPressed: _laneCount >= kMaxLanes ? null : widget.onAddLane,
+              onPressed: laneCount >= kMaxLanes ? null : onAddLane,
               icon: const Icon(Icons.add, size: 18),
               label: const Text('Add lane'),
             ),
@@ -550,15 +644,15 @@ class _LaneGraphViewState extends State<LaneGraphView> {
     );
   }
 
-  Widget _laneControls(int l) {
-    final lane = widget.lanes[l];
-    final canRemove = _laneCount > 1;
+  Widget _laneControls(int l, SurfaceTheme surface) {
+    final lane = lanes[l];
+    final canRemove = laneCount > 1;
     return Row(
       children: [
         Text(
           'Lane ${l + 1}',
-          style: const TextStyle(
-            color: SetupSurfaceColors.t1,
+          style: TextStyle(
+            color: surface.textPrimary,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -568,18 +662,25 @@ class _LaneGraphViewState extends State<LaneGraphView> {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           iconSize: 18,
-          color: lane.muted ? SetupSurfaceColors.accent : SetupSurfaceColors.t2,
+          color: lane.muted ? surface.accent : surface.textSecondary,
           tooltip: lane.muted ? 'Unmute lane' : 'Mute lane',
           icon: Icon(lane.muted ? Icons.volume_off : Icons.volume_up),
-          onPressed: () => widget.onMuteToggled(l),
+          onPressed: () => onMuteToggled(l),
         ),
         Expanded(
           child: SliderTheme(
-            data: setupSliderTheme,
+            data: SliderThemeData(
+              trackHeight: 3,
+              activeTrackColor: surface.accent,
+              inactiveTrackColor: surface.line,
+              thumbColor: surface.accent,
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+            ),
             child: Slider(
               key: const Key('laneGraph_vol'),
               value: lane.volume.clamp(0.0, 1.0),
-              onChanged: (v) => widget.onVolumeChanged(l, v),
+              onChanged: (v) => onVolumeChanged(l, v),
             ),
           ),
         ),
@@ -587,10 +688,10 @@ class _LaneGraphViewState extends State<LaneGraphView> {
           IconButton(
             key: const Key('laneGraph_removeLane'),
             iconSize: 18,
-            color: SetupSurfaceColors.t2,
+            color: surface.textSecondary,
             tooltip: 'Remove lane',
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => widget.onRemoveLane(l),
+            onPressed: () => onRemoveLane(l),
           ),
       ],
     );

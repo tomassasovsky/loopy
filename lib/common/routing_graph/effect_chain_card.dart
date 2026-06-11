@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/common/routing_graph/graph_geometry.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// The drag payload when reordering an effect: a reference to one card by its
 /// [rowId] (lane index or monitored input) and its [index] in that row's chain.
@@ -22,21 +23,19 @@ class GraphCardRef {
 /// (edit), and a delete button. The card is the drag *source*; the gaps between
 /// cards ([EffectDropZone]) are the drop targets, so reordering uses one
 /// insertion-index convention across every graph.
+///
+/// Keys are derived from a single [keyPrefix] (e.g. `laneGraph` / `monitorGraph`)
+/// so each graph keeps its own selector namespace without threading four keys.
 class EffectChainCard extends StatelessWidget {
   /// Creates an effect card.
   const EffectChainCard({
-    required this.cardKey,
-    required this.handleKey,
-    required this.labelKey,
-    required this.deleteKey,
+    required this.keyPrefix,
     required this.label,
     required this.accentColor,
     required this.selected,
     required this.dragging,
     required this.rowId,
     required this.index,
-    required this.cardW,
-    required this.cardH,
     required this.onTap,
     required this.onDelete,
     required this.onDragStart,
@@ -44,12 +43,8 @@ class EffectChainCard extends StatelessWidget {
     super.key,
   });
 
-  /// Keys for the card body and its interactive parts (caller-supplied so each
-  /// graph keeps its own selector names).
-  final Key cardKey;
-  final Key handleKey;
-  final Key labelKey;
-  final Key deleteKey;
+  /// The graph's selector namespace, e.g. `laneGraph` or `monitorGraph`.
+  final String keyPrefix;
 
   /// The effect's display label.
   final String label;
@@ -67,65 +62,61 @@ class EffectChainCard extends StatelessWidget {
   final int rowId;
   final int index;
 
-  /// The card's size, also used for the drag feedback.
-  final double cardW;
-  final double cardH;
-
   /// Edit (tap the label), delete, and drag lifecycle callbacks.
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
 
-  BoxDecoration get _decoration => BoxDecoration(
-    color: SetupSurfaceColors.cardHi.withValues(alpha: dragging ? 0.4 : 1),
-    borderRadius: BorderRadius.circular(8),
-    border: Border.all(
-      color: selected ? accentColor : accentColor.withValues(alpha: 0.45),
-      width: selected ? 2 : 1,
-    ),
-  );
-
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
+    final decoration = BoxDecoration(
+      color: surface.cardHigh.withValues(alpha: dragging ? 0.4 : 1),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(
+        color: selected ? accentColor : accentColor.withValues(alpha: 0.45),
+        width: selected ? 2 : 1,
+      ),
+    );
     final handle = Draggable<GraphCardRef>(
-      key: handleKey,
+      key: Key('${keyPrefix}_fxHandle_${rowId}_$index'),
       data: GraphCardRef(rowId, index),
       onDragStarted: onDragStart,
       onDragEnd: (_) => onDragEnd(),
       feedback: Material(
         color: Colors.transparent,
         child: SizedBox(
-          width: cardW,
-          height: cardH,
+          width: kRoutingCardWidth,
+          height: kRoutingCardHeight,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: SetupSurfaceColors.cardHi,
+              color: surface.cardHigh,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: accentColor),
             ),
             child: Center(
               child: Text(
                 label,
-                style: const TextStyle(color: SetupSurfaceColors.t1),
+                style: TextStyle(color: surface.textPrimary),
               ),
             ),
           ),
         ),
       ),
-      child: const MouseRegion(
+      child: MouseRegion(
         cursor: SystemMouseCursors.grab,
         child: Icon(
           Icons.drag_indicator,
           size: 16,
-          color: SetupSurfaceColors.t3,
+          color: surface.textTertiary,
         ),
       ),
     );
     return Container(
-      key: cardKey,
+      key: Key('${keyPrefix}_fx_${rowId}_$index'),
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: _decoration,
+      decoration: decoration,
       child: Row(
         children: [
           handle,
@@ -134,13 +125,13 @@ class EffectChainCard extends StatelessWidget {
             child: MouseRegion(
               cursor: SystemMouseCursors.click,
               child: GestureDetector(
-                key: labelKey,
+                key: Key('${keyPrefix}_fxLabel_${rowId}_$index'),
                 onTap: onTap,
                 behavior: HitTestBehavior.opaque,
                 child: Text(
                   label,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: SetupSurfaceColors.t1),
+                  style: TextStyle(color: surface.textPrimary),
                 ),
               ),
             ),
@@ -149,16 +140,16 @@ class EffectChainCard extends StatelessWidget {
           Tooltip(
             message: 'Remove effect',
             child: InkResponse(
-              key: deleteKey,
+              key: Key('${keyPrefix}_fxDelete_${rowId}_$index'),
               onTap: onDelete,
               radius: 16,
-              child: const SizedBox(
+              child: SizedBox(
                 width: 20,
                 height: 24,
                 child: Icon(
                   Icons.close,
                   size: 15,
-                  color: SetupSurfaceColors.t2,
+                  color: surface.textSecondary,
                 ),
               ),
             ),
@@ -169,17 +160,56 @@ class EffectChainCard extends StatelessWidget {
   }
 }
 
+/// Builds the insertion drop zones in the gaps around a row's effect [cardXs].
+///
+/// One zone sits before each card (and one after the last); dropping a same-row
+/// card on zone `pos` reports `(fromIndex, pos)` via [onMove], the single
+/// gap-index reorder convention shared by every routing graph. When the chain
+/// is empty a lone zone sits at [emptyStartX].
+List<Widget> buildEffectDropZones({
+  required String keyPrefix,
+  required int rowId,
+  required List<double> cardXs,
+  required double emptyStartX,
+  required double rowCenterY,
+  required Color accentColor,
+  required void Function(int fromIndex, int gapIndex) onMove,
+}) {
+  final spots = <double>[];
+  if (cardXs.isEmpty) {
+    spots.add(emptyStartX);
+  } else {
+    for (final x in cardXs) {
+      spots.add(x - kRoutingCardGap);
+    }
+    spots.add(cardXs.last + kRoutingCardWidth);
+  }
+  return [
+    for (var pos = 0; pos < spots.length; pos++)
+      Positioned(
+        left: spots[pos],
+        top: rowCenterY - kRoutingCardHeight / 2 - 6,
+        width: kRoutingCardGap + 10,
+        height: kRoutingCardHeight + 12,
+        child: EffectDropZone(
+          dropKey: Key('${keyPrefix}_drop_${rowId}_$pos'),
+          rowId: rowId,
+          accentColor: accentColor,
+          onAccept: (from) => onMove(from, pos),
+        ),
+      ),
+  ];
+}
+
 /// A drop target in the gap before a card (or after the last one). Accepts only
 /// cards from the same [rowId] and reports the dragged card's original index to
-/// [onAccept]; the caller knows which gap this zone is and moves accordingly. A
-/// caret shows where the card will land.
+/// [onAccept]; a caret shows where the card will land.
 class EffectDropZone extends StatelessWidget {
   /// Creates a drop zone.
   const EffectDropZone({
     required this.dropKey,
     required this.rowId,
     required this.accentColor,
-    required this.caretHeight,
     required this.onAccept,
     super.key,
   });
@@ -192,9 +222,6 @@ class EffectDropZone extends StatelessWidget {
 
   /// The insertion-caret colour.
   final Color accentColor;
-
-  /// The caret's height (the card height).
-  final double caretHeight;
 
   /// Called with the dragged card's original index when a same-row card drops.
   final void Function(int fromIndex) onAccept;
@@ -211,7 +238,7 @@ class EffectDropZone extends StatelessWidget {
             : Center(
                 child: Container(
                   width: 3,
-                  height: caretHeight,
+                  height: kRoutingCardHeight,
                   color: accentColor,
                 ),
               ),
@@ -231,7 +258,6 @@ class AddEffectButton extends StatelessWidget {
     required this.full,
     required this.onAdd,
     required this.tooltip,
-    this.iconSize = 24,
     super.key,
   });
 
@@ -250,9 +276,6 @@ class AddEffectButton extends StatelessWidget {
   /// The enabled-state tooltip (the disabled tooltip is "Chain is full").
   final String tooltip;
 
-  /// The add-icon size; the opaque backdrop is sized to its ring.
-  final double iconSize;
-
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -265,16 +288,16 @@ class AddEffectButton extends StatelessWidget {
             // Opaque disc sized to the icon's ring, so the routing wire is
             // masked behind the button without any fill showing past it.
             Container(
-              width: iconSize - 5,
-              height: iconSize - 5,
-              decoration: const BoxDecoration(
-                color: SetupSurfaceColors.surface,
+              width: 19,
+              height: 19,
+              decoration: BoxDecoration(
+                color: context.surface.surface,
                 shape: BoxShape.circle,
               ),
             ),
             IconButton(
               key: buttonKey,
-              iconSize: iconSize,
+              iconSize: 24,
               padding: EdgeInsets.zero,
               color: accentColor,
               constraints: const BoxConstraints.tightFor(width: 24, height: 24),

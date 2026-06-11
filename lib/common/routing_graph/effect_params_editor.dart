@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// The inline editor for one effect: a type dropdown and a slider per
 /// parameter, plus a remove button. Purely presentational — edits are
@@ -8,13 +8,11 @@ import 'package:loopy/setup/setup_surface.dart';
 ///
 /// [accentColor] tints the border, dropdown, and slider so each graph keeps its
 /// own accent (the lane editor is neutral, the monitor editor is wet-blue).
+/// Keys derive from [keyPrefix] (`laneGraph` / `monitorGraph`).
 class EffectParamsEditor extends StatelessWidget {
   /// Creates an effect editor.
   const EffectParamsEditor({
-    required this.editorKey,
-    required this.typeKey,
-    required this.removeKey,
-    required this.paramKey,
+    required this.keyPrefix,
     required this.fx,
     required this.accentColor,
     required this.onSetType,
@@ -23,13 +21,8 @@ class EffectParamsEditor extends StatelessWidget {
     super.key,
   });
 
-  /// Keys for the editor body and its controls (caller-supplied).
-  final Key editorKey;
-  final Key typeKey;
-  final Key removeKey;
-
-  /// Builds the key for parameter slider `p`.
-  final Key Function(int p) paramKey;
+  /// The graph's selector namespace, e.g. `laneGraph` or `monitorGraph`.
+  final String keyPrefix;
 
   /// The effect being edited.
   final TrackEffect fx;
@@ -44,19 +37,20 @@ class EffectParamsEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     final sliderTheme = SliderThemeData(
       trackHeight: 3,
       activeTrackColor: accentColor,
-      inactiveTrackColor: SetupSurfaceColors.line,
+      inactiveTrackColor: surface.line,
       thumbColor: accentColor,
       overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
     );
     return Container(
-      key: editorKey,
+      key: Key('${keyPrefix}_fxEditor'),
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
       decoration: BoxDecoration(
-        color: SetupSurfaceColors.cardHi,
+        color: surface.cardHigh,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: accentColor),
       ),
@@ -68,15 +62,12 @@ class EffectParamsEditor extends StatelessWidget {
             children: [
               Expanded(
                 child: DropdownButton<TrackEffectType>(
-                  key: typeKey,
+                  key: Key('${keyPrefix}_fxType'),
                   isExpanded: true,
                   isDense: true,
                   value: fx.type,
-                  dropdownColor: SetupSurfaceColors.cardHi,
-                  style: const TextStyle(
-                    color: SetupSurfaceColors.t1,
-                    fontSize: 14,
-                  ),
+                  dropdownColor: surface.cardHigh,
+                  style: TextStyle(color: surface.textPrimary, fontSize: 14),
                   onChanged: (type) {
                     if (type != null && type != TrackEffectType.none) {
                       onSetType(type);
@@ -91,9 +82,9 @@ class EffectParamsEditor extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               IconButton(
-                key: removeKey,
+                key: Key('${keyPrefix}_fxRemove'),
                 iconSize: 18,
-                color: SetupSurfaceColors.t2,
+                color: surface.textSecondary,
                 tooltip: 'Remove effect',
                 icon: const Icon(Icons.delete_outline),
                 onPressed: onRemove,
@@ -109,8 +100,8 @@ class EffectParamsEditor extends StatelessWidget {
                     width: 64,
                     child: Text(
                       fx.type.paramLabels[p],
-                      style: const TextStyle(
-                        color: SetupSurfaceColors.t2,
+                      style: TextStyle(
+                        color: surface.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -120,7 +111,7 @@ class EffectParamsEditor extends StatelessWidget {
                     child: SliderTheme(
                       data: sliderTheme,
                       child: Slider(
-                        key: paramKey(p),
+                        key: Key('${keyPrefix}_fxParam$p'),
                         value: fx.params[p].clamp(0.0, 1.0),
                         onChanged: (v) => onSetParam(p, v),
                       ),
