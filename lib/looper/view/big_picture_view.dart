@@ -168,10 +168,6 @@ class _BigPictureViewState extends State<BigPictureView> {
       context.read<LooperBloc>().add(LooperUndoPressed(selected));
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.keyR) {
-      context.read<LooperBloc>().add(LooperRedoPressed(selected));
-      return KeyEventResult.handled;
-    }
 
     // Number keys 1–8 select a track (auto-revealing its bank). In play mode
     // they also toggle mute on that track.
