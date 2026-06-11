@@ -222,6 +222,44 @@ void main() {
         },
         verify: (cubit) => expect(cubit.state.forInput(0).effects, isEmpty),
       );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'moveEffect reorders the chain and persists it',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0)
+            ..setEffectType(0, 0, TrackEffectType.drive)
+            ..addEffect(0)
+            ..setEffectType(0, 1, TrackEffectType.delay)
+            ..moveEffect(0, 0, 1); // drive moves after delay
+        },
+        verify: (cubit) async {
+          expect(
+            cubit.state.forInput(0).effects.map((e) => e.type),
+            [TrackEffectType.delay, TrackEffectType.drive],
+          );
+          verify(
+            () => repository.setMonitorEffects(
+              input: 0,
+              effects: any(named: 'effects'),
+            ),
+          ).called(greaterThanOrEqualTo(1));
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'moveEffect ignores out-of-range and no-op moves',
+        build: build,
+        act: (cubit) {
+          cubit
+            ..addEffect(0)
+            ..moveEffect(0, 5, 0) // from out of range
+            ..moveEffect(0, 0, 0); // no-op
+        },
+        verify: (cubit) =>
+            expect(cubit.state.forInput(0).effects, hasLength(1)),
+      );
     });
   });
 }

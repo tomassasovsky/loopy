@@ -871,6 +871,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     case LE_CMD_SET_MONITOR_INPUT_DRY: {
+      /* No excluded-input recheck (unlike SET_MONITOR_INPUT): the dry send is
+       * gated by mon_on in process(), which already drops loopback inputs. */
       const int32_t input = (int32_t)cmd->arg_f & 0xFF;
       if (input < 0 || input >= LE_MAX_INPUTS) break;
       const uint32_t valid = e->out_channels >= 32

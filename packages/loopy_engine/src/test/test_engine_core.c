@@ -1339,6 +1339,49 @@ static void test_monitor_input_dry_send(void) {
     CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
   }
 
+  /* Wet and dry sharing the same output sum: out 0 == tanh(1.0) + 1.0. */
+  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x1) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - (tanhf(1.0f) + 1.0f)) < 1e-5f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* The dry send, like the effected route, is never printed into a recording:
+ * a track records its raw input even while a dry monitor send is active. */
+static void test_monitor_input_dry_not_recorded(void) {
+  printf("test_monitor_input_dry_not_recorded\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  float out[2 * LOOP_N];
+
+  /* Monitor input 0 with a dry send to both outputs (no effects). */
+  le_engine_set_monitor_input(e, 0, 1, 0x0); /* enabled, wet routes nowhere */
+  le_engine_set_monitor_input_dry(e, 0, 0x3);
+  drain(e);
+
+  /* Record input 0 (1.0) on track 0 while the dry send is active. */
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  /* Playback over silence: the loop is the raw 1.0 (the dry send added nothing
+   * to the recording — it would read 2.0 if dry had been printed in). */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+
   le_engine_destroy(e);
 }
 
@@ -2564,6 +2607,7 @@ int main(void) {
   test_quantize_track_override_inherits();
   test_monitor_input_routes_live_through_chain();
   test_monitor_input_dry_send();
+  test_monitor_input_dry_not_recorded();
   test_monitor_input_not_recorded();
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();
