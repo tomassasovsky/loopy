@@ -6,7 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
-import 'package:loopy/looper/view/lane_graph_view.dart';
+import 'package:loopy/looper/view/lane_graph/lane_graph_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Opens the per-track I/O routing page for [channel]: the signal-flow graph
