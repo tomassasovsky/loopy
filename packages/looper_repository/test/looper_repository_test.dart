@@ -155,6 +155,73 @@ void main() {
       expect(state.hasContent, isTrue);
     });
 
+    test('maps a per-lane snapshot into Track.lanes', () {
+      engine
+        ..nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: LatencyState.idle,
+          measuredLatencyMs: -1,
+          masterLengthFrames: 48000,
+          tracks: [
+            TrackSnapshot(
+              state: TrackState.playing,
+              volume: 1,
+              muted: false,
+              lengthFrames: 48000,
+              undoDepth: 0,
+              rms: 0,
+              peak: 0,
+              lanes: [
+                LaneSnapshot(
+                  inputChannel: 0,
+                  outputMask: 0x1,
+                  volume: 0.8,
+                  muted: false,
+                  lengthFrames: 48000,
+                  rms: 0.2,
+                  peak: 0.4,
+                ),
+                LaneSnapshot(
+                  inputChannel: 1,
+                  outputMask: 0x2,
+                  volume: 0.5,
+                  muted: true,
+                  lengthFrames: 48000,
+                  rms: 0,
+                  peak: 0,
+                ),
+              ],
+            ),
+          ],
+        )
+        // Remembered lane-1 effects are attached to the projected lane.
+        ..startResult = EngineResult.ok;
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 1,
+          effects: [TrackEffect(type: TrackEffectType.drive)],
+        );
+
+      final track = repo.state.tracks[0];
+      expect(track.lanes, hasLength(2));
+      expect(track.lanes[0].inputChannel, 0);
+      expect(track.lanes[0].outputMask, 0x1);
+      expect(track.lanes[0].volume, closeTo(0.8, 1e-6));
+      expect(track.lanes[0].effects, isEmpty);
+      expect(track.lanes[1].inputChannel, 1);
+      expect(track.lanes[1].muted, isTrue);
+      expect(track.lanes[1].effects.single.type, TrackEffectType.drive);
+    });
+
     test('projects a track loop multiple', () {
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
@@ -395,7 +462,7 @@ void main() {
       expect(engine.trackMultiple[1], 3);
     });
 
-    test('a per-track effects chain is deferred then re-applied on start', () {
+    test('a per-lane effects chain is deferred then re-applied on start', () {
       final repo = buildRepo()
         ..setTrackEffects(
           channel: 1,
@@ -406,15 +473,13 @@ void main() {
             ),
           ],
         );
-      expect(engine.trackFx, isEmpty); // not running yet
+      expect(engine.laneFx, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.trackFx[(1, 0)], (
-        TrackEffectType.delay,
-        TrackEffectStage.post,
-      ));
-      expect(engine.trackFxParam[(1, 0, 1)], 0.4);
-      expect(engine.trackFxCount[1], 1);
+      // Track-addressed effects map to lane 0.
+      expect(engine.laneFx[(1, 0, 0)], TrackEffectType.delay);
+      expect(engine.laneFxParam[(1, 0, 0, 1)], 0.4);
+      expect(engine.laneFxCount[(1, 0)], 1);
     });
 
     test('a live param tweak updates the entry without resetting it', () {
@@ -427,37 +492,38 @@ void main() {
       engine.calls.clear();
 
       repo.setTrackEffectParam(channel: 0, index: 0, param: 0, value: 0.9);
-      expect(engine.trackFxParam[(0, 0, 0)], 0.9);
-      // No setTrackFx (which would reset DSP) — only the granular param call.
-      expect(engine.calls, isNot(contains('setTrackFx')));
-      expect(engine.calls, contains('setTrackFxParam'));
+      expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
+      // No setLaneFx (which would reset DSP) — only the granular param call.
+      expect(engine.calls, isNot(contains('setLaneFx')));
+      expect(engine.calls, contains('setLaneFxParam'));
 
       // The tweak is remembered and re-applied on restart.
-      engine.trackFxParam.clear();
+      engine.laneFxParam.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.trackFxParam[(0, 0, 0)], 0.9);
+      expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
     });
 
-    test('an empty chain drops the track and zeroes the count on restart', () {
+    test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setTrackEffects(
           channel: 0,
           effects: [TrackEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.trackFx[(0, 0)]?.$1, TrackEffectType.drive);
+      expect(engine.laneFx[(0, 0, 0)], TrackEffectType.drive);
 
       repo.setTrackEffects(channel: 0, effects: const []);
-      expect(engine.trackFxCount[0], 0);
+      expect(engine.laneFxCount[(0, 0)], 0);
 
-      engine.trackFx.clear();
+      engine.laneFx.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.trackFx.containsKey((0, 0)), isFalse);
+      expect(engine.laneFx.containsKey((0, 0, 0)), isFalse);
     });
 
-    test('the monitor-FX bus is deferred then re-applied on start', () {
+    test('a per-input monitor chain is deferred then re-applied on start', () {
       final repo = buildRepo()
         ..setMonitorEffects(
+          input: 0,
           effects: [
             TrackEffect(
               type: TrackEffectType.delay,
@@ -465,44 +531,46 @@ void main() {
             ),
           ],
         );
-      expect(engine.monitorFx, isEmpty); // not running yet
+      expect(engine.monitorInputFx, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorFx[0], TrackEffectType.delay);
-      expect(engine.monitorFxParam[(0, 1)], 0.4);
-      expect(engine.monitorFxCount, 1);
+      expect(engine.monitorInputFx[(0, 0)], TrackEffectType.delay);
+      expect(engine.monitorInputFxParam[(0, 0, 1)], 0.4);
+      expect(engine.monitorInputFxCount[0], 1);
     });
 
-    test('a monitor-FX param tweak updates the entry without resetting it', () {
+    test('a monitor param tweak updates the entry without resetting it', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setMonitorEffects(
+          input: 0,
           effects: [TrackEffect(type: TrackEffectType.drive)],
         );
       engine.calls.clear();
 
-      repo.setMonitorEffectParam(index: 0, param: 0, value: 0.9);
-      expect(engine.monitorFxParam[(0, 0)], 0.9);
-      // No setMonitorFx (which would reset DSP) — only the granular call.
-      expect(engine.calls, isNot(contains('setMonitorFx')));
-      expect(engine.calls, contains('setMonitorFxParam'));
+      repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.9);
+      expect(engine.monitorInputFxParam[(0, 0, 0)], 0.9);
+      // No setMonitorInputFx (which would reset DSP) — only the granular call.
+      expect(engine.calls, isNot(contains('setMonitorInputFx')));
+      expect(engine.calls, contains('setMonitorInputFxParam'));
 
       // The tweak is remembered and re-applied on restart.
-      engine.monitorFxParam.clear();
+      engine.monitorInputFxParam.clear();
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorFxParam[(0, 0)], 0.9);
+      expect(engine.monitorInputFxParam[(0, 0, 0)], 0.9);
     });
 
-    test('an empty monitor-FX chain zeroes the bus count on restart', () {
+    test('an empty monitor chain zeroes the input count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setMonitorEffects(
+          input: 0,
           effects: [TrackEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.monitorFx[0], TrackEffectType.drive);
+      expect(engine.monitorInputFx[(0, 0)], TrackEffectType.drive);
 
-      repo.setMonitorEffects(effects: const []);
-      expect(engine.monitorFxCount, 0);
+      repo.setMonitorEffects(input: 0, effects: const []);
+      expect(engine.monitorInputFxCount[0], 0);
     });
 
     test('clearing a track multiple (0) drops the override', () {
@@ -519,49 +587,33 @@ void main() {
       expect(engine.trackMultiple.containsKey(1), isFalse);
     });
 
-    test('custom monitor masks are deferred until running, then applied', () {
+    test('a per-input monitor is deferred until running, then applied', () {
       final repo = buildRepo()
-        ..setMonitorInputMask(0x2)
-        ..setMonitorOutputMask(0x1);
-      expect(engine.lastMonitorInputMask, isNull);
+        ..setMonitorInput(input: 1, enabled: true, outputMask: 0x1);
+      expect(engine.monitorInput, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.lastMonitorInputMask, 0x2);
-      expect(engine.lastMonitorOutputMask, 0x1);
+      expect(engine.monitorInput[1], (true, 0x1));
     });
 
-    test("following a track mirrors that track's masks to the monitor", () {
-      engine.nextSnapshot = _playingSnapshot; // track 0 mask 0x2 in / 0x2 out
+    test('per-input monitors are independent and survive a restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
-        ..setMonitorFollowTrack(0);
-      expect(engine.lastMonitorInputMask, 0x2);
-      expect(engine.lastMonitorOutputMask, 0x2);
-      // The monitor follows the track through its before-track effects.
-      expect(engine.lastMonitorFxTrack, 0);
+        ..setMonitorInput(input: 0, enabled: true, outputMask: 0x1)
+        ..setMonitorInput(input: 1, enabled: true, outputMask: 0x2);
+      expect(engine.monitorInput[0], (true, 0x1));
+      expect(engine.monitorInput[1], (true, 0x2));
 
-      // Editing the followed track's routing updates the monitor too.
-      repo.setInputMask(channel: 0, mask: 0x1);
-      expect(engine.lastMonitorInputMask, 0x1);
-      repo.setOutputMask(channel: 0, mask: 0x3);
-      expect(engine.lastMonitorOutputMask, 0x3);
+      // Disabling one input leaves the other untouched.
+      repo.setMonitorInput(input: 0, enabled: false, outputMask: 0x1);
+      expect(engine.monitorInput[0], (false, 0x1));
+      expect(engine.monitorInput[1], (true, 0x2));
 
-      // A non-followed track's edits do not touch the monitor.
-      repo.setInputMask(channel: 1, mask: 0x2);
-      expect(engine.lastMonitorInputMask, 0x1); // unchanged
-    });
-
-    test('switching back to custom restores the custom masks', () {
-      buildRepo()
-        ..setMonitorInputMask(0x2)
-        ..setMonitorOutputMask(0x1)
-        ..startEngine(const EngineConfig())
-        ..setMonitorFollowTrack(0)
-        ..setMonitorFollowTrack(null);
-      expect(engine.lastMonitorInputMask, 0x2);
-      expect(engine.lastMonitorOutputMask, 0x1);
-      // Custom mode no longer follows a track for effects.
-      expect(engine.lastMonitorFxTrack, -1);
+      // Both are re-applied on restart.
+      engine.monitorInput.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorInput[0], (false, 0x1));
+      expect(engine.monitorInput[1], (true, 0x2));
     });
 
     test('engineVersion is forwarded', () {
@@ -575,18 +627,34 @@ void main() {
       expect(engine.lastRecordOffset, 480);
     });
 
-    test('setInputMask forwards channel and mask to the engine', () {
-      buildRepo().setInputMask(channel: 2, mask: 0x3);
-      expect(engine.calls, contains('setInputMask'));
-      expect(engine.lastChannel, 2);
-      expect(engine.lastInputMask, 0x3);
+    test('setInputMask maps the lowest selected input onto lane 0', () {
+      // 0x6 selects inputs 1 and 2; the lowest (1) records into lane 0.
+      buildRepo().setInputMask(channel: 2, mask: 0x6);
+      expect(engine.calls, contains('setLaneInput'));
+      expect(engine.laneInput[(2, 0)], 1);
     });
 
-    test('setOutputMask forwards channel and mask to the engine', () {
+    test('setOutputMask forwards the mask onto lane 0', () {
       buildRepo().setOutputMask(channel: 1, mask: 0x5);
-      expect(engine.calls, contains('setOutputMask'));
-      expect(engine.lastChannel, 1);
-      expect(engine.lastOutputMask, 0x5);
+      expect(engine.calls, contains('setLaneOutput'));
+      expect(engine.laneOutput[(1, 0)], 0x5);
+    });
+
+    test('setLaneCount remembers, defers, and re-applies on start', () {
+      final repo = buildRepo()..setLaneCount(channel: 2, count: 3);
+      // Not running yet: remembered but not pushed to the engine.
+      expect(engine.laneCount, isEmpty);
+      expect(repo.laneCount(2), 3);
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.laneCount[2], 3);
+
+      // Count 1 (the default) drops the override and does not re-apply.
+      repo.setLaneCount(channel: 2, count: 1);
+      expect(repo.laneCount(2), 1);
+      engine.laneCount.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.laneCount.containsKey(2), isFalse);
     });
 
     test('detectLoopback forwards the engine result', () {

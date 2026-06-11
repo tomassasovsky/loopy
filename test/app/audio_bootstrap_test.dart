@@ -39,10 +39,10 @@ void main() {
           monitorInput: true,
         ),
       );
-      // Save routing for channel 1 only; channel 0 has none (exercises the
-      // null-guard skip in the restore loop).
-      await settings.saveTrackInputMask(1, 0x2);
-      await settings.saveTrackOutputMask(1, 0x4);
+      // Save lane-0 routing for channel 1 only; channel 0 has none (exercises
+      // the null-guard skip in the restore loop).
+      await settings.saveLaneInput(1, 0, 1);
+      await settings.saveLaneOutput(1, 0, 0x4);
       // The restore loop iterates the engine's reported tracks.
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,
@@ -64,14 +64,12 @@ void main() {
       );
 
       expect(started, isTrue);
-      // Only channel 1 had saved routing, so it is the last (and only) applied.
-      expect(engine.lastInputRoutingChannel, 1);
-      expect(engine.lastInputMask, 0x2);
-      expect(engine.lastOutputRoutingChannel, 1);
-      expect(engine.lastOutputMask, 0x4);
+      // Only channel 1 had saved routing, restored onto lane 0.
+      expect(engine.laneInput[(1, 0)], 1);
+      expect(engine.laneOutput[(1, 0)], 0x4);
     });
 
-    test('restores saved per-track effects on launch', () async {
+    test('restores saved per-lane effects on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(
           sampleRate: 48000,
@@ -79,15 +77,13 @@ void main() {
           monitorInput: true,
         ),
       );
-      // Track 0 = a two-effect chain (pre filter, post delay with a feedback
+      // Track 0 lane 0 = a two-effect chain (filter, then delay with a feedback
       // override); track 1 has no saved chain (exercises the empty skip).
-      await settings.saveTrackEffects(
+      await settings.saveLaneEffects(
+        0,
         0,
         encodeTrackEffects([
-          TrackEffect(
-            type: TrackEffectType.filter,
-            stage: TrackEffectStage.pre,
-          ),
+          TrackEffect(type: TrackEffectType.filter),
           TrackEffect(
             type: TrackEffectType.delay,
             params: const [0.3, 0.42, 0.5],
@@ -114,16 +110,10 @@ void main() {
       );
 
       expect(started, isTrue);
-      expect(engine.trackFx[(0, 0)], (
-        TrackEffectType.filter,
-        TrackEffectStage.pre,
-      ));
-      expect(engine.trackFx[(0, 1)], (
-        TrackEffectType.delay,
-        TrackEffectStage.post,
-      ));
-      expect(engine.trackFxCount[0], 2);
-      expect(engine.trackFxParam[(0, 1, 1)], 0.42);
+      expect(engine.laneFx[(0, 0, 0)], TrackEffectType.filter);
+      expect(engine.laneFx[(0, 0, 1)], TrackEffectType.delay);
+      expect(engine.laneFxCount[(0, 0)], 2);
+      expect(engine.laneFxParam[(0, 0, 1, 1)], 0.42);
     });
 
     test('starts the engine with the saved config', () async {

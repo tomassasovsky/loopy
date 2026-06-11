@@ -202,12 +202,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // A before-track Filter and an after-track Delay so the graph shows cards
-    // on the signal path.
-    await settings.saveTrackEffects(
+    // A Filter and a Delay so the graph shows cards on the signal path.
+    await settings.saveLaneEffects(
       1,
+      0,
       encodeTrackEffects([
-        TrackEffect(type: TrackEffectType.filter, stage: TrackEffectStage.pre),
+        TrackEffect(type: TrackEffectType.filter),
         TrackEffect(type: TrackEffectType.delay),
       ]),
     );

@@ -231,40 +231,41 @@ void main() {
     setUp(() {
       settings = _MockSettingsRepository();
       when(
-        () => settings.saveTrackInputMask(any(), any()),
+        () => settings.saveLaneInput(any(), any(), any()),
       ).thenAnswer((_) async {});
       when(
-        () => settings.saveTrackOutputMask(any(), any()),
+        () => settings.saveLaneOutput(any(), any(), any()),
       ).thenAnswer((_) async {});
       when(
-        () => settings.saveTrackEffects(any(), any()),
+        () => settings.saveLaneEffects(any(), any(), any()),
       ).thenAnswer((_) async {});
     });
 
     blocTest<LooperBloc, LooperState>(
-      'LooperInputMaskChanged persists the input mask',
+      'LooperInputMaskChanged persists the lowest input onto lane 0',
       build: () => LooperBloc(repository: repository, settings: settings),
-      act: (bloc) => bloc.add(const LooperInputMaskChanged(3, 0x3)),
+      act: (bloc) => bloc.add(const LooperInputMaskChanged(3, 0x6)),
       verify: (_) {
         verify(
-          () => repository.setInputMask(channel: 3, mask: 0x3),
+          () => repository.setInputMask(channel: 3, mask: 0x6),
         ).called(1);
-        verify(() => settings.saveTrackInputMask(3, 0x3)).called(1);
+        // 0x6 selects inputs 1 and 2; the lowest (1) records into lane 0.
+        verify(() => settings.saveLaneInput(3, 0, 1)).called(1);
       },
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperOutputMaskChanged persists the output mask',
+      'LooperOutputMaskChanged persists the output mask onto lane 0',
       build: () => LooperBloc(repository: repository, settings: settings),
       act: (bloc) => bloc.add(const LooperOutputMaskChanged(0, 0x6)),
       verify: (_) {
         verify(() => repository.setOutputMask(channel: 0, mask: 0x6)).called(1);
-        verify(() => settings.saveTrackOutputMask(0, 0x6)).called(1);
+        verify(() => settings.saveLaneOutput(0, 0, 0x6)).called(1);
       },
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperTrackEffectsChanged persists the encoded chain',
+      'LooperTrackEffectsChanged persists the encoded chain onto lane 0',
       build: () => LooperBloc(repository: repository, settings: settings),
       act: (bloc) => bloc.add(
         LooperTrackEffectsChanged(1, [
@@ -278,7 +279,7 @@ void main() {
             effects: any(named: 'effects'),
           ),
         ).called(1);
-        verify(() => settings.saveTrackEffects(1, any())).called(1);
+        verify(() => settings.saveLaneEffects(1, 0, any())).called(1);
       },
     );
 
@@ -296,7 +297,7 @@ void main() {
             value: 0.25,
           ),
         ).called(1);
-        verify(() => settings.saveTrackEffects(0, any())).called(1);
+        verify(() => settings.saveLaneEffects(0, 0, any())).called(1);
       },
     );
   });

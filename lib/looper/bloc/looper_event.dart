@@ -135,7 +135,7 @@ final class LooperTrackMultipleChanged extends LooperChannelEvent {
 }
 
 /// Track [channel]'s entire effects chain changed (a structural edit: add,
-/// remove, reorder, type, or stage). Resets the affected entries' DSP state.
+/// remove, reorder, or type). Resets the affected entries' DSP state.
 final class LooperTrackEffectsChanged extends LooperChannelEvent {
   /// Creates a [LooperTrackEffectsChanged].
   const LooperTrackEffectsChanged(super.channel, this.effects);
