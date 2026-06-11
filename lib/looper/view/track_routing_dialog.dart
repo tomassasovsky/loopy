@@ -372,18 +372,45 @@ class _LaneListState extends State<_LaneList> {
     _bloc.add(LooperLaneCountChanged(widget.channel, _laneCount));
   }
 
-  /// Removes [lane]. Lanes are a stack, so only the last lane is ever
-  /// removable (enforced by `canRemove` on the strip): dropping its [_chains]
-  /// key and decrementing the count keeps the local state and the engine's
-  /// `lane_count` in lockstep.
+  /// Removes [lane] and shifts every later lane up one slot: each subsequent
+  /// lane's routing, mix, and effect chain is reapplied onto the previous
+  /// index, then the count drops by one.
+  ///
+  /// This moves the lane *configuration*; a recorded lane's audio buffer is not
+  /// moved (that needs engine-side compaction — a follow-up). The common case —
+  /// reorganising lanes while configuring routing — behaves as expected.
   void _removeLane(int lane) {
-    if (_laneCount <= 1 || lane != _laneCount - 1) return;
+    if (_laneCount <= 1 || lane < 0 || lane >= _laneCount) return;
+    final channel = widget.channel;
+    final lanes = widget.track.lanes;
+    Lane stateLane(int j) => j < lanes.length ? lanes[j] : const Lane();
+    for (var j = lane; j < _laneCount - 1; j++) {
+      final src = stateLane(j + 1);
+      _bloc
+        ..add(LooperLaneInputChanged(channel, j, src.inputChannel))
+        ..add(LooperLaneOutputChanged(channel, j, src.outputMask))
+        ..add(LooperLaneVolumeChanged(channel, j, src.volume));
+      // Mute has no absolute setter; toggle only when the value must change.
+      if (stateLane(j).muted != src.muted) {
+        _bloc.add(LooperLaneMuteToggled(channel, j));
+      }
+      _bloc.add(
+        LooperLaneEffectsChanged(
+          channel,
+          j,
+          List<TrackEffect>.of(_chainOf(j + 1)),
+        ),
+      );
+    }
     setState(() {
+      for (var j = lane; j < _laneCount - 1; j++) {
+        _chains[j] = List<TrackEffect>.of(_chainOf(j + 1));
+      }
+      _chains.remove(_laneCount - 1);
       _laneCount -= 1;
-      _chains.remove(lane);
-      if (_selected?.lane == lane) _selected = null;
+      _selected = null;
     });
-    _bloc.add(LooperLaneCountChanged(widget.channel, _laneCount));
+    _bloc.add(LooperLaneCountChanged(channel, _laneCount));
   }
 
   void _pushChain(int lane) {

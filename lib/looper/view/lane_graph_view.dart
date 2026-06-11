@@ -74,7 +74,7 @@ class LaneGraphView extends StatefulWidget {
   final void Function(int lane, int index, int param, double value) onSetParam;
   final void Function(int lane, int index) onRemoveEffect;
 
-  /// Lane stack edits. Only the last lane is removable.
+  /// Lane stack edits. Any lane can be removed while more than one exists.
   final VoidCallback onAddLane;
   final void Function(int lane) onRemoveLane;
 
@@ -83,11 +83,15 @@ class LaneGraphView extends StatefulWidget {
   static const double _chH = 24;
   static const double _laneW = 120;
   static const double _laneH = 50;
-  static const double _cardW = 96;
+  static const double _cardW = 116;
   static const double _cardH = 40;
   static const double _gap = 16;
-  static const double _fan = 70;
+  static const double _fan = 92;
   static const double _addW = 30;
+
+  /// Fixed horizontal control-handle length for every wire, so all curves leave
+  /// and enter horizontally with the same tangent — a uniform, standard bend.
+  static const double _curveHandle = 46;
   static const double _laneRowH = 84;
   static const double _chRowH = 32;
   static const double _pad = 16;
@@ -557,6 +561,24 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                 ),
               ),
             ),
+            const SizedBox(width: 2),
+            Tooltip(
+              message: 'Remove effect',
+              child: InkResponse(
+                key: Key('laneGraph_fxDelete_${l}_$k'),
+                onTap: () => widget.onRemoveEffect(l, k),
+                radius: 16,
+                child: const SizedBox(
+                  width: 20,
+                  height: 24,
+                  child: Icon(
+                    Icons.close,
+                    size: 15,
+                    color: SetupSurfaceColors.t2,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -632,6 +654,12 @@ class _LaneGraphViewState extends State<LaneGraphView> {
         padding: EdgeInsets.zero,
         iconSize: 24,
         color: SetupSurfaceColors.accent,
+        // Opaque canvas-coloured fill so wires don't show behind it.
+        style: IconButton.styleFrom(
+          backgroundColor: SetupSurfaceColors.surface,
+          shape: const CircleBorder(),
+          padding: EdgeInsets.zero,
+        ),
         tooltip: full ? 'Chain is full' : 'Add effect to lane ${l + 1}',
         icon: const Icon(Icons.add_circle_outline),
         onPressed: full
@@ -694,7 +722,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
 
   Widget _laneControls(int l) {
     final lane = widget.lanes[l];
-    final canRemove = _laneCount > 1 && l == _laneCount - 1;
+    final canRemove = _laneCount > 1;
     return Row(
       children: [
         Text(
@@ -866,7 +894,12 @@ class _PathPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = e.faded ? 1.4 : 2.4
       ..color = e.color.withValues(alpha: e.faded ? 0.22 : 0.95);
-    final dx = (e.to.dx - e.from.dx) / 2;
+    // A fixed handle length (clamped so short hops stay straight) gives every
+    // wire the same horizontal tangent — uniform curvature across the graph.
+    final span = (e.to.dx - e.from.dx).abs();
+    final dx = span / 2 < LaneGraphView._curveHandle
+        ? span / 2
+        : LaneGraphView._curveHandle;
     final path = Path()
       ..moveTo(e.from.dx, e.from.dy)
       ..cubicTo(

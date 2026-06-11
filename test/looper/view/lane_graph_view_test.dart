@@ -227,21 +227,41 @@ void main() {
       expect(rec.addedLane, isTrue);
     });
 
-    testWidgets('only the last of several lanes can be removed', (
+    testWidgets('any lane can be removed when more than one exists', (
       tester,
     ) async {
       final rec = await pump(tester, lanes: const [Lane(), Lane()]);
 
-      // Focus lane 0 (not the last): no remove control.
+      // Focus lane 0 (not the last) and remove it directly.
+      await tester.tap(find.byKey(const Key('laneGraph_laneNode_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('laneGraph_removeLane')));
+      expect(rec.removedLane, 0);
+    });
+
+    testWidgets('a single lane cannot be removed', (tester) async {
+      await pump(tester, lanes: const [Lane()]);
       await tester.tap(find.byKey(const Key('laneGraph_laneNode_0')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('laneGraph_removeLane')), findsNothing);
+    });
 
-      // Focus lane 1 (the last): remove is offered.
-      await tester.tap(find.byKey(const Key('laneGraph_laneNode_1')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('laneGraph_removeLane')));
-      expect(rec.removedLane, 1);
+    testWidgets('the per-card delete button removes that effect', (
+      tester,
+    ) async {
+      final rec = await pump(
+        tester,
+        lanes: [
+          Lane(
+            effects: [
+              TrackEffect(type: TrackEffectType.drive),
+              TrackEffect(type: TrackEffectType.delay),
+            ],
+          ),
+        ],
+      );
+      await tester.tap(find.byKey(const Key('laneGraph_fxDelete_0_1')));
+      expect(rec.removedEffect, (0, 1));
     });
 
     testWidgets('an excluded input cannot be wired', (tester) async {
