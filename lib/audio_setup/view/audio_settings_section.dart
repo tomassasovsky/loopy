@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
-import 'package:loopy/audio_setup/view/monitor_graph_view.dart';
+import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_view.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
