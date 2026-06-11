@@ -29,7 +29,13 @@ enum TrackEffectType {
   delay(3, 'Delay'),
 
   /// Sine-LFO amplitude modulation.
-  tremolo(4, 'Tremolo');
+  tremolo(4, 'Tremolo'),
+
+  /// Pitch-shift octaver — shifts up or down, by octaves or smaller intervals.
+  octaver(5, 'Octaver'),
+
+  /// Tape-style echo with damped, smearing repeats.
+  echo(6, 'Echo');
 
   const TrackEffectType(this.code, this.label);
 
@@ -44,16 +50,47 @@ enum TrackEffectType {
   static TrackEffectType fromCode(int code) =>
       values.firstWhere((t) => t.code == code, orElse: () => none);
 
-  /// Labels for this type's parameters, in order. The list length is the number
-  /// of parameters the type actually uses (`<=` [kTrackEffectParams]); trailing
-  /// unused parameters are omitted.
-  List<String> get paramLabels => switch (this) {
+  /// This type's parameters, in order. The list length is the number of
+  /// parameters the type actually uses (`<=` [kTrackEffectParams]); trailing
+  /// unused parameters are omitted. Each entry also carries how it should be
+  /// presented (see [TrackEffectParam]) — most are plain continuous controls,
+  /// but musical parameters like the octaver's pitch snap to discrete values
+  /// and read out in their own units.
+  List<TrackEffectParam> get params => switch (this) {
     TrackEffectType.none => const [],
-    TrackEffectType.drive => const ['Drive', 'Level'],
-    TrackEffectType.filter => const ['Cutoff', 'Resonance'],
-    TrackEffectType.delay => const ['Time', 'Feedback', 'Mix'],
-    TrackEffectType.tremolo => const ['Rate', 'Depth'],
+    TrackEffectType.drive => const [
+      TrackEffectParam('Drive'),
+      TrackEffectParam('Level'),
+    ],
+    TrackEffectType.filter => const [
+      TrackEffectParam('Cutoff'),
+      TrackEffectParam('Resonance'),
+    ],
+    TrackEffectType.delay => const [
+      TrackEffectParam('Time'),
+      TrackEffectParam('Feedback'),
+      TrackEffectParam('Mix'),
+    ],
+    TrackEffectType.tremolo => const [
+      TrackEffectParam('Rate'),
+      TrackEffectParam('Depth'),
+    ],
+    // Shift snaps to whole semitones across the engine's +-2 octave range, with
+    // a centre detent at unison, and reads out as a pitch interval.
+    TrackEffectType.octaver => const [
+      TrackEffectParam('Shift', divisions: 48, format: formatPitchShift),
+      TrackEffectParam('Tone'),
+      TrackEffectParam('Mix'),
+    ],
+    TrackEffectType.echo => const [
+      TrackEffectParam('Time'),
+      TrackEffectParam('Feedback'),
+      TrackEffectParam('Mix'),
+    ],
   };
+
+  /// Labels for this type's parameters, in order. A convenience over [params].
+  List<String> get paramLabels => [for (final p in params) p.label];
 
   /// The musical default for each of the [kTrackEffectParams] parameters when
   /// the type is freshly engaged. Mirrors the engine's `le_fx_default_params`
@@ -64,7 +101,47 @@ enum TrackEffectType {
     TrackEffectType.filter => const [0.5, 0.2, 0],
     TrackEffectType.delay => const [0.35, 0.35, 0.35],
     TrackEffectType.tremolo => const [0.3, 0.7, 0],
+    TrackEffectType.octaver => const [0.25, 0.5, 0.5],
+    TrackEffectType.echo => const [0.45, 0.5, 0.35],
   };
+}
+
+/// How one effect parameter should be presented in the UI.
+///
+/// The value itself is always a normalized `0..1` double (see [TrackEffect]);
+/// this only describes the control. [divisions], when set, snaps the slider to
+/// that many discrete steps so a musical parameter lands on exact values rather
+/// than floating between them. [format], when set, renders the normalized value
+/// as a human-readable string in the parameter's own units (e.g. a pitch
+/// interval) for a live readout.
+@immutable
+class TrackEffectParam {
+  /// Creates a parameter descriptor.
+  const TrackEffectParam(this.label, {this.divisions, this.format});
+
+  /// A short name for the control.
+  final String label;
+
+  /// The number of discrete steps the control snaps to, or `null` for a
+  /// continuous control.
+  final int? divisions;
+
+  /// Formats a normalized `0..1` value as a display string, or `null` when the
+  /// raw value needs no readout.
+  final String Function(double value)? format;
+}
+
+/// Formats an octaver Shift value (normalized `0..1`, `0.5` = unison) as a
+/// pitch interval. Mirrors the engine, which maps the parameter across `+-24`
+/// semitones, so whole semitones land on exact intervals (and multiples of 12
+/// on whole octaves).
+String formatPitchShift(double value) {
+  final semitones = ((value - 0.5) * 48).round();
+  if (semitones == 0) return 'Unison';
+  final sign = semitones > 0 ? '+' : '-';
+  final magnitude = semitones.abs();
+  if (magnitude % 12 == 0) return '$sign${magnitude ~/ 12} oct';
+  return '$sign$magnitude st';
 }
 
 /// One entry in an effects chain: a [type] with its [params] (normalized

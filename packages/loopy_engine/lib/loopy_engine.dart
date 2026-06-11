@@ -21,8 +21,10 @@ export 'src/native_audio_engine.dart' show NativeAudioEngine;
 export 'src/track_effect.dart'
     show
         TrackEffect,
+        TrackEffectParam,
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects,
+        formatPitchShift,
         kTrackEffectMax,
         kTrackEffectParams;

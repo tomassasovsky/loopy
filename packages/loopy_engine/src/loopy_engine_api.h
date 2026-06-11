@@ -157,13 +157,18 @@ typedef enum le_command_code {
  *   DRIVE:   p0 = drive amount, p1 = output level
  *   FILTER:  p0 = cutoff, p1 = resonance        (resonant low-pass)
  *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
- *   TREMOLO: p0 = rate, p1 = depth */
+ *   TREMOLO: p0 = rate, p1 = depth
+ *   OCTAVER: p0 = shift (0 = -2 oct, .5 = unison, 1 = +2 oct), p1 = tone,
+ *            p2 = mix                                  (time-domain pitch shift)
+ *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats) */
 typedef enum le_fx_type {
   LE_FX_NONE = 0,
   LE_FX_DRIVE = 1,
   LE_FX_FILTER = 2,
   LE_FX_DELAY = 3,
   LE_FX_TREMOLO = 4,
+  LE_FX_OCTAVER = 5,
+  LE_FX_ECHO = 6,
 } le_fx_type;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).

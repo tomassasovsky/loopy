@@ -114,6 +114,43 @@ void main() {
         expect(type.defaultParams.length, kTrackEffectParams);
       }
     });
+
+    test('codes match the native le_fx_type contract', () {
+      // These integers are the wire contract with the engine and persisted
+      // chains; they must never drift.
+      expect(TrackEffectType.octaver.code, 5);
+      expect(TrackEffectType.echo.code, 6);
+    });
+
+    test('codes are unique', () {
+      final codes = TrackEffectType.values.map((t) => t.code).toList();
+      expect(codes.toSet(), hasLength(codes.length));
+    });
+
+    test('paramLabels stay in sync with params', () {
+      for (final type in TrackEffectType.values) {
+        expect(type.paramLabels, type.params.map((p) => p.label).toList());
+      }
+    });
+
+    test('the octaver Shift is a discrete, formatted pitch control', () {
+      final shift = TrackEffectType.octaver.params.first;
+      expect(shift.label, 'Shift');
+      expect(shift.divisions, 48); // one step per semitone across +-2 octaves
+      expect(shift.format, isNotNull);
+    });
+  });
+
+  group('formatPitchShift', () {
+    test('reads unison, semitones, and whole octaves from the 0..1 range', () {
+      expect(formatPitchShift(0.5), 'Unison');
+      expect(formatPitchShift(0.25), '-1 oct'); // -12 semitones
+      expect(formatPitchShift(0.75), '+1 oct'); // +12 semitones
+      expect(formatPitchShift(0), '-2 oct');
+      expect(formatPitchShift(1), '+2 oct');
+      // 7 semitones up: 0.5 + 7/48.
+      expect(formatPitchShift(0.5 + 7 / 48), '+7 st');
+    });
   });
 
   group('encode/decode chain', () {
