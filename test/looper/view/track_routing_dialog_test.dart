@@ -153,6 +153,45 @@ void main() {
       expect(find.byKey(const Key('laneGraph_laneNode_1')), findsNothing);
     });
 
+    testWidgets('removing a non-last lane shifts later lanes up', (
+      tester,
+    ) async {
+      whenListen(
+        bloc,
+        const Stream<LooperState>.empty(),
+        initialState: const LooperState(
+          tracks: [
+            Track(
+              lanes: [
+                Lane(outputMask: 0x1),
+                Lane(inputChannel: 1, outputMask: 0x2),
+              ],
+            ),
+          ],
+          status: EngineStatus(
+            inputChannels: 3,
+            outputChannels: 2,
+            isConnected: true,
+          ),
+        ),
+      );
+      await settings.saveLaneCount(0, 2);
+      await pumpOpener(tester);
+      await open(tester, focus: false);
+
+      // Focus and remove lane 0; lane 1's routing shifts onto lane 0.
+      await tester.tap(find.byKey(const Key('laneGraph_laneNode_0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('laneGraph_removeLane')));
+      await tester.pumpAndSettle();
+
+      verify(() => bloc.add(const LooperLaneInputChanged(0, 0, 1))).called(1);
+      verify(
+        () => bloc.add(const LooperLaneOutputChanged(0, 0, 0x2)),
+      ).called(1);
+      verify(() => bloc.add(const LooperLaneCountChanged(0, 1))).called(1);
+    });
+
     testWidgets('choosing a quantize override dispatches the change', (
       tester,
     ) async {
