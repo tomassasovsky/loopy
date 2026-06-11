@@ -9,7 +9,7 @@ import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/routing_graph_view.dart';
+import 'package:loopy/looper/view/tracks_routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -241,7 +241,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
         initialData: repository.state,
         builder: (context, snapshot) {
           final state = snapshot.data ?? const LooperState();
-          return RoutingGraphView(
+          return TracksRoutingGraphView(
             tracks: state.tracks,
             inputChannels: state.status.inputChannels,
             outputChannels: state.status.outputChannels,
