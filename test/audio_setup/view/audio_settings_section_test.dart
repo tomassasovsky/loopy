@@ -32,6 +32,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setMonitorDry(
+        input: any(named: 'input'),
+        dryOutputMask: any(named: 'dryOutputMask'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
@@ -173,32 +179,9 @@ void main() {
     verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
   });
 
-  testWidgets('enabling a per-input monitor updates the cubit', (tester) async {
-    seed(
-      const AudioSetupState(
-        status: AudioSetupStatus.running,
-        engineStatus: EngineStatus(
-          deviceName: 'Scarlett 4i4',
-          sampleRate: 48000,
-          bufferFrames: 128,
-          isConnected: true,
-          inputChannels: 2,
-          outputChannels: 2,
-        ),
-      ),
-    );
-    await pumpSection(tester);
-    expect(monitor.state.forInput(0).enabled, isFalse);
-
-    final sw = find.byKey(const Key('audioSettings_monitorInput_switch_0'));
-    await tester.ensureVisible(sw);
-    await tester.tap(sw);
-    await tester.pumpAndSettle();
-
-    expect(monitor.state.forInput(0).enabled, isTrue);
-  });
-
-  testWidgets("a monitor input's output chips toggle its mask", (tester) async {
+  testWidgets('opens the input-monitoring graph as a full page', (
+    tester,
+  ) async {
     seed(
       const AudioSetupState(
         status: AudioSetupStatus.running,
@@ -214,20 +197,15 @@ void main() {
     );
     await pumpSection(tester);
 
-    // Enable input 0's monitor to reveal its output chips.
-    final sw = find.byKey(const Key('audioSettings_monitorInput_switch_0'));
-    await tester.ensureVisible(sw);
-    await tester.tap(sw);
-    await tester.pumpAndSettle();
-    expect(monitor.state.forInput(0).outputMask, 0x3); // default outs 0 + 1
-
-    // Tap output channel 2 (index 1) to remove it: 0x3 ^ (1 << 1) == 0x1.
-    final outChip = find.byKey(const Key('audioSettings_monitorOut_0_1'));
-    await tester.ensureVisible(outChip);
-    await tester.tap(outChip);
+    final open = find.byKey(const Key('audioSettings_openMonitorGraph'));
+    await tester.ensureVisible(open);
+    await tester.tap(open);
     await tester.pumpAndSettle();
 
-    expect(monitor.state.forInput(0).outputMask, 0x1);
+    // The full-page routing graph opens (replacing the old chip tiles).
+    expect(find.byKey(const Key('monitorRouting_page')), findsOneWidget);
+    expect(find.byKey(const Key('monitorGraph_in_0')), findsOneWidget);
+    expect(find.byKey(const Key('monitorGraph_out_0')), findsOneWidget);
   });
 
   testWidgets('toggling quantize recording forwards to the quantize cubit', (

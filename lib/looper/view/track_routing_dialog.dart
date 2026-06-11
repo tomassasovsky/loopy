@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
@@ -52,34 +53,43 @@ class _TrackRoutingPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final trackName = bigPicture.state.names[channel];
 
-    return Scaffold(
-      key: const Key('trackRouting_page'),
-      appBar: AppBar(
-        title: Text('$trackName routing'),
-        actions: [
-          IconButton(
-            key: const Key('trackRouting_settings_button'),
-            icon: const Icon(Icons.tune),
-            tooltip: 'Track settings',
-            onPressed: () => _openSettings(context),
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            unawaited(Navigator.of(context).maybePop()),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          key: const Key('trackRouting_page'),
+          appBar: AppBar(
+            title: Text('$trackName routing'),
+            actions: [
+              IconButton(
+                key: const Key('trackRouting_settings_button'),
+                icon: const Icon(Icons.tune),
+                tooltip: 'Track settings',
+                onPressed: () => _openSettings(context),
+              ),
+            ],
           ),
-        ],
-      ),
-      // The stacked per-lane signal-flow strips fill the whole page.
-      body: BlocBuilder<LooperBloc, LooperState>(
-        builder: (context, state) {
-          final current = channel < state.tracks.length
-              ? state.tracks[channel]
-              : Track(channel: channel);
-          return _LaneList(
-            channel: channel,
-            settings: settings,
-            track: current,
-            inputChannels: state.status.inputChannels,
-            outputChannels: state.status.outputChannels,
-            excludedInputMask: state.status.excludedInputMask,
-          );
-        },
+          // The stacked per-lane signal-flow strips fill the whole page.
+          body: BlocBuilder<LooperBloc, LooperState>(
+            builder: (context, state) {
+              final current = channel < state.tracks.length
+                  ? state.tracks[channel]
+                  : Track(channel: channel);
+              return _LaneList(
+                channel: channel,
+                settings: settings,
+                track: current,
+                inputChannels: state.status.inputChannels,
+                outputChannels: state.status.outputChannels,
+                excludedInputMask: state.status.excludedInputMask,
+              );
+            },
+          ),
+        ),
       ),
     );
   }

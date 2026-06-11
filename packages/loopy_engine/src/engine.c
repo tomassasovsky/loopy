@@ -119,7 +119,9 @@ typedef struct le_lane {
  * replaces the old global monitor-FX bus and monitor-follows-a-track model. */
 typedef struct le_monitor_input {
   _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
-  _Atomic uint32_t a_output_mask; /* output channels the monitor routes to */
+  _Atomic uint32_t a_output_mask; /* output channels the effected route plays to */
+  _Atomic uint32_t a_dry_output_mask; /* outputs the CLEAN (pre-FX) signal goes
+                                       * to — a parallel dry send (0 = off) */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
@@ -868,6 +870,18 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       store_i32(&e->monitors[input].a_enabled, on);
       break;
     }
+    case LE_CMD_SET_MONITOR_INPUT_DRY: {
+      /* No excluded-input recheck (unlike SET_MONITOR_INPUT): the dry send is
+       * gated by mon_on in process(), which already drops loopback inputs. */
+      const int32_t input = (int32_t)cmd->arg_f & 0xFF;
+      if (input < 0 || input >= LE_MAX_INPUTS) break;
+      const uint32_t valid = e->out_channels >= 32
+                                 ? 0xFFFFFFFFu
+                                 : ((1u << e->out_channels) - 1u);
+      atomic_store_explicit(&e->monitors[input].a_dry_output_mask,
+                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+      break;
+    }
     case LE_CMD_SET_MONITOR_INPUT_FX: {
       const int32_t input = (cmd->arg_i >> 8) & 0xFF;
       const int32_t index = cmd->arg_i & 0xFF;
@@ -986,6 +1000,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
    * monitor pass per hardware input; the chain is stageless. */
   int mon_on[LE_MAX_INPUTS] = {0};
   uint32_t mon_out[LE_MAX_INPUTS];
+  uint32_t mon_dry_out[LE_MAX_INPUTS];
   int32_t mon_fx_count[LE_MAX_INPUTS];
   int32_t mon_fx_type[LE_MAX_INPUTS][LE_FX_MAX];
   float mon_fx_params[LE_MAX_INPUTS][LE_FX_MAX][LE_FX_PARAMS];
@@ -993,6 +1008,8 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     le_monitor_input* m = &e->monitors[c];
     mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
     mon_out[c] = atomic_load_explicit(&m->a_output_mask, memory_order_relaxed);
+    mon_dry_out[c] =
+        atomic_load_explicit(&m->a_dry_output_mask, memory_order_relaxed);
     int32_t n = load_i32(&m->a_fx_count);
     if (n < 0) n = 0;
     if (n > LE_FX_MAX) n = LE_FX_MAX;
@@ -1221,14 +1238,18 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     if (in) {
       for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
         if (!mon_on[c]) continue;
-        float msample = in[f * ch_in + c];
+        const float clean = in[f * ch_in + c];
+        float msample = clean;
         if (mon_fx_count[c] > 0) {
           msample = fx_apply_chain(&e->monitors[c].fx, sr, fx_cap, msample,
                                    mon_fx_count[c], mon_fx_type[c],
                                    mon_fx_params[c]);
         }
+        /* Effected route to its outputs; the parallel dry send routes the clean
+         * (pre-FX) sample to its own outputs — dry + wet at once. */
         for (int oc = 0; oc < ch_out; ++oc) {
           if (mon_out[c] & (1u << oc)) out[f * ch_out + oc] += msample;
+          if (mon_dry_out[c] & (1u << oc)) out[f * ch_out + oc] += clean;
         }
       }
     }
@@ -1401,6 +1422,7 @@ static void le_lane_reset(le_lane* ln, int32_t input_channel) {
 static void le_monitor_input_reset(le_monitor_input* m) {
   store_i32(&m->a_enabled, 0);
   atomic_store_explicit(&m->a_output_mask, 0x3u, memory_order_relaxed);
+  atomic_store_explicit(&m->a_dry_output_mask, 0u, memory_order_relaxed);
   store_i32(&m->a_fx_count, 0);
   for (int s = 0; s < LE_FX_MAX; ++s) {
     store_i32(&m->a_fx_type[s], LE_FX_NONE);
@@ -2589,6 +2611,14 @@ int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
   const int32_t iv = (input & 0xFF) | (enabled ? 0x100 : 0);
   return le_push(engine, LE_CMD_SET_MONITOR_INPUT, output_mask, (float)iv);
+}
+
+int32_t le_engine_set_monitor_input_dry(le_engine* engine, int32_t input,
+                                        int32_t dry_output_mask) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_MONITOR_INPUT_DRY, dry_output_mask,
+                 (float)input);
 }
 
 int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
