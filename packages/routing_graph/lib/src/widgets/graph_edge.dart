@@ -15,8 +15,10 @@ class GraphEdge {
     this.dashed = false,
   });
 
-  /// The wire's endpoints, in canvas coordinates.
+  /// The wire's start point, in canvas coordinates.
   final Offset from;
+
+  /// The wire's end point, in canvas coordinates.
   final Offset to;
 
   /// The wire's stroke colour (before the faded/normal alpha is applied).

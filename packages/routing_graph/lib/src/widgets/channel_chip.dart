@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 
 /// One hardware input/output port chip in a routing graph.
 ///
@@ -39,14 +39,14 @@ class ChannelChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final surface = context.surface;
+    final theme = context.routingGraph;
     final border = excluded
-        ? surface.line
+        ? theme.line
         : strong
         ? color
         : wired
         ? color.withValues(alpha: 0.7)
-        : surface.line.withValues(alpha: 0.6);
+        : theme.line.withValues(alpha: 0.6);
     return MouseRegion(
       cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
       child: GestureDetector(
@@ -57,7 +57,7 @@ class ChannelChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: !excluded && strong
                 ? color.withValues(alpha: 0.28)
-                : surface.card,
+                : theme.card,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: border, width: strong ? 1.6 : 1),
           ),
@@ -66,10 +66,10 @@ class ChannelChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               color: excluded
-                  ? surface.textTertiary
+                  ? theme.textTertiary
                   : wired
-                  ? surface.textPrimary
-                  : surface.textTertiary,
+                  ? theme.textPrimary
+                  : theme.textTertiary,
               decoration: excluded ? TextDecoration.lineThrough : null,
             ),
           ),

@@ -1,18 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/common/routing_graph/channel_chip.dart';
-import 'package:loopy/common/routing_graph/effect_chain_card.dart';
-import 'package:loopy/common/routing_graph/effect_params_editor.dart';
-import 'package:loopy/common/routing_graph/graph_canvas.dart';
-import 'package:loopy/common/routing_graph/graph_edge.dart';
-import 'package:loopy/common/routing_graph/graph_edge_painter.dart';
-import 'package:loopy/common/routing_graph/graph_geometry.dart';
+import 'package:loopy/common/effect_params_editor.dart';
 import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/routing_graph.dart';
 
 /// Opens the input-monitoring routing graph as a full-screen page (so it has
 /// room instead of a cramped panel). Re-provides the [MonitorCubit] into the
@@ -53,7 +47,7 @@ Future<void> showMonitorRoutingPage({
 /// input focused, the Effected/Dry toggle picks which send an output tap wires.
 ///
 /// Drawing, cards, chips, and the zoom/pan canvas come from the shared routing
-/// graph kit (`lib/common/routing_graph`); this view owns the monitor-specific
+/// graph package (`package:routing_graph`); this view owns the monitor-specific
 /// assembly: the dual-route geometry, the node body, the Stop / Effected-Dry
 /// controls, the wet/dry legend, and the internal selection that drives the
 /// [MonitorCubit].

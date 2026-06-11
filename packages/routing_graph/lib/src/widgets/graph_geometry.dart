@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/common/routing_graph/graph_edge.dart';
+import 'package:routing_graph/src/widgets/graph_edge.dart';
 
-/// Shared effect-card metrics for every routing graph, so a card's footprint
-/// and its drag-feedback ghost stay in lock-step without threading pixels
-/// through widget constructors.
+/// The width of an effect card in a chain.
+///
+/// Shared across every routing graph so a card's footprint and its
+/// drag-feedback ghost stay in lock-step without threading pixels through
+/// widget constructors.
 const double kRoutingCardWidth = 116;
+
+/// The height of an effect card in a chain.
 const double kRoutingCardHeight = 40;
 
 /// Gap between effect cards in a chain.
@@ -13,8 +17,9 @@ const double kRoutingCardGap = 16;
 /// The square slot reserved for the add-effect button at a chain's end.
 const double kRoutingAddSlot = 30;
 
-/// Positions [child] in a graph [Stack] by its left edge and vertical centre,
-/// so callers think in node centres rather than top-left corners.
+/// Positions [child] in a graph [Stack] by its [left] edge and vertical centre
+/// [centerY], sizing it [width]×[height], so callers think in node centres
+/// rather than top-left corners.
 Positioned positionedNode({
   required double left,
   required double centerY,
@@ -46,8 +51,10 @@ class GraphSend {
     this.dashed = false,
   });
 
-  /// Where the send leaves the row.
+  /// The horizontal position where the send leaves the row.
   final double originX;
+
+  /// The vertical position where the send leaves the row.
   final double originY;
 
   /// The output channels this send feeds, as a bitmask.
@@ -80,6 +87,9 @@ List<double> cardColumnXs({
 /// The wires that run along one row through its effect cards: node → first
 /// card, then card → card. The send from the last card onward is built by
 /// [fanEdges] (its origin is the chain's right edge).
+///
+/// Wires leave [nodeRight] at height [y], threading the [cardW]-wide cards at
+/// [cardXs] in [color]; [faded] dims a non-focused row's wires.
 List<GraphEdge> chainEdges({
   required double nodeRight,
   required double y,
@@ -116,7 +126,8 @@ List<GraphEdge> chainEdges({
 /// bit out to [outX]. Routing every send through its row's empty gutter means a
 /// wire never passes behind another row's cards, however short the chain.
 ///
-/// [outY] maps an output index and the output count to its vertical position.
+/// [outCount] is the number of outputs; [outY] maps an output index and that
+/// count to its vertical position; [faded] dims a non-focused row's wires.
 List<GraphEdge> fanEdges({
   required List<GraphSend> sends,
   required double railX,
