@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 
 /// A zoom/pan canvas for a routing graph: a fixed-size [width]×[height] stack of
 /// positioned [children] inside an [InteractiveViewer], clipped and centred on
@@ -22,8 +22,10 @@ class GraphCanvas extends StatefulWidget {
     super.key,
   });
 
-  /// The intrinsic size of the graph content.
+  /// The intrinsic width of the graph content.
   final double width;
+
+  /// The intrinsic height of the graph content.
   final double height;
 
   /// The structural identity of the current layout; a change re-fits the view.
@@ -68,7 +70,7 @@ class _GraphCanvasState extends State<GraphCanvas> {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: context.surface.surface,
+      color: context.routingGraph.surface,
       child: LayoutBuilder(
         builder: (context, constraints) {
           _maybeFit(constraints.maxWidth, constraints.maxHeight);

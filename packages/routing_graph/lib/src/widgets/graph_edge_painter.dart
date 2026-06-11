@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:loopy/common/routing_graph/graph_edge.dart';
+import 'package:routing_graph/src/widgets/graph_edge.dart';
 
 /// Paints a list of [GraphEdge]s as smooth bezier wires.
 ///

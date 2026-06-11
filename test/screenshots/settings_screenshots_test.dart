@@ -4,7 +4,6 @@ library;
 import 'dart:io';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,9 +15,24 @@ import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:routing_graph/routing_graph.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
+
+/// The deterministic golden theme: a bare dark [ThemeData] (fixed font, no
+/// seeded colours) carrying the same surface + routing-graph extensions the
+/// real app registers (via the shared [routingGraphThemeFromSurface] mapper),
+/// so widgets resolving `context.surface` / `context.routingGraph` render
+/// correctly under golden capture.
+ThemeData _goldenTheme() => ThemeData(
+  fontFamily: 'Roboto',
+  brightness: Brightness.dark,
+  extensions: [
+    SurfaceTheme.dark,
+    routingGraphThemeFromSurface(SurfaceTheme.dark),
+  ],
+);
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
@@ -106,11 +120,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          fontFamily: 'Roboto',
-          brightness: Brightness.dark,
-          extensions: const [SurfaceTheme.dark],
-        ),
+        theme: _goldenTheme(),
         home: MultiRepositoryProvider(
           providers: [
             RepositoryProvider<LooperRepository>.value(value: repository),
@@ -231,11 +241,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          fontFamily: 'Roboto',
-          brightness: Brightness.dark,
-          extensions: const [SurfaceTheme.dark],
-        ),
+        theme: _goldenTheme(),
         home: MultiRepositoryProvider(
           providers: [
             RepositoryProvider<SettingsRepository>.value(value: settings),

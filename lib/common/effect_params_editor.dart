@@ -91,35 +91,83 @@ class EffectParamsEditor extends StatelessWidget {
               ),
             ],
           ),
-          for (var p = 0; p < fx.type.paramLabels.length; p++)
-            SizedBox(
-              height: 38,
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 64,
-                    child: Text(
-                      fx.type.paramLabels[p],
-                      style: TextStyle(
-                        color: surface.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SliderTheme(
-                      data: sliderTheme,
-                      child: Slider(
-                        key: Key('${keyPrefix}_fxParam$p'),
-                        value: fx.params[p].clamp(0.0, 1.0),
-                        onChanged: (v) => onSetParam(p, v),
-                      ),
-                    ),
-                  ),
-                ],
+          for (var p = 0; p < fx.type.params.length; p++)
+            _ParamRow(
+              keyPrefix: keyPrefix,
+              index: p,
+              spec: fx.type.params[p],
+              value: fx.params[p],
+              sliderTheme: sliderTheme,
+              onChanged: (v) => onSetParam(p, v),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One labelled parameter control. A continuous slider by default; when the
+/// [spec] declares discrete steps the slider snaps to them, and when it
+/// declares a formatter the formatted value is shown both while dragging and in
+/// a trailing readout (so a musical parameter like pitch reads in its own
+/// units).
+class _ParamRow extends StatelessWidget {
+  const _ParamRow({
+    required this.keyPrefix,
+    required this.index,
+    required this.spec,
+    required this.value,
+    required this.sliderTheme,
+    required this.onChanged,
+  });
+
+  final String keyPrefix;
+  final int index;
+  final TrackEffectParam spec;
+  final double value;
+  final SliderThemeData sliderTheme;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final clamped = value.clamp(0.0, 1.0);
+    final readout = spec.format?.call(clamped);
+    return SizedBox(
+      height: 38,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(
+              spec.label,
+              style: TextStyle(color: surface.textSecondary, fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SliderTheme(
+              data: sliderTheme,
+              child: Slider(
+                key: Key('${keyPrefix}_fxParam$index'),
+                value: clamped,
+                divisions: spec.divisions,
+                label: readout,
+                onChanged: onChanged,
               ),
             ),
+          ),
+          if (readout != null) ...[
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 56,
+              child: Text(
+                readout,
+                textAlign: TextAlign.end,
+                style: TextStyle(color: surface.textPrimary, fontSize: 12),
+              ),
+            ),
+          ],
         ],
       ),
     );

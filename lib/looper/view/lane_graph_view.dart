@@ -1,20 +1,15 @@
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/routing_graph/channel_chip.dart';
-import 'package:loopy/common/routing_graph/effect_chain_card.dart';
-import 'package:loopy/common/routing_graph/effect_params_editor.dart';
-import 'package:loopy/common/routing_graph/graph_canvas.dart';
-import 'package:loopy/common/routing_graph/graph_edge.dart';
-import 'package:loopy/common/routing_graph/graph_edge_painter.dart';
-import 'package:loopy/common/routing_graph/graph_geometry.dart';
+import 'package:loopy/common/effect_params_editor.dart';
 import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/routing_graph.dart';
 
 /// The whole track as one wired graph: hardware inputs on the left, the track's
 /// **lanes** stacked in the middle (each a node + its own effect chain), and
 /// hardware outputs on the right. Bezier edges show how every lane is wired.
 ///
 /// Drawing, cards, chips, and the zoom/pan canvas come from the shared routing
-/// graph kit (`lib/common/routing_graph`); this view owns only the lane-specific
+/// graph package (`package:routing_graph`); this view owns only the
+/// lane-specific
 /// assembly: the layout geometry ([_LaneLayout]), the lane node body
 /// ([_LaneNode]), and the bottom panel ([_LanePanel]). Selection is
 /// **parent-owned** ([selectedEffect] + [onSelectEffect]); the widget holds

@@ -1,6 +1,5 @@
-import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/common/routing_graph/graph_geometry.dart';
+import 'package:routing_graph/routing_graph.dart';
 
 const _wet = Color(0xFF3B82F6);
 const _dry = Color(0xFFF59E0B);

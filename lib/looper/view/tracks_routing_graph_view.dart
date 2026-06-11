@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/common/routing_graph/graph_edge.dart';
-import 'package:loopy/common/routing_graph/graph_edge_painter.dart';
 import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/routing_graph.dart';
 
 /// Which column of the routing graph a node belongs to.
 enum RoutingNodeKind {
