@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// A dark-styled dropdown that picks an audio device by id: "System default"
 /// (empty id) plus the enumerated [devices]. A selected id that is no longer
@@ -37,9 +37,9 @@ class AudioDevicePicker extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: SetupSurfaceColors.card,
+        color: context.surface.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: SetupSurfaceColors.line),
+        border: Border.all(color: context.surface.line),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
@@ -47,10 +47,13 @@ class AudioDevicePicker extends StatelessWidget {
           key: Key(pickerKey),
           value: value,
           isExpanded: true,
-          dropdownColor: SetupSurfaceColors.cardHi,
+          dropdownColor: context.surface.cardHigh,
           borderRadius: BorderRadius.circular(12),
-          icon: const Icon(Icons.expand_more, color: SetupSurfaceColors.t2),
-          style: const TextStyle(color: SetupSurfaceColors.t1, fontSize: 14),
+          icon: Icon(
+            Icons.expand_more,
+            color: context.surface.textSecondary,
+          ),
+          style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
           items: [
             DropdownMenuItem(
               value: '',

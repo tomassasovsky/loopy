@@ -11,6 +11,7 @@ import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/tracks_routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -61,7 +62,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
         // the rail's ink taps need) instead of the old centered 940×640 panel.
         // CallbackShortcuts + Focus stay outside it so Esc still closes.
         child: Scaffold(
-          backgroundColor: SetupSurfaceColors.bg,
+          backgroundColor: context.surface.background,
           body: Stack(
             fit: StackFit.expand,
             children: [
@@ -75,10 +76,10 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
                       onSelect: _select,
                     ),
                   ),
-                  const VerticalDivider(
+                  VerticalDivider(
                     width: 1,
                     thickness: 1,
-                    color: SetupSurfaceColors.line,
+                    color: context.surface.line,
                   ),
                   Expanded(
                     child: SingleChildScrollView(
@@ -100,10 +101,10 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
                 child: IconButton(
                   key: const Key('bpSettings_close_button'),
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.close,
                     size: 18,
-                    color: SetupSurfaceColors.t2,
+                    color: context.surface.textSecondary,
                   ),
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
@@ -322,15 +323,17 @@ class _SettingsRail extends StatelessWidget {
               Container(
                 width: 7,
                 height: 7,
-                decoration: const BoxDecoration(
-                  color: SetupSurfaceColors.accent,
+                decoration: BoxDecoration(
+                  color: context.surface.accent,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 9),
               Text(
                 'SETTINGS',
-                style: setupKicker.copyWith(color: SetupSurfaceColors.t2),
+                style: setupKicker.copyWith(
+                  color: context.surface.textSecondary,
+                ),
               ),
             ],
           ),
@@ -367,7 +370,7 @@ class _SectionTab extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.only(bottom: 4),
         child: Material(
-          color: selected ? SetupSurfaceColors.cardHi : Colors.transparent,
+          color: selected ? context.surface.cardHigh : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
             key: Key('bpSettings_tab_${section.name}'),
@@ -379,8 +382,8 @@ class _SectionTab extends StatelessWidget {
                 section.label,
                 style: TextStyle(
                   color: selected
-                      ? SetupSurfaceColors.t1
-                      : SetupSurfaceColors.t2,
+                      ? context.surface.textPrimary
+                      : context.surface.textSecondary,
                   fontSize: 14,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
