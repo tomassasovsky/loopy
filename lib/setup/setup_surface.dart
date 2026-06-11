@@ -48,43 +48,6 @@ const setupSliderTheme = SliderThemeData(
   thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
 );
 
-/// A centered, bordered panel used by onboarding and settings flows.
-class SetupSurfacePanel extends StatelessWidget {
-  const SetupSurfacePanel({
-    required this.child,
-    this.maxWidth = 940,
-    this.maxHeight = 640,
-    super.key,
-  });
-
-  final Widget child;
-  final double maxWidth;
-  final double maxHeight;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: SetupSurfaceColors.bg,
-      body: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: SetupSurfaceColors.surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: SetupSurfaceColors.line),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: child,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Section label with a trailing rule, matching the audio setup controls.
 class SetupGroupLabel extends StatelessWidget {
   const SetupGroupLabel(this.label, {super.key});

@@ -57,8 +57,12 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
       },
       child: Focus(
         autofocus: true,
-        child: SetupSurfacePanel(
-          child: Stack(
+        // Full-bleed: a full-screen Scaffold (supplying the Material ancestor
+        // the rail's ink taps need) instead of the old centered 940×640 panel.
+        // CallbackShortcuts + Focus stay outside it so Esc still closes.
+        child: Scaffold(
+          backgroundColor: SetupSurfaceColors.bg,
+          body: Stack(
             fit: StackFit.expand,
             children: [
               Row(
