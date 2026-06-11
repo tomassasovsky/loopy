@@ -112,12 +112,14 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   moved to `lane_*` / `monitor_input*` keys (old `track_*mask`/`track_effects`/
   `monitor.*` keys dropped, drop-and-default — no migration). Session export
   stays **lane-0 only** (documented follow-up).
-- **Multi-lane routing UI (PR 5) is landed.** The per-track routing page is now a
-  **stacked list of lane strips** (`lane_strip_view.dart`): each lane is an
-  `In ▸ Lane (vol/mute) ▸ effects ▸ Out` strip with a single-input dropdown,
-  per-lane output chips, a drag-reorderable effect chain (tap a chip to edit its
-  type + params inline), and add/remove-lane controls (lanes are a stack — only
-  the last is removable, capped at `LE_MAX_LANES`). New **lane-addressed**
+- **Multi-lane routing UI (PR 5) is landed.** The per-track routing page is one
+  **unified wiring graph** (`lane_graph_view.dart`): hardware inputs on the left,
+  the track's lanes stacked in the middle (each a node + its own effect chain),
+  hardware outputs on the right, with bezier edges showing every lane's wiring on
+  a zoom/pan canvas. Tap a lane node to *focus* it, then tap input/output nodes to
+  (re)wire that lane; effects drag-to-reorder and tap-to-edit in a docked panel
+  that also holds the focused lane's mix and add/remove-lane (lanes are a stack —
+  only the last is removable, capped at `kMaxLanes`). New **lane-addressed**
   `LooperBloc` events (`LooperLane{Count,Input,Output,Volume,Mute,Effects,
   EffectParam}Changed`) replace the lane-0-only mask/track-effect events; each
   forwards to the matching `setLane*` repo method and persists the per-lane
