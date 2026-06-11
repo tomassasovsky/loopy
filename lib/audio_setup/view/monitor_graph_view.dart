@@ -527,7 +527,7 @@ class _GraphLayout {
   // The dry edge leaves below the node so it clears the cards.
   static const double dryDrop = cardH / 2 + 10;
 
-  /// The x at which the first effect card sits (also the empty-chain drop spot).
+  /// The x of the first effect card (also the empty-chain drop spot).
   static const double cardStartX = pad + chW + fanGap + nodeW + gap;
 
   /// Monitored input indices, in input order (one middle row each).
