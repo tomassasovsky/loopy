@@ -1,12 +1,13 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
-import 'package:loopy/audio_setup/view/monitor_graph_view.dart';
+import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_view.dart';
+import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/routing_graph.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-import '../../helpers/helpers.dart';
+import '../../../helpers/helpers.dart';
 
 void main() {
   group('MonitorGraphView', () {
@@ -226,6 +227,36 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(cubit.state.forInput(0).enabled, isFalse);
+    });
+
+    testWidgets('an output reached only by a dry send is amber', (
+      tester,
+    ) async {
+      // Seed: input 0 monitored, wet → Out 2 only, dry → Out 1 only. Nothing
+      // is focused (focus is view-local and starts null), so the output chips
+      // show their union colours.
+      await cubit.setEnabled(0, enabled: true);
+      await cubit.setOutputMask(0, 0x2); // wet → bit 1 (Out 2)
+      await cubit.setDryOutputMask(0, 0x1); // dry → bit 0 (Out 1)
+      await pump(tester);
+
+      final context = tester.element(
+        find.byKey(const Key('monitorGraph_out_0')),
+      );
+      final surface = context.surface;
+      final dryOut = tester.widget<ChannelChip>(
+        find.byKey(const Key('monitorGraph_out_0')),
+      );
+      final wetOut = tester.widget<ChannelChip>(
+        find.byKey(const Key('monitorGraph_out_1')),
+      );
+
+      // Out 1 is reached only by the dry send → amber, wired, not emphasised.
+      expect(dryOut.color, surface.dryRoute);
+      expect(dryOut.wired, isTrue);
+      expect(dryOut.strong, isFalse);
+      // Out 2 is reached by the wet send → blue.
+      expect(wetOut.color, surface.wetRoute);
     });
   });
 }
