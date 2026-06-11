@@ -1,6 +1,9 @@
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:loopy/common/routing_graph/graph_colors.dart';
 import 'package:loopy/common/routing_graph/graph_geometry.dart';
+
+const _wet = Color(0xFF3B82F6);
+const _dry = Color(0xFFF59E0B);
 
 void main() {
   group('cardColumnXs', () {
@@ -21,7 +24,7 @@ void main() {
         y: 50,
         cardXs: const [100, 230],
         cardW: 100,
-        color: kWetRouteColor,
+        color: _wet,
         faded: false,
       );
       // node(0) -> card0(100), then card0 right(200) -> card1(230).
@@ -39,7 +42,7 @@ void main() {
           y: 0,
           cardXs: const [],
           cardW: 100,
-          color: kWetRouteColor,
+          color: _wet,
           faded: false,
         ),
         isEmpty,
@@ -57,7 +60,7 @@ void main() {
             originX: 100,
             originY: 50,
             mask: 0x3,
-            color: kWetRouteColor,
+            color: _wet,
           ),
         ],
         railX: 200,
@@ -77,7 +80,7 @@ void main() {
     test('skips a send with an empty mask', () {
       final edges = fanEdges(
         sends: const [
-          GraphSend(originX: 100, originY: 50, mask: 0, color: kWetRouteColor),
+          GraphSend(originX: 100, originY: 50, mask: 0, color: _wet),
         ],
         railX: 200,
         outX: 300,
@@ -95,7 +98,7 @@ void main() {
             originX: 205,
             originY: 50,
             mask: 0x1,
-            color: kWetRouteColor,
+            color: _wet,
           ),
         ],
         railX: 200,
@@ -120,13 +123,13 @@ void main() {
             originX: 150,
             originY: wetY,
             mask: 0x1,
-            color: kWetRouteColor,
+            color: _wet,
           ),
           GraphSend(
             originX: 100,
             originY: dryY,
             mask: 0x1,
-            color: kDryRouteColor,
+            color: _dry,
             dashed: true,
           ),
         ],
@@ -136,8 +139,8 @@ void main() {
         outY: outY,
         faded: false,
       );
-      final wet = edges.where((e) => e.color == kWetRouteColor).toList();
-      final dry = edges.where((e) => e.color == kDryRouteColor).toList();
+      final wet = edges.where((e) => e.color == _wet).toList();
+      final dry = edges.where((e) => e.color == _dry).toList();
       expect(wet, isNotEmpty);
       expect(dry, isNotEmpty);
       // Every wet origin sits at wetY; every dry origin at the distinct dryY.

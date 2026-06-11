@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
@@ -76,6 +77,7 @@ void main() {
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     MaterialApp(
+      theme: AppTheme.bigPicture,
       home: MultiRepositoryProvider(
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
@@ -286,6 +288,7 @@ void main() {
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
           ],
           child: MaterialApp(
+            theme: AppTheme.bigPicture,
             home: Builder(
               builder: (context) => Scaffold(
                 body: Center(

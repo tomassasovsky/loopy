@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/common/routing_graph/graph_edge.dart';
 import 'package:loopy/common/routing_graph/graph_edge_painter.dart';
-import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
 
 /// Which column of the routing graph a node belongs to.
 enum RoutingNodeKind {
@@ -452,7 +452,7 @@ class _TracksRoutingGraphViewState extends State<TracksRoutingGraphView> {
         GraphEdge(
           Offset(center(edge.from).dx + half, center(edge.from).dy),
           Offset(center(edge.to).dx - half, center(edge.to).dy),
-          color: SetupSurfaceColors.accent,
+          color: context.surface.accent,
           faded: highlighted != null && !highlighted.contains(edge),
         ),
     ];
@@ -531,30 +531,30 @@ class _GraphNode extends StatelessWidget {
     Color fill;
     Color border;
     var borderWidth = 1.0;
-    var textColor = SetupSurfaceColors.t1;
+    var textColor = context.surface.textPrimary;
 
     if (node.excluded) {
-      fill = SetupSurfaceColors.cardHi;
-      border = SetupSurfaceColors.line;
-      textColor = SetupSurfaceColors.t3;
+      fill = context.surface.cardHigh;
+      border = context.surface.line;
+      textColor = context.surface.textTertiary;
     } else if (isTrack) {
-      fill = SetupSurfaceColors.accent.withValues(alpha: armed ? 0.34 : 0.18);
+      fill = context.surface.accent.withValues(alpha: armed ? 0.34 : 0.18);
       border = armed
-          ? SetupSurfaceColors.accent
-          : SetupSurfaceColors.accent.withValues(alpha: 0.6);
+          ? context.surface.accent
+          : context.surface.accent.withValues(alpha: 0.6);
       borderWidth = armed ? 2 : 1;
     } else if (isTarget) {
       // A channel that can be wired to the armed track.
       fill = connected ?? false
-          ? SetupSurfaceColors.accent.withValues(alpha: 0.30)
-          : SetupSurfaceColors.card;
+          ? context.surface.accent.withValues(alpha: 0.30)
+          : context.surface.card;
       border = connected ?? false
-          ? SetupSurfaceColors.accent
-          : SetupSurfaceColors.accent.withValues(alpha: 0.7);
+          ? context.surface.accent
+          : context.surface.accent.withValues(alpha: 0.7);
     } else {
-      fill = SetupSurfaceColors.card;
-      border = SetupSurfaceColors.line;
-      textColor = SetupSurfaceColors.t2;
+      fill = context.surface.card;
+      border = context.surface.line;
+      textColor = context.surface.textSecondary;
     }
     if (hovered) {
       border = Color.alphaBlend(Colors.white.withValues(alpha: 0.18), border);
@@ -586,7 +586,7 @@ class _GraphNode extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: isTrack ? FontWeight.w600 : FontWeight.w500,
                 decoration: node.excluded ? TextDecoration.lineThrough : null,
-                decorationColor: SetupSurfaceColors.t3,
+                decorationColor: context.surface.textTertiary,
               ),
             ),
           ),
