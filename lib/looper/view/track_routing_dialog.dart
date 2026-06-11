@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/lane_strip_view.dart';
+import 'package:loopy/looper/view/lane_graph_view.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Opens the per-track I/O routing page for [channel]: the signal-flow graph
@@ -258,10 +258,10 @@ class _TrackMultipleControlState extends State<_TrackMultipleControl> {
   }
 }
 
-/// The stacked per-lane routing + effects editor for one track [channel]. Each
-/// lane is a [LaneStripView] (`In ▸ Lane ▸ effects ▸ Out`); a track may add or
-/// remove lanes, and each lane records its own clean input and plays back
-/// through its own non-destructive chain.
+/// The per-track routing + effects editor: a [LaneGraphView] wiring inputs ▸
+/// lanes ▸ outputs in one canvas. A track may add or remove lanes, and each
+/// lane records its own clean input and plays back through its own
+/// non-destructive chain.
 ///
 /// Routing, mix, and lane-count edits are dispatched to the [LooperBloc]; the
 /// per-lane effect chains are held locally for snappy editing (seeded from
@@ -450,45 +450,28 @@ class _LaneListState extends State<_LaneList> {
   @override
   Widget build(BuildContext context) {
     final channel = widget.channel;
-    return ListView(
-      key: const Key('trackRouting_laneList'),
-      padding: const EdgeInsets.all(16),
-      children: [
-        for (var l = 0; l < _laneCount; l++)
-          LaneStripView(
-            key: ValueKey('trackRouting_lane_$l'),
-            laneIndex: l,
-            lane: _laneFor(l),
-            inputChannels: widget.inputChannels,
-            outputChannels: widget.outputChannels,
-            excludedInputMask: widget.excludedInputMask,
-            selectedEffect: _selected?.lane == l ? _selected!.index : null,
-            canRemove: _laneCount > 1 && l == _laneCount - 1,
-            onInputChanged: (c) =>
-                _bloc.add(LooperLaneInputChanged(channel, l, c)),
-            onOutputMaskChanged: (m) =>
-                _bloc.add(LooperLaneOutputChanged(channel, l, m)),
-            onVolumeChanged: (v) =>
-                _bloc.add(LooperLaneVolumeChanged(channel, l, v)),
-            onMuteToggled: () => _bloc.add(LooperLaneMuteToggled(channel, l)),
-            onAddEffect: () => _addEffect(l),
-            onSelectEffect: (i) => _select(l, i),
-            onMoveEffect: (f, t) => _move(l, f, t),
-            onSetType: (i, t) => _setType(l, i, t),
-            onSetParam: (i, p, v) => _setParam(l, i, p, v),
-            onRemoveEffect: (i) => _removeEffect(l, i),
-            onRemoveLane: () => _removeLane(l),
-          ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            key: const Key('trackRouting_addLane'),
-            onPressed: _laneCount >= kMaxLanes ? null : _addLane,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add lane'),
-          ),
-        ),
-      ],
+    return LaneGraphView(
+      key: const Key('trackRouting_laneGraph'),
+      lanes: [for (var l = 0; l < _laneCount; l++) _laneFor(l)],
+      inputChannels: widget.inputChannels,
+      outputChannels: widget.outputChannels,
+      excludedInputMask: widget.excludedInputMask,
+      selectedEffect: _selected,
+      onInputChanged: (l, c) =>
+          _bloc.add(LooperLaneInputChanged(channel, l, c)),
+      onOutputMaskChanged: (l, m) =>
+          _bloc.add(LooperLaneOutputChanged(channel, l, m)),
+      onVolumeChanged: (l, v) =>
+          _bloc.add(LooperLaneVolumeChanged(channel, l, v)),
+      onMuteToggled: (l) => _bloc.add(LooperLaneMuteToggled(channel, l)),
+      onAddEffect: _addEffect,
+      onSelectEffect: _select,
+      onMoveEffect: _move,
+      onSetType: _setType,
+      onSetParam: _setParam,
+      onRemoveEffect: _removeEffect,
+      onAddLane: _addLane,
+      onRemoveLane: _removeLane,
     );
   }
 }

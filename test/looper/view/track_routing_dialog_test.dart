@@ -23,7 +23,7 @@ void main() {
     const state = LooperState(
       tracks: [Track()],
       status: EngineStatus(
-        inputChannels: 2,
+        inputChannels: 3,
         outputChannels: 2,
         isConnected: true,
       ),
@@ -59,45 +59,47 @@ void main() {
       );
     }
 
-    testWidgets('opens a single lane strip by default', (tester) async {
-      await pumpOpener(tester);
+    /// Opens the dialog and focuses lane 0 (so input/output/mix taps apply).
+    Future<void> open(WidgetTester tester, {bool focus = true}) async {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      if (focus) {
+        await tester.tap(find.byKey(const Key('laneGraph_laneNode_0')));
+        await tester.pumpAndSettle();
+      }
+    }
+
+    testWidgets('opens the unified lane graph', (tester) async {
+      await pumpOpener(tester);
+      await open(tester, focus: false);
 
       expect(find.byKey(const Key('trackRouting_page')), findsOneWidget);
-      // One lane strip, with its input/output controls.
-      expect(find.byKey(const Key('lane_0')), findsOneWidget);
-      expect(find.byKey(const Key('lane_1')), findsNothing);
-      expect(find.byKey(const Key('lane_0_input')), findsOneWidget);
-      expect(find.byKey(const Key('lane_0_output_0')), findsOneWidget);
-      expect(find.text('Lane 1'), findsOneWidget);
+      expect(find.byKey(const Key('trackRouting_laneGraph')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_in_0')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_out_0')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_laneNode_0')), findsOneWidget);
+      expect(find.text('Lane 1'), findsWidgets);
     });
 
-    testWidgets('choosing a lane input dispatches LooperLaneInputChanged', (
+    testWidgets('wiring a focused lane input dispatches the change', (
       tester,
     ) async {
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester);
 
-      // Open the input dropdown and select In 2 (channel index 1).
-      await tester.tap(find.byKey(const Key('lane_0_input')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('In 2').last);
-      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('laneGraph_in_1')));
+      await tester.pump();
 
       verify(() => bloc.add(const LooperLaneInputChanged(0, 0, 1))).called(1);
     });
 
-    testWidgets('clicking an output chip dispatches LooperLaneOutputChanged', (
+    testWidgets('toggling a focused lane output dispatches the change', (
       tester,
     ) async {
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester);
 
-      // Default output mask 0x3 (out 1 + 2); toggling out 1 (index 0) -> 0x2.
-      await tester.tap(find.byKey(const Key('lane_0_output_0')));
+      await tester.tap(find.byKey(const Key('laneGraph_out_0')));
       await tester.pump();
 
       verify(
@@ -105,14 +107,11 @@ void main() {
       ).called(1);
     });
 
-    testWidgets('toggling mute dispatches LooperLaneMuteToggled', (
-      tester,
-    ) async {
+    testWidgets('muting a focused lane dispatches the toggle', (tester) async {
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester);
 
-      await tester.tap(find.byKey(const Key('lane_0_mute')));
+      await tester.tap(find.byKey(const Key('laneGraph_mute')));
       await tester.pump();
 
       verify(() => bloc.add(const LooperLaneMuteToggled(0, 0))).called(1);
@@ -122,42 +121,39 @@ void main() {
       tester,
     ) async {
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester, focus: false);
 
-      await tester.tap(find.byKey(const Key('trackRouting_addLane')));
+      await tester.tap(find.byKey(const Key('laneGraph_addLane')));
       await tester.pumpAndSettle();
 
       verify(() => bloc.add(const LooperLaneCountChanged(0, 2))).called(1);
-      // The second lane strip now renders and can be removed.
-      expect(find.byKey(const Key('lane_1')), findsOneWidget);
-      expect(find.byKey(const Key('lane_1_remove')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_laneNode_1')), findsOneWidget);
     });
 
     testWidgets('removing the last lane dispatches the lower count', (
       tester,
     ) async {
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester, focus: false);
 
-      await tester.tap(find.byKey(const Key('trackRouting_addLane')));
+      await tester.tap(find.byKey(const Key('laneGraph_addLane')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('lane_1_remove')));
+      // Focus the new last lane, then remove it.
+      await tester.tap(find.byKey(const Key('laneGraph_laneNode_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('laneGraph_removeLane')));
       await tester.pumpAndSettle();
 
       verify(() => bloc.add(const LooperLaneCountChanged(0, 1))).called(1);
-      expect(find.byKey(const Key('lane_1')), findsNothing);
+      expect(find.byKey(const Key('laneGraph_laneNode_1')), findsNothing);
     });
 
     testWidgets('choosing a quantize override dispatches the change', (
       tester,
     ) async {
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester, focus: false);
 
-      // Quantize / loop length live behind the AppBar settings button.
       await tester.tap(find.byKey(const Key('trackRouting_settings_button')));
       await tester.pumpAndSettle();
 
@@ -170,36 +166,15 @@ void main() {
       ).called(1);
     });
 
-    testWidgets('choosing a loop multiple dispatches the change', (
+    testWidgets('adding an effect dispatches the lane chain and opens editor', (
       tester,
     ) async {
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
+      await open(tester, focus: false);
+
+      await tester.tap(find.byKey(const Key('laneGraph_addFx_0')));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('trackRouting_settings_button')));
-      await tester.pumpAndSettle();
-
-      final chip = find.byKey(const Key('trackRouting_multiple_2'));
-      await tester.ensureVisible(chip);
-      await tester.tap(chip);
-      await tester.pump();
-      verify(
-        () => bloc.add(const LooperTrackMultipleChanged(0, 2)),
-      ).called(1);
-    });
-
-    testWidgets('adding an effect dispatches the lane chain', (tester) async {
-      await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      final add = find.byKey(const Key('lane_0_fx_add'));
-      await tester.ensureVisible(add);
-      await tester.tap(add);
-      await tester.pumpAndSettle();
-
-      // A default (drive) effect is appended to lane 0 and its editor opens.
       verify(
         () => bloc.add(
           any(
@@ -210,93 +185,8 @@ void main() {
           ),
         ),
       ).called(1);
-      expect(find.byKey(const Key('lane_0_fx_0')), findsOneWidget);
-      expect(find.byKey(const Key('lane_0_fx_editor')), findsOneWidget);
-    });
-
-    testWidgets('the effect editor shows the type and parameter sliders', (
-      tester,
-    ) async {
-      await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('lane_0_fx_type')), findsNothing);
-
-      await tester.tap(find.byKey(const Key('lane_0_fx_add')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('lane_0_fx_type')), findsOneWidget);
-      expect(find.byKey(const Key('lane_0_fx_param0')), findsOneWidget);
-      expect(find.byKey(const Key('lane_0_fx_param1')), findsOneWidget);
-    });
-
-    testWidgets('dragging a param slider dispatches the granular param event', (
-      tester,
-    ) async {
-      await settings.saveLaneEffects(
-        0,
-        0,
-        encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
-      );
-      await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      // Select the preloaded card to open its editor.
-      await tester.tap(find.byKey(const Key('lane_0_fx_0')));
-      await tester.pumpAndSettle();
-
-      final slider = find.byKey(const Key('lane_0_fx_param0'));
-      await tester.ensureVisible(slider);
-      await tester.drag(slider, const Offset(200, 0));
-      await tester.pump();
-
-      verify(
-        () => bloc.add(
-          any(
-            that: isA<LooperLaneEffectParamChanged>()
-                .having((e) => e.channel, 'channel', 0)
-                .having((e) => e.lane, 'lane', 0)
-                .having((e) => e.index, 'index', 0)
-                .having((e) => e.param, 'param', 0),
-          ),
-        ),
-      ).called(greaterThanOrEqualTo(1));
-    });
-
-    testWidgets('a saved per-lane chain is preloaded into the strip', (
-      tester,
-    ) async {
-      await settings.saveLaneEffects(
-        0,
-        0,
-        encodeTrackEffects([
-          TrackEffect(type: TrackEffectType.tremolo),
-          TrackEffect(type: TrackEffectType.delay),
-        ]),
-      );
-      await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('lane_0_fx_0')), findsOneWidget);
-      expect(find.byKey(const Key('lane_0_fx_1')), findsOneWidget);
-      expect(find.text('Tremolo'), findsWidgets);
-      expect(find.text('Delay'), findsWidgets);
-    });
-
-    testWidgets('a saved lane count restores multiple strips', (tester) async {
-      await settings.saveLaneCount(0, 2);
-      await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('lane_0')), findsOneWidget);
-      expect(find.byKey(const Key('lane_1')), findsOneWidget);
-      // Only the last lane in the stack is removable.
-      expect(find.byKey(const Key('lane_0_remove')), findsNothing);
-      expect(find.byKey(const Key('lane_1_remove')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_fx_0_0')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_fxEditor')), findsOneWidget);
     });
 
     testWidgets('changing an effect type dispatches the new chain', (
@@ -308,12 +198,11 @@ void main() {
         encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
       );
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester, focus: false);
 
-      await tester.tap(find.byKey(const Key('lane_0_fx_0')));
+      await tester.tap(find.byKey(const Key('laneGraph_fxLabel_0_0')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('lane_0_fx_type')));
+      await tester.tap(find.byKey(const Key('laneGraph_fxType')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Filter').last);
       await tester.pumpAndSettle();
@@ -333,6 +222,37 @@ void main() {
       ).called(1);
     });
 
+    testWidgets('dragging a param slider dispatches the granular event', (
+      tester,
+    ) async {
+      await settings.saveLaneEffects(
+        0,
+        0,
+        encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
+      );
+      await pumpOpener(tester);
+      await open(tester, focus: false);
+
+      await tester.tap(find.byKey(const Key('laneGraph_fxLabel_0_0')));
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const Key('laneGraph_fxParam0')),
+        const Offset(160, 0),
+      );
+      await tester.pump();
+
+      verify(
+        () => bloc.add(
+          any(
+            that: isA<LooperLaneEffectParamChanged>()
+                .having((e) => e.lane, 'lane', 0)
+                .having((e) => e.index, 'index', 0)
+                .having((e) => e.param, 'param', 0),
+          ),
+        ),
+      ).called(greaterThanOrEqualTo(1));
+    });
+
     testWidgets('dragging a card reorders the lane chain', (tester) async {
       await settings.saveLaneEffects(
         0,
@@ -343,16 +263,14 @@ void main() {
         ]),
       );
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester, focus: false);
 
-      final handle = find.byKey(const Key('lane_0_fx_handle_0'));
+      final handle = find.byKey(const Key('laneGraph_fx_handle_0_0'));
+      final target = find.byKey(const Key('laneGraph_drop_0_2'));
       final gesture = await tester.startGesture(tester.getCenter(handle));
-      await tester.pump(const Duration(milliseconds: 200));
-      for (var i = 0; i < 4; i++) {
-        await gesture.moveBy(const Offset(40, 0));
-        await tester.pump();
-      }
+      await tester.pump(const Duration(milliseconds: 150));
+      await gesture.moveTo(tester.getCenter(target));
+      await tester.pump();
       await gesture.up();
       await tester.pumpAndSettle();
 
@@ -369,21 +287,47 @@ void main() {
       ).called(1);
     });
 
+    testWidgets('a saved per-lane chain is preloaded onto its lane', (
+      tester,
+    ) async {
+      await settings.saveLaneEffects(
+        0,
+        0,
+        encodeTrackEffects([
+          TrackEffect(type: TrackEffectType.tremolo),
+          TrackEffect(type: TrackEffectType.delay),
+        ]),
+      );
+      await pumpOpener(tester);
+      await open(tester, focus: false);
+
+      expect(find.byKey(const Key('laneGraph_fx_0_0')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_fx_0_1')), findsOneWidget);
+      expect(find.text('Tremolo'), findsWidgets);
+      expect(find.text('Delay'), findsWidgets);
+    });
+
+    testWidgets('a saved lane count restores multiple lane nodes', (
+      tester,
+    ) async {
+      await settings.saveLaneCount(0, 2);
+      await pumpOpener(tester);
+      await open(tester, focus: false);
+
+      expect(find.byKey(const Key('laneGraph_laneNode_0')), findsOneWidget);
+      expect(find.byKey(const Key('laneGraph_laneNode_1')), findsOneWidget);
+    });
+
     testWidgets('the add-lane button is disabled at the lane cap', (
       tester,
     ) async {
       await settings.saveLaneCount(0, 8); // LE_MAX_LANES
       await pumpOpener(tester);
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      await open(tester, focus: false);
 
-      final addLaneFinder = find.byKey(const Key('trackRouting_addLane'));
-      await tester.scrollUntilVisible(
-        addLaneFinder,
-        300,
-        scrollable: find.byType(Scrollable).first,
+      final addLane = tester.widget<TextButton>(
+        find.byKey(const Key('laneGraph_addLane')),
       );
-      final addLane = tester.widget<TextButton>(addLaneFinder);
       expect(addLane.onPressed, isNull);
     });
   });
