@@ -140,6 +140,77 @@ void main() {
       expect(cubit.state.forInput(0).effects, hasLength(1));
     });
 
+    testWidgets('dragging an effect handle reorders the chain', (tester) async {
+      await cubit.setEnabled(0, enabled: true);
+      cubit
+        ..addEffect(0)
+        ..setEffectType(0, 0, TrackEffectType.drive)
+        ..addEffect(0)
+        ..setEffectType(0, 1, TrackEffectType.delay);
+      await pump(tester);
+
+      final handle = find.byKey(const Key('monitorGraph_fxHandle_0_0'));
+      final target = find.byKey(const Key('monitorGraph_fx_0_1'));
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      await tester.pump(const Duration(milliseconds: 150));
+      await gesture.moveTo(tester.getCenter(target));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        cubit.state.forInput(0).effects.map((e) => e.type),
+        [TrackEffectType.delay, TrackEffectType.drive],
+      );
+    });
+
+    testWidgets('an excluded (loopback) input cannot be monitored', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        BlocProvider<MonitorCubit>.value(
+          value: cubit,
+          child: const Scaffold(
+            body: MonitorGraphView(
+              inputChannels: 3,
+              outputChannels: 2,
+              excludedInputMask: 0x1, // In 1 is loopback
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('monitorGraph_in_0')));
+      await tester.pumpAndSettle();
+      expect(cubit.state.forInput(0).enabled, isFalse);
+    });
+
+    testWidgets('re-tapping the focused node unfocuses it', (tester) async {
+      await cubit.setEnabled(0, enabled: true);
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('monitorGraph_node_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('monitorGraph_node_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsNothing);
+    });
+
+    testWidgets('tapping an output with nothing focused is a no-op', (
+      tester,
+    ) async {
+      // Enabling through the cubit does not focus a node, so no input is wired.
+      await cubit.setEnabled(0, enabled: true);
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('monitorGraph_out_1')));
+      await tester.pumpAndSettle();
+      expect(cubit.state.forInput(0).outputMask, 0x3); // unchanged
+    });
+
     testWidgets('Stop disables monitoring of the focused input', (
       tester,
     ) async {

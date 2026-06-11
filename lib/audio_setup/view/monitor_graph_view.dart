@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -34,6 +36,20 @@ Future<void> showMonitorRoutingPage({
   );
 }
 
+/// Colours shared across the graph. Wet = effected route, dry = clean send.
+const Color _wet = Color(0xFF3B82F6);
+const Color _dry = Color(0xFFF59E0B);
+
+/// The slider styling for the effect-parameter editor.
+const _paramSliderTheme = SliderThemeData(
+  trackHeight: 3,
+  activeTrackColor: _wet,
+  inactiveTrackColor: SetupSurfaceColors.line,
+  thumbColor: _wet,
+  overlayShape: RoundSliderOverlayShape(overlayRadius: 12),
+  thumbShape: RoundSliderThumbShape(enabledThumbRadius: 7),
+);
+
 /// A reference to one effect within a monitored input's chain, used as the
 /// drag payload when reordering (so a drop only lands on the same input).
 @immutable
@@ -51,9 +67,8 @@ class _FxRef {
 /// the **effected (wet)** signal runs through the chain to its outputs (blue),
 /// and the **clean (dry)** signal is sent, untouched, to its own outputs
 /// (amber, dashed). Tap an input to start monitoring it and focus it; with an
-/// input focused, the wet/dry toggle below picks which send an output tap
-/// wires. The graph zooms/pans and fits to view. Reads and drives the
-/// [MonitorCubit].
+/// input focused, the Effected/Dry toggle picks which send an output tap wires.
+/// The graph zooms/pans and fits to view. Reads and drives the [MonitorCubit].
 class MonitorGraphView extends StatefulWidget {
   /// Creates a [MonitorGraphView].
   const MonitorGraphView({
@@ -70,30 +85,14 @@ class MonitorGraphView extends StatefulWidget {
   /// Loopback inputs, drawn dimmed and never monitorable.
   final int excludedInputMask;
 
-  static const Color _wet = Color(0xFF3B82F6); // effected
-  static const Color _dry = Color(0xFFF59E0B); // clean
-
-  // ---- geometry ----
-  static const double _chW = 54;
-  static const double _chH = 24;
-  static const double _nodeW = 128;
-  static const double _nodeH = 50;
-  static const double _cardW = 110;
-  static const double _cardH = 38;
-  static const double _gap = 16;
-  static const double _fan = 92;
-  static const double _addW = 28;
-  static const double _rowH = 80;
-  static const double _chRowH = 32;
-  static const double _pad = 16;
-  static const double _curveHandle = 46;
-
   @override
   State<MonitorGraphView> createState() => _MonitorGraphViewState();
 }
 
 class _MonitorGraphViewState extends State<MonitorGraphView> {
   final TransformationController _tc = TransformationController();
+
+  /// The effect currently being dragged to reorder, or null.
   _FxRef? _dragging;
 
   /// The input whose outputs are being wired, or null.
@@ -105,7 +104,9 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
   /// The selected (open-in-the-editor) effect, as `(input, index)`, or null.
   ({int input, int index})? _selected;
 
-  int _fittedKey = -1;
+  /// Identity of the last fitted layout, so we re-fit only on structural
+  /// changes (lane/effect count), not on every focus tap.
+  Object? _fittedKey;
 
   @override
   void dispose() {
@@ -118,100 +119,61 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
   int get _inCount => widget.inputChannels > 0 ? widget.inputChannels : 4;
   int get _outCount => widget.outputChannels > 0 ? widget.outputChannels : 2;
 
-  bool _excluded(int c) => widget.excludedInputMask & (1 << c) != 0;
-
-  /// Monitored (enabled) input indices, in input order — one middle row each.
-  List<int> _monitored(MonitorState s) => [
-    for (var c = 0; c < _inCount; c++)
-      if (s.forInput(c).enabled && !_excluded(c)) c,
-  ];
-
   @override
   Widget build(BuildContext context) {
     final state = context.watch<MonitorCubit>().state;
+    final layout = _GraphLayout.compute(
+      state: state,
+      inCount: _inCount,
+      outCount: _outCount,
+      excludedMask: widget.excludedInputMask,
+      focused: _focused,
+    );
     return Column(
       children: [
-        Expanded(child: _canvas(state)),
-        _panel(state),
+        Expanded(child: _canvas(state, layout)),
+        _RoutePanel(
+          monitor: _focused == null ? null : state.forInput(_focused!),
+          wireDry: _wireDry,
+          selectedFx: _selectedEffect(state),
+          onWireModeChanged: (dry) => setState(() => _wireDry = dry),
+          onStop: () {
+            final f = _focused!;
+            unawaited(_cubit.setEnabled(f, enabled: false));
+            setState(() {
+              _focused = null;
+              _selected = null;
+            });
+          },
+          onSetType: (t) =>
+              _cubit.setEffectType(_selected!.input, _selected!.index, t),
+          onSetParam: (p, v) =>
+              _cubit.setEffectParam(_selected!.input, _selected!.index, p, v),
+          onRemove: () {
+            _cubit.removeEffect(_selected!.input, _selected!.index);
+            setState(() => _selected = null);
+          },
+        ),
       ],
     );
   }
 
+  /// The selected effect, or null if the selection is stale.
+  TrackEffect? _selectedEffect(MonitorState state) {
+    final s = _selected;
+    if (s == null || !state.forInput(s.input).enabled) return null;
+    final effects = state.forInput(s.input).effects;
+    return s.index < effects.length ? effects[s.index] : null;
+  }
+
   // ---- canvas ----
 
-  Widget _canvas(MonitorState state) {
-    const g = MonitorGraphView._gap;
-    const chW = MonitorGraphView._chW;
-    const nodeW = MonitorGraphView._nodeW;
-    const cardW = MonitorGraphView._cardW;
-    const addW = MonitorGraphView._addW;
-    const inX = MonitorGraphView._pad;
-    const nodeX = inX + chW + MonitorGraphView._fan;
-    const cardStartX = nodeX + nodeW + g;
-
-    final rows = _monitored(state);
-
-    // Per monitored input: card x positions + the row's right edge.
-    final cardXs = <int, List<double>>{};
-    var widestRight = cardStartX;
-    for (final c in rows) {
-      final xs = <double>[];
-      var x = cardStartX;
-      for (var k = 0; k < state.forInput(c).effects.length; k++) {
-        xs.add(x);
-        x += cardW + g;
-      }
-      cardXs[c] = xs;
-      final right = x + addW;
-      if (right > widestRight) widestRight = right;
-    }
-    final outX = widestRight + MonitorGraphView._fan;
-    final canvasW = outX + chW + MonitorGraphView._pad;
-
-    final rowsBlockH = rows.length * MonitorGraphView._rowH;
-    final channelsH =
-        (_inCount > _outCount ? _inCount : _outCount) *
-        MonitorGraphView._chRowH;
-    final canvasH =
-        (rowsBlockH > channelsH ? rowsBlockH : channelsH) +
-        MonitorGraphView._pad * 2;
-    final rowsTop = (canvasH - rowsBlockH) / 2;
-
-    double rowY(int r) =>
-        rowsTop + r * MonitorGraphView._rowH + MonitorGraphView._rowH / 2;
-    double chY(int i, int count) => canvasH / count * (i + 0.5);
-    final rowOf = {for (var r = 0; r < rows.length; r++) rows[r]: r};
-
-    final edges = _edges(
-      state: state,
-      rows: rows,
-      rowOf: rowOf,
-      cardXs: cardXs,
-      nodeX: nodeX,
-      inX: inX,
-      outX: outX,
-      rowY: rowY,
-      chY: chY,
-    );
-
-    final layoutKey = Object.hashAll([
-      rows.length,
-      for (final c in rows) state.forInput(c).effects.length,
-      _inCount,
-      _outCount,
-    ]);
-
+  Widget _canvas(MonitorState state, _GraphLayout layout) {
     return ColoredBox(
       color: SetupSurfaceColors.surface,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          _maybeFit(
-            constraints.maxWidth,
-            constraints.maxHeight,
-            canvasW,
-            canvasH,
-            layoutKey,
-          );
+          _maybeFit(constraints.maxWidth, constraints.maxHeight, layout);
           return ClipRect(
             child: InteractiveViewer(
               transformationController: _tc,
@@ -220,32 +182,9 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
               minScale: 0.3,
               maxScale: 3,
               child: SizedBox(
-                width: canvasW,
-                height: canvasH,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: CustomPaint(painter: _PathPainter(edges)),
-                    ),
-                    for (var c = 0; c < _inCount; c++)
-                      _inNode(state, c, inX, chY(c, _inCount)),
-                    for (var c = 0; c < _outCount; c++)
-                      _outNode(state, c, outX, chY(c, _outCount)),
-                    for (final c in rows) ...[
-                      _monitorNode(state, c, nodeX, rowY(rowOf[c]!)),
-                      for (var k = 0; k < cardXs[c]!.length; k++)
-                        _fxCard(state, c, k, cardXs[c]![k], rowY(rowOf[c]!)),
-                      _addFxButton(
-                        state,
-                        c,
-                        cardXs[c]!.isEmpty
-                            ? cardStartX
-                            : cardXs[c]!.last + cardW + g,
-                        rowY(rowOf[c]!),
-                      ),
-                    ],
-                  ],
-                ),
+                width: layout.canvasW,
+                height: layout.canvasH,
+                child: Stack(children: _canvasChildren(state, layout)),
               ),
             ),
           );
@@ -254,52 +193,265 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     );
   }
 
-  void _maybeFit(double vw, double vh, double cw, double ch, int key) {
-    if (_fittedKey == key || vw <= 0 || vh <= 0) return;
-    _fittedKey = key;
-    var scale = vw / cw;
-    if (ch * scale > vh) scale = vh / ch;
+  List<Widget> _canvasChildren(MonitorState state, _GraphLayout layout) {
+    return [
+      Positioned.fill(child: CustomPaint(painter: _PathPainter(layout.edges))),
+      for (var c = 0; c < _inCount; c++) _inNode(state, layout, c),
+      for (var c = 0; c < _outCount; c++) _outNode(state, layout, c),
+      for (final c in layout.rows) ..._monitorRow(state, layout, c),
+    ];
+  }
+
+  Iterable<Widget> _monitorRow(
+    MonitorState state,
+    _GraphLayout layout,
+    int c,
+  ) sync* {
+    final y = layout.rowY(c);
+    yield _positioned(
+      layout.nodeX,
+      y,
+      _GraphLayout.nodeW,
+      _GraphLayout.nodeH,
+      _MonitorNode(
+        input: c,
+        focused: _focused == c,
+        onTap: () => setState(() {
+          _focused = _focused == c ? null : c;
+          _selected = null;
+        }),
+      ),
+    );
+    final xs = layout.cardXs[c]!;
+    for (var k = 0; k < xs.length; k++) {
+      yield _positioned(
+        xs[k],
+        y,
+        _GraphLayout.cardW,
+        _GraphLayout.cardH,
+        _FxCard(
+          input: c,
+          index: k,
+          fx: state.forInput(c).effects[k],
+          selected: _selected?.input == c && _selected?.index == k,
+          dragging: _dragging?.input == c && _dragging?.index == k,
+          onTap: () => setState(() {
+            _focused = c;
+            _selected = (_selected?.input == c && _selected?.index == k)
+                ? null
+                : (input: c, index: k);
+          }),
+          onDelete: () {
+            _cubit.removeEffect(c, k);
+            setState(() => _selected = null);
+          },
+          onDragStart: () => setState(() => _dragging = _FxRef(c, k)),
+          onDragEnd: () => setState(() => _dragging = null),
+          onReorder: (from) {
+            _cubit.moveEffect(c, from, k);
+            setState(() => _selected = null);
+          },
+        ),
+      );
+    }
+    yield _positioned(
+      layout.addFxX(c),
+      y,
+      _GraphLayout.addW,
+      _GraphLayout.addW,
+      _AddFxButton(
+        input: c,
+        full: state.forInput(c).effects.length >= kTrackEffectMax,
+        onAdd: () {
+          setState(() => _focused = c);
+          _cubit.addEffect(c);
+        },
+      ),
+    );
+  }
+
+  Positioned _positioned(
+    double x,
+    double y,
+    double w,
+    double h,
+    Widget child,
+  ) => Positioned(left: x, top: y - h / 2, width: w, height: h, child: child);
+
+  Widget _inNode(MonitorState state, _GraphLayout layout, int c) {
+    final excluded = layout.excluded(c);
+    final monitored = state.forInput(c).enabled && !excluded;
+    return _positioned(
+      layout.inX,
+      layout.inY(c),
+      _GraphLayout.chW,
+      _GraphLayout.chH,
+      _ChannelNode(
+        nodeKey: Key('monitorGraph_in_$c'),
+        label: 'In ${c + 1}',
+        color: _wet,
+        strong: _focused == c,
+        wired: monitored,
+        excluded: excluded,
+        onTap: excluded
+            ? null
+            : () {
+                if (!monitored) unawaited(_cubit.setEnabled(c, enabled: true));
+                setState(() {
+                  _focused = c;
+                  _selected = null;
+                });
+              },
+      ),
+    );
+  }
+
+  Widget _outNode(MonitorState state, _GraphLayout layout, int c) {
+    final bit = 1 << c;
+    final wiredWet = layout.wetUnion & bit != 0;
+    final wiredDry = layout.dryUnion & bit != 0;
+    final f = _focused;
+    final focusWet = f != null && state.forInput(f).outputMask & bit != 0;
+    final focusDry = f != null && state.forInput(f).dryOutputMask & bit != 0;
+    // Colour by the focused input's send, else amber when only dry uses it.
+    final color = focusDry || (f == null && wiredDry && !wiredWet)
+        ? _dry
+        : _wet;
+    return _positioned(
+      layout.outX,
+      layout.outY(c),
+      _GraphLayout.chW,
+      _GraphLayout.chH,
+      _ChannelNode(
+        nodeKey: Key('monitorGraph_out_$c'),
+        label: 'Out ${c + 1}',
+        color: color,
+        strong: focusWet || focusDry,
+        wired: wiredWet || wiredDry,
+        excluded: false,
+        onTap: f == null
+            ? null
+            : () {
+                final m = state.forInput(f);
+                if (_wireDry) {
+                  unawaited(_cubit.setDryOutputMask(f, m.dryOutputMask ^ bit));
+                } else {
+                  unawaited(_cubit.setOutputMask(f, m.outputMask ^ bit));
+                }
+              },
+      ),
+    );
+  }
+
+  void _maybeFit(double vw, double vh, _GraphLayout layout) {
+    if (_fittedKey == layout.key || vw <= 0 || vh <= 0) return;
+    _fittedKey = layout.key;
+    var scale = vw / layout.canvasW;
+    if (layout.canvasH * scale > vh) scale = vh / layout.canvasH;
     if (scale > 1) scale = 1;
     final m = Matrix4.identity()
       ..setEntry(0, 0, scale)
       ..setEntry(1, 1, scale)
-      ..setEntry(0, 3, (vw - cw * scale) / 2)
-      ..setEntry(1, 3, (vh - ch * scale) / 2);
+      ..setEntry(0, 3, (vw - layout.canvasW * scale) / 2)
+      ..setEntry(1, 3, (vh - layout.canvasH * scale) / 2);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _tc.value = m;
     });
   }
+}
 
-  List<_Edge> _edges({
+// ===========================================================================
+// Layout
+// ===========================================================================
+
+/// Pure geometry for one frame of the graph: node positions, card positions,
+/// and the wires. Computed once per build from the monitor state, so the build
+/// method composes widgets instead of threading a dozen coordinates around.
+@immutable
+class _GraphLayout {
+  const _GraphLayout._({
+    required this.rows,
+    required this.cardXs,
+    required this.edges,
+    required this.wetUnion,
+    required this.dryUnion,
+    required this.canvasW,
+    required this.canvasH,
+    required this.inX,
+    required this.nodeX,
+    required this.outX,
+    required this.excludedMask,
+    required int inCount,
+    required int outCount,
+    required double rowsTop,
+  }) : _inCount = inCount,
+       _outCount = outCount,
+       _rowsTop = rowsTop;
+
+  factory _GraphLayout.compute({
     required MonitorState state,
-    required List<int> rows,
-    required Map<int, int> rowOf,
-    required Map<int, List<double>> cardXs,
-    required double nodeX,
-    required double inX,
-    required double outX,
-    required double Function(int) rowY,
-    required double Function(int, int) chY,
+    required int inCount,
+    required int outCount,
+    required int excludedMask,
+    required int? focused,
   }) {
-    const chW = MonitorGraphView._chW;
-    const nodeW = MonitorGraphView._nodeW;
-    const cardW = MonitorGraphView._cardW;
-    final railX = outX - MonitorGraphView._fan;
-    final edges = <_Edge>[];
+    bool isExcluded(int c) => excludedMask & (1 << c) != 0;
+    final rows = [
+      for (var c = 0; c < inCount; c++)
+        if (state.forInput(c).enabled && !isExcluded(c)) c,
+    ];
+
+    const inX = pad;
+    const nodeX = inX + chW + fanGap;
+    const cardStartX = nodeX + nodeW + gap;
+
+    final cardXs = <int, List<double>>{};
+    var widestRight = cardStartX;
     for (final c in rows) {
+      final xs = <double>[];
+      var x = cardStartX;
+      for (var k = 0; k < state.forInput(c).effects.length; k++) {
+        xs.add(x);
+        x += cardW + gap;
+      }
+      cardXs[c] = xs;
+      widestRight = math.max(widestRight, x + addW);
+    }
+    final railX = widestRight;
+    final outX = railX + fanGap;
+    final canvasW = outX + chW + pad;
+
+    final rowsBlockH = rows.length * rowH;
+    final channelsH = math.max(inCount, outCount) * chRowH;
+    final canvasH = math.max(rowsBlockH, channelsH) + pad * 2;
+    final rowsTop = (canvasH - rowsBlockH) / 2;
+
+    double chYAt(int i, int count) => canvasH / count * (i + 0.5);
+    double rowYAt(int r) => rowsTop + r * rowH + rowH / 2;
+
+    var wetUnion = 0;
+    var dryUnion = 0;
+    final edges = <_Edge>[];
+    for (var r = 0; r < rows.length; r++) {
+      final c = rows[r];
       final m = state.forInput(c);
-      final y = rowY(rowOf[c]!);
-      final faded = _focused != null && _focused != c;
-      // input feed -> monitor node
-      edges.add(
-        _Edge(
-          Offset(inX + chW, chY(c, _inCount)),
-          Offset(nodeX, y),
-          color: MonitorGraphView._wet,
-          faded: faded,
-        ),
-      );
-      // wet path: node -> cards -> last -> wet outputs
+      final y = rowYAt(r);
+      final faded = focused != null && focused != c;
+      wetUnion |= m.enabled ? m.outputMask : 0;
+      dryUnion |= m.enabled ? m.dryOutputMask : 0;
+
+      // input feed → monitor node
+      if (!isExcluded(c)) {
+        edges.add(
+          _Edge(
+            Offset(inX + chW, chYAt(c, inCount)),
+            Offset(nodeX, y),
+            color: _wet,
+            faded: faded,
+          ),
+        );
+      }
+      // wet path: node → cards → last
       final xs = cardXs[c]!;
       var rightX = nodeX + nodeW;
       if (xs.isNotEmpty) {
@@ -307,7 +459,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
           _Edge(
             Offset(nodeX + nodeW, y),
             Offset(xs.first, y),
-            color: MonitorGraphView._wet,
+            color: _wet,
             faded: faded,
           ),
         );
@@ -316,13 +468,14 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
             _Edge(
               Offset(xs[k] + cardW, y),
               Offset(xs[k + 1], y),
-              color: MonitorGraphView._wet,
+              color: _wet,
               faded: faded,
             ),
           );
         }
         rightX = xs.last + cardW;
       }
+      // last → wet outputs (along the row to the rail, then fan)
       _fan(
         edges,
         rightX,
@@ -330,43 +483,120 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
         m.outputMask,
         railX,
         outX,
-        chY,
-        MonitorGraphView._wet,
-        faded,
-        false,
+        outCount,
+        chYAt,
+        _wet,
+        faded: faded,
+        dashed: false,
       );
-      // dry send: node -> dry outputs (amber, dashed), just below the row so it
-      // reads as bypassing the effects.
+      // dry send: leaves the node BELOW the cards (so it never hides behind
+      // them) and fans, dashed amber, to its own outputs.
       _fan(
         edges,
         nodeX + nodeW,
-        y + 14,
+        y + dryDrop,
         m.dryOutputMask,
         railX,
         outX,
-        chY,
-        MonitorGraphView._dry,
-        faded,
-        true,
+        outCount,
+        chYAt,
+        _dry,
+        faded: faded,
+        dashed: true,
       );
     }
-    return edges;
+
+    return _GraphLayout._(
+      rows: rows,
+      cardXs: cardXs,
+      edges: edges,
+      wetUnion: wetUnion,
+      dryUnion: dryUnion,
+      canvasW: canvasW,
+      canvasH: canvasH,
+      inX: inX,
+      nodeX: nodeX,
+      outX: outX,
+      excludedMask: excludedMask,
+      inCount: inCount,
+      outCount: outCount,
+      rowsTop: rowsTop,
+    );
   }
 
-  void _fan(
+  // Geometry constants. Inputs/outputs are small "channel" chips; a monitored
+  // input is a wider node feeding a horizontal chain of effect cards.
+  static const double chW = 54; // channel chip width
+  static const double chH = 24; // channel chip height
+  static const double chRowH = 32; // vertical pitch between channel chips
+  static const double nodeW = 128; // monitor node width
+  static const double nodeH = 50; // monitor node height
+  static const double rowH = 80; // vertical pitch between monitor rows
+  static const double cardW = 110; // effect card width
+  static const double cardH = 38; // effect card height
+  static const double gap = 16; // between effect cards
+  static const double fanGap = 100; // input→node / rail→output gutter width
+  static const double addW = 28; // add-effect button
+  static const double pad = 16; // canvas padding
+  static const double curveHandle = 48; // fixed bezier handle (uniform curves)
+  static const double dryDrop = cardH / 2 + 10; // dry edge offset, clears cards
+
+  /// Monitored input indices, in input order (one middle row each).
+  final List<int> rows;
+
+  /// Per monitored input: the x of each effect card.
+  final Map<int, List<double>> cardXs;
+
+  /// The wires to paint.
+  final List<_Edge> edges;
+
+  /// Outputs reached by any monitor's wet / dry send (for node colouring).
+  final int wetUnion;
+  final int dryUnion;
+
+  final double canvasW;
+  final double canvasH;
+  final double inX;
+  final double nodeX;
+  final double outX;
+  final int excludedMask;
+
+  final int _inCount;
+  final int _outCount;
+  final double _rowsTop;
+
+  bool excluded(int c) => excludedMask & (1 << c) != 0;
+  double inY(int c) => canvasH / _inCount * (c + 0.5);
+  double outY(int c) => canvasH / _outCount * (c + 0.5);
+  double rowY(int input) => _rowsTop + rows.indexOf(input) * rowH + rowH / 2;
+  double addFxX(int input) {
+    final xs = cardXs[input]!;
+    return xs.isEmpty ? nodeX + nodeW + gap : xs.last + cardW + gap;
+  }
+
+  /// Re-fit identity: the canvas only changes shape when the row/effect counts
+  /// or channel counts change.
+  Object get key => Object.hashAll([
+    _inCount,
+    _outCount,
+    for (final c in rows) cardXs[c]!.length,
+  ]);
+
+  static void _fan(
     List<_Edge> edges,
     double fromX,
     double fromY,
     int mask,
     double railX,
     double outX,
-    double Function(int, int) chY,
-    Color color,
-    bool faded,
-    bool dashed,
-  ) {
+    int outCount,
+    double Function(int, int) chYAt,
+    Color color, {
+    required bool faded,
+    required bool dashed,
+  }) {
     final outs = [
-      for (var o = 0; o < _outCount; o++)
+      for (var o = 0; o < outCount; o++)
         if (mask & (1 << o) != 0) o,
     ];
     if (outs.isEmpty) return;
@@ -385,7 +615,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
       edges.add(
         _Edge(
           Offset(railX, fromY),
-          Offset(outX, chY(o, _outCount)),
+          Offset(outX, chYAt(o, outCount)),
           color: color,
           faded: faded,
           dashed: dashed,
@@ -393,98 +623,34 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
       );
     }
   }
+}
 
-  // ---- nodes ----
+// ===========================================================================
+// Node + card widgets
+// ===========================================================================
 
-  Widget _inNode(MonitorState state, int c, double x, double y) {
-    final excluded = _excluded(c);
-    final monitored = state.forInput(c).enabled && !excluded;
-    final focused = _focused == c;
-    return _chNode(
-      key: 'monitorGraph_in_$c',
-      label: 'In ${c + 1}',
-      x: x,
-      y: y,
-      color: MonitorGraphView._wet,
-      strong: focused,
-      wired: monitored,
-      excluded: excluded,
-      onTap: excluded
-          ? null
-          : () {
-              if (!monitored) unawaited(_cubit.setEnabled(c, enabled: true));
-              setState(() {
-                _focused = c;
-                _selected = null;
-              });
-            },
-    );
-  }
+/// One hardware input/output port chip.
+class _ChannelNode extends StatelessWidget {
+  const _ChannelNode({
+    required this.nodeKey,
+    required this.label,
+    required this.color,
+    required this.strong,
+    required this.wired,
+    required this.excluded,
+    required this.onTap,
+  });
 
-  Widget _outNode(MonitorState state, int c, double x, double y) {
-    // Wired if any monitor routes to it (wet or dry); coloured by the focused
-    // input's send when one is focused.
-    final wetAny = [
-      for (var i = 0; i < _inCount; i++)
-        if (state.forInput(i).enabled &&
-            state.forInput(i).outputMask & (1 << c) != 0)
-          i,
-    ];
-    final dryAny = [
-      for (var i = 0; i < _inCount; i++)
-        if (state.forInput(i).enabled &&
-            state.forInput(i).dryOutputMask & (1 << c) != 0)
-          i,
-    ];
-    final f = _focused;
-    final focusWet = f != null && state.forInput(f).outputMask & (1 << c) != 0;
-    final focusDry =
-        f != null && state.forInput(f).dryOutputMask & (1 << c) != 0;
-    final color = focusDry || (f == null && dryAny.isNotEmpty && wetAny.isEmpty)
-        ? MonitorGraphView._dry
-        : MonitorGraphView._wet;
-    return _chNode(
-      key: 'monitorGraph_out_$c',
-      label: 'Out ${c + 1}',
-      x: x,
-      y: y,
-      color: color,
-      strong: focusWet || focusDry,
-      wired: wetAny.isNotEmpty || dryAny.isNotEmpty,
-      excluded: false,
-      onTap: f == null
-          ? null
-          : () {
-              if (_wireDry) {
-                unawaited(
-                  _cubit.setDryOutputMask(
-                    f,
-                    state.forInput(f).dryOutputMask ^ (1 << c),
-                  ),
-                );
-              } else {
-                unawaited(
-                  _cubit.setOutputMask(
-                    f,
-                    state.forInput(f).outputMask ^ (1 << c),
-                  ),
-                );
-              }
-            },
-    );
-  }
+  final Key nodeKey;
+  final String label;
+  final Color color;
+  final bool strong;
+  final bool wired;
+  final bool excluded;
+  final VoidCallback? onTap;
 
-  Widget _chNode({
-    required String key,
-    required String label,
-    required double x,
-    required double y,
-    required Color color,
-    required bool strong,
-    required bool wired,
-    required bool excluded,
-    required VoidCallback? onTap,
-  }) {
+  @override
+  Widget build(BuildContext context) {
     final border = excluded
         ? SetupSurfaceColors.line
         : strong
@@ -492,227 +658,269 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
         : wired
         ? color.withValues(alpha: 0.7)
         : SetupSurfaceColors.line.withValues(alpha: 0.6);
-    return Positioned(
-      left: x,
-      top: y - MonitorGraphView._chH / 2,
-      width: MonitorGraphView._chW,
-      height: MonitorGraphView._chH,
-      child: _Tappable(
-        nodeKey: Key(key),
-        onTap: onTap,
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: !excluded && strong
-                ? color.withValues(alpha: 0.28)
-                : SetupSurfaceColors.card,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: border, width: strong ? 1.6 : 1),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: excluded
-                  ? SetupSurfaceColors.t3
-                  : wired
-                  ? SetupSurfaceColors.t1
-                  : SetupSurfaceColors.t3,
-              decoration: excluded ? TextDecoration.lineThrough : null,
-            ),
+    return _Tappable(
+      nodeKey: nodeKey,
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: !excluded && strong
+              ? color.withValues(alpha: 0.28)
+              : SetupSurfaceColors.card,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: border, width: strong ? 1.6 : 1),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: excluded
+                ? SetupSurfaceColors.t3
+                : wired
+                ? SetupSurfaceColors.t1
+                : SetupSurfaceColors.t3,
+            decoration: excluded ? TextDecoration.lineThrough : null,
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _monitorNode(MonitorState state, int c, double x, double y) {
-    final focused = _focused == c;
-    return Positioned(
-      left: x,
-      top: y - MonitorGraphView._nodeH / 2,
-      width: MonitorGraphView._nodeW,
-      height: MonitorGraphView._nodeH,
-      child: _Tappable(
-        nodeKey: Key('monitorGraph_node_$c'),
-        onTap: () => setState(() {
-          _focused = focused ? null : c;
-          _selected = null;
-        }),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: MonitorGraphView._wet.withValues(
-              alpha: focused ? 0.3 : 0.16,
-            ),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: MonitorGraphView._wet,
-              width: focused ? 2.5 : 1.5,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'In ${c + 1} monitor',
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: SetupSurfaceColors.t1,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  height: 1.1,
-                ),
+/// A monitored input's node (feeds its effect chain).
+class _MonitorNode extends StatelessWidget {
+  const _MonitorNode({
+    required this.input,
+    required this.focused,
+    required this.onTap,
+  });
+
+  final int input;
+  final bool focused;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Tappable(
+      nodeKey: Key('monitorGraph_node_$input'),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: _wet.withValues(alpha: focused ? 0.3 : 0.16),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _wet, width: focused ? 2.5 : 1.5),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'In ${input + 1} monitor',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: SetupSurfaceColors.t1,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.1,
               ),
-              const Text(
-                'live · not recorded',
-                style: TextStyle(
-                  color: SetupSurfaceColors.t2,
-                  fontSize: 10,
-                  height: 1.2,
-                ),
+            ),
+            const Text(
+              'live · not recorded',
+              style: TextStyle(
+                color: SetupSurfaceColors.t2,
+                fontSize: 10,
+                height: 1.2,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  Widget _fxCard(MonitorState state, int c, int k, double x, double y) {
-    final fx = state.forInput(c).effects[k];
-    final selected = _selected?.input == c && _selected?.index == k;
-    final dragging = _dragging?.input == c && _dragging?.index == k;
-    final handle = Draggable<_FxRef>(
-      key: Key('monitorGraph_fxHandle_${c}_$k'),
-      data: _FxRef(c, k),
-      onDragStarted: () => setState(() => _dragging = _FxRef(c, k)),
-      onDragEnd: (_) => setState(() => _dragging = null),
-      feedback: Material(color: Colors.transparent, child: _chip(fx)),
-      child: const MouseRegion(
-        cursor: SystemMouseCursors.grab,
-        child: Icon(
-          Icons.drag_indicator,
-          size: 16,
-          color: SetupSurfaceColors.t3,
-        ),
-      ),
-    );
-    return Positioned(
-      left: x,
-      top: y - MonitorGraphView._cardH / 2,
-      width: MonitorGraphView._cardW,
-      height: MonitorGraphView._cardH,
-      child: DragTarget<_FxRef>(
-        onWillAcceptWithDetails: (d) => d.data.input == c,
-        onAcceptWithDetails: (d) => _cubit.moveEffect(c, d.data.index, k),
-        builder: (context, candidate, _) => Container(
-          key: Key('monitorGraph_fx_${c}_$k'),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: SetupSurfaceColors.cardHi.withValues(
-              alpha: dragging ? 0.4 : 1,
-            ),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected || candidate.isNotEmpty
-                  ? MonitorGraphView._wet
-                  : MonitorGraphView._wet.withValues(alpha: 0.45),
-              width: selected || candidate.isNotEmpty ? 2 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              handle,
-              const SizedBox(width: 4),
-              Expanded(
-                child: _Tappable(
-                  nodeKey: Key('monitorGraph_fxLabel_${c}_$k'),
-                  onTap: () => setState(() {
-                    _focused = c;
-                    _selected = selected ? null : (input: c, index: k);
-                  }),
-                  child: Text(
-                    fx.type.label,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: SetupSurfaceColors.t1),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 2),
-              InkResponse(
-                key: Key('monitorGraph_fxDelete_${c}_$k'),
-                onTap: () => _cubit.removeEffect(c, k),
-                radius: 15,
-                child: const SizedBox(
-                  width: 18,
-                  height: 24,
-                  child: Icon(
-                    Icons.close,
-                    size: 15,
-                    color: SetupSurfaceColors.t2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+/// One effect card on a monitor's wet path: a drag handle (reorder), a tappable
+/// label (edit), and a delete button. Accepts a same-input drop to reorder.
+class _FxCard extends StatelessWidget {
+  const _FxCard({
+    required this.input,
+    required this.index,
+    required this.fx,
+    required this.selected,
+    required this.dragging,
+    required this.onTap,
+    required this.onDelete,
+    required this.onDragStart,
+    required this.onDragEnd,
+    required this.onReorder,
+  });
 
-  Widget _chip(TrackEffect fx) => Container(
-    width: MonitorGraphView._cardW,
-    height: MonitorGraphView._cardH,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: SetupSurfaceColors.cardHi,
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: MonitorGraphView._wet),
-    ),
-    child: Text(
-      fx.type.label,
-      style: const TextStyle(color: SetupSurfaceColors.t1),
+  final int input;
+  final int index;
+  final TrackEffect fx;
+  final bool selected;
+  final bool dragging;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  final VoidCallback onDragStart;
+  final VoidCallback onDragEnd;
+  final void Function(int from) onReorder;
+
+  static BoxDecoration decoration({required bool selected}) => BoxDecoration(
+    color: SetupSurfaceColors.cardHi,
+    borderRadius: BorderRadius.circular(8),
+    border: Border.all(
+      color: selected ? _wet : _wet.withValues(alpha: 0.45),
+      width: selected ? 2 : 1,
     ),
   );
 
-  Widget _addFxButton(MonitorState state, int c, double x, double y) {
-    final full = state.forInput(c).effects.length >= kTrackEffectMax;
-    return Positioned(
-      left: x,
-      top: y - MonitorGraphView._addW / 2,
-      width: MonitorGraphView._addW,
-      height: MonitorGraphView._addW,
-      child: Center(
-        child: IconButton(
-          key: Key('monitorGraph_addFx_$c'),
-          iconSize: 22,
-          color: MonitorGraphView._wet,
-          constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-          style: IconButton.styleFrom(
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            backgroundColor: SetupSurfaceColors.surface,
-            shape: const CircleBorder(),
-          ),
-          tooltip: full ? 'Chain is full' : 'Add effect to input ${c + 1}',
-          icon: const Icon(Icons.add_circle_outline),
-          onPressed: full
-              ? null
-              : () {
-                  setState(() => _focused = c);
-                  _cubit.addEffect(c);
-                },
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<_FxRef>(
+      onWillAcceptWithDetails: (d) => d.data.input == input,
+      onAcceptWithDetails: (d) => onReorder(d.data.index),
+      builder: (context, candidate, _) => Container(
+        key: Key('monitorGraph_fx_${input}_$index'),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: decoration(selected: selected || candidate.isNotEmpty)
+            .copyWith(
+              color: SetupSurfaceColors.cardHi.withValues(
+                alpha: dragging ? 0.4 : 1,
+              ),
+            ),
+        child: Row(
+          children: [
+            Draggable<_FxRef>(
+              key: Key('monitorGraph_fxHandle_${input}_$index'),
+              data: _FxRef(input, index),
+              onDragStarted: onDragStart,
+              onDragEnd: (_) => onDragEnd(),
+              feedback: Material(
+                color: Colors.transparent,
+                child: SizedBox(
+                  width: _GraphLayout.cardW,
+                  height: _GraphLayout.cardH,
+                  child: DecoratedBox(
+                    decoration: decoration(selected: true),
+                    child: Center(
+                      child: Text(
+                        fx.type.label,
+                        style: const TextStyle(color: SetupSurfaceColors.t1),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              child: const MouseRegion(
+                cursor: SystemMouseCursors.grab,
+                child: Icon(
+                  Icons.drag_indicator,
+                  size: 16,
+                  color: SetupSurfaceColors.t3,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: _Tappable(
+                nodeKey: Key('monitorGraph_fxLabel_${input}_$index'),
+                onTap: onTap,
+                child: Text(
+                  fx.type.label,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: SetupSurfaceColors.t1),
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            InkResponse(
+              key: Key('monitorGraph_fxDelete_${input}_$index'),
+              onTap: onDelete,
+              radius: 15,
+              child: const SizedBox(
+                width: 18,
+                height: 24,
+                child: Icon(
+                  Icons.close,
+                  size: 15,
+                  color: SetupSurfaceColors.t2,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
 
-  // ---- bottom panel ----
+/// The "add an effect" button at the end of a monitor's chain.
+class _AddFxButton extends StatelessWidget {
+  const _AddFxButton({
+    required this.input,
+    required this.full,
+    required this.onAdd,
+  });
 
-  Widget _panel(MonitorState state) {
-    final f = _focused;
+  final int input;
+  final bool full;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: IconButton(
+        key: Key('monitorGraph_addFx_$input'),
+        iconSize: 22,
+        color: _wet,
+        constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          backgroundColor: SetupSurfaceColors.surface,
+          shape: const CircleBorder(),
+        ),
+        tooltip: full ? 'Chain is full' : 'Add effect to input ${input + 1}',
+        icon: const Icon(Icons.add_circle_outline),
+        onPressed: full ? null : onAdd,
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Bottom panel
+// ===========================================================================
+
+/// The docked controls below the canvas: a hint when nothing is focused, else
+/// the focused input's wet/dry toggle, stop button, selected-effect editor,
+/// and the wet/dry legend.
+class _RoutePanel extends StatelessWidget {
+  const _RoutePanel({
+    required this.monitor,
+    required this.wireDry,
+    required this.selectedFx,
+    required this.onWireModeChanged,
+    required this.onStop,
+    required this.onSetType,
+    required this.onSetParam,
+    required this.onRemove,
+  });
+
+  final InputMonitor? monitor;
+  final bool wireDry;
+  final TrackEffect? selectedFx;
+  final ValueChanged<bool> onWireModeChanged;
+  final VoidCallback onStop;
+  final ValueChanged<TrackEffectType> onSetType;
+  final void Function(int param, double value) onSetParam;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final focused = monitor?.enabled ?? false;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -724,66 +932,40 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (f == null || !state.forInput(f).enabled)
+          if (!focused)
             const Text(
               'Tap an input to monitor it, then tap outputs to send it there.',
               style: TextStyle(color: SetupSurfaceColors.t2, fontSize: 13),
             )
           else
-            _focusControls(state, f),
-          if (_selected case final s?
-              when state.forInput(s.input).enabled &&
-                  s.index < state.forInput(s.input).effects.length) ...[
+            _focusControls(monitor!),
+          if (focused && selectedFx != null) ...[
             const SizedBox(height: 10),
-            _fxEditor(
-              s.input,
-              s.index,
-              state.forInput(s.input).effects[s.index],
+            _EffectEditor(
+              fx: selectedFx!,
+              onSetType: onSetType,
+              onSetParam: onSetParam,
+              onRemove: onRemove,
             ),
           ],
           const SizedBox(height: 10),
-          _legend(),
+          const _Legend(),
         ],
       ),
     );
   }
 
-  Widget _legend() => Row(
-    children: [
-      _legendKey(MonitorGraphView._wet, 'effected (wet) → outs', dashed: false),
-      const SizedBox(width: 20),
-      _legendKey(MonitorGraphView._dry, 'clean (dry) → outs', dashed: true),
-    ],
-  );
-
-  Widget _legendKey(Color color, String label, {required bool dashed}) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      SizedBox(
-        width: 26,
-        height: 12,
-        child: CustomPaint(painter: _LegendLinePainter(color, dashed: dashed)),
-      ),
-      const SizedBox(width: 8),
-      Text(
-        label,
-        style: const TextStyle(color: SetupSurfaceColors.t2, fontSize: 12),
-      ),
-    ],
-  );
-
-  Widget _focusControls(MonitorState state, int f) {
+  Widget _focusControls(InputMonitor m) {
     return Row(
       children: [
         Text(
-          'In ${f + 1} monitor',
+          'In ${m.input + 1} monitor',
           style: const TextStyle(
             color: SetupSurfaceColors.t1,
             fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(width: 12),
-        // Which send an output tap wires.
         SegmentedButton<bool>(
           key: const Key('monitorGraph_routeToggle'),
           segments: const [
@@ -798,20 +980,14 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
               icon: Icon(Icons.water_drop_outlined, size: 16),
             ),
           ],
-          selected: {_wireDry},
+          selected: {wireDry},
           showSelectedIcon: false,
-          onSelectionChanged: (s) => setState(() => _wireDry = s.first),
+          onSelectionChanged: (s) => onWireModeChanged(s.first),
         ),
         const Spacer(),
         TextButton.icon(
           key: const Key('monitorGraph_stop'),
-          onPressed: () {
-            unawaited(_cubit.setEnabled(f, enabled: false));
-            setState(() {
-              if (_focused == f) _focused = null;
-              _selected = null;
-            });
-          },
+          onPressed: onStop,
           icon: const Icon(Icons.stop_circle_outlined, size: 18),
           label: const Text('Stop'),
           style: TextButton.styleFrom(foregroundColor: SetupSurfaceColors.t2),
@@ -819,15 +995,31 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
       ],
     );
   }
+}
 
-  Widget _fxEditor(int input, int index, TrackEffect fx) {
+/// The inline editor for the selected effect: type + parameter sliders.
+class _EffectEditor extends StatelessWidget {
+  const _EffectEditor({
+    required this.fx,
+    required this.onSetType,
+    required this.onSetParam,
+    required this.onRemove,
+  });
+
+  final TrackEffect fx;
+  final ValueChanged<TrackEffectType> onSetType;
+  final void Function(int param, double value) onSetParam;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       key: const Key('monitorGraph_fxEditor'),
       padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
       decoration: BoxDecoration(
         color: SetupSurfaceColors.cardHi,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: MonitorGraphView._wet),
+        border: Border.all(color: _wet),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -848,7 +1040,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                   ),
                   onChanged: (type) {
                     if (type != null && type != TrackEffectType.none) {
-                      _cubit.setEffectType(input, index, type);
+                      onSetType(type);
                     }
                   },
                   items: [
@@ -865,7 +1057,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                 color: SetupSurfaceColors.t2,
                 tooltip: 'Remove effect',
                 icon: const Icon(Icons.delete_outline),
-                onPressed: () => _cubit.removeEffect(input, index),
+                onPressed: onRemove,
               ),
             ],
           ),
@@ -887,23 +1079,11 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3,
-                        activeTrackColor: MonitorGraphView._wet,
-                        inactiveTrackColor: SetupSurfaceColors.line,
-                        thumbColor: MonitorGraphView._wet,
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 12,
-                        ),
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 7,
-                        ),
-                      ),
+                      data: _paramSliderTheme,
                       child: Slider(
                         key: Key('monitorGraph_fxParam$p'),
                         value: fx.params[p].clamp(0.0, 1.0),
-                        onChanged: (v) =>
-                            _cubit.setEffectParam(input, index, p, v),
+                        onChanged: (v) => onSetParam(p, v),
                       ),
                     ),
                   ),
@@ -915,6 +1095,59 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     );
   }
 }
+
+/// The wet/dry colour legend.
+class _Legend extends StatelessWidget {
+  const _Legend();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        _LegendKey(color: _wet, label: 'effected (wet) → outs', dashed: false),
+        SizedBox(width: 20),
+        _LegendKey(color: _dry, label: 'clean (dry) → outs', dashed: true),
+      ],
+    );
+  }
+}
+
+class _LegendKey extends StatelessWidget {
+  const _LegendKey({
+    required this.color,
+    required this.label,
+    required this.dashed,
+  });
+
+  final Color color;
+  final String label;
+  final bool dashed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 26,
+          height: 12,
+          child: CustomPaint(
+            painter: _LegendLinePainter(color, dashed: dashed),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: const TextStyle(color: SetupSurfaceColors.t2, fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
+// ===========================================================================
+// Painters + helpers
+// ===========================================================================
 
 class _Tappable extends StatelessWidget {
   const _Tappable({
@@ -939,6 +1172,8 @@ class _Tappable extends StatelessWidget {
   );
 }
 
+/// One wire. A value type so the painter can skip repaints when unchanged.
+@immutable
 class _Edge {
   const _Edge(
     this.from,
@@ -950,8 +1185,74 @@ class _Edge {
   final Offset from;
   final Offset to;
   final Color color;
+
+  /// A wire on a lane other than the focused one — drawn thin and dim.
   final bool faded;
   final bool dashed;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _Edge &&
+      other.from == from &&
+      other.to == to &&
+      other.color == color &&
+      other.faded == faded &&
+      other.dashed == dashed;
+
+  @override
+  int get hashCode => Object.hash(from, to, color, faded, dashed);
+}
+
+class _PathPainter extends CustomPainter {
+  _PathPainter(this.edges);
+
+  final List<_Edge> edges;
+
+  void _draw(Canvas canvas, _Edge e) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = e.faded ? 1.4 : 2.4
+      ..color = e.color.withValues(alpha: e.faded ? 0.22 : 0.95);
+    // A fixed handle length (clamped so short hops stay straight) gives every
+    // wire the same horizontal tangent — uniform curvature across the graph.
+    final span = (e.to.dx - e.from.dx).abs();
+    final dx = math.min(span / 2, _GraphLayout.curveHandle);
+    final path = Path()
+      ..moveTo(e.from.dx, e.from.dy)
+      ..cubicTo(
+        e.from.dx + dx,
+        e.from.dy,
+        e.to.dx - dx,
+        e.to.dy,
+        e.to.dx,
+        e.to.dy,
+      );
+    if (e.dashed) {
+      for (final metric in path.computeMetrics()) {
+        var d = 0.0;
+        while (d < metric.length) {
+          canvas.drawPath(metric.extractPath(d, d + 6), paint);
+          d += 11;
+        }
+      }
+    } else {
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Faded wires first so the focused input's wires sit on top.
+    for (final e in edges) {
+      if (e.faded) _draw(canvas, e);
+    }
+    for (final e in edges) {
+      if (!e.faded) _draw(canvas, e);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PathPainter old) => !listEquals(old.edges, edges);
 }
 
 /// Draws a short solid/dashed colour swatch for the wet/dry legend.
@@ -981,59 +1282,4 @@ class _LegendLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(_LegendLinePainter old) =>
       old.color != color || old.dashed != dashed;
-}
-
-class _PathPainter extends CustomPainter {
-  _PathPainter(this.edges);
-
-  final List<_Edge> edges;
-
-  void _draw(Canvas canvas, _Edge e) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = e.faded ? 1.4 : 2.4
-      ..color = e.color.withValues(alpha: e.faded ? 0.22 : 0.95);
-    final span = (e.to.dx - e.from.dx).abs();
-    final dx = span / 2 < MonitorGraphView._curveHandle
-        ? span / 2
-        : MonitorGraphView._curveHandle;
-    final path = Path()
-      ..moveTo(e.from.dx, e.from.dy)
-      ..cubicTo(
-        e.from.dx + dx,
-        e.from.dy,
-        e.to.dx - dx,
-        e.to.dy,
-        e.to.dx,
-        e.to.dy,
-      );
-    if (e.dashed) {
-      _drawDashed(canvas, path, paint);
-    } else {
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  void _drawDashed(Canvas canvas, Path path, Paint paint) {
-    for (final metric in path.computeMetrics()) {
-      var d = 0.0;
-      while (d < metric.length) {
-        canvas.drawPath(metric.extractPath(d, d + 6), paint);
-        d += 11;
-      }
-    }
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final e in edges) {
-      if (e.faded) _draw(canvas, e);
-    }
-    for (final e in edges) {
-      if (!e.faded) _draw(canvas, e);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_PathPainter old) => old.edges != edges;
 }
