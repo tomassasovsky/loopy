@@ -53,22 +53,84 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         channel: event.channel,
       ),
     );
-    on<LooperInputMaskChanged>((event, _) {
-      _repository.setInputMask(channel: event.channel, mask: event.mask);
-      // A lane records a single input; persist the lowest selected channel onto
-      // lane 0 (`-1` => record nothing). The full per-lane UI lands in a later
-      // PR.
+    on<LooperLaneCountChanged>((event, _) {
+      _repository.setLaneCount(channel: event.channel, count: event.count);
+      unawaited(_settings?.saveLaneCount(event.channel, event.count));
+    });
+    on<LooperLaneInputChanged>((event, _) {
+      _repository.setLaneInput(
+        channel: event.channel,
+        lane: event.lane,
+        inputChannel: event.inputChannel,
+      );
       unawaited(
-        _settings?.saveLaneInput(
+        _settings?.saveLaneInput(event.channel, event.lane, event.inputChannel),
+      );
+    });
+    on<LooperLaneOutputChanged>((event, _) {
+      _repository.setLaneOutput(
+        channel: event.channel,
+        lane: event.lane,
+        mask: event.mask,
+      );
+      unawaited(
+        _settings?.saveLaneOutput(event.channel, event.lane, event.mask),
+      );
+    });
+    on<LooperLaneVolumeChanged>((event, _) {
+      _repository.setLaneVolume(
+        event.volume,
+        channel: event.channel,
+        lane: event.lane,
+      );
+      unawaited(
+        _settings?.saveLaneVolume(event.channel, event.lane, event.volume),
+      );
+    });
+    on<LooperLaneMuteToggled>((event, _) {
+      final muted = !_laneMuted(event.channel, event.lane);
+      _repository.setLaneMute(
+        muted: muted,
+        channel: event.channel,
+        lane: event.lane,
+      );
+      unawaited(
+        _settings?.saveLaneMute(event.channel, event.lane, muted: muted),
+      );
+    });
+    on<LooperLaneEffectsChanged>((event, _) {
+      _repository.setLaneEffects(
+        channel: event.channel,
+        lane: event.lane,
+        effects: event.effects,
+      );
+      unawaited(
+        _settings?.saveLaneEffects(
           event.channel,
-          0,
-          maskToInputChannel(event.mask),
+          event.lane,
+          encodeTrackEffects(event.effects),
         ),
       );
     });
-    on<LooperOutputMaskChanged>((event, _) {
-      _repository.setOutputMask(channel: event.channel, mask: event.mask);
-      unawaited(_settings?.saveLaneOutput(event.channel, 0, event.mask));
+    on<LooperLaneEffectParamChanged>((event, _) {
+      _repository.setLaneEffectParam(
+        channel: event.channel,
+        lane: event.lane,
+        index: event.index,
+        param: event.param,
+        value: event.value,
+      );
+      // Re-save the whole chain (the engine call above was granular and did not
+      // reset DSP; persistence stores the chain as one encoded string).
+      unawaited(
+        _settings?.saveLaneEffects(
+          event.channel,
+          event.lane,
+          encodeTrackEffects(
+            _repository.laneEffects(event.channel, event.lane),
+          ),
+        ),
+      );
     });
     on<LooperTrackQuantizeChanged>((event, _) {
       _repository.setTrackQuantize(
@@ -86,36 +148,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       );
       unawaited(
         _settings?.saveTrackMultiple(event.channel, event.multiple),
-      );
-    });
-    on<LooperTrackEffectsChanged>((event, _) {
-      _repository.setTrackEffects(
-        channel: event.channel,
-        effects: event.effects,
-      );
-      unawaited(
-        _settings?.saveLaneEffects(
-          event.channel,
-          0,
-          encodeTrackEffects(event.effects),
-        ),
-      );
-    });
-    on<LooperTrackEffectParamChanged>((event, _) {
-      _repository.setTrackEffectParam(
-        channel: event.channel,
-        index: event.index,
-        param: event.param,
-        value: event.value,
-      );
-      // Re-save the whole chain (the engine call above was granular and did not
-      // reset DSP; persistence stores the chain as one encoded string).
-      unawaited(
-        _settings?.saveLaneEffects(
-          event.channel,
-          0,
-          encodeTrackEffects(_repository.trackEffects(event.channel)),
-        ),
       );
     });
     on<LooperPlayAllPressed>((_, _) {
@@ -149,6 +181,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       channel >= 0 &&
       channel < state.tracks.length &&
       state.tracks[channel].muted;
+
+  bool _laneMuted(int channel, int lane) {
+    if (channel < 0 || channel >= state.tracks.length) return false;
+    final lanes = state.tracks[channel].lanes;
+    return lane >= 0 && lane < lanes.length && lanes[lane].muted;
+  }
 
   void _onControllerEvent(ControllerEvent event) {
     switch (event.action) {

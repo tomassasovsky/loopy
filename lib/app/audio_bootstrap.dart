@@ -50,27 +50,10 @@ Future<bool> tryAutoStartEngine({
     repository.measureLatency();
   }
 
-  // Restore per-lane I/O routing and quantize overrides so saved settings are
-  // reapplied on launch (mirroring the latency-offset restore above). Lane-0
-  // only for now; the full per-lane restore lands with the lane UI in a later
-  // PR.
+  // Restore per-track transport overrides and every lane's routing / mix /
+  // effects so saved multi-lane setups are reapplied on launch (mirroring the
+  // latency-offset restore above).
   for (final track in repository.state.tracks) {
-    final inputChannel = await settings.loadLaneInput(track.channel, 0);
-    if (inputChannel != null) {
-      repository.setLaneInput(
-        channel: track.channel,
-        lane: 0,
-        inputChannel: inputChannel,
-      );
-    }
-    final outputMask = await settings.loadLaneOutput(track.channel, 0);
-    if (outputMask != null) {
-      repository.setLaneOutput(
-        channel: track.channel,
-        lane: 0,
-        mask: outputMask,
-      );
-    }
     final quantize = await settings.loadTrackQuantize(track.channel);
     if (quantize != null) {
       repository.setTrackQuantize(channel: track.channel, enabled: quantize);
@@ -79,15 +62,52 @@ Future<bool> tryAutoStartEngine({
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
     }
-    // Lane-0 effect chain: restore the saved ordered chain in one shot.
-    final encoded = await settings.loadLaneEffects(track.channel, 0);
-    final effects = decodeTrackEffects(encoded);
-    if (effects.isNotEmpty) {
-      repository.setLaneEffects(
-        channel: track.channel,
-        lane: 0,
-        effects: effects,
+    // Restore the saved lane count first so the engine allocates the added
+    // lanes before they are configured below.
+    final laneCount = await settings.loadLaneCount(track.channel);
+    if (laneCount > 1) {
+      repository.setLaneCount(channel: track.channel, count: laneCount);
+    }
+    for (var lane = 0; lane < laneCount; lane++) {
+      final inputChannel = await settings.loadLaneInput(track.channel, lane);
+      if (inputChannel != null) {
+        repository.setLaneInput(
+          channel: track.channel,
+          lane: lane,
+          inputChannel: inputChannel,
+        );
+      }
+      final outputMask = await settings.loadLaneOutput(track.channel, lane);
+      if (outputMask != null) {
+        repository.setLaneOutput(
+          channel: track.channel,
+          lane: lane,
+          mask: outputMask,
+        );
+      }
+      final volume = await settings.loadLaneVolume(track.channel, lane);
+      if (volume != null) {
+        repository.setLaneVolume(volume, channel: track.channel, lane: lane);
+      }
+      final muted = await settings.loadLaneMute(track.channel, lane);
+      if (muted != null) {
+        repository.setLaneMute(
+          muted: muted,
+          channel: track.channel,
+          lane: lane,
+        );
+      }
+      // Restore the saved ordered effect chain in one shot.
+      final effects = decodeTrackEffects(
+        await settings.loadLaneEffects(track.channel, lane),
       );
+      if (effects.isNotEmpty) {
+        repository.setLaneEffects(
+          channel: track.channel,
+          lane: lane,
+          effects: effects,
+        );
+      }
     }
   }
 

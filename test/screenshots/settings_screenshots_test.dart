@@ -202,7 +202,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    // A Filter and a Delay so the graph shows cards on the signal path.
+    // A Filter and a Delay on lane 0 so the lane strip shows its effect chips.
     await settings.saveLaneEffects(
       1,
       0,
@@ -234,8 +234,13 @@ void main() {
           providers: [
             RepositoryProvider<SettingsRepository>.value(value: settings),
           ],
-          child: BlocProvider<LooperBloc>.value(
-            value: bloc,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<BigPictureCubit>(
+                create: (_) => BigPictureCubit(settings: settings),
+              ),
+            ],
             child: Builder(
               builder: (context) => Scaffold(
                 body: Center(

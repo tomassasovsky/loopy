@@ -68,18 +68,6 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setInputMask(
-        channel: any(named: 'channel'),
-        mask: any(named: 'mask'),
-      ),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setOutputMask(
-        channel: any(named: 'channel'),
-        mask: any(named: 'mask'),
-      ),
-    ).thenReturn(EngineResult.ok);
-    when(
       () => repository.setTrackQuantize(
         channel: any(named: 'channel'),
         enabled: any(named: 'enabled'),
@@ -92,20 +80,56 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setTrackEffects(
+      () => repository.setLaneCount(
         channel: any(named: 'channel'),
+        count: any(named: 'count'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setLaneInput(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        inputChannel: any(named: 'inputChannel'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setLaneOutput(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        mask: any(named: 'mask'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setLaneVolume(
+        any(),
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setLaneMute(
+        muted: any(named: 'muted'),
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setLaneEffects(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
         effects: any(named: 'effects'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setTrackEffectParam(
+      () => repository.setLaneEffectParam(
         channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
         index: any(named: 'index'),
         param: any(named: 'param'),
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
-    when(() => repository.trackEffects(any())).thenReturn(const []);
+    when(() => repository.laneEffects(any(), any())).thenReturn(const []);
   });
 
   tearDown(() => stateController.close());
@@ -162,22 +186,6 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperInputMaskChanged forwards channel and mask to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperInputMaskChanged(2, 0x3)),
-    verify: (_) =>
-        verify(() => repository.setInputMask(channel: 2, mask: 0x3)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperOutputMaskChanged forwards channel and mask to the repository',
-    build: buildBloc,
-    act: (bloc) => bloc.add(const LooperOutputMaskChanged(1, 0x5)),
-    verify: (_) =>
-        verify(() => repository.setOutputMask(channel: 1, mask: 0x5)).called(1),
-  );
-
-  blocTest<LooperBloc, LooperState>(
     'LooperTrackQuantizeChanged forwards the override to the repository',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperTrackQuantizeChanged(2, enabled: true)),
@@ -196,28 +204,89 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackEffectsChanged forwards the chain to the repository',
+    'LooperLaneCountChanged forwards the new count to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperLaneCountChanged(1, 3)),
+    verify: (_) =>
+        verify(() => repository.setLaneCount(channel: 1, count: 3)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneInputChanged forwards channel, lane and input to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperLaneInputChanged(2, 1, 3)),
+    verify: (_) => verify(
+      () => repository.setLaneInput(channel: 2, lane: 1, inputChannel: 3),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneOutputChanged forwards channel, lane and mask to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperLaneOutputChanged(1, 2, 0x5)),
+    verify: (_) => verify(
+      () => repository.setLaneOutput(channel: 1, lane: 2, mask: 0x5),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneVolumeChanged forwards the volume for the lane',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperLaneVolumeChanged(3, 1, 0.5)),
+    verify: (_) => verify(
+      () => repository.setLaneVolume(0.5, channel: 3, lane: 1),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneMuteToggled mutes from the current (unmuted) state',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperLaneMuteToggled(0, 0)),
+    verify: (_) => verify(
+      () => repository.setLaneMute(muted: true, channel: 0, lane: 0),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneMuteToggled unmutes when the lane is already muted',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [
+        Track(lanes: [Lane(muted: true)]),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperLaneMuteToggled(0, 0)),
+    verify: (_) => verify(
+      () => repository.setLaneMute(muted: false, channel: 0, lane: 0),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneEffectsChanged forwards the chain to the repository',
     build: buildBloc,
     act: (bloc) => bloc.add(
-      LooperTrackEffectsChanged(1, [
+      LooperLaneEffectsChanged(1, 2, [
         TrackEffect(type: TrackEffectType.delay),
       ]),
     ),
     verify: (_) => verify(
-      () => repository.setTrackEffects(
+      () => repository.setLaneEffects(
         channel: 1,
+        lane: 2,
         effects: any(named: 'effects'),
       ),
     ).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperTrackEffectParamChanged forwards the param to the repository',
+    'LooperLaneEffectParamChanged forwards the param to the repository',
     build: buildBloc,
-    act: (bloc) => bloc.add(const LooperTrackEffectParamChanged(2, 1, 0, 0.6)),
+    act: (bloc) =>
+        bloc.add(const LooperLaneEffectParamChanged(2, 1, 1, 0, 0.6)),
     verify: (_) => verify(
-      () => repository.setTrackEffectParam(
+      () => repository.setLaneEffectParam(
         channel: 2,
+        lane: 1,
         index: 1,
         param: 0,
         value: 0.6,
@@ -231,10 +300,19 @@ void main() {
     setUp(() {
       settings = _MockSettingsRepository();
       when(
+        () => settings.saveLaneCount(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
         () => settings.saveLaneInput(any(), any(), any()),
       ).thenAnswer((_) async {});
       when(
         () => settings.saveLaneOutput(any(), any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveLaneVolume(any(), any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => settings.saveLaneMute(any(), any(), muted: any(named: 'muted')),
       ).thenAnswer((_) async {});
       when(
         () => settings.saveLaneEffects(any(), any(), any()),
@@ -242,62 +320,99 @@ void main() {
     });
 
     blocTest<LooperBloc, LooperState>(
-      'LooperInputMaskChanged persists the lowest input onto lane 0',
+      'LooperLaneCountChanged persists the lane count',
       build: () => LooperBloc(repository: repository, settings: settings),
-      act: (bloc) => bloc.add(const LooperInputMaskChanged(3, 0x6)),
+      act: (bloc) => bloc.add(const LooperLaneCountChanged(3, 2)),
+      verify: (_) {
+        verify(() => repository.setLaneCount(channel: 3, count: 2)).called(1);
+        verify(() => settings.saveLaneCount(3, 2)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperLaneInputChanged persists the input onto the lane',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperLaneInputChanged(3, 1, 2)),
       verify: (_) {
         verify(
-          () => repository.setInputMask(channel: 3, mask: 0x6),
+          () => repository.setLaneInput(channel: 3, lane: 1, inputChannel: 2),
         ).called(1);
-        // 0x6 selects inputs 1 and 2; the lowest (1) records into lane 0.
-        verify(() => settings.saveLaneInput(3, 0, 1)).called(1);
+        verify(() => settings.saveLaneInput(3, 1, 2)).called(1);
       },
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperOutputMaskChanged persists the output mask onto lane 0',
+      'LooperLaneOutputChanged persists the output mask onto the lane',
       build: () => LooperBloc(repository: repository, settings: settings),
-      act: (bloc) => bloc.add(const LooperOutputMaskChanged(0, 0x6)),
+      act: (bloc) => bloc.add(const LooperLaneOutputChanged(0, 1, 0x6)),
       verify: (_) {
-        verify(() => repository.setOutputMask(channel: 0, mask: 0x6)).called(1);
-        verify(() => settings.saveLaneOutput(0, 0, 0x6)).called(1);
+        verify(
+          () => repository.setLaneOutput(channel: 0, lane: 1, mask: 0x6),
+        ).called(1);
+        verify(() => settings.saveLaneOutput(0, 1, 0x6)).called(1);
       },
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperTrackEffectsChanged persists the encoded chain onto lane 0',
+      'LooperLaneVolumeChanged persists the volume onto the lane',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperLaneVolumeChanged(2, 1, 0.4)),
+      verify: (_) {
+        verify(
+          () => repository.setLaneVolume(0.4, channel: 2, lane: 1),
+        ).called(1);
+        verify(() => settings.saveLaneVolume(2, 1, 0.4)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperLaneMuteToggled persists the toggled mute onto the lane',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) => bloc.add(const LooperLaneMuteToggled(1, 0)),
+      verify: (_) {
+        verify(
+          () => repository.setLaneMute(muted: true, channel: 1, lane: 0),
+        ).called(1);
+        verify(() => settings.saveLaneMute(1, 0, muted: true)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperLaneEffectsChanged persists the encoded chain onto the lane',
       build: () => LooperBloc(repository: repository, settings: settings),
       act: (bloc) => bloc.add(
-        LooperTrackEffectsChanged(1, [
+        LooperLaneEffectsChanged(1, 2, [
           TrackEffect(type: TrackEffectType.filter),
         ]),
       ),
       verify: (_) {
         verify(
-          () => repository.setTrackEffects(
+          () => repository.setLaneEffects(
             channel: 1,
+            lane: 2,
             effects: any(named: 'effects'),
           ),
         ).called(1);
-        verify(() => settings.saveLaneEffects(1, 0, any())).called(1);
+        verify(() => settings.saveLaneEffects(1, 2, any())).called(1);
       },
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperTrackEffectParamChanged persists the re-encoded chain',
+      'LooperLaneEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(repository: repository, settings: settings),
       act: (bloc) =>
-          bloc.add(const LooperTrackEffectParamChanged(0, 1, 2, 0.25)),
+          bloc.add(const LooperLaneEffectParamChanged(0, 1, 1, 2, 0.25)),
       verify: (_) {
         verify(
-          () => repository.setTrackEffectParam(
+          () => repository.setLaneEffectParam(
             channel: 0,
+            lane: 1,
             index: 1,
             param: 2,
             value: 0.25,
           ),
         ).called(1);
-        verify(() => settings.saveLaneEffects(0, 0, any())).called(1);
+        verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
       },
     );
   });
