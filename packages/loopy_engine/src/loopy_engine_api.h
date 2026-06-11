@@ -97,22 +97,14 @@ typedef enum le_command_code {
                                   * (arg_f = track, arg_i = output bitmask) */
   LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop top) */
   LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record */
-  LE_CMD_SET_MONITOR_INPUT_MASK = 18,  /* arg_i = monitor input bitmask */
-  LE_CMD_SET_MONITOR_OUTPUT_MASK = 19, /* arg_i = monitor output bitmask */
-  LE_CMD_SET_FX = 20, /* set a chain entry's type + stage (and reset its DSP
-                       * state). arg_i = (channel << 16) | (index << 8) | stage,
-                       * arg_f = le_fx_type. */
-  LE_CMD_SET_FX_COUNT = 21, /* set a track's active chain length.
-                             * arg_i = (channel << 8) | count. */
-  LE_CMD_SET_MONITOR_FX_TRACK = 22, /* monitor follows a track's pre-FX input.
-                                     * arg_i = track index, or -1 for none. */
+  LE_CMD_SET_LANE_FX = 20, /* set a lane chain entry's type (and reset its DSP
+                            * state). arg_i = (channel << 16) | (lane << 8) |
+                            * index, arg_f = le_fx_type. */
+  LE_CMD_SET_LANE_FX_COUNT = 21, /* set a lane's active chain length.
+                                  * arg_i = (channel << 16) | (lane << 8) |
+                                  * count. */
   LE_CMD_COMMIT_SESSION = 23,    /* arg_i = base loop length in frames: publish
                                   * the master loop and start imported tracks */
-  LE_CMD_SET_MONITOR_FX = 24, /* set a monitor-bus chain entry's type (and reset
-                               * its DSP state). arg_i = index, arg_f =
-                               * le_fx_type. */
-  LE_CMD_SET_MONITOR_FX_COUNT = 25, /* set the monitor bus's active chain length.
-                                     * arg_i = count (0..LE_FX_MAX). */
   /* ---- multi-lane recording (a track owns an array of lanes) ----
    * Each lane records one hardware input into its own clean mono buffer; all
    * lanes of a track share one transport and one undo span. The lane *count* is
@@ -132,26 +124,29 @@ typedef enum le_command_code {
   LE_CMD_SET_LANE_MUTE = 29,   /* lane mute.
                                 * arg_i = channel*LE_MAX_LANES + lane,
                                 * arg_f = 0/1. */
+  /* ---- per-input live monitor (one slot per hardware input) ----
+   * Each hardware input has an independent live monitor route to the outputs
+   * with its own effect chain; it is never recorded and is independent of all
+   * track state. */
+  LE_CMD_SET_MONITOR_INPUT = 30,    /* enable + route a hardware input's monitor.
+                                     * arg_f = input | (enabled << 8),
+                                     * arg_i = output bitmask. */
+  LE_CMD_SET_MONITOR_INPUT_FX = 31, /* set a monitor input's chain entry type
+                                     * (and reset its DSP state). arg_i =
+                                     * (input << 8) | index, arg_f = le_fx_type. */
+  LE_CMD_SET_MONITOR_INPUT_FX_COUNT = 32, /* set a monitor input's active chain
+                                           * length. arg_i = (input<<8)|count. */
 } le_command_code;
 
-/* Per-track effects: each track carries an ordered chain of up to LE_FX_MAX
- * entries, each with a type, a stage (pre/post), and LE_FX_PARAMS normalized
- * (0..1) parameters. The cap exists only so the audio thread reads a fixed-size,
- * allocation-free array — it is far beyond musical need, not a CPU limit. */
+/* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
+ * carries an ordered chain of up to LE_FX_MAX entries, each with a type and
+ * LE_FX_PARAMS normalized (0..1) parameters. The chain is non-destructive (the
+ * recording is ALWAYS dry; effects color playback only) and every active entry
+ * applies in chain order — there is no pre/post stage. The cap exists only so
+ * the audio thread reads a fixed-size, allocation-free array — it is far beyond
+ * musical need, not a CPU limit. */
 #define LE_FX_MAX 8
 #define LE_FX_PARAMS 3
-
-/* Whether a chain entry is heard on the live input monitor. The recording is
- * ALWAYS dry (no effect is ever printed into the buffer), and EVERY entry — pre
- * or post — colors playback in chain order. The stage only adds monitoring:
- *   POST (after-track) — playback only; not heard on the live input. The
- *        default. PRE (before-track) — also applied to the live monitored
- *        input, so when the monitor follows this track you hear it while
- *        playing. */
-typedef enum le_fx_stage {
-  LE_FX_POST = 0,
-  LE_FX_PRE = 1,
-} le_fx_stage;
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
  * in as just another type. Each type reads its entry's LE_FX_PARAMS normalized
@@ -206,7 +201,14 @@ typedef struct le_config {
  * is the fundamental recordable unit — one clean mono buffer fed by one input —
  * and a track owns up to this many, all sharing one transport and undo span.
  * Lane buffers are allocated lazily (only recorded/counted lanes), so the
- * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory. */
+ * worst-case LE_MAX_TRACKS * LE_MAX_LANES does not inflate idle memory.
+ *
+ * This also bounds the per-input live-monitor array (le_engine_set_monitor_input
+ * and friends), so live monitoring covers input channels [0, LE_MAX_INPUTS). On
+ * an interface with more than LE_MAX_INPUTS inputs, a higher-numbered channel
+ * can still be RECORDED into a lane (le_engine_set_lane_input accepts any
+ * in-range channel) but cannot be monitored; raise LE_MAX_INPUTS if that ceiling
+ * is ever a problem. */
 #define LE_MAX_INPUTS 8
 #define LE_MAX_LANES LE_MAX_INPUTS
 
@@ -481,68 +483,66 @@ LE_EXPORT int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled);
  * second press before then cancels. Disabling cancels tracks still waiting. */
 LE_EXPORT int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled);
 
-/* Sets the monitor input mask: which input channels are averaged (mono) into
- * the live monitor signal. Bits beyond the input range or loopback-excluded are
- * ignored. */
-LE_EXPORT int32_t le_engine_set_monitor_input_mask(le_engine* engine,
-                                                   int32_t mask);
+/* Sets chain entry [index] (0..LE_FX_MAX-1) on lane [lane] of track [channel] to
+ * [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY lazily
+ * allocates the entry's delay line (on this calling thread) and seeds the type's
+ * default parameters. The chain is non-destructive and stageless — every active
+ * entry colors playback in order. This sets the entry's value only; use
+ * le_engine_set_lane_fx_count to make entries active. */
+LE_EXPORT int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel,
+                                        int32_t lane, int32_t index,
+                                        int32_t type);
 
-/* Sets the monitor output mask: which output channels the monitor is routed to.
- * Bits beyond the output range are ignored. */
-LE_EXPORT int32_t le_engine_set_monitor_output_mask(le_engine* engine,
-                                                    int32_t mask);
+/* Sets the active chain length on lane [lane] of track [channel] to [count]
+ * (0..LE_FX_MAX): only entries [0, count) are processed, in order. */
+LE_EXPORT int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
+                                              int32_t lane, int32_t count);
 
-/* Makes the monitor follow track [track] (0..track_count-1): the monitored
- * signal becomes that track's pre-stage-processed input (its masked input run
- * through its before-track effects), so those effects are heard live. Pass -1
- * to stop following and monitor the raw masked inputs (the default). */
-LE_EXPORT int32_t le_engine_set_monitor_fx_track(le_engine* engine,
-                                                 int32_t track);
+/* Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on lane
+ * [lane] of track [channel] to [value] (clamped to 0..1). The parameter's
+ * meaning depends on the entry's le_fx_type. */
+LE_EXPORT int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
+                                              int32_t lane, int32_t index,
+                                              int32_t param, float value);
 
-/* Sets chain entry [index] (0..LE_FX_MAX-1) on track [channel] to [type] at
- * [stage] (le_fx_stage). Changing the type resets that entry's DSP state;
- * LE_FX_DELAY lazily allocates the entry's delay line (on this calling thread)
- * and seeds the type's default parameters. This sets the entry's value only;
- * use le_engine_set_track_fx_count to make entries active. */
-LE_EXPORT int32_t le_engine_set_track_fx(le_engine* engine, int32_t channel,
-                                         int32_t index, int32_t type,
-                                         int32_t stage);
+/* ---- per-input live monitor ---- *
+ * Each hardware input has an independent live monitor route: when enabled, its
+ * live signal is summed (through its own effect chain) into the output channels
+ * its output mask selects. It is NEVER recorded and is independent of all track
+ * state (record/play/overdub), so an input can be monitored whether or not any
+ * track is using it. This replaces the old global monitor-FX bus and the
+ * monitor-follows-a-track model. */
 
-/* Sets the active chain length on track [channel] to [count] (0..LE_FX_MAX):
+/* Enables or disables live monitoring of hardware input [input] and routes it
+ * to the output channels set in [output_mask] (bit c => output channel c). Bits
+ * beyond the output range are ignored; a loopback-excluded input is never
+ * monitored. */
+LE_EXPORT int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
+                                              int32_t enabled,
+                                              int32_t output_mask);
+
+/* Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input] to [type].
+ * Changing the type resets that entry's DSP state; LE_FX_DELAY lazily allocates
+ * the entry's delay line (on this calling thread) and seeds the type's default
+ * parameters. Use le_engine_set_monitor_input_fx_count to make entries active. */
+LE_EXPORT int32_t le_engine_set_monitor_input_fx(le_engine* engine,
+                                                 int32_t input, int32_t index,
+                                                 int32_t type);
+
+/* Sets monitor input [input]'s active chain length to [count] (0..LE_FX_MAX):
  * only entries [0, count) are processed, in order. */
-LE_EXPORT int32_t le_engine_set_track_fx_count(le_engine* engine,
-                                               int32_t channel, int32_t count);
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_count(le_engine* engine,
+                                                       int32_t input,
+                                                       int32_t count);
 
-/* Sets parameter [param] (0..LE_FX_PARAMS-1) of chain entry [index] on track
- * [channel] to [value] (clamped to 0..1). The parameter's meaning depends on
- * the entry's le_fx_type. */
-LE_EXPORT int32_t le_engine_set_track_fx_param(le_engine* engine,
-                                               int32_t channel, int32_t index,
-                                               int32_t param, float value);
-
-/* The monitor-FX bus: a single global effects chain applied to the live
- * monitored signal in every monitor mode (raw masked inputs or following a
- * track), so input effects are heard without depending on a track. The bus has
- * no pre/post distinction — all active entries process the monitor signal in
- * order. These mirror the per-track effect setters. */
-
-/* Sets monitor-bus chain entry [index] (0..LE_FX_MAX-1) to [type]. Changing the
- * type resets that entry's DSP state; LE_FX_DELAY lazily allocates its delay
- * line (on this calling thread) and seeds the type's default parameters. Use
- * le_engine_set_monitor_fx_count to make entries active. */
-LE_EXPORT int32_t le_engine_set_monitor_fx(le_engine* engine, int32_t index,
-                                           int32_t type);
-
-/* Sets the monitor bus's active chain length to [count] (0..LE_FX_MAX): only
- * entries [0, count) are processed, in order. */
-LE_EXPORT int32_t le_engine_set_monitor_fx_count(le_engine* engine,
-                                                 int32_t count);
-
-/* Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor-bus entry [index] to
- * [value] (clamped to 0..1). Its meaning depends on the entry's le_fx_type. */
-LE_EXPORT int32_t le_engine_set_monitor_fx_param(le_engine* engine,
-                                                 int32_t index, int32_t param,
-                                                 float value);
+/* Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor input [input]'s chain
+ * entry [index] to [value] (clamped to 0..1). Its meaning depends on the
+ * entry's le_fx_type. */
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_param(le_engine* engine,
+                                                       int32_t input,
+                                                       int32_t index,
+                                                       int32_t param,
+                                                       float value);
 
 /* ---- session persistence ---- *
  * Save: read each track's loop PCM with le_engine_export_track. Load: clear the

@@ -353,30 +353,33 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  // The engine's global monitor bus / masks / follow model was removed in favour
+  // of a per-input live monitor subsystem (le_engine_set_monitor_input*). The
+  // typed Dart API for that lands with the per-lane / per-input rework; until
+  // then these legacy monitor setters have no native backing.
   @override
   EngineResult setMonitorInputMask({required int mask}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_input_mask(_engine, mask),
+    throw UnimplementedError(
+      'global monitor masks were replaced by per-input monitors',
     );
   }
 
   @override
   EngineResult setMonitorOutputMask({required int mask}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_output_mask(_engine, mask),
+    throw UnimplementedError(
+      'global monitor masks were replaced by per-input monitors',
     );
   }
 
   @override
   EngineResult setMonitorFxTrack({required int track}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_fx_track(_engine, track),
+    throw UnimplementedError(
+      'monitor-follows-track was replaced by per-input monitors',
     );
   }
 
+  // Effect chains moved from the track to the lane. The track-addressed API
+  // maps to lane 0 for backward compatibility (per-lane Dart API lands later).
   @override
   EngineResult setTrackFx({
     required int channel,
@@ -386,13 +389,7 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_fx(
-        _engine,
-        channel,
-        index,
-        type.code,
-        stage.code,
-      ),
+      _bindings.le_engine_set_lane_fx(_engine, channel, 0, index, type.code),
     );
   }
 
@@ -400,7 +397,7 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult setTrackFxCount({required int channel, required int count}) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_fx_count(_engine, channel, count),
+      _bindings.le_engine_set_lane_fx_count(_engine, channel, 0, count),
     );
   }
 
@@ -413,9 +410,10 @@ class NativeAudioEngine implements AudioEngine {
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_track_fx_param(
+      _bindings.le_engine_set_lane_fx_param(
         _engine,
         channel,
+        0,
         index,
         param,
         value,
@@ -428,17 +426,15 @@ class NativeAudioEngine implements AudioEngine {
     required int index,
     required TrackEffectType type,
   }) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_fx(_engine, index, type.code),
+    throw UnimplementedError(
+      'the global monitor-FX bus was replaced by per-input monitors',
     );
   }
 
   @override
   EngineResult setMonitorFxCount({required int count}) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_fx_count(_engine, count),
+    throw UnimplementedError(
+      'the global monitor-FX bus was replaced by per-input monitors',
     );
   }
 
@@ -448,9 +444,8 @@ class NativeAudioEngine implements AudioEngine {
     required int param,
     required double value,
   }) {
-    _checkAlive();
-    return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_fx_param(_engine, index, param, value),
+    throw UnimplementedError(
+      'the global monitor-FX bus was replaced by per-input monitors',
     );
   }
 
