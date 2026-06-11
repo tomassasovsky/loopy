@@ -6,6 +6,34 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 
+/// Opens the input-monitoring routing graph as a full-screen page (so it has
+/// room instead of a cramped panel). Re-provides the [MonitorCubit] into the
+/// pushed route, which lives under the root navigator.
+Future<void> showMonitorRoutingPage({
+  required BuildContext context,
+  required int inputChannels,
+  required int outputChannels,
+  int excludedInputMask = 0,
+}) {
+  final cubit = context.read<MonitorCubit>();
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => BlocProvider.value(
+        value: cubit,
+        child: Scaffold(
+          key: const Key('monitorRouting_page'),
+          appBar: AppBar(title: const Text('Input monitoring')),
+          body: MonitorGraphView(
+            inputChannels: inputChannels,
+            outputChannels: outputChannels,
+            excludedInputMask: excludedInputMask,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /// A reference to one effect within a monitored input's chain, used as the
 /// drag payload when reordering (so a drop only lands on the same input).
 @immutable
@@ -48,8 +76,8 @@ class MonitorGraphView extends StatefulWidget {
   // ---- geometry ----
   static const double _chW = 54;
   static const double _chH = 24;
-  static const double _nodeW = 116;
-  static const double _nodeH = 40;
+  static const double _nodeW = 128;
+  static const double _nodeH = 50;
   static const double _cardW = 110;
   static const double _cardH = 38;
   static const double _gap = 16;
@@ -512,7 +540,6 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
           _selected = null;
         }),
         child: Container(
-          alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: MonitorGraphView._wet.withValues(
@@ -524,14 +551,29 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
               width: focused ? 2.5 : 1.5,
             ),
           ),
-          child: Text(
-            'In ${c + 1} monitor',
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: SetupSurfaceColors.t1,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'In ${c + 1} monitor',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: SetupSurfaceColors.t1,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  height: 1.1,
+                ),
+              ),
+              const Text(
+                'live · not recorded',
+                style: TextStyle(
+                  color: SetupSurfaceColors.t2,
+                  fontSize: 10,
+                  height: 1.2,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -699,10 +741,36 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
               state.forInput(s.input).effects[s.index],
             ),
           ],
+          const SizedBox(height: 10),
+          _legend(),
         ],
       ),
     );
   }
+
+  Widget _legend() => Row(
+    children: [
+      _legendKey(MonitorGraphView._wet, 'effected (wet) → outs', dashed: false),
+      const SizedBox(width: 20),
+      _legendKey(MonitorGraphView._dry, 'clean (dry) → outs', dashed: true),
+    ],
+  );
+
+  Widget _legendKey(Color color, String label, {required bool dashed}) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SizedBox(
+        width: 26,
+        height: 12,
+        child: CustomPaint(painter: _LegendLinePainter(color, dashed: dashed)),
+      ),
+      const SizedBox(width: 8),
+      Text(
+        label,
+        style: const TextStyle(color: SetupSurfaceColors.t2, fontSize: 12),
+      ),
+    ],
+  );
 
   Widget _focusControls(MonitorState state, int f) {
     return Row(
@@ -884,6 +952,35 @@ class _Edge {
   final Color color;
   final bool faded;
   final bool dashed;
+}
+
+/// Draws a short solid/dashed colour swatch for the wet/dry legend.
+class _LegendLinePainter extends CustomPainter {
+  _LegendLinePainter(this.color, {required this.dashed});
+  final Color color;
+  final bool dashed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4
+      ..color = color;
+    final y = size.height / 2;
+    if (dashed) {
+      var x = 0.0;
+      while (x < size.width) {
+        canvas.drawLine(Offset(x, y), Offset(x + 5, y), paint);
+        x += 9;
+      }
+    } else {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LegendLinePainter old) =>
+      old.color != color || old.dashed != dashed;
 }
 
 class _PathPainter extends CustomPainter {
