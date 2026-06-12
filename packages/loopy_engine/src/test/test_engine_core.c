@@ -1103,6 +1103,48 @@ static void test_loopback_latency_uses_loopback_channel(void) {
   free(in);
 }
 
+/* The correlator is level-independent (peak vs baseline ratio), so a weak echo
+ * still resolves; pure silence reports a timeout rather than locking onto noise. */
+static void test_loopback_latency_weak_echo_and_silence(void) {
+  printf("test_loopback_latency_weak_echo_and_silence\n");
+  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
+  le_snapshot s;
+  float* out = calloc((size_t)CAP * 2, sizeof(float));
+  float* in = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(out != NULL && in != NULL);
+
+  /* A faint (-34 dBFS) plateau on the loopback channel still resolves to RET. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, SR, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  le_engine_begin_latency_for_test(e);
+  drain(e);
+  for (int i = 0; i < CAP; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.02f : 0.0f;
+  }
+  le_engine_process(e, out, in, CAP);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
+  le_engine_destroy(e);
+
+  /* Pure silence -> timeout, not a spurious lock. */
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, SR, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e2, 0x2u);
+  le_engine_begin_latency_for_test(e2);
+  drain(e2);
+  for (int i = 0; i < CAP * 2; ++i) in[i] = 0.0f;
+  le_engine_process(e2, out, in, CAP);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.latency_state == LE_LATENCY_TIMEOUT);
+  le_engine_destroy(e2);
+
+  free(out);
+  free(in);
+}
+
 /* Regression: an empty input mask records silence even with a hot input bus.
  * (The single-channel-only case is covered by test_routing_input_mask.) */
 static void test_routing_input_mask_empty_records_silence(void) {
@@ -2660,6 +2702,7 @@ int main(void) {
   test_label_is_loopback();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
+  test_loopback_latency_weak_echo_and_silence();
   test_set_record_offset_publishes_latency();
   test_fx_bypass_is_transparent();
   test_fx_count_gates_the_chain();
