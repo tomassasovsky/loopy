@@ -15,6 +15,7 @@
  */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "engine_internal.h"
@@ -1052,47 +1053,54 @@ static void test_loopback_exclusion(void) {
   le_engine_destroy(e2);
 }
 
-/* The round-trip latency harness times the pulse returning on the loopback
- * channel(s) when the interface exposes them, and ignores the real inputs. */
+/* The round-trip latency harness captures the input envelope over a fixed
+ * window and cross-correlates it with the pulse to find the round-trip by the
+ * correlation peak. It uses the loopback channel(s) when the interface exposes
+ * them, and ignores the real inputs. */
 static void test_loopback_latency_uses_loopback_channel(void) {
   printf("test_loopback_latency_uses_loopback_channel\n");
-  enum { N = 200, RET = 150 };
-  float out[2 * N];
-  float in[2 * N];
+  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
   le_snapshot s;
+  float* out = calloc((size_t)CAP * 2, sizeof(float));
+  float* in = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(out != NULL && in != NULL);
 
-  // ch1 is the loopback; the looped-back pulse arrives there at frame RET,
-  // after the detector's dead-time. ch0 (a real input) stays silent.
+  // ch1 is the loopback; the looped-back pulse returns there as a PULSE-length
+  // plateau starting at frame RET. ch0 (a real input) stays silent. Processing
+  // a full capture window resolves the measurement by correlation peak = RET.
   le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 2, 2, 100000);
+  le_engine_configure(e, SR, 2, 2, 100000);
   le_engine_set_excluded_input_mask_for_test(e, 0x2u);
   CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
   drain(e); // apply MEASURE_LATENCY
-  for (int i = 0; i < N; ++i) {
+  for (int i = 0; i < CAP; ++i) {
     in[i * 2 + 0] = 0.0f;
-    in[i * 2 + 1] = i >= RET ? 0.5f : 0.0f;
+    in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
   }
-  le_engine_process(e, out, in, N);
+  le_engine_process(e, out, in, CAP);
   le_engine_get_snapshot(e, &s);
   CHECK(s.latency_state == LE_LATENCY_DONE);
   CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
   le_engine_destroy(e);
 
   // Control: the same pulse on a real input (ch0) must NOT be mistaken for the
-  // loopback return — detection stays on the loopback channel only.
+  // loopback return — the loopback channel stays silent, so there is no signal.
   le_engine* e2 = le_engine_create();
-  le_engine_configure(e2, 48000, 2, 2, 100000);
+  le_engine_configure(e2, SR, 2, 2, 100000);
   le_engine_set_excluded_input_mask_for_test(e2, 0x2u);
   le_engine_begin_latency_for_test(e2);
   drain(e2);
-  for (int i = 0; i < N; ++i) {
-    in[i * 2 + 0] = i >= RET ? 0.5f : 0.0f;
+  for (int i = 0; i < CAP; ++i) {
+    in[i * 2 + 0] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
     in[i * 2 + 1] = 0.0f;
   }
-  le_engine_process(e2, out, in, N);
+  le_engine_process(e2, out, in, CAP);
   le_engine_get_snapshot(e2, &s);
-  CHECK(s.latency_state == LE_LATENCY_MEASURING); // not detected on a real input
+  CHECK(s.latency_state == LE_LATENCY_TIMEOUT); // nothing on the loopback channel
   le_engine_destroy(e2);
+
+  free(out);
+  free(in);
 }
 
 /* Regression: an empty input mask records silence even with a hot input bus.

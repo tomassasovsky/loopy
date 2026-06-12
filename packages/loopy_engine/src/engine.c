@@ -42,12 +42,11 @@
  * a full-scale pulse on a typical interface), so we emit a quiet calibration
  * tone rather than full scale to spare the user's monitors, and detect with a
  * threshold comfortably below the echo yet well above the noise floor. */
-#define LE_LATENCY_PULSE_AMP 0.3f /* calibration pulse amplitude (0..1) */
-#define LE_LATENCY_THRESHOLD 0.05f /* loopback detection level (0..1) */
+#define LE_LATENCY_PULSE_AMP 0.9f  /* calibration tone amplitude (0..1) */
+#define LE_LATENCY_TONE_HZ 1000.0f /* tone-burst freq (AC: survives AC-coupling) */
+#define LE_LATENCY_PEAK_RATIO 2.5f /* correlation peak must exceed this x baseline */
 #define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
-#define LE_LATENCY_DEAD_DIV 400    /* dead-time   = sample_rate / this (~2.5ms) */
-#define LE_LATENCY_RETRY_DIV 10    /* per-attempt = sample_rate / this (~100ms) */
-#define LE_LATENCY_ATTEMPTS 5      /* re-emit this many pulses before timing out */
+#define LE_LATENCY_CAPTURE_DIV 10  /* capture window = sample_rate / this (~100ms) */
 
 /* Per-track buffer pool size: one live buffer plus up to LE_UNDO_SLOTS-1 undo/
  * redo snapshots. Buffers are allocated lazily, so memory grows only as deep as
@@ -282,11 +281,15 @@ struct le_engine {
   float loop_viz_accum;
   float track_viz_accum[LE_MAX_TRACKS];
 
-  /* Latency harness (audio-thread-local + published state). */
+  /* Latency harness (audio-thread-local + published state). The measurement
+   * captures the input-magnitude envelope into lat_buf for a fixed window after
+   * emitting the pulse, then cross-correlates it with the pulse to find the
+   * round-trip by its peak (robust to crosstalk/noise). */
   int lat_active;
   int32_t lat_emit_remaining;
-  uint64_t lat_frames_since_emit;
-  int32_t lat_attempts_remaining;
+  float* lat_buf;      /* envelope capture (control-thread allocated) */
+  int32_t lat_buf_cap; /* capacity in frames */
+  int32_t lat_buf_pos; /* write head during a measurement */
 
   char device_name[256];
   int passthrough; /* input monitoring */
@@ -775,8 +778,7 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       e->lat_active = 1;
       /* Emit for ~10 ms so the pulse survives D/A → cable → A/D. */
       e->lat_emit_remaining = sr / LE_LATENCY_PULSE_DIV;
-      e->lat_frames_since_emit = 0;
-      e->lat_attempts_remaining = LE_LATENCY_ATTEMPTS;
+      e->lat_buf_pos = 0; /* start a fresh capture window */
       store_i32(&e->a_latency_state, LE_LATENCY_MEASURING);
       /* A loopback measurement requires a physical out->in cable, which forms a
        * feedback loop with input monitoring (out -> cable -> in -> monitor ->
@@ -1057,6 +1059,49 @@ static void apply_command(le_engine* e, const le_command* cmd) {
   }
 }
 
+/* Resolves a captured latency measurement: cross-correlates the input-magnitude
+ * envelope (lat_buf) with the emitted pulse — a length-M boxcar — via a sliding
+ * sum, and publishes the peak lag as the round-trip record offset. Integrating
+ * over the whole pulse locks onto the sustained echo and rejects the brief
+ * crosstalk/noise a first-over-threshold test mis-locked onto. Audio-thread,
+ * one-shot at end of capture; bounded (<= lat_buf_cap iterations). */
+static void le_latency_resolve(le_engine* e, int sr) {
+  const int32_t m = sr / LE_LATENCY_PULSE_DIV; /* pulse length in frames */
+  const int32_t n = e->lat_buf_pos;            /* frames captured */
+  if (e->lat_buf == NULL || n <= m) {
+    store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
+    return;
+  }
+  double window = 0.0;
+  for (int32_t i = 0; i < m; ++i) window += e->lat_buf[i];
+  double best = window;
+  double total = window;
+  int32_t best_lag = 0;
+  int32_t count = 1;
+  for (int32_t lag = 1; lag + m <= n; ++lag) {
+    window += e->lat_buf[lag + m - 1] - e->lat_buf[lag - 1];
+    total += window;
+    ++count;
+    if (window > best) {
+      best = window;
+      best_lag = lag;
+    }
+  }
+  const double avg = total / (double)count;
+  /* The echo's correlation peak must stand clearly above the baseline — a
+   * level-independent test that works for weak loopback levels; the tiny
+   * absolute floor rejects pure silence. */
+  if (best < (double)LE_LATENCY_PEAK_RATIO * avg || best / (double)m < 1e-4) {
+    store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
+    return;
+  }
+  store_i32(&e->a_record_offset, best_lag);
+  atomic_store_explicit(&e->a_latency_ms_bits,
+                        f64_to_bits((double)best_lag * 1000.0 / (double)sr),
+                        memory_order_relaxed);
+  store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+}
+
 /* ---- the real-time DSP core ---- */
 
 void le_engine_process(le_engine* e, float* output, const float* input,
@@ -1182,46 +1227,32 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * routed loopback capture device) it returns on the normal inputs. */
     const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
 
-    /* Latency harness takes over the output entirely while measuring.
-     *
-     * Each attempt broadcasts a quiet ~10 ms pulse, then silence, and listens
-     * for the echo. lat_frames_since_emit counts from the current pulse's first
-     * frame. A short dead-time suppresses direct output bleed before we start
-     * checking input; thereafter we check every frame (the echo can arrive while
-     * a small-buffer pulse is still emitting). If an attempt's window elapses
-     * with no echo, we re-emit — a single dropped period at device startup costs
-     * one retry instead of a full timeout. After LE_LATENCY_ATTEMPTS misses we
-     * report a timeout. The retry interval (~100 ms) is far longer than any real
-     * round-trip, so an echo is never mis-attributed to the wrong pulse. */
+    /* Latency harness takes over the output entirely while measuring. It emits
+     * a quiet ~10 ms pulse at the start of a fixed capture window, records the
+     * input-magnitude envelope across that window, then cross-correlates it with
+     * the pulse to find the round-trip by the correlation peak (le_latency_
+     * resolve). The peak — integrated over the whole pulse — locks onto the real
+     * echo and ignores the brief direct/crosstalk bleed that a first-over-
+     * threshold test mis-reported (especially on low-latency JACK graphs). */
     if (e->lat_active) {
       float broadcast = 0.0f;
       if (e->lat_emit_remaining > 0) {
-        broadcast = LE_LATENCY_PULSE_AMP;
+        /* A tone burst (not a DC level): AC-coupled interface inputs high-pass
+         * a constant pulse down to edge transients, leaving nothing to
+         * correlate. A 1 kHz burst returns as a sustained AC signal. */
+        const int32_t emitted =
+            (sr / LE_LATENCY_PULSE_DIV) - e->lat_emit_remaining;
+        const float phase = 2.0f * 3.14159265f * LE_LATENCY_TONE_HZ *
+                            (float)emitted / (float)sr;
+        broadcast = LE_LATENCY_PULSE_AMP * sinf(phase);
         e->lat_emit_remaining--;
       }
-      e->lat_frames_since_emit++;
-
-      const uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
-      const uint64_t attempt_frames = (uint64_t)(sr / LE_LATENCY_RETRY_DIV);
-      if (e->lat_frames_since_emit > dead_frames &&
-          lat_mag >= LE_LATENCY_THRESHOLD) {
-        const double ms = (double)e->lat_frames_since_emit * 1000.0 / (double)sr;
-        atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
-                              memory_order_relaxed);
-        store_i32(&e->a_latency_state, LE_LATENCY_DONE);
-        /* The measured round-trip is exactly the record offset that aligns
-         * overdubs; apply it automatically (the UI can override). */
-        store_i32(&e->a_record_offset, (int32_t)e->lat_frames_since_emit);
+      if (e->lat_buf != NULL && e->lat_buf_pos < e->lat_buf_cap) {
+        e->lat_buf[e->lat_buf_pos++] = lat_mag;
+      }
+      if (e->lat_buf == NULL || e->lat_buf_pos >= e->lat_buf_cap) {
+        le_latency_resolve(e, sr);
         e->lat_active = 0;
-      } else if (e->lat_frames_since_emit >= attempt_frames) {
-        if (e->lat_attempts_remaining > 1) {
-          e->lat_attempts_remaining--;
-          e->lat_emit_remaining = sr / LE_LATENCY_PULSE_DIV;
-          e->lat_frames_since_emit = 0;
-        } else {
-          store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
-          e->lat_active = 0;
-        }
       }
       for (int c = 0; c < ch_out; ++c) {
         out[f * ch_out + c] = broadcast;
@@ -1622,6 +1653,14 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
   engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
+
+  /* Latency-measurement capture window (~100 ms): the audio thread fills it with
+   * the input-magnitude envelope, the resolver cross-correlates it. */
+  free(engine->lat_buf);
+  engine->lat_buf_cap = sample_rate / LE_LATENCY_CAPTURE_DIV;
+  engine->lat_buf = (float*)calloc((size_t)engine->lat_buf_cap, sizeof(float));
+  engine->lat_buf_pos = 0;
+  if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
 
@@ -1997,6 +2036,17 @@ void le_engine_destroy(le_engine* engine) {
       free(engine->monitors[c].fx.delay[s]);
     }
   }
+  free(engine->lat_buf);
+#if defined(__linux__)
+  /* Restore PipeWire's dynamic quantum that le_engine_start forced (best-effort,
+   * mirrors the pw-metadata force there). */
+  {
+    extern int system(const char* command);
+    int rc =
+        system("pw-metadata -n settings 0 clock.force-quantum 0 >/dev/null 2>&1");
+    (void)rc;
+  }
+#endif
   free(engine);
 }
 
@@ -2049,15 +2099,19 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   const ma_uint32 backend_count = 3;
   /* JACK/PipeWire takes its buffer size (quantum) from the server and ignores
    * our requested period, so the in-app buffer selector would otherwise have no
-   * effect on Linux latency. Ask PipeWire — per app, no global config edit — to
-   * run our graph at the requested buffer size by exporting PIPEWIRE_QUANTUM
-   * before the JACK client connects. PipeWire runs at the smallest quantum any
-   * active client requests, so this lowers latency to our buffer while Loopy is
-   * open and restores it on exit. */
+   * effect on Linux latency. Two steps make it stick:
+   *   1. export PIPEWIRE_QUANTUM before the JACK client connects (wins on the
+   *      first connection);
+   *   2. force the graph quantum globally via pw-metadata — a later reopen can
+   *      otherwise inherit another driver's larger quantum (e.g. a webcam mic),
+   *      and a per-app request loses to it. Best-effort: pw-metadata ships with
+   *      PipeWire; if absent the env in (1) is the fallback. le_engine_destroy
+   *      restores the dynamic quantum. */
   {
-    /* setenv is POSIX, not ISO C; declare it so a strict -std=c11 build (the
-     * device-free test harness) sees it — the CMake build uses gnu11. */
+    /* setenv/system are POSIX, not ISO C; declare so a strict -std=c11 build
+     * (the device-free test harness) sees them — the CMake build uses gnu11. */
     extern int setenv(const char* name, const char* value, int overwrite);
+    extern int system(const char* command);
     /* Default to 256 frames (~5 ms) when no buffer is selected, instead of the
      * PipeWire server default (often 1024 / ~21 ms). */
     const int q_rate = config->sample_rate > 0 ? config->sample_rate : 48000;
@@ -2066,6 +2120,13 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     char quantum[32];
     snprintf(quantum, sizeof(quantum), "%d/%d", q_frames, q_rate);
     setenv("PIPEWIRE_QUANTUM", quantum, /*overwrite=*/1);
+    char cmd[160];
+    snprintf(cmd, sizeof(cmd),
+             "pw-metadata -n settings 0 clock.force-quantum %d "
+             ">/dev/null 2>&1",
+             q_frames);
+    int rc = system(cmd);
+    (void)rc;
   }
 #else
   const ma_backend* p_backends = NULL;
@@ -2130,7 +2191,7 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;
-  engine->lat_attempts_remaining = 0;
+  engine->lat_buf_pos = 0;
 
   strncpy(engine->device_name, engine->device.playback.name,
           sizeof(engine->device_name) - 1);
