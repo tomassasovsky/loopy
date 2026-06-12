@@ -20,17 +20,27 @@ setup, and JACK exposes the full multichannel interface (ALSA only offers a
 Consequences of the JACK backend:
 
 - **Buffer size = the PipeWire quantum.** JACK takes its buffer from the server,
-  so the engine exports `PIPEWIRE_QUANTUM=<buffer>/<rate>` (per app, no global
-  config) before connecting. The in-app **Buffer size** selector therefore
-  controls latency directly; default is 256 frames (~5 ms). PipeWire runs at the
-  smallest quantum any client requests and restores it when Loopy exits.
+  so the engine both exports `PIPEWIRE_QUANTUM=<buffer>/<rate>` (wins on the first
+  connection) and forces the graph quantum globally via `pw-metadata` (a per-app
+  request loses to another driver's quantum on a reopen). The in-app **Buffer
+  size** selector therefore controls latency directly; default is 256 frames
+  (~5 ms). The dynamic quantum is restored when the engine stops or exits — but a
+  crash leaves it forced (`pw-metadata -n settings 0 clock.force-quantum 0`
+  resets it).
 - **Generic device name.** JACK reports a single "Default … Device", so the
-  status shows the *selected* device's name instead. Specific device pinning is
-  not available through JACK — it uses the PipeWire default (your interface).
+  status shows the *selected* device's name instead.
+- **Ports are pinned to the selected device.** miniaudio's JACK backend would
+  otherwise auto-connect to *every* aggregated physical port (all devices), so
+  channels land on the wrong hardware and the channel count is inflated. After
+  the device opens, the engine rewires its ports to only the selected interface's
+  `<name>:capture_*` / `:playback_*` ports (in numeric order, skipping monitor
+  ports) and reports just that device's channel count — so I/O maps to your
+  interface like on CoreAudio. **Select the interface as both input and output**;
+  pinning keys off the selected device ids.
 - **Latency calibration is per (device, sample-rate, buffer).** Measure
   round-trip latency *after* choosing your buffer; changing the buffer needs a
   re-measure. The measurement needs a physical out→in loopback cable (it detects
-  the pulse on the real input channels).
+  the tone burst on the real input channels by cross-correlation).
 
 ## Renderer: Impeller is disabled
 
@@ -42,12 +52,16 @@ is needed. Remove that call once Linux Impeller matures.
 
 ## Audio device selection
 
-- Under the JACK backend Loopy uses PipeWire's **default** device, so make your
-  interface the PipeWire default (or the only Pro-Audio device). The Audio-tab
-  device pickers still drive the selection label and the loopback heuristic.
+- **Select your interface as both input and output** in the Audio tab. The engine
+  pins its JACK ports to exactly that device (see "Ports are pinned" above); with
+  no selection it falls back to miniaudio's aggregate auto-connect.
 - An explicit input selection always wins over loopback auto-routing — important
   on PipeWire, where every output sink exposes a "Monitor of …" source that the
   cable-free latency feature would otherwise auto-pick as the capture device.
+- **Other apps can still steal a channel.** PipeWire lets any client grab an
+  interface input (e.g. the GNOME Settings input meter takes the first one or two
+  channels); the engine only repins ports it owns, so close such apps (or point
+  them at a different device) if a channel reads silence.
 - Keep the engine at **48 kHz** for the widest channel count on USB interfaces
   (see below).
 
