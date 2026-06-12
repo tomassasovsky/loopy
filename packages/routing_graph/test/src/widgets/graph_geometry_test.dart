@@ -68,12 +68,12 @@ void main() {
         outY: outY,
         faded: false,
       );
-      // One rail hop (100->200 at y=50) + one wire per output (2).
-      expect(edges, hasLength(3));
-      expect(edges.first.from, const Offset(100, 50));
-      expect(edges.first.to, const Offset(200, 50));
-      expect(edges[1].to, Offset(300, outY(0, 2)));
-      expect(edges[2].to, Offset(300, outY(1, 2)));
+      // One curved wire per output, each bending at the rail.
+      expect(edges, hasLength(2));
+      expect(edges[0].from, const Offset(100, 50));
+      expect(edges[0].knee, const Offset(200, 50));
+      expect(edges[0].to, Offset(300, outY(0, 2)));
+      expect(edges[1].to, Offset(300, outY(1, 2)));
     });
 
     test('skips a send with an empty mask', () {
@@ -106,9 +106,11 @@ void main() {
         outY: outY,
         faded: false,
       );
-      // No rail hop (origin is right of the rail) — just the fan wire.
+      // No knee when the origin already sits past the rail.
       expect(edges, hasLength(1));
       expect(edges.single.from, const Offset(200, 50));
+      expect(edges.single.knee, isNull);
+      expect(edges.single.to, Offset(300, outY(0, 1)));
     });
 
     // R1 mitigation: the dual-route (wet + dry) geometry must keep the dry send
@@ -142,9 +144,26 @@ void main() {
       final dry = edges.where((e) => e.color == _dry).toList();
       expect(wet, isNotEmpty);
       expect(dry, isNotEmpty);
-      // Every wet origin sits at wetY; every dry origin at the distinct dryY.
-      expect(wet.every((e) => e.from.dy == wetY), isTrue);
-      expect(dry.every((e) => e.from.dy == dryY), isTrue);
+      // Each send fans from its own row Y with a knee on the rail.
+      expect(
+        wet.single,
+        const GraphEdge(
+          Offset(150, wetY),
+          Offset(300, 10),
+          color: _wet,
+          knee: Offset(200, wetY),
+        ),
+      );
+      expect(
+        dry.single,
+        const GraphEdge(
+          Offset(100, dryY),
+          Offset(300, 10),
+          color: _dry,
+          knee: Offset(200, dryY),
+          dashed: true,
+        ),
+      );
       expect(wetY == dryY, isFalse);
       // The dry send is dashed; the wet send is not.
       expect(dry.every((e) => e.dashed), isTrue);

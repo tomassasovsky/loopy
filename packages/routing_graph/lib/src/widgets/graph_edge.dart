@@ -11,6 +11,7 @@ class GraphEdge {
     this.from,
     this.to, {
     required this.color,
+    this.knee,
     this.faded = false,
     this.dashed = false,
   });
@@ -20,6 +21,12 @@ class GraphEdge {
 
   /// The wire's end point, in canvas coordinates.
   final Offset to;
+
+  /// An optional bend point between [from] and [to].
+  ///
+  /// When set, the wire is one stroke: a straight run into [knee], then a
+  /// curved fan from [knee] to [to] with a matched horizontal tangent.
+  final Offset? knee;
 
   /// The wire's stroke colour (before the faded/normal alpha is applied).
   final Color color;
@@ -36,10 +43,11 @@ class GraphEdge {
       other is GraphEdge &&
       other.from == from &&
       other.to == to &&
+      other.knee == knee &&
       other.color == color &&
       other.faded == faded &&
       other.dashed == dashed;
 
   @override
-  int get hashCode => Object.hash(from, to, color, faded, dashed);
+  int get hashCode => Object.hash(from, to, knee, color, faded, dashed);
 }

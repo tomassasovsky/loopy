@@ -10,7 +10,7 @@ import 'package:routing_graph/routing_graph.dart';
 ///
 /// Each monitored input has two parallel sends: the **effected (wet)** signal
 /// runs through the chain to its outputs, and the **clean (dry)** signal leaves
-/// from below the node (so it clears the cards) to its own outputs.
+/// from the bottom centre of the monitor node to its own outputs.
 @immutable
 class MonitorGraphLayout {
   const MonitorGraphLayout._({
@@ -119,8 +119,27 @@ class MonitorGraphLayout {
       final rightX = xs.isEmpty
           ? nodeX + monitorNodeWidth
           : xs.last + cardWidth;
-      // Two parallel sends: wet from the chain tail, dry from below the node
-      // (so it never hides behind the cards), each fanned to its own outputs.
+      const dryX = nodeX + monitorNodeWidth / 2;
+      final dryCardBottom = y + monitorNodeHeight / 2;
+      final dryY = y + dryDrop;
+      // The dry send drops below the node, then turns to run across. End the
+      // drop a knee-radius past the corner so the painter can round the 90°
+      // turn; the fan then continues the horizontal from that point.
+      const dryAcrossX = dryX + dryCornerRadius;
+      if (m.dryOutputMask != 0) {
+        edges.add(
+          GraphEdge(
+            Offset(dryX, dryCardBottom),
+            Offset(dryAcrossX, dryY),
+            color: dryColor,
+            knee: Offset(dryX, dryY),
+            faded: faded,
+            dashed: true,
+          ),
+        );
+      }
+      // Two parallel sends: wet from the chain tail, dry from below the
+      // monitor node (90° down then across), each fanned to its own outputs.
       edges.addAll(
         fanEdges(
           sends: [
@@ -131,8 +150,8 @@ class MonitorGraphLayout {
               color: wetColor,
             ),
             GraphSend(
-              originX: nodeX + monitorNodeWidth,
-              originY: y + dryDrop,
+              originX: dryAcrossX,
+              originY: dryY,
               mask: m.dryOutputMask,
               color: dryColor,
               dashed: true,
@@ -176,11 +195,14 @@ class MonitorGraphLayout {
   static const double monitorRowHeight = 80; // vertical pitch between rows
   static const double cardWidth = kRoutingCardWidth;
   static const double cardGap = kRoutingCardGap;
-  static const double fanGutter = 100; // input→node / rail→output gutter
+  static const double fanGutter = 150; // input→node / rail→output gutter
   static const double addSlotWidth = kRoutingAddSlot; // add-effect button slot
   static const double padding = 16; // canvas padding
   // The dry edge leaves below the node so it clears the cards.
-  static const double dryDrop = kRoutingCardHeight / 2 + 10;
+  static const double dryDrop = kRoutingCardHeight / 2 + 15;
+  // Radius of the dry send's rounded drop→across corner. Kept under the drop
+  // height so the painter's clamp leaves a little straight run before the turn.
+  static const double dryCornerRadius = 6;
 
   /// The x of the first effect card (also the empty-chain drop spot).
   static const double cardStartX =

@@ -17,6 +17,7 @@ export 'src/engine_snapshot.dart'
         TrackState,
         kMaxLanes;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
+export 'src/mock_audio_engine.dart' show MockAudioEngine;
 export 'src/native_audio_engine.dart' show NativeAudioEngine;
 export 'src/track_effect.dart'
     show

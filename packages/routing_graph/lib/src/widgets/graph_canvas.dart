@@ -19,6 +19,7 @@ class GraphCanvas extends StatefulWidget {
     required this.height,
     required this.fitIdentity,
     required this.children,
+    this.onTapBackground,
     super.key,
   });
 
@@ -33,6 +34,10 @@ class GraphCanvas extends StatefulWidget {
 
   /// The positioned graph contents (painter, nodes, cards).
   final List<Widget> children;
+
+  /// Called when the user taps empty canvas (not a node or card), e.g. to clear
+  /// the current selection. When null, background taps do nothing.
+  final VoidCallback? onTapBackground;
 
   @override
   State<GraphCanvas> createState() => _GraphCanvasState();
@@ -69,26 +74,29 @@ class _GraphCanvasState extends State<GraphCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.routingGraph.surface,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          _maybeFit(constraints.maxWidth, constraints.maxHeight);
-          return ClipRect(
-            child: InteractiveViewer(
-              transformationController: _tc,
-              constrained: false,
-              boundaryMargin: const EdgeInsets.all(double.infinity),
-              minScale: 0.3,
-              maxScale: 3,
-              child: SizedBox(
-                width: widget.width,
-                height: widget.height,
-                child: Stack(children: widget.children),
+    return GestureDetector(
+      onTap: widget.onTapBackground,
+      child: ColoredBox(
+        color: context.routingGraph.surface,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            _maybeFit(constraints.maxWidth, constraints.maxHeight);
+            return ClipRect(
+              child: InteractiveViewer(
+                transformationController: _tc,
+                constrained: false,
+                boundaryMargin: const EdgeInsets.all(double.infinity),
+                minScale: 0.3,
+                maxScale: 3,
+                child: SizedBox(
+                  width: widget.width,
+                  height: widget.height,
+                  child: Stack(children: widget.children),
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

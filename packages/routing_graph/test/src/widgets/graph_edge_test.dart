@@ -58,6 +58,16 @@ void main() {
             ),
         isFalse,
       );
+      expect(
+        base ==
+            const GraphEdge(
+              Offset.zero,
+              Offset(10, 10),
+              color: _wet,
+              knee: Offset(5, 0),
+            ),
+        isFalse,
+      );
     });
   });
 }

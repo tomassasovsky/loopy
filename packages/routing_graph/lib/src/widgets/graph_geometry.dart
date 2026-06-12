@@ -38,7 +38,7 @@ Positioned positionedNode({
 /// ([originX], [originY]) in [color], optionally [dashed].
 ///
 /// A row can have several sends — the lane graph has one (its output), the
-/// monitor graph has two (wet from the chain tail, dry from below the node) —
+/// monitor graph has two (wet from the chain tail, dry from the monitor node) —
 /// each with its own origin so they never overlap.
 @immutable
 class GraphSend {
@@ -121,10 +121,10 @@ List<GraphEdge> chainEdges({
   return edges;
 }
 
-/// The fan for each of [sends]: a hop along the send's own row to [railX] (a
-/// shared rail just left of the output column), then one wire per set output
-/// bit out to [outX]. Routing every send through its row's empty gutter means a
-/// wire never passes behind another row's cards, however short the chain.
+/// The fan for each of [sends]: one wire per output from the send's origin,
+/// bending at [railX] on the row (via [GraphEdge.knee]) before curving into
+/// [outX]. Each output gets its own arc so bundled wires fan apart instead of
+/// stacking on a shared vertical rail.
 ///
 /// [outCount] is the number of outputs; [outY] maps an output index and that
 /// count to its vertical position; [faded] dims a non-focused row's wires.
@@ -143,23 +143,14 @@ List<GraphEdge> fanEdges({
         if (s.mask & (1 << o) != 0) o,
     ];
     if (outs.isEmpty) continue;
-    if (railX > s.originX + 0.5) {
-      edges.add(
-        GraphEdge(
-          Offset(s.originX, s.originY),
-          Offset(railX, s.originY),
-          color: s.color,
-          faded: faded,
-          dashed: s.dashed,
-        ),
-      );
-    }
+    final needsHop = railX > s.originX + 0.5;
     for (final o in outs) {
       edges.add(
         GraphEdge(
-          Offset(railX, s.originY),
+          needsHop ? Offset(s.originX, s.originY) : Offset(railX, s.originY),
           Offset(outX, outY(o, outCount)),
           color: s.color,
+          knee: needsHop ? Offset(railX, s.originY) : null,
           faded: faded,
           dashed: s.dashed,
         ),
