@@ -305,6 +305,53 @@ void main() {
     );
 
     blocTest<AudioSetupCubit, AudioSetupState>(
+      'an explicit capture device wins over loopback auto-routing',
+      build: () {
+        when(repository.detectLoopback).thenReturn(routable);
+        return buildCubit();
+      },
+      // The host advertises a routable loopback (as every PipeWire output
+      // does), but the user pinned a real input device: capture must open on
+      // it, not on the loopback, and the loopback auto-measure must be skipped.
+      act: (cubit) => cubit
+        ..setCaptureDevice('in-1')
+        ..start(),
+      verify: (_) {
+        verify(
+          () => repository.startEngine(
+            const EngineConfig(
+              sampleRate: 48000,
+              bufferFrames: 128,
+              passthrough: true,
+              captureDeviceId: 'in-1',
+            ),
+          ),
+        ).called(1);
+        verifyNever(repository.measureLatency);
+      },
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'an explicit capture device still auto-measures via loopback channels',
+      build: () {
+        when(repository.detectLoopback).thenReturn(routable);
+        // The pinned interface itself reports dedicated loopback channels, so a
+        // measurement is still meaningful even though capture is not the
+        // monitor source.
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            status: EngineStatus(isConnected: true, excludedInputMask: 0x30),
+          ),
+        );
+        return buildCubit();
+      },
+      act: (cubit) => cubit
+        ..setCaptureDevice('in-1')
+        ..start(),
+      verify: (_) => verify(repository.measureLatency).called(1),
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
       'start does not auto-measure when no loopback is detected',
       build: buildCubit,
       act: (cubit) => cubit.start(),

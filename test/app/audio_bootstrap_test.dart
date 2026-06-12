@@ -236,6 +236,34 @@ void main() {
     );
 
     test(
+      'a saved capture device wins over loopback auto-routing',
+      () async {
+        // A routable loopback exists (as on any PipeWire host), but the saved
+        // config pins a real input device: capture must not be auto-routed to
+        // the loopback, and the loopback-driven auto-measure must be skipped.
+        engine.loopback = const LoopbackInfo(
+          available: true,
+          kind: LoopbackKind.virtualDevice,
+          deviceName: 'BlackHole',
+        );
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            monitorInput: true,
+            captureDeviceId: 'clarett-in',
+          ),
+        );
+
+        await tryAutoStartEngine(repository: repository, settings: settings);
+
+        expect(engine.lastConfig?.useLoopbackCapture, isFalse);
+        expect(engine.lastConfig?.captureDeviceId, 'clarett-in');
+        expect(engine.measureLatencyCalls, 0);
+      },
+    );
+
+    test(
       'auto-measures when no saved offset and the device has loopback channels',
       () async {
         // No routable loopback device, but the opened interface reports

@@ -135,7 +135,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // opens with all its channels; the negotiated counts are reported back.
     passthrough: state.monitorInput,
     maxLoopFrames: _maxLoopFrames(state.maxLoopMinutes, state.sampleRate),
-    useLoopbackCapture: state.loopback.isAutoRoutable,
+    // An explicitly chosen input device always wins: only auto-route capture to
+    // a detected loopback when the user has not pinned a capture device.
+    // Otherwise, on hosts where every output exposes a "monitor" capture source
+    // (e.g. PipeWire), the loopback auto-route would silently commandeer the
+    // capture path and ignore the selected interface.
+    useLoopbackCapture:
+        state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
   );
@@ -174,7 +180,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       // with dedicated loopback channels (e.g. a Scarlett's "Loop 1/2", now
       // open and reported via the excluded-input mask). The measured offset is
       // persisted per device by _syncLatencyPersistence.
-      if (state.loopback.isAutoRoutable ||
+      if ((state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty) ||
           _repository.state.status.excludedInputMask != 0) {
         _repository.measureLatency();
       }

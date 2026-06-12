@@ -22,7 +22,12 @@ Future<bool> tryAutoStartEngine({
       maxLoopFrames: saved.maxLoopMinutes <= 0
           ? 0
           : saved.maxLoopMinutes * 60 * saved.sampleRate,
-      useLoopbackCapture: loopback.isAutoRoutable,
+      // An explicitly chosen input device always wins: only auto-route capture
+      // to a detected loopback when no capture device was pinned (otherwise a
+      // ubiquitous "monitor" source — e.g. on PipeWire — would commandeer the
+      // capture path and ignore the saved interface).
+      useLoopbackCapture:
+          loopback.isAutoRoutable && saved.captureDeviceId.isEmpty,
       playbackDeviceId: saved.playbackDeviceId,
       captureDeviceId: saved.captureDeviceId,
     ),
@@ -46,7 +51,8 @@ Future<bool> tryAutoStartEngine({
   );
   if (savedOffset != null && savedOffset > 0) {
     repository.setRecordOffset(savedOffset);
-  } else if (loopback.isAutoRoutable || status.excludedInputMask != 0) {
+  } else if ((loopback.isAutoRoutable && saved.captureDeviceId.isEmpty) ||
+      status.excludedInputMask != 0) {
     repository.measureLatency();
   }
 
