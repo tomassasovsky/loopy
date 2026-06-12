@@ -213,6 +213,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Triggers a loopback round-trip latency measurement.
   void measureLatency() => _repository.measureLatency();
 
+  /// Sets the record offset (latency compensation) directly, in frames — a
+  /// manual override for when the automatic measurement isn't available or
+  /// reliable. Applied live; persisted per device by [_syncLatencyPersistence]
+  /// on the next engine tick (the engine reports it back in the snapshot).
+  void setRecordOffset(int frames) =>
+      _repository.setRecordOffset(frames < 0 ? 0 : frames);
+
   void _onLooperState(LooperState looper) {
     emit(_projectFromRepository(looper, current: state));
     _detectConnectivity(looper.status);

@@ -137,6 +137,7 @@
     "engineRunningHint": "El motor está abierto y listo. Deténlo para reconfigurar.",
     "roundTripLatencyLabel": "Latencia de ida y vuelta",
     "recordOffsetLabel": "Desplazamiento de grabación",
+    "applyLabel": "Aplicar",
     "measuringEllipsis": "Midiendo…",
     "measureRoundTripLatency": "Medir latencia de ida y vuelta",
     "stopEngine": "Detener motor",

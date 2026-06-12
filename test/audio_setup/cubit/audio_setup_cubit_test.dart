@@ -254,6 +254,20 @@ void main() {
   );
 
   blocTest<AudioSetupCubit, AudioSetupState>(
+    'setRecordOffset forwards a manual offset to the repository',
+    build: buildCubit,
+    act: (cubit) => cubit.setRecordOffset(257),
+    verify: (_) => verify(() => repository.setRecordOffset(257)).called(1),
+  );
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
+    'setRecordOffset clamps a negative offset to zero',
+    build: buildCubit,
+    act: (cubit) => cubit.setRecordOffset(-5),
+    verify: (_) => verify(() => repository.setRecordOffset(0)).called(1),
+  );
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
     'repository stream updates the engine status',
     build: buildCubit,
     act: (_) => stateController.add(

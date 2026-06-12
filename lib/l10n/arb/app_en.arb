@@ -264,6 +264,7 @@
     "engineRunningHint": "The engine is open and ready. Stop it to reconfigure.",
     "roundTripLatencyLabel": "Round-trip latency",
     "recordOffsetLabel": "Record offset",
+    "applyLabel": "Set",
     "measuringEllipsis": "Measuring…",
     "measureRoundTripLatency": "Measure round-trip latency",
     "stopEngine": "Stop engine",

@@ -200,6 +200,12 @@ class AudioSettingsSection extends StatelessWidget {
           icon: Icons.timer_outlined,
           onTap: cubit.measureLatency,
         ),
+        const SizedBox(height: 12),
+        _RecordOffsetField(
+          frames: status.recordOffsetFrames,
+          sampleRate: status.sampleRate,
+          onApply: cubit.setRecordOffset,
+        ),
       ],
     );
   }
@@ -269,4 +275,85 @@ class AudioSettingsSection extends StatelessWidget {
         LatencyState.timeout => l10n.noSignalDetected,
         LatencyState.idle => l10n.notMeasured,
       };
+}
+
+/// Manual record-offset (latency compensation) entry, in frames. A fallback for
+/// when the automatic round-trip measurement isn't available or reliable; the
+/// value is applied live and persisted per device. Reflects an externally
+/// updated offset (e.g. a fresh measurement) while the user isn't editing.
+class _RecordOffsetField extends StatefulWidget {
+  const _RecordOffsetField({
+    required this.frames,
+    required this.sampleRate,
+    required this.onApply,
+  });
+
+  final int frames;
+  final int sampleRate;
+  final ValueChanged<int> onApply;
+
+  @override
+  State<_RecordOffsetField> createState() => _RecordOffsetFieldState();
+}
+
+class _RecordOffsetFieldState extends State<_RecordOffsetField> {
+  late final TextEditingController _controller = TextEditingController(
+    text: '${widget.frames}',
+  );
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void didUpdateWidget(_RecordOffsetField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.frames != oldWidget.frames && !_focus.hasFocus) {
+      _controller.text = '${widget.frames}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _apply() {
+    final value = int.tryParse(_controller.text.trim());
+    if (value != null) widget.onApply(value);
+    _focus.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final ms = widget.sampleRate > 0
+        ? (widget.frames * 1000 / widget.sampleRate).toStringAsFixed(2)
+        : '0.00';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextField(
+            key: const Key('audioSettings_recordOffset_field'),
+            controller: _controller,
+            focusNode: _focus,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: l10n.recordOffsetLabel,
+              helperText: '$ms ms — manual latency compensation (frames)',
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onSubmitted: (_) => _apply(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        FilledButton(
+          key: const Key('audioSettings_recordOffset_apply'),
+          onPressed: _apply,
+          child: Text(l10n.applyLabel),
+        ),
+      ],
+    );
+  }
 }

@@ -179,6 +179,19 @@ void main() {
     verify(cubit.measureLatency).called(1);
   });
 
+  testWidgets('manual record offset applies to the cubit', (tester) async {
+    seed(runningState);
+    await pumpSection(tester);
+
+    final field = find.byKey(const Key('audioSettings_recordOffset_field'));
+    await tester.ensureVisible(field);
+    await tester.enterText(field, '257');
+    final apply = find.byKey(const Key('audioSettings_recordOffset_apply'));
+    await tester.ensureVisible(apply);
+    await tester.tap(apply);
+    verify(() => cubit.setRecordOffset(257)).called(1);
+  });
+
   testWidgets('toggling monitor input forwards to the cubit', (tester) async {
     seed(runningState); // monitorInput defaults to true
     await pumpSection(tester);
