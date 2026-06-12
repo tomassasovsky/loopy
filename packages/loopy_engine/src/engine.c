@@ -19,6 +19,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -2029,17 +2030,55 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   cfg.notificationCallback = notification_callback;
   cfg.pUserData = engine;
 
-  /* An explicit context is needed to capture from a detected loopback device
-   * (use_loopback_capture) or to pin playback/capture to a device by id. When
-   * any of those is requested, open one context and resolve the relevant ids;
-   * otherwise the default device is opened with no context. */
+  /* An explicit context lets us pick the backend (see below) and resolve a
+   * pinned/loopback device id. We always open one; a detected loopback device
+   * (use_loopback_capture) or a device pinned by id is resolved against it. */
   const int want_playback_pin = config->playback_device_id[0] != '\0';
   const int want_capture_pin = config->capture_device_id[0] != '\0';
   ma_context* pContext = NULL;
-  if (config->use_loopback_capture || want_playback_pin || want_capture_pin) {
-    if (ma_context_init(NULL, 0, NULL, &engine->context) == MA_SUCCESS) {
-      engine->context_initialised = 1;
-      pContext = &engine->context;
+
+  /* Backend preference. On Linux, miniaudio's PulseAudio backend returns silent
+   * capture buffers under PipeWire's pulse emulation (verified on a Clarett+
+   * 8Pre: pulse = silence, JACK = full multichannel capture). Prefer JACK
+   * (PipeWire ships a JACK server), then PulseAudio, then ALSA. Every other
+   * platform keeps miniaudio's default backend priority. */
+#if defined(__linux__)
+  static const ma_backend k_backends[] = {
+      ma_backend_jack, ma_backend_pulseaudio, ma_backend_alsa};
+  const ma_backend* p_backends = k_backends;
+  const ma_uint32 backend_count = 3;
+  /* JACK/PipeWire takes its buffer size (quantum) from the server and ignores
+   * our requested period, so the in-app buffer selector would otherwise have no
+   * effect on Linux latency. Ask PipeWire — per app, no global config edit — to
+   * run our graph at the requested buffer size by exporting PIPEWIRE_QUANTUM
+   * before the JACK client connects. PipeWire runs at the smallest quantum any
+   * active client requests, so this lowers latency to our buffer while Loopy is
+   * open and restores it on exit. */
+  {
+    /* setenv is POSIX, not ISO C; declare it so a strict -std=c11 build (the
+     * device-free test harness) sees it — the CMake build uses gnu11. */
+    extern int setenv(const char* name, const char* value, int overwrite);
+    /* Default to 256 frames (~5 ms) when no buffer is selected, instead of the
+     * PipeWire server default (often 1024 / ~21 ms). */
+    const int q_rate = config->sample_rate > 0 ? config->sample_rate : 48000;
+    const int q_frames =
+        config->buffer_frames > 0 ? (int)config->buffer_frames : 256;
+    char quantum[32];
+    snprintf(quantum, sizeof(quantum), "%d/%d", q_frames, q_rate);
+    setenv("PIPEWIRE_QUANTUM", quantum, /*overwrite=*/1);
+  }
+#else
+  const ma_backend* p_backends = NULL;
+  const ma_uint32 backend_count = 0;
+#endif
+
+  /* Always open a context so the backend preference takes effect (it is also
+   * needed to resolve a pinned/loopback device id). */
+  if (ma_context_init(p_backends, backend_count, NULL, &engine->context) ==
+      MA_SUCCESS) {
+    engine->context_initialised = 1;
+    pContext = &engine->context;
+    {
       if (config->use_loopback_capture) {
         /* Loopback capture overrides an explicit capture device id. */
         le_loopback_info info;
