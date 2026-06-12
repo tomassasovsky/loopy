@@ -52,13 +52,22 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   bool? _lastDevicePresent;
   String _lastPresentDeviceName = '';
 
-  /// Selects the requested sample rate (applied on the next start).
-  void setSampleRate(int sampleRate) =>
-      emit(state.copyWith(sampleRate: sampleRate));
+  /// Selects the requested sample rate. Persists it and, when the engine is
+  /// already running, reopens the device so the change takes effect now.
+  void setSampleRate(int sampleRate) {
+    if (sampleRate == state.sampleRate) return;
+    emit(state.copyWith(sampleRate: sampleRate));
+    _persistAndApply();
+  }
 
-  /// Selects the requested buffer size (applied on the next start).
-  void setBufferFrames(int bufferFrames) =>
-      emit(state.copyWith(bufferFrames: bufferFrames));
+  /// Selects the requested buffer size. Persists it and, when the engine is
+  /// already running, reopens the device so the change takes effect now (on
+  /// Linux/JACK this maps to the PipeWire quantum, i.e. live latency).
+  void setBufferFrames(int bufferFrames) {
+    if (bufferFrames == state.bufferFrames) return;
+    emit(state.copyWith(bufferFrames: bufferFrames));
+    _persistAndApply();
+  }
 
   /// Toggles input monitoring. Persists the choice and, when the engine is
   /// running, reopens the device so it takes effect immediately.
@@ -278,14 +287,18 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final engineStatus = looper.status;
     final lastConfig = _repository.lastEngineConfig;
 
+    // The sample-rate / buffer selectors reflect the user's *requested* values,
+    // not what the engine negotiated. On hydrate we resolve from the saved
+    // config; on every other tick we keep the current selection. (Pulling the
+    // engine-reported value back into the selection drifts it from what was
+    // picked — and, since changes persist, poisons the saved config. The
+    // STATUS table shows the engine's actual values separately.)
     final resolvedSampleRate = hydrateConfig
         ? _resolvedOption(
             negotiated: engineStatus.sampleRate,
             requested: lastConfig?.sampleRate,
             fallback: current.sampleRate,
           )
-        : engineStatus.isConnected && engineStatus.sampleRate > 0
-        ? engineStatus.sampleRate
         : current.sampleRate;
 
     return current.copyWith(
@@ -296,8 +309,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
               requested: lastConfig?.bufferFrames,
               fallback: current.bufferFrames,
             )
-          : engineStatus.isConnected && engineStatus.bufferFrames > 0
-          ? engineStatus.bufferFrames
           : current.bufferFrames,
       monitorInput: hydrateConfig
           ? lastConfig?.passthrough ?? current.monitorInput

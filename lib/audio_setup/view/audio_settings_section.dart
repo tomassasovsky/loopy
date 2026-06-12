@@ -50,6 +50,37 @@ class AudioSettingsSection extends StatelessWidget {
           onSelected: cubit.setCaptureDevice,
         ),
         const SizedBox(height: 28),
+        SetupGroupLabel(l10n.sampleRateGroup),
+        const SizedBox(height: 12),
+        SetupOptionRow<int>(
+          selected: state.sampleRate,
+          onSelected: cubit.setSampleRate,
+          options: [
+            for (final rate in AudioSetupState.sampleRates)
+              SetupOption(
+                value: rate,
+                label: l10n.sampleRateHz(rate),
+                optionKey: Key('audioSettings_sampleRate_$rate'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        SetupGroupLabel(l10n.bufferSizeGroup),
+        const SizedBox(height: 12),
+        SetupOptionRow<int>(
+          selected: state.bufferFrames,
+          onSelected: cubit.setBufferFrames,
+          options: [
+            for (final size in AudioSetupState.bufferSizes)
+              SetupOption(
+                value: size,
+                label: '$size',
+                sub: _latencyHint(size, state.sampleRate),
+                optionKey: Key('audioSettings_bufferSize_$size'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 28),
         SetupGroupLabel(l10n.monitoringGroupLabel),
         const SizedBox(height: 12),
         SetupToggleRow(
@@ -135,7 +166,7 @@ class AudioSettingsSection extends StatelessWidget {
           rows: [
             (
               l10n.deviceLabel,
-              status.deviceName.isEmpty ? l10n.notRunning : status.deviceName,
+              _displayDeviceName(context, state),
             ),
             (
               l10n.sampleRateLabel,
@@ -205,6 +236,28 @@ class AudioSettingsSection extends StatelessWidget {
         ),
       ),
     ];
+  }
+
+  /// A friendly device name for the status row. The JACK backend (Linux) only
+  /// reports a generic "Default ... Device", so prefer the name of the device
+  /// the user selected; fall back to the engine's reported name.
+  String _displayDeviceName(BuildContext context, AudioSetupState state) {
+    final selectedId = state.playbackDeviceId.isNotEmpty
+        ? state.playbackDeviceId
+        : state.captureDeviceId;
+    if (selectedId.isNotEmpty) {
+      for (final device in state.devices) {
+        if (device.id == selectedId) return device.name;
+      }
+    }
+    final reported = state.engineStatus.deviceName;
+    return reported.isEmpty ? context.l10n.notRunning : reported;
+  }
+
+  /// One-buffer latency hint for a buffer-size option, e.g. "5.3 ms".
+  String _latencyHint(int frames, int sampleRate) {
+    if (sampleRate <= 0) return '';
+    return '${(frames * 1000 / sampleRate).toStringAsFixed(1)} ms';
   }
 
   String _roundTripLatency(AppLocalizations l10n, EngineStatus status) =>

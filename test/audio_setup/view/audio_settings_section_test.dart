@@ -120,8 +120,18 @@ void main() {
       find.byKey(const Key('audioSettings_captureDevice_picker')),
       findsOneWidget,
     );
+    // Sample-rate and buffer selectors are editable in settings.
+    expect(
+      find.byKey(const Key('audioSettings_sampleRate_48000')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('audioSettings_bufferSize_128')),
+      findsOneWidget,
+    );
     // Live status reflects the running engine + restored/measured latency.
-    expect(find.text('48000 Hz'), findsOneWidget);
+    // "48000 Hz" appears twice: the sample-rate selector option and the status.
+    expect(find.text('48000 Hz'), findsNWidgets(2));
     expect(find.text('128 frames'), findsOneWidget);
     expect(find.text('9.50 ms'), findsOneWidget);
     expect(find.text('456 frames'), findsOneWidget);
