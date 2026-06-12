@@ -279,6 +279,16 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **VST3 SDK went MIT (VST 3.8, Oct 2025)**, so a host is no longer licence- or
   GPL-blocked; it remains a gated follow-up (needs the SDK vendored to compile +
   plugin-editor child-window embedding).
+- **Windows + Linux native — portable foundation (PR1).** Generated the Linux GTK
+  app scaffold (`linux/`); `flutter build linux --debug -t lib/main_development.dart`
+  compiles + bundles `libloopy_engine.so` (miniaudio dlopen()s the audio backend at
+  runtime). Desktop flavors are **entrypoint-only** (`--target lib/main_<flavor>.dart`;
+  `--flavor` only namespaces build output). CI now fires on PRs (trigger fixed
+  **`main` → `master`**) and adds compile-only `windows-latest` / `ubuntu-latest`
+  build jobs. Per-channel label exclusion is **unchanged** (`return 0` off macOS;
+  ASIO/PipeWire are PR2/PR3). *Hardware-gated, not yet run on real interfaces:
+  end-to-end record/loop/play/monitor/FX, the `desktop_multi_window` waveform window
+  on GTK, device-name classification, and the latency harness.*
 - **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
   `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
   exports mixdown / per-track stems. Native `le_engine_export_track` /
