@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/ui_mode/ui_mode.dart';
@@ -78,6 +79,8 @@ void main() {
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.bigPicture,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: MultiRepositoryProvider(
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
@@ -289,6 +292,8 @@ void main() {
           ],
           child: MaterialApp(
             theme: AppTheme.bigPicture,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
             home: Builder(
               builder: (context) => Scaffold(
                 body: Center(
