@@ -13,7 +13,10 @@ import 'package:settings_repository/settings_repository.dart';
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
 /// otherwise wires the repositories, auto-starts the engine from the saved
 /// audio config (showing the setup flow on a first run), and runs the [App].
-Future<void> runLoopy(List<String> args) async {
+Future<void> runLoopy(
+  List<String> args, {
+  AudioEngine Function()? createEngine,
+}) async {
   // A `multi_window` sub-window (the output waveform) is a separate Flutter
   // engine; it runs a lightweight app and owns no audio engine.
   if (args.isNotEmpty && args.first == 'multi_window') {
@@ -30,16 +33,18 @@ Future<void> runLoopy(List<String> args) async {
 
   // One engine instance, shared by the looper (which owns its lifecycle) and
   // the session repository (which only reads/writes its loop PCM).
-  final engine = NativeAudioEngine();
+  final engine = createEngine?.call() ?? NativeAudioEngine();
   final repository = LooperRepository(engine: engine);
   final controllerRepository = ControllerRepository(sources: const []);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
   final sessionRepository = SessionRepository(engine: engine);
 
-  final configured = await tryAutoStartEngine(
-    repository: repository,
-    settings: settings,
-  );
+  final configured = engine is MockAudioEngine
+      ? repository.startEngine(engine.defaultConfig).isOk
+      : await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
 
   await bootstrap(
     () => App(

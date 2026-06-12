@@ -202,6 +202,25 @@ void main() {
       expect(find.byKey(const Key('monitorGraph_routeToggle')), findsNothing);
     });
 
+    testWidgets('tapping the background unfocuses the input', (tester) async {
+      await cubit.setEnabled(0, enabled: true);
+      await pump(tester);
+      // Focus it — the route toggle appears and the canvas exposes a
+      // background-tap handler.
+      await tester.tap(find.byKey(const Key('monitorGraph_node_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsOneWidget);
+
+      final canvas = tester.widget<GraphCanvas>(find.byType(GraphCanvas));
+      expect(canvas.onTapBackground, isNotNull);
+      canvas.onTapBackground!();
+      await tester.pumpAndSettle();
+
+      // Focus cleared: the route toggle is gone, monitoring stays enabled.
+      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsNothing);
+      expect(cubit.state.forInput(0).enabled, isTrue);
+    });
+
     testWidgets('tapping an output with nothing focused is a no-op', (
       tester,
     ) async {
