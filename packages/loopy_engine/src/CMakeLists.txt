@@ -7,6 +7,12 @@ project(loopy_engine_core VERSION 0.1.0 LANGUAGES C)
 
 add_library(loopy_engine SHARED
   engine.c
+  # Per-OS platform-seam translation units (engine_platform.h). Each is wrapped
+  # whole in its OS guard, so the two that don't match the build target compile
+  # to near-empty objects — every build lists all three unconditionally.
+  engine_linux.c
+  engine_apple.c
+  engine_windows.c
   lockfree_ring.c
   loop_clock.c
   miniaudio_impl.c

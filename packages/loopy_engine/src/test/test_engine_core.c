@@ -5,10 +5,24 @@
  * and the engine lifecycle paths that do not require an audio device. These are
  * the pieces with the strictest correctness/real-time requirements.
  *
- * Build & run (macOS):
+ * The engine sources now include the three per-OS platform-seam TUs
+ * (engine_linux.c / engine_apple.c / engine_windows.c). All three are listed
+ * unconditionally — the two that don't match the host compile to near-empty
+ * objects — so the le_platform_* seam symbols resolve at link time.
+ *
+ * Build & run (Linux): no Core Audio frameworks; libc + pthreads only.
  *   clang -std=c11 -I src -I src/miniaudio \
  *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
  *     src/loop_clock.c src/miniaudio_impl.c \
+ *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
+ *     -lpthread -lm -o /tmp/loopy_core_tests
+ *   /tmp/loopy_core_tests
+ *
+ * Build & run (macOS): add the Core Audio frameworks engine_apple.c needs.
+ *   clang -std=c11 -I src -I src/miniaudio \
+ *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
+ *     src/loop_clock.c src/miniaudio_impl.c \
+ *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
  *     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
  *     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
  *   /tmp/loopy_core_tests
