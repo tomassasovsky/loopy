@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/view/tracks_routing_graph/tracks_routing_graph_view.dart';
 import 'package:loopy/theme/theme.dart';
 
@@ -9,6 +10,8 @@ void main() {
     Future<void> pump(WidgetTester tester, Widget child) => tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.bigPicture,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: Scaffold(body: child),
       ),
     );

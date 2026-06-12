@@ -1,0 +1,9 @@
+# Test configuration for the loopy app.
+#
+# Declare the `screenshots` tag so package:test does not warn about it. The
+# manual golden/screenshot generators in test/screenshots/ self-skip in-test
+# when the local Flutter Material fonts (and matching macOS goldens) are absent
+# — i.e. everywhere but the author's machine — so no unconditional skip is
+# configured here (that would also block an explicit `--tags screenshots` run).
+tags:
+  screenshots:

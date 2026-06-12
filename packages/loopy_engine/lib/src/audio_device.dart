@@ -12,6 +12,8 @@ class AudioDevice {
     required this.name,
     required this.isDefault,
     required this.isInput,
+    this.inputChannels = 0,
+    this.outputChannels = 0,
   });
 
   /// The backend-specific device id, suitable for pinning via
@@ -28,6 +30,14 @@ class AudioDevice {
   /// device.
   final bool isInput;
 
+  /// The device's hardware capture channel count, or `0` when unknown (the
+  /// WASAPI/miniaudio enumeration path reports `0`; an ASIO probe fills it in
+  /// Part 2).
+  final int inputChannels;
+
+  /// The device's hardware playback channel count, or `0` when unknown.
+  final int outputChannels;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -36,13 +46,17 @@ class AudioDevice {
           id == other.id &&
           name == other.name &&
           isDefault == other.isDefault &&
-          isInput == other.isInput;
+          isInput == other.isInput &&
+          inputChannels == other.inputChannels &&
+          outputChannels == other.outputChannels;
 
   @override
-  int get hashCode => Object.hash(id, name, isDefault, isInput);
+  int get hashCode =>
+      Object.hash(id, name, isDefault, isInput, inputChannels, outputChannels);
 
   @override
   String toString() =>
       'AudioDevice(id: $id, name: $name, isDefault: $isDefault, '
-      'isInput: $isInput)';
+      'isInput: $isInput, inputChannels: $inputChannels, '
+      'outputChannels: $outputChannels)';
 }

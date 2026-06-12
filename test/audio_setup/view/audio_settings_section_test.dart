@@ -120,8 +120,18 @@ void main() {
       find.byKey(const Key('audioSettings_captureDevice_picker')),
       findsOneWidget,
     );
+    // Sample-rate and buffer selectors are editable in settings.
+    expect(
+      find.byKey(const Key('audioSettings_sampleRate_48000')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('audioSettings_bufferSize_128')),
+      findsOneWidget,
+    );
     // Live status reflects the running engine + restored/measured latency.
-    expect(find.text('48000 Hz'), findsOneWidget);
+    // "48000 Hz" appears twice: the sample-rate selector option and the status.
+    expect(find.text('48000 Hz'), findsNWidgets(2));
     expect(find.text('128 frames'), findsOneWidget);
     expect(find.text('9.50 ms'), findsOneWidget);
     expect(find.text('456 frames'), findsOneWidget);
@@ -167,6 +177,19 @@ void main() {
     await tester.ensureVisible(button);
     await tester.tap(button);
     verify(cubit.measureLatency).called(1);
+  });
+
+  testWidgets('manual record offset applies to the cubit', (tester) async {
+    seed(runningState);
+    await pumpSection(tester);
+
+    final field = find.byKey(const Key('audioSettings_recordOffset_field'));
+    await tester.ensureVisible(field);
+    await tester.enterText(field, '257');
+    final apply = find.byKey(const Key('audioSettings_recordOffset_apply'));
+    await tester.ensureVisible(apply);
+    await tester.tap(apply);
+    verify(() => cubit.setRecordOffset(257)).called(1);
   });
 
   testWidgets('toggling monitor input forwards to the cubit', (tester) async {

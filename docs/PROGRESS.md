@@ -29,7 +29,8 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   cd packages/loopy_engine
   clang -std=c11 -Wall -Wextra -I src -I src/miniaudio \
     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
-    src/loop_clock.c src/miniaudio_impl.c \
+    src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
+    src/engine_linux.c src/engine_apple.c src/engine_windows.c \
     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
   /tmp/loopy_core_tests
@@ -279,6 +280,76 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **VST3 SDK went MIT (VST 3.8, Oct 2025)**, so a host is no longer licence- or
   GPL-blocked; it remains a gated follow-up (needs the SDK vendored to compile +
   plugin-editor child-window embedding).
+- **Windows + Linux native — portable foundation (PR1).** Generated the Linux GTK
+  app scaffold (`linux/`); `flutter build linux --debug -t lib/main_development.dart`
+  compiles + bundles `libloopy_engine.so` (miniaudio dlopen()s the audio backend at
+  runtime). Desktop flavors are **entrypoint-only** (`--target lib/main_<flavor>.dart`;
+  `--flavor` only namespaces build output). CI now fires on PRs (trigger fixed
+  **`main` → `master`**) and adds compile-only `windows-latest` / `ubuntu-latest`
+  build jobs. Per-channel label exclusion is **unchanged** (`return 0` off macOS;
+  ASIO/PipeWire are PR2/PR3). *Hardware-gated, not yet run on real interfaces:
+  end-to-end record/loop/play/monitor/FX, the `desktop_multi_window` waveform window
+  on GTK, device-name classification, and the latency harness.*
+- **Windows bring-up fixes (real-hardware run).** Two blockers found running the
+  app on a real Windows interface, both fixed + verified (build + app launch +
+  native tests green via MSVC):
+  - **MSVC C11 atomics:** CMake's `C_STANDARD 11` only emits `/std:c11`, which is
+    not enough for MSVC to accept `_Atomic` / `<stdatomic.h>` (the lock-free ring)
+    — it needs `/experimental:c11atomics` too. Without it the whole Windows engine
+    failed to compile. Added under `if(MSVC)` in `src/CMakeLists.txt` (+ quieted
+    C4996 `strncpy` warnings via `_CRT_SECURE_NO_WARNINGS`).
+  - **WASAPI device ids collapsed to `"{"`:** `device_id_to_str` read the WASAPI
+    *wchar* id as a narrow `char*`, truncating every id to its first byte, so all
+    devices shared one id → the device-picker `DropdownButton` crashed and pinning
+    was broken. Fixed behind the platform seam (`le_platform_device_id_to_str`):
+    Windows converts wchar→UTF-8, macOS/Linux keep the verbatim copy. Regression
+    test `test_device_id_to_str`.
+- **Windows per-channel labels — ASIO opt-in scaffolding (PR2).** `LOOPY_ENABLE_ASIO`
+  CMake option (**OFF by default**; default build byte-for-byte unchanged) +
+  `LOOPY_ASIO_SDK_DIR` for a **user-supplied, non-vendored** (MIT/GPLv3) ASIO SDK,
+  `.gitignore`d. New `win_asio_labels.cpp` probe reads `ASIOGetChannelInfo().name`
+  and reuses the portable, unit-tested `le_excluded_mask_from_names` /
+  `le_label_is_loopback`; dispatched from `engine_windows.c` under the flag,
+  degrading to `0` on any failure/ambiguity. Docs: `docs/WINDOWS_ASIO.md`.
+  *Still gated on the user's 30-min hardware spike* (does `ASIOChannelInfo.name`
+  carry "Loopback" on the interface, and does the WASAPI↔ASIO device match hold?).
+- **WASAPI exclusive mode — full device control on Windows.** Opens the duplex
+  device in `ma_share_mode_exclusive` + `wasapi.noAutoConvertSRC` so audio bypasses
+  the Windows mixer (native format, low latency). Surfaced as a Windows-only
+  audio-setup toggle, **default ON on Windows** / hidden + off on macOS/Linux,
+  persisted (`audio.exclusive`). One *intent* bool (`le_config.exclusive`) flows
+  down; one *reality* bool (`le_snapshot.exclusive_active`) flows back up the
+  snapshot so the UI shows a "Shared — device refused exclusive" note only on a
+  fallback. **Graceful fallback**: a pure `le_decide_share_fallback` helper retries
+  shared once if exclusive init fails, so audio never dies; the platform default is
+  resolved in the presentation layer (`defaultTargetPlatform`), never in storage.
+  Verified on a real interface: exclusive engaged with the requested 128-frame
+  buffer honored (shared would clamp to the OS period). macOS/Linux unchanged
+  (no hog mode). See `docs/WINDOWS_ASIO.md`.
+- **Device-backend seam (ASIO Part 1 — foundation, behavior-preserving).** An
+  internal vtable (`le_device_backend.h`: `open`/`start`/`stop`/`close` +
+  `le_device_open_result`) that `le_engine_start`/`stop`/`destroy` drive instead
+  of calling `ma_device_*` directly. The existing miniaudio device lifecycle
+  (config build, context init, pin/loopback resolution, the exclusive-mode
+  fallback, `ma_device_init`/`start`/`uninit`, data + notification callbacks)
+  moved verbatim behind it into **`engine_miniaudio.c`** (compiled
+  unconditionally like the per-OS TUs); `le_engine_process`, the ring, the
+  snapshot, and the looper/lane/FX DSP stay in `engine.c` and are reused
+  unchanged. `le_select_backend(backend)` returns `&le_miniaudio_backend` for
+  every choice in this build — the default build links **no** ASIO symbol
+  (link-time guarantee; the `#if LOOPY_ENABLE_ASIO` branch lands in Part 2).
+  This is **distinct from** the per-OS `engine_platform.h` seam (capabilities
+  over one shared device, not swappable backends). The FFI structs grew their
+  final Part-2 shape, **inert** today: `le_config.backend`/`asio_driver`,
+  `le_device_info.input_channels`/`output_channels` (`0`/unknown on WASAPI;
+  `device_info_copy` zero-inits them to avoid a stack-garbage read),
+  `le_snapshot.active_backend` (always WASAPI). Threaded through Dart with
+  inert defaults (`AudioBackend` enum, `EngineConfig`/`AudioDevice`/
+  `EngineSnapshot` new fields + hand-written equality). **Acceptance gate:
+  invisibility** — all existing native + Dart tests pass unchanged. New tests:
+  `test_select_backend_defaults_to_miniaudio`, `test_backend_struct_defaults`,
+  enumeration asserts `input_channels == 0`, and Dart round-trip/equality for
+  the new fields.
 - **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
   `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
   exports mixdown / per-track stems. Native `le_engine_export_track` /

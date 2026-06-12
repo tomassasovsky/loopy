@@ -1,5 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+
+/// The platform default for OS-exclusive device access: on by default on
+/// Windows (full device control via WASAPI exclusive mode), off elsewhere.
+///
+/// Resolved here in the presentation layer — the single source of this OS rule.
+/// The cubit and repository hold no OS policy (the engine still falls back to
+/// shared if exclusive is refused, so this is always safe).
+bool get platformDefaultExclusive =>
+    defaultTargetPlatform == TargetPlatform.windows;
 
 /// Loads the last-used audio configuration and, if present, starts the engine
 /// with it. Returns `true` when a saved config existed and the engine started,
@@ -11,6 +21,11 @@ Future<bool> tryAutoStartEngine({
 }) async {
   final saved = await settings.loadAudioConfig();
   if (saved == null) return false;
+  // Resolve the exclusive-access default here (not in storage): an unset value
+  // means OS-exclusive on Windows, shared elsewhere. The engine falls back to
+  // shared if exclusive is refused, so this is always safe.
+  final exclusive =
+      await settings.loadAudioExclusive() ?? platformDefaultExclusive;
   final loopback = repository.detectLoopback();
   final result = repository.startEngine(
     EngineConfig(
@@ -19,10 +34,16 @@ Future<bool> tryAutoStartEngine({
       inputChannels: saved.inputChannels,
       outputChannels: saved.outputChannels,
       passthrough: saved.monitorInput,
+      exclusive: exclusive,
       maxLoopFrames: saved.maxLoopMinutes <= 0
           ? 0
           : saved.maxLoopMinutes * 60 * saved.sampleRate,
-      useLoopbackCapture: loopback.isAutoRoutable,
+      // An explicitly chosen input device always wins: only auto-route capture
+      // to a detected loopback when no capture device was pinned (otherwise a
+      // ubiquitous "monitor" source — e.g. on PipeWire — would commandeer the
+      // capture path and ignore the saved interface).
+      useLoopbackCapture:
+          loopback.isAutoRoutable && saved.captureDeviceId.isEmpty,
       playbackDeviceId: saved.playbackDeviceId,
       captureDeviceId: saved.captureDeviceId,
     ),
@@ -46,7 +67,8 @@ Future<bool> tryAutoStartEngine({
   );
   if (savedOffset != null && savedOffset > 0) {
     repository.setRecordOffset(savedOffset);
-  } else if (loopback.isAutoRoutable || status.excludedInputMask != 0) {
+  } else if ((loopback.isAutoRoutable && saved.captureDeviceId.isEmpty) ||
+      status.excludedInputMask != 0) {
     repository.measureLatency();
   }
 

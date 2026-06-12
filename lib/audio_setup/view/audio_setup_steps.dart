@@ -202,6 +202,18 @@ class _EngineStep extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         _Hint(_bufferHint(l10n, state.bufferFrames)),
+        // Exclusive mode is a Windows-only capability (WASAPI exclusive),
+        // hidden elsewhere so macOS/Linux behavior is unchanged.
+        if (defaultTargetPlatform == TargetPlatform.windows) ...[
+          const SizedBox(height: 26),
+          _Toggle(
+            toggleKey: 'audioSetup_exclusive_switch',
+            title: l10n.exclusiveModeTitle,
+            subtitle: l10n.exclusiveModeSubtitle,
+            value: state.exclusive,
+            onChanged: (v) => cubit.setExclusive(exclusive: v),
+          ),
+        ],
       ],
     );
   }
@@ -358,6 +370,15 @@ class _RunningPanel extends StatelessWidget {
                     ),
                   ],
                 ),
+                // Surface the negotiated mode only when it diverges from
+                // intent: exclusive was requested but the device opened shared.
+                if (state.exclusive && !s.exclusiveActive) ...[
+                  const SizedBox(height: 12),
+                  _Hint(
+                    l10n.exclusiveSharedFallback,
+                    key: const Key('audioSetup_exclusiveFallback_note'),
+                  ),
+                ],
                 const Spacer(),
                 _Ghost(
                   key: const Key('audioSetup_measureLatency_button'),

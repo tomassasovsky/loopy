@@ -31,7 +31,14 @@ $ flutter run --flavor staging --target lib/main_staging.dart
 $ flutter run --flavor production --target lib/main_production.dart
 ```
 
-_\*Loopy works on iOS, Android, Web, and Windows._
+_\*Loopy runs natively on macOS, Windows, and Linux._
+
+> On desktop, flavors select the entrypoint via `--target`; `--flavor` only
+> namespaces the build-output directory (there is no per-flavor app identity).
+> Pass the matching `--target lib/main_<flavor>.dart` as shown above.
+>
+> Linux notes (PipeWire backend, Focusrite/`scarlett2` routing, renderer): see
+> [docs/RUNNING_ON_LINUX.md](docs/RUNNING_ON_LINUX.md).
 
 ---
 

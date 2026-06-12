@@ -21,6 +21,12 @@ migration:
     - platform: ios
       create_revision: db7ef5bf9f59442b0e200a90587e8fa5e0c6336a
       base_revision: db7ef5bf9f59442b0e200a90587e8fa5e0c6336a
+    - platform: windows
+      create_revision: d211f42860350d914a5ad8102f9ec32764dc6d06
+      base_revision: d211f42860350d914a5ad8102f9ec32764dc6d06
+    - platform: linux
+      create_revision: c9a6c484230f8b5e408ec57be1ef71dee1e77020
+      base_revision: c9a6c484230f8b5e408ec57be1ef71dee1e77020
 
   # User provided section
 

@@ -19,284 +19,41 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "engine_internal.h"
+#include "engine_miniaudio.h"
+#include "engine_platform.h"
+#include "engine_private.h"
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
 #include "miniaudio.h"
 
-#if defined(__APPLE__)
-/* Core Audio is used only to read per-channel hardware labels for loopback
- * exclusion (see le_compute_excluded_input_mask). The frameworks are already
- * linked by the macOS build. */
-#include <CoreAudio/CoreAudio.h>
-#include <CoreFoundation/CoreFoundation.h>
-#endif
+/* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
+ * PipeWire quantum forcing) lives behind the engine_platform.h seam, implemented
+ * per OS in engine_apple.c / engine_linux.c / engine_windows.c. This file is
+ * platform-agnostic — no #if defined(__APPLE__|__linux__|_WIN32) behavior. */
 
-#define LE_RING_CAPACITY 256u
 /* Loopback latency harness. The echo returns only mildly attenuated (~0.9 from
  * a full-scale pulse on a typical interface), so we emit a quiet calibration
  * tone rather than full scale to spare the user's monitors, and detect with a
  * threshold comfortably below the echo yet well above the noise floor. */
-#define LE_LATENCY_PULSE_AMP 0.3f /* calibration pulse amplitude (0..1) */
-#define LE_LATENCY_THRESHOLD 0.05f /* loopback detection level (0..1) */
+#define LE_LATENCY_PULSE_AMP 0.9f  /* calibration tone amplitude (0..1) */
+#define LE_LATENCY_TONE_HZ 1000.0f /* tone-burst freq (AC: survives AC-coupling) */
+#define LE_LATENCY_PEAK_RATIO 2.5f /* correlation peak must exceed this x baseline */
 #define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
-#define LE_LATENCY_DEAD_DIV 400    /* dead-time   = sample_rate / this (~2.5ms) */
-#define LE_LATENCY_RETRY_DIV 10    /* per-attempt = sample_rate / this (~100ms) */
-#define LE_LATENCY_ATTEMPTS 5      /* re-emit this many pulses before timing out */
+#define LE_LATENCY_CAPTURE_DIV 10  /* capture window = sample_rate / this (~100ms) */
 
-/* Per-track buffer pool size: one live buffer plus up to LE_UNDO_SLOTS-1 undo/
- * redo snapshots. Buffers are allocated lazily, so memory grows only as deep as
- * the user actually overdubs. */
-#define LE_UNDO_SLOTS 8
 /* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
 #define LE_AUTO_RECORD_THRESHOLD 0.02f
 
-/* One looper track.
- *
- * The audio thread only reads pool[a_live] (and writes into it while recording/
- * overdubbing). All undo/redo bookkeeping — the pool, the stacks, and a_live
- * (whose sole writer is the control thread) — lives on the control thread, so
- * undo/redo never races the audio callback. */
-/* Audio-thread-owned DSP state for one effects chain (LE_FX_MAX entries), reset
- * per entry when its type changes. svf_* are the state-variable filter
- * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
- * lazily allocated ring
- * (the control thread allocates before posting the command) of fx_delay_frames
- * samples (shared by DELAY, ECHO, and the OCTAVER's grain ring); fx_lp is a
- * generic one-pole low-pass memory (ECHO feedback damping, OCTAVER tone);
- * grain_phase is the OCTAVER pitch-shifter's read phase within a grain. A slot
- * is only ever one type at a time, so these reuse freely. Each lane and each
- * live monitor input owns one of these, running its own non-destructive chain. */
-typedef struct le_fx_state {
-  float svf_ic1[LE_FX_MAX];
-  float svf_ic2[LE_FX_MAX];
-  float lfo[LE_FX_MAX];
-  float* delay[LE_FX_MAX];
-  int32_t delay_pos[LE_FX_MAX];
-  float fx_lp[LE_FX_MAX];
-  float grain_phase[LE_FX_MAX];
-} le_fx_state;
-
-/* One recordable input lane — the fundamental unit of captured audio.
- *
- * A lane records exactly one hardware input (a_input_channel, -1 = none) into
- * its own clean mono buffer (pool[a_live]); sibling lanes are NEVER merged.
- * Lanes own only their audio content + per-lane routing/volume/mute + their
- * effects DSP state. The owning track (le_track) drives the shared write head,
- * the one undo span (lanes use the same slot indices in lockstep), and a_live
- * (whose sole writer is the control thread), so undo/redo never races the audio
- * callback.
- *
- * The effects fields are the per-lane record-route chain: a single
- * non-destructive chain run on playback. The recording stays dry. */
-typedef struct le_lane {
-  _Atomic int32_t a_input_channel; /* hardware input recorded (-1 = none) */
-  _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
-  _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
-  _Atomic int32_t a_muted;         /* per-lane mute */
-
-  float* pool[LE_UNDO_SLOTS]; /* lazily allocated loop buffers */
-  _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
-  _Atomic int32_t a_len;      /* recorded length (== the track's length) */
-  _Atomic uint32_t a_rms_bits;
-  _Atomic uint32_t a_peak_bits;
-
-  /* Per-lane effects chain. Published config (control writes, audio reads once
-   * per buffer): an ordered array of LE_FX_MAX entries, of which a_fx_count are
-   * active, each with a type and LE_FX_PARAMS normalized parameters. The chain
-   * is stageless — every active entry colors playback in order — and runs on
-   * the lane's own `fx` DSP state. */
-  _Atomic int32_t a_fx_count;
-  _Atomic int32_t a_fx_type[LE_FX_MAX];
-  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
-  le_fx_state fx;
-} le_lane;
-
-/* One hardware input's live monitor route (engine-level, one slot per input).
- *
- * When a_enabled, the input's live sample is run through this route's own
- * effect chain and summed into the output channels a_output_mask selects. The
- * monitored signal is NEVER recorded and is independent of all track state, so
- * an input can be monitored whether or not any track records or plays it. This
- * replaces the old global monitor-FX bus and monitor-follows-a-track model. */
-typedef struct le_monitor_input {
-  _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
-  _Atomic uint32_t a_output_mask; /* output channels the effected route plays to */
-  _Atomic uint32_t a_dry_output_mask; /* outputs the CLEAN (pre-FX) signal goes
-                                       * to — a parallel dry send (0 = off) */
-  _Atomic int32_t a_fx_count;
-  _Atomic int32_t a_fx_type[LE_FX_MAX];
-  _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
-  le_fx_state fx;
-} le_monitor_input;
-
-/* One looper track: a multi-lane container that owns the transport, the shared
- * latency-compensated write head, and one undo span across all its lanes.
- *
- * Recording is track-addressed and fans out to every active lane (each captures
- * its own input clean); playback sums all active lanes. The undo span uses the
- * SAME pool slot indices across every lane in lockstep, so the track owns the
- * stacks and the lanes own only the buffers. */
-typedef struct le_track {
-  le_lane lanes[LE_MAX_LANES];
-  int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
-                       * int, like track_count — not an atomic, not a ring
-                       * command (set before the first record into a new lane). */
-
-  /* Control-thread-owned undo/redo stacks of pool indices, shared by all lanes
-   * (the same slot index names the snapshot in every lane). */
-  int32_t undo_stack[LE_UNDO_SLOTS];
-  int undo_count;
-  int32_t redo_stack[LE_UNDO_SLOTS];
-  int redo_count;
-
-  _Atomic int32_t a_state;
-  _Atomic int32_t a_undo_depth; /* published undo_count */
-  _Atomic int32_t a_redo_depth; /* published redo_count */
-  _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
-  _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
-                              * to fire a quantized record action); read by the
-                              * control thread to reconcile arm vs. fired. */
-  int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
-  int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
-                            * top (quantize), 1 = input level threshold
-                            * (sound-activated auto-record). */
-  int32_t record_pos; /* audio-thread-local shared write head, driving every
-                       * active lane. Defining track: linear frame count. New
-                       * track over a master: the absolute phase (segment*base +
-                       * position), seeded at press so writes stay phase-locked
-                       * to the master loop. */
-  uint64_t start_iter; /* loop_iteration when this track's recording began */
-  int32_t record_start; /* record_pos when this capture began, so a fixed-length
-                         * track can auto-finalize after exactly K base loops. */
-} le_track;
-
-struct le_engine {
-  ma_device device;
-  int device_initialised;
-
-  /* Snapshot, published as independent atomics. */
-  _Atomic int32_t a_running;
-  /* 1 while the device is present, 0 once a device-lost/rerouted/stopped
-   * notification fires. Written only by the RT-adjacent notification callback
-   * (store-only, no work) and the lifecycle calls; read into the snapshot.
-   * The callback stores `relaxed` (it carries no other state and must not block
-   * the audio thread); the lifecycle store and the snapshot load use
-   * release/acquire to match the `a_running` publication they sit beside. The
-   * flag is a single independent value, so plain visibility is all that's
-   * required either way. */
-  _Atomic int32_t a_device_present;
-  _Atomic int32_t a_configured;
-  _Atomic int32_t a_sample_rate;
-  _Atomic int32_t a_buffer_frames;
-  _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
-  _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
-  /* Input channels whose Core Audio label marks them as loopback; never
-   * recorded, monitored, or routable. Computed once at device open. */
-  _Atomic uint32_t a_excluded_input_mask;
-  _Atomic uint64_t a_frames;
-  _Atomic uint32_t a_xruns;
-  _Atomic uint32_t a_in_rms_bits;
-  _Atomic uint32_t a_in_peak_bits;
-  _Atomic uint32_t a_out_rms_bits;
-  /* Loop-indexed visualization (float bits): one peak per loop bucket, spanning
-   * exactly one master loop and refreshed as the playhead sweeps. a_loop_viz is
-   * the mixed output; a_track_viz is each track's own contribution. */
-  _Atomic uint32_t a_loop_viz[LE_VIZ_POINTS];
-  _Atomic uint32_t a_track_viz[LE_MAX_TRACKS][LE_VIZ_POINTS];
-  _Atomic int32_t a_latency_state;
-  _Atomic uint64_t a_latency_ms_bits;
-
-  /* Per-input live monitors: one independent route per hardware input. Each
-   * sounds iff its a_enabled is set (a loopback measurement clears them all to
-   * break the cable feedback loop; a fresh start restores defaults). */
-  le_monitor_input monitors[LE_MAX_INPUTS];
-
-  /* Looper transport (master). */
-  _Atomic int32_t a_master_len;
-  _Atomic int32_t a_master_pos;
-
-  _Atomic int32_t a_record_offset; /* latency compensation in frames */
-
-  /* Tracks. */
-  le_track tracks[LE_MAX_TRACKS];
-  int32_t track_count;
-
-  /* Command ring + pre-allocated backing storage. */
-  le_ring ring;
-  le_command ring_storage[LE_RING_CAPACITY];
-
-  /* Configuration. */
-  int sample_rate;
-  int in_channels;  /* hardware capture channels */
-  int out_channels; /* hardware playback channels */
-  int32_t max_loop_frames;
-  int32_t fx_delay_frames; /* per-slot delay-line capacity (1 s @ sample rate) */
-
-  /* Audio-thread-local transport. */
-  le_loop_clock clock;
-  uint64_t loop_iteration; /* free-running count of base-loop wraps */
-
-  /* Quantized recording (control-thread-owned). When `quantize` is set, a record
-   * press over an existing master arms `armed[ch]` (and does the one-time prep
-   * an immediate record would) instead of acting now; the audio thread fires it
-   * at the next loop top. `arm_snapshotted[ch]` records whether the arm pushed a
-   * pre-overdub undo layer, so a cancel can reverse it. */
-  int quantize; /* global default */
-  /* Per-track quantize override: -1 inherit the global default, 0 force off,
-   * 1 force on. The effective value drives le_engine_record's arm decision. */
-  int track_quantize[LE_MAX_TRACKS];
-  int armed[LE_MAX_TRACKS];
-  int arm_snapshotted[LE_MAX_TRACKS];
-  /* What each arm is waiting for: 0 = loop top (quantize), 1 = input level
-   * (auto-record). Lets toggling one feature cancel only its own arms. */
-  int armed_trigger[LE_MAX_TRACKS];
-
-  /* Loop length. The global default (0 auto-rounds up to whole base loops on
-   * stop; K >= 1 fixes K base loops) applies to tracks that inherit. A track's
-   * target_multiple is 0 to inherit the global default, or K >= 1 to fix it.
-   * Control-thread-owned. */
-  int default_multiple;
-  int target_multiple[LE_MAX_TRACKS];
-
-  /* When `rec_dub` is set, finalizing a recording with a record press continues
-   * into overdub instead of playback (the second-press "rec/dub" mode). A stop
-   * still ends in playback/stopped. Control-thread default, read on the audio
-   * thread via the finalize end-state. */
-  int rec_dub;
-
-  /* When `auto_record` is set, a record press on an empty track arms a
-   * signal-triggered start: the audio thread begins recording the first frame
-   * the input level crosses LE_AUTO_RECORD_THRESHOLD. Reuses the arm/pending
-   * machinery with a per-track trigger type (see le_track.pending_trigger). */
-  int auto_record;
-
-  /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
-   * current loop bucket and publish when the playhead crosses into the next. */
-  int32_t loop_viz_bucket;
-  float loop_viz_accum;
-  float track_viz_accum[LE_MAX_TRACKS];
-
-  /* Latency harness (audio-thread-local + published state). */
-  int lat_active;
-  int32_t lat_emit_remaining;
-  uint64_t lat_frames_since_emit;
-  int32_t lat_attempts_remaining;
-
-  char device_name[256];
-  int passthrough; /* input monitoring */
-
-  /* Explicit context + resolved device ids, used when capturing from a detected
-   * loopback device (use_loopback_capture) or when a device is pinned by id. */
-  ma_context context;
-  int context_initialised;
-  ma_device_id capture_id;
-  ma_device_id playback_id;
-};
+/* struct le_engine and its nested types (le_fx_state, le_lane,
+ * le_monitor_input, le_track) plus LE_RING_CAPACITY / LE_UNDO_SLOTS now live in
+ * engine_private.h, shared with the per-OS translation units (engine_linux.c /
+ * engine_apple.c / engine_windows.c). */
 
 /* ---- float/double <-> atomic-bits helpers ---- */
 
@@ -326,12 +83,9 @@ static void store_f32(_Atomic uint32_t* slot, float v) {
 static float load_f32(_Atomic uint32_t* slot) {
   return bits_to_f32(atomic_load_explicit(slot, memory_order_relaxed));
 }
-static int32_t load_i32(_Atomic int32_t* slot) {
-  return atomic_load_explicit(slot, memory_order_relaxed);
-}
-static void store_i32(_Atomic int32_t* slot, int32_t v) {
-  atomic_store_explicit(slot, v, memory_order_relaxed);
-}
+/* load_i32 / store_i32 are static inline in engine_private.h (shared with the
+ * per-OS TUs); load_f32 / store_f32 / bits_to_f32 have no cross-TU consumer and
+ * stay file-local here. */
 
 /* Wraps `pos - offset` into [0, len). Used to write captured input at the
  * latency-compensated loop position so overdubs align with what was heard. */
@@ -774,8 +528,7 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       e->lat_active = 1;
       /* Emit for ~10 ms so the pulse survives D/A → cable → A/D. */
       e->lat_emit_remaining = sr / LE_LATENCY_PULSE_DIV;
-      e->lat_frames_since_emit = 0;
-      e->lat_attempts_remaining = LE_LATENCY_ATTEMPTS;
+      e->lat_buf_pos = 0; /* start a fresh capture window */
       store_i32(&e->a_latency_state, LE_LATENCY_MEASURING);
       /* A loopback measurement requires a physical out->in cable, which forms a
        * feedback loop with input monitoring (out -> cable -> in -> monitor ->
@@ -1056,6 +809,49 @@ static void apply_command(le_engine* e, const le_command* cmd) {
   }
 }
 
+/* Resolves a captured latency measurement: cross-correlates the input-magnitude
+ * envelope (lat_buf) with the emitted pulse — a length-M boxcar — via a sliding
+ * sum, and publishes the peak lag as the round-trip record offset. Integrating
+ * over the whole pulse locks onto the sustained echo and rejects the brief
+ * crosstalk/noise a first-over-threshold test mis-locked onto. Audio-thread,
+ * one-shot at end of capture; bounded (<= lat_buf_cap iterations). */
+static void le_latency_resolve(le_engine* e, int sr) {
+  const int32_t m = sr / LE_LATENCY_PULSE_DIV; /* pulse length in frames */
+  const int32_t n = e->lat_buf_pos;            /* frames captured */
+  if (e->lat_buf == NULL || n <= m) {
+    store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
+    return;
+  }
+  double window = 0.0;
+  for (int32_t i = 0; i < m; ++i) window += e->lat_buf[i];
+  double best = window;
+  double total = window;
+  int32_t best_lag = 0;
+  int32_t count = 1;
+  for (int32_t lag = 1; lag + m <= n; ++lag) {
+    window += e->lat_buf[lag + m - 1] - e->lat_buf[lag - 1];
+    total += window;
+    ++count;
+    if (window > best) {
+      best = window;
+      best_lag = lag;
+    }
+  }
+  const double avg = total / (double)count;
+  /* The echo's correlation peak must stand clearly above the baseline — a
+   * level-independent test that works for weak loopback levels; the tiny
+   * absolute floor rejects pure silence. */
+  if (best < (double)LE_LATENCY_PEAK_RATIO * avg || best / (double)m < 1e-4) {
+    store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
+    return;
+  }
+  store_i32(&e->a_record_offset, best_lag);
+  atomic_store_explicit(&e->a_latency_ms_bits,
+                        f64_to_bits((double)best_lag * 1000.0 / (double)sr),
+                        memory_order_relaxed);
+  store_i32(&e->a_latency_state, LE_LATENCY_DONE);
+}
+
 /* ---- the real-time DSP core ---- */
 
 void le_engine_process(le_engine* e, float* output, const float* input,
@@ -1181,46 +977,35 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * routed loopback capture device) it returns on the normal inputs. */
     const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
 
-    /* Latency harness takes over the output entirely while measuring.
-     *
-     * Each attempt broadcasts a quiet ~10 ms pulse, then silence, and listens
-     * for the echo. lat_frames_since_emit counts from the current pulse's first
-     * frame. A short dead-time suppresses direct output bleed before we start
-     * checking input; thereafter we check every frame (the echo can arrive while
-     * a small-buffer pulse is still emitting). If an attempt's window elapses
-     * with no echo, we re-emit — a single dropped period at device startup costs
-     * one retry instead of a full timeout. After LE_LATENCY_ATTEMPTS misses we
-     * report a timeout. The retry interval (~100 ms) is far longer than any real
-     * round-trip, so an echo is never mis-attributed to the wrong pulse. */
+    /* Latency harness takes over the output entirely while measuring. It emits
+     * a quiet ~10 ms pulse at the start of a fixed capture window, records the
+     * input-magnitude envelope across that window, then cross-correlates it with
+     * the pulse to find the round-trip by the correlation peak (le_latency_
+     * resolve). The peak — integrated over the whole pulse — locks onto the real
+     * echo and ignores the brief direct/crosstalk bleed that a first-over-
+     * threshold test mis-reported (especially on low-latency JACK graphs). */
     if (e->lat_active) {
       float broadcast = 0.0f;
       if (e->lat_emit_remaining > 0) {
-        broadcast = LE_LATENCY_PULSE_AMP;
+        /* A tone burst (not a DC level): AC-coupled interface inputs high-pass
+         * a constant pulse down to edge transients, leaving nothing to
+         * correlate. A 1 kHz burst returns as a sustained AC signal. */
+        const int32_t emitted =
+            (sr / LE_LATENCY_PULSE_DIV) - e->lat_emit_remaining;
+        const float phase = 2.0f * 3.14159265f * LE_LATENCY_TONE_HZ *
+                            (float)emitted / (float)sr;
+        broadcast = LE_LATENCY_PULSE_AMP * sinf(phase);
         e->lat_emit_remaining--;
       }
-      e->lat_frames_since_emit++;
-
-      const uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
-      const uint64_t attempt_frames = (uint64_t)(sr / LE_LATENCY_RETRY_DIV);
-      if (e->lat_frames_since_emit > dead_frames &&
-          lat_mag >= LE_LATENCY_THRESHOLD) {
-        const double ms = (double)e->lat_frames_since_emit * 1000.0 / (double)sr;
-        atomic_store_explicit(&e->a_latency_ms_bits, f64_to_bits(ms),
-                              memory_order_relaxed);
-        store_i32(&e->a_latency_state, LE_LATENCY_DONE);
-        /* The measured round-trip is exactly the record offset that aligns
-         * overdubs; apply it automatically (the UI can override). */
-        store_i32(&e->a_record_offset, (int32_t)e->lat_frames_since_emit);
+      if (e->lat_buf != NULL && e->lat_buf_pos < e->lat_buf_cap) {
+        e->lat_buf[e->lat_buf_pos++] = lat_mag;
+      }
+      /* Resolve on the same frame the window fills (not the next): the two
+       * conditions overlap on the fill frame, so this is intentionally not an
+       * `else`. */
+      if (e->lat_buf == NULL || e->lat_buf_pos >= e->lat_buf_cap) {
+        le_latency_resolve(e, sr);
         e->lat_active = 0;
-      } else if (e->lat_frames_since_emit >= attempt_frames) {
-        if (e->lat_attempts_remaining > 1) {
-          e->lat_attempts_remaining--;
-          e->lat_emit_remaining = sr / LE_LATENCY_PULSE_DIV;
-          e->lat_frames_since_emit = 0;
-        } else {
-          store_i32(&e->a_latency_state, LE_LATENCY_TIMEOUT);
-          e->lat_active = 0;
-        }
       }
       for (int c = 0; c < ch_out; ++c) {
         out[f * ch_out + c] = broadcast;
@@ -1500,11 +1285,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                             memory_order_relaxed);
 }
 
-static void data_callback(ma_device* device, void* output, const void* input,
-                          ma_uint32 frame_count) {
-  le_engine_process((le_engine*)device->pUserData, (float*)output,
-                    (const float*)input, frame_count);
-}
+/* The miniaudio data + notification callbacks, the device-config build, and the
+ * device lifecycle (open/start/stop/close) now live behind the device-backend
+ * seam in engine_miniaudio.c; this file keeps only le_engine_process (the
+ * real-time core they pump) and the backend-agnostic lifecycle dispatch below. */
 
 /* ---- configuration / lifecycle ---- */
 
@@ -1621,6 +1405,14 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
   engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
+
+  /* Latency-measurement capture window (~100 ms): the audio thread fills it with
+   * the input-magnitude envelope, the resolver cross-correlates it. */
+  free(engine->lat_buf);
+  engine->lat_buf_cap = sample_rate / LE_LATENCY_CAPTURE_DIV;
+  engine->lat_buf = (float*)calloc((size_t)engine->lat_buf_cap, sizeof(float));
+  engine->lat_buf_pos = 0;
+  if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
 
@@ -1642,6 +1434,11 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
   store_i32(&engine->a_out_channels, output_channels);
+  /* Default to shared; le_engine_start publishes the real mode after device open. */
+  store_i32(&engine->a_exclusive_active, 0);
+  /* Default to WASAPI; le_engine_start republishes the negotiated backend after
+   * device open (always WASAPI in this build). */
+  store_i32(&engine->a_active_backend, LE_BACKEND_WASAPI);
   /* Re-derived per device open in le_engine_start; default to none excluded. */
   atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
                         memory_order_relaxed);
@@ -1701,8 +1498,29 @@ int le_label_is_loopback(const char* label) {
   return contains_ci(label, "loop");
 }
 
-static void find_loopback(ma_context* ctx, le_loopback_info* out,
-                          ma_device_id* out_id) {
+uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
+                                     int channel_count) {
+  /* Pure bit-setting core shared by every platform's label probe: walk the
+   * input channels, ask the caller's provider for each channel's name, and set
+   * the bit for any name le_label_is_loopback matches. The OS-specific part is
+   * only the *source* of the names (Core Audio on macOS, ASIO on Windows), so
+   * this stays unit-testable with a fake provider and free of any OS calls.
+   * Channels beyond LE_MAX_CHANNELS (the mask's width) are ignored. */
+  if (get_name == NULL) return 0;
+  uint32_t mask = 0;
+  const int n =
+      channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
+  for (int c = 0; c < n; ++c) {
+    const char* name = get_name(ctx, c);
+    if (name != NULL && le_label_is_loopback(name)) {
+      mask |= (1u << c);
+    }
+  }
+  return mask;
+}
+
+void le_find_loopback(ma_context* ctx, le_loopback_info* out,
+                      ma_device_id* out_id) {
   out->available = 0;
   out->kind = LE_LOOPBACK_NONE;
   out->device_name[0] = '\0';
@@ -1743,7 +1561,7 @@ int32_t le_detect_loopback(le_loopback_info* out) {
     out->device_name[0] = '\0';
     return LE_ERR_INVALID;
   }
-  find_loopback(&ctx, out, NULL);
+  le_find_loopback(&ctx, out, NULL);
   ma_context_uninit(&ctx);
   return LE_OK;
 }
@@ -1751,14 +1569,12 @@ int32_t le_detect_loopback(le_loopback_info* out) {
 /* ---- device enumeration & pinning ---- */
 
 /* Serializes a miniaudio device id into a printable, round-trippable token.
- * On every string-id backend (CoreAudio, ALSA, PulseAudio, sndio, oss) the
- * union's active member is a NUL-terminated char string at offset 0, so reading
- * it as a C string is exact and matches byte-for-byte at resolve time. WASAPI
- * (a wchar string) is not represented here; pinning is a no-op there and the
- * engine falls back to the default device. */
+ * The backend-specific encoding (char string vs WASAPI wchar string) lives
+ * behind the platform seam so this portable core stays free of OS #ifs; see
+ * le_platform_device_id_to_str (engine_platform.h). Enumeration and resolution
+ * both route through here, so the token round-trips via strcmp on every OS. */
 static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
-  strncpy(out, (const char*)id, cap - 1);
-  out[cap - 1] = '\0';
+  le_platform_device_id_to_str(id, out, cap);
 }
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
@@ -1766,13 +1582,20 @@ static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
   strncpy(dst->name, src->name, sizeof(dst->name) - 1);
   dst->name[sizeof(dst->name) - 1] = '\0';
   dst->is_default = src->isDefault ? 1 : 0;
+  /* WASAPI enumeration reports no per-device channel count here; zero them so
+   * Dart's AudioDevice never surfaces stack garbage as channel counts. An ASIO
+   * probe fills these in Part 2 (0 = unknown). */
+  dst->input_channels = 0;
+  dst->output_channels = 0;
 }
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
  * writes the count into *count. Uses a transient context so it never disturbs a
- * running device. `capture` selects the direction. */
-static int32_t enumerate_devices(le_device_info* out, int32_t max,
-                                 int32_t* count, int capture) {
+ * running device. `capture` selects the direction. Externally linked (declared
+ * in engine_private.h) so the Linux JACK pin hook can resolve friendly device
+ * names through it; defined only here. */
+int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
+                          int capture) {
   if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
   *count = 0;
   ma_context ctx;
@@ -1810,8 +1633,8 @@ int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
 /* Looks up the device whose serialized id equals `want` in the already-open
  * `ctx` and copies its native id into *out_id. Returns 1 on a match (out_id set)
  * or 0 if `want` is empty / unmatched / enumeration failed. */
-static int resolve_device_id(ma_context* ctx, int capture, const char* want,
-                             ma_device_id* out_id) {
+int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
+                         ma_device_id* out_id) {
   if (want == NULL || want[0] == '\0') return 0;
   ma_device_info* playback = NULL;
   ma_uint32 playback_count = 0;
@@ -1834,104 +1657,9 @@ static int resolve_device_id(ma_context* ctx, int capture, const char* want,
   return 0;
 }
 
-/* Device-state notifications from miniaudio. RT-adjacent: stores the presence
- * atomic only — never allocates, locks, or touches the device. A stopped /
- * rerouted / interrupted device flips presence to 0; (re)start / resume flips it
- * back to 1. Recovery from a 0 is the Dart layer's job (A2), not native's. */
-static void notification_callback(const ma_device_notification* notification) {
-  if (notification == NULL || notification->pDevice == NULL) return;
-  le_engine* e = (le_engine*)notification->pDevice->pUserData;
-  if (e == NULL) return;
-  switch (notification->type) {
-    case ma_device_notification_type_started:
-    case ma_device_notification_type_interruption_ended:
-      atomic_store_explicit(&e->a_device_present, 1, memory_order_relaxed);
-      break;
-    case ma_device_notification_type_stopped:
-    case ma_device_notification_type_rerouted:
-    case ma_device_notification_type_interruption_began:
-      atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
-      break;
-    default:
-      break;
-  }
-}
-
-/* ---- loopback channel exclusion (Core Audio labels) ---- */
-
-#if defined(__APPLE__)
-/* Resolves the AudioDeviceID for `uid` (a Core Audio device UID string), or the
- * default input device when `uid` is NULL/empty. Returns kAudioObjectUnknown on
- * failure. */
-static AudioObjectID le_macos_input_device(const char* uid) {
-  if (uid != NULL && uid[0] != '\0') {
-    CFStringRef cf = CFStringCreateWithCString(NULL, uid, kCFStringEncodingUTF8);
-    if (cf == NULL) return kAudioObjectUnknown;
-    AudioObjectID dev = kAudioObjectUnknown;
-    AudioValueTranslation t = {&cf, sizeof(cf), &dev, sizeof(dev)};
-    UInt32 size = sizeof(t);
-    AudioObjectPropertyAddress addr = {
-        kAudioHardwarePropertyDeviceForUID, kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMain};
-    const OSStatus st = AudioObjectGetPropertyData(
-        kAudioObjectSystemObject, &addr, 0, NULL, &size, &t);
-    CFRelease(cf);
-    if (st == noErr && dev != kAudioObjectUnknown) return dev;
-  }
-  AudioObjectID dev = kAudioObjectUnknown;
-  UInt32 size = sizeof(dev);
-  AudioObjectPropertyAddress addr = {kAudioHardwarePropertyDefaultInputDevice,
-                                     kAudioObjectPropertyScopeGlobal,
-                                     kAudioObjectPropertyElementMain};
-  if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, NULL, &size,
-                                 &dev) != noErr) {
-    return kAudioObjectUnknown;
-  }
-  return dev;
-}
-
-/* Builds a bitmask of input channels (0..channel_count-1) whose Core Audio
- * element name matches "loopback". Channels with no label are treated as
- * not-loopback. */
-static uint32_t le_macos_excluded_mask(const char* uid, int channel_count) {
-  const AudioObjectID dev = le_macos_input_device(uid);
-  if (dev == kAudioObjectUnknown) return 0;
-  uint32_t mask = 0;
-  const int n = channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
-  for (int c = 0; c < n; ++c) {
-    AudioObjectPropertyAddress addr = {kAudioObjectPropertyElementName,
-                                       kAudioObjectPropertyScopeInput,
-                                       (AudioObjectPropertyElement)(c + 1)};
-    CFStringRef name = NULL;
-    UInt32 size = sizeof(name);
-    if (AudioObjectGetPropertyData(dev, &addr, 0, NULL, &size, &name) != noErr ||
-        name == NULL) {
-      continue;
-    }
-    char buf[256];
-    if (CFStringGetCString(name, buf, sizeof(buf), kCFStringEncodingUTF8) &&
-        le_label_is_loopback(buf)) {
-      mask |= (1u << c);
-    }
-    CFRelease(name);
-  }
-  return mask;
-}
-#endif
-
-/* Computes the excluded-input bitmask for the capture device identified by
- * `uid` (NULL/empty => default input). macOS reads Core Audio channel labels;
- * every other platform excludes nothing. */
-static uint32_t le_compute_excluded_input_mask(const char* uid,
-                                               int channel_count) {
-#if defined(__APPLE__)
-  return le_macos_excluded_mask(uid, channel_count);
-#else
-  (void)uid;
-  (void)channel_count;
-  return 0;
-#endif
-}
+/* Loopback channel exclusion is per-OS: macOS reads Core Audio channel labels
+ * (engine_apple.c), Linux/Windows exclude nothing for now. The mask is fetched
+ * through le_platform_excluded_input_mask (engine_platform.h) at device open. */
 
 void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
                                                 uint32_t mask) {
@@ -1958,11 +1686,20 @@ void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
   engine->tracks[channel].lane_count = count; /* no buffer allocation */
 }
 
-static void le_uninit_context(le_engine* engine) {
-  if (engine->context_initialised) {
-    ma_context_uninit(&engine->context);
-    engine->context_initialised = 0;
-  }
+le_share_decision le_decide_share_fallback(int requested_exclusive,
+                                           int first_init_ok) {
+  if (!requested_exclusive) return LE_SHARE_DONE_SHARED;
+  return first_init_ok ? LE_SHARE_DONE_EXCLUSIVE : LE_SHARE_RETRY_SHARED;
+}
+
+/* Selects the device backend for a requested le_audio_backend. In this build the
+ * only implementation is the miniaudio backend, so every choice resolves to it
+ * (the backend / asio_driver config fields are accepted and ignored). Part 2
+ * adds the `#if LOOPY_ENABLE_ASIO` branch returning &le_asio_backend; the
+ * default build never references any le_asio_* symbol. */
+const le_device_backend* le_select_backend(int32_t backend) {
+  (void)backend;
+  return &le_miniaudio_backend;
 }
 
 le_engine* le_engine_create(void) {
@@ -1975,11 +1712,12 @@ le_engine* le_engine_create(void) {
 
 void le_engine_destroy(le_engine* engine) {
   if (engine == NULL) return;
-  if (engine->device_initialised) {
-    ma_device_uninit(&engine->device);
-    engine->device_initialised = 0;
+  /* Release the device + context through the backend that opened it. NULL until
+   * the first successful start; close() is idempotent, so a create→destroy with
+   * no start (and a stop→destroy) are both safe. */
+  if (engine->backend != NULL) {
+    engine->backend->close(engine);
   }
-  le_uninit_context(engine);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
@@ -1996,6 +1734,8 @@ void le_engine_destroy(le_engine* engine) {
       free(engine->monitors[c].fx.delay[s]);
     }
   }
+  free(engine->lat_buf);
+  le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
   free(engine);
 }
 
@@ -2004,80 +1744,26 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
   }
-
-  /* Capture and playback widths may differ (e.g. 2-in / 4-out). An unset (0)
-   * count tells miniaudio to open the device's native channel count, so a
-   * multichannel interface comes up with all its channels; the negotiated
-   * counts are read back after init. */
-  int in_channels = config->input_channels > 0 ? config->input_channels : 0;
-  int out_channels = config->output_channels > 0 ? config->output_channels : 0;
-  if (in_channels > LE_MAX_CHANNELS) in_channels = LE_MAX_CHANNELS;
-  if (out_channels > LE_MAX_CHANNELS) out_channels = LE_MAX_CHANNELS;
   engine->passthrough = config->passthrough ? 1 : 0;
 
-  ma_device_config cfg = ma_device_config_init(ma_device_type_duplex);
-  cfg.capture.format = ma_format_f32;
-  cfg.capture.channels = (ma_uint32)in_channels;
-  cfg.playback.format = ma_format_f32;
-  cfg.playback.channels = (ma_uint32)out_channels;
-  cfg.sampleRate = config->sample_rate > 0 ? (ma_uint32)config->sample_rate : 0;
-  if (config->buffer_frames > 0) {
-    cfg.periodSizeInFrames = (ma_uint32)config->buffer_frames;
-    cfg.periods = 2;
-  }
-  cfg.dataCallback = data_callback;
-  cfg.notificationCallback = notification_callback;
-  cfg.pUserData = engine;
-
-  /* An explicit context is needed to capture from a detected loopback device
-   * (use_loopback_capture) or to pin playback/capture to a device by id. When
-   * any of those is requested, open one context and resolve the relevant ids;
-   * otherwise the default device is opened with no context. */
-  const int want_playback_pin = config->playback_device_id[0] != '\0';
-  const int want_capture_pin = config->capture_device_id[0] != '\0';
-  ma_context* pContext = NULL;
-  if (config->use_loopback_capture || want_playback_pin || want_capture_pin) {
-    if (ma_context_init(NULL, 0, NULL, &engine->context) == MA_SUCCESS) {
-      engine->context_initialised = 1;
-      pContext = &engine->context;
-      if (config->use_loopback_capture) {
-        /* Loopback capture overrides an explicit capture device id. */
-        le_loopback_info info;
-        find_loopback(&engine->context, &info, &engine->capture_id);
-        if (info.available && info.device_name[0] != '\0') {
-          cfg.capture.pDeviceID = &engine->capture_id;
-        }
-      } else if (want_capture_pin) {
-        if (resolve_device_id(&engine->context, /*capture=*/1,
-                              config->capture_device_id, &engine->capture_id)) {
-          cfg.capture.pDeviceID = &engine->capture_id;
-        }
-      }
-      if (want_playback_pin) {
-        if (resolve_device_id(&engine->context, /*capture=*/0,
-                              config->playback_device_id,
-                              &engine->playback_id)) {
-          cfg.playback.pDeviceID = &engine->playback_id;
-        }
-      }
-    }
+  /* Open the device through the selected backend (miniaudio in this build). The
+   * backend builds the device config, resolves pins/loopback, runs the
+   * exclusive-mode fallback, and reports the negotiated parameters back. */
+  const le_device_backend* be = le_select_backend(config->backend);
+  le_device_open_result info;
+  int32_t open_result = be->open(engine, config, &info);
+  if (open_result != LE_OK) {
+    return open_result;
   }
 
-  if (ma_device_init(pContext, &cfg, &engine->device) != MA_SUCCESS) {
-    le_uninit_context(engine);
-    return LE_ERR_DEVICE;
-  }
-  engine->device_initialised = 1;
+  /* Remember the backend before start() publishes a_running, so the invariant
+   * "running implies backend set" holds for any concurrent stop()/snapshot. */
+  engine->backend = be;
 
-  const int32_t sr = (int32_t)engine->device.sampleRate;
-  /* Use the device-negotiated channel counts (they may differ from requested). */
-  const int32_t neg_in = (int32_t)engine->device.capture.channels;
-  const int32_t neg_out = (int32_t)engine->device.playback.channels;
-  if (le_engine_configure(engine, sr, neg_in, neg_out,
+  if (le_engine_configure(engine, info.sample_rate, info.input_channels,
+                          info.output_channels,
                           config->max_loop_frames) != LE_OK) {
-    ma_device_uninit(&engine->device);
-    engine->device_initialised = 0;
-    le_uninit_context(engine);
+    be->close(engine);
     return LE_ERR_INVALID;
   }
   /* Passthrough: monitor hardware input 0 live to the default stereo pair
@@ -2086,36 +1772,40 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     store_i32(&engine->monitors[0].a_enabled, 1);
   }
 
-  store_i32(&engine->a_buffer_frames,
-            (int32_t)engine->device.playback.internalPeriodSizeInFrames);
+  /* Publish the negotiated parameters (configure() reset them above). */
+  store_i32(&engine->a_active_backend, info.active_backend);
+  store_i32(&engine->a_buffer_frames, info.buffer_frames);
+  store_i32(&engine->a_exclusive_active, info.exclusive_active);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;
-  engine->lat_attempts_remaining = 0;
+  engine->lat_buf_pos = 0;
 
-  strncpy(engine->device_name, engine->device.playback.name,
+  strncpy(engine->device_name, info.device_name,
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
   /* Exclude any loopback-labelled capture channels. The capture device's UID is
-   * our explicit capture id when one was pinned/loopback-routed, else the system
-   * default input. On string-id backends the id union is the UID string. */
+   * our explicit capture id when one was pinned/loopback-routed (capture_id_set,
+   * set by the backend), else the system default input. On string-id backends
+   * the id union is the UID string. */
   const char* capture_uid =
-      cfg.capture.pDeviceID != NULL ? (const char*)&engine->capture_id : NULL;
+      engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
   /* relaxed: a lone published value, matching the other configuration atomics
    * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
-  atomic_store_explicit(&engine->a_excluded_input_mask,
-                        le_compute_excluded_input_mask(capture_uid, neg_in),
-                        memory_order_relaxed);
+  atomic_store_explicit(
+      &engine->a_excluded_input_mask,
+      le_platform_excluded_input_mask(capture_uid, info.input_channels),
+      memory_order_relaxed);
 
-  if (ma_device_start(&engine->device) != MA_SUCCESS) {
-    ma_device_uninit(&engine->device);
-    engine->device_initialised = 0;
-    le_uninit_context(engine);
+  if (be->start(engine) != LE_OK) {
+    be->close(engine);
     return LE_ERR_DEVICE;
   }
-  atomic_store_explicit(&engine->a_device_present, 1, memory_order_release);
-  atomic_store_explicit(&engine->a_running, 1, memory_order_release);
+  /* Per-OS post-start hook: Linux repins the JACK ports to the selected
+   * interface (overriding miniaudio's connect-to-every-physical-port default)
+   * so channels map to that device only. No-op elsewhere. */
+  le_platform_after_device_start(engine, config);
   return LE_OK;
 }
 
@@ -2124,12 +1814,17 @@ int32_t le_engine_stop(le_engine* engine) {
   if (!atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
-  ma_device_uninit(&engine->device);
-  engine->device_initialised = 0;
-  le_uninit_context(engine);
+  /* Release the device through the backend that opened it (always set while
+   * running). */
+  if (engine->backend != NULL) {
+    engine->backend->stop(engine);
+  }
   engine->device_name[0] = '\0';
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
+  /* Per-OS teardown on stop (not only destroy) so a forced quantum doesn't
+   * outlive a running engine for other PipeWire clients. No-op off Linux. */
+  le_platform_on_engine_teardown();
   return LE_OK;
 }
 
@@ -2184,6 +1879,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
+  out->exclusive_active = load_i32(&engine->a_exclusive_active);
+  out->active_backend = load_i32(&engine->a_active_backend);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,

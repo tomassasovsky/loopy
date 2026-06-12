@@ -15,6 +15,7 @@ class StoredAudioConfig {
     this.maxLoopMinutes = 0,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
+    this.exclusive = false,
   });
 
   /// Requested sample rate in Hz.
@@ -43,6 +44,13 @@ class StoredAudioConfig {
   /// Pinned capture device id (empty => system default).
   final String captureDeviceId;
 
+  /// Whether OS-exclusive device access was requested. This is the persisted
+  /// *intent*; the negotiated reality is reported live by the engine. The
+  /// platform default for an unset stored value (Windows => on) is resolved by
+  /// the caller (presentation layer), not here — this field's `false` is only a
+  /// construction default.
+  final bool exclusive;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -55,7 +63,8 @@ class StoredAudioConfig {
           outputChannels == other.outputChannels &&
           maxLoopMinutes == other.maxLoopMinutes &&
           playbackDeviceId == other.playbackDeviceId &&
-          captureDeviceId == other.captureDeviceId;
+          captureDeviceId == other.captureDeviceId &&
+          exclusive == other.exclusive;
 
   @override
   int get hashCode => Object.hash(
@@ -67,6 +76,7 @@ class StoredAudioConfig {
     maxLoopMinutes,
     playbackDeviceId,
     captureDeviceId,
+    exclusive,
   );
 }
 
@@ -127,6 +137,7 @@ class SettingsRepository {
   static const String _audioMaxLoopMinutesKey = 'audio.max_loop_minutes';
   static const String _audioPlaybackDeviceIdKey = 'audio.playback_device_id';
   static const String _audioCaptureDeviceIdKey = 'audio.capture_device_id';
+  static const String _audioExclusiveKey = 'audio.exclusive';
 
   /// Loads the last-used audio configuration, or `null` if none has been saved
   /// yet (a first run, so the setup flow should be shown).
@@ -143,8 +154,15 @@ class SettingsRepository {
       maxLoopMinutes: await _store.getInt(_audioMaxLoopMinutesKey) ?? 0,
       playbackDeviceId: await _store.getString(_audioPlaybackDeviceIdKey) ?? '',
       captureDeviceId: await _store.getString(_audioCaptureDeviceIdKey) ?? '',
+      exclusive: await _store.getBool(_audioExclusiveKey) ?? false,
     );
   }
+
+  /// Loads the requested exclusive-access intent, or `null` if it has never
+  /// been set. Kept separate (and nullable) from [loadAudioConfig] so callers
+  /// can tell "never chosen" apart from "explicitly off" and apply the platform
+  /// default (Windows => on) themselves — the repository holds no OS policy.
+  Future<bool?> loadAudioExclusive() => _store.getBool(_audioExclusiveKey);
 
   /// Saves the audio [config] so the engine can auto-start with it next launch.
   Future<void> saveAudioConfig(StoredAudioConfig config) async {
@@ -159,6 +177,7 @@ class SettingsRepository {
       config.playbackDeviceId,
     );
     await _store.setString(_audioCaptureDeviceIdKey, config.captureDeviceId);
+    await _store.setBool(_audioExclusiveKey, value: config.exclusive);
   }
 
   static const String _showWaveformWindowKey = 'big_picture.waveform_window';

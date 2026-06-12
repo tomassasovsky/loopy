@@ -9,11 +9,18 @@
 
 #include <stdint.h>
 
+#include "le_device_backend.h"  /* le_device_backend (le_select_backend return) */
 #include "loopy_engine_api.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Selects the device backend for a requested le_audio_backend (le_config.backend).
+ * In this build the only implementation is the miniaudio backend, so every input
+ * returns it; the opt-in ASIO branch lands in Part 2. The default build never
+ * references an ASIO symbol. Not part of the FFI surface. */
+const le_device_backend* le_select_backend(int32_t backend);
 
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /
@@ -37,6 +44,33 @@ le_loopback_kind le_classify_capture_device(const char* name);
  * substring "loopback"). Pure and unit-testable; a NULL/blank label is not a
  * loopback. */
 int le_label_is_loopback(const char* label);
+
+/* Outcome of the share-mode fallback decision (see le_decide_share_fallback). */
+typedef enum {
+  LE_SHARE_DONE_EXCLUSIVE, /* exclusive requested and the first init succeeded */
+  LE_SHARE_RETRY_SHARED,   /* exclusive requested but failed: retry in shared */
+  LE_SHARE_DONE_SHARED,    /* exclusive not requested: shared as-is */
+} le_share_decision;
+
+/* Pure share-mode fallback decision, factored out so the retry logic is testable
+ * without opening a device. Given whether exclusive access was requested and
+ * whether the first (exclusive) device init succeeded, decides what to do.
+ * Not part of the FFI surface. */
+le_share_decision le_decide_share_fallback(int requested_exclusive,
+                                           int first_init_ok);
+
+/* Per-channel name provider: returns input channel [channel]'s label (or NULL
+ * if unavailable). `ctx` is caller state (e.g. an ASIO driver handle or, in
+ * tests, a fixed name table). */
+typedef const char* (*le_channel_name_fn)(void* ctx, int channel);
+
+/* Builds the excluded-input-channel bitmask from a name provider: bit c is set
+ * when get_name(ctx, c) matches le_label_is_loopback. The platform-agnostic
+ * core of every label probe (only the name *source* is OS-specific), so it is
+ * pure and unit-testable with a fake provider. Channels >= LE_MAX_CHANNELS and
+ * a NULL provider yield no bits. Not part of the FFI surface. */
+uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
+                                     int channel_count);
 
 /* Overrides the excluded-input-channel mask without opening a device, so the
  * capture-average / monitoring / SET_INPUT_MASK exclusion paths can be tested

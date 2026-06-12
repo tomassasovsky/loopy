@@ -278,6 +278,46 @@ void main() {
       },
     );
 
+    test('round-trips the exclusive intent', () async {
+      const config = StoredAudioConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        monitorInput: true,
+        exclusive: true,
+      );
+      await repository.saveAudioConfig(config);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.exclusive, isTrue);
+    });
+
+    test(
+      'defaults exclusive to false in the stored struct when unset',
+      () async {
+        await store.setInt('audio.sample_rate', 44100);
+        await store.setInt('audio.buffer_frames', 64);
+        final loaded = await repository.loadAudioConfig();
+        expect(loaded?.exclusive, isFalse);
+      },
+    );
+
+    test(
+      'loadAudioExclusive is null when never set, and reflects the saved value',
+      () async {
+        // Never set: the caller (presentation layer) applies the platform
+        // default; the repository reports "unset" as null rather than a guess.
+        expect(await repository.loadAudioExclusive(), isNull);
+        await repository.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            monitorInput: true,
+            exclusive: true,
+          ),
+        );
+        expect(await repository.loadAudioExclusive(), isTrue);
+      },
+    );
+
     test('ignores a legacy audio.merge_to_mono key on load', () async {
       // The merge-to-mono feature was removed; an old store may still carry the
       // key. Loading must succeed and simply not read it. monitorInput is set

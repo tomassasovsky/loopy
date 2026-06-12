@@ -16,8 +16,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   AudioSetupCubit({
     required LooperRepository repository,
     required SettingsRepository settings,
+    required bool defaultExclusive,
   }) : _repository = repository,
        _settings = settings,
+       _defaultExclusive = defaultExclusive,
        super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
 
@@ -40,6 +42,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   final SettingsRepository _settings;
   late final StreamSubscription<LooperState> _subscription;
 
+  /// The platform default for OS-exclusive device access (Windows => on),
+  /// injected by the presentation layer (`platformDefaultExclusive`) so this
+  /// cubit holds no OS policy and stays free of Flutter imports. Used as the
+  /// exclusive-intent fallback when no saved config exists.
+  final bool _defaultExclusive;
+
   /// The device profile we've loaded a saved offset for, to load only once.
   String? _hydratedDeviceKey;
 
@@ -52,19 +60,37 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   bool? _lastDevicePresent;
   String _lastPresentDeviceName = '';
 
-  /// Selects the requested sample rate (applied on the next start).
-  void setSampleRate(int sampleRate) =>
-      emit(state.copyWith(sampleRate: sampleRate));
+  /// Selects the requested sample rate. Persists it and, when the engine is
+  /// already running, reopens the device so the change takes effect now.
+  void setSampleRate(int sampleRate) {
+    if (sampleRate == state.sampleRate) return;
+    emit(state.copyWith(sampleRate: sampleRate));
+    _persistAndApply();
+  }
 
-  /// Selects the requested buffer size (applied on the next start).
-  void setBufferFrames(int bufferFrames) =>
-      emit(state.copyWith(bufferFrames: bufferFrames));
+  /// Selects the requested buffer size. Persists it and, when the engine is
+  /// already running, reopens the device so the change takes effect now (on
+  /// Linux/JACK this maps to the PipeWire quantum, i.e. live latency).
+  void setBufferFrames(int bufferFrames) {
+    if (bufferFrames == state.bufferFrames) return;
+    emit(state.copyWith(bufferFrames: bufferFrames));
+    _persistAndApply();
+  }
 
   /// Toggles input monitoring. Persists the choice and, when the engine is
   /// running, reopens the device so it takes effect immediately.
   void setMonitorInput({required bool monitorInput}) {
     if (monitorInput == state.monitorInput) return;
     emit(state.copyWith(monitorInput: monitorInput));
+    _persistAndApply();
+  }
+
+  /// Toggles OS-exclusive device access (full device control on Windows).
+  /// Persists the intent and, when running, reopens the device so it engages
+  /// (or disengages) now — a reopen that falls back to shared still succeeds.
+  void setExclusive({required bool exclusive}) {
+    if (exclusive == state.exclusive) return;
+    emit(state.copyWith(exclusive: exclusive));
     _persistAndApply();
   }
 
@@ -134,8 +160,15 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
     passthrough: state.monitorInput,
+    exclusive: state.exclusive,
     maxLoopFrames: _maxLoopFrames(state.maxLoopMinutes, state.sampleRate),
-    useLoopbackCapture: state.loopback.isAutoRoutable,
+    // An explicitly chosen input device always wins: only auto-route capture to
+    // a detected loopback when the user has not pinned a capture device.
+    // Otherwise, on hosts where every output exposes a "monitor" capture source
+    // (e.g. PipeWire), the loopback auto-route would silently commandeer the
+    // capture path and ignore the selected interface.
+    useLoopbackCapture:
+        state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
   );
@@ -145,6 +178,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     sampleRate: state.sampleRate,
     bufferFrames: state.bufferFrames,
     monitorInput: state.monitorInput,
+    exclusive: state.exclusive,
     maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
@@ -174,7 +208,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       // with dedicated loopback channels (e.g. a Scarlett's "Loop 1/2", now
       // open and reported via the excluded-input mask). The measured offset is
       // persisted per device by _syncLatencyPersistence.
-      if (state.loopback.isAutoRoutable ||
+      if ((state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty) ||
           _repository.state.status.excludedInputMask != 0) {
         _repository.measureLatency();
       }
@@ -197,6 +231,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// Triggers a loopback round-trip latency measurement.
   void measureLatency() => _repository.measureLatency();
+
+  /// Sets the record offset (latency compensation) directly, in frames — a
+  /// manual override for when the automatic measurement isn't available or
+  /// reliable. Applied live; persisted per device by [_syncLatencyPersistence]
+  /// on the next engine tick (the engine reports it back in the snapshot).
+  void setRecordOffset(int frames) =>
+      _repository.setRecordOffset(frames < 0 ? 0 : frames);
 
   void _onLooperState(LooperState looper) {
     emit(_projectFromRepository(looper, current: state));
@@ -272,14 +313,18 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     final engineStatus = looper.status;
     final lastConfig = _repository.lastEngineConfig;
 
+    // The sample-rate / buffer selectors reflect the user's *requested* values,
+    // not what the engine negotiated. On hydrate we resolve from the saved
+    // config; on every other tick we keep the current selection. (Pulling the
+    // engine-reported value back into the selection drifts it from what was
+    // picked — and, since changes persist, poisons the saved config. The
+    // STATUS table shows the engine's actual values separately.)
     final resolvedSampleRate = hydrateConfig
         ? _resolvedOption(
             negotiated: engineStatus.sampleRate,
             requested: lastConfig?.sampleRate,
             fallback: current.sampleRate,
           )
-        : engineStatus.isConnected && engineStatus.sampleRate > 0
-        ? engineStatus.sampleRate
         : current.sampleRate;
 
     return current.copyWith(
@@ -290,12 +335,16 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
               requested: lastConfig?.bufferFrames,
               fallback: current.bufferFrames,
             )
-          : engineStatus.isConnected && engineStatus.bufferFrames > 0
-          ? engineStatus.bufferFrames
           : current.bufferFrames,
       monitorInput: hydrateConfig
           ? lastConfig?.passthrough ?? current.monitorInput
           : current.monitorInput,
+      // Hydrate the requested exclusive intent; an unconfigured engine falls
+      // back to the platform default (Windows => on). The negotiated reality is
+      // read separately from engineStatus.exclusiveActive.
+      exclusive: hydrateConfig
+          ? lastConfig?.exclusive ?? _defaultExclusive
+          : current.exclusive,
       maxLoopMinutes: hydrateConfig
           ? _maxLoopMinutes(lastConfig?.maxLoopFrames, resolvedSampleRate)
           : current.maxLoopMinutes,

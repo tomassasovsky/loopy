@@ -174,6 +174,8 @@ class NativeAudioEngine implements AudioEngine {
             name: readNativeString((outPtr + i).ref.name),
             isDefault: (outPtr + i).ref.is_default != 0,
             isInput: isInput,
+            inputChannels: (outPtr + i).ref.input_channels,
+            outputChannels: (outPtr + i).ref.output_channels,
           ),
       ];
     } finally {
