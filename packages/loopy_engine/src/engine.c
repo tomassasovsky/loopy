@@ -1201,17 +1201,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
       e->lat_frames_since_emit++;
 
-      /* The real round-trip cannot be shorter than the device's own buffering
-       * (a duplex graph buffers roughly a period in and a period out), so ignore
-       * any detection before ~1.5x the buffer. Otherwise early output bleed /
-       * crosstalk near one period mis-triggers and reports a too-small offset
-       * (seen on JACK/PipeWire: a 128-frame "echo" at a 128-frame buffer). The
-       * fixed ~2.5 ms dead-time remains the floor for tiny buffers. */
-      const int32_t buf_frames = load_i32(&e->a_buffer_frames);
-      uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
-      const uint64_t buffer_floor =
-          buf_frames > 0 ? (uint64_t)buf_frames * 3u / 2u : 0u;
-      if (buffer_floor > dead_frames) dead_frames = buffer_floor;
+      const uint64_t dead_frames = (uint64_t)(sr / LE_LATENCY_DEAD_DIV);
       const uint64_t attempt_frames = (uint64_t)(sr / LE_LATENCY_RETRY_DIV);
       if (e->lat_frames_since_emit > dead_frames &&
           lat_mag >= LE_LATENCY_THRESHOLD) {
