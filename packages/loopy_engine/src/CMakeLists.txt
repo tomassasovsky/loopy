@@ -8,6 +8,7 @@ project(loopy_engine_core VERSION 0.1.0 LANGUAGES C)
 add_library(loopy_engine SHARED
   engine.c
   lockfree_ring.c
+  loop_clock.c
   miniaudio_impl.c
 )
 
