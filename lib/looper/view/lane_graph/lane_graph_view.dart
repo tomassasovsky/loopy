@@ -116,6 +116,15 @@ class _LaneGraphViewState extends State<LaneGraphView> {
             width: layout.canvasWidth,
             height: layout.canvasHeight,
             fitIdentity: layout.fitIdentity,
+            onTapBackground: (_focused == null && widget.selectedEffect == null)
+                ? null
+                : () {
+                    final selected = widget.selectedEffect;
+                    if (selected != null) {
+                      widget.onSelectEffect(selected.lane, null);
+                    }
+                    setState(() => _focused = null);
+                  },
             children: [
               Positioned.fill(
                 child: CustomPaint(painter: GraphEdgePainter(layout.edges)),

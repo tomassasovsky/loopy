@@ -190,6 +190,16 @@ class _AppViewState extends State<_AppView> {
   /// (above the pages) so the banner survives navigation between layouts.
   final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
+  /// Resolves localized strings from inside [MaterialApp] when this state
+  /// sits above it in the tree.
+  AppLocalizations get _l10n {
+    final localizedContext = loopyNavigatorKey.currentContext;
+    if (localizedContext != null) {
+      return localizedContext.l10n;
+    }
+    return lookupAppLocalizations(PlatformDispatcher.instance.locale);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -225,7 +235,7 @@ class _AppViewState extends State<_AppView> {
     final shouldOpen = mode == UiMode.bigPicture && enabled;
     if (shouldOpen) {
       await widget.waveformWindow.open(
-        title: context.l10n.outputWaveformWindowTitle,
+        title: _l10n.outputWaveformWindowTitle,
       );
       _pushTimer ??= Timer.periodic(_waveformFrame, (_) {
         if (!mounted) return;
@@ -246,10 +256,10 @@ class _AppViewState extends State<_AppView> {
   /// pinned device is lost, and replaces it with a transient "reconnected"
   /// snackbar when it returns. Driven from [AudioSetupCubit] connectivity
   /// transitions; mounted on the shell messenger so it persists across layouts.
-  void _showConnectivityBanner(BuildContext context, AudioSetupState state) {
+  void _showConnectivityBanner(AudioSetupState state) {
     final messenger = _messengerKey.currentState;
     if (messenger == null) return;
-    final l10n = context.l10n;
+    final l10n = _l10n;
     messenger.clearMaterialBanners();
     final name = state.connectivityDeviceName.isEmpty
         ? l10n.audioDeviceFallbackName
@@ -313,12 +323,12 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioSetupCubit, AudioSetupState>(
           listenWhen: (previous, current) =>
               previous.deviceConnectivity != current.deviceConnectivity,
-          listener: (_, state) => _showConnectivityBanner(context, state),
+          listener: (_, state) => _showConnectivityBanner(state),
         ),
       ],
       child: BlocBuilder<UiModeCubit, UiMode>(
         builder: (context, mode) {
-          Widget app = MaterialApp(
+          return MaterialApp(
             scaffoldMessengerKey: _messengerKey,
             navigatorKey: loopyNavigatorKey,
             theme: mode == UiMode.bigPicture
@@ -331,11 +341,14 @@ class _AppViewState extends State<_AppView> {
               sessionDirectory: widget.sessionDirectory,
             ),
             debugShowCheckedModeBanner: false,
+            builder: (context, child) {
+              var app = child ?? const SizedBox.shrink();
+              if (defaultTargetPlatform == TargetPlatform.macOS) {
+                app = PlatformMenuBar(menus: _menus(context), child: app);
+              }
+              return app;
+            },
           );
-          if (defaultTargetPlatform == TargetPlatform.macOS) {
-            app = PlatformMenuBar(menus: _menus(context), child: app);
-          }
-          return app;
         },
       ),
     );

@@ -32,6 +32,30 @@ void main() {
         GraphEdge(Offset.zero, Offset(100, 40), color: _wet, faded: true),
         GraphEdge(Offset.zero, Offset(100, 40), color: _wet),
         GraphEdge(Offset(0, 60), Offset(120, 60), color: _dry, dashed: true),
+        GraphEdge(
+          Offset(100, 50),
+          Offset(300, 10),
+          color: _wet,
+          knee: Offset(200, 50),
+        ),
+        // A vertical run into the knee: the rounded-corner branch (the dry
+        // send dropping below a node, then turning to run across).
+        GraphEdge(
+          Offset(100, 0),
+          Offset(140, 40),
+          color: _dry,
+          knee: Offset(100, 40),
+          dashed: true,
+        ),
+        // A dashed fan: a horizontal lead into a curve — the lead dashes, the
+        // bow is stroked solid (the solid-tail extraction branch).
+        GraphEdge(
+          Offset(0, 10),
+          Offset(120, 80),
+          color: _dry,
+          knee: Offset(90, 10),
+          dashed: true,
+        ),
       ]);
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
