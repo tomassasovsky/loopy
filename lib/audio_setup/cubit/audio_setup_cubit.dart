@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -17,8 +16,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   AudioSetupCubit({
     required LooperRepository repository,
     required SettingsRepository settings,
+    required bool defaultExclusive,
   }) : _repository = repository,
        _settings = settings,
+       _defaultExclusive = defaultExclusive,
        super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
 
@@ -41,12 +42,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   final SettingsRepository _settings;
   late final StreamSubscription<LooperState> _subscription;
 
-  /// The platform default for OS-exclusive device access: on by default on
-  /// Windows (full device control via WASAPI exclusive mode), off elsewhere.
-  /// The single source of this rule — `audio_bootstrap` uses the same
-  /// `defaultTargetPlatform` primitive, and the repository holds no OS policy.
-  static bool get _defaultExclusive =>
-      defaultTargetPlatform == TargetPlatform.windows;
+  /// The platform default for OS-exclusive device access (Windows => on),
+  /// injected by the presentation layer (`platformDefaultExclusive`) so this
+  /// cubit holds no OS policy and stays free of Flutter imports. Used as the
+  /// exclusive-intent fallback when no saved config exists.
+  final bool _defaultExclusive;
 
   /// The device profile we've loaded a saved offset for, to load only once.
   String? _hydratedDeviceKey;

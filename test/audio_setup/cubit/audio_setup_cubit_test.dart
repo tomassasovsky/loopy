@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
@@ -40,8 +39,12 @@ void main() {
 
   tearDown(() => stateController.close());
 
-  AudioSetupCubit buildCubit() =>
-      AudioSetupCubit(repository: repository, settings: settings);
+  AudioSetupCubit buildCubit({bool defaultExclusive = false}) =>
+      AudioSetupCubit(
+        repository: repository,
+        settings: settings,
+        defaultExclusive: defaultExclusive,
+      );
 
   test('initial state has sensible defaults', () {
     final cubit = buildCubit();
@@ -145,29 +148,24 @@ void main() {
   );
 
   group('exclusive mode', () {
-    tearDown(() => debugDefaultTargetPlatformOverride = null);
-
-    test('defaults on when unset on Windows', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      final cubit = buildCubit();
+    test('defaults to the injected platform default (on) when unset', () {
+      final cubit = buildCubit(defaultExclusive: true);
       addTearDown(cubit.close);
       expect(cubit.state.exclusive, isTrue);
     });
 
-    test('defaults off when unset on non-Windows', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    test('defaults to the injected platform default (off) when unset', () {
       final cubit = buildCubit();
       addTearDown(cubit.close);
       expect(cubit.state.exclusive, isFalse);
     });
 
     test('hydrates the persisted intent over the platform default', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       when(() => repository.lastEngineConfig).thenReturn(
-        // Saved intent (exclusive off) must win over the Windows-on default.
+        // Saved intent (exclusive off) must win over the injected on-default.
         const EngineConfig(sampleRate: 48000, bufferFrames: 128),
       );
-      final cubit = buildCubit();
+      final cubit = buildCubit(defaultExclusive: true);
       addTearDown(cubit.close);
       expect(cubit.state.exclusive, isFalse);
     });
@@ -207,9 +205,7 @@ void main() {
 
     blocTest<AudioSetupCubit, AudioSetupState>(
       'start carries the exclusive intent through to the engine',
-      setUp: () => debugDefaultTargetPlatformOverride = TargetPlatform.windows,
-      tearDown: () => debugDefaultTargetPlatformOverride = null,
-      build: buildCubit,
+      build: () => buildCubit(defaultExclusive: true),
       act: (cubit) => cubit.start(),
       verify: (_) => verify(
         () => repository.startEngine(

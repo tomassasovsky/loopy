@@ -2,6 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+/// The platform default for OS-exclusive device access: on by default on
+/// Windows (full device control via WASAPI exclusive mode), off elsewhere.
+///
+/// Resolved here in the presentation layer — the single source of this OS rule.
+/// The cubit and repository hold no OS policy (the engine still falls back to
+/// shared if exclusive is refused, so this is always safe).
+bool get platformDefaultExclusive =>
+    defaultTargetPlatform == TargetPlatform.windows;
+
 /// Loads the last-used audio configuration and, if present, starts the engine
 /// with it. Returns `true` when a saved config existed and the engine started,
 /// so the app can boot straight into the looper; `false` means a first run (no
@@ -16,8 +25,7 @@ Future<bool> tryAutoStartEngine({
   // means OS-exclusive on Windows, shared elsewhere. The engine falls back to
   // shared if exclusive is refused, so this is always safe.
   final exclusive =
-      await settings.loadAudioExclusive() ??
-      (defaultTargetPlatform == TargetPlatform.windows);
+      await settings.loadAudioExclusive() ?? platformDefaultExclusive;
   final loopback = repository.detectLoopback();
   final result = repository.startEngine(
     EngineConfig(
