@@ -51,6 +51,9 @@ class AudioSetupState extends Equatable {
     this.devices = const [],
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
+    this.backend = AudioBackend.wasapi,
+    this.asioDriver = '',
+    this.asioDrivers = const [],
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
     this.error,
@@ -96,6 +99,19 @@ class AudioSetupState extends Equatable {
   /// Selected capture device id, or empty for the system default.
   final String captureDeviceId;
 
+  /// The requested device backend (intent). Defaults to [AudioBackend.wasapi];
+  /// [AudioBackend.asio] is selectable only on Windows with drivers present.
+  /// The negotiated reality is read from [engineStatus]'s `activeBackend`.
+  final AudioBackend backend;
+
+  /// The selected ASIO driver id, or empty when none is chosen. Meaningful only
+  /// when [backend] is [AudioBackend.asio].
+  final String asioDriver;
+
+  /// The installed ASIO drivers (one duplex [AudioDevice] each) for the driver
+  /// picker. Empty off Windows / on the default build.
+  final List<AudioDevice> asioDrivers;
+
   /// The most recent pinned-device connectivity transition (drives the banner).
   final DeviceConnectivity deviceConnectivity;
 
@@ -115,6 +131,9 @@ class AudioSetupState extends Equatable {
   /// Capture (input) devices from [devices].
   List<AudioDevice> get captureDevices =>
       devices.where((d) => d.isInput).toList();
+
+  /// Whether the ASIO backend is the requested intent.
+  bool get isAsio => backend == AudioBackend.asio;
 
   /// Selectable sample rates.
   static const sampleRates = [44100, 48000, 96000];
@@ -138,6 +157,9 @@ class AudioSetupState extends Equatable {
     List<AudioDevice>? devices,
     String? playbackDeviceId,
     String? captureDeviceId,
+    AudioBackend? backend,
+    String? asioDriver,
+    List<AudioDevice>? asioDrivers,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
     AudioSetupError? error,
@@ -155,6 +177,9 @@ class AudioSetupState extends Equatable {
       devices: devices ?? this.devices,
       playbackDeviceId: playbackDeviceId ?? this.playbackDeviceId,
       captureDeviceId: captureDeviceId ?? this.captureDeviceId,
+      backend: backend ?? this.backend,
+      asioDriver: asioDriver ?? this.asioDriver,
+      asioDrivers: asioDrivers ?? this.asioDrivers,
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
@@ -176,6 +201,9 @@ class AudioSetupState extends Equatable {
     devices,
     playbackDeviceId,
     captureDeviceId,
+    backend,
+    asioDriver,
+    asioDrivers,
     deviceConnectivity,
     connectivityDeviceName,
     error,

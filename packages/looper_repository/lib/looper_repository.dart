@@ -4,6 +4,7 @@ library;
 
 export 'package:loopy_engine/loopy_engine.dart'
     show
+        AudioBackend,
         AudioDevice,
         EngineConfig,
         EngineResult,

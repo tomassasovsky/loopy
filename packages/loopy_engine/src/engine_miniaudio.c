@@ -206,8 +206,7 @@ static int32_t le_miniaudio_start(le_engine* engine) {
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     return LE_ERR_DEVICE;
   }
-  atomic_store_explicit(&engine->a_device_present, 1, memory_order_release);
-  atomic_store_explicit(&engine->a_running, 1, memory_order_release);
+  le_engine_mark_started(engine);
   return LE_OK;
 }
 

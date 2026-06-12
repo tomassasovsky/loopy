@@ -31,6 +31,9 @@
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
 #include "miniaudio.h"
+#if defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)
+#include "win_asio_device.h" /* le_asio_backend (selected by le_select_backend) */
+#endif
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
  * PipeWire quantum forcing) lives behind the engine_platform.h seam, implemented
@@ -1692,14 +1695,182 @@ le_share_decision le_decide_share_fallback(int requested_exclusive,
   return first_init_ok ? LE_SHARE_DONE_EXCLUSIVE : LE_SHARE_RETRY_SHARED;
 }
 
-/* Selects the device backend for a requested le_audio_backend. In this build the
- * only implementation is the miniaudio backend, so every choice resolves to it
- * (the backend / asio_driver config fields are accepted and ignored). Part 2
- * adds the `#if LOOPY_ENABLE_ASIO` branch returning &le_asio_backend; the
- * default build never references any le_asio_* symbol. */
+/* ---- ASIO bridge math (pure; see engine_internal.h) ----------------------- *
+ *
+ * These run in the ASIO real-time callback but touch no engine state and no ASIO
+ * headers, so they live here and are unit-tested directly. All integer formats
+ * are read/written little-endian byte-by-byte so the conversion is correct
+ * regardless of host endianness (the *LSB ASIO formats are always little-endian).
+ */
+
+/* Byte width of one sample in each native format. */
+static int le_sample_bytes(le_sample_fmt fmt) {
+  switch (fmt) {
+    case LE_SMP_I16: return 2;
+    case LE_SMP_I24: return 3;
+    case LE_SMP_I32: return 4;
+    case LE_SMP_F32: return 4;
+  }
+  return 4;
+}
+
+/* One little-endian native sample -> normalized f32 (integer formats map their
+ * full range to [-1, 1)). */
+static float le_native_to_f32(const uint8_t* p, le_sample_fmt fmt) {
+  switch (fmt) {
+    case LE_SMP_I16: {
+      int16_t v = (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+      return (float)v / 32768.0f;
+    }
+    case LE_SMP_I24: {
+      int32_t v = (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+                            ((uint32_t)p[2] << 16));
+      if (v & 0x00800000) v |= (int32_t)0xFF000000; /* sign-extend 24 -> 32 */
+      return (float)v / 8388608.0f;
+    }
+    case LE_SMP_I32: {
+      int32_t v = (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+                            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24));
+      return (float)v / 2147483648.0f;
+    }
+    case LE_SMP_F32: {
+      uint32_t bits = (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+                      ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+      float f;
+      memcpy(&f, &bits, sizeof(f));
+      return f;
+    }
+  }
+  return 0.0f;
+}
+
+/* Rounds + clamps to a signed integer range, then writes `bytes` little-endian. */
+static void le_write_le_int(uint8_t* p, double scaled, double lo, double hi,
+                            int bytes) {
+  if (scaled > hi) scaled = hi;
+  if (scaled < lo) scaled = lo;
+  int64_t v = (int64_t)(scaled < 0 ? scaled - 0.5 : scaled + 0.5);
+  for (int b = 0; b < bytes; ++b) p[b] = (uint8_t)((v >> (8 * b)) & 0xFF);
+}
+
+/* Normalized f32 -> one little-endian native sample (clamped to the format). */
+static void le_f32_to_native(uint8_t* p, float f, le_sample_fmt fmt) {
+  switch (fmt) {
+    case LE_SMP_I16:
+      le_write_le_int(p, (double)f * 32768.0, -32768.0, 32767.0, 2);
+      break;
+    case LE_SMP_I24:
+      le_write_le_int(p, (double)f * 8388608.0, -8388608.0, 8388607.0, 3);
+      break;
+    case LE_SMP_I32:
+      le_write_le_int(p, (double)f * 2147483648.0, -2147483648.0, 2147483647.0,
+                      4);
+      break;
+    case LE_SMP_F32: {
+      uint32_t bits;
+      memcpy(&bits, &f, sizeof(bits));
+      p[0] = (uint8_t)(bits & 0xFF);
+      p[1] = (uint8_t)((bits >> 8) & 0xFF);
+      p[2] = (uint8_t)((bits >> 16) & 0xFF);
+      p[3] = (uint8_t)((bits >> 24) & 0xFF);
+      break;
+    }
+  }
+}
+
+void le_deinterleave_in(float* out_interleaved, const void* native_block,
+                        le_sample_fmt fmt, int chan, int channel_count,
+                        int frames) {
+  if (out_interleaved == NULL || native_block == NULL || channel_count <= 0 ||
+      chan < 0 || chan >= channel_count) {
+    return;
+  }
+  const int bytes = le_sample_bytes(fmt);
+  const uint8_t* src = (const uint8_t*)native_block;
+  for (int f = 0; f < frames; ++f) {
+    out_interleaved[(size_t)f * channel_count + chan] =
+        le_native_to_f32(src + (size_t)f * bytes, fmt);
+  }
+}
+
+void le_interleave_out(void* native_block, const float* in_interleaved,
+                       le_sample_fmt fmt, int chan, int channel_count,
+                       int frames) {
+  if (native_block == NULL || in_interleaved == NULL || channel_count <= 0 ||
+      chan < 0 || chan >= channel_count) {
+    return;
+  }
+  const int bytes = le_sample_bytes(fmt);
+  uint8_t* dst = (uint8_t*)native_block;
+  for (int f = 0; f < frames; ++f) {
+    le_f32_to_native(dst + (size_t)f * bytes,
+                     in_interleaved[(size_t)f * channel_count + chan], fmt);
+  }
+}
+
+int32_t le_asio_pick_buffer(int32_t requested, int32_t min, int32_t max,
+                            int32_t preferred, int32_t granularity) {
+  /* Fixed-size driver: only `preferred` is selectable. */
+  if (granularity == 0) return preferred;
+  /* A request the driver can't honor (outside its window) -> preferred. */
+  if (requested < min || requested > max) return preferred;
+
+  if (granularity == -1) {
+    /* Powers of two only: snap to the nearest power of two within [min,max]
+     * (preferring the larger on a tie). */
+    int32_t best = 0;
+    int64_t best_dist = 0;
+    for (int64_t p = 1; p <= max; p <<= 1) {
+      if (p < min) continue;
+      int64_t d = p > requested ? p - requested : requested - p;
+      if (best == 0 || d < best_dist || (d == best_dist && p > best)) {
+        best = (int32_t)p;
+        best_dist = d;
+      }
+    }
+    return best != 0 ? best : preferred;
+  }
+
+  /* granularity > 0: linear steps from `min`. Snap to the nearest valid step,
+   * clamped to the largest step that does not exceed `max`. */
+  int64_t steps = ((int64_t)requested - min + granularity / 2) / granularity;
+  int64_t snapped = (int64_t)min + steps * granularity;
+  int64_t last = (int64_t)min + (((int64_t)max - min) / granularity) * granularity;
+  if (snapped > last) snapped = last;
+  if (snapped < min) snapped = min;
+  return (int32_t)snapped;
+}
+
+/* Selects the device backend for a requested le_audio_backend. The default build
+ * ships only the miniaudio backend, so every choice resolves to it. In a
+ * LOOPY_ENABLE_ASIO Windows build, LE_BACKEND_ASIO resolves to the ASIO backend;
+ * the reference to le_asio_backend lives inside the guard, so the default build
+ * never links any le_asio_* symbol. */
 const le_device_backend* le_select_backend(int32_t backend) {
+#if defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)
+  if (backend == LE_BACKEND_ASIO) return &le_asio_backend;
+#endif
   (void)backend;
   return &le_miniaudio_backend;
+}
+
+#if !(defined(_WIN32) && defined(LOOPY_ENABLE_ASIO))
+/* ASIO-disabled stub: no ASIO drivers exist, so enumeration is always empty. The
+ * real probe lives in win_asio_device.cpp behind LOOPY_ENABLE_ASIO. Keeping the
+ * FFI symbol defined in every build lets the Dart layer call it unconditionally
+ * (it returns [] / count 0 off Windows or on the default build). */
+int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
+                                  int32_t* count) {
+  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
+  *count = 0;
+  return LE_OK;
+}
+#endif
+
+void le_engine_mark_started(le_engine* engine) {
+  if (engine == NULL) return;
+  atomic_store_explicit(&engine->a_device_present, 1, memory_order_release);
+  atomic_store_explicit(&engine->a_running, 1, memory_order_release);
 }
 
 le_engine* le_engine_create(void) {
@@ -1752,6 +1923,15 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   const le_device_backend* be = le_select_backend(config->backend);
   le_device_open_result info;
   int32_t open_result = be->open(engine, config, &info);
+  /* ASIO fallback: a requested ASIO open that fails (build off, no/missing
+   * driver, driver busy, init failure) retries once on miniaudio/WASAPI with the
+   * same config (channel fields stay 0 = device default). info.active_backend
+   * then reflects what actually opened, so the UI shows reality. Unlike the
+   * share-mode fallback, this resets no config fields, so it stays inline. */
+  if (config->backend == LE_BACKEND_ASIO && open_result != LE_OK) {
+    be = &le_miniaudio_backend;
+    open_result = be->open(engine, config, &info);
+  }
   if (open_result != LE_OK) {
     return open_result;
   }

@@ -159,17 +159,70 @@ class _EngineStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    // Each ASIO driver is one duplex device; label it with its probed counts so
+    // the picker reads e.g. "Focusrite USB ASIO · 18 in / 20 out".
+    final asioDriverDevices = [
+      for (final d in state.asioDrivers)
+        AudioDevice(
+          id: d.id,
+          name:
+              '${d.name} · '
+              '${l10n.asioChannelCounts(d.inputChannels, d.outputChannels)}',
+          isDefault: d.isDefault,
+          isInput: d.isInput,
+          inputChannels: d.inputChannels,
+          outputChannels: d.outputChannels,
+        ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _GroupLabel(l10n.outputDeviceGroup),
-        const SizedBox(height: 12),
-        AudioDevicePicker(
-          pickerKey: 'audioSetup_playbackDevice_picker',
-          devices: state.playbackDevices,
-          selectedId: state.playbackDeviceId,
-          onSelected: cubit.setPlaybackDevice,
-        ),
+        // Backend selector — only when ASIO is selectable (Windows + at least
+        // one enumerated driver; the cubit loads none otherwise).
+        if (state.asioDrivers.isNotEmpty) ...[
+          _GroupLabel(l10n.backendGroup),
+          const SizedBox(height: 12),
+          _OptionRow(
+            children: [
+              _Option(
+                optionKey: 'audioSetup_backend_wasapi',
+                headline: l10n.backendWasapi,
+                sub: l10n.backendWasapiNote,
+                selected: !state.isAsio,
+                onTap: () => cubit.setBackend(AudioBackend.wasapi),
+              ),
+              _Option(
+                optionKey: 'audioSetup_backend_asio',
+                headline: l10n.backendAsio,
+                sub: l10n.backendAsioNote,
+                selected: state.isAsio,
+                onTap: () => cubit.setBackend(AudioBackend.asio),
+              ),
+            ],
+          ),
+          const SizedBox(height: 26),
+        ],
+        // Under ASIO a single driver drives all I/O, so the two device pickers
+        // collapse to one ASIO driver picker; else the output picker shows.
+        if (state.isAsio) ...[
+          _GroupLabel(l10n.asioDriverGroup),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSetup_asioDriver_picker',
+            devices: asioDriverDevices,
+            selectedId: state.asioDriver,
+            onSelected: cubit.setAsioDriver,
+          ),
+        ] else ...[
+          _GroupLabel(l10n.outputDeviceGroup),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSetup_playbackDevice_picker',
+            devices: state.playbackDevices,
+            selectedId: state.playbackDeviceId,
+            onSelected: cubit.setPlaybackDevice,
+          ),
+        ],
         const SizedBox(height: 26),
         _GroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),
@@ -202,9 +255,11 @@ class _EngineStep extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         _Hint(_bufferHint(l10n, state.bufferFrames)),
-        // Exclusive mode is a Windows-only capability (WASAPI exclusive),
-        // hidden elsewhere so macOS/Linux behavior is unchanged.
-        if (defaultTargetPlatform == TargetPlatform.windows) ...[
+        // Exclusive mode is a Windows-only WASAPI capability, hidden elsewhere
+        // so macOS/Linux behavior is unchanged — and hidden under ASIO, which
+        // has no share-mode concept.
+        if (defaultTargetPlatform == TargetPlatform.windows &&
+            !state.isAsio) ...[
           const SizedBox(height: 26),
           _Toggle(
             toggleKey: 'audioSetup_exclusive_switch',
@@ -231,14 +286,23 @@ class _InputStep extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _GroupLabel(l10n.inputDeviceGroup),
-        const SizedBox(height: 12),
-        AudioDevicePicker(
-          pickerKey: 'audioSetup_captureDevice_picker',
-          devices: state.captureDevices,
-          selectedId: state.captureDeviceId,
-          onSelected: cubit.setCaptureDevice,
-        ),
+        // Under ASIO the one driver provides every input, so the input picker
+        // is replaced by a read-only note.
+        if (state.isAsio)
+          _Hint(
+            l10n.asioDriverHandlesAllIo,
+            key: const Key('audioSetup_asioInput_note'),
+          )
+        else ...[
+          _GroupLabel(l10n.inputDeviceGroup),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSetup_captureDevice_picker',
+            devices: state.captureDevices,
+            selectedId: state.captureDeviceId,
+            onSelected: cubit.setCaptureDevice,
+          ),
+        ],
         const SizedBox(height: 26),
         _Toggle(
           toggleKey: 'audioSetup_monitor_switch',
@@ -368,15 +432,33 @@ class _RunningPanel extends StatelessWidget {
                       l10n.recordOffsetLabel,
                       l10n.bufferFrames(s.recordOffsetFrames),
                     ),
+                    (
+                      l10n.backendLabel,
+                      s.activeBackend == AudioBackend.asio
+                          ? l10n.backendAsio
+                          : l10n.backendWasapi,
+                    ),
                   ],
                 ),
                 // Surface the negotiated mode only when it diverges from
                 // intent: exclusive was requested but the device opened shared.
-                if (state.exclusive && !s.exclusiveActive) ...[
+                // Suppressed under ASIO, where the (WASAPI-only) exclusive
+                // intent stays dormant and would read as a spurious fallback.
+                if (state.exclusive && !s.exclusiveActive && !state.isAsio) ...[
                   const SizedBox(height: 12),
                   _Hint(
                     l10n.exclusiveSharedFallback,
                     key: const Key('audioSetup_exclusiveFallback_note'),
+                  ),
+                ],
+                // ASIO was requested but the device opened on WASAPI (build
+                // off, missing/busy driver, or init failure): show the reality.
+                if (state.backend == AudioBackend.asio &&
+                    s.activeBackend != AudioBackend.asio) ...[
+                  const SizedBox(height: 12),
+                  _Hint(
+                    l10n.asioUnavailableFallback,
+                    key: const Key('audioSetup_asioFallback_note'),
                   ),
                 ],
                 const Spacer(),

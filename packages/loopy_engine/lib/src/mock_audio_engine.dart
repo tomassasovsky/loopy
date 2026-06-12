@@ -125,6 +125,12 @@ class MockAudioEngine implements AudioEngine {
       // requested (no real device to refuse it). The fallback-display path is
       // covered by tests that seed an EngineStatus directly, not via the mock.
       exclusiveActive: _running && (_activeConfig?.exclusive ?? false),
+      // The mock echoes the requested backend as the negotiated one (ASIO
+      // "succeeds"), so the requested-ASIO/reality-WASAPI fallback is NOT
+      // exercised here — the widget test seeds that state directly.
+      activeBackend: _running
+          ? (_activeConfig?.backend ?? AudioBackend.wasapi)
+          : AudioBackend.wasapi,
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -145,6 +151,20 @@ class MockAudioEngine implements AudioEngine {
       name: deviceLabel,
       isDefault: true,
       isInput: true,
+    ),
+  ];
+
+  @override
+  List<AudioDevice> enumerateAsioDrivers() => const [
+    // One deterministic fake duplex driver (18 in / 20 out), so UI development
+    // and tests can drive the ASIO backend selector without real hardware.
+    AudioDevice(
+      id: 'mock-asio',
+      name: 'Mock ASIO Device',
+      isDefault: false,
+      isInput: false,
+      inputChannels: 18,
+      outputChannels: 20,
     ),
   ];
 

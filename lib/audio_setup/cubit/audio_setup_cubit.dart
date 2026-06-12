@@ -17,9 +17,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     required LooperRepository repository,
     required SettingsRepository settings,
     required bool defaultExclusive,
+    bool asioSelectable = false,
   }) : _repository = repository,
        _settings = settings,
        _defaultExclusive = defaultExclusive,
+       _asioSelectable = asioSelectable,
        super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
 
@@ -32,6 +34,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         current: state.copyWith(
           loopback: _repository.detectLoopback(),
           devices: _repository.devices(),
+          asioDrivers: _loadAsioDrivers(_repository.state.status),
         ),
         hydrateConfig: true,
       ),
@@ -47,6 +50,24 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// cubit holds no OS policy and stays free of Flutter imports. Used as the
   /// exclusive-intent fallback when no saved config exists.
   final bool _defaultExclusive;
+
+  /// Whether the ASIO backend is selectable on this platform (Windows only),
+  /// injected by the presentation layer (`platformAsioSelectable`) for the same
+  /// no-OS-policy reason as [_defaultExclusive]. ASIO is offered only when this
+  /// is true and at least one driver enumerated.
+  final bool _asioSelectable;
+
+  /// Enumerates the installed ASIO drivers for the backend selector, honoring
+  /// the R1 re-entrancy contract: the ASIO host SDK loads one process-global
+  /// driver, so we never probe while a device is already running on ASIO (that
+  /// would tear down the live stream). Returns `[]` off Windows / when ASIO is
+  /// the active backend.
+  List<AudioDevice> _loadAsioDrivers(EngineStatus status) {
+    if (!_asioSelectable || status.activeBackend == AudioBackend.asio) {
+      return const [];
+    }
+    return _repository.asioDrivers();
+  }
 
   /// The device profile we've loaded a saved offset for, to load only once.
   String? _hydratedDeviceKey;
@@ -91,6 +112,30 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setExclusive({required bool exclusive}) {
     if (exclusive == state.exclusive) return;
     emit(state.copyWith(exclusive: exclusive));
+    _persistAndApply();
+  }
+
+  /// Selects the device [backend]. Switching to ASIO defaults the driver to the
+  /// first enumerated one when none is chosen yet; the WASAPI device ids are
+  /// kept dormant (restored on a switch back). Persists the intent and, when
+  /// running, reopens the device so the change takes effect now.
+  void setBackend(AudioBackend backend) {
+    if (backend == state.backend) return;
+    final driver =
+        backend == AudioBackend.asio &&
+            state.asioDriver.isEmpty &&
+            state.asioDrivers.isNotEmpty
+        ? state.asioDrivers.first.id
+        : state.asioDriver;
+    emit(state.copyWith(backend: backend, asioDriver: driver));
+    _persistAndApply();
+  }
+
+  /// Selects the ASIO driver to open (an id from `state.asioDrivers`). Persists
+  /// the choice and, when running, reopens the device on it now.
+  void setAsioDriver(String driverId) {
+    if (driverId == state.asioDriver) return;
+    emit(state.copyWith(asioDriver: driverId));
     _persistAndApply();
   }
 
@@ -166,11 +211,16 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // a detected loopback when the user has not pinned a capture device.
     // Otherwise, on hosts where every output exposes a "monitor" capture source
     // (e.g. PipeWire), the loopback auto-route would silently commandeer the
-    // capture path and ignore the selected interface.
+    // capture path and ignore the selected interface. WASAPI loopback is also
+    // irrelevant under ASIO (ASIO holds the device), so force it off there.
     useLoopbackCapture:
-        state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty,
+        !state.isAsio &&
+        state.loopback.isAutoRoutable &&
+        state.captureDeviceId.isEmpty,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
+    backend: state.backend,
+    asioDriver: state.asioDriver,
   );
 
   /// The persisted form of the current options + device selection.
@@ -182,6 +232,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
+    backend: state.backend,
+    asioDriver: state.asioDriver,
   );
 
   /// Converts a minute cap to engine frames at [sampleRate]; `0` (engine
@@ -249,8 +301,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// lost/restored banner trigger for a pinned device. The system default is
   /// not flagged (it is never auto-restarted, so a banner would be noise).
   void _detectConnectivity(EngineStatus status) {
+    // A selected ASIO driver counts as "pinned" too, so losing it raises the
+    // banner the same way a lost WASAPI device does.
     final pinned =
-        state.playbackDeviceId.isNotEmpty || state.captureDeviceId.isNotEmpty;
+        state.playbackDeviceId.isNotEmpty ||
+        state.captureDeviceId.isNotEmpty ||
+        (state.isAsio && state.asioDriver.isNotEmpty);
     final present = status.devicePresent;
     final previous = _lastDevicePresent;
     _lastDevicePresent = present;
@@ -354,6 +410,14 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       captureDeviceId: hydrateConfig
           ? lastConfig?.captureDeviceId ?? current.captureDeviceId
           : current.captureDeviceId,
+      // Hydrate the requested backend + ASIO driver intent; the negotiated
+      // reality is read separately from engineStatus.activeBackend.
+      backend: hydrateConfig
+          ? lastConfig?.backend ?? AudioBackend.wasapi
+          : current.backend,
+      asioDriver: hydrateConfig
+          ? lastConfig?.asioDriver ?? current.asioDriver
+          : current.asioDriver,
       engineStatus: engineStatus,
       status: engineStatus.isConnected
           ? AudioSetupStatus.running

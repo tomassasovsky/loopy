@@ -186,6 +186,41 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  List<AudioDevice> enumerateAsioDrivers() {
+    _checkAlive();
+    // Modeled on _enumerate, but the native call returns DUPLEX drivers (one
+    // driver = all I/O), so each result is tagged isInput: false and carries the
+    // probed channel counts rather than being split by direction. Off Windows /
+    // on the default build the native symbol is a stub returning 0 drivers.
+    final outPtr = calloc<le_device_info>(_maxDevices);
+    final countPtr = calloc<Int32>();
+    try {
+      final code = _bindings.le_enumerate_asio_drivers(
+        outPtr,
+        _maxDevices,
+        countPtr,
+      );
+      if (code != 0) return const [];
+      final count = countPtr.value;
+      return [
+        for (var i = 0; i < count; i++)
+          AudioDevice(
+            id: readNativeString((outPtr + i).ref.id),
+            name: readNativeString((outPtr + i).ref.name),
+            isDefault: (outPtr + i).ref.is_default != 0,
+            isInput: false,
+            inputChannels: (outPtr + i).ref.input_channels,
+            outputChannels: (outPtr + i).ref.output_channels,
+          ),
+      ];
+    } finally {
+      calloc
+        ..free(outPtr)
+        ..free(countPtr);
+    }
+  }
+
+  @override
   EngineResult measureLatency() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_measure_latency(_engine));

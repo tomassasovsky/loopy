@@ -192,6 +192,29 @@ void main() {
       expect(engine.lastConfig?.outputChannels, 0);
     });
 
+    test('relaunches into the saved ASIO backend + driver', () async {
+      // The auto-start config assembly is duplicated from the cubit's
+      // _engineConfig; this guards against the two diverging on backend/driver.
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          monitorInput: true,
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+        ),
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started, isTrue);
+      expect(engine.lastConfig?.backend, AudioBackend.asio);
+      expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+    });
+
     test('restores the saved latency offset for the device', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(

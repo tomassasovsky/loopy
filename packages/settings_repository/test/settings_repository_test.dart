@@ -318,6 +318,38 @@ void main() {
       },
     );
 
+    test('round-trips the backend and ASIO driver', () async {
+      const config = StoredAudioConfig(
+        sampleRate: 48000,
+        bufferFrames: 128,
+        monitorInput: true,
+        backend: AudioBackend.asio,
+        asioDriver: 'Focusrite USB ASIO',
+      );
+      await repository.saveAudioConfig(config);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.backend, AudioBackend.asio);
+      expect(loaded?.asioDriver, 'Focusrite USB ASIO');
+    });
+
+    test('defaults backend to WASAPI and driver to empty when unset', () async {
+      await store.setInt('audio.sample_rate', 44100);
+      await store.setInt('audio.buffer_frames', 64);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.backend, AudioBackend.wasapi);
+      expect(loaded?.asioDriver, '');
+    });
+
+    test('resolves an unknown stored backend name to WASAPI', () async {
+      // Forward-compat: a newer build may write a backend name this build does
+      // not know. It must resolve to WASAPI rather than throwing.
+      await store.setInt('audio.sample_rate', 48000);
+      await store.setInt('audio.buffer_frames', 128);
+      await store.setString('audio.backend', 'some_future_backend');
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.backend, AudioBackend.wasapi);
+    });
+
     test('ignores a legacy audio.merge_to_mono key on load', () async {
       // The merge-to-mono feature was removed; an old store may still carry the
       // key. Loading must succeed and simply not read it. monitorInput is set

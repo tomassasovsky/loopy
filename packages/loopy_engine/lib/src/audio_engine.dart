@@ -90,6 +90,20 @@ abstract interface class AudioEngine {
   /// an empty list when enumeration fails.
   List<AudioDevice> enumerateDevices();
 
+  /// Enumerates the installed ASIO drivers, each as a single **duplex**
+  /// [AudioDevice] (`isInput: false`) carrying its probed
+  /// [AudioDevice.inputChannels] / [AudioDevice.outputChannels] so the picker
+  /// can show "18 in / 20 out" before the device is opened. One ASIO driver
+  /// drives all I/O, so these are never partitioned by direction like
+  /// [enumerateDevices]. Returns an empty list off Windows, on the default
+  /// (non-ASIO) build, or when no ASIO driver is installed.
+  ///
+  /// RE-ENTRANCY: the ASIO host SDK loads a single process-global driver, so
+  /// this must NOT be called while the engine is running on the ASIO backend —
+  /// probing would tear down the live stream. Call only while stopped or while
+  /// running on WASAPI (the presentation layer enforces this).
+  List<AudioDevice> enumerateAsioDrivers();
+
   /// Triggers a single loopback round-trip latency measurement. The result is
   /// surfaced asynchronously via [snapshot]'s latency fields.
   ///

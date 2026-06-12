@@ -35,18 +35,22 @@
 #include <string.h>
 
 // User-supplied Steinberg ASIO SDK (LOOPY_ASIO_SDK_DIR on the include path).
+// asiosys.h MUST precede asio.h: it defines the platform macros asio.h reads to
+// pick its native types (e.g. ASIOSampleRate = double on Windows).
+#include "asiosys.h"
 #include "asio.h"
 #include "asiodrivers.h"
-#include "asiosys.h"
+
+// loadAsioDriver() is defined in the SDK host glue (asiodrivers.cpp) but declared
+// in no SDK header, so the host declares it itself (as hostsample.cpp does). C++
+// linkage — keep it OUTSIDE the extern "C" engine includes below.
+bool loadAsioDriver(char* name);
 
 extern "C" {
 #include "engine_internal.h"  // le_excluded_mask_from_names, le_channel_name_fn
 #include "loopy_engine_api.h"  // LE_MAX_CHANNELS
 #include "win_asio_labels.h"   // le_win_asio_excluded_mask prototype
 }
-
-// asiodrivers.h declares loadAsioDriver() and the asioDrivers global; both are
-// defined in the SDK host sources (asiodrivers.cpp) the CMake adds when ON.
 
 namespace {
 

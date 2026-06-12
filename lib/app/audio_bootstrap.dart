@@ -11,6 +11,13 @@ import 'package:settings_repository/settings_repository.dart';
 bool get platformDefaultExclusive =>
     defaultTargetPlatform == TargetPlatform.windows;
 
+/// Whether the ASIO backend is selectable on this platform: Windows only (ASIO
+/// is a Windows-only API). Resolved here in the presentation layer — the single
+/// source of this OS rule — and injected into the audio-setup cubit, so the
+/// cubit holds no OS policy (mirroring [platformDefaultExclusive]).
+bool get platformAsioSelectable =>
+    defaultTargetPlatform == TargetPlatform.windows;
+
 /// Loads the last-used audio configuration and, if present, starts the engine
 /// with it. Returns `true` when a saved config existed and the engine started,
 /// so the app can boot straight into the looper; `false` means a first run (no
@@ -46,6 +53,13 @@ Future<bool> tryAutoStartEngine({
           loopback.isAutoRoutable && saved.captureDeviceId.isEmpty,
       playbackDeviceId: saved.playbackDeviceId,
       captureDeviceId: saved.captureDeviceId,
+      // Relaunch into the saved backend. This config assembly is duplicated
+      // from the cubit's _engineConfig, so both must carry backend/asioDriver
+      // or an auto-start would diverge from an interactive start. If the saved
+      // ASIO driver is gone, the native dispatcher falls back to WASAPI and the
+      // cubit surfaces it via engineStatus.activeBackend.
+      backend: saved.backend,
+      asioDriver: saved.asioDriver,
     ),
   );
   if (!result.isOk) return false;

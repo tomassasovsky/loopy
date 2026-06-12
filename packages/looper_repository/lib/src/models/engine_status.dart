@@ -18,6 +18,7 @@ class EngineStatus extends Equatable {
     this.excludedInputMask = 0,
     this.recordOffsetFrames = 0,
     this.exclusiveActive = false,
+    this.activeBackend = AudioBackend.wasapi,
   });
 
   /// Active device name, or empty when stopped.
@@ -67,6 +68,11 @@ class EngineStatus extends Equatable {
   /// negotiated reality behind the requested [EngineConfig.exclusive] intent.
   final bool exclusiveActive;
 
+  /// The device backend actually running (negotiated). A requested-ASIO open
+  /// that fell back to WASAPI reports [AudioBackend.wasapi] here — the reality
+  /// behind the requested [EngineConfig.backend] intent.
+  final AudioBackend activeBackend;
+
   /// Whether a latency measurement has completed.
   bool get hasMeasuredLatency => latencyState == LatencyState.done;
 
@@ -85,5 +91,6 @@ class EngineStatus extends Equatable {
     excludedInputMask,
     recordOffsetFrames,
     exclusiveActive,
+    activeBackend,
   ];
 }

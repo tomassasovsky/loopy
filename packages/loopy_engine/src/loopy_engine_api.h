@@ -360,6 +360,21 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
 
+/* Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
+ * count into *count. Each entry is one duplex driver: `id` and `name` are the
+ * driver name and `input_channels`/`output_channels` are probed from the driver
+ * (so the picker can show "18 in / 20 out" before opening). A driver that fails
+ * to probe is omitted; the call degrades to *count = 0 rather than erroring.
+ *
+ * Only the LOOPY_ENABLE_ASIO Windows build enumerates real drivers; every other
+ * build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
+ * loads a single process-global driver, so this MUST NOT be called while an ASIO
+ * device is open (it would tear down the live stream) — the Dart layer only
+ * enumerates while stopped or running on WASAPI. Returns LE_OK, or LE_ERR_INVALID
+ * for a null argument / non-positive `max`. */
+LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
+                                            int32_t* count);
+
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
 

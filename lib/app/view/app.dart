@@ -155,6 +155,7 @@ class App extends StatelessWidget {
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
               defaultExclusive: platformDefaultExclusive,
+              asioSelectable: platformAsioSelectable,
             ),
           ),
         ],

@@ -304,11 +304,19 @@ class LooperRepository {
       excludedInputMask: s.excludedInputMask,
       recordOffsetFrames: s.recordOffsetFrames,
       exclusiveActive: s.exclusiveActive,
+      activeBackend: s.activeBackend,
     ),
   );
 
   /// Enumerates the host's audio devices (playback + capture) for the picker.
   List<AudioDevice> devices() => _engine.enumerateDevices();
+
+  /// Enumerates the installed ASIO drivers (one duplex [AudioDevice] each) for
+  /// the backend selector's driver picker. Empty off Windows / the default
+  /// build. Must not be called while running on the ASIO backend (the cubit
+  /// enforces this — see the re-entrancy contract on
+  /// [AudioEngine.enumerateAsioDrivers]).
+  List<AudioDevice> asioDrivers() => _engine.enumerateAsioDrivers();
 
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {

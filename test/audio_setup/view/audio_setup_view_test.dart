@@ -307,4 +307,155 @@ void main() {
 
     verify(() => cubit.setCaptureDevice('in-1')).called(1);
   });
+
+  group('asio backend selector', () {
+    const asioDriver = AudioDevice(
+      id: 'Focusrite USB ASIO',
+      name: 'Focusrite USB ASIO',
+      isDefault: false,
+      isInput: false,
+      inputChannels: 18,
+      outputChannels: 20,
+    );
+
+    testWidgets('shows the selector and forwards a backend choice when drivers '
+        'are present', (tester) async {
+      seed(const AudioSetupState(asioDrivers: [asioDriver]));
+      await pumpView(tester);
+
+      expect(find.byKey(const Key('audioSetup_backend_asio')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('audioSetup_backend_asio')));
+      verify(() => cubit.setBackend(AudioBackend.asio)).called(1);
+    });
+
+    testWidgets('hides the selector when no drivers enumerated', (
+      tester,
+    ) async {
+      seed(const AudioSetupState());
+      await pumpView(tester);
+
+      expect(find.byKey(const Key('audioSetup_backend_asio')), findsNothing);
+      expect(find.byKey(const Key('audioSetup_backend_wasapi')), findsNothing);
+    });
+
+    testWidgets('under ASIO the driver picker replaces the output picker', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+          asioDrivers: [asioDriver],
+        ),
+      );
+      await pumpView(tester);
+
+      expect(
+        find.byKey(const Key('audioSetup_asioDriver_picker')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('audioSetup_playbackDevice_picker')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('selecting an ASIO driver forwards to the cubit', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          backend: AudioBackend.asio,
+          asioDrivers: [asioDriver],
+        ),
+      );
+      await pumpView(tester);
+
+      await tester.tap(find.byKey(const Key('audioSetup_asioDriver_picker')));
+      await tester.pumpAndSettle();
+      // The driver label includes its probed channel counts.
+      await tester.tap(find.textContaining('18 in / 20 out').last);
+      await tester.pumpAndSettle();
+
+      verify(() => cubit.setAsioDriver('Focusrite USB ASIO')).called(1);
+    });
+
+    testWidgets('under ASIO the input step hides the capture picker', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+          asioDrivers: [asioDriver],
+        ),
+      );
+      await pumpView(tester);
+
+      await tester.tap(find.byKey(const Key('audioSetup_next_button')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('audioSetup_asioInput_note')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('audioSetup_captureDevice_picker')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'the running panel surfaces the ASIO fallback note on mismatch',
+      (tester) async {
+        // ASIO requested but the device opened on WASAPI => show the note, and
+        // suppress the (dormant) exclusive-shared fallback under ASIO.
+        seed(
+          const AudioSetupState(
+            status: AudioSetupStatus.running,
+            backend: AudioBackend.asio,
+            asioDriver: 'Focusrite USB ASIO',
+            exclusive: true,
+            engineStatus: EngineStatus(
+              deviceName: 'Realtek',
+              isConnected: true,
+            ),
+          ),
+        );
+        await pumpView(tester);
+
+        expect(
+          find.byKey(const Key('audioSetup_asioFallback_note')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('audioSetup_exclusiveFallback_note')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('no ASIO fallback note when ASIO actually engaged', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          status: AudioSetupStatus.running,
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+          engineStatus: EngineStatus(
+            deviceName: 'Focusrite USB ASIO',
+            isConnected: true,
+            activeBackend: AudioBackend.asio,
+          ),
+        ),
+      );
+      await pumpView(tester);
+
+      expect(
+        find.byKey(const Key('audioSetup_asioFallback_note')),
+        findsNothing,
+      );
+    });
+  });
 }

@@ -146,6 +146,8 @@ class FakeSessionEngine implements AudioEngine {
   @override
   List<AudioDevice> enumerateDevices() => const [];
   @override
+  List<AudioDevice> enumerateAsioDrivers() => const [];
+  @override
   EngineResult measureLatency() => EngineResult.ok;
   @override
   EngineResult record({int channel = 0}) => EngineResult.ok;

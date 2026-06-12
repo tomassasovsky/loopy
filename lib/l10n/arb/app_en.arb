@@ -258,6 +258,26 @@
     "exclusiveModeTitle": "Exclusive mode",
     "exclusiveModeSubtitle": "Take exclusive control of the interface for lower latency, bypassing the Windows mixer. Falls back to shared if unavailable.",
     "exclusiveSharedFallback": "Shared mode — the device refused exclusive access.",
+    "backendGroup": "Audio backend",
+    "backendWasapi": "WASAPI",
+    "backendWasapiNote": "Windows default device path.",
+    "backendAsio": "ASIO",
+    "backendAsioNote": "Full multichannel via the ASIO driver.",
+    "asioDriverGroup": "ASIO driver",
+    "asioChannelCounts": "{inputs} in / {outputs} out",
+    "@asioChannelCounts": {
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "asioDriverHandlesAllIo": "The ASIO driver provides every input and output.",
+    "backendLabel": "Backend",
+    "asioUnavailableFallback": "ASIO unavailable — running on WASAPI.",
     "sampleRateLabel": "Sample rate",
     "bufferLabel": "Buffer",
     "estimatedLatencyLabel": "Estimated latency",

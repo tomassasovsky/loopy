@@ -350,6 +350,33 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `test_select_backend_defaults_to_miniaudio`, `test_backend_struct_defaults`,
   enumeration asserts `input_channels == 0`, and Dart round-trip/equality for
   the new fields.
+- **ASIO duplex backend (ASIO Part 2 — opt-in, off by default).** The real ASIO
+  capture/playback backend behind Part 1's seam, so a pro interface runs at its
+  **full channel count** (e.g. 18 in / 20 out) that WASAPI never exposes. New
+  **`win_asio_device.cpp`** (`#if LOOPY_ENABLE_ASIO`) exposes
+  `le_asio_backend`: load the driver → negotiate rate/buffer → run its real-time
+  `bufferSwitch` feeding the **unchanged** `le_engine_process`. ASIO's
+  per-channel native-format buffers are bridged to the engine's interleaved f32
+  by the pure, unit-tested `le_deinterleave_in`/`le_interleave_out` (Int16/24/32,
+  Float32 LSB) + `le_asio_pick_buffer` (snap-to-allowed-size); scratch is
+  pre-allocated at open so the RT contract holds. `le_select_backend` returns
+  `&le_asio_backend` under the `#if` (default build still links no ASIO symbol);
+  `le_engine_start` **falls back to WASAPI** once on any ASIO open failure, and
+  `le_snapshot.active_backend` reports the negotiated reality. New
+  `le_enumerate_asio_drivers` FFI symbol (real probe in the `#if`, stub returning
+  0 in `engine.c` otherwise) — **regen ffigen** (`dart run ffigen` + `dart
+  format`; diff is just the one function). **R1 re-entrancy**: enumeration never
+  probes while ASIO is the running backend (native reports the open driver; the
+  cubit refuses to enumerate while `activeBackend == asio`); teardown clears the
+  callback's engine pointer only after `ASIOStop` returns. Dart/UI: a **backend
+  selector** + ASIO **driver picker** in audio setup, `AudioBackend`/`asioDriver`
+  persistence (forward-compat name read), auto-start relaunch-into-ASIO, and a
+  fallback status row. New tests: native bridge round-trips / `le_asio_pick_buffer`
+  granularity / enumerate stub; Dart `enumerateAsioDrivers` duplex tagging,
+  `StoredAudioConfig` round-trip + unknown-name guard, cubit
+  `setBackend`/`setAsioDriver`/hydration/no-reprobe-while-asio, and audio-setup
+  widget selector/driver-swap/fallback. **Hardware spike still required before
+  merge** (real Focusrite: full count, audio integrity, fallback, persistence).
 - **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
   `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
   exports mixdown / per-track stems. Native `le_engine_export_track` /

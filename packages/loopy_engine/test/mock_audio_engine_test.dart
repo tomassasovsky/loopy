@@ -18,10 +18,33 @@ void main() {
       expect(engine.deviceName, contains('18i20o'));
     });
 
-    test('snapshot reports the WASAPI backend (the only mock path)', () {
+    test('snapshot echoes the requested backend (no fallback in the mock)', () {
+      // Stopped, or started on WASAPI, the negotiated backend is WASAPI.
       expect(engine.snapshot().activeBackend, AudioBackend.wasapi);
       engine.start(engine.defaultConfig);
       expect(engine.snapshot().activeBackend, AudioBackend.wasapi);
+      // Started on ASIO, the mock "succeeds" and reports ASIO as negotiated —
+      // the requested-ASIO/reality-WASAPI fallback is never exercised here.
+      engine
+        ..stop()
+        ..start(
+          const EngineConfig(
+            backend: AudioBackend.asio,
+            asioDriver: 'mock-asio',
+          ),
+        );
+      expect(engine.snapshot().activeBackend, AudioBackend.asio);
+    });
+
+    test('enumerates one duplex ASIO driver with probed channel counts', () {
+      final drivers = engine.enumerateAsioDrivers();
+      expect(drivers, hasLength(1));
+      final driver = drivers.single;
+      // An ASIO driver is one duplex device (never split by direction), so it
+      // is tagged isInput: false and carries the counts the picker shows.
+      expect(driver.isInput, isFalse);
+      expect(driver.inputChannels, 18);
+      expect(driver.outputChannels, 20);
     });
 
     test('enumerates a duplex mock device', () {

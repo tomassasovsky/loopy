@@ -60,6 +60,15 @@ class FakeAudioEngine implements AudioEngine {
     return devices;
   }
 
+  /// Drivers returned by [enumerateAsioDrivers].
+  List<AudioDevice> asioDrivers = const [];
+
+  @override
+  List<AudioDevice> enumerateAsioDrivers() {
+    calls.add('enumerateAsioDrivers');
+    return asioDrivers;
+  }
+
   @override
   EngineResult measureLatency() {
     calls.add('measureLatency');

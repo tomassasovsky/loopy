@@ -74,9 +74,21 @@ endif()
 # this MIT repo. It is user-supplied via LOOPY_ASIO_SDK_DIR and .gitignored; the
 # MIT boundary is enforced by this OFF default + .gitignore + review, NOT by CI
 # (license_check.yaml scans Dart deps only). See docs/WINDOWS_ASIO.md.
-option(LOOPY_ENABLE_ASIO "Build the opt-in Windows ASIO channel-label probe" OFF)
+option(LOOPY_ENABLE_ASIO "Build the opt-in Windows ASIO support" OFF)
 set(LOOPY_ASIO_SDK_DIR "" CACHE PATH
   "Path to a user-supplied Steinberg ASIO SDK (only used when LOOPY_ENABLE_ASIO=ON)")
+
+# The Flutter Windows build drives this CMake through the plugin and cannot
+# forward -D cache flags, so also honor environment variables. An explicit -D
+# (a non-default cache value) still wins; the env fallback only applies when the
+# flag/path was left at its default. This is what lets `flutter build windows`
+# opt into ASIO (set LOOPY_ENABLE_ASIO=ON + LOOPY_ASIO_SDK_DIR in the env first).
+if(NOT LOOPY_ENABLE_ASIO AND DEFINED ENV{LOOPY_ENABLE_ASIO})
+  set(LOOPY_ENABLE_ASIO "$ENV{LOOPY_ENABLE_ASIO}")
+endif()
+if(NOT LOOPY_ASIO_SDK_DIR AND DEFINED ENV{LOOPY_ASIO_SDK_DIR})
+  set(LOOPY_ASIO_SDK_DIR "$ENV{LOOPY_ASIO_SDK_DIR}")
+endif()
 
 if(LOOPY_ENABLE_ASIO)
   if(NOT WIN32)
@@ -87,12 +99,15 @@ if(LOOPY_ENABLE_ASIO)
       "LOOPY_ENABLE_ASIO=ON requires LOOPY_ASIO_SDK_DIR to point at a local "
       "Steinberg ASIO SDK. See docs/WINDOWS_ASIO.md.")
   endif()
-  # The probe and the SDK host glue are C++.
+  # The probe, the duplex device backend, and the SDK host glue are C++.
   enable_language(CXX)
   # Standard ASIO SDK layout (asio_sdk/common, host, host/pc). Adjust the paths
-  # here if your SDK is laid out differently.
+  # here if your SDK is laid out differently. win_asio_device.cpp (Part 2) is the
+  # real ASIO duplex backend selected by le_select_backend; it links the SAME SDK
+  # host objects as the label probe — no new SDK sources are needed.
   target_sources(loopy_engine PRIVATE
     win_asio_labels.cpp
+    win_asio_device.cpp
     "${LOOPY_ASIO_SDK_DIR}/common/asio.cpp"
     "${LOOPY_ASIO_SDK_DIR}/host/asiodrivers.cpp"
     "${LOOPY_ASIO_SDK_DIR}/host/pc/asiolist.cpp"
@@ -103,4 +118,16 @@ if(LOOPY_ENABLE_ASIO)
     "${LOOPY_ASIO_SDK_DIR}/host/pc"
   )
   target_compile_definitions(loopy_engine PRIVATE LOOPY_ENABLE_ASIO)
+  # The SDK host glue (asiolist.cpp) calls the Win32 registry/char APIs with ANSI
+  # `char*` string literals, but the Flutter Windows build defines UNICODE, which
+  # binds those names to the wide (…W) variants and fails to compile. The SDK is
+  # an ANSI codebase, so compile its sources with UNICODE/_UNICODE undefined
+  # (MSVC `/U`). Our own ASIO TUs use no …A/…W string APIs, so they keep UNICODE.
+  if(MSVC)
+    set_source_files_properties(
+      "${LOOPY_ASIO_SDK_DIR}/common/asio.cpp"
+      "${LOOPY_ASIO_SDK_DIR}/host/asiodrivers.cpp"
+      "${LOOPY_ASIO_SDK_DIR}/host/pc/asiolist.cpp"
+      PROPERTIES COMPILE_OPTIONS "/UUNICODE;/U_UNICODE")
+  endif()
 endif()
