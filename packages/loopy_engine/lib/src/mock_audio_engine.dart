@@ -121,6 +121,10 @@ class MockAudioEngine implements AudioEngine {
       latencyState: _latencyState,
       measuredLatencyMs: _measuredLatencyMs,
       recordOffsetFrames: _recordOffsetFrames,
+      // The mock always "succeeds": exclusive access is granted exactly as
+      // requested (no real device to refuse it). The fallback-display path is
+      // covered by tests that seed an EngineStatus directly, not via the mock.
+      exclusiveActive: _running && (_activeConfig?.exclusive ?? false),
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }

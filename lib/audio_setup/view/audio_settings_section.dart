@@ -50,6 +50,37 @@ class AudioSettingsSection extends StatelessWidget {
           onSelected: cubit.setCaptureDevice,
         ),
         const SizedBox(height: 28),
+        SetupGroupLabel(l10n.sampleRateGroup),
+        const SizedBox(height: 12),
+        SetupOptionRow<int>(
+          selected: state.sampleRate,
+          onSelected: cubit.setSampleRate,
+          options: [
+            for (final rate in AudioSetupState.sampleRates)
+              SetupOption(
+                value: rate,
+                label: l10n.sampleRateHz(rate),
+                optionKey: Key('audioSettings_sampleRate_$rate'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        SetupGroupLabel(l10n.bufferSizeGroup),
+        const SizedBox(height: 12),
+        SetupOptionRow<int>(
+          selected: state.bufferFrames,
+          onSelected: cubit.setBufferFrames,
+          options: [
+            for (final size in AudioSetupState.bufferSizes)
+              SetupOption(
+                value: size,
+                label: '$size',
+                sub: _latencyHint(size, state.sampleRate),
+                optionKey: Key('audioSettings_bufferSize_$size'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 28),
         SetupGroupLabel(l10n.monitoringGroupLabel),
         const SizedBox(height: 12),
         SetupToggleRow(
@@ -135,7 +166,7 @@ class AudioSettingsSection extends StatelessWidget {
           rows: [
             (
               l10n.deviceLabel,
-              status.deviceName.isEmpty ? l10n.notRunning : status.deviceName,
+              _displayDeviceName(context, state),
             ),
             (
               l10n.sampleRateLabel,
@@ -168,6 +199,12 @@ class AudioSettingsSection extends StatelessWidget {
           subtitle: l10n.measureLatencySubtitle,
           icon: Icons.timer_outlined,
           onTap: cubit.measureLatency,
+        ),
+        const SizedBox(height: 12),
+        _RecordOffsetField(
+          frames: status.recordOffsetFrames,
+          sampleRate: status.sampleRate,
+          onApply: cubit.setRecordOffset,
         ),
       ],
     );
@@ -207,6 +244,28 @@ class AudioSettingsSection extends StatelessWidget {
     ];
   }
 
+  /// A friendly device name for the status row. The JACK backend (Linux) only
+  /// reports a generic "Default ... Device", so prefer the name of the device
+  /// the user selected; fall back to the engine's reported name.
+  String _displayDeviceName(BuildContext context, AudioSetupState state) {
+    final selectedId = state.playbackDeviceId.isNotEmpty
+        ? state.playbackDeviceId
+        : state.captureDeviceId;
+    if (selectedId.isNotEmpty) {
+      for (final device in state.devices) {
+        if (device.id == selectedId) return device.name;
+      }
+    }
+    final reported = state.engineStatus.deviceName;
+    return reported.isEmpty ? context.l10n.notRunning : reported;
+  }
+
+  /// One-buffer latency hint for a buffer-size option, e.g. "5.3 ms".
+  String _latencyHint(int frames, int sampleRate) {
+    if (sampleRate <= 0) return '';
+    return '${(frames * 1000 / sampleRate).toStringAsFixed(1)} ms';
+  }
+
   String _roundTripLatency(AppLocalizations l10n, EngineStatus status) =>
       switch (status.latencyState) {
         LatencyState.measuring => l10n.measuringEllipsis,
@@ -216,4 +275,85 @@ class AudioSettingsSection extends StatelessWidget {
         LatencyState.timeout => l10n.noSignalDetected,
         LatencyState.idle => l10n.notMeasured,
       };
+}
+
+/// Manual record-offset (latency compensation) entry, in frames. A fallback for
+/// when the automatic round-trip measurement isn't available or reliable; the
+/// value is applied live and persisted per device. Reflects an externally
+/// updated offset (e.g. a fresh measurement) while the user isn't editing.
+class _RecordOffsetField extends StatefulWidget {
+  const _RecordOffsetField({
+    required this.frames,
+    required this.sampleRate,
+    required this.onApply,
+  });
+
+  final int frames;
+  final int sampleRate;
+  final ValueChanged<int> onApply;
+
+  @override
+  State<_RecordOffsetField> createState() => _RecordOffsetFieldState();
+}
+
+class _RecordOffsetFieldState extends State<_RecordOffsetField> {
+  late final TextEditingController _controller = TextEditingController(
+    text: '${widget.frames}',
+  );
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void didUpdateWidget(_RecordOffsetField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.frames != oldWidget.frames && !_focus.hasFocus) {
+      _controller.text = '${widget.frames}';
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _apply() {
+    final value = int.tryParse(_controller.text.trim());
+    if (value != null) widget.onApply(value);
+    _focus.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final ms = widget.sampleRate > 0
+        ? (widget.frames * 1000 / widget.sampleRate).toStringAsFixed(2)
+        : '0.00';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextField(
+            key: const Key('audioSettings_recordOffset_field'),
+            controller: _controller,
+            focusNode: _focus,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: l10n.recordOffsetLabel,
+              helperText: '$ms ms — manual latency compensation (frames)',
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            onSubmitted: (_) => _apply(),
+          ),
+        ),
+        const SizedBox(width: 12),
+        FilledButton(
+          key: const Key('audioSettings_recordOffset_apply'),
+          onPressed: _apply,
+          child: Text(l10n.applyLabel),
+        ),
+      ],
+    );
+  }
 }

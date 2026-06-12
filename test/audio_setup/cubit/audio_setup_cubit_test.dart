@@ -39,8 +39,12 @@ void main() {
 
   tearDown(() => stateController.close());
 
-  AudioSetupCubit buildCubit() =>
-      AudioSetupCubit(repository: repository, settings: settings);
+  AudioSetupCubit buildCubit({bool defaultExclusive = false}) =>
+      AudioSetupCubit(
+        repository: repository,
+        settings: settings,
+        defaultExclusive: defaultExclusive,
+      );
 
   test('initial state has sensible defaults', () {
     final cubit = buildCubit();
@@ -142,6 +146,79 @@ void main() {
       expect((await settings.loadAudioConfig())?.monitorInput, isFalse);
     },
   );
+
+  group('exclusive mode', () {
+    test('defaults to the injected platform default (on) when unset', () {
+      final cubit = buildCubit(defaultExclusive: true);
+      addTearDown(cubit.close);
+      expect(cubit.state.exclusive, isTrue);
+    });
+
+    test('defaults to the injected platform default (off) when unset', () {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.exclusive, isFalse);
+    });
+
+    test('hydrates the persisted intent over the platform default', () {
+      when(() => repository.lastEngineConfig).thenReturn(
+        // Saved intent (exclusive off) must win over the injected on-default.
+        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      final cubit = buildCubit(defaultExclusive: true);
+      addTearDown(cubit.close);
+      expect(cubit.state.exclusive, isFalse);
+    });
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'setExclusive while running reopens with exclusive and persists it',
+      setUp: seedRunning,
+      build: buildCubit,
+      act: (cubit) => cubit.setExclusive(exclusive: true),
+      expect: () => [
+        isA<AudioSetupState>().having((s) => s.exclusive, 'exclusive', true),
+      ],
+      verify: (_) async {
+        verify(repository.stopEngine).called(1);
+        verify(
+          () => repository.startEngine(
+            const EngineConfig(
+              sampleRate: 48000,
+              bufferFrames: 128,
+              passthrough: true,
+              exclusive: true,
+            ),
+          ),
+        ).called(1);
+        expect((await settings.loadAudioConfig())?.exclusive, isTrue);
+      },
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'setExclusive with the unchanged value is a no-op (no reopen)',
+      // Host default is non-Windows in tests, so initial exclusive is false.
+      build: buildCubit,
+      act: (cubit) => cubit.setExclusive(exclusive: false),
+      expect: () => const <AudioSetupState>[],
+      verify: (_) => verifyNever(repository.stopEngine),
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'start carries the exclusive intent through to the engine',
+      build: () => buildCubit(defaultExclusive: true),
+      act: (cubit) => cubit.start(),
+      verify: (_) => verify(
+        () => repository.startEngine(
+          const EngineConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            passthrough: true,
+            exclusive: true,
+          ),
+        ),
+      ).called(1),
+    );
+  });
 
   blocTest<AudioSetupCubit, AudioSetupState>(
     'start uses the selected max loop length (minutes -> frames)',
@@ -254,6 +331,20 @@ void main() {
   );
 
   blocTest<AudioSetupCubit, AudioSetupState>(
+    'setRecordOffset forwards a manual offset to the repository',
+    build: buildCubit,
+    act: (cubit) => cubit.setRecordOffset(257),
+    verify: (_) => verify(() => repository.setRecordOffset(257)).called(1),
+  );
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
+    'setRecordOffset clamps a negative offset to zero',
+    build: buildCubit,
+    act: (cubit) => cubit.setRecordOffset(-5),
+    verify: (_) => verify(() => repository.setRecordOffset(0)).called(1),
+  );
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
     'repository stream updates the engine status',
     build: buildCubit,
     act: (_) => stateController.add(
@@ -302,6 +393,53 @@ void main() {
         ).called(1);
         verify(repository.measureLatency).called(1);
       },
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'an explicit capture device wins over loopback auto-routing',
+      build: () {
+        when(repository.detectLoopback).thenReturn(routable);
+        return buildCubit();
+      },
+      // The host advertises a routable loopback (as every PipeWire output
+      // does), but the user pinned a real input device: capture must open on
+      // it, not on the loopback, and the loopback auto-measure must be skipped.
+      act: (cubit) => cubit
+        ..setCaptureDevice('in-1')
+        ..start(),
+      verify: (_) {
+        verify(
+          () => repository.startEngine(
+            const EngineConfig(
+              sampleRate: 48000,
+              bufferFrames: 128,
+              passthrough: true,
+              captureDeviceId: 'in-1',
+            ),
+          ),
+        ).called(1);
+        verifyNever(repository.measureLatency);
+      },
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'an explicit capture device still auto-measures via loopback channels',
+      build: () {
+        when(repository.detectLoopback).thenReturn(routable);
+        // The pinned interface itself reports dedicated loopback channels, so a
+        // measurement is still meaningful even though capture is not the
+        // monitor source.
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            status: EngineStatus(isConnected: true, excludedInputMask: 0x30),
+          ),
+        );
+        return buildCubit();
+      },
+      act: (cubit) => cubit
+        ..setCaptureDevice('in-1')
+        ..start(),
+      verify: (_) => verify(repository.measureLatency).called(1),
     );
 
     blocTest<AudioSetupCubit, AudioSetupState>(

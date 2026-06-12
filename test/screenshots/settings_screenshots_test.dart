@@ -52,8 +52,15 @@ Future<void> _loadFont(String family, List<String> paths) async {
 void main() {
   const fontDir =
       '/Users/Tomas/development/flutter/bin/cache/artifacts/material_fonts';
+  // These golden generators load the local Flutter SDK's Material fonts and
+  // compare against macOS-rendered goldens, so they only run where those fonts
+  // exist — the author's machine. Everywhere else (CI, other contributors) they
+  // skip: cross-platform golden rendering would not match the committed goldens
+  // anyway. Run them with `flutter test --tags screenshots` on that setup.
+  final hasScreenshotFonts = File('$fontDir/Roboto-Regular.ttf').existsSync();
 
   setUpAll(() async {
+    if (!hasScreenshotFonts) return;
     await _loadFont('Roboto', [
       '$fontDir/Roboto-Regular.ttf',
       '$fontDir/Roboto-Medium.ttf',
@@ -187,7 +194,7 @@ void main() {
       find.byType(BigPictureSettingsPage),
       matchesGoldenFile('goldens/settings_view_performance.png'),
     );
-  });
+  }, skip: !hasScreenshotFonts);
 
   testWidgets('Audio section — monitoring + recording', (tester) async {
     await pump(tester);
@@ -205,7 +212,7 @@ void main() {
       find.byType(BigPictureSettingsPage),
       matchesGoldenFile('goldens/settings_audio_monitoring_recording.png'),
     );
-  });
+  }, skip: !hasScreenshotFonts);
 
   testWidgets('Per-track routing dialog', (tester) async {
     tester.view
@@ -275,7 +282,7 @@ void main() {
       find.byKey(const Key('trackRouting_page')),
       matchesGoldenFile('goldens/track_routing_dialog.png'),
     );
-  });
+  }, skip: !hasScreenshotFonts);
 }
 
 class _ScreenshotLooperBloc extends MockBloc<LooperEvent, LooperState>

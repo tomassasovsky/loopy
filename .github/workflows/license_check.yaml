@@ -7,13 +7,13 @@ concurrency:
 on:
   pull_request:
     branches:
-      - main
+      - master
     paths:
       - "pubspec.yaml"
       - ".github/workflows/license_check.yaml"
   push:
     branches:
-      - main
+      - master
     paths:
       - "pubspec.yaml"
       - ".github/workflows/license_check.yaml"
@@ -22,4 +22,10 @@ jobs:
   license_check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/license_check.yml@v1
     with:
-      allowed: "MIT,BSD-3-Clause,BSD-2-Clause,Apache-2.0"
+      flutter_version: "3.44.x"
+      # Zlib covers vector_math, a permissive Flutter SDK transitive dependency.
+      allowed: "MIT,BSD-3-Clause,BSD-2-Clause,Apache-2.0,Zlib"
+      # pubspec_lock_parse reports no machine-detectable license on pub.dev (it is
+      # a transitive dep of the very_good_cli tooling, not shipped app code), so
+      # skip it rather than fail the run on an "unknown" classification.
+      skip_packages: "pubspec_lock_parse"

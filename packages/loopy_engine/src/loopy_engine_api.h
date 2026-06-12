@@ -171,6 +171,16 @@ typedef enum le_fx_type {
   LE_FX_ECHO = 6,
 } le_fx_type;
 
+/* Which device backend to open. The default (0) opens miniaudio's default
+ * backend for the platform (WASAPI on Windows, Core Audio on macOS, the Linux
+ * preference list). ASIO is opt-in and only available in a LOOPY_ENABLE_ASIO
+ * build (the real backend lands in Part 2); the fields below are accepted and
+ * ignored until then. */
+typedef enum le_audio_backend {
+  LE_BACKEND_WASAPI = 0, /* default: miniaudio's default backend (WASAPI/CoreAudio/ALSA) */
+  LE_BACKEND_ASIO = 1,   /* opt-in Windows ASIO (Part 2; requires LOOPY_ENABLE_ASIO) */
+} le_audio_backend;
+
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
  *
  * `id` is an opaque, backend-specific token suitable for pinning a device via
@@ -181,7 +191,9 @@ typedef enum le_fx_type {
 typedef struct le_device_info {
   char id[256];
   char name[256];
-  int32_t is_default; /* 0/1 */
+  int32_t is_default;      /* 0/1 */
+  int32_t input_channels;  /* 0 = unknown (WASAPI); an ASIO probe fills it in Part 2 */
+  int32_t output_channels; /* 0 = unknown */
 } le_device_info;
 
 /* Requested device configuration. Any channel field set to 0 uses the device
@@ -199,6 +211,17 @@ typedef struct le_config {
    * overrides capture_device_id when a loopback device is detected. */
   char playback_device_id[256];
   char capture_device_id[256];
+  /* 1 = request OS-exclusive device access (WASAPI exclusive mode on Windows:
+   * bypasses the Windows mixer, native format, no resampling). Falls back to
+   * shared automatically if the OS/hardware refuses exclusive. No effect on
+   * backends without an exclusive concept; default 0 (shared, unchanged). */
+  int32_t exclusive;
+  /* le_audio_backend to open; 0 (LE_BACKEND_WASAPI) selects the default
+   * miniaudio path. Accepted and ignored until the ASIO backend lands. */
+  int32_t backend;
+  /* Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
+   * ignored on the default path. */
+  char asio_driver[256];
 } le_config;
 
 /* Maximum number of simultaneous looper tracks (two banks of four). */
@@ -299,6 +322,15 @@ typedef struct le_snapshot {
    * written this many frames earlier in the loop so it aligns with what the
    * player heard. Auto-set by a latency measurement; manually overridable. */
   int32_t record_offset_frames;
+
+  /* 1 = the device is actually open in OS-exclusive mode; 0 = shared (including
+   * an exclusive request that fell back to shared). Lets the UI show the real
+   * negotiated mode versus what was requested (le_config.exclusive). */
+  int32_t exclusive_active;
+
+  /* le_audio_backend actually running (negotiated). In Part 2, a requested-ASIO
+   * open that fell back to WASAPI reports WASAPI here. Always WASAPI today. */
+  int32_t active_backend;
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */

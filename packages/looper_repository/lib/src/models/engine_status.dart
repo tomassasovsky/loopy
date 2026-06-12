@@ -17,6 +17,7 @@ class EngineStatus extends Equatable {
     this.devicePresent = false,
     this.excludedInputMask = 0,
     this.recordOffsetFrames = 0,
+    this.exclusiveActive = false,
   });
 
   /// Active device name, or empty when stopped.
@@ -61,6 +62,11 @@ class EngineStatus extends Equatable {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
+  /// Whether the device is actually open in OS-exclusive mode. `false` for
+  /// shared mode, including an exclusive request that fell back to shared. The
+  /// negotiated reality behind the requested [EngineConfig.exclusive] intent.
+  final bool exclusiveActive;
+
   /// Whether a latency measurement has completed.
   bool get hasMeasuredLatency => latencyState == LatencyState.done;
 
@@ -78,5 +84,6 @@ class EngineStatus extends Equatable {
     devicePresent,
     excludedInputMask,
     recordOffsetFrames,
+    exclusiveActive,
   ];
 }

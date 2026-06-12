@@ -5,19 +5,47 @@
  * and the engine lifecycle paths that do not require an audio device. These are
  * the pieces with the strictest correctness/real-time requirements.
  *
- * Build & run (macOS):
+ * The engine sources now include the three per-OS platform-seam TUs
+ * (engine_linux.c / engine_apple.c / engine_windows.c). All three are listed
+ * unconditionally — the two that don't match the host compile to near-empty
+ * objects — so the le_platform_* seam symbols resolve at link time.
+ *
+ * Build & run (Linux): no Core Audio frameworks; libc + pthreads only.
  *   clang -std=c11 -I src -I src/miniaudio \
  *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
- *     src/loop_clock.c src/miniaudio_impl.c \
+ *     src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
+ *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
+ *     -lpthread -lm -o /tmp/loopy_core_tests
+ *   /tmp/loopy_core_tests
+ *
+ * Build & run (macOS): add the Core Audio frameworks engine_apple.c needs.
+ *   clang -std=c11 -I src -I src/miniaudio \
+ *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
+ *     src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
+ *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
  *     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
  *     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
  *   /tmp/loopy_core_tests
+ *
+ * Build & run (Windows, from a VS x64 dev prompt): MSVC needs
+ * /experimental:c11atomics for <stdatomic.h>; WASAPI links ole32 + winmm.
+ *   cl /std:c11 /experimental:c11atomics /D_CRT_SECURE_NO_WARNINGS ^
+ *     /I src /I src/miniaudio ^
+ *     src\test\test_engine_core.c src\engine.c src\lockfree_ring.c ^
+ *     src\loop_clock.c src\miniaudio_impl.c src\engine_miniaudio.c ^
+ *     src\engine_linux.c src\engine_apple.c src\engine_windows.c ^
+ *     ole32.lib winmm.lib /Fe:loopy_core_tests.exe
+ *   loopy_core_tests.exe
  */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "engine_internal.h"
+#include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
+#include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
@@ -116,8 +144,19 @@ static void test_engine_lifecycle_without_device(void) {
   CHECK(snap.device_present == 0); /* no device opened yet */
   CHECK(snap.frames_processed == 0);
   CHECK(snap.latency_state == LE_LATENCY_IDLE);
+  CHECK(snap.exclusive_active == 0); /* shared until a device opens exclusive */
 
   le_engine_destroy(engine);
+}
+
+static void test_decide_share_fallback(void) {
+  printf("test_decide_share_fallback\n");
+  /* Exclusive requested: the outcome follows whether the exclusive init worked. */
+  CHECK(le_decide_share_fallback(1, 1) == LE_SHARE_DONE_EXCLUSIVE);
+  CHECK(le_decide_share_fallback(1, 0) == LE_SHARE_RETRY_SHARED);
+  /* Not requested: always shared, regardless of the (shared) init result. */
+  CHECK(le_decide_share_fallback(0, 1) == LE_SHARE_DONE_SHARED);
+  CHECK(le_decide_share_fallback(0, 0) == LE_SHARE_DONE_SHARED);
 }
 
 static void test_null_safety(void) {
@@ -954,17 +993,107 @@ static void test_enumerate_devices_runs(void) {
     CHECK(strlen(devices[i].id) < sizeof(devices[i].id));     /* NUL-terminated */
     CHECK(strlen(devices[i].name) < sizeof(devices[i].name)); /* NUL-terminated */
     CHECK(devices[i].is_default == 0 || devices[i].is_default == 1);
+    /* WASAPI/miniaudio enumeration reports no per-device channel count, so
+     * device_info_copy must zero these — never leak stack garbage as a count.
+     * An ASIO probe fills them in Part 2 (0 = unknown). */
+    CHECK(devices[i].input_channels == 0);
+    CHECK(devices[i].output_channels == 0);
   }
 
   count = -1;
   CHECK(le_enumerate_capture_devices(devices, MAXD, &count) == LE_OK);
   CHECK(count >= 0 && count <= MAXD);
+  for (int32_t i = 0; i < count; ++i) {
+    /* device_info_copy zero-inits the channel counts on the capture path too. */
+    CHECK(devices[i].input_channels == 0);
+    CHECK(devices[i].output_channels == 0);
+  }
 
   /* Bad arguments are rejected without touching the output. */
   CHECK(le_enumerate_playback_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
   CHECK(le_enumerate_playback_devices(devices, MAXD, NULL) == LE_ERR_INVALID);
   CHECK(le_enumerate_playback_devices(devices, 0, &count) == LE_ERR_INVALID);
   CHECK(le_enumerate_capture_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
+}
+
+/* The device-id serializer (engine_platform.h) turns a backend id into a
+ * printable token used to match a user-selected device back to its native id.
+ * On the char-string backends (CoreAudio/ALSA/PulseAudio) it copies verbatim;
+ * on Windows/WASAPI it converts the wchar endpoint string to UTF-8. The Windows
+ * branch is the regression guard for the bug where reading the wchar id as a
+ * narrow char* collapsed every device id to its first character (e.g. "{"),
+ * making every device indistinguishable and crashing the device dropdown. */
+static void test_device_id_to_str(void) {
+  printf("test_device_id_to_str\n");
+  ma_device_id id;
+  char out[256];
+
+  /* Zero capacity must never write. */
+  out[0] = 'x';
+  le_platform_device_id_to_str(&id, out, 0);
+  CHECK(out[0] == 'x');
+
+#if defined(_WIN32)
+  /* WASAPI: the full wchar endpoint string survives as UTF-8, not truncated. */
+  memset(&id, 0, sizeof(id));
+  wcsncpy((wchar_t*)&id, L"{0.0.1.00000000}.{abcd}",
+          sizeof(id) / sizeof(wchar_t) - 1);
+  le_platform_device_id_to_str(&id, out, sizeof(out));
+  CHECK(strcmp(out, "{0.0.1.00000000}.{abcd}") == 0);
+  CHECK(strlen(out) > 1); /* not collapsed to "{" */
+#else
+  /* char-string backends: the id is copied verbatim and round-trips. */
+  memset(&id, 0, sizeof(id));
+  strncpy((char*)&id, "hw:CARD=USB,DEV=0", sizeof(id) - 1);
+  le_platform_device_id_to_str(&id, out, sizeof(out));
+  CHECK(strcmp(out, "hw:CARD=USB,DEV=0") == 0);
+#endif
+}
+
+/* ---- device-backend seam (ASIO Part 1) ---- */
+
+/* le_select_backend resolves every backend choice to the miniaudio backend in
+ * this build — including LE_BACKEND_ASIO, which has no implementation yet — and
+ * the returned vtable is fully populated. This is the link-time guarantee that
+ * the default build never depends on an ASIO symbol. */
+static void test_select_backend_defaults_to_miniaudio(void) {
+  printf("test_select_backend_defaults_to_miniaudio\n");
+  const le_device_backend* wasapi = le_select_backend(LE_BACKEND_WASAPI);
+  const le_device_backend* asio = le_select_backend(LE_BACKEND_ASIO);
+  CHECK(wasapi == &le_miniaudio_backend);
+  CHECK(asio == &le_miniaudio_backend);
+  /* An unknown/out-of-range choice still resolves to the miniaudio backend. */
+  CHECK(le_select_backend(42) == &le_miniaudio_backend);
+  /* The vtable is complete — no NULL function pointer the dispatcher could call. */
+  CHECK(le_miniaudio_backend.open != NULL);
+  CHECK(le_miniaudio_backend.start != NULL);
+  CHECK(le_miniaudio_backend.stop != NULL);
+  CHECK(le_miniaudio_backend.close != NULL);
+}
+
+/* The grown FFI structs default to the WASAPI path when zero-initialized
+ * (le_config) and a fresh engine publishes active_backend == WASAPI in its
+ * snapshot. Guards against the new fields ever defaulting to a non-zero / non-
+ * WASAPI value that would silently change behavior. */
+static void test_backend_struct_defaults(void) {
+  printf("test_backend_struct_defaults\n");
+  le_config cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  CHECK(cfg.backend == LE_BACKEND_WASAPI); /* 0 */
+  CHECK(cfg.asio_driver[0] == '\0');
+
+  le_engine* engine = le_engine_create();
+  CHECK(engine != NULL);
+  if (engine != NULL) {
+    /* Configure without opening a device: the snapshot reports the negotiated
+     * defaults, including the WASAPI active backend. */
+    CHECK(le_engine_configure(engine, 48000, 2, 2, 48000) == LE_OK);
+    le_snapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    le_engine_get_snapshot(engine, &snap);
+    CHECK(snap.active_backend == LE_BACKEND_WASAPI);
+    le_engine_destroy(engine);
+  }
 }
 
 /* ---- loopback channel exclusion (PR B) ---- */
@@ -984,6 +1113,34 @@ static void test_label_is_loopback(void) {
   CHECK(le_label_is_loopback("Microphone") == 0);
   CHECK(le_label_is_loopback("") == 0);
   CHECK(le_label_is_loopback(NULL) == 0);
+}
+
+/* Fake per-channel name provider for the mask test: `ctx` is a NULL-terminable
+ * array of channel labels indexed by channel. */
+static const char* fake_channel_name(void* ctx, int channel) {
+  const char* const* names = (const char* const*)ctx;
+  return names[channel];
+}
+
+/* le_excluded_mask_from_names is the platform-agnostic bit-setting core every
+ * label probe (Core Audio today, ASIO on Windows behind LOOPY_ENABLE_ASIO)
+ * shares; only the name source is OS-specific. This exercises it with a fake
+ * provider so the masking logic is covered without any OS calls. */
+static void test_excluded_mask_from_names(void) {
+  printf("test_excluded_mask_from_names\n");
+  /* ch0 Input(no), ch1 Input(no), ch2 "Loopback 1"(yes), ch3 "Loop 2"(yes,
+   * Focusrite naming), ch4 NULL(no), ch5 Mic(no). */
+  const char* names[] = {"Input 1",    "Input 2", "Loopback 1",
+                         "Loop 2", NULL,      "Microphone"};
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 6) ==
+        ((1u << 2) | (1u << 3)));
+  /* channel_count clamps which channels are inspected. */
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 2) == 0);
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 3) == (1u << 2));
+  /* Defensive: NULL provider and non-positive counts yield no bits. */
+  CHECK(le_excluded_mask_from_names(NULL, names, 6) == 0);
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 0) == 0);
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, -1) == 0);
 }
 
 /* An excluded channel is stripped from a track's input mask by SET_INPUT_MASK,
@@ -1052,47 +1209,96 @@ static void test_loopback_exclusion(void) {
   le_engine_destroy(e2);
 }
 
-/* The round-trip latency harness times the pulse returning on the loopback
- * channel(s) when the interface exposes them, and ignores the real inputs. */
+/* The round-trip latency harness captures the input envelope over a fixed
+ * window and cross-correlates it with the pulse to find the round-trip by the
+ * correlation peak. It uses the loopback channel(s) when the interface exposes
+ * them, and ignores the real inputs. */
 static void test_loopback_latency_uses_loopback_channel(void) {
   printf("test_loopback_latency_uses_loopback_channel\n");
-  enum { N = 200, RET = 150 };
-  float out[2 * N];
-  float in[2 * N];
+  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
   le_snapshot s;
+  float* out = calloc((size_t)CAP * 2, sizeof(float));
+  float* in = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(out != NULL && in != NULL);
 
-  // ch1 is the loopback; the looped-back pulse arrives there at frame RET,
-  // after the detector's dead-time. ch0 (a real input) stays silent.
+  // ch1 is the loopback; the looped-back pulse returns there as a PULSE-length
+  // plateau starting at frame RET. ch0 (a real input) stays silent. Processing
+  // a full capture window resolves the measurement by correlation peak = RET.
   le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 2, 2, 100000);
+  le_engine_configure(e, SR, 2, 2, 100000);
   le_engine_set_excluded_input_mask_for_test(e, 0x2u);
   CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
   drain(e); // apply MEASURE_LATENCY
-  for (int i = 0; i < N; ++i) {
+  for (int i = 0; i < CAP; ++i) {
     in[i * 2 + 0] = 0.0f;
-    in[i * 2 + 1] = i >= RET ? 0.5f : 0.0f;
+    in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
   }
-  le_engine_process(e, out, in, N);
+  le_engine_process(e, out, in, CAP);
   le_engine_get_snapshot(e, &s);
   CHECK(s.latency_state == LE_LATENCY_DONE);
   CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
   le_engine_destroy(e);
 
   // Control: the same pulse on a real input (ch0) must NOT be mistaken for the
-  // loopback return — detection stays on the loopback channel only.
+  // loopback return — the loopback channel stays silent, so there is no signal.
   le_engine* e2 = le_engine_create();
-  le_engine_configure(e2, 48000, 2, 2, 100000);
+  le_engine_configure(e2, SR, 2, 2, 100000);
   le_engine_set_excluded_input_mask_for_test(e2, 0x2u);
   le_engine_begin_latency_for_test(e2);
   drain(e2);
-  for (int i = 0; i < N; ++i) {
-    in[i * 2 + 0] = i >= RET ? 0.5f : 0.0f;
+  for (int i = 0; i < CAP; ++i) {
+    in[i * 2 + 0] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
     in[i * 2 + 1] = 0.0f;
   }
-  le_engine_process(e2, out, in, N);
+  le_engine_process(e2, out, in, CAP);
   le_engine_get_snapshot(e2, &s);
-  CHECK(s.latency_state == LE_LATENCY_MEASURING); // not detected on a real input
+  CHECK(s.latency_state == LE_LATENCY_TIMEOUT); // nothing on the loopback channel
   le_engine_destroy(e2);
+
+  free(out);
+  free(in);
+}
+
+/* The correlator is level-independent (peak vs baseline ratio), so a weak echo
+ * still resolves; pure silence reports a timeout rather than locking onto noise. */
+static void test_loopback_latency_weak_echo_and_silence(void) {
+  printf("test_loopback_latency_weak_echo_and_silence\n");
+  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
+  le_snapshot s;
+  float* out = calloc((size_t)CAP * 2, sizeof(float));
+  float* in = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(out != NULL && in != NULL);
+
+  /* A faint (-34 dBFS) plateau on the loopback channel still resolves to RET. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, SR, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u);
+  le_engine_begin_latency_for_test(e);
+  drain(e);
+  for (int i = 0; i < CAP; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.02f : 0.0f;
+  }
+  le_engine_process(e, out, in, CAP);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+  CHECK(s.record_offset_frames >= RET && s.record_offset_frames <= RET + 2);
+  le_engine_destroy(e);
+
+  /* Pure silence -> timeout, not a spurious lock. */
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, SR, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e2, 0x2u);
+  le_engine_begin_latency_for_test(e2);
+  drain(e2);
+  for (int i = 0; i < CAP * 2; ++i) in[i] = 0.0f;
+  le_engine_process(e2, out, in, CAP);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.latency_state == LE_LATENCY_TIMEOUT);
+  le_engine_destroy(e2);
+
+  free(out);
+  free(in);
 }
 
 /* Regression: an empty input mask records silence even with a hot input bus.
@@ -2622,6 +2828,7 @@ int main(void) {
   test_ring_reports_full();
   test_ring_wraps_around();
   test_engine_lifecycle_without_device();
+  test_decide_share_fallback();
   test_null_safety();
   test_loop_clock();
   test_looper_record_then_play();
@@ -2649,9 +2856,14 @@ int main(void) {
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
+  test_device_id_to_str();
+  test_select_backend_defaults_to_miniaudio();
+  test_backend_struct_defaults();
   test_label_is_loopback();
+  test_excluded_mask_from_names();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
+  test_loopback_latency_weak_echo_and_silence();
   test_set_record_offset_publishes_latency();
   test_fx_bypass_is_transparent();
   test_fx_count_gates_the_chain();

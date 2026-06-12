@@ -1537,6 +1537,14 @@ final class le_device_info extends ffi.Struct {
   /// 0/1
   @ffi.Int32()
   external int is_default;
+
+  /// 0 = unknown (WASAPI); an ASIO probe fills it in Part 2
+  @ffi.Int32()
+  external int input_channels;
+
+  /// 0 = unknown
+  @ffi.Int32()
+  external int output_channels;
 }
 
 /// Requested device configuration. Any channel field set to 0 uses the device
@@ -1576,6 +1584,23 @@ final class le_config extends ffi.Struct {
 
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> capture_device_id;
+
+  /// 1 = request OS-exclusive device access (WASAPI exclusive mode on Windows:
+  /// bypasses the Windows mixer, native format, no resampling). Falls back to
+  /// shared automatically if the OS/hardware refuses exclusive. No effect on
+  /// backends without an exclusive concept; default 0 (shared, unchanged).
+  @ffi.Int32()
+  external int exclusive;
+
+  /// le_audio_backend to open; 0 (LE_BACKEND_WASAPI) selects the default
+  /// miniaudio path. Accepted and ignored until the ASIO backend lands.
+  @ffi.Int32()
+  external int backend;
+
+  /// Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
+  /// ignored on the default path.
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> asio_driver;
 }
 
 /// Per-lane state published via le_engine_get_lane: one recordable input lane of
@@ -1749,6 +1774,17 @@ final class le_snapshot extends ffi.Struct {
   /// player heard. Auto-set by a latency measurement; manually overridable.
   @ffi.Int32()
   external int record_offset_frames;
+
+  /// 1 = the device is actually open in OS-exclusive mode; 0 = shared (including
+  /// an exclusive request that fell back to shared). Lets the UI show the real
+  /// negotiated mode versus what was requested (le_config.exclusive).
+  @ffi.Int32()
+  external int exclusive_active;
+
+  /// le_audio_backend actually running (negotiated). In Part 2, a requested-ASIO
+  /// open that fell back to WASAPI reports WASAPI here. Always WASAPI today.
+  @ffi.Int32()
+  external int active_backend;
 
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()

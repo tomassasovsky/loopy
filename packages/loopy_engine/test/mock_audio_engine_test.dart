@@ -18,6 +18,12 @@ void main() {
       expect(engine.deviceName, contains('18i20o'));
     });
 
+    test('snapshot reports the WASAPI backend (the only mock path)', () {
+      expect(engine.snapshot().activeBackend, AudioBackend.wasapi);
+      engine.start(engine.defaultConfig);
+      expect(engine.snapshot().activeBackend, AudioBackend.wasapi);
+    });
+
     test('enumerates a duplex mock device', () {
       final devices = engine.enumerateDevices();
       expect(devices, hasLength(2));
@@ -25,6 +31,12 @@ void main() {
         devices.map((d) => d.id).toSet(),
         equals({MockAudioEngine.deviceId}),
       );
+      // The mock does not probe per-device channel counts, so they read 0
+      // (unknown) — matching the native WASAPI enumeration path.
+      for (final device in devices) {
+        expect(device.inputChannels, 0);
+        expect(device.outputChannels, 0);
+      }
     });
 
     test('reflects lane routing in snapshots', () {
