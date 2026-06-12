@@ -1,0 +1,11 @@
+# Test configuration for the loopy app.
+#
+# The `screenshots` tag marks manual golden/screenshot generators
+# (test/screenshots/) that load fonts from the local Flutter SDK and compare
+# against macOS-rendered goldens — they are machine-specific and cannot run
+# portably in CI (golden rendering differs across platforms). Skip them by
+# default; run them explicitly with `flutter test --tags screenshots` on the
+# setup that owns the goldens.
+tags:
+  screenshots:
+    skip: "Manual golden/screenshot generation; run with --tags screenshots."
