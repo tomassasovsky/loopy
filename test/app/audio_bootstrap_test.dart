@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
@@ -11,6 +12,7 @@ void main() {
     late FakeAudioEngine engine;
     late LooperRepository repository;
     late SettingsRepository settings;
+    late FakeKeyValueStore store;
 
     setUp(() {
       engine = FakeAudioEngine();
@@ -18,7 +20,8 @@ void main() {
         engine: engine,
         ticker: const Stream<void>.empty(),
       );
-      settings = SettingsRepository(store: FakeKeyValueStore());
+      store = FakeKeyValueStore();
+      settings = SettingsRepository(store: store);
       addTearDown(repository.dispose);
     });
 
@@ -294,6 +297,46 @@ void main() {
         expect(engine.measureLatencyCalls, 1);
       },
     );
+
+    group('exclusive-access resolution (platform default)', () {
+      tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      // A saved config with the exclusive key never written (older config or a
+      // fresh device): loadAudioConfig succeeds on rate+buffer, exclusive
+      // unset, so the platform default applies.
+      Future<void> saveConfigWithoutExclusiveKey() async {
+        await store.setInt('audio.sample_rate', 48000);
+        await store.setInt('audio.buffer_frames', 128);
+      }
+
+      test('defaults to exclusive on Windows when unset', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        await saveConfigWithoutExclusiveKey();
+        await tryAutoStartEngine(repository: repository, settings: settings);
+        expect(engine.lastConfig?.exclusive, isTrue);
+      });
+
+      test('defaults to shared off Windows when unset', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        await saveConfigWithoutExclusiveKey();
+        await tryAutoStartEngine(repository: repository, settings: settings);
+        expect(engine.lastConfig?.exclusive, isFalse);
+      });
+
+      test('a saved exclusive intent wins over the platform default', () async {
+        // Saved OFF must win even on Windows (where the default is on).
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            monitorInput: true,
+          ),
+        );
+        await tryAutoStartEngine(repository: repository, settings: settings);
+        expect(engine.lastConfig?.exclusive, isFalse);
+      });
+    });
 
     test('returns false when the engine fails to start', () async {
       engine.startResult = EngineResult.device;

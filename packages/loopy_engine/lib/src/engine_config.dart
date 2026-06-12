@@ -21,6 +21,7 @@ class EngineConfig {
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
+    this.exclusive = false,
   });
 
   /// Requested sample rate in Hz, or `0` for the device default.
@@ -60,6 +61,13 @@ class EngineConfig {
   /// default. Ignored when [useLoopbackCapture] resolves a loopback device.
   final String captureDeviceId;
 
+  /// Whether to request OS-exclusive device access (WASAPI exclusive mode on
+  /// Windows: bypasses the mixer, native format, no resampling). The engine
+  /// falls back to shared mode automatically if exclusive is refused; the
+  /// negotiated result is reported via `EngineSnapshot.exclusiveActive`. No
+  /// effect on backends without an exclusive concept.
+  final bool exclusive;
+
   /// Writes this configuration into a native [le_config] struct in [ptr].
   void writeTo(Pointer<le_config> ptr) {
     ptr.ref
@@ -69,7 +77,8 @@ class EngineConfig {
       ..output_channels = outputChannels
       ..passthrough = passthrough ? 1 : 0
       ..max_loop_frames = maxLoopFrames
-      ..use_loopback_capture = useLoopbackCapture ? 1 : 0;
+      ..use_loopback_capture = useLoopbackCapture ? 1 : 0
+      ..exclusive = exclusive ? 1 : 0;
     writeNativeString(ptr.ref.playback_device_id, playbackDeviceId);
     writeNativeString(ptr.ref.capture_device_id, captureDeviceId);
   }
@@ -87,7 +96,8 @@ class EngineConfig {
           maxLoopFrames == other.maxLoopFrames &&
           useLoopbackCapture == other.useLoopbackCapture &&
           playbackDeviceId == other.playbackDeviceId &&
-          captureDeviceId == other.captureDeviceId;
+          captureDeviceId == other.captureDeviceId &&
+          exclusive == other.exclusive;
 
   @override
   int get hashCode => Object.hash(
@@ -100,6 +110,7 @@ class EngineConfig {
     useLoopbackCapture,
     playbackDeviceId,
     captureDeviceId,
+    exclusive,
   );
 
   @override
@@ -110,5 +121,6 @@ class EngineConfig {
       'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames, '
       'useLoopbackCapture: $useLoopbackCapture, '
       'playbackDeviceId: $playbackDeviceId, '
-      'captureDeviceId: $captureDeviceId)';
+      'captureDeviceId: $captureDeviceId, '
+      'exclusive: $exclusive)';
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -11,6 +12,12 @@ Future<bool> tryAutoStartEngine({
 }) async {
   final saved = await settings.loadAudioConfig();
   if (saved == null) return false;
+  // Resolve the exclusive-access default here (not in storage): an unset value
+  // means OS-exclusive on Windows, shared elsewhere. The engine falls back to
+  // shared if exclusive is refused, so this is always safe.
+  final exclusive =
+      await settings.loadAudioExclusive() ??
+      (defaultTargetPlatform == TargetPlatform.windows);
   final loopback = repository.detectLoopback();
   final result = repository.startEngine(
     EngineConfig(
@@ -19,6 +26,7 @@ Future<bool> tryAutoStartEngine({
       inputChannels: saved.inputChannels,
       outputChannels: saved.outputChannels,
       passthrough: saved.monitorInput,
+      exclusive: exclusive,
       maxLoopFrames: saved.maxLoopMinutes <= 0
           ? 0
           : saved.maxLoopMinutes * 60 * saved.sampleRate,

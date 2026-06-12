@@ -263,6 +263,14 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
   return 0;
 }
 
+void le_platform_device_id_to_str(const ma_device_id* id, char* out,
+                                  size_t cap) {
+  /* ALSA/PulseAudio/JACK device ids are NUL-terminated char strings. */
+  if (cap == 0) return;
+  strncpy(out, (const char*)id, cap - 1);
+  out[cap - 1] = '\0';
+}
+
 #else
 typedef int loopy_engine_linux_tu_unused; /* keep the TU non-empty off Linux */
 #endif

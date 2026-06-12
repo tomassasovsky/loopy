@@ -255,6 +255,7 @@ void main() {
           ..master_length_frames = 96000
           ..master_position_frames = 1200
           ..record_offset_frames = 480
+          ..exclusive_active = 1
           ..track_count = 2;
 
         const tracks = [
@@ -282,6 +283,7 @@ void main() {
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
         expect(snapshot.recordOffsetFrames, 480);
+        expect(snapshot.exclusiveActive, isTrue);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.
         expect(snapshot.trackState, TrackState.playing);
@@ -300,6 +302,24 @@ void main() {
         expect(
           EngineSnapshot.fromNative(ptr.ref, const []).isRunning,
           isFalse,
+        );
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('exclusive_active maps to exclusiveActive (default 0 => false)', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        // Zero-initialized struct: exclusive_active defaults to 0 => shared.
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).exclusiveActive,
+          isFalse,
+        );
+        ptr.ref.exclusive_active = 1;
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).exclusiveActive,
+          isTrue,
         );
       } finally {
         calloc.free(ptr);

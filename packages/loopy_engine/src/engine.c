@@ -1434,6 +1434,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
   store_i32(&engine->a_out_channels, output_channels);
+  /* Default to shared; le_engine_start publishes the real mode after device open. */
+  store_i32(&engine->a_exclusive_active, 0);
   /* Re-derived per device open in le_engine_start; default to none excluded. */
   atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
                         memory_order_relaxed);
@@ -1493,6 +1495,27 @@ int le_label_is_loopback(const char* label) {
   return contains_ci(label, "loop");
 }
 
+uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
+                                     int channel_count) {
+  /* Pure bit-setting core shared by every platform's label probe: walk the
+   * input channels, ask the caller's provider for each channel's name, and set
+   * the bit for any name le_label_is_loopback matches. The OS-specific part is
+   * only the *source* of the names (Core Audio on macOS, ASIO on Windows), so
+   * this stays unit-testable with a fake provider and free of any OS calls.
+   * Channels beyond LE_MAX_CHANNELS (the mask's width) are ignored. */
+  if (get_name == NULL) return 0;
+  uint32_t mask = 0;
+  const int n =
+      channel_count < LE_MAX_CHANNELS ? channel_count : LE_MAX_CHANNELS;
+  for (int c = 0; c < n; ++c) {
+    const char* name = get_name(ctx, c);
+    if (name != NULL && le_label_is_loopback(name)) {
+      mask |= (1u << c);
+    }
+  }
+  return mask;
+}
+
 static void find_loopback(ma_context* ctx, le_loopback_info* out,
                           ma_device_id* out_id) {
   out->available = 0;
@@ -1543,14 +1566,12 @@ int32_t le_detect_loopback(le_loopback_info* out) {
 /* ---- device enumeration & pinning ---- */
 
 /* Serializes a miniaudio device id into a printable, round-trippable token.
- * On every string-id backend (CoreAudio, ALSA, PulseAudio, sndio, oss) the
- * union's active member is a NUL-terminated char string at offset 0, so reading
- * it as a C string is exact and matches byte-for-byte at resolve time. WASAPI
- * (a wchar string) is not represented here; pinning is a no-op there and the
- * engine falls back to the default device. */
+ * The backend-specific encoding (char string vs WASAPI wchar string) lives
+ * behind the platform seam so this portable core stays free of OS #ifs; see
+ * le_platform_device_id_to_str (engine_platform.h). Enumeration and resolution
+ * both route through here, so the token round-trips via strcmp on every OS. */
 static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
-  strncpy(out, (const char*)id, cap - 1);
-  out[cap - 1] = '\0';
+  le_platform_device_id_to_str(id, out, cap);
 }
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
@@ -1680,6 +1701,12 @@ void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
   engine->tracks[channel].lane_count = count; /* no buffer allocation */
 }
 
+le_share_decision le_decide_share_fallback(int requested_exclusive,
+                                           int first_init_ok) {
+  if (!requested_exclusive) return LE_SHARE_DONE_SHARED;
+  return first_init_ok ? LE_SHARE_DONE_EXCLUSIVE : LE_SHARE_RETRY_SHARED;
+}
+
 static void le_uninit_context(le_engine* engine) {
   if (engine->context_initialised) {
     ma_context_uninit(&engine->context);
@@ -1798,7 +1825,33 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     }
   }
 
-  if (ma_device_init(pContext, &cfg, &engine->device) != MA_SUCCESS) {
+  /* Full device control: when requested, open the device in OS-exclusive mode
+   * (WASAPI exclusive on Windows — bypasses the mixer, native format) with no OS
+   * sample-rate conversion. miniaudio does NOT auto-fall-back, so on failure we
+   * reset to shared and reinitialize once. exclusive_active is set only when the
+   * exclusive init itself succeeded, never on the shared retry. */
+  int exclusive_active = 0;
+  if (config->exclusive) {
+    cfg.capture.shareMode = ma_share_mode_exclusive;
+    cfg.playback.shareMode = ma_share_mode_exclusive;
+    cfg.wasapi.noAutoConvertSRC = MA_TRUE;
+  }
+  ma_result init_result = ma_device_init(pContext, &cfg, &engine->device);
+  switch (le_decide_share_fallback(config->exclusive,
+                                   init_result == MA_SUCCESS)) {
+    case LE_SHARE_DONE_EXCLUSIVE:
+      exclusive_active = 1;
+      break;
+    case LE_SHARE_RETRY_SHARED:
+      cfg.capture.shareMode = ma_share_mode_shared;
+      cfg.playback.shareMode = ma_share_mode_shared;
+      cfg.wasapi.noAutoConvertSRC = MA_FALSE;
+      init_result = ma_device_init(pContext, &cfg, &engine->device);
+      break;
+    case LE_SHARE_DONE_SHARED:
+      break;
+  }
+  if (init_result != MA_SUCCESS) {
     le_uninit_context(engine);
     return LE_ERR_DEVICE;
   }
@@ -1823,6 +1876,8 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
 
   store_i32(&engine->a_buffer_frames,
             (int32_t)engine->device.playback.internalPeriodSizeInFrames);
+  /* Publish the negotiated share mode (configure() reset it to 0 above). */
+  store_i32(&engine->a_exclusive_active, exclusive_active);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;
@@ -1926,6 +1981,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
+  out->exclusive_active = load_i32(&engine->a_exclusive_active);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,

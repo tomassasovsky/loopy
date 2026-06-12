@@ -118,3 +118,13 @@ app.*.map.json
 lib/l10n/gen/
 # Flutter golden-test diff artifacts
 test/**/failures/
+
+# Steinberg ASIO SDK — user-supplied for the opt-in Windows channel-label probe
+# (LOOPY_ENABLE_ASIO). GPLv3-or-proprietary: NEVER commit it into this MIT repo.
+# See docs/WINDOWS_ASIO.md. These patterns cover the common SDK folder names.
+asiosdk/
+asio_sdk/
+ASIOSDK*/
+**/asiosdk/
+**/asio_sdk/
+**/ASIOSDK*/

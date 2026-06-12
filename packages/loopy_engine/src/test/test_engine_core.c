@@ -26,13 +26,25 @@
  *     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
  *     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
  *   /tmp/loopy_core_tests
+ *
+ * Build & run (Windows, from a VS x64 dev prompt): MSVC needs
+ * /experimental:c11atomics for <stdatomic.h>; WASAPI links ole32 + winmm.
+ *   cl /std:c11 /experimental:c11atomics /D_CRT_SECURE_NO_WARNINGS ^
+ *     /I src /I src/miniaudio ^
+ *     src\test\test_engine_core.c src\engine.c src\lockfree_ring.c ^
+ *     src\loop_clock.c src\miniaudio_impl.c ^
+ *     src\engine_linux.c src\engine_apple.c src\engine_windows.c ^
+ *     ole32.lib winmm.lib /Fe:loopy_core_tests.exe
+ *   loopy_core_tests.exe
  */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "engine_internal.h"
+#include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
@@ -131,8 +143,19 @@ static void test_engine_lifecycle_without_device(void) {
   CHECK(snap.device_present == 0); /* no device opened yet */
   CHECK(snap.frames_processed == 0);
   CHECK(snap.latency_state == LE_LATENCY_IDLE);
+  CHECK(snap.exclusive_active == 0); /* shared until a device opens exclusive */
 
   le_engine_destroy(engine);
+}
+
+static void test_decide_share_fallback(void) {
+  printf("test_decide_share_fallback\n");
+  /* Exclusive requested: the outcome follows whether the exclusive init worked. */
+  CHECK(le_decide_share_fallback(1, 1) == LE_SHARE_DONE_EXCLUSIVE);
+  CHECK(le_decide_share_fallback(1, 0) == LE_SHARE_RETRY_SHARED);
+  /* Not requested: always shared, regardless of the (shared) init result. */
+  CHECK(le_decide_share_fallback(0, 1) == LE_SHARE_DONE_SHARED);
+  CHECK(le_decide_share_fallback(0, 0) == LE_SHARE_DONE_SHARED);
 }
 
 static void test_null_safety(void) {
@@ -982,6 +1005,40 @@ static void test_enumerate_devices_runs(void) {
   CHECK(le_enumerate_capture_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
 }
 
+/* The device-id serializer (engine_platform.h) turns a backend id into a
+ * printable token used to match a user-selected device back to its native id.
+ * On the char-string backends (CoreAudio/ALSA/PulseAudio) it copies verbatim;
+ * on Windows/WASAPI it converts the wchar endpoint string to UTF-8. The Windows
+ * branch is the regression guard for the bug where reading the wchar id as a
+ * narrow char* collapsed every device id to its first character (e.g. "{"),
+ * making every device indistinguishable and crashing the device dropdown. */
+static void test_device_id_to_str(void) {
+  printf("test_device_id_to_str\n");
+  ma_device_id id;
+  char out[256];
+
+  /* Zero capacity must never write. */
+  out[0] = 'x';
+  le_platform_device_id_to_str(&id, out, 0);
+  CHECK(out[0] == 'x');
+
+#if defined(_WIN32)
+  /* WASAPI: the full wchar endpoint string survives as UTF-8, not truncated. */
+  memset(&id, 0, sizeof(id));
+  wcsncpy((wchar_t*)&id, L"{0.0.1.00000000}.{abcd}",
+          sizeof(id) / sizeof(wchar_t) - 1);
+  le_platform_device_id_to_str(&id, out, sizeof(out));
+  CHECK(strcmp(out, "{0.0.1.00000000}.{abcd}") == 0);
+  CHECK(strlen(out) > 1); /* not collapsed to "{" */
+#else
+  /* char-string backends: the id is copied verbatim and round-trips. */
+  memset(&id, 0, sizeof(id));
+  strncpy((char*)&id, "hw:CARD=USB,DEV=0", sizeof(id) - 1);
+  le_platform_device_id_to_str(&id, out, sizeof(out));
+  CHECK(strcmp(out, "hw:CARD=USB,DEV=0") == 0);
+#endif
+}
+
 /* ---- loopback channel exclusion (PR B) ---- */
 
 static void test_label_is_loopback(void) {
@@ -999,6 +1056,34 @@ static void test_label_is_loopback(void) {
   CHECK(le_label_is_loopback("Microphone") == 0);
   CHECK(le_label_is_loopback("") == 0);
   CHECK(le_label_is_loopback(NULL) == 0);
+}
+
+/* Fake per-channel name provider for the mask test: `ctx` is a NULL-terminable
+ * array of channel labels indexed by channel. */
+static const char* fake_channel_name(void* ctx, int channel) {
+  const char* const* names = (const char* const*)ctx;
+  return names[channel];
+}
+
+/* le_excluded_mask_from_names is the platform-agnostic bit-setting core every
+ * label probe (Core Audio today, ASIO on Windows behind LOOPY_ENABLE_ASIO)
+ * shares; only the name source is OS-specific. This exercises it with a fake
+ * provider so the masking logic is covered without any OS calls. */
+static void test_excluded_mask_from_names(void) {
+  printf("test_excluded_mask_from_names\n");
+  /* ch0 Input(no), ch1 Input(no), ch2 "Loopback 1"(yes), ch3 "Loop 2"(yes,
+   * Focusrite naming), ch4 NULL(no), ch5 Mic(no). */
+  const char* names[] = {"Input 1",    "Input 2", "Loopback 1",
+                         "Loop 2", NULL,      "Microphone"};
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 6) ==
+        ((1u << 2) | (1u << 3)));
+  /* channel_count clamps which channels are inspected. */
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 2) == 0);
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 3) == (1u << 2));
+  /* Defensive: NULL provider and non-positive counts yield no bits. */
+  CHECK(le_excluded_mask_from_names(NULL, names, 6) == 0);
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, 0) == 0);
+  CHECK(le_excluded_mask_from_names(fake_channel_name, names, -1) == 0);
 }
 
 /* An excluded channel is stripped from a track's input mask by SET_INPUT_MASK,
@@ -2686,6 +2771,7 @@ int main(void) {
   test_ring_reports_full();
   test_ring_wraps_around();
   test_engine_lifecycle_without_device();
+  test_decide_share_fallback();
   test_null_safety();
   test_loop_clock();
   test_looper_record_then_play();
@@ -2713,7 +2799,9 @@ int main(void) {
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
+  test_device_id_to_str();
   test_label_is_loopback();
+  test_excluded_mask_from_names();
   test_loopback_exclusion();
   test_loopback_latency_uses_loopback_channel();
   test_loopback_latency_weak_echo_and_silence();

@@ -12,6 +12,7 @@
 #if defined(__APPLE__)
 
 #include <stdint.h>
+#include <string.h>
 
 /* Core Audio is used only to read per-channel hardware labels for loopback
  * exclusion. The frameworks are already linked by the macOS build. */
@@ -84,6 +85,14 @@ static uint32_t le_macos_excluded_mask(const char* uid, int channel_count) {
 
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
   return le_macos_excluded_mask(uid, channel_count);
+}
+
+void le_platform_device_id_to_str(const ma_device_id* id, char* out,
+                                  size_t cap) {
+  /* Core Audio device ids are NUL-terminated char strings. */
+  if (cap == 0) return;
+  strncpy(out, (const char*)id, cap - 1);
+  out[cap - 1] = '\0';
 }
 
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {

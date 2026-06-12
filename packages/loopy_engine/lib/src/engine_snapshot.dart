@@ -313,6 +313,7 @@ class EngineSnapshot {
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
+    this.exclusiveActive = false,
     this.tracks = const [],
   });
 
@@ -335,6 +336,7 @@ class EngineSnapshot {
       masterLengthFrames = 0,
       masterPositionFrames = 0,
       recordOffsetFrames = 0,
+      exclusiveActive = false,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -363,6 +365,7 @@ class EngineSnapshot {
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
     recordOffsetFrames: native.record_offset_frames,
+    exclusiveActive: native.exclusive_active != 0,
     tracks: tracks,
   );
 
@@ -423,6 +426,10 @@ class EngineSnapshot {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
+  /// Whether the device is actually open in OS-exclusive mode. `false` for
+  /// shared mode, including an exclusive request that fell back to shared.
+  final bool exclusiveActive;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -475,6 +482,7 @@ class EngineSnapshot {
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
           recordOffsetFrames == other.recordOffsetFrames &&
+          exclusiveActive == other.exclusiveActive &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -496,6 +504,7 @@ class EngineSnapshot {
     masterLengthFrames,
     masterPositionFrames,
     recordOffsetFrames,
+    exclusiveActive,
     ...tracks,
   ]);
 

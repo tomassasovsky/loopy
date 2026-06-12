@@ -1,5 +1,5 @@
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -117,6 +117,96 @@ void main() {
 
     await tester.tap(find.byKey(const Key('audioSetup_startStop_button')));
     verify(cubit.stop).called(1);
+  });
+
+  group('exclusive mode (Windows-only toggle)', () {
+    // Safety net for a throwing test; passing tests also reset inline because
+    // the foundation-vars invariant is checked before tearDown runs.
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    testWidgets('engine step shows the toggle and forwards taps on Windows', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      seed(const AudioSetupState());
+      await pumpView(tester);
+
+      final toggle = find.byKey(const Key('audioSetup_exclusive_switch'));
+      expect(toggle, findsOneWidget);
+      await tester.ensureVisible(toggle); // it sits below the fold
+      await tester.pumpAndSettle();
+      await tester.tap(toggle);
+      verify(() => cubit.setExclusive(exclusive: true)).called(1);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('toggling the exclusive switch off forwards false', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      seed(const AudioSetupState(exclusive: true));
+      await pumpView(tester);
+
+      final toggle = find.byKey(const Key('audioSetup_exclusive_switch'));
+      await tester.ensureVisible(toggle);
+      await tester.pumpAndSettle();
+      await tester.tap(toggle);
+      verify(() => cubit.setExclusive(exclusive: false)).called(1);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('the exclusive toggle is hidden off Windows', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      seed(const AudioSetupState());
+      await pumpView(tester);
+
+      expect(
+        find.byKey(const Key('audioSetup_exclusive_switch')),
+        findsNothing,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('running panel surfaces the shared-fallback note on mismatch', (
+      tester,
+    ) async {
+      // Exclusive requested but the device opened shared => show the note.
+      seed(
+        const AudioSetupState(
+          status: AudioSetupStatus.running,
+          exclusive: true,
+          engineStatus: EngineStatus(deviceName: 'Scarlett', isConnected: true),
+        ),
+      );
+      await pumpView(tester);
+
+      expect(
+        find.byKey(const Key('audioSetup_exclusiveFallback_note')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no fallback note when exclusive actually engaged', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          status: AudioSetupStatus.running,
+          exclusive: true,
+          engineStatus: EngineStatus(
+            deviceName: 'Scarlett',
+            isConnected: true,
+            exclusiveActive: true,
+          ),
+        ),
+      );
+      await pumpView(tester);
+
+      expect(
+        find.byKey(const Key('audioSetup_exclusiveFallback_note')),
+        findsNothing,
+      );
+    });
   });
 
   testWidgets('error state shows the error banner', (tester) async {

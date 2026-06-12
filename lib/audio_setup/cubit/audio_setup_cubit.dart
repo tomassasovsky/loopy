@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -40,6 +41,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   final SettingsRepository _settings;
   late final StreamSubscription<LooperState> _subscription;
 
+  /// The platform default for OS-exclusive device access: on by default on
+  /// Windows (full device control via WASAPI exclusive mode), off elsewhere.
+  /// The single source of this rule — `audio_bootstrap` uses the same
+  /// `defaultTargetPlatform` primitive, and the repository holds no OS policy.
+  static bool get _defaultExclusive =>
+      defaultTargetPlatform == TargetPlatform.windows;
+
   /// The device profile we've loaded a saved offset for, to load only once.
   String? _hydratedDeviceKey;
 
@@ -74,6 +82,15 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setMonitorInput({required bool monitorInput}) {
     if (monitorInput == state.monitorInput) return;
     emit(state.copyWith(monitorInput: monitorInput));
+    _persistAndApply();
+  }
+
+  /// Toggles OS-exclusive device access (full device control on Windows).
+  /// Persists the intent and, when running, reopens the device so it engages
+  /// (or disengages) now — a reopen that falls back to shared still succeeds.
+  void setExclusive({required bool exclusive}) {
+    if (exclusive == state.exclusive) return;
+    emit(state.copyWith(exclusive: exclusive));
     _persistAndApply();
   }
 
@@ -143,6 +160,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
     passthrough: state.monitorInput,
+    exclusive: state.exclusive,
     maxLoopFrames: _maxLoopFrames(state.maxLoopMinutes, state.sampleRate),
     // An explicitly chosen input device always wins: only auto-route capture to
     // a detected loopback when the user has not pinned a capture device.
@@ -160,6 +178,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     sampleRate: state.sampleRate,
     bufferFrames: state.bufferFrames,
     monitorInput: state.monitorInput,
+    exclusive: state.exclusive,
     maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
@@ -320,6 +339,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       monitorInput: hydrateConfig
           ? lastConfig?.passthrough ?? current.monitorInput
           : current.monitorInput,
+      // Hydrate the requested exclusive intent; an unconfigured engine falls
+      // back to the platform default (Windows => on). The negotiated reality is
+      // read separately from engineStatus.exclusiveActive.
+      exclusive: hydrateConfig
+          ? lastConfig?.exclusive ?? _defaultExclusive
+          : current.exclusive,
       maxLoopMinutes: hydrateConfig
           ? _maxLoopMinutes(lastConfig?.maxLoopFrames, resolvedSampleRate)
           : current.maxLoopMinutes,

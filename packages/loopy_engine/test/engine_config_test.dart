@@ -17,6 +17,7 @@ void main() {
       expect(config.passthrough, isFalse);
       expect(config.playbackDeviceId, '');
       expect(config.captureDeviceId, '');
+      expect(config.exclusive, isFalse);
     });
   });
 
@@ -32,6 +33,7 @@ void main() {
         useLoopbackCapture: true,
         playbackDeviceId: 'out-device-1',
         captureDeviceId: 'in-device-2',
+        exclusive: true,
       );
       final ptr = calloc<le_config>();
       try {
@@ -43,8 +45,20 @@ void main() {
         expect(ptr.ref.passthrough, 1);
         expect(ptr.ref.max_loop_frames, 480000);
         expect(ptr.ref.use_loopback_capture, 1);
+        expect(ptr.ref.exclusive, 1);
         expect(readNativeString(ptr.ref.playback_device_id), 'out-device-1');
         expect(readNativeString(ptr.ref.capture_device_id), 'in-device-2');
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('encodes exclusive false as 0', () {
+      const config = EngineConfig();
+      final ptr = calloc<le_config>();
+      try {
+        config.writeTo(ptr);
+        expect(ptr.ref.exclusive, 0);
       } finally {
         calloc.free(ptr);
       }
@@ -108,6 +122,13 @@ void main() {
       const c = EngineConfig(captureDeviceId: 'a');
       const d = EngineConfig();
       expect(c, isNot(equals(d)));
+    });
+
+    test('differing exclusive breaks equality', () {
+      const a = EngineConfig(exclusive: true);
+      const b = EngineConfig();
+      expect(a, isNot(equals(b)));
+      expect(a.hashCode, isNot(equals(b.hashCode)));
     });
 
     test('toString surfaces key fields', () {

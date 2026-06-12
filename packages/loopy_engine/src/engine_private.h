@@ -180,6 +180,10 @@ struct le_engine {
   _Atomic int32_t a_buffer_frames;
   _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
   _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
+  /* 1 when the device opened in OS-exclusive mode, 0 for shared (incl. an
+   * exclusive request that fell back). Set once at device open in
+   * le_engine_start; published in the snapshot. */
+  _Atomic int32_t a_exclusive_active;
   /* Input channels whose Core Audio label marks them as loopback; never
    * recorded, monitored, or routable. Computed once at device open. */
   _Atomic uint32_t a_excluded_input_mask;

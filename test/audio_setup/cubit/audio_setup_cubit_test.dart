@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
@@ -142,6 +143,86 @@ void main() {
       expect((await settings.loadAudioConfig())?.monitorInput, isFalse);
     },
   );
+
+  group('exclusive mode', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('defaults on when unset on Windows', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.exclusive, isTrue);
+    });
+
+    test('defaults off when unset on non-Windows', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.exclusive, isFalse);
+    });
+
+    test('hydrates the persisted intent over the platform default', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      when(() => repository.lastEngineConfig).thenReturn(
+        // Saved intent (exclusive off) must win over the Windows-on default.
+        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.exclusive, isFalse);
+    });
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'setExclusive while running reopens with exclusive and persists it',
+      setUp: seedRunning,
+      build: buildCubit,
+      act: (cubit) => cubit.setExclusive(exclusive: true),
+      expect: () => [
+        isA<AudioSetupState>().having((s) => s.exclusive, 'exclusive', true),
+      ],
+      verify: (_) async {
+        verify(repository.stopEngine).called(1);
+        verify(
+          () => repository.startEngine(
+            const EngineConfig(
+              sampleRate: 48000,
+              bufferFrames: 128,
+              passthrough: true,
+              exclusive: true,
+            ),
+          ),
+        ).called(1);
+        expect((await settings.loadAudioConfig())?.exclusive, isTrue);
+      },
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'setExclusive with the unchanged value is a no-op (no reopen)',
+      // Host default is non-Windows in tests, so initial exclusive is false.
+      build: buildCubit,
+      act: (cubit) => cubit.setExclusive(exclusive: false),
+      expect: () => const <AudioSetupState>[],
+      verify: (_) => verifyNever(repository.stopEngine),
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'start carries the exclusive intent through to the engine',
+      setUp: () => debugDefaultTargetPlatformOverride = TargetPlatform.windows,
+      tearDown: () => debugDefaultTargetPlatformOverride = null,
+      build: buildCubit,
+      act: (cubit) => cubit.start(),
+      verify: (_) => verify(
+        () => repository.startEngine(
+          const EngineConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            passthrough: true,
+            exclusive: true,
+          ),
+        ),
+      ).called(1),
+    );
+  });
 
   blocTest<AudioSetupCubit, AudioSetupState>(
     'start uses the selected max loop length (minutes -> frames)',

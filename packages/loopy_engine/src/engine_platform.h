@@ -11,11 +11,12 @@
 #ifndef LOOPY_ENGINE_PLATFORM_H
 #define LOOPY_ENGINE_PLATFORM_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "engine_private.h"  /* struct le_engine; le_config re-exported via its
                               * own loopy_engine_api.h include */
-#include "miniaudio.h"       /* ma_backend, ma_uint32 */
+#include "miniaudio.h"       /* ma_backend, ma_uint32, ma_device_id */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,6 +41,15 @@ void le_platform_on_engine_teardown(void);
 /* Excluded-input-channel mask from per-channel labels. macOS reads CoreAudio
  * labels; Windows (ASIO) and Linux return 0 for now. */
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
+
+/* Serializes a miniaudio device id into a printable, round-trippable token used
+ * to match a user-selected device back to its native id. On the string-id
+ * backends (CoreAudio, ALSA, PulseAudio, …) the union's active member is a
+ * NUL-terminated char string, so a plain copy is exact. On Windows the WASAPI id
+ * is a wchar_t string and must be converted to UTF-8 — reading it as a narrow
+ * char* stops at the first UTF-16 NUL byte and collapses every id to its first
+ * character. Writes at most `cap` bytes including the NUL. */
+void le_platform_device_id_to_str(const ma_device_id* id, char* out, size_t cap);
 
 #ifdef __cplusplus
 }
