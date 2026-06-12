@@ -9,11 +9,26 @@ void main() {
         name: 'MacBook Pro Speakers',
         isDefault: true,
         isInput: false,
+        inputChannels: 2,
+        outputChannels: 8,
       );
       expect(device.id, 'BuiltInSpeakerDevice');
       expect(device.name, 'MacBook Pro Speakers');
       expect(device.isDefault, isTrue);
       expect(device.isInput, isFalse);
+      expect(device.inputChannels, 2);
+      expect(device.outputChannels, 8);
+    });
+
+    test('channel counts default to 0 (unknown)', () {
+      const device = AudioDevice(
+        id: 'd',
+        name: 'Device',
+        isDefault: false,
+        isInput: false,
+      );
+      expect(device.inputChannels, 0);
+      expect(device.outputChannels, 0);
     });
 
     test('equal devices are equal and share a hashCode', () {
@@ -92,6 +107,34 @@ void main() {
           ),
         ),
       );
+      expect(
+        base,
+        isNot(
+          equals(
+            const AudioDevice(
+              id: 'd',
+              name: 'Device',
+              isDefault: false,
+              isInput: false,
+              inputChannels: 4,
+            ),
+          ),
+        ),
+      );
+      expect(
+        base,
+        isNot(
+          equals(
+            const AudioDevice(
+              id: 'd',
+              name: 'Device',
+              isDefault: false,
+              isInput: false,
+              outputChannels: 6,
+            ),
+          ),
+        ),
+      );
     });
 
     test('toString surfaces the key fields', () {
@@ -100,11 +143,15 @@ void main() {
         name: 'My Device',
         isDefault: true,
         isInput: true,
+        inputChannels: 2,
+        outputChannels: 4,
       );
       final text = device.toString();
       expect(text, contains('My Device'));
       expect(text, contains('isDefault: true'));
       expect(text, contains('isInput: true'));
+      expect(text, contains('inputChannels: 2'));
+      expect(text, contains('outputChannels: 4'));
     });
   });
 }

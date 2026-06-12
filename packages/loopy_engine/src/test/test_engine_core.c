@@ -13,7 +13,7 @@
  * Build & run (Linux): no Core Audio frameworks; libc + pthreads only.
  *   clang -std=c11 -I src -I src/miniaudio \
  *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
- *     src/loop_clock.c src/miniaudio_impl.c \
+ *     src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
  *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
  *     -lpthread -lm -o /tmp/loopy_core_tests
  *   /tmp/loopy_core_tests
@@ -21,7 +21,7 @@
  * Build & run (macOS): add the Core Audio frameworks engine_apple.c needs.
  *   clang -std=c11 -I src -I src/miniaudio \
  *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
- *     src/loop_clock.c src/miniaudio_impl.c \
+ *     src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
  *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
  *     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
  *     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
@@ -32,7 +32,7 @@
  *   cl /std:c11 /experimental:c11atomics /D_CRT_SECURE_NO_WARNINGS ^
  *     /I src /I src/miniaudio ^
  *     src\test\test_engine_core.c src\engine.c src\lockfree_ring.c ^
- *     src\loop_clock.c src\miniaudio_impl.c ^
+ *     src\loop_clock.c src\miniaudio_impl.c src\engine_miniaudio.c ^
  *     src\engine_linux.c src\engine_apple.c src\engine_windows.c ^
  *     ole32.lib winmm.lib /Fe:loopy_core_tests.exe
  *   loopy_core_tests.exe
@@ -44,6 +44,7 @@
 #include <wchar.h>
 
 #include "engine_internal.h"
+#include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
@@ -992,11 +993,21 @@ static void test_enumerate_devices_runs(void) {
     CHECK(strlen(devices[i].id) < sizeof(devices[i].id));     /* NUL-terminated */
     CHECK(strlen(devices[i].name) < sizeof(devices[i].name)); /* NUL-terminated */
     CHECK(devices[i].is_default == 0 || devices[i].is_default == 1);
+    /* WASAPI/miniaudio enumeration reports no per-device channel count, so
+     * device_info_copy must zero these — never leak stack garbage as a count.
+     * An ASIO probe fills them in Part 2 (0 = unknown). */
+    CHECK(devices[i].input_channels == 0);
+    CHECK(devices[i].output_channels == 0);
   }
 
   count = -1;
   CHECK(le_enumerate_capture_devices(devices, MAXD, &count) == LE_OK);
   CHECK(count >= 0 && count <= MAXD);
+  for (int32_t i = 0; i < count; ++i) {
+    /* device_info_copy zero-inits the channel counts on the capture path too. */
+    CHECK(devices[i].input_channels == 0);
+    CHECK(devices[i].output_channels == 0);
+  }
 
   /* Bad arguments are rejected without touching the output. */
   CHECK(le_enumerate_playback_devices(NULL, MAXD, &count) == LE_ERR_INVALID);
@@ -1037,6 +1048,52 @@ static void test_device_id_to_str(void) {
   le_platform_device_id_to_str(&id, out, sizeof(out));
   CHECK(strcmp(out, "hw:CARD=USB,DEV=0") == 0);
 #endif
+}
+
+/* ---- device-backend seam (ASIO Part 1) ---- */
+
+/* le_select_backend resolves every backend choice to the miniaudio backend in
+ * this build — including LE_BACKEND_ASIO, which has no implementation yet — and
+ * the returned vtable is fully populated. This is the link-time guarantee that
+ * the default build never depends on an ASIO symbol. */
+static void test_select_backend_defaults_to_miniaudio(void) {
+  printf("test_select_backend_defaults_to_miniaudio\n");
+  const le_device_backend* wasapi = le_select_backend(LE_BACKEND_WASAPI);
+  const le_device_backend* asio = le_select_backend(LE_BACKEND_ASIO);
+  CHECK(wasapi == &le_miniaudio_backend);
+  CHECK(asio == &le_miniaudio_backend);
+  /* An unknown/out-of-range choice still resolves to the miniaudio backend. */
+  CHECK(le_select_backend(42) == &le_miniaudio_backend);
+  /* The vtable is complete — no NULL function pointer the dispatcher could call. */
+  CHECK(le_miniaudio_backend.open != NULL);
+  CHECK(le_miniaudio_backend.start != NULL);
+  CHECK(le_miniaudio_backend.stop != NULL);
+  CHECK(le_miniaudio_backend.close != NULL);
+}
+
+/* The grown FFI structs default to the WASAPI path when zero-initialized
+ * (le_config) and a fresh engine publishes active_backend == WASAPI in its
+ * snapshot. Guards against the new fields ever defaulting to a non-zero / non-
+ * WASAPI value that would silently change behavior. */
+static void test_backend_struct_defaults(void) {
+  printf("test_backend_struct_defaults\n");
+  le_config cfg;
+  memset(&cfg, 0, sizeof(cfg));
+  CHECK(cfg.backend == LE_BACKEND_WASAPI); /* 0 */
+  CHECK(cfg.asio_driver[0] == '\0');
+
+  le_engine* engine = le_engine_create();
+  CHECK(engine != NULL);
+  if (engine != NULL) {
+    /* Configure without opening a device: the snapshot reports the negotiated
+     * defaults, including the WASAPI active backend. */
+    CHECK(le_engine_configure(engine, 48000, 2, 2, 48000) == LE_OK);
+    le_snapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    le_engine_get_snapshot(engine, &snap);
+    CHECK(snap.active_backend == LE_BACKEND_WASAPI);
+    le_engine_destroy(engine);
+  }
 }
 
 /* ---- loopback channel exclusion (PR B) ---- */
@@ -2800,6 +2857,8 @@ int main(void) {
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
   test_device_id_to_str();
+  test_select_backend_defaults_to_miniaudio();
+  test_backend_struct_defaults();
   test_label_is_loopback();
   test_excluded_mask_from_names();
   test_loopback_exclusion();

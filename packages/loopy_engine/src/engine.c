@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "engine_internal.h"
+#include "engine_miniaudio.h"
 #include "engine_platform.h"
 #include "engine_private.h"
 #include "lockfree_ring.h"
@@ -1284,11 +1285,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                             memory_order_relaxed);
 }
 
-static void data_callback(ma_device* device, void* output, const void* input,
-                          ma_uint32 frame_count) {
-  le_engine_process((le_engine*)device->pUserData, (float*)output,
-                    (const float*)input, frame_count);
-}
+/* The miniaudio data + notification callbacks, the device-config build, and the
+ * device lifecycle (open/start/stop/close) now live behind the device-backend
+ * seam in engine_miniaudio.c; this file keeps only le_engine_process (the
+ * real-time core they pump) and the backend-agnostic lifecycle dispatch below. */
 
 /* ---- configuration / lifecycle ---- */
 
@@ -1436,6 +1436,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_out_channels, output_channels);
   /* Default to shared; le_engine_start publishes the real mode after device open. */
   store_i32(&engine->a_exclusive_active, 0);
+  /* Default to WASAPI; le_engine_start republishes the negotiated backend after
+   * device open (always WASAPI in this build). */
+  store_i32(&engine->a_active_backend, LE_BACKEND_WASAPI);
   /* Re-derived per device open in le_engine_start; default to none excluded. */
   atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
                         memory_order_relaxed);
@@ -1516,8 +1519,8 @@ uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
   return mask;
 }
 
-static void find_loopback(ma_context* ctx, le_loopback_info* out,
-                          ma_device_id* out_id) {
+void le_find_loopback(ma_context* ctx, le_loopback_info* out,
+                      ma_device_id* out_id) {
   out->available = 0;
   out->kind = LE_LOOPBACK_NONE;
   out->device_name[0] = '\0';
@@ -1558,7 +1561,7 @@ int32_t le_detect_loopback(le_loopback_info* out) {
     out->device_name[0] = '\0';
     return LE_ERR_INVALID;
   }
-  find_loopback(&ctx, out, NULL);
+  le_find_loopback(&ctx, out, NULL);
   ma_context_uninit(&ctx);
   return LE_OK;
 }
@@ -1579,6 +1582,11 @@ static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
   strncpy(dst->name, src->name, sizeof(dst->name) - 1);
   dst->name[sizeof(dst->name) - 1] = '\0';
   dst->is_default = src->isDefault ? 1 : 0;
+  /* WASAPI enumeration reports no per-device channel count here; zero them so
+   * Dart's AudioDevice never surfaces stack garbage as channel counts. An ASIO
+   * probe fills these in Part 2 (0 = unknown). */
+  dst->input_channels = 0;
+  dst->output_channels = 0;
 }
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
@@ -1625,8 +1633,8 @@ int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
 /* Looks up the device whose serialized id equals `want` in the already-open
  * `ctx` and copies its native id into *out_id. Returns 1 on a match (out_id set)
  * or 0 if `want` is empty / unmatched / enumeration failed. */
-static int resolve_device_id(ma_context* ctx, int capture, const char* want,
-                             ma_device_id* out_id) {
+int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
+                         ma_device_id* out_id) {
   if (want == NULL || want[0] == '\0') return 0;
   ma_device_info* playback = NULL;
   ma_uint32 playback_count = 0;
@@ -1647,29 +1655,6 @@ static int resolve_device_id(ma_context* ctx, int capture, const char* want,
     }
   }
   return 0;
-}
-
-/* Device-state notifications from miniaudio. RT-adjacent: stores the presence
- * atomic only — never allocates, locks, or touches the device. A stopped /
- * rerouted / interrupted device flips presence to 0; (re)start / resume flips it
- * back to 1. Recovery from a 0 is the Dart layer's job (A2), not native's. */
-static void notification_callback(const ma_device_notification* notification) {
-  if (notification == NULL || notification->pDevice == NULL) return;
-  le_engine* e = (le_engine*)notification->pDevice->pUserData;
-  if (e == NULL) return;
-  switch (notification->type) {
-    case ma_device_notification_type_started:
-    case ma_device_notification_type_interruption_ended:
-      atomic_store_explicit(&e->a_device_present, 1, memory_order_relaxed);
-      break;
-    case ma_device_notification_type_stopped:
-    case ma_device_notification_type_rerouted:
-    case ma_device_notification_type_interruption_began:
-      atomic_store_explicit(&e->a_device_present, 0, memory_order_relaxed);
-      break;
-    default:
-      break;
-  }
 }
 
 /* Loopback channel exclusion is per-OS: macOS reads Core Audio channel labels
@@ -1707,11 +1692,14 @@ le_share_decision le_decide_share_fallback(int requested_exclusive,
   return first_init_ok ? LE_SHARE_DONE_EXCLUSIVE : LE_SHARE_RETRY_SHARED;
 }
 
-static void le_uninit_context(le_engine* engine) {
-  if (engine->context_initialised) {
-    ma_context_uninit(&engine->context);
-    engine->context_initialised = 0;
-  }
+/* Selects the device backend for a requested le_audio_backend. In this build the
+ * only implementation is the miniaudio backend, so every choice resolves to it
+ * (the backend / asio_driver config fields are accepted and ignored). Part 2
+ * adds the `#if LOOPY_ENABLE_ASIO` branch returning &le_asio_backend; the
+ * default build never references any le_asio_* symbol. */
+const le_device_backend* le_select_backend(int32_t backend) {
+  (void)backend;
+  return &le_miniaudio_backend;
 }
 
 le_engine* le_engine_create(void) {
@@ -1724,11 +1712,12 @@ le_engine* le_engine_create(void) {
 
 void le_engine_destroy(le_engine* engine) {
   if (engine == NULL) return;
-  if (engine->device_initialised) {
-    ma_device_uninit(&engine->device);
-    engine->device_initialised = 0;
+  /* Release the device + context through the backend that opened it. NULL until
+   * the first successful start; close() is idempotent, so a create→destroy with
+   * no start (and a stop→destroy) are both safe. */
+  if (engine->backend != NULL) {
+    engine->backend->close(engine);
   }
-  le_uninit_context(engine);
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
@@ -1755,117 +1744,26 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
   }
-
-  /* Capture and playback widths may differ (e.g. 2-in / 4-out). An unset (0)
-   * count tells miniaudio to open the device's native channel count, so a
-   * multichannel interface comes up with all its channels; the negotiated
-   * counts are read back after init. */
-  int in_channels = config->input_channels > 0 ? config->input_channels : 0;
-  int out_channels = config->output_channels > 0 ? config->output_channels : 0;
-  if (in_channels > LE_MAX_CHANNELS) in_channels = LE_MAX_CHANNELS;
-  if (out_channels > LE_MAX_CHANNELS) out_channels = LE_MAX_CHANNELS;
   engine->passthrough = config->passthrough ? 1 : 0;
 
-  ma_device_config cfg = ma_device_config_init(ma_device_type_duplex);
-  cfg.capture.format = ma_format_f32;
-  cfg.capture.channels = (ma_uint32)in_channels;
-  cfg.playback.format = ma_format_f32;
-  cfg.playback.channels = (ma_uint32)out_channels;
-  cfg.sampleRate = config->sample_rate > 0 ? (ma_uint32)config->sample_rate : 0;
-  if (config->buffer_frames > 0) {
-    cfg.periodSizeInFrames = (ma_uint32)config->buffer_frames;
-    cfg.periods = 2;
-  }
-  cfg.dataCallback = data_callback;
-  cfg.notificationCallback = notification_callback;
-  cfg.pUserData = engine;
-
-  /* An explicit context lets us pick the backend (see below) and resolve a
-   * pinned/loopback device id. We always open one; a detected loopback device
-   * (use_loopback_capture) or a device pinned by id is resolved against it. */
-  const int want_playback_pin = config->playback_device_id[0] != '\0';
-  const int want_capture_pin = config->capture_device_id[0] != '\0';
-  ma_context* pContext = NULL;
-
-  /* Per-OS backend preference + pre-context-init hook. Linux prefers
-   * {jack, pulseaudio, alsa} and forces the PipeWire quantum; every other
-   * platform keeps miniaudio's default backend priority and does nothing here. */
-  const ma_backend* p_backends = NULL;
-  ma_uint32 backend_count = 0;
-  le_platform_backends(&p_backends, &backend_count);
-  le_platform_before_context_init(config);
-
-  /* Always open a context so the backend preference takes effect (it is also
-   * needed to resolve a pinned/loopback device id). */
-  if (ma_context_init(p_backends, backend_count, NULL, &engine->context) ==
-      MA_SUCCESS) {
-    engine->context_initialised = 1;
-    pContext = &engine->context;
-    {
-      if (config->use_loopback_capture) {
-        /* Loopback capture overrides an explicit capture device id. */
-        le_loopback_info info;
-        find_loopback(&engine->context, &info, &engine->capture_id);
-        if (info.available && info.device_name[0] != '\0') {
-          cfg.capture.pDeviceID = &engine->capture_id;
-        }
-      } else if (want_capture_pin) {
-        if (resolve_device_id(&engine->context, /*capture=*/1,
-                              config->capture_device_id, &engine->capture_id)) {
-          cfg.capture.pDeviceID = &engine->capture_id;
-        }
-      }
-      if (want_playback_pin) {
-        if (resolve_device_id(&engine->context, /*capture=*/0,
-                              config->playback_device_id,
-                              &engine->playback_id)) {
-          cfg.playback.pDeviceID = &engine->playback_id;
-        }
-      }
-    }
+  /* Open the device through the selected backend (miniaudio in this build). The
+   * backend builds the device config, resolves pins/loopback, runs the
+   * exclusive-mode fallback, and reports the negotiated parameters back. */
+  const le_device_backend* be = le_select_backend(config->backend);
+  le_device_open_result info;
+  int32_t open_result = be->open(engine, config, &info);
+  if (open_result != LE_OK) {
+    return open_result;
   }
 
-  /* Full device control: when requested, open the device in OS-exclusive mode
-   * (WASAPI exclusive on Windows — bypasses the mixer, native format) with no OS
-   * sample-rate conversion. miniaudio does NOT auto-fall-back, so on failure we
-   * reset to shared and reinitialize once. exclusive_active is set only when the
-   * exclusive init itself succeeded, never on the shared retry. */
-  int exclusive_active = 0;
-  if (config->exclusive) {
-    cfg.capture.shareMode = ma_share_mode_exclusive;
-    cfg.playback.shareMode = ma_share_mode_exclusive;
-    cfg.wasapi.noAutoConvertSRC = MA_TRUE;
-  }
-  ma_result init_result = ma_device_init(pContext, &cfg, &engine->device);
-  switch (le_decide_share_fallback(config->exclusive,
-                                   init_result == MA_SUCCESS)) {
-    case LE_SHARE_DONE_EXCLUSIVE:
-      exclusive_active = 1;
-      break;
-    case LE_SHARE_RETRY_SHARED:
-      cfg.capture.shareMode = ma_share_mode_shared;
-      cfg.playback.shareMode = ma_share_mode_shared;
-      cfg.wasapi.noAutoConvertSRC = MA_FALSE;
-      init_result = ma_device_init(pContext, &cfg, &engine->device);
-      break;
-    case LE_SHARE_DONE_SHARED:
-      break;
-  }
-  if (init_result != MA_SUCCESS) {
-    le_uninit_context(engine);
-    return LE_ERR_DEVICE;
-  }
-  engine->device_initialised = 1;
+  /* Remember the backend before start() publishes a_running, so the invariant
+   * "running implies backend set" holds for any concurrent stop()/snapshot. */
+  engine->backend = be;
 
-  const int32_t sr = (int32_t)engine->device.sampleRate;
-  /* Use the device-negotiated channel counts (they may differ from requested). */
-  const int32_t neg_in = (int32_t)engine->device.capture.channels;
-  const int32_t neg_out = (int32_t)engine->device.playback.channels;
-  if (le_engine_configure(engine, sr, neg_in, neg_out,
+  if (le_engine_configure(engine, info.sample_rate, info.input_channels,
+                          info.output_channels,
                           config->max_loop_frames) != LE_OK) {
-    ma_device_uninit(&engine->device);
-    engine->device_initialised = 0;
-    le_uninit_context(engine);
+    be->close(engine);
     return LE_ERR_INVALID;
   }
   /* Passthrough: monitor hardware input 0 live to the default stereo pair
@@ -1874,38 +1772,36 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     store_i32(&engine->monitors[0].a_enabled, 1);
   }
 
-  store_i32(&engine->a_buffer_frames,
-            (int32_t)engine->device.playback.internalPeriodSizeInFrames);
-  /* Publish the negotiated share mode (configure() reset it to 0 above). */
-  store_i32(&engine->a_exclusive_active, exclusive_active);
+  /* Publish the negotiated parameters (configure() reset them above). */
+  store_i32(&engine->a_active_backend, info.active_backend);
+  store_i32(&engine->a_buffer_frames, info.buffer_frames);
+  store_i32(&engine->a_exclusive_active, info.exclusive_active);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;
   engine->lat_buf_pos = 0;
 
-  strncpy(engine->device_name, engine->device.playback.name,
+  strncpy(engine->device_name, info.device_name,
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
   /* Exclude any loopback-labelled capture channels. The capture device's UID is
-   * our explicit capture id when one was pinned/loopback-routed, else the system
-   * default input. On string-id backends the id union is the UID string. */
+   * our explicit capture id when one was pinned/loopback-routed (capture_id_set,
+   * set by the backend), else the system default input. On string-id backends
+   * the id union is the UID string. */
   const char* capture_uid =
-      cfg.capture.pDeviceID != NULL ? (const char*)&engine->capture_id : NULL;
+      engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
   /* relaxed: a lone published value, matching the other configuration atomics
    * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
-  atomic_store_explicit(&engine->a_excluded_input_mask,
-                        le_platform_excluded_input_mask(capture_uid, neg_in),
-                        memory_order_relaxed);
+  atomic_store_explicit(
+      &engine->a_excluded_input_mask,
+      le_platform_excluded_input_mask(capture_uid, info.input_channels),
+      memory_order_relaxed);
 
-  if (ma_device_start(&engine->device) != MA_SUCCESS) {
-    ma_device_uninit(&engine->device);
-    engine->device_initialised = 0;
-    le_uninit_context(engine);
+  if (be->start(engine) != LE_OK) {
+    be->close(engine);
     return LE_ERR_DEVICE;
   }
-  atomic_store_explicit(&engine->a_device_present, 1, memory_order_release);
-  atomic_store_explicit(&engine->a_running, 1, memory_order_release);
   /* Per-OS post-start hook: Linux repins the JACK ports to the selected
    * interface (overriding miniaudio's connect-to-every-physical-port default)
    * so channels map to that device only. No-op elsewhere. */
@@ -1918,9 +1814,11 @@ int32_t le_engine_stop(le_engine* engine) {
   if (!atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
-  ma_device_uninit(&engine->device);
-  engine->device_initialised = 0;
-  le_uninit_context(engine);
+  /* Release the device through the backend that opened it (always set while
+   * running). */
+  if (engine->backend != NULL) {
+    engine->backend->stop(engine);
+  }
   engine->device_name[0] = '\0';
   atomic_store_explicit(&engine->a_device_present, 0, memory_order_release);
   atomic_store_explicit(&engine->a_running, 0, memory_order_release);
@@ -1982,6 +1880,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->master_position_frames = load_i32(&engine->a_master_pos);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
   out->exclusive_active = load_i32(&engine->a_exclusive_active);
+  out->active_backend = load_i32(&engine->a_active_backend);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,

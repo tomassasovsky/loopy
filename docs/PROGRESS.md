@@ -29,7 +29,8 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   cd packages/loopy_engine
   clang -std=c11 -Wall -Wextra -I src -I src/miniaudio \
     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
-    src/loop_clock.c src/miniaudio_impl.c \
+    src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
+    src/engine_linux.c src/engine_apple.c src/engine_windows.c \
     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
   /tmp/loopy_core_tests
@@ -325,6 +326,30 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   Verified on a real interface: exclusive engaged with the requested 128-frame
   buffer honored (shared would clamp to the OS period). macOS/Linux unchanged
   (no hog mode). See `docs/WINDOWS_ASIO.md`.
+- **Device-backend seam (ASIO Part 1 — foundation, behavior-preserving).** An
+  internal vtable (`le_device_backend.h`: `open`/`start`/`stop`/`close` +
+  `le_device_open_result`) that `le_engine_start`/`stop`/`destroy` drive instead
+  of calling `ma_device_*` directly. The existing miniaudio device lifecycle
+  (config build, context init, pin/loopback resolution, the exclusive-mode
+  fallback, `ma_device_init`/`start`/`uninit`, data + notification callbacks)
+  moved verbatim behind it into **`engine_miniaudio.c`** (compiled
+  unconditionally like the per-OS TUs); `le_engine_process`, the ring, the
+  snapshot, and the looper/lane/FX DSP stay in `engine.c` and are reused
+  unchanged. `le_select_backend(backend)` returns `&le_miniaudio_backend` for
+  every choice in this build — the default build links **no** ASIO symbol
+  (link-time guarantee; the `#if LOOPY_ENABLE_ASIO` branch lands in Part 2).
+  This is **distinct from** the per-OS `engine_platform.h` seam (capabilities
+  over one shared device, not swappable backends). The FFI structs grew their
+  final Part-2 shape, **inert** today: `le_config.backend`/`asio_driver`,
+  `le_device_info.input_channels`/`output_channels` (`0`/unknown on WASAPI;
+  `device_info_copy` zero-inits them to avoid a stack-garbage read),
+  `le_snapshot.active_backend` (always WASAPI). Threaded through Dart with
+  inert defaults (`AudioBackend` enum, `EngineConfig`/`AudioDevice`/
+  `EngineSnapshot` new fields + hand-written equality). **Acceptance gate:
+  invisibility** — all existing native + Dart tests pass unchanged. New tests:
+  `test_select_backend_defaults_to_miniaudio`, `test_backend_struct_defaults`,
+  enumeration asserts `input_channels == 0`, and Dart round-trip/equality for
+  the new fields.
 - **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
   `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
   exports mixdown / per-track stems. Native `le_engine_export_track` /

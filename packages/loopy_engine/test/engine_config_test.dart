@@ -18,6 +18,28 @@ void main() {
       expect(config.playbackDeviceId, '');
       expect(config.captureDeviceId, '');
       expect(config.exclusive, isFalse);
+      expect(config.backend, AudioBackend.wasapi);
+      expect(config.asioDriver, '');
+    });
+  });
+
+  group('AudioBackend', () {
+    test('round-trips through the native integer', () {
+      for (final backend in AudioBackend.values) {
+        expect(AudioBackend.fromNative(backend.toNative()), backend);
+      }
+    });
+
+    test('maps the native enum values explicitly', () {
+      expect(AudioBackend.wasapi.toNative(), 0);
+      expect(AudioBackend.asio.toNative(), 1);
+      expect(AudioBackend.fromNative(0), AudioBackend.wasapi);
+      expect(AudioBackend.fromNative(1), AudioBackend.asio);
+    });
+
+    test('unknown native values fall back to wasapi', () {
+      expect(AudioBackend.fromNative(-1), AudioBackend.wasapi);
+      expect(AudioBackend.fromNative(99), AudioBackend.wasapi);
     });
   });
 
@@ -34,6 +56,8 @@ void main() {
         playbackDeviceId: 'out-device-1',
         captureDeviceId: 'in-device-2',
         exclusive: true,
+        backend: AudioBackend.asio,
+        asioDriver: 'ASIO4ALL v2',
       );
       final ptr = calloc<le_config>();
       try {
@@ -46,8 +70,22 @@ void main() {
         expect(ptr.ref.max_loop_frames, 480000);
         expect(ptr.ref.use_loopback_capture, 1);
         expect(ptr.ref.exclusive, 1);
+        expect(ptr.ref.backend, 1); // AudioBackend.asio
         expect(readNativeString(ptr.ref.playback_device_id), 'out-device-1');
         expect(readNativeString(ptr.ref.capture_device_id), 'in-device-2');
+        expect(readNativeString(ptr.ref.asio_driver), 'ASIO4ALL v2');
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('defaults write the WASAPI backend and an empty asio driver', () {
+      const config = EngineConfig();
+      final ptr = calloc<le_config>();
+      try {
+        config.writeTo(ptr);
+        expect(ptr.ref.backend, 0); // AudioBackend.wasapi
+        expect(readNativeString(ptr.ref.asio_driver), '');
       } finally {
         calloc.free(ptr);
       }
@@ -131,10 +169,26 @@ void main() {
       expect(a.hashCode, isNot(equals(b.hashCode)));
     });
 
+    test('differing backend or asio driver breaks equality', () {
+      const a = EngineConfig(backend: AudioBackend.asio);
+      const b = EngineConfig();
+      expect(a, isNot(equals(b)));
+      expect(a.hashCode, isNot(equals(b.hashCode)));
+      const c = EngineConfig(asioDriver: 'ASIO4ALL v2');
+      const d = EngineConfig();
+      expect(c, isNot(equals(d)));
+      expect(c.hashCode, isNot(equals(d.hashCode)));
+    });
+
     test('toString surfaces key fields', () {
-      const config = EngineConfig(sampleRate: 48000, passthrough: true);
+      const config = EngineConfig(
+        sampleRate: 48000,
+        passthrough: true,
+        backend: AudioBackend.asio,
+      );
       expect(config.toString(), contains('sampleRate: 48000'));
       expect(config.toString(), contains('passthrough: true'));
+      expect(config.toString(), contains('backend: asio'));
     });
   });
 }

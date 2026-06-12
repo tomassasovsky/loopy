@@ -29,6 +29,7 @@ void main() {
       expect(snapshot.framesProcessed, 0);
       expect(snapshot.latencyState, LatencyState.idle);
       expect(snapshot.measuredLatencyMs, -1);
+      expect(snapshot.activeBackend, AudioBackend.wasapi);
     });
   });
 
@@ -256,6 +257,7 @@ void main() {
           ..master_position_frames = 1200
           ..record_offset_frames = 480
           ..exclusive_active = 1
+          ..active_backend = 1
           ..track_count = 2;
 
         const tracks = [
@@ -284,6 +286,7 @@ void main() {
         expect(snapshot.masterLengthFrames, 96000);
         expect(snapshot.recordOffsetFrames, 480);
         expect(snapshot.exclusiveActive, isTrue);
+        expect(snapshot.activeBackend, AudioBackend.asio);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.
         expect(snapshot.trackState, TrackState.playing);
@@ -326,6 +329,24 @@ void main() {
       }
     });
 
+    test('active_backend maps to activeBackend (default 0 => wasapi)', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        // Zero-initialized struct: active_backend defaults to 0 => wasapi.
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
+          AudioBackend.wasapi,
+        );
+        ptr.ref.active_backend = 1;
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
+          AudioBackend.asio,
+        );
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
     test('device_present is independent of running', () {
       final ptr = calloc<le_snapshot>();
       try {
@@ -353,7 +374,10 @@ void main() {
 
     // Distinct (non-const) instances so the `==` body runs rather than being
     // short-circuited by `identical`, exercising every field comparison.
-    EngineSnapshot build({bool devicePresent = true}) => EngineSnapshot(
+    EngineSnapshot build({
+      bool devicePresent = true,
+      AudioBackend activeBackend = AudioBackend.wasapi,
+    }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
       sampleRate: 48000,
@@ -365,6 +389,7 @@ void main() {
       outputRms: 0,
       latencyState: LatencyState.idle,
       measuredLatencyMs: -1,
+      activeBackend: activeBackend,
     );
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
@@ -374,6 +399,13 @@ void main() {
 
     test('devicePresent participates in equality', () {
       expect(build(), isNot(equals(build(devicePresent: false))));
+    });
+
+    test('activeBackend participates in equality', () {
+      expect(
+        build(),
+        isNot(equals(build(activeBackend: AudioBackend.asio))),
+      );
     });
 
     test('differing snapshots are not equal', () {
@@ -396,6 +428,7 @@ void main() {
     test('toString surfaces key fields', () {
       const snapshot = EngineSnapshot.initial();
       expect(snapshot.toString(), contains('running: false'));
+      expect(snapshot.toString(), contains('backend: wasapi'));
     });
   });
 }

@@ -9,11 +9,18 @@
 
 #include <stdint.h>
 
+#include "le_device_backend.h"  /* le_device_backend (le_select_backend return) */
 #include "loopy_engine_api.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Selects the device backend for a requested le_audio_backend (le_config.backend).
+ * In this build the only implementation is the miniaudio backend, so every input
+ * returns it; the opt-in ASIO branch lands in Part 2. The default build never
+ * references an ASIO symbol. Not part of the FFI surface. */
+const le_device_backend* le_select_backend(int32_t backend);
 
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /

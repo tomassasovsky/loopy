@@ -7,6 +7,10 @@ project(loopy_engine_core VERSION 0.1.0 LANGUAGES C)
 
 add_library(loopy_engine SHARED
   engine.c
+  # The miniaudio device backend (le_device_backend.h). Compiled unconditionally
+  # — it is the only device backend this build ships; the opt-in ASIO backend
+  # slots in behind le_select_backend later.
+  engine_miniaudio.c
   # Per-OS platform-seam translation units (engine_platform.h). Each is wrapped
   # whole in its OS guard, so the two that don't match the build target compile
   # to near-empty objects — every build lists all three unconditionally.

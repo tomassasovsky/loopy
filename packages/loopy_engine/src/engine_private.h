@@ -21,6 +21,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "loopy_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
@@ -161,6 +162,13 @@ typedef struct le_track {
 } le_track;
 
 struct le_engine {
+  /* The device backend driving the lifecycle (le_select_backend's choice),
+   * remembered so le_engine_stop / le_engine_destroy release the device through
+   * the same seam that opened it. NULL until the first device open; set once the
+   * device is open (so "running implies backend set") and retained across
+   * stop/start cycles. close() is idempotent, so a stale value never harms. */
+  const le_device_backend* backend;
+
   ma_device device;
   int device_initialised;
 
@@ -184,6 +192,11 @@ struct le_engine {
    * exclusive request that fell back). Set once at device open in
    * le_engine_start; published in the snapshot. */
   _Atomic int32_t a_exclusive_active;
+  /* le_audio_backend actually running, published in the snapshot. Set to
+   * LE_BACKEND_WASAPI in the configure/reset path and republished at device
+   * open from the backend's negotiated le_device_open_result.active_backend
+   * (always WASAPI today). */
+  _Atomic int32_t a_active_backend;
   /* Input channels whose Core Audio label marks them as loopback; never
    * recorded, monitored, or routable. Computed once at device open. */
   _Atomic uint32_t a_excluded_input_mask;
@@ -284,11 +297,16 @@ struct le_engine {
   int passthrough; /* input monitoring */
 
   /* Explicit context + resolved device ids, used when capturing from a detected
-   * loopback device (use_loopback_capture) or when a device is pinned by id. */
+   * loopback device (use_loopback_capture) or when a device is pinned by id.
+   * Owned and managed by the miniaudio backend (engine_miniaudio.c). */
   ma_context context;
   int context_initialised;
   ma_device_id capture_id;
   ma_device_id playback_id;
+  /* 1 when capture_id holds a resolved (pinned/loopback) capture device, so the
+   * portable core can compute the loopback-excluded input mask from that device
+   * UID after open. */
+  int capture_id_set;
 };
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
@@ -298,6 +316,15 @@ struct le_engine {
  * through it (le_jack_device_name). */
 int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
                           int capture);
+
+/* Device-resolution helpers defined in the portable core (engine.c) and shared
+ * with the miniaudio backend (engine_miniaudio.c), which resolves pinned /
+ * loopback device ids at device open. le_find_loopback also backs the FFI
+ * le_detect_loopback. Both operate on an already-open ma_context. */
+void le_find_loopback(ma_context* ctx, le_loopback_info* out,
+                      ma_device_id* out_id);
+int le_resolve_device_id(ma_context* ctx, int capture, const char* want,
+                         ma_device_id* out_id);
 
 /* Relaxed atomic accessors for the published int32 snapshot fields. `static
  * inline` so every TU that touches engine state (the core and the per-OS seam
