@@ -1908,21 +1908,16 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
     return LE_ERR_ALREADY_RUNNING;
   }
 
-  /* Open the device through the selected backend (miniaudio in this build). The
-   * backend builds the device config, resolves pins/loopback, opens the device
-   * (shared mode), and reports the negotiated parameters back. */
+  /* Open the device through the selected backend (ASIO on Windows, miniaudio on
+   * macOS/Linux). The backend builds the device config, resolves pins/loopback,
+   * opens the device, and reports the negotiated parameters back. A requested
+   * ASIO open that fails (no/missing driver, driver busy, init failure) is NOT
+   * silently retried on WASAPI: Windows is ASIO-only, so the failure surfaces
+   * (the app lands stopped and shows the no-driver / ASIO4ALL affordance) rather
+   * than dropping to system audio behind the user's back. */
   const le_device_backend* be = le_select_backend(config->backend);
   le_device_open_result info;
-  int32_t open_result = be->open(engine, config, &info);
-  /* ASIO fallback: a requested ASIO open that fails (build off, no/missing
-   * driver, driver busy, init failure) retries once on miniaudio/WASAPI with the
-   * same config (channel fields stay 0 = device default). info.active_backend
-   * then reflects what actually opened, so the UI shows reality. It resets no
-   * config fields, so it stays inline. */
-  if (config->backend == LE_BACKEND_ASIO && open_result != LE_OK) {
-    be = &le_miniaudio_backend;
-    open_result = be->open(engine, config, &info);
-  }
+  const int32_t open_result = be->open(engine, config, &info);
   if (open_result != LE_OK) {
     return open_result;
   }

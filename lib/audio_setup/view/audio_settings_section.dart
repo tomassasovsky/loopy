@@ -57,13 +57,6 @@ class AudioSettingsSection extends StatelessWidget {
               selectedId: state.asioDriver,
               onSelected: cubit.setAsioDriver,
             ),
-            // D5: ASIO was requested but the device opened on WASAPI — disclose
-            // it (never run system audio silently).
-            if (status.isConnected &&
-                status.activeBackend == AudioBackend.wasapi) ...[
-              const SizedBox(height: 12),
-              const _AsioFallbackNote(),
-            ],
           ],
         ] else ...[
           SetupGroupLabel(l10n.outputDeviceGroupUpper),
@@ -430,39 +423,6 @@ class _NoAsioDriverMessage extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Shown on Windows when ASIO was requested but the device opened on WASAPI
-/// (system audio): discloses the fallback (D5) and offers the ASIO4ALL link.
-class _AsioFallbackNote extends StatelessWidget {
-  const _AsioFallbackNote();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      key: const Key('audioSettings_asioFallback_note'),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, size: 18, color: scheme.error),
-              const SizedBox(width: 10),
-              Expanded(child: Text(l10n.asioUnavailableFallback)),
-            ],
-          ),
-          const _Asio4AllLink(),
-        ],
-      ),
     );
   }
 }

@@ -16,14 +16,15 @@ Windows** and built against the Steinberg ASIO SDK vendored under
    first analogue pair). The user selects it via a **backend selector** in audio
    setup; under ASIO a single **driver picker** drives all I/O.
 
-Both features **degrade cleanly** to the standard behaviour when not built or
-when the hardware does not cooperate (exclude nothing / fall back to WASAPI).
+The channel-label feature **degrades cleanly** (excludes nothing) when a driver
+doesn't name its channels. The duplex backend does **not** fall back to WASAPI:
+Windows is ASIO-only, so a failed/missing ASIO open lands the app stopped with
+the no-driver affordance rather than dropping to system audio.
 
-> **ASIO backend vs. WASAPI exclusive mode — different "full control" paths.**
-> For low-latency device control, Loopy can also use **WASAPI exclusive mode**
-> via miniaudio — but WASAPI still only sees the channels the driver publishes to
-> it (often a stereo pair). The **ASIO backend** is the only way to reach the
-> device's *full* channel count.
+> **Windows is ASIO-only.** There is no WASAPI device selector, no exclusive-mode
+> toggle, and no silent WASAPI fallback — ASIO is the only way to reach a pro
+> interface's full channel count, so it is the only Windows path. macOS/Linux use
+> the miniaudio backend (Core Audio / the Linux preference list).
 
 ## License (GPLv3) and the vendored SDK
 
@@ -62,12 +63,13 @@ is OFF there).
   `le_interleave_out`; buffer sizes are snapped to a driver-allowed value by
   `le_asio_pick_buffer`. Scratch buffers are pre-allocated at open, never in the
   callback — the engine's no-alloc/no-lock RT contract holds.
-- **Graceful fallback (the contract).** A requested ASIO open that fails — build
-  OFF, no/missing driver, driver busy, init failure — **falls back to WASAPI**:
-  the dispatcher in `le_engine_start` retries once on the miniaudio backend. The
-  **negotiated** backend is reported via `le_snapshot.active_backend`, so the UI
-  shows reality (an "ASIO unavailable — running on WASAPI" note), never a dead
-  engine.
+- **No WASAPI fallback (ASIO-only).** A requested ASIO open that fails — no/missing
+  driver, driver busy, init failure — is **not** silently retried on WASAPI:
+  Windows is ASIO-only, so `le_engine_start` returns the error and the app lands
+  stopped, surfacing the no-driver / ASIO4ALL affordance rather than dropping to
+  2-channel system audio behind the user's back. (macOS/Linux still use the
+  miniaudio backend for their native device APIs; only the ASIO→WASAPI retry is
+  removed.)
 - **R1 — global-state re-entrancy (correctness).** The ASIO host SDK loads a
   **single process-global driver** (`loadAsioDriver`/`ASIOInit`/`ASIOExit` operate
   on global state). `le_enumerate_asio_drivers` therefore must **never** probe a
@@ -99,21 +101,21 @@ works. You do not need to disable ASIO for it.
 ## Building
 
 On Windows, ASIO is built **by default** against the vendored SDK — no extra
-step. `flutter build windows` and a plain `cmake` configure both compile it.
+step. `flutter build windows` and a plain `cmake` configure both compile it. The
+SDK path is fixed to the vendored copy (`third_party/asiosdk`) and is **not**
+configurable — it's a non-cache variable resolved every configure, so it never
+goes stale.
 
-To build against a **different** SDK, or to **disable** ASIO, use environment
-variables (the Flutter Windows build drives CMake through the plugin and cannot
-forward `-D` cache flags):
+To **disable** ASIO (e.g. a non-ASIO CI build), set the enable flag — via env
+var, since the Flutter Windows build can't forward `-D` cache flags:
 
 ```powershell
-$env:LOOPY_ENABLE_ASIO = 'OFF'                 # skip ASIO entirely, or
-$env:LOOPY_ASIO_SDK_DIR = 'C:/path/to/asio_sdk' # point at a different SDK
-flutter clean   # force a CMake reconfigure so the env vars take effect
+$env:LOOPY_ENABLE_ASIO = 'OFF'
+flutter clean   # force a CMake reconfigure so the change takes effect
 flutter build windows --debug --target lib/main_development.dart
 ```
 
-A standalone `cmake -S packages/loopy_engine/src` accepts the same as `-D` cache
-flags. The vendored SDK uses the standard layout
+The vendored SDK uses the standard layout
 (`common/asio.cpp`, `host/asiodrivers.cpp`, `host/pc/asiolist.cpp` + headers).
 
 ## Where the code lives
@@ -136,7 +138,7 @@ flags. The vendored SDK uses the standard layout
   [win_asio_device.cpp](../packages/loopy_engine/src/win_asio_device.cpp)
   (+ [win_asio_device.h](../packages/loopy_engine/src/win_asio_device.h)),
   exposing `le_asio_backend` and `le_enumerate_asio_drivers`.
-- Backend selection + WASAPI fallback: `le_select_backend` / `le_engine_start` in
+- Backend selection: `le_select_backend` / `le_engine_start` in
   [engine.c](../packages/loopy_engine/src/engine.c). The default build links no
   ASIO symbol (the reference lives inside the `#if`); a non-ASIO build provides a
   stub `le_enumerate_asio_drivers` returning 0.

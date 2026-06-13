@@ -361,21 +361,20 @@ void main() {
     AudioSetupState asioState({
       List<AudioDevice> drivers = const [focusrite],
       String driver = 'Focusrite USB ASIO',
-      AudioBackend activeBackend = AudioBackend.asio,
     }) => AudioSetupState(
       status: AudioSetupStatus.running,
       asioOnly: true,
       backend: AudioBackend.asio,
       asioDriver: driver,
       cachedAsioDrivers: drivers,
-      engineStatus: EngineStatus(
+      engineStatus: const EngineStatus(
         deviceName: 'Focusrite USB ASIO',
         sampleRate: 48000,
         bufferFrames: 128,
         isConnected: true,
         inputChannels: 18,
         outputChannels: 20,
-        activeBackend: activeBackend,
+        activeBackend: AudioBackend.asio,
       ),
     );
 
@@ -427,18 +426,6 @@ void main() {
       expect(
         find.byKey(const Key('audioSettings_asioDriver_picker')),
         findsNothing,
-      );
-    });
-
-    testWidgets('WASAPI-active surfaces the ASIO-unavailable fallback note', (
-      tester,
-    ) async {
-      seed(asioState(activeBackend: AudioBackend.wasapi));
-      await pumpSection(tester);
-
-      expect(
-        find.byKey(const Key('audioSettings_asioFallback_note')),
-        findsOneWidget,
       );
     });
   });
