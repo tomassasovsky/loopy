@@ -7,7 +7,7 @@
  * can exclude "Loopback"-labelled inputs the same way macOS does via Core Audio.
  *
  * Purely internal: NOT part of the FFI surface (loopy_engine_api.h) or ffigen.
- * See docs/WINDOWS_ASIO.md for the opt-in build and the MIT/GPLv3 SDK rationale.
+ * See docs/WINDOWS_ASIO.md for the build and the vendored-SDK rationale.
  */
 #ifndef LOOPY_WIN_ASIO_LABELS_H
 #define LOOPY_WIN_ASIO_LABELS_H

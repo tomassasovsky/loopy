@@ -64,29 +64,31 @@ elseif(UNIX AND NOT APPLE)
   target_link_libraries(loopy_engine PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
 endif()
 
-# --- Opt-in Windows ASIO per-channel label probe ---------------------------
+# --- Windows ASIO (duplex backend + per-channel label probe) ---------------
 #
-# OFF by default: the standard build is byte-for-byte unchanged and needs no
-# ASIO SDK. When ON (Windows only), the engine reads per-input-channel names via
-# ASIO to exclude "Loopback" inputs the way macOS does via Core Audio.
+# ON by default on Windows: the engine opens ASIO for full-channel-count duplex
+# audio and reads per-input-channel names to exclude "Loopback" inputs the way
+# macOS does via Core Audio. macOS/Linux keep the miniaudio backend (OFF there).
 #
-# The Steinberg ASIO SDK is GPLv3-or-proprietary and MUST NOT be vendored into
-# this MIT repo. It is user-supplied via LOOPY_ASIO_SDK_DIR and .gitignored; the
-# MIT boundary is enforced by this OFF default + .gitignore + review, NOT by CI
-# (license_check.yaml scans Dart deps only). See docs/WINDOWS_ASIO.md.
-option(LOOPY_ENABLE_ASIO "Build the opt-in Windows ASIO support" OFF)
-set(LOOPY_ASIO_SDK_DIR "" CACHE PATH
-  "Path to a user-supplied Steinberg ASIO SDK (only used when LOOPY_ENABLE_ASIO=ON)")
+# The Steinberg ASIO SDK is vendored under third_party/asiosdk (this repo is
+# GPLv3; the Steinberg license file is kept intact alongside it). ASIO is built
+# by default on Windows; macOS/Linux keep the miniaudio backend (OFF there).
+if(WIN32)
+  option(LOOPY_ENABLE_ASIO "Build Windows ASIO support" ON)
+else()
+  option(LOOPY_ENABLE_ASIO "Build Windows ASIO support" OFF)
+endif()
+set(LOOPY_ASIO_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/asiosdk"
+  CACHE PATH "Path to the Steinberg ASIO SDK (defaults to the vendored copy)")
 
 # The Flutter Windows build drives this CMake through the plugin and cannot
-# forward -D cache flags, so also honor environment variables. An explicit -D
-# (a non-default cache value) still wins; the env fallback only applies when the
-# flag/path was left at its default. This is what lets `flutter build windows`
-# opt into ASIO (set LOOPY_ENABLE_ASIO=ON + LOOPY_ASIO_SDK_DIR in the env first).
-if(NOT LOOPY_ENABLE_ASIO AND DEFINED ENV{LOOPY_ENABLE_ASIO})
+# forward -D cache flags, so honor environment overrides too: set
+# LOOPY_ENABLE_ASIO=OFF to skip ASIO, or LOOPY_ASIO_SDK_DIR to build against a
+# different SDK than the vendored one.
+if(DEFINED ENV{LOOPY_ENABLE_ASIO} AND NOT "$ENV{LOOPY_ENABLE_ASIO}" STREQUAL "")
   set(LOOPY_ENABLE_ASIO "$ENV{LOOPY_ENABLE_ASIO}")
 endif()
-if(NOT LOOPY_ASIO_SDK_DIR AND DEFINED ENV{LOOPY_ASIO_SDK_DIR})
+if(DEFINED ENV{LOOPY_ASIO_SDK_DIR} AND NOT "$ENV{LOOPY_ASIO_SDK_DIR}" STREQUAL "")
   set(LOOPY_ASIO_SDK_DIR "$ENV{LOOPY_ASIO_SDK_DIR}")
 endif()
 
@@ -96,8 +98,9 @@ if(LOOPY_ENABLE_ASIO)
   endif()
   if(NOT LOOPY_ASIO_SDK_DIR OR NOT EXISTS "${LOOPY_ASIO_SDK_DIR}")
     message(FATAL_ERROR
-      "LOOPY_ENABLE_ASIO=ON requires LOOPY_ASIO_SDK_DIR to point at a local "
-      "Steinberg ASIO SDK. See docs/WINDOWS_ASIO.md.")
+      "LOOPY_ENABLE_ASIO=ON could not find the Steinberg ASIO SDK at "
+      "LOOPY_ASIO_SDK_DIR='${LOOPY_ASIO_SDK_DIR}' (defaults to the vendored "
+      "third_party/asiosdk). See docs/WINDOWS_ASIO.md.")
   endif()
   # The probe, the duplex device backend, and the SDK host glue are C++.
   enable_language(CXX)

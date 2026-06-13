@@ -2,6 +2,7 @@ name: loopy
 description: Loopy — a cross-platform desktop loopstation with a native low-latency audio engine
 version: 1.0.0+1
 publish_to: none
+license: GPL-3.0-or-later
 
 environment:
   sdk: ^3.11.0

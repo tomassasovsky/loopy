@@ -14,11 +14,11 @@
  * `#if defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)` guard, so the default build
  * links no ASIO symbol (the Part 1 link-time guarantee holds).
  *
- * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is NOT vendored
- * into this MIT repo. It is user-supplied via LOOPY_ASIO_SDK_DIR and .gitignored.
+ * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is vendored
+ * under third_party/asiosdk (this repo is GPL-3.0-or-later).
  *
  * Purely internal: NOT part of the FFI surface (loopy_engine_api.h) or ffigen.
- * See docs/WINDOWS_ASIO.md for the opt-in build and the MIT/GPLv3 SDK rationale.
+ * See docs/WINDOWS_ASIO.md for the build and the vendored-SDK rationale.
  */
 #ifndef LOOPY_WIN_ASIO_DEVICE_H
 #define LOOPY_WIN_ASIO_DEVICE_H

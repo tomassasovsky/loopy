@@ -1,7 +1,8 @@
-# Windows ASIO (opt-in): channel-label exclusion + duplex device backend
+# Windows ASIO: channel-label exclusion + duplex device backend
 
-`LOOPY_ENABLE_ASIO` gates **two** opt-in Windows ASIO features, both off by
-default and both behind the same user-supplied GPLv3 SDK:
+`LOOPY_ENABLE_ASIO` gates **two** Windows ASIO features, **on by default on
+Windows** and built against the Steinberg ASIO SDK vendored under
+[third_party/asiosdk](../packages/loopy_engine/third_party/asiosdk):
 
 1. **Channel-label exclusion** (the original feature): read per-channel hardware
    labels via `ASIOGetChannelInfo().name` to exclude an interface's "Loopback"
@@ -19,28 +20,23 @@ Both features **degrade cleanly** to the standard behaviour when not built or
 when the hardware does not cooperate (exclude nothing / fall back to WASAPI).
 
 > **ASIO backend vs. WASAPI exclusive mode — different "full control" paths.**
-> For low-latency device control *without an SDK*, Loopy uses **WASAPI exclusive
-> mode** via miniaudio (MIT-clean, default-on Windows toggle) — but WASAPI still
-> only sees the channels the driver publishes to it (often a stereo pair). The
-> **ASIO backend** is the only way to reach the device's *full* channel count.
-> The two are mutually exclusive in the UI: selecting ASIO hides the
-> exclusive-mode toggle (ASIO has no WASAPI share-mode concept).
+> For low-latency device control, Loopy can also use **WASAPI exclusive mode**
+> via miniaudio — but WASAPI still only sees the channels the driver publishes to
+> it (often a stereo pair). The **ASIO backend** is the only way to reach the
+> device's *full* channel count.
 
-## Why it is not on by default
+## License (GPLv3) and the vendored SDK
 
-The Steinberg ASIO SDK is **GPLv3-or-proprietary** (since Nov 2025), which is
-incompatible with Loopy's MIT license if vendored. So the SDK is:
+The Steinberg ASIO SDK is **GPLv3-or-proprietary**. Loopy is licensed
+**GPL-3.0-or-later**, so the SDK is **vendored** under
+[`packages/loopy_engine/third_party/asiosdk`](../packages/loopy_engine/third_party/asiosdk)
+(version pinned in its README), with the Steinberg Licensing Agreement kept
+intact alongside it. ASIO is therefore compiled by default on Windows — no
+user-supplied SDK step. macOS/Linux keep the miniaudio backend (`LOOPY_ENABLE_ASIO`
+is OFF there).
 
-- **never committed** to this repository (it is `.gitignore`d),
-- **user-supplied** at build time via `LOOPY_ASIO_SDK_DIR`,
-- only compiled when you explicitly set `LOOPY_ENABLE_ASIO=ON`.
-
-The default build requires no ASIO SDK, links no ASIO code, and is byte-for-byte
-unchanged: `le_platform_excluded_input_mask` returns `0` on Windows.
-
-> The MIT boundary here is enforced by the **OFF-by-default flag + `.gitignore` +
-> review** — not by CI. `license_check.yaml` scans Dart dependencies only; it
-> does not see a C/C++ SDK dropped into the build tree.
+> `license_check.yaml` scans Dart dependencies only; it does not assert the repo
+> license or inspect the vendored C/C++ SDK.
 
 ## What the label probe does (and does not) do
 
@@ -96,52 +92,29 @@ guaranteed):
    and returns "no match" on ambiguity. On a multi-interface rig you may need to
    tighten this once you see what your driver reports.
 
-If either answer is no on your hardware, leave the flag OFF — the feature simply
-isn't available there, which is expected.
+If either answer is no on your hardware, the **label-exclusion** sub-feature just
+degrades to a no-op (mask `0`, nothing excluded) — the ASIO duplex backend still
+works. You do not need to disable ASIO for it.
 
-## Building with ASIO enabled
+## Building
 
-1. Download the Steinberg ASIO SDK and unpack it **outside** version control (or
-   into one of the `.gitignore`d folder names, e.g. `asio_sdk/`). The build
-   expects the standard SDK layout:
+On Windows, ASIO is built **by default** against the vendored SDK — no extra
+step. `flutter build windows` and a plain `cmake` configure both compile it.
 
-   ```
-   <sdk>/common/asio.cpp
-   <sdk>/host/asiodrivers.cpp
-   <sdk>/host/pc/asiolist.cpp
-   <sdk>/common, <sdk>/host, <sdk>/host/pc   (headers)
-   ```
+To build against a **different** SDK, or to **disable** ASIO, use environment
+variables (the Flutter Windows build drives CMake through the plugin and cannot
+forward `-D` cache flags):
 
-   If your SDK is laid out differently, adjust the paths in
-   [packages/loopy_engine/src/CMakeLists.txt](../packages/loopy_engine/src/CMakeLists.txt).
+```powershell
+$env:LOOPY_ENABLE_ASIO = 'OFF'                 # skip ASIO entirely, or
+$env:LOOPY_ASIO_SDK_DIR = 'C:/path/to/asio_sdk' # point at a different SDK
+flutter clean   # force a CMake reconfigure so the env vars take effect
+flutter build windows --debug --target lib/main_development.dart
+```
 
-2. Configure the native engine with the flag and SDK path:
-
-   ```sh
-   cmake -S packages/loopy_engine/src -B build/asio \
-     -DLOOPY_ENABLE_ASIO=ON \
-     -DLOOPY_ASIO_SDK_DIR=C:/path/to/asio_sdk
-   cmake --build build/asio
-   ```
-
-   For the **full Flutter app**, the Windows build drives this CMake through the
-   plugin and cannot forward `-D` cache flags, so set the two values as
-   **environment variables** before building — `src/CMakeLists.txt` reads them as
-   a fallback:
-
-   ```powershell
-   $env:LOOPY_ENABLE_ASIO = 'ON'
-   $env:LOOPY_ASIO_SDK_DIR = 'C:/path/to/asio_sdk'
-   flutter clean   # force a CMake reconfigure so the env vars take effect
-   flutter build windows --debug --target lib/main_development.dart
-   ```
-
-   (An explicit `-DLOOPY_ENABLE_ASIO=ON` on a standalone `cmake` invocation still
-   takes precedence; the env fallback only applies when the flag is left default.)
-
-3. With the flag ON and a driver that populates channel names, loopback channels
-   on your interface are excluded via the same mask path as macOS. With the flag
-   OFF, nothing changes.
+A standalone `cmake -S packages/loopy_engine/src` accepts the same as `-D` cache
+flags. The vendored SDK uses the standard layout
+(`common/asio.cpp`, `host/asiodrivers.cpp`, `host/pc/asiolist.cpp` + headers).
 
 ## Where the code lives
 
@@ -175,4 +148,4 @@ isn't available there, which is expected.
   the `AudioBackend` / `asioDriver` persistence
   ([settings_repository.dart](../packages/settings_repository/lib/src/settings_repository.dart)),
   and the backend selector + driver picker in the audio-setup feature
-  ([audio_setup_steps.dart](../lib/audio_setup/view/audio_setup_steps.dart)).
+  ([audio_settings_section.dart](../lib/audio_setup/view/audio_settings_section.dart)).

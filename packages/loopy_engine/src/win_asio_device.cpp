@@ -21,8 +21,8 @@
  * device backend and le_enumerate_asio_drivers must never both touch it. While a
  * device is open, enumeration reports the open driver only (it probes nothing).
  *
- * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is NOT vendored
- * into this MIT repo. It is user-supplied via LOOPY_ASIO_SDK_DIR and .gitignored.
+ * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is vendored
+ * under third_party/asiosdk (this repo is GPL-3.0-or-later).
  *
  * Lifecycle-flag note: this is a C++ TU and cannot include engine_private.h (its
  * struct uses the C11 `_Atomic` keyword), so it publishes "started" through the

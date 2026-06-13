@@ -4,6 +4,7 @@ description: >-
   miniaudio looping core via Dart FFI.
 version: 0.1.0
 publish_to: none
+license: GPL-3.0-or-later
 
 environment:
   sdk: ^3.11.0

@@ -17,8 +17,8 @@
  *   - Prefer no-match over wrong-match: a mask that excludes the WRONG channels
  *     is worse than the no-op default, so any uncertainty returns 0.
  *
- * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is NOT vendored
- * into this MIT repo. It is user-supplied via LOOPY_ASIO_SDK_DIR and .gitignored.
+ * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is vendored
+ * under third_party/asiosdk (this repo is GPL-3.0-or-later).
  *
  * The ASIO↔WASAPI device-matching heuristic below is deliberately conservative
  * pending the PR2 hardware spike (does the interface expose a name that reliably

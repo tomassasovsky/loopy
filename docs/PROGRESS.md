@@ -306,10 +306,11 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
     was broken. Fixed behind the platform seam (`le_platform_device_id_to_str`):
     Windows converts wchar→UTF-8, macOS/Linux keep the verbatim copy. Regression
     test `test_device_id_to_str`.
-- **Windows per-channel labels — ASIO opt-in scaffolding (PR2).** `LOOPY_ENABLE_ASIO`
-  CMake option (**OFF by default**; default build byte-for-byte unchanged) +
-  `LOOPY_ASIO_SDK_DIR` for a **user-supplied, non-vendored** (MIT/GPLv3) ASIO SDK,
-  `.gitignore`d. New `win_asio_labels.cpp` probe reads `ASIOGetChannelInfo().name`
+- **Windows per-channel labels — ASIO scaffolding (PR2).** `LOOPY_ENABLE_ASIO`
+  CMake option. _(The Steinberg ASIO SDK was later **vendored** under
+  `packages/loopy_engine/third_party/asiosdk` and the repo relicensed to GPLv3,
+  so ASIO now builds **on by default on Windows** — see docs/WINDOWS_ASIO.md.)_
+  `win_asio_labels.cpp` probe reads `ASIOGetChannelInfo().name`
   and reuses the portable, unit-tested `le_excluded_mask_from_names` /
   `le_label_is_loopback`; dispatched from `engine_windows.c` under the flag,
   degrading to `0` on any failure/ambiguity. Docs: `docs/WINDOWS_ASIO.md`.
