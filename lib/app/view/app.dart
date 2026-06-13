@@ -25,8 +25,8 @@ class App extends StatelessWidget {
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
   /// fakes / a no-op window service instead of the native device and a real
-  /// second OS window. [needsSetup] is `true` on a first run (no saved audio
-  /// config), routing to the audio setup flow before the looper.
+  /// second OS window. [initialAsioDrivers] is the ASIO driver list enumerated
+  /// at startup, cached by the audio-setup cubit for the picker.
   const App({
     required this.repository,
     required this.controllerRepository,
@@ -34,7 +34,7 @@ class App extends StatelessWidget {
     required this.waveformWindow,
     required this.sessionRepository,
     required this.sessionDirectory,
-    this.needsSetup = false,
+    this.initialAsioDrivers = const [],
     super.key,
   });
 
@@ -50,8 +50,9 @@ class App extends StatelessWidget {
   /// Manages the secondary output-waveform window.
   final WaveformWindowService waveformWindow;
 
-  /// Whether to show the audio setup flow before the looper (first run).
-  final bool needsSetup;
+  /// The ASIO drivers enumerated at startup, cached by the audio-setup cubit so
+  /// the picker stays populated even while ASIO holds the device (R1).
+  final List<AudioDevice> initialAsioDrivers;
 
   /// The shared session repository (save/load + export), sharing the engine.
   final SessionRepository sessionRepository;
@@ -146,12 +147,12 @@ class App extends StatelessWidget {
               settings: context.read<SettingsRepository>(),
               defaultExclusive: platformDefaultExclusive,
               asioSelectable: platformAsioSelectable,
+              initialAsioDrivers: initialAsioDrivers,
             ),
           ),
         ],
         child: _AppView(
           waveformWindow: waveformWindow,
-          needsSetup: needsSetup,
           sessionDirectory: sessionDirectory,
         ),
       ),
@@ -164,12 +165,10 @@ class App extends StatelessWidget {
 class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
-    required this.needsSetup,
     required this.sessionDirectory,
   });
 
   final WaveformWindowService waveformWindow;
-  final bool needsSetup;
   final Future<String> Function() sessionDirectory;
 
   @override
@@ -317,10 +316,7 @@ class _AppViewState extends State<_AppView> {
         theme: AppTheme.bigPicture,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: _RootView(
-          needsSetup: widget.needsSetup,
-          sessionDirectory: widget.sessionDirectory,
-        ),
+        home: LooperPage(sessionDirectory: widget.sessionDirectory),
         debugShowCheckedModeBanner: false,
         builder: (context, child) {
           var app = child ?? const SizedBox.shrink();
@@ -330,38 +326,6 @@ class _AppViewState extends State<_AppView> {
           return app;
         },
       ),
-    );
-  }
-}
-
-/// On a first run, shows the audio setup as the start screen until the engine
-/// connects, then hands off to the looper. Otherwise shows the looper directly.
-class _RootView extends StatefulWidget {
-  const _RootView({required this.needsSetup, required this.sessionDirectory});
-
-  final bool needsSetup;
-  final Future<String> Function() sessionDirectory;
-
-  @override
-  State<_RootView> createState() => _RootViewState();
-}
-
-class _RootViewState extends State<_RootView> {
-  late bool _inSetup = widget.needsSetup;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_inSetup) {
-      return LooperPage(sessionDirectory: widget.sessionDirectory);
-    }
-    // The AudioSetupCubit is provided at the app shell, so the setup screen
-    // listens to the shared instance for the connect → hand-off to the looper.
-    return BlocListener<AudioSetupCubit, AudioSetupState>(
-      listenWhen: (previous, current) =>
-          !previous.engineStatus.isConnected &&
-          current.engineStatus.isConnected,
-      listener: (_, _) => setState(() => _inSetup = false),
-      child: const AudioSetupView(),
     );
   }
 }

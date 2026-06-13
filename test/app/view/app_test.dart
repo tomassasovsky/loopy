@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
@@ -86,7 +85,11 @@ void main() {
       expect(find.byType(BigPictureView), findsOneWidget);
     });
 
-    testWidgets('first run shows the audio setup start screen', (tester) async {
+    testWidgets('always lands on the looper — no first-run gate', (
+      tester,
+    ) async {
+      // The wizard and the needsSetup gate are gone; the app renders the looper
+      // directly even with no saved audio config.
       await tester.pumpWidget(
         App(
           repository: repository,
@@ -95,13 +98,11 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           sessionDirectory: () async => '.',
-          needsSetup: true,
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(AudioSetupView), findsOneWidget);
-      expect(find.byType(LooperPage), findsNothing);
+      expect(find.byType(LooperPage), findsOneWidget);
     });
 
     testWidgets('opens the waveform window on launch in big picture', (

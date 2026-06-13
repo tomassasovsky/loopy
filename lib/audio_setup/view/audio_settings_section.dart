@@ -32,6 +32,13 @@ class AudioSettingsSection extends StatelessWidget {
       children: [
         Text(l10n.audioSettingsIntro, style: setupBody),
         const SizedBox(height: 28),
+        // Engine errors are surfaced here (the only audio surface now that the
+        // wizard is gone): a failed open/start from a setting change shows its
+        // reason inline.
+        if (state.status == AudioSetupStatus.error && state.error != null) ...[
+          _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
+          const SizedBox(height: 20),
+        ],
         // Backend selector — only when ASIO is selectable (Windows + drivers).
         if (state.asioDrivers.isNotEmpty) ...[
           SetupGroupLabel(l10n.backendGroup),
@@ -330,6 +337,46 @@ class AudioSettingsSection extends StatelessWidget {
         LatencyState.timeout => l10n.noSignalDetected,
         LatencyState.idle => l10n.notMeasured,
       };
+}
+
+/// An inline banner showing the categorized engine error and its detail, shown
+/// in [AudioSettingsSection] when the engine failed to open/start. Ported from
+/// the removed wizard; reuses the same l10n keys.
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.error, required this.detail});
+
+  final AudioSetupError error;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    final message = switch (error) {
+      AudioSetupError.openDeviceFailed => l10n.failedToOpenDevice(detail),
+    };
+    return Container(
+      key: const Key('audioSettings_error_banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Manual record-offset (latency compensation) entry, in frames. A fallback for

@@ -25,13 +25,97 @@ void main() {
       addTearDown(repository.dispose);
     });
 
-    test('returns false and does not start when no config is saved', () async {
-      final started = await tryAutoStartEngine(
-        repository: repository,
-        settings: settings,
+    group('first run (no saved config)', () {
+      tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      const asioDriver = AudioDevice(
+        id: 'Focusrite USB ASIO',
+        name: 'Focusrite USB ASIO',
+        isDefault: false,
+        isInput: false,
+        inputChannels: 18,
+        outputChannels: 20,
+        sampleRates: [48000, 96000],
+        bufferSizes: [128, 256],
       );
-      expect(started, isFalse);
-      expect(engine.startCalls, 0);
+
+      test('macOS/Linux opens the system default and persists it', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isTrue);
+        expect(engine.startCalls, 1);
+        // A zero-config open (sample rate / buffer left at the device default).
+        expect(engine.lastConfig, const EngineConfig());
+        // Persisted so the next launch takes the saved-config path.
+        expect(await settings.loadAudioConfig(), isNotNull);
+      });
+
+      test('macOS/Linux lands stopped when the default open fails', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        engine.startResult = EngineResult.device;
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+      });
+
+      test('Windows starts on the first ASIO driver and caches it', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [asioDriver];
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isTrue);
+        // The enumerated list is returned for the cubit's picker cache.
+        expect(result.asioDrivers, const [asioDriver]);
+        expect(engine.lastConfig?.backend, AudioBackend.asio);
+        expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+        expect(engine.lastConfig?.sampleRate, 48000);
+        expect(engine.lastConfig?.bufferFrames, 128);
+        final saved = await settings.loadAudioConfig();
+        expect(saved?.backend, AudioBackend.asio);
+        expect(saved?.asioDriver, 'Focusrite USB ASIO');
+      });
+
+      test('Windows with no ASIO driver lands stopped', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [];
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+        expect(engine.startCalls, 0);
+      });
+
+      test('Windows lands stopped when the ASIO driver open fails', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine
+          ..asioDrivers = const [asioDriver]
+          ..startResult = EngineResult.device;
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+        // The drivers are still enumerated and returned for the picker cache.
+        expect(result.asioDrivers, const [asioDriver]);
+      });
     });
 
     test('restores saved per-track routing on launch', () async {
@@ -65,7 +149,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       // Only channel 1 had saved routing, restored onto lane 0.
       expect(engine.laneInput[(1, 0)], 1);
       expect(engine.laneOutput[(1, 0)], 0x4);
@@ -110,7 +194,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       expect(engine.laneFx[(0, 0, 0)], TrackEffectType.filter);
       expect(engine.laneFx[(0, 0, 1)], TrackEffectType.delay);
       expect(engine.laneFxCount[(0, 0)], 2);
@@ -155,7 +239,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       expect(engine.laneCount[0], 2);
       expect(engine.laneInput[(0, 1)], 2);
       expect(engine.laneOutput[(0, 1)], 0x2);
@@ -177,7 +261,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       expect(engine.startCalls, 1);
       expect(engine.lastConfig?.sampleRate, 96000);
       expect(engine.lastConfig?.bufferFrames, 256);
@@ -204,7 +288,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       expect(engine.lastConfig?.backend, AudioBackend.asio);
       expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
     });
@@ -363,7 +447,7 @@ void main() {
         repository: repository,
         settings: settings,
       );
-      expect(started, isFalse);
+      expect(started.started, isFalse);
     });
   });
 }

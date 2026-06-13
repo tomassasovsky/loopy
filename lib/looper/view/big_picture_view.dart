@@ -64,6 +64,12 @@ class _BigPictureViewState extends State<BigPictureView> {
                     ],
                   ),
                   const SizedBox(height: 14),
+                  // With no first-run gate, a stopped engine lands here; a
+                  // full-width affordance opens settings to (re)start it.
+                  if (!state.status.isConnected) ...[
+                    const _AudioNotRunningBanner(),
+                    const SizedBox(height: 14),
+                  ],
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -229,6 +235,38 @@ class _BigPictureViewState extends State<BigPictureView> {
       return id - LogicalKeyboardKey.digit0.keyId;
     }
     return null;
+  }
+}
+
+/// A full-width affordance shown when the engine isn't running (no first-run
+/// gate exists anymore). Tapping it opens settings, where the engine can be
+/// (re)started by choosing a device.
+class _AudioNotRunningBanner extends StatelessWidget {
+  const _AudioNotRunningBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        key: const Key('bigpicture_audioNotRunning'),
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => unawaited(openLoopySettings()),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, size: 18),
+              const SizedBox(width: 10),
+              Expanded(child: Text(context.l10n.engineStoppedBanner)),
+              const Icon(Icons.settings, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

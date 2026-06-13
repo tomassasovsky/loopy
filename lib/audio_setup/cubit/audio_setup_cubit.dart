@@ -7,9 +7,10 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'audio_setup_state.dart';
 
-/// Manages audio device options (sample rate, buffer size, input monitoring),
-/// starts/stops the engine through the repository, and surfaces live engine
-/// status and latency measurements.
+/// Manages audio device options (backend, device, sample rate, buffer size).
+/// Persisting a change reopens the device (or starts a stopped/failed engine
+/// when the config is startable — there is no manual Start/Stop), and the cubit
+/// surfaces live engine status and latency measurements.
 class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Creates an [AudioSetupCubit] backed by [repository], persisting per-device
   /// latency calibration through [settings].
@@ -18,12 +19,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     required SettingsRepository settings,
     required bool defaultExclusive,
     bool asioSelectable = false,
+    List<AudioDevice> initialAsioDrivers = const [],
   }) : _repository = repository,
        _settings = settings,
        _defaultExclusive = defaultExclusive,
        _asioSelectable = asioSelectable,
        super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
+
+    // The ASIO driver list is enumerated once at process start (before the
+    // engine auto-starts) and injected here, so the picker stays populated even
+    // when ASIO is already live (re-probing would tear the stream down — R1).
+    final drivers = _loadAsioDrivers(
+      _repository.state.status,
+      cached: initialAsioDrivers,
+    );
 
     // Hydrate from the repository immediately — [looperState] is a broadcast
     // stream that does not replay, so a new cubit would otherwise show defaults
@@ -34,7 +44,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         current: state.copyWith(
           loopback: _repository.detectLoopback(),
           devices: _repository.devices(),
-          asioDrivers: _loadAsioDrivers(_repository.state.status),
+          asioDrivers: drivers,
+          // Prefer the startup enumeration; when none was injected (non-Windows
+          // or a test/interactive build) the freshly probed list is the cache.
+          cachedAsioDrivers: initialAsioDrivers.isNotEmpty
+              ? initialAsioDrivers
+              : drivers,
         ),
         hydrateConfig: true,
       ),
@@ -60,12 +75,15 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Enumerates the installed ASIO drivers for the backend selector, honoring
   /// the R1 re-entrancy contract: the ASIO host SDK loads one process-global
   /// driver, so we never probe while a device is already running on ASIO (that
-  /// would tear down the live stream). Returns `[]` off Windows / when ASIO is
-  /// the active backend.
-  List<AudioDevice> _loadAsioDrivers(EngineStatus status) {
-    if (!_asioSelectable || status.activeBackend == AudioBackend.asio) {
-      return const [];
-    }
+  /// would tear down the live stream). While ASIO is live we fall back to the
+  /// [cached] list (enumerated at startup) instead of returning `[]`, so the
+  /// picker stays populated. Returns `[]` off Windows.
+  List<AudioDevice> _loadAsioDrivers(
+    EngineStatus status, {
+    List<AudioDevice> cached = const [],
+  }) {
+    if (!_asioSelectable) return const [];
+    if (status.activeBackend == AudioBackend.asio) return cached;
     return _repository.asioDrivers();
   }
 
@@ -192,23 +210,59 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     _persistAndApply();
   }
 
-  /// Persists the current options and, when the engine is running, reopens the
-  /// device so a config change (device, monitoring, loop cap) takes effect now;
-  /// otherwise it is used on the next start / auto-start.
+  /// Persists the current options and (re)starts the engine whenever the config
+  /// is startable — from any status, not only while running. With no manual
+  /// Start/Stop, this is the sole recovery path: changing a setting from a
+  /// stopped/error state boots the engine. A reopen stops the current device
+  /// first. An incomplete (non-startable) config is persisted but never boots
+  /// audio. On a failed open, sets the error status (surfaced by the banner).
   void _persistAndApply() {
     unawaited(_settings.saveAudioConfig(_storedConfig()));
+    if (!_isStartable) return;
     if (state.status == AudioSetupStatus.running) {
       _repository.stopEngine();
-      final result = _repository.startEngine(_engineConfig());
-      if (!result.isOk) {
-        emit(
-          state.copyWith(
-            status: AudioSetupStatus.error,
-            error: AudioSetupError.openDeviceFailed,
-            errorDetail: result.name,
-          ),
-        );
-      }
+    }
+    final result = _repository.startEngine(_engineConfig());
+    if (result.isOk) {
+      // Clear any prior error: a successful (re)start recovers from a failed
+      // open, so a stale banner must not linger.
+      emit(state.copyWith(status: AudioSetupStatus.running, clearError: true));
+      _autoMeasureIfLoopback();
+    } else {
+      emit(
+        state.copyWith(
+          status: AudioSetupStatus.error,
+          error: AudioSetupError.openDeviceFailed,
+          errorDetail: result.name,
+        ),
+      );
+    }
+  }
+
+  /// Whether the current options form a config the engine can actually open.
+  /// "Startable" = a positive sample rate and buffer **and** a resolvable
+  /// device: under ASIO, the selected driver must be present in the enumerated
+  /// list; otherwise an empty device id is the valid system default. Persisting
+  /// an incomplete config (e.g. ASIO selected with no driver) must not boot
+  /// audio.
+  bool get _isStartable {
+    if (state.sampleRate <= 0 || state.bufferFrames <= 0) return false;
+    if (state.isAsio) {
+      return state.asioDriver.isNotEmpty &&
+          state.cachedAsioDrivers.any((d) => d.id == state.asioDriver);
+    }
+    return true;
+  }
+
+  /// Auto-measures round-trip latency whenever the capture path carries our own
+  /// output back: a routable loopback capture device, or an interface with
+  /// dedicated loopback channels (e.g. a Scarlett's "Loop 1/2", reported via the
+  /// excluded-input mask). The measured offset is persisted per device by
+  /// [_syncLatencyPersistence].
+  void _autoMeasureIfLoopback() {
+    if ((state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty) ||
+        _repository.state.status.excludedInputMask != 0) {
+      _repository.measureLatency();
     }
   }
 
@@ -259,39 +313,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       frames == null || frames <= 0 || sampleRate <= 0
       ? 0
       : (frames / (60 * sampleRate)).round();
-
-  /// Opens the audio device with the current options.
-  void start() {
-    final result = _repository.startEngine(_engineConfig());
-    if (result.isOk) {
-      emit(state.copyWith(status: AudioSetupStatus.running));
-      // Remember these options so the engine can auto-start on the next launch.
-      unawaited(_settings.saveAudioConfig(_storedConfig()));
-      // Auto-measure round-trip latency whenever the capture path carries our
-      // own output back: a routable loopback capture device, or an interface
-      // with dedicated loopback channels (e.g. a Scarlett's "Loop 1/2", now
-      // open and reported via the excluded-input mask). The measured offset is
-      // persisted per device by _syncLatencyPersistence.
-      if ((state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty) ||
-          _repository.state.status.excludedInputMask != 0) {
-        _repository.measureLatency();
-      }
-    } else {
-      emit(
-        state.copyWith(
-          status: AudioSetupStatus.error,
-          error: AudioSetupError.startAudioFailed,
-          errorDetail: result.name,
-        ),
-      );
-    }
-  }
-
-  /// Closes the audio device.
-  void stop() {
-    _repository.stopEngine();
-    emit(state.copyWith(status: AudioSetupStatus.stopped));
-  }
 
   /// Triggers a loopback round-trip latency measurement.
   void measureLatency() => _repository.measureLatency();

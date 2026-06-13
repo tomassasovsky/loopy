@@ -314,4 +314,31 @@ void main() {
       expect(decoration.boxShadow, anyOf(isNull, isEmpty));
     });
   });
+
+  group('audio-not-running affordance', () {
+    testWidgets('shows when the engine is not connected', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      expect(
+        find.byKey(const Key('bigpicture_audioNotRunning')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is hidden once the engine is connected', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track()],
+          status: EngineStatus(isConnected: true),
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        find.byKey(const Key('bigpicture_audioNotRunning')),
+        findsNothing,
+      );
+    });
+  });
 }

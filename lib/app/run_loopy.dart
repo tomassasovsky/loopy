@@ -12,8 +12,8 @@ import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
-/// otherwise wires the repositories, auto-starts the engine from the saved
-/// audio config (showing the setup flow on a first run), and runs the [App].
+/// otherwise wires the repositories, auto-starts the engine (from the saved
+/// config or a first-run default), and runs the [App] straight on the looper.
 Future<void> runLoopy(
   List<String> args, {
   AudioEngine Function()? createEngine,
@@ -46,12 +46,20 @@ Future<void> runLoopy(
   // config exists.
   await runMonitorMigration(settings);
 
-  final configured = engine is MockAudioEngine
-      ? repository.startEngine(engine.defaultConfig).isOk
-      : await tryAutoStartEngine(
-          repository: repository,
-          settings: settings,
-        );
+  // Auto-start the engine and lands directly on the looper (no first-run gate).
+  // The mock flavor opens a deterministic default config; the native flavor
+  // auto-starts from the saved config or a first-run default and returns the
+  // ASIO drivers enumerated at startup for the audio-setup picker cache.
+  var asioDrivers = const <AudioDevice>[];
+  if (engine is MockAudioEngine) {
+    repository.startEngine(engine.defaultConfig);
+  } else {
+    final result = await tryAutoStartEngine(
+      repository: repository,
+      settings: settings,
+    );
+    asioDrivers = result.asioDrivers;
+  }
 
   await bootstrap(
     () => App(
@@ -61,7 +69,7 @@ Future<void> runLoopy(
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: sessionRepository,
       sessionDirectory: defaultSessionDirectory,
-      needsSetup: !configured,
+      initialAsioDrivers: asioDrivers,
     ),
   );
 }

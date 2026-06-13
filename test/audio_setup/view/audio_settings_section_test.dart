@@ -348,7 +348,7 @@ void main() {
     expect(find.text('Not measured'), findsOneWidget);
   });
 
-  group('asio backend (consistency with the wizard)', () {
+  group('asio backend', () {
     const focusrite = AudioDevice(
       id: 'Focusrite USB ASIO',
       name: 'Focusrite USB ASIO',
@@ -405,6 +405,36 @@ void main() {
       );
       expect(
         find.byKey(const Key('audioSettings_captureDevice_picker')),
+        findsNothing,
+      );
+    });
+  });
+
+  group('error banner', () {
+    testWidgets('renders the engine error and detail when status is error', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          status: AudioSetupStatus.error,
+          error: AudioSetupError.openDeviceFailed,
+          errorDetail: 'device',
+        ),
+      );
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_error_banner')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is absent when there is no error', (tester) async {
+      seed(runningState);
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_error_banner')),
         findsNothing,
       );
     });

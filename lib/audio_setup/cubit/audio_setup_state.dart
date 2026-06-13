@@ -1,12 +1,10 @@
 part of 'audio_setup_cubit.dart';
 
-/// A categorized audio-setup failure surfaced in the wizard error banner.
+/// A categorized audio-setup failure surfaced in the audio-settings error
+/// banner.
 enum AudioSetupError {
   /// The engine failed to open or reopen the device.
   openDeviceFailed,
-
-  /// The engine failed to start audio.
-  startAudioFailed,
 }
 
 /// Whether the audio device is currently open.
@@ -53,6 +51,7 @@ class AudioSetupState extends Equatable {
     this.backend = AudioBackend.wasapi,
     this.asioDriver = '',
     this.asioDrivers = const [],
+    this.cachedAsioDrivers = const [],
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
     this.error,
@@ -107,6 +106,11 @@ class AudioSetupState extends Equatable {
   /// The installed ASIO drivers (one duplex [AudioDevice] each) for the driver
   /// picker. Empty off Windows / on the default build.
   final List<AudioDevice> asioDrivers;
+
+  /// The ASIO drivers enumerated once at process start, cached so the picker
+  /// stays populated even while ASIO holds the device (re-probing live would
+  /// tear the stream down — R1). [asioDrivers] falls back to this while live.
+  final List<AudioDevice> cachedAsioDrivers;
 
   /// The most recent pinned-device connectivity transition (drives the banner).
   final DeviceConnectivity deviceConnectivity;
@@ -185,10 +189,12 @@ class AudioSetupState extends Equatable {
     AudioBackend? backend,
     String? asioDriver,
     List<AudioDevice>? asioDrivers,
+    List<AudioDevice>? cachedAsioDrivers,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
     AudioSetupError? error,
     String? errorDetail,
+    bool clearError = false,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
@@ -204,11 +210,14 @@ class AudioSetupState extends Equatable {
       backend: backend ?? this.backend,
       asioDriver: asioDriver ?? this.asioDriver,
       asioDrivers: asioDrivers ?? this.asioDrivers,
+      cachedAsioDrivers: cachedAsioDrivers ?? this.cachedAsioDrivers,
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
-      error: error ?? this.error,
-      errorDetail: errorDetail ?? this.errorDetail,
+      // [clearError] resets the error on a successful (re)start, since nullable
+      // fields cannot otherwise be cleared through `?? this`.
+      error: clearError ? null : (error ?? this.error),
+      errorDetail: clearError ? null : (errorDetail ?? this.errorDetail),
     );
   }
 
@@ -227,6 +236,7 @@ class AudioSetupState extends Equatable {
     backend,
     asioDriver,
     asioDrivers,
+    cachedAsioDrivers,
     deviceConnectivity,
     connectivityDeviceName,
     error,
