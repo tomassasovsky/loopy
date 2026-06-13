@@ -20,20 +20,12 @@
         }
     },
     "dismiss": "Dismiss",
-    "sessionSaved": "Session saved",
-    "sessionLoaded": "Session loaded",
     "mixdownExported": "Mixdown exported",
     "stemsExported": "Stems exported",
-    "looperAppBarTitle": "Loopy",
-    "sessionTooltip": "Session",
     "saveSession": "Save session",
     "loadSession": "Load session",
     "exportMixdown": "Export mixdown",
     "exportStems": "Export stems",
-    "playAllTooltip": "Play all",
-    "stopAllTooltip": "Stop all",
-    "audioSetupTooltip": "Audio setup",
-    "masterLoopLabel": "Master loop",
     "engineStoppedBanner": "Audio engine stopped — open setup to start.",
     "trackNumberLabel": "Track {trackNumber}",
     "@trackNumberLabel": {
@@ -52,49 +44,15 @@
         }
     },
     "ioRoutingTooltip": "I/O routing",
-    "recordButton": "Record",
-    "finishButton": "Finish",
-    "stopDubButton": "Stop dub",
-    "overdubButton": "Overdub",
     "stopButton": "Stop",
-    "playButton": "Play",
-    "undoButton": "Undo",
-    "redoButton": "Redo",
-    "clearButton": "Clear",
-    "muteTooltip": "Mute",
-    "unmuteTooltip": "Unmute",
     "trackStateEmpty": "empty",
     "trackStateRecording": "recording",
     "trackStateOverdubbing": "overdubbing",
     "trackStatePlaying": "playing",
     "trackStateStopped": "stopped",
-    "noDevice": "no device",
     "measuringLowercase": "measuring…",
     "noLoopback": "no loopback",
     "emDash": "—",
-    "engineStatusFooter": "{deviceName} · {sampleRate} Hz · {bufferFrames} frames · {inputChannels} in / {outputChannels} out · latency {latency}",
-    "@engineStatusFooter": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            },
-            "sampleRate": {
-                "type": "int"
-            },
-            "bufferFrames": {
-                "type": "int"
-            },
-            "inputChannels": {
-                "type": "int"
-            },
-            "outputChannels": {
-                "type": "int"
-            },
-            "latency": {
-                "type": "String"
-            }
-        }
-    },
     "performanceModeRec": "REC",
     "performanceModePlay": "PLAY",
     "renameTrackTitle": "Rename track {trackNumber}",
@@ -237,27 +195,9 @@
     "configureInputMonitoring": "Configure input monitoring",
     "monitorRoutingIntro": "Monitor inputs live through their own effects (wet) and/or as a clean dry send — routed to the outputs you pick. Never recorded.",
     "startEngineForMonitorChannels": "Start the engine to choose monitor channels.",
-    "setupStepAudioEngine": "Audio engine",
-    "setupStepInput": "Input",
-    "setupStepReady": "Ready to play",
-    "audioSetupKicker": "AUDIO SETUP",
-    "audioDeviceTitle": "Audio device",
-    "audioSetupRailIntro": "Configure your interface for low-latency looping.",
-    "back": "Back",
     "startEngine": "Start engine",
-    "continueButton": "Continue",
-    "outputDeviceGroup": "Output device",
     "sampleRateGroup": "Sample rate",
     "bufferSizeGroup": "Buffer size",
-    "inputDeviceGroup": "Input device",
-    "exclusiveModeTitle": "Exclusive mode",
-    "exclusiveModeSubtitle": "Take exclusive control of the interface for lower latency, bypassing the Windows mixer. Falls back to shared if unavailable.",
-    "exclusiveSharedFallback": "Shared mode — the device refused exclusive access.",
-    "backendGroup": "Audio backend",
-    "backendWasapi": "WASAPI",
-    "backendWasapiNote": "Windows default device path.",
-    "backendAsio": "ASIO",
-    "backendAsioNote": "Full multichannel via the ASIO driver.",
     "asioDriverGroup": "ASIO driver",
     "asioChannelCounts": "{inputs} in / {outputs} out",
     "@asioChannelCounts": {
@@ -270,18 +210,11 @@
             }
         }
     },
-    "asioDriverHandlesAllIo": "The ASIO driver provides every input and output.",
-    "backendLabel": "Backend",
-    "asioUnavailableFallback": "ASIO unavailable — running on system audio.",
     "noAsioDriverTitle": "No ASIO driver found",
     "noAsioDriverMessage": "Loopy uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL, then reopen settings.",
     "downloadAsio4all": "Get ASIO4ALL",
     "sampleRateLabel": "Sample rate",
     "bufferLabel": "Buffer",
-    "estimatedLatencyLabel": "Estimated latency",
-    "defaultDevice": "Default device",
-    "liveKicker": "LIVE",
-    "engineRunningHint": "The engine is open and ready. Stop it to reconfigure.",
     "roundTripLatencyLabel": "Round-trip latency",
     "recordOffsetLabel": "Record offset",
     "applyLabel": "Set",
@@ -356,14 +289,6 @@
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Failed to open device: {errorName}",
     "@failedToOpenDevice": {
-        "placeholders": {
-            "errorName": {
-                "type": "String"
-            }
-        }
-    },
-    "failedToStartAudio": "Failed to start audio: {errorName}",
-    "@failedToStartAudio": {
         "placeholders": {
             "errorName": {
                 "type": "String"

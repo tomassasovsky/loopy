@@ -6,45 +6,25 @@
     "deviceDisconnectedBanner": "{deviceName} desconectado — intentando reconectar…",
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
     "dismiss": "Descartar",
-    "sessionSaved": "Sesión guardada",
-    "sessionLoaded": "Sesión cargada",
     "mixdownExported": "Mezcla exportada",
     "stemsExported": "Pistas exportadas",
-    "looperAppBarTitle": "Loopy",
-    "sessionTooltip": "Sesión",
     "saveSession": "Guardar sesión",
     "loadSession": "Cargar sesión",
     "exportMixdown": "Exportar mezcla",
     "exportStems": "Exportar pistas",
-    "playAllTooltip": "Reproducir todo",
-    "stopAllTooltip": "Detener todo",
-    "audioSetupTooltip": "Configuración de audio",
-    "masterLoopLabel": "Bucle maestro",
     "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
     "trackNumberLabel": "Pista {trackNumber}",
     "loopMultipleLabel": "×{multiple}",
     "ioRoutingTooltip": "Enrutamiento E/S",
-    "recordButton": "Grabar",
-    "finishButton": "Finalizar",
-    "stopDubButton": "Detener dub",
-    "overdubButton": "Sobregrabar",
     "stopButton": "Detener",
-    "playButton": "Reproducir",
-    "undoButton": "Deshacer",
-    "redoButton": "Rehacer",
-    "clearButton": "Borrar",
-    "muteTooltip": "Silenciar",
-    "unmuteTooltip": "Activar sonido",
     "trackStateEmpty": "vacío",
     "trackStateRecording": "grabando",
     "trackStateOverdubbing": "sobregrabando",
     "trackStatePlaying": "reproduciendo",
     "trackStateStopped": "detenido",
-    "noDevice": "sin dispositivo",
     "measuringLowercase": "midiendo…",
     "noLoopback": "sin loopback",
     "emDash": "—",
-    "engineStatusFooter": "{deviceName} · {sampleRate} Hz · {bufferFrames} fotogramas · {inputChannels} ent / {outputChannels} sal · latencia {latency}",
     "performanceModeRec": "GRAB",
     "performanceModePlay": "PLAY",
     "renameTrackTitle": "Renombrar pista {trackNumber}",
@@ -110,27 +90,9 @@
     "configureInputMonitoring": "Configurar monitorización de entrada",
     "monitorRoutingIntro": "Monitoriza entradas en vivo a través de sus propios efectos (wet) y/o como envío seco limpio — enrutado a las salidas que elijas. Nunca se graba.",
     "startEngineForMonitorChannels": "Inicia el motor para elegir canales de monitor.",
-    "setupStepAudioEngine": "Motor de audio",
-    "setupStepInput": "Entrada",
-    "setupStepReady": "Listo para tocar",
-    "audioSetupKicker": "CONFIGURACIÓN DE AUDIO",
-    "audioDeviceTitle": "Dispositivo de audio",
-    "audioSetupRailIntro": "Configura tu interfaz para bucles de baja latencia.",
-    "back": "Atrás",
     "startEngine": "Iniciar motor",
-    "continueButton": "Continuar",
-    "outputDeviceGroup": "Dispositivo de salida",
     "sampleRateGroup": "Frecuencia de muestreo",
     "bufferSizeGroup": "Tamaño del búfer",
-    "inputDeviceGroup": "Dispositivo de entrada",
-    "exclusiveModeTitle": "Modo exclusivo",
-    "exclusiveModeSubtitle": "Toma el control exclusivo de la interfaz para reducir la latencia, evitando el mezclador de Windows. Vuelve a compartido si no está disponible.",
-    "exclusiveSharedFallback": "Modo compartido: el dispositivo rechazó el acceso exclusivo.",
-    "backendGroup": "Backend de audio",
-    "backendWasapi": "WASAPI",
-    "backendWasapiNote": "Ruta de dispositivo predeterminada de Windows.",
-    "backendAsio": "ASIO",
-    "backendAsioNote": "Multicanal completo mediante el controlador ASIO.",
     "asioDriverGroup": "Controlador ASIO",
     "asioChannelCounts": "{inputs} ent / {outputs} sal",
     "@asioChannelCounts": {
@@ -143,18 +105,11 @@
             }
         }
     },
-    "asioDriverHandlesAllIo": "El controlador ASIO proporciona todas las entradas y salidas.",
-    "backendLabel": "Backend",
-    "asioUnavailableFallback": "ASIO no disponible — usando el audio del sistema.",
     "noAsioDriverTitle": "No se encontró ningún controlador ASIO",
     "noAsioDriverMessage": "Loopy usa ASIO en Windows. Instala el controlador ASIO de tu interfaz, u obtén uno genérico de ASIO4ALL, y vuelve a abrir la configuración.",
     "downloadAsio4all": "Obtener ASIO4ALL",
     "sampleRateLabel": "Frecuencia de muestreo",
     "bufferLabel": "Búfer",
-    "estimatedLatencyLabel": "Latencia estimada",
-    "defaultDevice": "Dispositivo predeterminado",
-    "liveKicker": "EN VIVO",
-    "engineRunningHint": "El motor está abierto y listo. Deténlo para reconfigurar.",
     "roundTripLatencyLabel": "Latencia de ida y vuelta",
     "recordOffsetLabel": "Desplazamiento de grabación",
     "applyLabel": "Aplicar",
@@ -183,7 +138,6 @@
     "loopbackKindMonitor": "monitor",
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Error al abrir el dispositivo: {errorName}",
-    "failedToStartAudio": "Error al iniciar el audio: {errorName}",
     "audioSettingsIntro": "Elige el dispositivo de audio y comprueba la latencia de ida y vuelta medida.",
     "outputDeviceGroupUpper": "DISPOSITIVO DE SALIDA",
     "inputDeviceGroupUpper": "DISPOSITIVO DE ENTRADA",
@@ -252,28 +206,6 @@
         "placeholders": {
             "multiple": {
                 "type": "int"
-            }
-        }
-    },
-    "@engineStatusFooter": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            },
-            "sampleRate": {
-                "type": "int"
-            },
-            "bufferFrames": {
-                "type": "int"
-            },
-            "inputChannels": {
-                "type": "int"
-            },
-            "outputChannels": {
-                "type": "int"
-            },
-            "latency": {
-                "type": "String"
             }
         }
     },
@@ -400,13 +332,6 @@
         }
     },
     "@failedToOpenDevice": {
-        "placeholders": {
-            "errorName": {
-                "type": "String"
-            }
-        }
-    },
-    "@failedToStartAudio": {
         "placeholders": {
             "errorName": {
                 "type": "String"
