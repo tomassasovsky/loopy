@@ -39,6 +39,22 @@ Future<AutoStartResult> tryAutoStartEngine({
     );
     return (started: started, asioDrivers: asioDrivers);
   }
+  // On Windows (ASIO-only) the engine always runs ASIO, and the driver is found
+  // automatically: keep the saved one if it is still enumerated, otherwise fall
+  // back to the first installed driver. This heals a config saved as WASAPI or
+  // with a stale/empty driver (e.g. from an earlier build), so the app finds
+  // the installed driver on its own — the user can still switch it in settings.
+  // With no driver installed at all, land stopped (the looper shows the
+  // no-driver / ASIO4ALL affordance), mirroring the first-run path. The coercion
+  // mirrors the cubit's hydration so the engine and the UI never disagree.
+  final backend = platformAsioSelectable ? AudioBackend.asio : saved.backend;
+  final asioDriver = platformAsioSelectable
+      ? _resolveAsioDriver(saved.asioDriver, asioDrivers)
+      : saved.asioDriver;
+  if (platformAsioSelectable && asioDriver.isEmpty) {
+    return (started: false, asioDrivers: asioDrivers);
+  }
+
   final loopback = repository.detectLoopback();
   final result = repository.startEngine(
     EngineConfig(
@@ -57,13 +73,11 @@ Future<AutoStartResult> tryAutoStartEngine({
           loopback.isAutoRoutable && saved.captureDeviceId.isEmpty,
       playbackDeviceId: saved.playbackDeviceId,
       captureDeviceId: saved.captureDeviceId,
-      // Relaunch into the saved backend. This config assembly is duplicated
-      // from the cubit's _engineConfig, so both must carry backend/asioDriver
-      // or an auto-start would diverge from an interactive start. If the saved
-      // ASIO driver is gone, the native dispatcher falls back to WASAPI and the
-      // cubit surfaces it via engineStatus.activeBackend.
-      backend: saved.backend,
-      asioDriver: saved.asioDriver,
+      // This config assembly is duplicated from the cubit's _engineConfig, so
+      // both must carry backend/asioDriver or an auto-start would diverge from
+      // an interactive start.
+      backend: backend,
+      asioDriver: asioDriver,
     ),
   );
   if (!result.isOk) return (started: false, asioDrivers: asioDrivers);
@@ -211,3 +225,12 @@ Future<bool> _firstRunAutoStart({
 /// preferring the common default when the driver allows it.
 int _preferred(List<int> options, int wanted) =>
     options.isEmpty || options.contains(wanted) ? wanted : options.first;
+
+/// Resolves the ASIO driver to open on Windows: keeps [saved] when it is still
+/// enumerated, otherwise falls back to the first enumerated driver, or empty
+/// when none are installed. Mirrors `AudioSetupCubit._resolveAsioDriver` so the
+/// auto-start and the interactive UI agree on the driver.
+String _resolveAsioDriver(String saved, List<AudioDevice> drivers) {
+  if (drivers.any((d) => d.id == saved)) return saved;
+  return drivers.isEmpty ? '' : drivers.first.id;
+}

@@ -78,7 +78,11 @@ if(WIN32)
 else()
   option(LOOPY_ENABLE_ASIO "Build Windows ASIO support" OFF)
 endif()
-set(LOOPY_ASIO_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/asiosdk"
+# The canonical vendored SDK location, resolved to a normalized absolute path so
+# the build finds it on its own regardless of where CMake is invoked from.
+get_filename_component(LOOPY_VENDORED_ASIO_SDK
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/asiosdk" ABSOLUTE)
+set(LOOPY_ASIO_SDK_DIR "${LOOPY_VENDORED_ASIO_SDK}"
   CACHE PATH "Path to the Steinberg ASIO SDK (defaults to the vendored copy)")
 
 # The Flutter Windows build drives this CMake through the plugin and cannot
@@ -92,15 +96,28 @@ if(DEFINED ENV{LOOPY_ASIO_SDK_DIR} AND NOT "$ENV{LOOPY_ASIO_SDK_DIR}" STREQUAL "
   set(LOOPY_ASIO_SDK_DIR "$ENV{LOOPY_ASIO_SDK_DIR}")
 endif()
 
+# Self-heal: if the resolved path is empty or missing — a stale CMake cache from
+# an older build, or an override that points somewhere gone — fall back to the
+# vendored SDK so the build still finds it on its own instead of failing.
+if(LOOPY_ENABLE_ASIO AND
+   (NOT LOOPY_ASIO_SDK_DIR OR NOT EXISTS "${LOOPY_ASIO_SDK_DIR}"))
+  message(STATUS
+    "Loopy: LOOPY_ASIO_SDK_DIR ('${LOOPY_ASIO_SDK_DIR}') is unset or missing; "
+    "falling back to the vendored ASIO SDK at ${LOOPY_VENDORED_ASIO_SDK}.")
+  set(LOOPY_ASIO_SDK_DIR "${LOOPY_VENDORED_ASIO_SDK}")
+endif()
+
 if(LOOPY_ENABLE_ASIO)
   if(NOT WIN32)
     message(FATAL_ERROR "LOOPY_ENABLE_ASIO is Windows-only.")
   endif()
-  if(NOT LOOPY_ASIO_SDK_DIR OR NOT EXISTS "${LOOPY_ASIO_SDK_DIR}")
+  if(NOT EXISTS "${LOOPY_ASIO_SDK_DIR}")
+    # Even the vendored SDK is gone (a broken/partial checkout) — nothing to
+    # fall back to.
     message(FATAL_ERROR
-      "LOOPY_ENABLE_ASIO=ON could not find the Steinberg ASIO SDK at "
-      "LOOPY_ASIO_SDK_DIR='${LOOPY_ASIO_SDK_DIR}' (defaults to the vendored "
-      "third_party/asiosdk). See docs/WINDOWS_ASIO.md.")
+      "LOOPY_ENABLE_ASIO=ON but no Steinberg ASIO SDK was found. The vendored "
+      "copy at ${LOOPY_VENDORED_ASIO_SDK} is missing; restore it or set "
+      "LOOPY_ASIO_SDK_DIR. See docs/WINDOWS_ASIO.md.")
   endif()
   # The probe, the duplex device backend, and the SDK host glue are C++.
   enable_language(CXX)

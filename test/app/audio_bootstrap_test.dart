@@ -118,6 +118,98 @@ void main() {
       });
     });
 
+    group('saved config on Windows (auto-finds ASIO)', () {
+      tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      const focusrite = AudioDevice(
+        id: 'Focusrite USB ASIO',
+        name: 'Focusrite USB ASIO',
+        isDefault: false,
+        isInput: false,
+        inputChannels: 18,
+        outputChannels: 20,
+      );
+
+      test(
+        'heals a stale saved backend=wasapi to the installed driver',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+          engine.asioDrivers = const [focusrite];
+          // A config saved before the ASIO-only switch (WASAPI, no driver).
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.lastConfig?.backend, AudioBackend.asio);
+          expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+        },
+      );
+
+      test('keeps the saved driver when it is still installed', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [focusrite];
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            backend: AudioBackend.asio,
+            asioDriver: 'Focusrite USB ASIO',
+          ),
+        );
+
+        await tryAutoStartEngine(repository: repository, settings: settings);
+
+        expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+      });
+
+      test(
+        'falls back to the first driver when the saved one is gone',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+          engine.asioDrivers = const [focusrite];
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(
+              sampleRate: 48000,
+              bufferFrames: 128,
+              backend: AudioBackend.asio,
+              asioDriver: 'Some Removed Interface',
+            ),
+          );
+
+          await tryAutoStartEngine(repository: repository, settings: settings);
+
+          expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+        },
+      );
+
+      test('lands stopped when no ASIO driver is installed', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [];
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            backend: AudioBackend.asio,
+            asioDriver: 'Focusrite USB ASIO',
+          ),
+        );
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+        expect(engine.startCalls, 0);
+      });
+    });
+
     test('restores saved per-track routing on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(
