@@ -39,7 +39,6 @@ typedef struct le_device_open_result {
   int32_t input_channels;   /* negotiated capture channels, clamped to LE_MAX_CHANNELS */
   int32_t output_channels;  /* negotiated playback channels, clamped to LE_MAX_CHANNELS */
   int32_t buffer_frames;    /* internal device period size in frames */
-  int32_t exclusive_active; /* 1 = opened OS-exclusive (miniaudio only; 0 for ASIO) */
   int32_t active_backend;   /* le_audio_backend actually opened */
   char    device_name[256]; /* human-readable name of the active playback device */
   /* Loopback-excluded input channels computed by the backend from its own

@@ -144,19 +144,8 @@ static void test_engine_lifecycle_without_device(void) {
   CHECK(snap.device_present == 0); /* no device opened yet */
   CHECK(snap.frames_processed == 0);
   CHECK(snap.latency_state == LE_LATENCY_IDLE);
-  CHECK(snap.exclusive_active == 0); /* shared until a device opens exclusive */
 
   le_engine_destroy(engine);
-}
-
-static void test_decide_share_fallback(void) {
-  printf("test_decide_share_fallback\n");
-  /* Exclusive requested: the outcome follows whether the exclusive init worked. */
-  CHECK(le_decide_share_fallback(1, 1) == LE_SHARE_DONE_EXCLUSIVE);
-  CHECK(le_decide_share_fallback(1, 0) == LE_SHARE_RETRY_SHARED);
-  /* Not requested: always shared, regardless of the (shared) init result. */
-  CHECK(le_decide_share_fallback(0, 1) == LE_SHARE_DONE_SHARED);
-  CHECK(le_decide_share_fallback(0, 0) == LE_SHARE_DONE_SHARED);
 }
 
 static void test_null_safety(void) {
@@ -2988,7 +2977,6 @@ int main(void) {
   test_ring_reports_full();
   test_ring_wraps_around();
   test_engine_lifecycle_without_device();
-  test_decide_share_fallback();
   test_null_safety();
   test_loop_clock();
   test_looper_record_then_play();

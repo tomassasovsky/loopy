@@ -10,6 +10,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// The audio controls embedded in the Big Picture settings "Audio" section,
 /// driven by the shared [AudioSetupCubit]: pick the playback/capture device
@@ -39,42 +40,31 @@ class AudioSettingsSection extends StatelessWidget {
           _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
           const SizedBox(height: 20),
         ],
-        // Backend selector — only when ASIO is selectable (Windows + drivers).
-        if (state.asioDrivers.isNotEmpty) ...[
-          SetupGroupLabel(l10n.backendGroup),
-          const SizedBox(height: 12),
-          SetupOptionRow<AudioBackend>(
-            selected: state.backend,
-            onSelected: cubit.setBackend,
-            options: [
-              SetupOption(
-                value: AudioBackend.wasapi,
-                label: l10n.backendWasapi,
-                sub: l10n.backendWasapiNote,
-                optionKey: const Key('audioSettings_backend_wasapi'),
-              ),
-              SetupOption(
-                value: AudioBackend.asio,
-                label: l10n.backendAsio,
-                sub: l10n.backendAsioNote,
-                optionKey: const Key('audioSettings_backend_asio'),
-              ),
+        // Windows runs ASIO exclusively: one driver picker, no WASAPI selector
+        // or device pickers. With no driver installed, an ASIO4ALL affordance
+        // shows instead. macOS/Linux keep the output + input device pickers.
+        if (state.asioOnly) ...[
+          if (state.cachedAsioDrivers.isEmpty)
+            const _NoAsioDriverMessage()
+          else ...[
+            SetupGroupLabel(l10n.asioDriverGroup),
+            const SizedBox(height: 12),
+            AudioDevicePicker(
+              pickerKey: 'audioSettings_asioDriver_picker',
+              // The cached enumeration stays populated even while ASIO holds
+              // the device (re-probing live would tear the stream down — R1).
+              devices: _asioDriverDevices(l10n, state.cachedAsioDrivers),
+              selectedId: state.asioDriver,
+              onSelected: cubit.setAsioDriver,
+            ),
+            // D5: ASIO was requested but the device opened on WASAPI — disclose
+            // it (never run system audio silently).
+            if (status.isConnected &&
+                status.activeBackend == AudioBackend.wasapi) ...[
+              const SizedBox(height: 12),
+              const _AsioFallbackNote(),
             ],
-          ),
-          const SizedBox(height: 28),
-        ],
-        // Under ASIO a single driver drives all I/O, so the two device pickers
-        // collapse to one ASIO driver picker; else the WASAPI output + input
-        // pickers show.
-        if (state.isAsio) ...[
-          SetupGroupLabel(l10n.asioDriverGroup),
-          const SizedBox(height: 12),
-          AudioDevicePicker(
-            pickerKey: 'audioSettings_asioDriver_picker',
-            devices: _asioDriverDevices(l10n, state),
-            selectedId: state.asioDriver,
-            onSelected: cubit.setAsioDriver,
-          ),
+          ],
         ] else ...[
           SetupGroupLabel(l10n.outputDeviceGroupUpper),
           const SizedBox(height: 12),
@@ -286,14 +276,14 @@ class AudioSettingsSection extends StatelessWidget {
     ];
   }
 
-  /// The enumerated ASIO drivers as duplex devices labelled with their probed
+  /// The enumerated ASIO [drivers] as duplex devices labelled with their probed
   /// channel counts (e.g. "Focusrite USB ASIO · 18 in / 20 out"), for the
   /// driver picker shown under the ASIO backend.
   List<AudioDevice> _asioDriverDevices(
     AppLocalizations l10n,
-    AudioSetupState state,
+    List<AudioDevice> drivers,
   ) => [
-    for (final d in state.asioDrivers)
+    for (final d in drivers)
       AudioDevice(
         id: d.id,
         name:
@@ -373,6 +363,104 @@ class _ErrorBanner extends StatelessWidget {
               style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The ASIO4ALL download page — a generic ASIO driver for interfaces without
+/// their own. Linked, never bundled (its license forbids redistribution).
+final Uri _asio4allUri = Uri.parse('https://asio4all.org');
+
+/// A labelled link that opens the ASIO4ALL download page in the external
+/// browser via `url_launcher`.
+class _Asio4AllLink extends StatelessWidget {
+  const _Asio4AllLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        key: const Key('audioSettings_asio4all_link'),
+        onPressed: () => unawaited(
+          launchUrl(_asio4allUri, mode: LaunchMode.externalApplication),
+        ),
+        icon: const Icon(Icons.open_in_new, size: 16),
+        label: Text(context.l10n.downloadAsio4all),
+      ),
+    );
+  }
+}
+
+/// Shown on Windows when no ASIO driver is installed: explains that Loopy needs
+/// ASIO and offers the ASIO4ALL link (the engine cannot start with no driver).
+class _NoAsioDriverMessage extends StatelessWidget {
+  const _NoAsioDriverMessage();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      key: const Key('audioSettings_noAsioDriver'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SetupGroupLabel(l10n.asioDriverGroup),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.noAsioDriverTitle,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Text(l10n.noAsioDriverMessage, style: setupBody),
+              const SizedBox(height: 6),
+              const _Asio4AllLink(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shown on Windows when ASIO was requested but the device opened on WASAPI
+/// (system audio): discloses the fallback (D5) and offers the ASIO4ALL link.
+class _AsioFallbackNote extends StatelessWidget {
+  const _AsioFallbackNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('audioSettings_asioFallback_note'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 18, color: scheme.error),
+              const SizedBox(width: 10),
+              Expanded(child: Text(l10n.asioUnavailableFallback)),
+            ],
+          ),
+          const _Asio4AllLink(),
         ],
       ),
     );

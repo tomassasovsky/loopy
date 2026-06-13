@@ -318,7 +318,6 @@ class EngineSnapshot {
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
-    this.exclusiveActive = false,
     this.activeBackend = AudioBackend.wasapi,
     this.tracks = const [],
   });
@@ -342,7 +341,6 @@ class EngineSnapshot {
       masterLengthFrames = 0,
       masterPositionFrames = 0,
       recordOffsetFrames = 0,
-      exclusiveActive = false,
       activeBackend = AudioBackend.wasapi,
       tracks = const [];
 
@@ -372,7 +370,6 @@ class EngineSnapshot {
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
     recordOffsetFrames: native.record_offset_frames,
-    exclusiveActive: native.exclusive_active != 0,
     activeBackend: AudioBackend.fromNative(native.active_backend),
     tracks: tracks,
   );
@@ -434,10 +431,6 @@ class EngineSnapshot {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
-  /// Whether the device is actually open in OS-exclusive mode. `false` for
-  /// shared mode, including an exclusive request that fell back to shared.
-  final bool exclusiveActive;
-
   /// The device backend actually running (negotiated). Always
   /// [AudioBackend.wasapi] today; in Part 2 a requested-ASIO open that fell
   /// back reports [AudioBackend.wasapi] here.
@@ -495,7 +488,6 @@ class EngineSnapshot {
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
           recordOffsetFrames == other.recordOffsetFrames &&
-          exclusiveActive == other.exclusiveActive &&
           activeBackend == other.activeBackend &&
           _listEquals(tracks, other.tracks);
 
@@ -518,7 +510,6 @@ class EngineSnapshot {
     masterLengthFrames,
     masterPositionFrames,
     recordOffsetFrames,
-    exclusiveActive,
     activeBackend,
     ...tracks,
   ]);

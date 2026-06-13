@@ -2,19 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-/// The platform default for OS-exclusive device access: on by default on
-/// Windows (full device control via WASAPI exclusive mode), off elsewhere.
-///
-/// Resolved here in the presentation layer — the single source of this OS rule.
-/// The cubit and repository hold no OS policy (the engine still falls back to
-/// shared if exclusive is refused, so this is always safe).
-bool get platformDefaultExclusive =>
-    defaultTargetPlatform == TargetPlatform.windows;
-
 /// Whether the ASIO backend is selectable on this platform: Windows only (ASIO
 /// is a Windows-only API). Resolved here in the presentation layer — the single
 /// source of this OS rule — and injected into the audio-setup cubit, so the
-/// cubit holds no OS policy (mirroring [platformDefaultExclusive]).
+/// cubit holds no OS policy.
 bool get platformAsioSelectable =>
     defaultTargetPlatform == TargetPlatform.windows;
 
@@ -48,11 +39,6 @@ Future<AutoStartResult> tryAutoStartEngine({
     );
     return (started: started, asioDrivers: asioDrivers);
   }
-  // Resolve the exclusive-access default here (not in storage): an unset value
-  // means OS-exclusive on Windows, shared elsewhere. The engine falls back to
-  // shared if exclusive is refused, so this is always safe.
-  final exclusive =
-      await settings.loadAudioExclusive() ?? platformDefaultExclusive;
   final loopback = repository.detectLoopback();
   final result = repository.startEngine(
     EngineConfig(
@@ -60,7 +46,6 @@ Future<AutoStartResult> tryAutoStartEngine({
       bufferFrames: saved.bufferFrames,
       inputChannels: saved.inputChannels,
       outputChannels: saved.outputChannels,
-      exclusive: exclusive,
       maxLoopFrames: saved.maxLoopMinutes <= 0
           ? 0
           : saved.maxLoopMinutes * 60 * saved.sampleRate,

@@ -219,11 +219,6 @@ typedef struct le_config {
    * overrides capture_device_id when a loopback device is detected. */
   char playback_device_id[256];
   char capture_device_id[256];
-  /* 1 = request OS-exclusive device access (WASAPI exclusive mode on Windows:
-   * bypasses the Windows mixer, native format, no resampling). Falls back to
-   * shared automatically if the OS/hardware refuses exclusive. No effect on
-   * backends without an exclusive concept; default 0 (shared, unchanged). */
-  int32_t exclusive;
   /* le_audio_backend to open; 0 (LE_BACKEND_WASAPI) selects the default
    * miniaudio path. Accepted and ignored until the ASIO backend lands. */
   int32_t backend;
@@ -330,11 +325,6 @@ typedef struct le_snapshot {
    * written this many frames earlier in the loop so it aligns with what the
    * player heard. Auto-set by a latency measurement; manually overridable. */
   int32_t record_offset_frames;
-
-  /* 1 = the device is actually open in OS-exclusive mode; 0 = shared (including
-   * an exclusive request that fell back to shared). Lets the UI show the real
-   * negotiated mode versus what was requested (le_config.exclusive). */
-  int32_t exclusive_active;
 
   /* le_audio_backend actually running (negotiated). In Part 2, a requested-ASIO
    * open that fell back to WASAPI reports WASAPI here. Always WASAPI today. */

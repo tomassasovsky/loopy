@@ -47,7 +47,6 @@ class EngineConfig {
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.exclusive = false,
     this.backend = AudioBackend.wasapi,
     this.asioDriver = '',
   });
@@ -86,13 +85,6 @@ class EngineConfig {
   /// default. Ignored when [useLoopbackCapture] resolves a loopback device.
   final String captureDeviceId;
 
-  /// Whether to request OS-exclusive device access (WASAPI exclusive mode on
-  /// Windows: bypasses the mixer, native format, no resampling). The engine
-  /// falls back to shared mode automatically if exclusive is refused; the
-  /// negotiated result is reported via `EngineSnapshot.exclusiveActive`. No
-  /// effect on backends without an exclusive concept.
-  final bool exclusive;
-
   /// Which device backend to open. Defaults to [AudioBackend.wasapi] (the
   /// platform's default miniaudio backend); [AudioBackend.asio] is opt-in and
   /// only honored in Part 2.
@@ -111,7 +103,6 @@ class EngineConfig {
       ..output_channels = outputChannels
       ..max_loop_frames = maxLoopFrames
       ..use_loopback_capture = useLoopbackCapture ? 1 : 0
-      ..exclusive = exclusive ? 1 : 0
       ..backend = backend.toNative();
     writeNativeString(ptr.ref.playback_device_id, playbackDeviceId);
     writeNativeString(ptr.ref.capture_device_id, captureDeviceId);
@@ -131,7 +122,6 @@ class EngineConfig {
           useLoopbackCapture == other.useLoopbackCapture &&
           playbackDeviceId == other.playbackDeviceId &&
           captureDeviceId == other.captureDeviceId &&
-          exclusive == other.exclusive &&
           backend == other.backend &&
           asioDriver == other.asioDriver;
 
@@ -145,7 +135,6 @@ class EngineConfig {
     useLoopbackCapture,
     playbackDeviceId,
     captureDeviceId,
-    exclusive,
     backend,
     asioDriver,
   );
@@ -159,6 +148,6 @@ class EngineConfig {
       'useLoopbackCapture: $useLoopbackCapture, '
       'playbackDeviceId: $playbackDeviceId, '
       'captureDeviceId: $captureDeviceId, '
-      'exclusive: $exclusive, backend: ${backend.name}, '
+      'backend: ${backend.name}, '
       'asioDriver: $asioDriver)';
 }

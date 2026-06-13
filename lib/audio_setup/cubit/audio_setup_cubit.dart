@@ -17,12 +17,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   AudioSetupCubit({
     required LooperRepository repository,
     required SettingsRepository settings,
-    required bool defaultExclusive,
     bool asioSelectable = false,
     List<AudioDevice> initialAsioDrivers = const [],
   }) : _repository = repository,
        _settings = settings,
-       _defaultExclusive = defaultExclusive,
        _asioSelectable = asioSelectable,
        super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
@@ -38,37 +36,37 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // Hydrate from the repository immediately — [looperState] is a broadcast
     // stream that does not replay, so a new cubit would otherwise show defaults
     // until the next engine tick even when the device is already open.
-    emit(
-      _projectFromRepository(
-        _repository.state,
-        current: state.copyWith(
-          loopback: _repository.detectLoopback(),
-          devices: _repository.devices(),
-          asioDrivers: drivers,
-          // Prefer the startup enumeration; when none was injected (non-Windows
-          // or a test/interactive build) the freshly probed list is the cache.
-          cachedAsioDrivers: initialAsioDrivers.isNotEmpty
-              ? initialAsioDrivers
-              : drivers,
-        ),
-        hydrateConfig: true,
+    var initial = _projectFromRepository(
+      _repository.state,
+      current: state.copyWith(
+        loopback: _repository.detectLoopback(),
+        devices: _repository.devices(),
+        asioDrivers: drivers,
+        // Prefer the startup enumeration; when none was injected (non-Windows
+        // or a test/interactive build) the freshly probed list is the cache.
+        cachedAsioDrivers: initialAsioDrivers.isNotEmpty
+            ? initialAsioDrivers
+            : drivers,
+        // Windows runs ASIO exclusively: the UI hides the WASAPI selector /
+        // pickers and the backend is coerced to ASIO on hydrate.
+        asioOnly: _asioSelectable,
       ),
+      hydrateConfig: true,
     );
+    // On Windows the resolved driver may offer a different rate/buffer set than
+    // the generic defaults, so snap the selection into it (mirrors a driver
+    // switch) — otherwise the chips would show no selection.
+    if (initial.asioOnly) initial = _snapRateAndBuffer(initial);
+    emit(initial);
   }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   late final StreamSubscription<LooperState> _subscription;
 
-  /// The platform default for OS-exclusive device access (Windows => on),
-  /// injected by the presentation layer (`platformDefaultExclusive`) so this
-  /// cubit holds no OS policy and stays free of Flutter imports. Used as the
-  /// exclusive-intent fallback when no saved config exists.
-  final bool _defaultExclusive;
-
   /// Whether the ASIO backend is selectable on this platform (Windows only),
-  /// injected by the presentation layer (`platformAsioSelectable`) for the same
-  /// no-OS-policy reason as [_defaultExclusive]. ASIO is offered only when this
+  /// injected by the presentation layer (`platformAsioSelectable`) so the cubit
+  /// holds no OS policy and stays free of Flutter imports. ASIO is offered when
   /// is true and at least one driver enumerated.
   final bool _asioSelectable;
 
@@ -116,21 +114,13 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     _persistAndApply();
   }
 
-  /// Toggles OS-exclusive device access (full device control on Windows).
-  /// Persists the intent and, when running, reopens the device so it engages
-  /// (or disengages) now — a reopen that falls back to shared still succeeds.
-  void setExclusive({required bool exclusive}) {
-    if (exclusive == state.exclusive) return;
-    emit(state.copyWith(exclusive: exclusive));
-    _persistAndApply();
-  }
-
-  /// Selects the device [backend]. Switching to ASIO defaults the driver to the
-  /// first enumerated one when none is chosen yet; the WASAPI device ids are
-  /// kept dormant (restored on a switch back). Persists the intent and, when
+  /// Selects the device [backend] (macOS/Linux only — Windows is ASIO-only and
+  /// ignores this). Switching to ASIO defaults the driver to the first
+  /// enumerated one when none is chosen yet; the WASAPI device ids are kept
+  /// dormant (restored on a switch back). Persists the intent and, when
   /// running, reopens the device so the change takes effect now.
   void setBackend(AudioBackend backend) {
-    if (backend == state.backend) return;
+    if (state.asioOnly || backend == state.backend) return;
     final driver =
         backend == AudioBackend.asio &&
             state.asioDriver.isEmpty &&
@@ -272,7 +262,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     bufferFrames: state.bufferFrames,
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
-    exclusive: state.exclusive,
     maxLoopFrames: _maxLoopFrames(state.maxLoopMinutes, state.sampleRate),
     // An explicitly chosen input device always wins: only auto-route capture to
     // a detected loopback when the user has not pinned a capture device.
@@ -294,7 +283,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   StoredAudioConfig _storedConfig() => StoredAudioConfig(
     sampleRate: state.sampleRate,
     bufferFrames: state.bufferFrames,
-    exclusive: state.exclusive,
     maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
@@ -425,12 +413,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
               fallback: current.bufferFrames,
             )
           : current.bufferFrames,
-      // Hydrate the requested exclusive intent; an unconfigured engine falls
-      // back to the platform default (Windows => on). The negotiated reality is
-      // read separately from engineStatus.exclusiveActive.
-      exclusive: hydrateConfig
-          ? lastConfig?.exclusive ?? _defaultExclusive
-          : current.exclusive,
       maxLoopMinutes: hydrateConfig
           ? _maxLoopMinutes(lastConfig?.maxLoopFrames, resolvedSampleRate)
           : current.maxLoopMinutes,
@@ -441,12 +423,21 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           ? lastConfig?.captureDeviceId ?? current.captureDeviceId
           : current.captureDeviceId,
       // Hydrate the requested backend + ASIO driver intent; the negotiated
-      // reality is read separately from engineStatus.activeBackend.
+      // reality is read separately from engineStatus.activeBackend. On Windows
+      // (asioOnly) the backend is hardwired to ASIO, coercing a saved
+      // backend=wasapi, and the driver is resolved against the enumeration.
       backend: hydrateConfig
-          ? lastConfig?.backend ?? AudioBackend.wasapi
+          ? (current.asioOnly
+                ? AudioBackend.asio
+                : lastConfig?.backend ?? AudioBackend.wasapi)
           : current.backend,
       asioDriver: hydrateConfig
-          ? lastConfig?.asioDriver ?? current.asioDriver
+          ? (current.asioOnly
+                ? _resolveAsioDriver(
+                    lastConfig?.asioDriver ?? '',
+                    current.cachedAsioDrivers,
+                  )
+                : lastConfig?.asioDriver ?? current.asioDriver)
           : current.asioDriver,
       engineStatus: engineStatus,
       status: engineStatus.isConnected
@@ -455,6 +446,14 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           ? AudioSetupStatus.error
           : AudioSetupStatus.stopped,
     );
+  }
+
+  /// Resolves the ASIO driver to open on Windows: keeps [saved] when it is
+  /// still enumerated, otherwise falls back to the first enumerated driver, or
+  /// empty when none are installed (the no-driver case).
+  String _resolveAsioDriver(String saved, List<AudioDevice> drivers) {
+    if (drivers.any((d) => d.id == saved)) return saved;
+    return drivers.isEmpty ? '' : drivers.first.id;
   }
 
   int _resolvedOption({

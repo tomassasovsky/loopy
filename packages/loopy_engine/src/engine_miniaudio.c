@@ -3,8 +3,8 @@
  *
  * Owns the miniaudio device lifecycle behind the device-backend seam: building
  * the ma_device_config, initialising the context, resolving pinned / loopback
- * device ids, the WASAPI exclusive-mode fallback, ma_device_init / start /
- * uninit, and the real-time data + device-notification callbacks. The portable
+ * device ids, ma_device_init / start / uninit, and the real-time data +
+ * device-notification callbacks. The portable
  * core (engine.c) drives this through le_select_backend and never calls
  * ma_device_* directly. The real-time core (le_engine_process), the command
  * ring, the snapshot, and the looper/lane/FX DSP all stay in engine.c and are
@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "engine_internal.h"  /* le_engine_process, le_decide_share_fallback */
+#include "engine_internal.h"  /* le_engine_process */
 #include "engine_miniaudio.h" /* le_miniaudio_backend */
 #include "engine_platform.h"  /* le_platform_backends / _before_context_init */
 #include "engine_private.h"   /* struct le_engine, le_find_loopback, le_resolve_device_id */
@@ -149,32 +149,10 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
     }
   }
 
-  /* Full device control: when requested, open the device in OS-exclusive mode
-   * (WASAPI exclusive on Windows — bypasses the mixer, native format) with no OS
-   * sample-rate conversion. miniaudio does NOT auto-fall-back, so on failure we
-   * reset to shared and reinitialize once. exclusive_active is set only when the
-   * exclusive init itself succeeded, never on the shared retry. */
-  int exclusive_active = 0;
-  if (config->exclusive) {
-    cfg.capture.shareMode = ma_share_mode_exclusive;
-    cfg.playback.shareMode = ma_share_mode_exclusive;
-    cfg.wasapi.noAutoConvertSRC = MA_TRUE;
-  }
+  /* Open the device in shared mode (miniaudio's default on every backend). The
+   * OS mixer owns the device; this is the unchanged behaviour on macOS/Linux and
+   * the only Windows WASAPI mode now that full device control goes through ASIO. */
   ma_result init_result = ma_device_init(pContext, &cfg, &engine->device);
-  switch (le_decide_share_fallback(config->exclusive,
-                                   init_result == MA_SUCCESS)) {
-    case LE_SHARE_DONE_EXCLUSIVE:
-      exclusive_active = 1;
-      break;
-    case LE_SHARE_RETRY_SHARED:
-      cfg.capture.shareMode = ma_share_mode_shared;
-      cfg.playback.shareMode = ma_share_mode_shared;
-      cfg.wasapi.noAutoConvertSRC = MA_FALSE;
-      init_result = ma_device_init(pContext, &cfg, &engine->device);
-      break;
-    case LE_SHARE_DONE_SHARED:
-      break;
-  }
   if (init_result != MA_SUCCESS) {
     le_uninit_context(engine);
     return LE_ERR_DEVICE;
@@ -192,7 +170,6 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   out->output_channels = neg_out;
   out->buffer_frames =
       (int32_t)engine->device.playback.internalPeriodSizeInFrames;
-  out->exclusive_active = exclusive_active;
   out->active_backend = LE_BACKEND_WASAPI;
   /* The loopback-excluded mask is computed in le_engine_start from the resolved
    * capture-device UID for this path; the backend reports none here. */

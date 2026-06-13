@@ -1437,8 +1437,6 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
   store_i32(&engine->a_out_channels, output_channels);
-  /* Default to shared; le_engine_start publishes the real mode after device open. */
-  store_i32(&engine->a_exclusive_active, 0);
   /* Default to WASAPI; le_engine_start republishes the negotiated backend after
    * device open (always WASAPI in this build). */
   store_i32(&engine->a_active_backend, LE_BACKEND_WASAPI);
@@ -1689,12 +1687,6 @@ void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
   engine->tracks[channel].lane_count = count; /* no buffer allocation */
 }
 
-le_share_decision le_decide_share_fallback(int requested_exclusive,
-                                           int first_init_ok) {
-  if (!requested_exclusive) return LE_SHARE_DONE_SHARED;
-  return first_init_ok ? LE_SHARE_DONE_EXCLUSIVE : LE_SHARE_RETRY_SHARED;
-}
-
 /* ---- ASIO bridge math (pure; see engine_internal.h) ----------------------- *
  *
  * These run in the ASIO real-time callback but touch no engine state and no ASIO
@@ -1917,16 +1909,16 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   }
 
   /* Open the device through the selected backend (miniaudio in this build). The
-   * backend builds the device config, resolves pins/loopback, runs the
-   * exclusive-mode fallback, and reports the negotiated parameters back. */
+   * backend builds the device config, resolves pins/loopback, opens the device
+   * (shared mode), and reports the negotiated parameters back. */
   const le_device_backend* be = le_select_backend(config->backend);
   le_device_open_result info;
   int32_t open_result = be->open(engine, config, &info);
   /* ASIO fallback: a requested ASIO open that fails (build off, no/missing
    * driver, driver busy, init failure) retries once on miniaudio/WASAPI with the
    * same config (channel fields stay 0 = device default). info.active_backend
-   * then reflects what actually opened, so the UI shows reality. Unlike the
-   * share-mode fallback, this resets no config fields, so it stays inline. */
+   * then reflects what actually opened, so the UI shows reality. It resets no
+   * config fields, so it stays inline. */
   if (config->backend == LE_BACKEND_ASIO && open_result != LE_OK) {
     be = &le_miniaudio_backend;
     open_result = be->open(engine, config, &info);
@@ -1949,7 +1941,6 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   /* Publish the negotiated parameters (configure() reset them above). */
   store_i32(&engine->a_active_backend, info.active_backend);
   store_i32(&engine->a_buffer_frames, info.buffer_frames);
-  store_i32(&engine->a_exclusive_active, info.exclusive_active);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   engine->lat_active = 0;
   engine->lat_emit_remaining = 0;
@@ -2062,7 +2053,6 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
-  out->exclusive_active = load_i32(&engine->a_exclusive_active);
   out->active_backend = load_i32(&engine->a_active_backend);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {

@@ -40,7 +40,6 @@ class AudioSetupState extends Equatable {
   const AudioSetupState({
     this.sampleRate = 48000,
     this.bufferFrames = 128,
-    this.exclusive = false,
     this.maxLoopMinutes = 0,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
@@ -52,6 +51,7 @@ class AudioSetupState extends Equatable {
     this.asioDriver = '',
     this.asioDrivers = const [],
     this.cachedAsioDrivers = const [],
+    this.asioOnly = false,
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
     this.error,
@@ -63,13 +63,6 @@ class AudioSetupState extends Equatable {
 
   /// Requested buffer (period) size in frames.
   final int bufferFrames;
-
-  /// Whether OS-exclusive device access is requested (full control on Windows:
-  /// bypasses the mixer, native format). This is the user's *intent*; the
-  /// engine falls back to shared if exclusive is refused, and the negotiated
-  /// reality is read from [engineStatus]'s `exclusiveActive`. No effect off
-  /// Windows (the toggle is not shown there).
-  final bool exclusive;
 
   /// Maximum loop length per track, in whole minutes. `0` defers to the engine
   /// default. Applied on the next start (buffers are allocated at start).
@@ -111,6 +104,11 @@ class AudioSetupState extends Equatable {
   /// stays populated even while ASIO holds the device (re-probing live would
   /// tear the stream down — R1). [asioDrivers] falls back to this while live.
   final List<AudioDevice> cachedAsioDrivers;
+
+  /// Whether this platform runs ASIO exclusively (Windows): the backend is
+  /// hardwired to ASIO, there is no WASAPI selector or device picker, and the
+  /// no-driver / ASIO4ALL affordances apply. `false` on macOS/Linux.
+  final bool asioOnly;
 
   /// The most recent pinned-device connectivity transition (drives the banner).
   final DeviceConnectivity deviceConnectivity;
@@ -178,7 +176,6 @@ class AudioSetupState extends Equatable {
   AudioSetupState copyWith({
     int? sampleRate,
     int? bufferFrames,
-    bool? exclusive,
     int? maxLoopMinutes,
     AudioSetupStatus? status,
     EngineStatus? engineStatus,
@@ -190,6 +187,7 @@ class AudioSetupState extends Equatable {
     String? asioDriver,
     List<AudioDevice>? asioDrivers,
     List<AudioDevice>? cachedAsioDrivers,
+    bool? asioOnly,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
     AudioSetupError? error,
@@ -199,7 +197,6 @@ class AudioSetupState extends Equatable {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
       bufferFrames: bufferFrames ?? this.bufferFrames,
-      exclusive: exclusive ?? this.exclusive,
       maxLoopMinutes: maxLoopMinutes ?? this.maxLoopMinutes,
       status: status ?? this.status,
       engineStatus: engineStatus ?? this.engineStatus,
@@ -211,6 +208,7 @@ class AudioSetupState extends Equatable {
       asioDriver: asioDriver ?? this.asioDriver,
       asioDrivers: asioDrivers ?? this.asioDrivers,
       cachedAsioDrivers: cachedAsioDrivers ?? this.cachedAsioDrivers,
+      asioOnly: asioOnly ?? this.asioOnly,
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
@@ -225,7 +223,6 @@ class AudioSetupState extends Equatable {
   List<Object?> get props => [
     sampleRate,
     bufferFrames,
-    exclusive,
     maxLoopMinutes,
     status,
     engineStatus,
@@ -237,6 +234,7 @@ class AudioSetupState extends Equatable {
     asioDriver,
     asioDrivers,
     cachedAsioDrivers,
+    asioOnly,
     deviceConnectivity,
     connectivityDeviceName,
     error,

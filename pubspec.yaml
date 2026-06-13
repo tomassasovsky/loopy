@@ -31,6 +31,7 @@ dependencies:
     path: packages/session_repository
   settings_repository:
     path: packages/settings_repository
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   bloc_lint: ^0.4.1

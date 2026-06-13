@@ -15,7 +15,6 @@ class StoredAudioConfig {
     this.maxLoopMinutes = 0,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.exclusive = false,
     this.backend = AudioBackend.wasapi,
     this.asioDriver = '',
   });
@@ -43,13 +42,6 @@ class StoredAudioConfig {
   /// Pinned capture device id (empty => system default).
   final String captureDeviceId;
 
-  /// Whether OS-exclusive device access was requested. This is the persisted
-  /// *intent*; the negotiated reality is reported live by the engine. The
-  /// platform default for an unset stored value (Windows => on) is resolved by
-  /// the caller (presentation layer), not here — this field's `false` is only a
-  /// construction default.
-  final bool exclusive;
-
   /// The persisted device-backend intent. Defaults to [AudioBackend.wasapi].
   /// ASIO availability is a presentation-layer decision (Windows + an installed
   /// driver), so the repository stays platform-agnostic and holds only intent.
@@ -71,7 +63,6 @@ class StoredAudioConfig {
           maxLoopMinutes == other.maxLoopMinutes &&
           playbackDeviceId == other.playbackDeviceId &&
           captureDeviceId == other.captureDeviceId &&
-          exclusive == other.exclusive &&
           backend == other.backend &&
           asioDriver == other.asioDriver;
 
@@ -84,7 +75,6 @@ class StoredAudioConfig {
     maxLoopMinutes,
     playbackDeviceId,
     captureDeviceId,
-    exclusive,
     backend,
     asioDriver,
   );
@@ -131,7 +121,6 @@ class SettingsRepository {
   static const String _audioMaxLoopMinutesKey = 'audio.max_loop_minutes';
   static const String _audioPlaybackDeviceIdKey = 'audio.playback_device_id';
   static const String _audioCaptureDeviceIdKey = 'audio.capture_device_id';
-  static const String _audioExclusiveKey = 'audio.exclusive';
   static const String _audioBackendKey = 'audio.backend';
   static const String _audioAsioDriverKey = 'audio.asioDriver';
 
@@ -149,7 +138,6 @@ class SettingsRepository {
       maxLoopMinutes: await _store.getInt(_audioMaxLoopMinutesKey) ?? 0,
       playbackDeviceId: await _store.getString(_audioPlaybackDeviceIdKey) ?? '',
       captureDeviceId: await _store.getString(_audioCaptureDeviceIdKey) ?? '',
-      exclusive: await _store.getBool(_audioExclusiveKey) ?? false,
       backend: _backendFromName(await _store.getString(_audioBackendKey)),
       asioDriver: await _store.getString(_audioAsioDriverKey) ?? '',
     );
@@ -160,12 +148,6 @@ class SettingsRepository {
   /// [AudioBackend.wasapi] rather than throwing (a defensive read).
   AudioBackend _backendFromName(String? name) =>
       AudioBackend.values.asNameMap()[name] ?? AudioBackend.wasapi;
-
-  /// Loads the requested exclusive-access intent, or `null` if it has never
-  /// been set. Kept separate (and nullable) from [loadAudioConfig] so callers
-  /// can tell "never chosen" apart from "explicitly off" and apply the platform
-  /// default (Windows => on) themselves — the repository holds no OS policy.
-  Future<bool?> loadAudioExclusive() => _store.getBool(_audioExclusiveKey);
 
   /// Loads the legacy global input-monitor flag, or `null` if it was never set.
   /// Only the one-time monitor migration reads this — the live app no longer
@@ -196,7 +178,6 @@ class SettingsRepository {
       config.playbackDeviceId,
     );
     await _store.setString(_audioCaptureDeviceIdKey, config.captureDeviceId);
-    await _store.setBool(_audioExclusiveKey, value: config.exclusive);
     await _store.setString(_audioBackendKey, config.backend.name);
     await _store.setString(_audioAsioDriverKey, config.asioDriver);
   }

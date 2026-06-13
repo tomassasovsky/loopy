@@ -52,20 +52,6 @@ le_loopback_kind le_classify_capture_device(const char* name);
  * loopback. */
 int le_label_is_loopback(const char* label);
 
-/* Outcome of the share-mode fallback decision (see le_decide_share_fallback). */
-typedef enum {
-  LE_SHARE_DONE_EXCLUSIVE, /* exclusive requested and the first init succeeded */
-  LE_SHARE_RETRY_SHARED,   /* exclusive requested but failed: retry in shared */
-  LE_SHARE_DONE_SHARED,    /* exclusive not requested: shared as-is */
-} le_share_decision;
-
-/* Pure share-mode fallback decision, factored out so the retry logic is testable
- * without opening a device. Given whether exclusive access was requested and
- * whether the first (exclusive) device init succeeded, decides what to do.
- * Not part of the FFI surface. */
-le_share_decision le_decide_share_fallback(int requested_exclusive,
-                                           int first_init_ok);
-
 /* ---- ASIO bridge math (pure, platform-agnostic; defined in engine.c) ---- *
  *
  * ASIO hands the device callback non-interleaved, per-channel blocks in the

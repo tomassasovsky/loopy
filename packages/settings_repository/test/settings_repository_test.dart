@@ -253,43 +253,14 @@ void main() {
       expect(loaded?.captureDeviceId, '');
     });
 
-    test('round-trips the exclusive intent', () async {
-      const config = StoredAudioConfig(
-        sampleRate: 48000,
-        bufferFrames: 128,
-        exclusive: true,
+    test('does not write the removed audio.exclusive key', () async {
+      // OS-exclusive mode is gone (Windows is ASIO-only); saving must never
+      // resurrect the legacy key.
+      await repository.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
-      await repository.saveAudioConfig(config);
-      final loaded = await repository.loadAudioConfig();
-      expect(loaded?.exclusive, isTrue);
+      expect(store.values.containsKey('audio.exclusive'), isFalse);
     });
-
-    test(
-      'defaults exclusive to false in the stored struct when unset',
-      () async {
-        await store.setInt('audio.sample_rate', 44100);
-        await store.setInt('audio.buffer_frames', 64);
-        final loaded = await repository.loadAudioConfig();
-        expect(loaded?.exclusive, isFalse);
-      },
-    );
-
-    test(
-      'loadAudioExclusive is null when never set, and reflects the saved value',
-      () async {
-        // Never set: the caller (presentation layer) applies the platform
-        // default; the repository reports "unset" as null rather than a guess.
-        expect(await repository.loadAudioExclusive(), isNull);
-        await repository.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-            exclusive: true,
-          ),
-        );
-        expect(await repository.loadAudioExclusive(), isTrue);
-      },
-    );
 
     test('round-trips the backend and ASIO driver', () async {
       const config = StoredAudioConfig(

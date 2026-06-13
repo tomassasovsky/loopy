@@ -394,7 +394,6 @@ int32_t le_asio_open(le_engine* engine, const le_config* config,
   out->input_channels = static_cast<int32_t>(max_in);
   out->output_channels = static_cast<int32_t>(max_out);
   out->buffer_frames = static_cast<int32_t>(bufsize);
-  out->exclusive_active = 0;  // ASIO has no WASAPI-style share mode.
   out->active_backend = LE_BACKEND_ASIO;
   // Loopback-excluded inputs from the driver's own channel labels (e.g. a
   // Scarlett's "Loop 1/2"), shared with the macOS Core Audio path.

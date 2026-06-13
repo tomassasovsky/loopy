@@ -145,7 +145,6 @@ class App extends StatelessWidget {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              defaultExclusive: platformDefaultExclusive,
               asioSelectable: platformAsioSelectable,
               initialAsioDrivers: initialAsioDrivers,
             ),
