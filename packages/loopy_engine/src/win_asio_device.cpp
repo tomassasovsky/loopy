@@ -100,6 +100,67 @@ bool map_format(ASIOSampleType type, le_sample_fmt* out) {
   }
 }
 
+// Input-channel names collected at open, fed to the portable mask builder so the
+// loopback-exclusion logic stays shared with macOS (le_excluded_mask_from_names /
+// le_label_is_loopback) and no ASIO-specific string matching leaks into it.
+struct AsioInputNames {
+  char names[LE_MAX_CHANNELS][kAsioNameLen];
+  int count;
+};
+
+const char* asio_input_name(void* ctx, int channel) {
+  const AsioInputNames* n = static_cast<const AsioInputNames*>(ctx);
+  if (channel < 0 || channel >= n->count) return nullptr;
+  return n->names[channel];
+}
+
+// Fills `out` (room for 8) with the standard buffer sizes the driver actually
+// allows for its (min,max,preferred,granularity) — reusing le_asio_pick_buffer
+// so the validity rule matches what open() will snap to — and always includes
+// the driver's preferred size. Ascending. Returns the count. Driver must be
+// ASIOInit'd. The same probe backs the UI chips and the open-time snap.
+int fill_asio_buffers(int32_t* out, long bmin, long bmax, long bpref,
+                      long bgran) {
+  static const int32_t kStd[] = {32, 64, 128, 256, 512, 1024, 2048};
+  int n = 0;
+  for (size_t i = 0; i < sizeof(kStd) / sizeof(kStd[0]) && n < 8; ++i) {
+    if (le_asio_pick_buffer(kStd[i], static_cast<int32_t>(bmin),
+                            static_cast<int32_t>(bmax),
+                            static_cast<int32_t>(bpref),
+                            static_cast<int32_t>(bgran)) == kStd[i]) {
+      out[n++] = kStd[i];
+    }
+  }
+  bool has_pref = false;
+  for (int i = 0; i < n; ++i) {
+    if (out[i] == static_cast<int32_t>(bpref)) has_pref = true;
+  }
+  if (!has_pref && n < 8) out[n++] = static_cast<int32_t>(bpref);
+  for (int i = 1; i < n; ++i) {  // insertion sort (preferred may be appended)
+    const int32_t v = out[i];
+    int j = i - 1;
+    while (j >= 0 && out[j] > v) {
+      out[j + 1] = out[j];
+      --j;
+    }
+    out[j + 1] = v;
+  }
+  return n;
+}
+
+// Fills `out` (room for 8) with the standard sample rates the driver accepts
+// (ASIOCanSampleRate). Driver must be ASIOInit'd. Returns the count.
+int fill_asio_rates(int32_t* out) {
+  static const int32_t kStd[] = {44100, 48000, 88200, 96000, 176400, 192000};
+  int n = 0;
+  for (size_t i = 0; i < sizeof(kStd) / sizeof(kStd[0]) && n < 8; ++i) {
+    if (ASIOCanSampleRate(static_cast<ASIOSampleRate>(kStd[i])) == ASE_OK) {
+      out[n++] = kStd[i];
+    }
+  }
+  return n;
+}
+
 // Frees the pre-allocated scratch buffers (idempotent).
 void free_scratch() {
   free(g_asio.in_scratch);
@@ -246,7 +307,12 @@ int32_t le_asio_open(le_engine* engine, const le_config* config,
       want_buf, static_cast<int32_t>(bmin), static_cast<int32_t>(bmax),
       static_cast<int32_t>(bpref), static_cast<int32_t>(bgran)));
 
-  // Per-channel native formats (any unsupported format fails the open).
+  // Per-channel native formats (any unsupported format fails the open). Input
+  // channel names are also collected here, from the already-open driver, to
+  // build the loopback-excluded mask — re-probing labels via win_asio_labels
+  // while the device is open would tear it down (R1).
+  AsioInputNames in_names;
+  in_names.count = 0;
   for (int c = 0; c < max_in; ++c) {
     ASIOChannelInfo ci;
     memset(&ci, 0, sizeof(ci));
@@ -257,6 +323,9 @@ int32_t le_asio_open(le_engine* engine, const le_config* config,
       ASIOExit();
       return LE_ERR_DEVICE;
     }
+    strncpy(in_names.names[c], ci.name, kAsioNameLen - 1);
+    in_names.names[c][kAsioNameLen - 1] = '\0';
+    in_names.count++;
   }
   for (int c = 0; c < max_out; ++c) {
     ASIOChannelInfo ci;
@@ -327,6 +396,11 @@ int32_t le_asio_open(le_engine* engine, const le_config* config,
   out->buffer_frames = static_cast<int32_t>(bufsize);
   out->exclusive_active = 0;  // ASIO has no WASAPI-style share mode.
   out->active_backend = LE_BACKEND_ASIO;
+  // Loopback-excluded inputs from the driver's own channel labels (e.g. a
+  // Scarlett's "Loop 1/2"), shared with the macOS Core Audio path.
+  out->excluded_input_mask =
+      le_excluded_mask_from_names(asio_input_name, &in_names,
+                                  static_cast<int>(max_in));
   strncpy(out->device_name, config->asio_driver, sizeof(out->device_name) - 1);
   out->device_name[sizeof(out->device_name) - 1] = '\0';
   return LE_OK;
@@ -400,6 +474,22 @@ extern "C" int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
     long in_ch = 0;
     long out_ch = 0;
     const bool ok = ASIOGetChannels(&in_ch, &out_ch) == ASE_OK;
+    // Probe the driver's buffer-size set and supported sample rates while it is
+    // still ASIOInit'd, so the picker can offer the driver's real options.
+    int32_t bufs[8];
+    int n_bufs = 0;
+    int32_t rates[8];
+    int n_rates = 0;
+    if (ok) {
+      long bmin = 0;
+      long bmax = 0;
+      long bpref = 0;
+      long bgran = 0;
+      if (ASIOGetBufferSize(&bmin, &bmax, &bpref, &bgran) == ASE_OK) {
+        n_bufs = fill_asio_buffers(bufs, bmin, bmax, bpref, bgran);
+      }
+      n_rates = fill_asio_rates(rates);
+    }
     ASIOExit();  // release the global driver before the next probe / returning
     if (!ok) continue;
 
@@ -411,6 +501,10 @@ extern "C" int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
     d->is_default = 0;
     d->input_channels = static_cast<int32_t>(in_ch);
     d->output_channels = static_cast<int32_t>(out_ch);
+    for (int b = 0; b < n_bufs; ++b) d->asio_buffer_sizes[b] = bufs[b];
+    d->asio_buffer_count = n_bufs;
+    for (int r = 0; r < n_rates; ++r) d->asio_sample_rates[r] = rates[r];
+    d->asio_sample_rate_count = n_rates;
     ++written;
   }
   *count = written;

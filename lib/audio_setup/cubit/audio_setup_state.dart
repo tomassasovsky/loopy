@@ -135,6 +135,36 @@ class AudioSetupState extends Equatable {
   /// Whether the ASIO backend is the requested intent.
   bool get isAsio => backend == AudioBackend.asio;
 
+  /// The currently selected ASIO driver from [asioDrivers], or `null` when none
+  /// matches [asioDriver].
+  AudioDevice? get selectedAsioDriver {
+    for (final driver in asioDrivers) {
+      if (driver.id == asioDriver) return driver;
+    }
+    return null;
+  }
+
+  /// The buffer-size options to offer the user: under ASIO, the selected
+  /// driver's real set (probed from the driver — e.g. a Focusrite locked to its
+  /// Focusrite Control setting); otherwise the generic [bufferSizes] list.
+  List<int> get bufferChoices {
+    final driver = selectedAsioDriver;
+    if (isAsio && driver != null && driver.bufferSizes.isNotEmpty) {
+      return driver.bufferSizes;
+    }
+    return bufferSizes;
+  }
+
+  /// The sample-rate options to offer: the selected ASIO driver's supported
+  /// rates under ASIO, otherwise the generic [sampleRates] list.
+  List<int> get sampleRateChoices {
+    final driver = selectedAsioDriver;
+    if (isAsio && driver != null && driver.sampleRates.isNotEmpty) {
+      return driver.sampleRates;
+    }
+    return sampleRates;
+  }
+
   /// Selectable sample rates.
   static const sampleRates = [44100, 48000, 96000];
 

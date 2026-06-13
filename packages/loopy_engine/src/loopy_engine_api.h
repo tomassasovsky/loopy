@@ -192,8 +192,17 @@ typedef struct le_device_info {
   char id[256];
   char name[256];
   int32_t is_default;      /* 0/1 */
-  int32_t input_channels;  /* 0 = unknown (WASAPI); an ASIO probe fills it in Part 2 */
+  int32_t input_channels;  /* 0 = unknown (WASAPI); an ASIO probe fills it */
   int32_t output_channels; /* 0 = unknown */
+  /* ASIO-only: the driver's selectable buffer sizes and supported sample rates,
+   * probed by le_enumerate_asio_drivers so the UI can offer the driver's real
+   * options instead of a generic list. Count 0 for non-ASIO devices (the UI
+   * then keeps its default lists). Sizes/rates are ascending; the buffer set
+   * always includes the driver's preferred size. */
+  int32_t asio_buffer_sizes[8];
+  int32_t asio_buffer_count;
+  int32_t asio_sample_rates[8];
+  int32_t asio_sample_rate_count;
 } le_device_info;
 
 /* Requested device configuration. Any channel field set to 0 uses the device

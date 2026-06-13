@@ -228,7 +228,9 @@ class _EngineStep extends StatelessWidget {
         const SizedBox(height: 12),
         _OptionRow(
           children: [
-            for (final rate in AudioSetupState.sampleRates)
+            // Under ASIO these are the driver's real supported rates; otherwise
+            // the generic list.
+            for (final rate in state.sampleRateChoices)
               _Option(
                 optionKey: 'audioSetup_sampleRate_$rate',
                 headline: _khz(l10n, rate),
@@ -243,7 +245,9 @@ class _EngineStep extends StatelessWidget {
         const SizedBox(height: 12),
         _OptionRow(
           children: [
-            for (final size in AudioSetupState.bufferSizes)
+            // Under ASIO these are the driver's real buffer sizes (e.g. a
+            // single size if locked in the driver's control panel).
+            for (final size in state.bufferChoices)
               _Option(
                 optionKey: 'audioSetup_bufferSize_$size',
                 headline: '$size',

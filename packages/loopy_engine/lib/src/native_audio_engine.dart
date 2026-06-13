@@ -211,6 +211,14 @@ class NativeAudioEngine implements AudioEngine {
             isInput: false,
             inputChannels: (outPtr + i).ref.input_channels,
             outputChannels: (outPtr + i).ref.output_channels,
+            bufferSizes: [
+              for (var b = 0; b < (outPtr + i).ref.asio_buffer_count; b++)
+                (outPtr + i).ref.asio_buffer_sizes[b],
+            ],
+            sampleRates: [
+              for (var s = 0; s < (outPtr + i).ref.asio_sample_rate_count; s++)
+                (outPtr + i).ref.asio_sample_rates[s],
+            ],
           ),
       ];
     } finally {

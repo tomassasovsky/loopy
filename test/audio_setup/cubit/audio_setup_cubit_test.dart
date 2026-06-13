@@ -727,6 +727,33 @@ void main() {
     );
 
     blocTest<AudioSetupCubit, AudioSetupState>(
+      "setBackend(asio) snaps rate/buffer into the driver's offered set",
+      setUp: () => when(repository.asioDrivers).thenReturn(const [
+        // A driver locked to a single buffer size / sample rate (e.g. a USB
+        // interface whose ASIO buffer is set in its own control panel).
+        AudioDevice(
+          id: 'Locked ASIO',
+          name: 'Locked ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [256],
+          sampleRates: [96000],
+        ),
+      ]),
+      build: () => buildCubit(asioSelectable: true),
+      // Defaults are 48000 / 128, neither offered by the driver.
+      act: (cubit) => cubit.setBackend(AudioBackend.asio),
+      expect: () => [
+        isA<AudioSetupState>()
+            .having((s) => s.backend, 'backend', AudioBackend.asio)
+            .having((s) => s.sampleRate, 'sampleRate', 96000)
+            .having((s) => s.bufferFrames, 'bufferFrames', 256),
+      ],
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
       'setBackend(asio) while running reopens on ASIO without WASAPI loopback',
       setUp: () {
         when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);

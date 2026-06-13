@@ -1581,15 +1581,15 @@ static void device_id_to_str(const ma_device_id* id, char* out, size_t cap) {
 }
 
 static void device_info_copy(le_device_info* dst, const ma_device_info* src) {
+  /* Zero everything first so the WASAPI path never surfaces stack garbage for
+   * fields it does not fill (channel counts, the ASIO-only buffer/rate sets). */
+  memset(dst, 0, sizeof(*dst));
   device_id_to_str(&src->id, dst->id, sizeof(dst->id));
   strncpy(dst->name, src->name, sizeof(dst->name) - 1);
   dst->name[sizeof(dst->name) - 1] = '\0';
   dst->is_default = src->isDefault ? 1 : 0;
-  /* WASAPI enumeration reports no per-device channel count here; zero them so
-   * Dart's AudioDevice never surfaces stack garbage as channel counts. An ASIO
-   * probe fills these in Part 2 (0 = unknown). */
-  dst->input_channels = 0;
-  dst->output_channels = 0;
+  /* WASAPI enumeration reports no per-device channel count / ASIO option sets
+   * here; they stay 0 (unknown), filled only by the ASIO driver probe. */
 }
 
 /* Fills `out` (room for `max`) with the host's playback or capture devices and
@@ -1965,18 +1965,27 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
           sizeof(engine->device_name) - 1);
   engine->device_name[sizeof(engine->device_name) - 1] = '\0';
 
-  /* Exclude any loopback-labelled capture channels. The capture device's UID is
-   * our explicit capture id when one was pinned/loopback-routed (capture_id_set,
-   * set by the backend), else the system default input. On string-id backends
-   * the id union is the UID string. */
-  const char* capture_uid =
-      engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
+  /* Exclude any loopback-labelled capture channels. The ASIO backend already
+   * read its channel labels from the open driver and reported the mask in
+   * info.excluded_input_mask — re-running the per-OS label probe while ASIO
+   * holds the device would tear it down (R1 re-entrancy). Every other backend
+   * computes it here from the resolved capture-device UID: our explicit capture
+   * id when one was pinned/loopback-routed (capture_id_set, set by the backend),
+   * else the system default input (on string-id backends the id union is the
+   * UID string). */
+  uint32_t excluded_mask;
+  if (info.active_backend == LE_BACKEND_ASIO) {
+    excluded_mask = info.excluded_input_mask;
+  } else {
+    const char* capture_uid =
+        engine->capture_id_set ? (const char*)&engine->capture_id : NULL;
+    excluded_mask =
+        le_platform_excluded_input_mask(capture_uid, info.input_channels);
+  }
   /* relaxed: a lone published value, matching the other configuration atomics
    * (a_sample_rate, etc.) and the relaxed audio-thread / snapshot reads. */
-  atomic_store_explicit(
-      &engine->a_excluded_input_mask,
-      le_platform_excluded_input_mask(capture_uid, info.input_channels),
-      memory_order_relaxed);
+  atomic_store_explicit(&engine->a_excluded_input_mask, excluded_mask,
+                        memory_order_relaxed);
 
   if (be->start(engine) != LE_OK) {
     be->close(engine);

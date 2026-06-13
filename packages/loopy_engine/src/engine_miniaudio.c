@@ -194,6 +194,9 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
       (int32_t)engine->device.playback.internalPeriodSizeInFrames;
   out->exclusive_active = exclusive_active;
   out->active_backend = LE_BACKEND_WASAPI;
+  /* The loopback-excluded mask is computed in le_engine_start from the resolved
+   * capture-device UID for this path; the backend reports none here. */
+  out->excluded_input_mask = 0;
   strncpy(out->device_name, engine->device.playback.name,
           sizeof(out->device_name) - 1);
   out->device_name[sizeof(out->device_name) - 1] = '\0';

@@ -1577,13 +1577,30 @@ final class le_device_info extends ffi.Struct {
   @ffi.Int32()
   external int is_default;
 
-  /// 0 = unknown (WASAPI); an ASIO probe fills it in Part 2
+  /// 0 = unknown (WASAPI); an ASIO probe fills it
   @ffi.Int32()
   external int input_channels;
 
   /// 0 = unknown
   @ffi.Int32()
   external int output_channels;
+
+  /// ASIO-only: the driver's selectable buffer sizes and supported sample rates,
+  /// probed by le_enumerate_asio_drivers so the UI can offer the driver's real
+  /// options instead of a generic list. Count 0 for non-ASIO devices (the UI
+  /// then keeps its default lists). Sizes/rates are ascending; the buffer set
+  /// always includes the driver's preferred size.
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> asio_buffer_sizes;
+
+  @ffi.Int32()
+  external int asio_buffer_count;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> asio_sample_rates;
+
+  @ffi.Int32()
+  external int asio_sample_rate_count;
 }
 
 /// Requested device configuration. Any channel field set to 0 uses the device

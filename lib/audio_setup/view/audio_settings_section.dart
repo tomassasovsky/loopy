@@ -32,23 +32,61 @@ class AudioSettingsSection extends StatelessWidget {
       children: [
         Text(l10n.audioSettingsIntro, style: setupBody),
         const SizedBox(height: 28),
-        SetupGroupLabel(l10n.outputDeviceGroupUpper),
-        const SizedBox(height: 12),
-        AudioDevicePicker(
-          pickerKey: 'audioSettings_playbackDevice_picker',
-          devices: state.playbackDevices,
-          selectedId: state.playbackDeviceId,
-          onSelected: cubit.setPlaybackDevice,
-        ),
-        const SizedBox(height: 24),
-        SetupGroupLabel(l10n.inputDeviceGroupUpper),
-        const SizedBox(height: 12),
-        AudioDevicePicker(
-          pickerKey: 'audioSettings_captureDevice_picker',
-          devices: state.captureDevices,
-          selectedId: state.captureDeviceId,
-          onSelected: cubit.setCaptureDevice,
-        ),
+        // Backend selector — only when ASIO is selectable (Windows + drivers).
+        if (state.asioDrivers.isNotEmpty) ...[
+          SetupGroupLabel(l10n.backendGroup),
+          const SizedBox(height: 12),
+          SetupOptionRow<AudioBackend>(
+            selected: state.backend,
+            onSelected: cubit.setBackend,
+            options: [
+              SetupOption(
+                value: AudioBackend.wasapi,
+                label: l10n.backendWasapi,
+                sub: l10n.backendWasapiNote,
+                optionKey: const Key('audioSettings_backend_wasapi'),
+              ),
+              SetupOption(
+                value: AudioBackend.asio,
+                label: l10n.backendAsio,
+                sub: l10n.backendAsioNote,
+                optionKey: const Key('audioSettings_backend_asio'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+        ],
+        // Under ASIO a single driver drives all I/O, so the two device pickers
+        // collapse to one ASIO driver picker; else the WASAPI output + input
+        // pickers show.
+        if (state.isAsio) ...[
+          SetupGroupLabel(l10n.asioDriverGroup),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSettings_asioDriver_picker',
+            devices: _asioDriverDevices(l10n, state),
+            selectedId: state.asioDriver,
+            onSelected: cubit.setAsioDriver,
+          ),
+        ] else ...[
+          SetupGroupLabel(l10n.outputDeviceGroupUpper),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSettings_playbackDevice_picker',
+            devices: state.playbackDevices,
+            selectedId: state.playbackDeviceId,
+            onSelected: cubit.setPlaybackDevice,
+          ),
+          const SizedBox(height: 24),
+          SetupGroupLabel(l10n.inputDeviceGroupUpper),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSettings_captureDevice_picker',
+            devices: state.captureDevices,
+            selectedId: state.captureDeviceId,
+            onSelected: cubit.setCaptureDevice,
+          ),
+        ],
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),
@@ -56,7 +94,8 @@ class AudioSettingsSection extends StatelessWidget {
           selected: state.sampleRate,
           onSelected: cubit.setSampleRate,
           options: [
-            for (final rate in AudioSetupState.sampleRates)
+            // Driver-supported rates under ASIO, else the generic list.
+            for (final rate in state.sampleRateChoices)
               SetupOption(
                 value: rate,
                 label: l10n.sampleRateHz(rate),
@@ -71,7 +110,9 @@ class AudioSettingsSection extends StatelessWidget {
           selected: state.bufferFrames,
           onSelected: cubit.setBufferFrames,
           options: [
-            for (final size in AudioSetupState.bufferSizes)
+            // Driver buffer sizes under ASIO (often a single locked size), else
+            // the generic list.
+            for (final size in state.bufferChoices)
               SetupOption(
                 value: size,
                 label: '$size',
@@ -243,6 +284,26 @@ class AudioSettingsSection extends StatelessWidget {
       ),
     ];
   }
+
+  /// The enumerated ASIO drivers as duplex devices labelled with their probed
+  /// channel counts (e.g. "Focusrite USB ASIO · 18 in / 20 out"), for the
+  /// driver picker shown under the ASIO backend.
+  List<AudioDevice> _asioDriverDevices(
+    AppLocalizations l10n,
+    AudioSetupState state,
+  ) => [
+    for (final d in state.asioDrivers)
+      AudioDevice(
+        id: d.id,
+        name:
+            '${d.name} · '
+            '${l10n.asioChannelCounts(d.inputChannels, d.outputChannels)}',
+        isDefault: d.isDefault,
+        isInput: d.isInput,
+        inputChannels: d.inputChannels,
+        outputChannels: d.outputChannels,
+      ),
+  ];
 
   /// A friendly device name for the status row. The JACK backend (Linux) only
   /// reports a generic "Default ... Device", so prefer the name of the device

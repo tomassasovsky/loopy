@@ -157,7 +157,8 @@ class MockAudioEngine implements AudioEngine {
   @override
   List<AudioDevice> enumerateAsioDrivers() => const [
     // One deterministic fake duplex driver (18 in / 20 out), so UI development
-    // and tests can drive the ASIO backend selector without real hardware.
+    // and tests can drive the ASIO backend selector without real hardware. The
+    // buffer/rate sets are a small fake of what a driver probe reports.
     AudioDevice(
       id: 'mock-asio',
       name: 'Mock ASIO Device',
@@ -165,6 +166,8 @@ class MockAudioEngine implements AudioEngine {
       isInput: false,
       inputChannels: 18,
       outputChannels: 20,
+      bufferSizes: [128, 256, 512],
+      sampleRates: [48000, 96000],
     ),
   ];
 

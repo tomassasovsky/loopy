@@ -326,4 +326,66 @@ void main() {
     expect(find.text('Not running'), findsOneWidget);
     expect(find.text('Not measured'), findsOneWidget);
   });
+
+  group('asio backend (consistency with the wizard)', () {
+    const focusrite = AudioDevice(
+      id: 'Focusrite USB ASIO',
+      name: 'Focusrite USB ASIO',
+      isDefault: false,
+      isInput: false,
+      inputChannels: 18,
+      outputChannels: 20,
+    );
+
+    testWidgets('no backend selector when no ASIO drivers enumerated', (
+      tester,
+    ) async {
+      seed(runningState);
+      await pumpSection(tester);
+      expect(
+        find.byKey(const Key('audioSettings_backend_asio')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('shows the selector and forwards a backend choice', (
+      tester,
+    ) async {
+      seed(const AudioSetupState(asioDrivers: [focusrite]));
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_backend_asio')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('audioSettings_backend_asio')));
+      verify(() => cubit.setBackend(AudioBackend.asio)).called(1);
+    });
+
+    testWidgets('under ASIO the driver picker replaces the WASAPI pickers', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+          asioDrivers: [focusrite],
+        ),
+      );
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_asioDriver_picker')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_playbackDevice_picker')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_captureDevice_picker')),
+        findsNothing,
+      );
+    });
+  });
 }

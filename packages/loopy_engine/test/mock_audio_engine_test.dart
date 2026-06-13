@@ -45,6 +45,9 @@ void main() {
       expect(driver.isInput, isFalse);
       expect(driver.inputChannels, 18);
       expect(driver.outputChannels, 20);
+      // It also carries the driver's selectable buffer sizes / sample rates.
+      expect(driver.bufferSizes, [128, 256, 512]);
+      expect(driver.sampleRates, [48000, 96000]);
     });
 
     test('enumerates a duplex mock device', () {

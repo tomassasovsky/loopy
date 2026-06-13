@@ -1,4 +1,4 @@
-import 'package:meta/meta.dart';
+import 'package:flutter/foundation.dart';
 
 /// A hardware audio device discovered by `AudioEngine.enumerateDevices`.
 ///
@@ -14,6 +14,8 @@ class AudioDevice {
     required this.isInput,
     this.inputChannels = 0,
     this.outputChannels = 0,
+    this.bufferSizes = const [],
+    this.sampleRates = const [],
   });
 
   /// The backend-specific device id, suitable for pinning via
@@ -38,6 +40,15 @@ class AudioDevice {
   /// The device's hardware playback channel count, or `0` when unknown.
   final int outputChannels;
 
+  /// The driver's selectable buffer sizes (ASIO drivers only; empty otherwise).
+  /// Ascending; always includes the driver's preferred size. The UI offers
+  /// these under ASIO instead of the generic list.
+  final List<int> bufferSizes;
+
+  /// The driver's supported sample rates in Hz (ASIO drivers only; empty
+  /// otherwise). The UI offers these under ASIO instead of the generic list.
+  final List<int> sampleRates;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -48,15 +59,26 @@ class AudioDevice {
           isDefault == other.isDefault &&
           isInput == other.isInput &&
           inputChannels == other.inputChannels &&
-          outputChannels == other.outputChannels;
+          outputChannels == other.outputChannels &&
+          listEquals(bufferSizes, other.bufferSizes) &&
+          listEquals(sampleRates, other.sampleRates);
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, isDefault, isInput, inputChannels, outputChannels);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    isDefault,
+    isInput,
+    inputChannels,
+    outputChannels,
+    Object.hashAll(bufferSizes),
+    Object.hashAll(sampleRates),
+  );
 
   @override
   String toString() =>
       'AudioDevice(id: $id, name: $name, isDefault: $isDefault, '
       'isInput: $isInput, inputChannels: $inputChannels, '
-      'outputChannels: $outputChannels)';
+      'outputChannels: $outputChannels, bufferSizes: $bufferSizes, '
+      'sampleRates: $sampleRates)';
 }

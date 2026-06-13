@@ -127,7 +127,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
             state.asioDrivers.isNotEmpty
         ? state.asioDrivers.first.id
         : state.asioDriver;
-    emit(state.copyWith(backend: backend, asioDriver: driver));
+    emit(
+      _snapRateAndBuffer(
+        state.copyWith(backend: backend, asioDriver: driver),
+      ),
+    );
     _persistAndApply();
   }
 
@@ -135,8 +139,26 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// the choice and, when running, reopens the device on it now.
   void setAsioDriver(String driverId) {
     if (driverId == state.asioDriver) return;
-    emit(state.copyWith(asioDriver: driverId));
+    emit(_snapRateAndBuffer(state.copyWith(asioDriver: driverId)));
     _persistAndApply();
+  }
+
+  /// Clamps the requested sample rate / buffer size into the offered options for
+  /// [next] (a driver's real ASIO set, or the generic list). So switching to a
+  /// backend/driver that doesn't allow the current value lands on a valid one
+  /// rather than leaving no chip selected. The choice lists are never empty
+  /// (they fall back to the static lists), so `.first` is safe.
+  AudioSetupState _snapRateAndBuffer(AudioSetupState next) {
+    final rates = next.sampleRateChoices;
+    final buffers = next.bufferChoices;
+    return next.copyWith(
+      sampleRate: rates.contains(next.sampleRate)
+          ? next.sampleRate
+          : rates.first,
+      bufferFrames: buffers.contains(next.bufferFrames)
+          ? next.bufferFrames
+          : buffers.first,
+    );
   }
 
   /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine

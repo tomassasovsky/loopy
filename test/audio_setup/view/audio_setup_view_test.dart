@@ -405,6 +405,42 @@ void main() {
       );
     });
 
+    testWidgets('under ASIO the buffer chips come from the driver set', (
+      tester,
+    ) async {
+      // A driver locked to a single buffer size: only that chip is offered, not
+      // the generic 64/128/256/512 list.
+      seed(
+        const AudioSetupState(
+          backend: AudioBackend.asio,
+          asioDriver: 'Locked ASIO',
+          bufferFrames: 256,
+          asioDrivers: [
+            AudioDevice(
+              id: 'Locked ASIO',
+              name: 'Locked ASIO',
+              isDefault: false,
+              isInput: false,
+              inputChannels: 2,
+              outputChannels: 2,
+              bufferSizes: [256],
+              sampleRates: [48000],
+            ),
+          ],
+        ),
+      );
+      await pumpView(tester);
+
+      expect(
+        find.byKey(const Key('audioSetup_bufferSize_256')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('audioSetup_bufferSize_512')),
+        findsNothing,
+      );
+    });
+
     testWidgets(
       'the running panel surfaces the ASIO fallback note on mismatch',
       (tester) async {
