@@ -40,7 +40,6 @@ Future<bool> tryAutoStartEngine({
       bufferFrames: saved.bufferFrames,
       inputChannels: saved.inputChannels,
       outputChannels: saved.outputChannels,
-      passthrough: saved.monitorInput,
       exclusive: exclusive,
       maxLoopFrames: saved.maxLoopMinutes <= 0
           ? 0

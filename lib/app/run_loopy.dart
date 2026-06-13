@@ -2,6 +2,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/widgets.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
+import 'package:loopy/app/monitor_migration.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
 import 'package:loopy/session_directory.dart';
@@ -38,6 +39,12 @@ Future<void> runLoopy(
   final controllerRepository = ControllerRepository(sources: const []);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
   final sessionRepository = SessionRepository(engine: engine);
+
+  // One-time courtesy migration from the removed global passthrough monitor to
+  // the per-input routing graph. Runs before the engine-start branch (and so on
+  // the mock path and a first launch too), independent of whether a saved audio
+  // config exists.
+  await runMonitorMigration(settings);
 
   final configured = engine is MockAudioEngine
       ? repository.startEngine(engine.defaultConfig).isOk

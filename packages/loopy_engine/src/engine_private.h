@@ -294,7 +294,6 @@ struct le_engine {
   int32_t lat_buf_pos; /* write head during a measurement */
 
   char device_name[256];
-  int passthrough; /* input monitoring */
 
   /* Explicit context + resolved device ids, used when capturing from a detected
    * loopback device (use_loopback_capture) or when a device is pinned by id.

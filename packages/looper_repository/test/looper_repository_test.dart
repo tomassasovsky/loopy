@@ -346,7 +346,7 @@ void main() {
   group('commands forward to the engine', () {
     test('each command calls the matching engine method', () {
       buildRepo()
-        ..startEngine(const EngineConfig(passthrough: true))
+        ..startEngine(const EngineConfig(sampleRate: 48000))
         ..record()
         ..stopTrack()
         ..play()
@@ -372,7 +372,7 @@ void main() {
           'stop',
         ]),
       );
-      expect(engine.lastConfig?.passthrough, isTrue);
+      expect(engine.lastConfig?.sampleRate, 48000);
       expect(engine.lastVolume, 0.5);
       expect(engine.lastMuted, isTrue);
     });

@@ -39,7 +39,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Save lane-0 routing for channel 1 only; channel 0 has none (exercises
@@ -77,7 +76,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Track 0 lane 0 = a two-effect chain (filter, then delay with a feedback
@@ -124,7 +122,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Track 0 has two lanes; lane 1 carries its own input, output, mix, and
@@ -172,7 +169,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 96000,
           bufferFrames: 256,
-          monitorInput: false,
         ),
       );
 
@@ -185,7 +181,6 @@ void main() {
       expect(engine.startCalls, 1);
       expect(engine.lastConfig?.sampleRate, 96000);
       expect(engine.lastConfig?.bufferFrames, 256);
-      expect(engine.lastConfig?.passthrough, isFalse);
       // Channel counts left at 0 (device default) so the interface opens with
       // all its channels; the negotiated counts come back via the snapshot.
       expect(engine.lastConfig?.inputChannels, 0);
@@ -199,7 +194,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
           backend: AudioBackend.asio,
           asioDriver: 'Focusrite USB ASIO',
         ),
@@ -220,7 +214,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Saved under the profile the running engine reports (the fake's default
@@ -249,7 +242,6 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            monitorInput: true,
           ),
         );
         // No saved latency offset for this profile.
@@ -276,7 +268,6 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            monitorInput: true,
             captureDeviceId: 'clarett-in',
           ),
         );
@@ -311,7 +302,6 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            monitorInput: true,
           ),
         );
 
@@ -353,7 +343,6 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            monitorInput: true,
           ),
         );
         await tryAutoStartEngine(repository: repository, settings: settings);
@@ -367,7 +356,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
 

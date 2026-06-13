@@ -42,7 +42,6 @@ class AudioSetupState extends Equatable {
   const AudioSetupState({
     this.sampleRate = 48000,
     this.bufferFrames = 128,
-    this.monitorInput = true,
     this.exclusive = false,
     this.maxLoopMinutes = 0,
     this.status = AudioSetupStatus.stopped,
@@ -65,9 +64,6 @@ class AudioSetupState extends Equatable {
 
   /// Requested buffer (period) size in frames.
   final int bufferFrames;
-
-  /// Whether captured input is monitored to the output.
-  final bool monitorInput;
 
   /// Whether OS-exclusive device access is requested (full control on Windows:
   /// bypasses the mixer, native format). This is the user's *intent*; the
@@ -178,7 +174,6 @@ class AudioSetupState extends Equatable {
   AudioSetupState copyWith({
     int? sampleRate,
     int? bufferFrames,
-    bool? monitorInput,
     bool? exclusive,
     int? maxLoopMinutes,
     AudioSetupStatus? status,
@@ -198,7 +193,6 @@ class AudioSetupState extends Equatable {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
       bufferFrames: bufferFrames ?? this.bufferFrames,
-      monitorInput: monitorInput ?? this.monitorInput,
       exclusive: exclusive ?? this.exclusive,
       maxLoopMinutes: maxLoopMinutes ?? this.maxLoopMinutes,
       status: status ?? this.status,
@@ -222,7 +216,6 @@ class AudioSetupState extends Equatable {
   List<Object?> get props => [
     sampleRate,
     bufferFrames,
-    monitorInput,
     exclusive,
     maxLoopMinutes,
     status,

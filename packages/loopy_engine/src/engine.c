@@ -1447,8 +1447,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                         memory_order_relaxed);
 
   /* Per-input live monitors: all disabled by default (each defaults to full
-   * stereo output, empty chain). le_engine_start enables input 0 when the
-   * config requests passthrough. */
+   * stereo output, empty chain). Inputs are monitored only when explicitly
+   * routed through the per-input monitor graph (le_engine_set_monitor_input). */
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
     le_monitor_input_reset(&engine->monitors[c]);
   }
@@ -1915,7 +1915,6 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
   if (atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_ALREADY_RUNNING;
   }
-  engine->passthrough = config->passthrough ? 1 : 0;
 
   /* Open the device through the selected backend (miniaudio in this build). The
    * backend builds the device config, resolves pins/loopback, runs the
@@ -1945,11 +1944,6 @@ int32_t le_engine_start(le_engine* engine, const le_config* config) {
                           config->max_loop_frames) != LE_OK) {
     be->close(engine);
     return LE_ERR_INVALID;
-  }
-  /* Passthrough: monitor hardware input 0 live to the default stereo pair
-   * (configure() left every monitor disabled with a full-stereo output mask). */
-  if (engine->passthrough) {
-    store_i32(&engine->monitors[0].a_enabled, 1);
   }
 
   /* Publish the negotiated parameters (configure() reset them above). */

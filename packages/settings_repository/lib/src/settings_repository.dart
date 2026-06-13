@@ -10,7 +10,6 @@ class StoredAudioConfig {
   const StoredAudioConfig({
     required this.sampleRate,
     required this.bufferFrames,
-    required this.monitorInput,
     this.inputChannels = 0,
     this.outputChannels = 0,
     this.maxLoopMinutes = 0,
@@ -26,9 +25,6 @@ class StoredAudioConfig {
 
   /// Requested buffer (period) size in frames.
   final int bufferFrames;
-
-  /// Whether captured input is monitored to the output.
-  final bool monitorInput;
 
   /// Requested hardware capture channel count (`0` => device default).
   final int inputChannels;
@@ -70,7 +66,6 @@ class StoredAudioConfig {
           runtimeType == other.runtimeType &&
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
-          monitorInput == other.monitorInput &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
           maxLoopMinutes == other.maxLoopMinutes &&
@@ -84,7 +79,6 @@ class StoredAudioConfig {
   int get hashCode => Object.hash(
     sampleRate,
     bufferFrames,
-    monitorInput,
     inputChannels,
     outputChannels,
     maxLoopMinutes,
@@ -147,6 +141,9 @@ class SettingsRepository {
 
   static const String _audioSampleRateKey = 'audio.sample_rate';
   static const String _audioBufferFramesKey = 'audio.buffer_frames';
+  // Legacy global input-monitor flag. No longer part of [StoredAudioConfig]:
+  // monitoring is now the per-input routing graph (the `monitor_input.N` keys).
+  // Read only by the one-time monitor migration via [loadLegacyMonitorInput].
   static const String _audioMonitorKey = 'audio.monitor_input';
   static const String _audioInputChannelsKey = 'audio.input_channels';
   static const String _audioOutputChannelsKey = 'audio.output_channels';
@@ -166,7 +163,6 @@ class SettingsRepository {
     return StoredAudioConfig(
       sampleRate: sampleRate,
       bufferFrames: bufferFrames,
-      monitorInput: await _store.getBool(_audioMonitorKey) ?? true,
       inputChannels: await _store.getInt(_audioInputChannelsKey) ?? 0,
       outputChannels: await _store.getInt(_audioOutputChannelsKey) ?? 0,
       maxLoopMinutes: await _store.getInt(_audioMaxLoopMinutesKey) ?? 0,
@@ -191,11 +187,27 @@ class SettingsRepository {
   /// default (Windows => on) themselves — the repository holds no OS policy.
   Future<bool?> loadAudioExclusive() => _store.getBool(_audioExclusiveKey);
 
+  /// Loads the legacy global input-monitor flag, or `null` if it was never set.
+  /// Only the one-time monitor migration reads this — the live app no longer
+  /// persists it (monitoring is the per-input routing graph). Nullable so the
+  /// migration can tell "never configured" apart from an explicit choice.
+  Future<bool?> loadLegacyMonitorInput() => _store.getBool(_audioMonitorKey);
+
+  static const String _monitorMigratedV1Key = 'monitor.migrated_v1';
+
+  /// Whether the one-time legacy-monitor migration has already run. Defaults to
+  /// `false` so a fresh install runs (and no-ops) it once.
+  Future<bool> loadMonitorMigratedV1() async =>
+      await _store.getBool(_monitorMigratedV1Key) ?? false;
+
+  /// Marks the one-time legacy-monitor migration done so it never re-runs.
+  Future<void> saveMonitorMigratedV1() =>
+      _store.setBool(_monitorMigratedV1Key, value: true);
+
   /// Saves the audio [config] so the engine can auto-start with it next launch.
   Future<void> saveAudioConfig(StoredAudioConfig config) async {
     await _store.setInt(_audioSampleRateKey, config.sampleRate);
     await _store.setInt(_audioBufferFramesKey, config.bufferFrames);
-    await _store.setBool(_audioMonitorKey, value: config.monitorInput);
     await _store.setInt(_audioInputChannelsKey, config.inputChannels);
     await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
     await _store.setInt(_audioMaxLoopMinutesKey, config.maxLoopMinutes);

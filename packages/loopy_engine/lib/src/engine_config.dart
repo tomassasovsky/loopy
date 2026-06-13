@@ -33,8 +33,8 @@ enum AudioBackend {
 
 /// Requested audio device configuration passed to `AudioEngine.start`.
 ///
-/// Any field left at `0` (or `false` for [passthrough]) defers to the device
-/// default. This is the pure-Dart counterpart of the native `le_config` struct.
+/// Any field left at `0` defers to the device default. This is the pure-Dart
+/// counterpart of the native `le_config` struct.
 @immutable
 class EngineConfig {
   /// Creates an [EngineConfig].
@@ -43,7 +43,6 @@ class EngineConfig {
     this.bufferFrames = 0,
     this.inputChannels = 0,
     this.outputChannels = 0,
-    this.passthrough = false,
     this.maxLoopFrames = 0,
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
@@ -68,9 +67,6 @@ class EngineConfig {
   /// Requested hardware playback channel count, or `0` for the device default.
   /// Clamped to the engine maximum.
   final int outputChannels;
-
-  /// Whether captured input should be copied straight to the output.
-  final bool passthrough;
 
   /// Per-track loop buffer cap in frames, or `0` for the engine default
   /// (about two minutes at the device sample rate).
@@ -113,7 +109,6 @@ class EngineConfig {
       ..buffer_frames = bufferFrames
       ..input_channels = inputChannels
       ..output_channels = outputChannels
-      ..passthrough = passthrough ? 1 : 0
       ..max_loop_frames = maxLoopFrames
       ..use_loopback_capture = useLoopbackCapture ? 1 : 0
       ..exclusive = exclusive ? 1 : 0
@@ -132,7 +127,6 @@ class EngineConfig {
           bufferFrames == other.bufferFrames &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
-          passthrough == other.passthrough &&
           maxLoopFrames == other.maxLoopFrames &&
           useLoopbackCapture == other.useLoopbackCapture &&
           playbackDeviceId == other.playbackDeviceId &&
@@ -147,7 +141,6 @@ class EngineConfig {
     bufferFrames,
     inputChannels,
     outputChannels,
-    passthrough,
     maxLoopFrames,
     useLoopbackCapture,
     playbackDeviceId,
@@ -162,7 +155,7 @@ class EngineConfig {
       'EngineConfig(sampleRate: $sampleRate, '
       'bufferFrames: $bufferFrames, inputChannels: $inputChannels, '
       'outputChannels: $outputChannels, '
-      'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames, '
+      'maxLoopFrames: $maxLoopFrames, '
       'useLoopbackCapture: $useLoopbackCapture, '
       'playbackDeviceId: $playbackDeviceId, '
       'captureDeviceId: $captureDeviceId, '

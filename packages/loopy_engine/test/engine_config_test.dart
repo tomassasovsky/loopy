@@ -14,7 +14,6 @@ void main() {
       expect(config.bufferFrames, 0);
       expect(config.inputChannels, 0);
       expect(config.outputChannels, 0);
-      expect(config.passthrough, isFalse);
       expect(config.playbackDeviceId, '');
       expect(config.captureDeviceId, '');
       expect(config.exclusive, isFalse);
@@ -50,7 +49,6 @@ void main() {
         bufferFrames: 64,
         inputChannels: 2,
         outputChannels: 4,
-        passthrough: true,
         maxLoopFrames: 480000,
         useLoopbackCapture: true,
         playbackDeviceId: 'out-device-1',
@@ -66,7 +64,6 @@ void main() {
         expect(ptr.ref.buffer_frames, 64);
         expect(ptr.ref.input_channels, 2);
         expect(ptr.ref.output_channels, 4);
-        expect(ptr.ref.passthrough, 1);
         expect(ptr.ref.max_loop_frames, 480000);
         expect(ptr.ref.use_loopback_capture, 1);
         expect(ptr.ref.exclusive, 1);
@@ -126,17 +123,6 @@ void main() {
         calloc.free(ptr);
       }
     });
-
-    test('encodes passthrough false as 0', () {
-      const config = EngineConfig();
-      final ptr = calloc<le_config>();
-      try {
-        config.writeTo(ptr);
-        expect(ptr.ref.passthrough, 0);
-      } finally {
-        calloc.free(ptr);
-      }
-    });
   });
 
   group('value semantics', () {
@@ -183,11 +169,9 @@ void main() {
     test('toString surfaces key fields', () {
       const config = EngineConfig(
         sampleRate: 48000,
-        passthrough: true,
         backend: AudioBackend.asio,
       );
       expect(config.toString(), contains('sampleRate: 48000'));
-      expect(config.toString(), contains('passthrough: true'));
       expect(config.toString(), contains('backend: asio'));
     });
   });

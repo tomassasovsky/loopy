@@ -6,6 +6,10 @@ import 'package:meta/meta.dart';
 /// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
 const int kMaxLanes = LE_MAX_LANES;
 
+/// The maximum number of monitorable hardware inputs, mirroring the native
+/// `LE_MAX_INPUTS`. Referenced (not re-typed) so it can never drift from the C.
+const int kMaxInputs = LE_MAX_INPUTS;
+
 /// Phase of the loopback round-trip latency harness.
 ///
 /// Mirrors the native `le_latency_state` enum.

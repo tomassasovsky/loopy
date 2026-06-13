@@ -307,14 +307,6 @@ class _InputStep extends StatelessWidget {
             onSelected: cubit.setCaptureDevice,
           ),
         ],
-        const SizedBox(height: 26),
-        _Toggle(
-          toggleKey: 'audioSetup_monitor_switch',
-          title: l10n.monitorInputTitle,
-          subtitle: l10n.monitorInputSubtitle,
-          value: state.monitorInput,
-          onChanged: (v) => cubit.setMonitorInput(monitorInput: v),
-        ),
       ],
     );
   }
@@ -341,10 +333,6 @@ class _ReadyStep extends StatelessWidget {
             (
               l10n.estimatedLatencyLabel,
               _latencyMs(l10n, state.bufferFrames, state.sampleRate),
-            ),
-            (
-              l10n.monitorInputLabel,
-              state.monitorInput ? l10n.toggleOn : l10n.toggleOff,
             ),
           ],
         ),

@@ -46,17 +46,15 @@ class MonitorCubit extends Cubit<MonitorState> {
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
 
-  /// Hardware-input ceiling scanned on restore (matches the engine's
-  /// `LE_MAX_INPUTS`). Only inputs with saved state populate the map.
-  static const int _maxInputs = 8;
-
   /// Restores the persisted per-input monitors and applies them to the
   /// repository.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
+    // Scan the shared engine input ceiling ([kMaxInputs] == `LE_MAX_INPUTS`).
+    // Only inputs with saved state populate the map.
     final loaded = await Future.wait([
-      for (var input = 0; input < _maxInputs; input++) _restoreInput(input),
+      for (var input = 0; input < kMaxInputs; input++) _restoreInput(input),
     ]);
     if (isClosed) return;
     final restored = <int, InputMonitor>{};

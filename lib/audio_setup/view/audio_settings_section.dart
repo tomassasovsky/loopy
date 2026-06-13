@@ -123,15 +123,9 @@ class AudioSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.monitoringGroupLabel),
-        const SizedBox(height: 12),
-        SetupToggleRow(
-          toggleKey: const Key('audioSettings_monitor_switch'),
-          title: l10n.monitorInputTitle,
-          subtitle: l10n.monitorInputSubtitle,
-          value: state.monitorInput,
-          onChanged: (on) => cubit.setMonitorInput(monitorInput: on),
-        ),
-        if (state.monitorInput) ..._monitorRouting(context, status),
+        // The per-input routing graph is the single monitor surface (each input
+        // carries its own enable), so there is no master toggle to gate it.
+        ..._monitorRouting(context, status),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.recordingGroupLabel),
         const SizedBox(height: 12),

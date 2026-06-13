@@ -98,14 +98,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     _persistAndApply();
   }
 
-  /// Toggles input monitoring. Persists the choice and, when the engine is
-  /// running, reopens the device so it takes effect immediately.
-  void setMonitorInput({required bool monitorInput}) {
-    if (monitorInput == state.monitorInput) return;
-    emit(state.copyWith(monitorInput: monitorInput));
-    _persistAndApply();
-  }
-
   /// Toggles OS-exclusive device access (full device control on Windows).
   /// Persists the intent and, when running, reopens the device so it engages
   /// (or disengages) now — a reopen that falls back to shared still succeeds.
@@ -226,7 +218,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     bufferFrames: state.bufferFrames,
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
-    passthrough: state.monitorInput,
     exclusive: state.exclusive,
     maxLoopFrames: _maxLoopFrames(state.maxLoopMinutes, state.sampleRate),
     // An explicitly chosen input device always wins: only auto-route capture to
@@ -249,7 +240,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   StoredAudioConfig _storedConfig() => StoredAudioConfig(
     sampleRate: state.sampleRate,
     bufferFrames: state.bufferFrames,
-    monitorInput: state.monitorInput,
     exclusive: state.exclusive,
     maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
@@ -414,9 +404,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
               fallback: current.bufferFrames,
             )
           : current.bufferFrames,
-      monitorInput: hydrateConfig
-          ? lastConfig?.passthrough ?? current.monitorInput
-          : current.monitorInput,
       // Hydrate the requested exclusive intent; an unconfigured engine falls
       // back to the platform default (Windows => on). The negotiated reality is
       // read separately from engineStatus.exclusiveActive.

@@ -61,17 +61,21 @@ void main() {
     verify(() => cubit.setSampleRate(96000)).called(1);
   });
 
-  testWidgets('the input step forwards the monitor toggle', (tester) async {
+  testWidgets('the input step renders no removed monitor/merge toggles', (
+    tester,
+  ) async {
     seed(const AudioSetupState());
     await pumpView(tester);
 
     await tester.tap(find.byKey(const Key('audioSetup_next_button')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('audioSetup_monitor_switch')));
-    verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
-
-    // Merge-to-mono was removed: its toggle must no longer be rendered.
+    // The global monitor toggle is gone (monitoring is the per-input routing
+    // graph), as is the earlier-removed merge-to-mono toggle.
+    expect(
+      find.byKey(const Key('audioSetup_monitor_switch')),
+      findsNothing,
+    );
     expect(
       find.byKey(const Key('audioSetup_mergeToMono_switch')),
       findsNothing,

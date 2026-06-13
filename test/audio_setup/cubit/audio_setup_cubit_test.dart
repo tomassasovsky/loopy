@@ -64,7 +64,6 @@ void main() {
     addTearDown(cubit.close);
     expect(cubit.state.sampleRate, 48000);
     expect(cubit.state.bufferFrames, 128);
-    expect(cubit.state.monitorInput, isTrue);
     expect(cubit.state.status, AudioSetupStatus.stopped);
   });
 
@@ -92,7 +91,6 @@ void main() {
     expect(cubit.state.status, AudioSetupStatus.running);
     expect(cubit.state.sampleRate, 96000);
     expect(cubit.state.bufferFrames, 256);
-    expect(cubit.state.monitorInput, isFalse);
     expect(cubit.state.engineStatus.deviceName, 'Scarlett');
   });
 
@@ -101,16 +99,10 @@ void main() {
     build: buildCubit,
     act: (cubit) => cubit
       ..setSampleRate(96000)
-      ..setBufferFrames(64)
-      ..setMonitorInput(monitorInput: false),
+      ..setBufferFrames(64),
     expect: () => [
       isA<AudioSetupState>().having((s) => s.sampleRate, 'sampleRate', 96000),
       isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
-      isA<AudioSetupState>().having(
-        (s) => s.monitorInput,
-        'monitorInput',
-        false,
-      ),
     ],
   );
 
@@ -129,36 +121,9 @@ void main() {
       const EngineConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        passthrough: true,
       ),
     );
   }
-
-  blocTest<AudioSetupCubit, AudioSetupState>(
-    'setMonitorInput while running reopens the device and persists it',
-    setUp: seedRunning,
-    build: buildCubit,
-    act: (cubit) => cubit.setMonitorInput(monitorInput: false),
-    expect: () => [
-      isA<AudioSetupState>().having(
-        (s) => s.monitorInput,
-        'monitorInput',
-        false,
-      ),
-    ],
-    verify: (_) async {
-      verify(repository.stopEngine).called(1);
-      verify(
-        () => repository.startEngine(
-          const EngineConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-          ),
-        ),
-      ).called(1);
-      expect((await settings.loadAudioConfig())?.monitorInput, isFalse);
-    },
-  );
 
   group('exclusive mode', () {
     test('defaults to the injected platform default (on) when unset', () {
@@ -198,7 +163,6 @@ void main() {
             const EngineConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              passthrough: true,
               exclusive: true,
             ),
           ),
@@ -225,7 +189,6 @@ void main() {
           const EngineConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            passthrough: true,
             exclusive: true,
           ),
         ),
@@ -258,7 +221,6 @@ void main() {
           const EngineConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            passthrough: true,
             maxLoopFrames: 14400000,
           ),
         ),
@@ -308,7 +270,6 @@ void main() {
         const EngineConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          passthrough: true,
         ),
       ),
     ).called(1),
@@ -399,7 +360,6 @@ void main() {
             const EngineConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              passthrough: true,
               useLoopbackCapture: true,
             ),
           ),
@@ -426,7 +386,6 @@ void main() {
             const EngineConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              passthrough: true,
               captureDeviceId: 'in-1',
             ),
           ),
@@ -777,7 +736,6 @@ void main() {
             const EngineConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              passthrough: true,
               backend: AudioBackend.asio,
               asioDriver: 'Focusrite USB ASIO',
             ),

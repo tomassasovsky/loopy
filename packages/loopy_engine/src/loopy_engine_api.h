@@ -5,7 +5,7 @@
  * opaque handle; no C++; no callbacks into Dart. The audio callback that backs
  * this API performs no allocation, locking, or I/O (see engine.c).
  *
- * Scope: device lifecycle, duplex passthrough, level metering, a loopback
+ * Scope: device lifecycle, per-input live monitoring, level metering, a loopback
  * round-trip latency harness, the lock-free command ring, and a multi-track,
  * multi-lane looper. Each track owns up to LE_MAX_LANES lanes; a lane records
  * one hardware input into its own clean mono buffer (never merged with sibling
@@ -210,7 +210,6 @@ typedef struct le_device_info {
 typedef struct le_config {
   int32_t sample_rate;
   int32_t buffer_frames;
-  int32_t passthrough;     /* 1 = copy captured input straight to the output */
   int32_t max_loop_frames; /* per-track buffer cap; 0 => default (8 min @ sr) */
   int32_t use_loopback_capture; /* 1 = capture from a detected loopback device */
   int32_t input_channels;  /* hardware capture channels (0 => device default) */

@@ -192,15 +192,36 @@ void main() {
     verify(() => cubit.setRecordOffset(257)).called(1);
   });
 
-  testWidgets('toggling monitor input forwards to the cubit', (tester) async {
-    seed(runningState); // monitorInput defaults to true
-    await pumpSection(tester);
+  testWidgets(
+    'per-input monitor routing is shown with no master toggle gating it',
+    (tester) async {
+      seed(
+        const AudioSetupState(
+          status: AudioSetupStatus.running,
+          engineStatus: EngineStatus(
+            deviceName: 'Scarlett 4i4',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+        ),
+      );
+      await pumpSection(tester);
 
-    final toggle = find.byKey(const Key('audioSettings_monitor_switch'));
-    await tester.ensureVisible(toggle);
-    await tester.tap(toggle);
-    verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
-  });
+      // The redundant master "Monitor input" toggle is gone; the per-input
+      // routing entry (with its own per-input enable) is always available.
+      expect(
+        find.byKey(const Key('audioSettings_monitor_switch')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_openMonitorGraph')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('opens the input-monitoring graph as a full page', (
     tester,

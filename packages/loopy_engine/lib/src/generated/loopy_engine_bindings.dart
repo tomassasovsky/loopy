@@ -1612,10 +1612,6 @@ final class le_config extends ffi.Struct {
   @ffi.Int32()
   external int buffer_frames;
 
-  /// 1 = copy captured input straight to the output
-  @ffi.Int32()
-  external int passthrough;
-
   /// per-track buffer cap; 0 => default (8 min @ sr)
   @ffi.Int32()
   external int max_loop_frames;
