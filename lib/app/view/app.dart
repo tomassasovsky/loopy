@@ -12,7 +12,6 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
-import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -71,15 +70,6 @@ class App extends StatelessWidget {
       ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(
-            create: (context) {
-              final cubit = UiModeCubit(
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
           BlocProvider(
             create: (context) {
               final cubit = BigPictureCubit(
@@ -211,13 +201,11 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// Waits for persisted UI preferences before opening the waveform window so
-  /// a disabled preference does not flash a second OS window on launch.
+  /// Waits for the persisted waveform-window preference before opening the
+  /// window so a disabled preference does not flash a second OS window on
+  /// launch.
   Future<void> _bootstrapWindow() async {
-    await Future.wait([
-      context.read<WaveformWindowCubit>().load(),
-      context.read<UiModeCubit>().load(),
-    ]);
+    await context.read<WaveformWindowCubit>().load();
     if (!mounted) return;
     await _syncWindow();
   }
@@ -229,13 +217,11 @@ class _AppViewState extends State<_AppView> {
     super.dispose();
   }
 
-  /// Opens the secondary waveform window when big-picture mode is active and
-  /// the window is enabled; closes it otherwise.
+  /// Opens the secondary waveform window when it is enabled; closes it
+  /// otherwise.
   Future<void> _syncWindow() async {
     if (!mounted) return;
-    final mode = context.read<UiModeCubit>().state;
-    final enabled = context.read<WaveformWindowCubit>().state;
-    final shouldOpen = mode == UiMode.bigPicture && enabled;
+    final shouldOpen = context.read<WaveformWindowCubit>().state;
     if (shouldOpen) {
       await widget.waveformWindow.open(
         title: _l10n.outputWaveformWindowTitle,
@@ -315,10 +301,6 @@ class _AppViewState extends State<_AppView> {
   Widget build(BuildContext context) {
     return MultiBlocListener(
       listeners: [
-        BlocListener<UiModeCubit, UiMode>(
-          listenWhen: (previous, current) => previous != current,
-          listener: (_, _) => unawaited(_syncWindow()),
-        ),
         BlocListener<WaveformWindowCubit, bool>(
           listenWhen: (previous, current) => previous != current,
           listener: (_, _) => unawaited(_syncWindow()),
@@ -329,29 +311,23 @@ class _AppViewState extends State<_AppView> {
           listener: (_, state) => _showConnectivityBanner(state),
         ),
       ],
-      child: BlocBuilder<UiModeCubit, UiMode>(
-        builder: (context, mode) {
-          return MaterialApp(
-            scaffoldMessengerKey: _messengerKey,
-            navigatorKey: loopyNavigatorKey,
-            theme: mode == UiMode.bigPicture
-                ? AppTheme.bigPicture
-                : AppTheme.desktop,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: _RootView(
-              needsSetup: widget.needsSetup,
-              sessionDirectory: widget.sessionDirectory,
-            ),
-            debugShowCheckedModeBanner: false,
-            builder: (context, child) {
-              var app = child ?? const SizedBox.shrink();
-              if (defaultTargetPlatform == TargetPlatform.macOS) {
-                app = PlatformMenuBar(menus: _menus(context), child: app);
-              }
-              return app;
-            },
-          );
+      child: MaterialApp(
+        scaffoldMessengerKey: _messengerKey,
+        navigatorKey: loopyNavigatorKey,
+        theme: AppTheme.bigPicture,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: _RootView(
+          needsSetup: widget.needsSetup,
+          sessionDirectory: widget.sessionDirectory,
+        ),
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) {
+          var app = child ?? const SizedBox.shrink();
+          if (defaultTargetPlatform == TargetPlatform.macOS) {
+            app = PlatformMenuBar(menus: _menus(context), child: app);
+          }
+          return app;
         },
       ),
     );

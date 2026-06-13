@@ -125,8 +125,8 @@ void main() {
       expect(windowService.isOpen, isFalse);
     });
 
-    testWidgets('right-click opens settings; switching to desktop closes the '
-        'window', (tester) async {
+    testWidgets('right-click opens settings; disabling the waveform window '
+        'closes it', (tester) async {
       final windowService = _RecordingWindowService();
       await pumpApp(tester, windowService);
       expect(windowService.isOpen, isTrue);
@@ -138,12 +138,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(BigPictureSettingsPage), findsOneWidget);
 
-      // Turn Big Picture off -> desktop layout; the waveform window closes.
-      await tester.tap(find.byKey(const Key('bpSettings_bigPicture_switch')));
+      // Disable the secondary waveform window; it closes (Big Picture is the
+      // only mode now, so the window follows this enable toggle alone).
+      await tester.tap(
+        find.byKey(const Key('bpSettings_waveformWindow_switch')),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.byType(LooperView), findsOneWidget);
       expect(windowService.isOpen, isFalse);
+
+      // Close the settings page so the global open-guard resets for the next
+      // test (the toggle no longer navigates away on its own).
+      await tester.tap(find.byKey(const Key('bpSettings_close_button')));
+      await tester.pumpAndSettle();
+
+      // The layout never swaps — Big Picture is the only mode.
+      expect(find.byType(BigPictureView), findsOneWidget);
     });
 
     testWidgets('the S key opens the settings page', (tester) async {

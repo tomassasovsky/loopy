@@ -13,7 +13,6 @@ import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/tracks_routing_graph/tracks_routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
-import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -117,7 +116,6 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
 
   List<Widget> _viewSection(BuildContext context) {
     final l10n = context.l10n;
-    final mode = context.watch<UiModeCubit>().state;
     final waveformEnabled = context.watch<WaveformWindowCubit>().state;
     final defaultMode = context.watch<BigPictureCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
@@ -125,21 +123,6 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
       Text(l10n.bpSettingsViewIntro, style: setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.viewGroupLabel),
-      const SizedBox(height: 12),
-      SetupToggleRow(
-        toggleKey: const Key('bpSettings_bigPicture_switch'),
-        title: l10n.bigPictureModeTitle,
-        subtitle: l10n.bigPictureModeSubtitle,
-        value: mode == UiMode.bigPicture,
-        onChanged: (on) {
-          unawaited(
-            context.read<UiModeCubit>().setMode(
-              on ? UiMode.bigPicture : UiMode.desktop,
-            ),
-          );
-          unawaited(Navigator.of(context).maybePop());
-        },
-      ),
       const SizedBox(height: 12),
       SetupToggleRow(
         toggleKey: const Key('bpSettings_waveformWindow_switch'),

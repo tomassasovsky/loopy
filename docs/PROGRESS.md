@@ -188,9 +188,11 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **auto-rounded up** to whole base loops on stop (buffer zeroed on the control
   thread so a rounded-up tail is silent). Per-track `multiple` in the snapshot;
   `×N` chip in the UI.
-- **Theming + Big Picture mode** (Phase 4 slice): two Material 3 themes via a
-  `LooperTheme` `ThemeExtension` (dark-neutral **Desktop**, neon-on-black **Big
-  Picture**); `UiModeCubit` persists the mode (as a string). Big Picture is a
+- **Theming + Big Picture mode** (Phase 4 slice): Material 3 theming via a
+  `LooperTheme` `ThemeExtension` (neon-on-black **Big Picture**). _(The
+  dark-neutral Desktop theme, the desktop `LooperView`, and the `UiMode`
+  toggle were later removed — Big Picture is the single UI mode.)_ Big Picture
+  is a
   Chewie-Monsta-style row of tall colored track columns (per-track number,
   loop-waveform thumbnail, editable persisted name via `BigPictureCubit`,
   selection highlight, per-track accent / red recording) **plus a second OS
@@ -207,9 +209,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   loads it and starts the engine; if none is saved (first run) the **Audio Setup
   page is the start screen** until the engine connects, then it hands off to the
   looper.
-- **Big Picture is the default look** (`UiModeCubit` defaults to `bigPicture`).
+- **Big Picture is the only look** (the `UiMode` toggle was removed).
   A dedicated, minimal **Big Picture settings page** (rename tracks, reach audio
-  setup, toggle the waveform window, switch to Desktop) is reachable from the
+  setup, toggle the waveform window) is reachable from the
   performance view by **right-click** or the **`S` key**, and from the **macOS
   system menu bar** (`PlatformMenuBar`, ⌘,). A persisted `WaveformWindowCubit`
   gates the secondary window. The chromeless big-picture exit button was removed
@@ -226,7 +228,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   persisted **bank-enable** toggle (default off = one bank of four); when on, the
   eight tracks show as two banks of four (A / B), one bank visible at a time.
   `BankCubit` (app-wide) holds enabled + active bank; Big Picture shows an A|B
-  switch, desktop `LooperView` an app-bar A/B toggle.
+  switch.
 - **Performance keyboard + Record/Play modes** — handled in the Big Picture
   `Focus` (plain keys consumed so macOS does not beep). `M` switches mode (a
   REC/PLAY indicator shows it); `1`–`8` select a track (auto-revealing its bank);

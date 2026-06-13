@@ -21,15 +21,6 @@ void main() {
     }
 
     test(
-      'desktop registers RoutingGraphTheme mapped from SurfaceTheme.dark',
-      () {
-        expectRoutingGraphMatchesSurface(
-          AppTheme.desktop.extension<RoutingGraphTheme>(),
-        );
-      },
-    );
-
-    test(
       'bigPicture registers RoutingGraphTheme mapped from SurfaceTheme.dark',
       () {
         expectRoutingGraphMatchesSurface(

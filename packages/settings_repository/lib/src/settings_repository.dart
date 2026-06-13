@@ -93,8 +93,8 @@ class StoredAudioConfig {
 /// Persists user/device settings via a [KeyValueStore].
 ///
 /// Stores the per-device record-offset latency calibration, the last-used audio
-/// device configuration (so the engine can auto-start on launch), the UI mode,
-/// per-track display names, and big-picture view preferences.
+/// device configuration (so the engine can auto-start on launch), per-track
+/// display names, and big-picture view preferences.
 class SettingsRepository {
   /// Creates a [SettingsRepository] backed by [store].
   const SettingsRepository({required KeyValueStore store}) : _store = store;
@@ -119,25 +119,6 @@ class SettingsRepository {
     required int bufferFrames,
     required int frames,
   }) => _store.setInt(_latencyKey(device, sampleRate, bufferFrames), frames);
-
-  static const String _uiModeKey = 'ui_mode';
-
-  /// Loads the saved UI-mode name, or `null` if none has been stored.
-  ///
-  /// Tolerates a legacy value of a different type (an earlier build stored the
-  /// mode as an int): the stale key is dropped and `null` is returned rather
-  /// than throwing a type-cast error from the store.
-  Future<String?> loadUiMode() async {
-    try {
-      return await _store.getString(_uiModeKey);
-    } on Object {
-      await _store.remove(_uiModeKey);
-      return null;
-    }
-  }
-
-  /// Saves the UI-mode [name].
-  Future<void> saveUiMode(String name) => _store.setString(_uiModeKey, name);
 
   static const String _audioSampleRateKey = 'audio.sample_rate';
   static const String _audioBufferFramesKey = 'audio.buffer_frames';
@@ -176,8 +157,7 @@ class SettingsRepository {
 
   /// Resolves a stored backend name to an [AudioBackend], forward-compatibly:
   /// an unknown name (e.g. a value written by a newer build) resolves to
-  /// [AudioBackend.wasapi] rather than throwing, mirroring [loadUiMode]'s
-  /// defensive read.
+  /// [AudioBackend.wasapi] rather than throwing (a defensive read).
   AudioBackend _backendFromName(String? name) =>
       AudioBackend.values.asNameMap()[name] ?? AudioBackend.wasapi;
 
