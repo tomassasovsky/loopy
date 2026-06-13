@@ -536,9 +536,11 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       /* A loopback measurement requires a physical out->in cable, which forms a
        * feedback loop with input monitoring (out -> cable -> in -> monitor ->
        * out). With loop gain > 1 that runs away to clipping and can overload the
-       * interface. Disable every per-input monitor for the rest of the session;
-       * the next start() restores defaults. */
+       * interface. Suppress every per-input monitor for the duration of the
+       * measurement, saving each one's state so it is restored when the
+       * measurement finishes (see le_latency_resolve completion below). */
       for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+        e->lat_saved_monitor_enabled[c] = load_i32(&e->monitors[c].a_enabled);
         store_i32(&e->monitors[c].a_enabled, 0);
       }
       break;
@@ -1009,6 +1011,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       if (e->lat_buf == NULL || e->lat_buf_pos >= e->lat_buf_cap) {
         le_latency_resolve(e, sr);
         e->lat_active = 0;
+        /* Restore the per-input monitors suppressed at measurement start, so
+         * monitoring resumes once the pulse is done (both on a resolved peak and
+         * on a timeout — both reach this completion). */
+        for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+          store_i32(&e->monitors[c].a_enabled, e->lat_saved_monitor_enabled[c]);
+        }
       }
       for (int c = 0; c < ch_out; ++c) {
         out[f * ch_out + c] = broadcast;

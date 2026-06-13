@@ -1704,6 +1704,52 @@ static void test_monitor_input_dry_send(void) {
   le_engine_destroy(e);
 }
 
+/* A latency measurement temporarily suppresses input monitoring (to break the
+ * out->cable->in->monitor->out feedback loop during the pulse), then RESTORES
+ * it when the measurement finishes — monitoring must resume, not stop forever. */
+static void test_latency_restores_monitoring(void) {
+  printf("test_latency_restores_monitoring\n");
+  enum { SR = 48000, RET = 150, PULSE = SR / 100, CAP = SR / 10 };
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, SR, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
+
+  /* Enable monitoring of input 0 -> output 0, and apply it before measuring. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1, 0x1) == LE_OK);
+  drain(e);
+
+  /* Run a measurement to completion (the pulse returns on the loopback ch1). */
+  CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
+  drain(e);
+  float* out = calloc((size_t)CAP * 2, sizeof(float));
+  float* in = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(out != NULL && in != NULL);
+  for (int i = 0; i < CAP; ++i) {
+    in[i * 2 + 0] = 0.0f;
+    in[i * 2 + 1] = (i >= RET && i < RET + PULSE) ? 0.5f : 0.0f;
+  }
+  le_engine_process(e, out, in, CAP);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_DONE);
+
+  /* Monitoring must be active again: input 0 is audible on output 0. */
+  float out2[2 * LOOP_N];
+  float in2[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in2[i * 2 + 0] = 1.0f;
+    in2[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out2, in2, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out2[i * 2 + 0] - 1.0f) < 1e-6f);
+  }
+
+  free(out);
+  free(in);
+  le_engine_destroy(e);
+}
+
 /* The dry send, like the effected route, is never printed into a recording:
  * a track records its raw input even while a dry monitor send is active. */
 static void test_monitor_input_dry_not_recorded(void) {
@@ -2962,6 +3008,7 @@ int main(void) {
   test_quantize_track_override_inherits();
   test_monitor_input_routes_live_through_chain();
   test_monitor_input_dry_send();
+  test_latency_restores_monitoring();
   test_monitor_input_dry_not_recorded();
   test_monitor_input_not_recorded();
   test_two_monitored_inputs_dont_interfere();
