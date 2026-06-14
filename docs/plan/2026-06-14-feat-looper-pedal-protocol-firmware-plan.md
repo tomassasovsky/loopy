@@ -98,7 +98,7 @@ PedalCubit  (mode SM · armed track (default Tr1) · bank A/B · rec-cycle setti
 PedalRepository.encode → SysEx (7-bit, versioned, checksummed)
   ▼
 [native MIDI OUT seam — NEW: le_midi_out_send]
-  ▼  SysEx state frame (on change + periodic refresh) · loop-top pulse (realtime)
+  ▼  SysEx state frame (on change + periodic refresh) · loop-top pulse (real-time)
 Pedal renders LEDs from the last good frame; ring interpolates between loop-top pulses
 ```
 
@@ -148,7 +148,7 @@ firmware/                                # Arduino UNO sketch (thin client) + 16
   self-heals despite the FastLED gap. Refresh = **~1 Hz** (worst case ≈ 1 s of stale LEDs
   after a dropped frame; negligible MIDI bandwidth — one ~16-byte frame/s); revisit only if
   smoke testing shows visible staleness.
-- **Loop-top pulse:** a **single-byte realtime message** (`Start 0xFA` at each loop top) —
+- **Loop-top pulse:** a **single-byte real-time message** (`Start 0xFA` at each loop top) —
   survives the FastLED interrupt gap far better than multi-byte SysEx; the pedal interpolates
   the ring spin locally from loop length between pulses (1 revolution = 1 loop).
 - **Goodbye:** loopy sends a `.blank()` frame (`isGoodbye=1`, all LEDs off) on shutdown so
@@ -303,7 +303,7 @@ risk; see Risks.)*
 #### PR5: Firmware rewrite (`firmware/`)
 - Full Arduino UNO sketch, thin client: `Serial` MIDI in/out @ 31250 (dualMocoLUFA on the
   16U2); SysEx parser (validate `F0`/id/version/length/checksum/`F7`, **discard partials**,
-  tolerate interleaved realtime), render 19 LEDs (FastLED) from the last good frame; ring
+  tolerate interleaved real-time), render 19 LEDs (FastLED) from the last good frame; ring
   interpolation from loop length + `Start 0xFA` pulse; **poll MIDI immediately before every
   `FastLED.show()`** (and chunk if needed) to avoid dropped bytes; send Notes (press/release)
   + relative CC; reply to the identity handshake; contact debounce (~10 ms); startup
@@ -323,7 +323,7 @@ risk; see Risks.)*
 - **Fold the pedal into `controller_repository`** — rejected; bidirectional + stateful +
   handshake overloads the one-way stateless `ControllerSource`. Dedicated module is the VGV
   fit.
-- **Continuous position frames for the ring** — rejected for the **loop length + realtime
+- **Continuous position frames for the ring** — rejected for the **loop length + real-time
   loop-top pulse** (far less traffic; survives the FastLED gap).
 - **MIDIUSB library** — N/A on the UNO (32U4-only); use dualMocoLUFA + serial.
 
@@ -355,14 +355,14 @@ risk; see Risks.)*
       retained); Clear LED lit for the fade. (I1)
 - [ ] **Mode switch Rec → Play** finalizes any recording/overdubbing track (stops recording,
       plays); Play → Rec has no transport effect. (H6)
-- [ ] **Ring** = 1 revolution per loop via loop-top realtime pulse; idle pattern when no loop.
+- [ ] **Ring** = 1 revolution per loop via loop-top real-time pulse; idle pattern when no loop.
       (F1, F2)
 - [ ] **Lifecycle:** goodbye frame on shutdown; replug re-binds with exactly one
       subscription/binding (no double events); replug mid-record leaves the take intact;
       stale display after a crash is harmless (pedal never self-acts). (G1–G4, G5 stuck-press)
 - [ ] **Robustness:** garbled/partial SysEx is discarded (last good frame retained, no crash);
       dropped frame self-heals via the periodic refresh; all SysEx payload bytes are 7-bit;
-      interleaved realtime doesn't corrupt parsing. (H3, H4)
+      interleaved real-time doesn't corrupt parsing. (H3, H4)
 - [ ] **Debounce:** one physical stomp = one logical event (never a double record toggle).
       (H2)
 
@@ -408,7 +408,7 @@ and zero looper regressions when no pedal is present.
   *Deriving discrete actions*); if it proves racy in PR4, add an explicit engine
   `finalize`/`stop-to-playing` command (small, isolated) as the fallback.
 - **FastLED interrupt gap drops MIDI** → poll-around-`show()` + chunking + checksum + periodic
-  refresh; realtime loop-top pulse. (If unreliable, document APA102/Teensy as the hardware
+  refresh; real-time loop-top pulse. (If unreliable, document APA102/Teensy as the hardware
   fix — out of scope.)
 - **Data loss from Clear-all** → the fade window is the guard (abortable); buffers retained
   until the fade completes.
@@ -466,7 +466,7 @@ contract; README feature entry; CHANGELOG.
 2. **Clear-all guard** — confirm fade-as-abort-window (vs hold-to-confirm / double-press).
 3. **Armed-track-after-bank-switch** — confirm per-active-bank re-resolution (default Track 1
    of the new bank).
-4. **Loop-top pulse** — confirm realtime `Start 0xFA` (vs custom SysEx).
+4. **Loop-top pulse** — confirm real-time `Start 0xFA` (vs custom SysEx).
 5. **Playing-set memory** invalidation rule (default: persists until a track's recorded
    content changes).
 6. **Pedal-mode persistence** across launches (default: reset on bind — Rec / armed Track 1 /

@@ -171,7 +171,7 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
   `le_midi_*` surface + `le_midi_info`.
 - **Portable core (`midi.c`)**: `le_midi_ring` (SPSC, fixed capacity ~128, mirroring
   [lockfree_ring.c](../../packages/loopy_engine/src/lockfree_ring.c)); pure
-  `le_midi_parse` (Note On/Off w/ velocity-0 = Note Off, CC; drop SysEx/realtime/
+  `le_midi_parse` (Note On/Off w/ velocity-0 = Note Off, CC; drop SysEx/real-time/
   partial/aftertouch); atomic callback pointer (`_Atomic`, release/acquire) so close
   can null it before teardown (no use-after-free); `le_midi_select_backend()`.
 - **CoreMIDI** (`midi_backend_apple.c`): `MIDIClientCreate` (main run loop) +
@@ -194,7 +194,7 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
   `s.frameworks`), `asound` on Linux (`find_package`), `winmm` already linked on Windows.
 - **Tests** (`packages/loopy_engine/src/test/test_engine_core.c` or new
   `test_midi_core.c`): pure `le_midi_parse` cases (CC, Note On, Note-On-vel-0 → off,
-  SysEx/realtime dropped, running status N/A); `le_midi_ring` wrap/full/FIFO;
+  SysEx/real-time dropped, running status N/A); `le_midi_ring` wrap/full/FIFO;
   `le_midi_push_for_test` → callback delivery. Build/run with mingw gcc like the
   existing native suite.
 - **Success:** native suite ALL PASSED; `flutter build {windows,linux,macos} --debug`
@@ -299,7 +299,7 @@ Each phase is independently mergeable → **suggested 3-PR split** (run
 - [ ] **Momentary semantics:** a 127→0 sequence yields exactly one action; latching
       pedals documented as unsupported. (EC-14)
 - [ ] **Debounce:** sub-30 ms repeats of the same trigger collapse to one event. (EC-15)
-- [ ] **FFI framing:** SysEx/realtime/partial messages never crash the listener nor
+- [ ] **FFI framing:** SysEx/real-time/partial messages never crash the listener nor
       produce spurious inputs. (EC-16)
 - [ ] **Switching MIDI never restarts audio**; MIDI picker visible even in Windows
       `asioOnly` mode. (EC-17)
