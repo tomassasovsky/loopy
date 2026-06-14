@@ -113,9 +113,9 @@ class EffectParamsEditor extends StatelessWidget {
 
 /// One labelled parameter control. A continuous slider by default; when the
 /// [spec] declares discrete steps the slider snaps to them, and when it
-/// declares a formatter the formatted value is shown both while dragging and in
-/// a trailing readout (so a musical parameter like pitch reads in its own
-/// units).
+/// declares a [ParamReadout] the value's unit reading is shown both while
+/// dragging and in a trailing readout (so a musical parameter like pitch reads
+/// in its own units).
 class _ParamRow extends StatelessWidget {
   const _ParamRow({
     required this.keyPrefix,
@@ -133,12 +133,12 @@ class _ParamRow extends StatelessWidget {
   final SliderThemeData sliderTheme;
   final ValueChanged<double> onChanged;
 
-  String? _readout(AppLocalizations l10n, double clamped) {
-    if (spec.format != null) {
-      return l10n.formatLocalizedPitchShift(clamped);
-    }
-    return null;
-  }
+  String? _readout(AppLocalizations l10n, double clamped) =>
+      switch (spec.readout) {
+        ParamReadout.none => null,
+        ParamReadout.pitchShift => l10n.formatLocalizedPitchShift(clamped),
+        ParamReadout.octaverMode => l10n.octaverModeLabel(clamped),
+      };
 
   @override
   Widget build(BuildContext context) {

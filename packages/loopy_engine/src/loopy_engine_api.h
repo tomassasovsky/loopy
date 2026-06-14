@@ -165,7 +165,7 @@ typedef enum le_command_code {
  * the audio thread reads a fixed-size, allocation-free array — it is far beyond
  * musical need, not a CPU limit. */
 #define LE_FX_MAX 8
-#define LE_FX_PARAMS 3
+#define LE_FX_PARAMS 4
 
 /* Built-in effect types. Designed so a hosted VST3/CLAP plugin can later slot
  * in as just another type. Each type reads its entry's LE_FX_PARAMS normalized
@@ -175,7 +175,10 @@ typedef enum le_command_code {
  *   DELAY:   p0 = time, p1 = feedback, p2 = wet mix
  *   TREMOLO: p0 = rate, p1 = depth
  *   OCTAVER: p0 = shift (0 = -2 oct, .5 = unison, 1 = +2 oct), p1 = tone,
- *            p2 = mix                                  (time-domain pitch shift)
+ *            p2 = mix, p3 = mode (< .5 = phase vocoder, >= .5 = PSOLA; stored
+ *            but inert until the formant-preserving rewrite reads it)
+ * Every other type leaves its unused trailing params (including p3) at 0; no
+ * non-octaver effect reads p3.
  *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats)
  *   REVERB:  p0 = size, p1 = damping, p2 = mix   (Schroeder room tail; a mono
  *            input yields a decorrelated stereo tail spread across the first two

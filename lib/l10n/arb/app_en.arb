@@ -345,6 +345,9 @@
     "paramTone": "Tone",
     "paramSize": "Size",
     "paramDamping": "Damping",
+    "paramMode": "Mode",
+    "octaverModePhaseVocoder": "Phase Vocoder",
+    "octaverModePsola": "PSOLA",
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {

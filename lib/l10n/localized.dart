@@ -36,8 +36,14 @@ extension EngineLocalizations on AppLocalizations {
     'Tone' => paramTone,
     'Size' => paramSize,
     'Damping' => paramDamping,
+    'Mode' => paramMode,
     _ => englishLabel,
   };
+
+  /// The octaver's algorithm-mode readout: `< 0.5` selects the phase vocoder,
+  /// `>= 0.5` selects PSOLA.
+  String octaverModeLabel(double value) =>
+      value < 0.5 ? octaverModePhaseVocoder : octaverModePsola;
 
   String formatLocalizedPitchShift(double value) {
     final semitones = ((value - 0.5) * 48).round();

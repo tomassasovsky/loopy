@@ -11,6 +11,7 @@ export 'package:loopy_engine/loopy_engine.dart'
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
+        ParamReadout,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,

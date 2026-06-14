@@ -22,11 +22,11 @@ export 'src/mock_audio_engine.dart' show MockAudioEngine;
 export 'src/native_audio_engine.dart' show NativeAudioEngine;
 export 'src/track_effect.dart'
     show
+        ParamReadout,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects,
-        formatPitchShift,
         kTrackEffectMax,
         kTrackEffectParams;
