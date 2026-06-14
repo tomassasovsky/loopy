@@ -1426,6 +1426,122 @@ class LoopyEngineBindings {
       >('le_engine_commit_session');
   late final _le_engine_commit_session = _le_engine_commit_sessionPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Allocates a MIDI capture handle bound to the compiled-in per-OS backend.
+  /// Returns NULL on allocation failure or when no backend is available for the
+  /// platform.
+  ffi.Pointer<le_midi> le_midi_create() {
+    return _le_midi_create();
+  }
+
+  late final _le_midi_createPtr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<le_midi> Function()>>(
+        'le_midi_create',
+      );
+  late final _le_midi_create = _le_midi_createPtr
+      .asFunction<ffi.Pointer<le_midi> Function()>();
+
+  /// Closes any open port and frees the handle. Safe to call with NULL.
+  void le_midi_destroy(
+    ffi.Pointer<le_midi> m,
+  ) {
+    return _le_midi_destroy(
+      m,
+    );
+  }
+
+  late final _le_midi_destroyPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<le_midi>)>>(
+        'le_midi_destroy',
+      );
+  late final _le_midi_destroy = _le_midi_destroyPtr
+      .asFunction<void Function(ffi.Pointer<le_midi>)>();
+
+  /// Enumerates the host's MIDI input ports into `out` (room for `max` entries),
+  /// writing the number filled into *count (clamped to `max`). Returns LE_OK, or
+  /// LE_ERR_INVALID for a null argument / non-positive `max`. Degrades to
+  /// *count = 0, LE_OK when the platform has no backend or no ports. Uses a
+  /// transient OS handle, so it is safe to call while a port is open.
+  int le_midi_enumerate(
+    ffi.Pointer<le_midi_info> out,
+    int max,
+    ffi.Pointer<ffi.Int32> count,
+  ) {
+    return _le_midi_enumerate(
+      out,
+      max,
+      count,
+    );
+  }
+
+  late final _le_midi_enumeratePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_midi_info>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_midi_enumerate');
+  late final _le_midi_enumerate = _le_midi_enumeratePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_midi_info>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Opens the input port whose `id` matches an `id` from le_midi_enumerate and
+  /// begins capture, delivering messages to `cb`. Re-opening switches the device
+  /// (the previous port is closed first), so this is idempotent for re-selection.
+  /// Returns LE_OK, LE_ERR_INVALID (null handle / cb), LE_ERR_DEVICE (port not
+  /// found or could not be opened, e.g. in use).
+  int le_midi_open(
+    ffi.Pointer<le_midi> m,
+    ffi.Pointer<ffi.Char> id,
+    le_midi_event_cb cb,
+  ) {
+    return _le_midi_open(
+      m,
+      id,
+      cb,
+    );
+  }
+
+  late final _le_midi_openPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_midi>,
+            ffi.Pointer<ffi.Char>,
+            le_midi_event_cb,
+          )
+        >
+      >('le_midi_open');
+  late final _le_midi_open = _le_midi_openPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_midi>,
+          ffi.Pointer<ffi.Char>,
+          le_midi_event_cb,
+        )
+      >();
+
+  /// Stops capture and closes the open port. Idempotent (a no-op when nothing is
+  /// open). After it returns the callback registered by le_midi_open is guaranteed
+  /// not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle).
+  int le_midi_close(
+    ffi.Pointer<le_midi> m,
+  ) {
+    return _le_midi_close(
+      m,
+    );
+  }
+
+  late final _le_midi_closePtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_midi>)>>(
+        'le_midi_close',
+      );
+  late final _le_midi_close = _le_midi_closePtr
+      .asFunction<int Function(ffi.Pointer<le_midi>)>();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -1976,6 +2092,48 @@ final class le_snapshot extends ffi.Struct {
 }
 
 final class le_engine extends ffi.Opaque {}
+
+/// A MIDI input port discovered by le_midi_enumerate.
+///
+/// `id` is a per-OS stable token for re-selecting the same device across replug:
+/// the CoreMIDI kMIDIPropertyUniqueID (macOS), or the port name (ALSA, WinMM).
+/// `name` is the human-readable label. `is_default` marks a system-preferred
+/// input where the OS exposes one (always 0 on ALSA/WinMM, which have none).
+final class le_midi_info extends ffi.Struct {
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> id;
+
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> name;
+
+  /// 0/1
+  @ffi.Int32()
+  external int is_default;
+}
+
+typedef le_midi_event_cbFunction =
+    ffi.Void Function(
+      ffi.Uint8 status,
+      ffi.Uint8 data1,
+      ffi.Uint8 data2,
+      ffi.Uint64 ts_us,
+    );
+typedef Dartle_midi_event_cbFunction =
+    void Function(int status, int data1, int data2, int ts_us);
+
+/// Raw MIDI input callback: one Note On/Off or Control Change message.
+/// `status` carries the message type in its high nibble and the channel in its
+/// low nibble; `data1`/`data2` are the two data bytes (CC number/value or note/
+/// velocity). `ts_us` is a per-OS monotonic capture timestamp in microseconds,
+/// carried for future quantization (unused by the default control path).
+///
+/// Invoked off the OS MIDI thread via the drain step. With Dart's
+/// NativeCallable.listener the delivery is marshalled onto the isolate event
+/// loop, so the registered function may run any Dart code.
+typedef le_midi_event_cb =
+    ffi.Pointer<ffi.NativeFunction<le_midi_event_cbFunction>>;
+
+final class le_midi extends ffi.Opaque {}
 
 const int LE_MAX_CHANNELS = 32;
 

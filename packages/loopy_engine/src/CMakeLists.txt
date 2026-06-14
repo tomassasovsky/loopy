@@ -17,6 +17,15 @@ add_library(loopy_engine SHARED
   engine_linux.c
   engine_apple.c
   engine_windows.c
+  # Native USB MIDI input seam (le_midi_backend.h). midi.c is the portable core
+  # (ring + parser + FFI surface, no OS MIDI headers); the three backend TUs are
+  # each wrapped whole in their OS guard, so the two that don't match the build
+  # target compile to near-empty objects — every build lists all three, exactly
+  # like the engine_*.c platform seam.
+  midi.c
+  midi_backend_linux.c
+  midi_backend_apple.c
+  midi_backend_windows.c
   lockfree_ring.c
   loop_clock.c
   miniaudio_impl.c
@@ -56,12 +65,25 @@ target_include_directories(loopy_engine PRIVATE
 target_compile_definitions(loopy_engine PUBLIC DART_SHARED_LIB)
 
 if(WIN32)
-  # miniaudio's Windows device backends need COM + the multimedia timer.
+  # miniaudio's Windows device backends need COM + the multimedia timer; the
+  # WinMM MIDI-input backend (midi_backend_windows.c) also links winmm.
   target_link_libraries(loopy_engine PRIVATE ole32 winmm)
 elseif(UNIX AND NOT APPLE)
   # miniaudio dlopen()s ALSA/PulseAudio/JACK at runtime; we only need libc bits.
   find_package(Threads REQUIRED)
   target_link_libraries(loopy_engine PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
+  # The ALSA-sequencer MIDI backend (midi_backend_linux.c) links libasound
+  # directly (unlike miniaudio, which dlopen()s it). Needs libasound2-dev.
+  find_package(ALSA REQUIRED)
+  target_link_libraries(loopy_engine PRIVATE ALSA::ALSA)
+endif()
+
+# The CocoaPods (macOS/iOS) build compiles these sources via the podspec, not
+# CMake, and links CoreMIDI there. This APPLE branch only matters if the engine
+# is ever built through CMake on Apple (e.g. the native test harness).
+if(APPLE)
+  target_link_libraries(loopy_engine PRIVATE "-framework CoreMIDI"
+    "-framework CoreFoundation")
 endif()
 
 # --- Windows ASIO (duplex backend + per-channel label probe) ---------------
