@@ -41,6 +41,31 @@
  * per OS in engine_apple.c / engine_linux.c / engine_windows.c. This file is
  * platform-agnostic — no #if defined(__APPLE__|__linux__|_WIN32) behavior. */
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+#include <pmmintrin.h> /* _MM_SET_DENORMALS_ZERO_MODE (DAZ) */
+#include <xmmintrin.h> /* _MM_SET_FLUSH_ZERO_MODE (FTZ) */
+#endif
+
+/* Flush denormals to zero on the audio thread. Decaying FX tails (reverb/delay/
+ * phase-vocoder) trend toward ~1e-30, and denormal arithmetic can be orders of
+ * magnitude slower — a CPU spike that shows up as a buffer underrun (dropout /
+ * click), not as wrong audio. FTZ+DAZ make the FPU treat those as zero. Per
+ * thread, so we set it each callback (negligible cost). No-op where unsupported;
+ * the inaudible denormals simply remain. */
+static inline void le_flush_denormals(void) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#elif defined(__aarch64__)
+  uint64_t fpcr;
+  __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
+  fpcr |= (1ull << 24); /* FZ: flush-to-zero */
+  __asm__ __volatile__("msr fpcr, %0" : : "r"(fpcr));
+#endif
+}
+
 /* Loopback latency harness. The echo returns only mildly attenuated (~0.9 from
  * a full-scale pulse on a typical interface), so we emit a quiet calibration
  * tone rather than full scale to spare the user's monitors, and detect with a
@@ -1458,6 +1483,8 @@ static void le_latency_resolve(le_engine* e, int sr) {
 
 void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
+  le_flush_denormals(); /* per-thread; cheap to reassert every callback */
+
   const int ch_in = e->in_channels > 0 ? e->in_channels : 1;
   const int ch_out = e->out_channels > 0 ? e->out_channels : 1;
   const int tc = e->track_count;
@@ -1470,6 +1497,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   /* Global master output gain, read once per block after draining the ring so a
    * mid-block change applies from the next block (no per-frame atomic load). */
   const float master_gain = load_f32(&e->a_master_gain_bits);
+
+  /* Master limiter + overdub feedback, read once per block (same rationale). */
+  const int limiter_on = load_i32(&e->a_limiter_enabled) != 0;
+  const float limiter_ceiling = load_f32(&e->a_limiter_ceiling_bits);
+  const float overdub_fb = load_f32(&e->a_overdub_fb_bits);
+  /* ~50 ms release toward unity once the signal drops below the ceiling. */
+  float lim_release = 1.0f / (0.05f * (float)(e->sample_rate > 0
+                                                  ? e->sample_rate
+                                                  : 48000));
+  if (lim_release > 1.0f) lim_release = 1.0f;
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   /* Overdub punch declick: ramp the layered input in/out over ~10 ms so a punch
@@ -1769,7 +1806,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
           if (od_gain > 0.0f) {
             const int32_t w =
                 seg_base[t] + comp_pos(pos, offset, e->clock.length);
-            lbuf[w] += insample * od_gain;
+            /* Feedback scales the existing content at the write head before the
+             * new layer is summed in, bounding runaway buildup. fb == 1.0 (the
+             * default) is the classic additive `+= insample`. */
+            lbuf[w] = lbuf[w] * overdub_fb + insample * od_gain;
           }
         }
 
@@ -1832,6 +1872,30 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * the next frame), keeping the measurement tone at its fixed amplitude. */
     if (master_gain != 1.0f) {
       for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= master_gain;
+    }
+
+    /* Master peak limiter (feed-forward, no lookahead): find this frame's peak,
+     * compute the gain that would pin it to the ceiling, and apply it. Instant
+     * attack — if the needed gain is below the current one, clamp down this very
+     * frame so nothing exceeds the ceiling (no overshoot); smooth release back
+     * toward unity. Below the ceiling the gain rests at 1.0, so the path is
+     * bit-transparent when nothing is clipping. */
+    if (limiter_on) {
+      float peak = 0.0f;
+      for (int c = 0; c < ch_out; ++c) {
+        const float a = fabsf(out[f * ch_out + c]);
+        if (a > peak) peak = a;
+      }
+      float target = 1.0f;
+      if (peak > limiter_ceiling && peak > 0.0f) target = limiter_ceiling / peak;
+      if (target < e->lim_gain) {
+        e->lim_gain = target; /* instant attack: no sample over the ceiling */
+      } else {
+        e->lim_gain += (target - e->lim_gain) * lim_release;
+      }
+      if (e->lim_gain != 1.0f) {
+        for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= e->lim_gain;
+      }
     }
 
     /* Output metering for this frame. */
@@ -2115,6 +2179,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
 
   store_i32(&engine->a_record_offset, 0); /* re-measured per session */
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
+  /* Limiter off by default (the app enables it); ceiling just below full scale.
+   * Overdub feedback unity by default == classic additive overdub. */
+  store_i32(&engine->a_limiter_enabled, 0);
+  store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
+  engine->lim_gain = 1.0f;
+  store_f32(&engine->a_overdub_fb_bits, 1.0f);
 
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
@@ -2574,6 +2644,10 @@ le_engine* le_engine_create(void) {
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
+  store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
+  store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
+  engine->lim_gain = 1.0f;
+  store_f32(&engine->a_overdub_fb_bits, 1.0f); /* classic additive overdub */
   return engine;
 }
 
@@ -3249,6 +3323,26 @@ int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
       if (engine->armed_trigger[c] == 1) le_cancel_arm(engine, c);
     }
   }
+  return LE_OK;
+}
+
+int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
+                              float ceiling) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* Independent published atomics (no ordering vs. the command stream), so the
+   * control thread stores them directly. Clamp the ceiling to a sane (0,1]. */
+  if (ceiling <= 0.0f) ceiling = 0.99f;
+  if (ceiling > 1.0f) ceiling = 1.0f;
+  store_f32(&engine->a_limiter_ceiling_bits, ceiling);
+  store_i32(&engine->a_limiter_enabled, enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_overdub_feedback(le_engine* engine, float feedback) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (feedback < 0.0f) feedback = 0.0f;
+  if (feedback > 1.0f) feedback = 1.0f;
+  store_f32(&engine->a_overdub_fb_bits, feedback);
   return LE_OK;
 }
 

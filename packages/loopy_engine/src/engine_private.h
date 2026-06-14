@@ -297,6 +297,21 @@ struct le_engine {
    * per process() on the audio thread. Unity (1.0) by default / on configure. */
   _Atomic uint32_t a_master_gain_bits;
 
+  /* Master peak limiter, applied post-gain to the additive mix so the summed
+   * output (many tracks + overdub layers + monitoring) cannot hard-clip in the
+   * driver. Feed-forward, no lookahead: instant attack (clamp this frame to the
+   * ceiling) + smooth release. OFF by default so the deterministic native tests
+   * see the raw mix; the app enables it. ceiling is float bits in (0,1]. */
+  _Atomic int32_t a_limiter_enabled;
+  _Atomic uint32_t a_limiter_ceiling_bits;
+  float lim_gain; /* audio-thread-local smoothed gain reduction (1 = no cut) */
+
+  /* Overdub feedback: the existing loop content at the write head is scaled by
+   * this before the new input is layered in, so stacked overdubs can't grow
+   * without bound. Unity (1.0) by default == the classic additive overdub (and
+   * what the native tests assert); < 1.0 decays older layers. Float bits. */
+  _Atomic uint32_t a_overdub_fb_bits;
+
   /* Tracks. */
   le_track tracks[LE_MAX_TRACKS];
   int32_t track_count;
