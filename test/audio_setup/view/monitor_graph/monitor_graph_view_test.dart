@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_view.dart';
-import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -39,7 +38,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('tapping an input starts monitoring it and focuses it', (
+    testWidgets('tapping an input starts monitoring it and focuses lane 0', (
       tester,
     ) async {
       await pump(tester);
@@ -49,45 +48,62 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(cubit.state.forInput(0).enabled, isTrue);
-      // Its monitor node and route toggle now show.
-      expect(find.byKey(const Key('monitorGraph_node_0')), findsOneWidget);
-      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsOneWidget);
+      // Its lane node and the focused-lane panel (add-lane) now show.
+      expect(
+        find.byKey(const Key('monitorGraph_laneNode_0_0')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('monitorGraph_addLane')), findsOneWidget);
     });
 
-    testWidgets('tapping an output wires the focused input wet send', (
-      tester,
-    ) async {
+    testWidgets('renders one node per (input, lane)', (tester) async {
+      await cubit.setEnabled(0, enabled: true);
+      await cubit.addLane(0);
+      await pump(tester);
+
+      expect(
+        find.byKey(const Key('monitorGraph_laneNode_0_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('monitorGraph_laneNode_0_1')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping an output wires the focused lane', (tester) async {
       await pump(tester);
       await tester.tap(find.byKey(const Key('monitorGraph_in_0')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).outputMask, 0x3);
+      expect(cubit.state.forInput(0).lane(0).outputMask, 0x3);
 
-      // Wet mode is the default; toggling Out 2 (index 1) -> 0x3 ^ 0x2 = 0x1.
+      // Toggling Out 2 (index 1) -> 0x3 ^ 0x2 = 0x1.
       await tester.tap(find.byKey(const Key('monitorGraph_out_1')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).outputMask, 0x1);
+      expect(cubit.state.forInput(0).lane(0).outputMask, 0x1);
     });
 
-    testWidgets('the Dry toggle routes output taps to the dry send', (
+    testWidgets('add-lane appends a lane; remove-lane drops it', (
       tester,
     ) async {
+      await cubit.setEnabled(0, enabled: true);
       await pump(tester);
-      await tester.tap(find.byKey(const Key('monitorGraph_in_0')));
-      await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).dryOutputMask, 0);
-
-      // Switch the route toggle to Dry, then wire Out 1 (index 0) -> 0x1.
-      await tester.tap(find.text('Dry'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('monitorGraph_out_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
       await tester.pumpAndSettle();
 
-      expect(cubit.state.forInput(0).dryOutputMask, 0x1);
-      // The wet send is untouched.
-      expect(cubit.state.forInput(0).outputMask, 0x3);
+      await tester.tap(find.byKey(const Key('monitorGraph_addLane')));
+      await tester.pumpAndSettle();
+      expect(cubit.state.forInput(0).laneCount, 2);
+
+      // Focus the second lane and remove it.
+      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('monitorGraph_removeLane')));
+      await tester.pumpAndSettle();
+      expect(cubit.state.forInput(0).laneCount, 1);
     });
 
-    testWidgets('the add button appends an effect to the input', (
+    testWidgets('the add button appends an effect to the focused lane', (
       tester,
     ) async {
       await pump(tester);
@@ -98,7 +114,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        cubit.state.forInput(0).effects.single.type,
+        cubit.state.forInput(0).lane(0).effects.single.type,
         TrackEffectType.drive,
       );
       expect(find.byKey(const Key('monitorGraph_fx_0_0')), findsOneWidget);
@@ -108,7 +124,7 @@ void main() {
       tester,
     ) async {
       await cubit.setEnabled(0, enabled: true);
-      cubit.addEffect(0);
+      cubit.addEffect(0, 0);
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('monitorGraph_fxLabel_0_0')));
@@ -120,34 +136,34 @@ void main() {
       await tester.tap(find.text('Delay').last);
       await tester.pumpAndSettle();
       expect(
-        cubit.state.forInput(0).effects.single.type,
+        cubit.state.forInput(0).lane(0).effects.single.type,
         TrackEffectType.delay,
       );
 
       await tester.tap(find.byKey(const Key('monitorGraph_fxRemove')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).effects, isEmpty);
+      expect(cubit.state.forInput(0).lane(0).effects, isEmpty);
     });
 
     testWidgets('the per-card delete removes that effect', (tester) async {
       await cubit.setEnabled(0, enabled: true);
       cubit
-        ..addEffect(0)
-        ..addEffect(0);
+        ..addEffect(0, 0)
+        ..addEffect(0, 0);
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('monitorGraph_fxDelete_0_1')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).effects, hasLength(1));
+      expect(cubit.state.forInput(0).lane(0).effects, hasLength(1));
     });
 
     testWidgets('dragging an effect handle reorders the chain', (tester) async {
       await cubit.setEnabled(0, enabled: true);
       cubit
-        ..addEffect(0)
-        ..setEffectType(0, 0, TrackEffectType.drive)
-        ..addEffect(0)
-        ..setEffectType(0, 1, TrackEffectType.delay);
+        ..addEffect(0, 0)
+        ..setEffectType(0, 0, 0, TrackEffectType.drive)
+        ..addEffect(0, 0)
+        ..setEffectType(0, 0, 1, TrackEffectType.delay);
       await pump(tester);
 
       // Reordering uses the gap-index drop zones (the unified convention):
@@ -162,7 +178,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        cubit.state.forInput(0).effects.map((e) => e.type),
+        cubit.state.forInput(0).lane(0).effects.map((e) => e.type),
         [TrackEffectType.delay, TrackEffectType.drive],
       );
     });
@@ -193,44 +209,42 @@ void main() {
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('monitorGraph_node_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsOneWidget);
+      expect(find.byKey(const Key('monitorGraph_addLane')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('monitorGraph_node_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsNothing);
+      expect(find.byKey(const Key('monitorGraph_addLane')), findsNothing);
     });
 
-    testWidgets('tapping the background unfocuses the input', (tester) async {
+    testWidgets('tapping the background unfocuses the lane', (tester) async {
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
-      // Focus it — the route toggle appears and the canvas exposes a
-      // background-tap handler.
-      await tester.tap(find.byKey(const Key('monitorGraph_node_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsOneWidget);
+      expect(find.byKey(const Key('monitorGraph_addLane')), findsOneWidget);
 
       final canvas = tester.widget<GraphCanvas>(find.byType(GraphCanvas));
       expect(canvas.onTapBackground, isNotNull);
       canvas.onTapBackground!();
       await tester.pumpAndSettle();
 
-      // Focus cleared: the route toggle is gone, monitoring stays enabled.
-      expect(find.byKey(const Key('monitorGraph_routeToggle')), findsNothing);
+      // Focus cleared: the panel returns to the hint, monitoring stays enabled.
+      expect(find.byKey(const Key('monitorGraph_addLane')), findsNothing);
       expect(cubit.state.forInput(0).enabled, isTrue);
     });
 
     testWidgets('tapping an output with nothing focused is a no-op', (
       tester,
     ) async {
-      // Enabling through the cubit does not focus a node, so no input is wired.
+      // Enabling via the cubit does not focus a lane, so no output is wired.
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('monitorGraph_out_1')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).outputMask, 0x3); // unchanged
+      expect(cubit.state.forInput(0).lane(0).outputMask, 0x3); // unchanged
     });
 
     testWidgets('Stop disables monitoring of the focused input', (
@@ -238,8 +252,7 @@ void main() {
     ) async {
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
-      // Focus it.
-      await tester.tap(find.byKey(const Key('monitorGraph_node_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('monitorGraph_stop')));
@@ -248,34 +261,22 @@ void main() {
       expect(cubit.state.forInput(0).enabled, isFalse);
     });
 
-    testWidgets('an output reached only by a dry send is amber', (
-      tester,
-    ) async {
-      // Seed: input 0 monitored, wet → Out 2 only, dry → Out 1 only. Nothing
-      // is focused (focus is view-local and starts null), so the output chips
-      // show their union colours.
+    testWidgets('an output chip reached by a lane is wired', (tester) async {
+      // Input 0 monitored, lane 0 routed to Out 1 only (bit 0). Nothing is
+      // focused (focus is view-local and starts null), so the chips reflect the
+      // routed union.
       await cubit.setEnabled(0, enabled: true);
-      await cubit.setOutputMask(0, 0x2); // wet → bit 1 (Out 2)
-      await cubit.setDryOutputMask(0, 0x1); // dry → bit 0 (Out 1)
+      await cubit.setLaneOutputMask(0, 0, 0x1);
       await pump(tester);
 
-      final context = tester.element(
+      final routed = tester.widget<ChannelChip>(
         find.byKey(const Key('monitorGraph_out_0')),
       );
-      final surface = context.surface;
-      final dryOut = tester.widget<ChannelChip>(
-        find.byKey(const Key('monitorGraph_out_0')),
-      );
-      final wetOut = tester.widget<ChannelChip>(
+      final unrouted = tester.widget<ChannelChip>(
         find.byKey(const Key('monitorGraph_out_1')),
       );
-
-      // Out 1 is reached only by the dry send → amber, wired, not emphasised.
-      expect(dryOut.color, surface.dryRoute);
-      expect(dryOut.wired, isTrue);
-      expect(dryOut.strong, isFalse);
-      // Out 2 is reached by the wet send → blue.
-      expect(wetOut.color, surface.wetRoute);
+      expect(routed.wired, isTrue);
+      expect(unrouted.wired, isFalse);
     });
   });
 }

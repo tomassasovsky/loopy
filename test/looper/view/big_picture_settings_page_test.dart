@@ -55,10 +55,9 @@ void main() {
       () => repository.setQuantize(enabled: any(named: 'enabled')),
     ).thenReturn(EngineResult.ok);
     when(
-      () => repository.setMonitorInput(
+      () => repository.setMonitorInputEnabled(
         input: any(named: 'input'),
         enabled: any(named: 'enabled'),
-        outputMask: any(named: 'outputMask'),
       ),
     ).thenReturn(EngineResult.ok);
     when(
