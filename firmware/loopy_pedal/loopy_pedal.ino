@@ -58,7 +58,7 @@ static const uint8_t kButtonPins[PEDAL_BTN_COUNT] = {
 static const uint8_t kEncoderClk = A0;
 static const uint8_t kEncoderDat = A1;
 
-static const unsigned long kDebounceMs = 10;
+static const unsigned long kDebounceMs = 25; // foot-switch contact debounce
 static const uint8_t kMidiChannel = 0; // channel 1 (0-based on the wire)
 
 // ---- inbound state ----------------------------------------------------------
@@ -74,8 +74,9 @@ static unsigned long g_lastLoopTopMs = 0;
 
 // ---- button / encoder debounce state ----------------------------------------
 
-static bool g_btnState[PEDAL_BTN_COUNT];
-static unsigned long g_btnChangedMs[PEDAL_BTN_COUNT];
+static bool g_btnStable[PEDAL_BTN_COUNT];  // last debounced (reported) state
+static bool g_btnLastRaw[PEDAL_BTN_COUNT]; // previous raw sample
+static unsigned long g_btnRawSinceMs[PEDAL_BTN_COUNT]; // when raw last changed
 static uint8_t g_encClkPrev = 0;
 
 // ---- MIDI out ---------------------------------------------------------------
@@ -178,34 +179,69 @@ static CRGB globalColor(uint8_t color) {
   }
 }
 
+// A ~1.5 s breathing level (floor 20..255) for the selected-track LED.
+static uint8_t breathe() {
+  const uint8_t phase = (uint8_t)((millis() / 6) & 0xFFu);
+  const uint8_t tri =
+      (phase < 128) ? (uint8_t)(phase * 2) : (uint8_t)((255 - phase) * 2);
+  return (uint8_t)(20 + ((uint16_t)tri * 220) / 255);
+}
+
+static CRGB scaled(CRGB c, uint8_t level) {
+  c.nscale8_video(level);
+  return c;
+}
+
 static void renderRing() {
-  // One revolution per loop: interpolate the head position from the time since
-  // the last loop-top pulse and the loop length. Idle (no loop) shows a dim
-  // breathing dot at the top.
-  if (!g_haveFrame || g_frame.loop_length_micros == 0) {
+  // The ring spins one revolution per loop, colored by the activity color loopy
+  // sends in global_color: red recording / amber overdubbing / green playing.
+  // Idle (off, or the clear-fade blue) shows a dim breathing dot.
+  const CRGB activity = g_haveFrame ? globalColor(g_frame.global_color)
+                                    : CRGB::Black;
+  const bool active = g_haveFrame && (activity.r || activity.g || activity.b) &&
+                      g_frame.global_color != PEDAL_GLOBAL_BLUE;
+  if (!active) {
     for (uint8_t i = 0; i < kRingCount; i++) g_leds[kRingStart + i] = CRGB::Black;
-    const uint8_t pulse = (uint8_t)((millis() / 4) & 0x3F);
-    g_leds[kRingStart] = CRGB(0, 0, pulse);
+    g_leds[kRingStart] = scaled(CRGB::Blue, (uint8_t)(breathe() / 4));
     return;
   }
-  const unsigned long loopMs = g_frame.loop_length_micros / 1000UL;
-  const unsigned long elapsed = millis() - g_lastLoopTopMs;
-  const unsigned long pos = (loopMs > 0) ? (elapsed % loopMs) : 0;
-  const uint8_t head = (uint8_t)((pos * kRingCount) / (loopMs ? loopMs : 1));
+  // Phase: from the loop position when the loop length is known, else free-run
+  // so it still spins during the first (not-yet-closed) recording.
+  unsigned long phasePos;
+  unsigned long phaseLen;
+  if (g_frame.loop_length_micros > 0) {
+    const unsigned long loopMs = g_frame.loop_length_micros / 1000UL;
+    phaseLen = (loopMs > 0) ? loopMs : 1;
+    phasePos = (millis() - g_lastLoopTopMs) % phaseLen;
+  } else {
+    phaseLen = 750; // ~0.75 s/rev free-run before the loop closes
+    phasePos = millis() % phaseLen;
+  }
+  const uint8_t head = (uint8_t)((phasePos * kRingCount) / phaseLen);
   for (uint8_t i = 0; i < kRingCount; i++) {
-    g_leds[kRingStart + i] = (i == head) ? CRGB::White : CRGB(0, 0, 16);
+    const uint8_t back = (uint8_t)((head + kRingCount - i) % kRingCount);
+    const uint8_t level = (back == 0) ? 255 : (back <= 3 ? (uint8_t)(120 >> back) : 0);
+    g_leds[kRingStart + i] = scaled(activity, level);
   }
 }
 
 static void render() {
   renderRing(); // the loop-position ring, LEDs 0..11
   if (g_haveFrame) {
-    // Show the active bank's 4 tracks on the physical Tr1..Tr4 LEDs.
+    // Active bank's 4 tracks on the physical Tr1..Tr4 LEDs; the selected
+    // (armed) track breathes — red/green from its state, or blue when empty in
+    // Rec mode (matching the original).
     const uint8_t base = g_frame.active_bank * 4; // bank A: 0..3, bank B: 4..7
     for (uint8_t i = 0; i < 4; i++) {
-      g_leds[kTrackLed0 + i] = ledColor(g_frame.track_leds[base + i]);
+      const uint8_t ledState = g_frame.track_leds[base + i];
+      CRGB color = ledColor(ledState);
+      if ((base + i) == g_frame.armed_track) {
+        if (ledState == PEDAL_LED_OFF && !g_frame.play_mode) color = CRGB::Blue;
+        color = scaled(color, breathe());
+      }
+      g_leds[kTrackLed0 + i] = color;
     }
-    g_leds[kModeLed] = globalColor(g_frame.global_color);
+    g_leds[kModeLed] = g_frame.play_mode ? CRGB::Green : CRGB::Red; // Rec=red
     g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Blue : CRGB::Black;
     g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;
   } else {
@@ -226,14 +262,22 @@ static void render() {
 static void pollButtons() {
   const unsigned long now = millis();
   for (uint8_t i = 0; i < PEDAL_BTN_COUNT; i++) {
-    const bool pressed = (digitalRead(kButtonPins[i]) == LOW); // active-low
-    if (pressed == g_btnState[i]) continue;
-    if (now - g_btnChangedMs[i] < kDebounceMs) continue; // contact debounce
-    g_btnState[i] = pressed;
-    g_btnChangedMs[i] = now;
-    uint8_t msg[3];
-    const int len = pedal_encode_button(i, pressed ? 1 : 0, kMidiChannel, msg);
-    sendBytes(msg, len);
+    const bool raw = (digitalRead(kButtonPins[i]) == LOW); // active-low
+    // Restart the stability timer whenever the raw reading flips. Contact
+    // chatter keeps resetting it, so a change is only reported once the line has
+    // been steady for kDebounceMs — a proper stable-for-N-ms debounce on both
+    // the press and the release edges (no single-stomp double-triggers).
+    if (raw != g_btnLastRaw[i]) {
+      g_btnLastRaw[i] = raw;
+      g_btnRawSinceMs[i] = now;
+      continue;
+    }
+    if (raw != g_btnStable[i] && (now - g_btnRawSinceMs[i]) >= kDebounceMs) {
+      g_btnStable[i] = raw;
+      uint8_t msg[3];
+      const int len = pedal_encode_button(i, raw ? 1 : 0, kMidiChannel, msg);
+      sendBytes(msg, len);
+    }
   }
 }
 
@@ -260,8 +304,9 @@ void setup() {
 
   for (uint8_t i = 0; i < PEDAL_BTN_COUNT; i++) {
     pinMode(kButtonPins[i], INPUT_PULLUP);
-    g_btnState[i] = false;
-    g_btnChangedMs[i] = 0;
+    g_btnStable[i] = false;  // released at boot
+    g_btnLastRaw[i] = false;
+    g_btnRawSinceMs[i] = 0;
   }
   pinMode(kEncoderClk, INPUT_PULLUP);
   pinMode(kEncoderDat, INPUT_PULLUP);
