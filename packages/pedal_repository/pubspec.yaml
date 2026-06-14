@@ -1,0 +1,21 @@
+name: pedal_repository
+description: >-
+  Protocol layer for the Loopy bidirectional MIDI looper pedal: state-frame
+  models and the SysEx codec (versioned, checksummed, 7-bit-packed) that loopy
+  and the pedal firmware share as a single contract.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  equatable: ^2.0.7
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.2.0
