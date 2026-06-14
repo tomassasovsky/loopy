@@ -2072,6 +2072,18 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int record_offset_frames;
 
+  /// Added latency (frames) of the highest-latency effect active in any audible
+  /// or monitored lane chain — the MAXIMUM across active effects, so it stays
+  /// forward-compatible as effects accrue. Today the formant-preserving octaver
+  /// is the only contributor (~LE_PV_N frames; both PV and PSOLA modes report the
+  /// same value); every other effect adds 0, so this reads 0 whenever no octaver
+  /// is engaged. The Dart layer divides by sample_rate to show milliseconds and
+  /// warn a performer monitoring through the octaver. PURELY informational: this
+  /// does NOT feed record_offset_frames or any compensation — it only surfaces
+  /// the lag so the UI can suggest the lower-latency choice.
+  @ffi.Int32()
+  external int fx_added_latency_frames;
+
   /// Global master output gain (0..1) applied post-mix to the final output, after
   /// every track/lane/monitor lane has summed in. 1.0 (unity) by default and on
   /// every fresh configure. Set via le_engine_set_master_gain.

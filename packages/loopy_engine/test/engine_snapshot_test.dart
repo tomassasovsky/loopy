@@ -257,6 +257,7 @@ void main() {
           ..master_length_frames = 96000
           ..master_position_frames = 1200
           ..record_offset_frames = 480
+          ..fx_added_latency_frames = 1024
           ..master_gain = 0.5
           ..active_backend = 1
           ..track_count = 2;
@@ -286,6 +287,9 @@ void main() {
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
         expect(snapshot.recordOffsetFrames, 480);
+        expect(snapshot.fxAddedLatencyFrames, 1024);
+        // 1024 frames at 48 kHz ~= 21.3 ms.
+        expect(snapshot.fxAddedLatencyMs, closeTo(1024 * 1000 / 48000, 1e-9));
         expect(snapshot.masterGain, closeTo(0.5, 1e-6));
         expect(snapshot.activeBackend, AudioBackend.asio);
         expect(snapshot.trackCount, 2);
@@ -379,6 +383,7 @@ void main() {
       bool devicePresent = true,
       AudioBackend activeBackend = AudioBackend.miniaudio,
       double masterGain = 1,
+      int fxAddedLatencyFrames = 0,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -392,6 +397,7 @@ void main() {
       latencyState: LatencyState.idle,
       measuredLatencyMs: -1,
       masterGain: masterGain,
+      fxAddedLatencyFrames: fxAddedLatencyFrames,
       activeBackend: activeBackend,
     );
 
@@ -413,6 +419,16 @@ void main() {
 
     test('masterGain participates in equality', () {
       expect(build(), isNot(equals(build(masterGain: 0.5))));
+    });
+
+    test('fxAddedLatencyFrames participates in equality', () {
+      expect(build(), isNot(equals(build(fxAddedLatencyFrames: 1024))));
+    });
+
+    test('fxAddedLatencyMs is 0 when the sample rate is unknown', () {
+      // The initial snapshot has sampleRate 0; the ms getter must not divide by
+      // zero (and is informational only, so 0 is the right "unknown" value).
+      expect(const EngineSnapshot.initial().fxAddedLatencyMs, 0);
     });
 
     test('differing snapshots are not equal', () {

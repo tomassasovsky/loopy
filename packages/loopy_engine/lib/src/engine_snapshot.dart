@@ -318,6 +318,7 @@ class EngineSnapshot {
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
+    this.fxAddedLatencyFrames = 0,
     this.masterGain = 1,
     this.activeBackend = AudioBackend.miniaudio,
     this.tracks = const [],
@@ -342,6 +343,7 @@ class EngineSnapshot {
       masterLengthFrames = 0,
       masterPositionFrames = 0,
       recordOffsetFrames = 0,
+      fxAddedLatencyFrames = 0,
       masterGain = 1,
       activeBackend = AudioBackend.miniaudio,
       tracks = const [];
@@ -372,6 +374,7 @@ class EngineSnapshot {
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
     recordOffsetFrames: native.record_offset_frames,
+    fxAddedLatencyFrames: native.fx_added_latency_frames,
     masterGain: native.master_gain,
     activeBackend: AudioBackend.fromNative(native.active_backend),
     tracks: tracks,
@@ -434,6 +437,18 @@ class EngineSnapshot {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
+  /// Added latency (frames) of the highest-latency effect engaged in any
+  /// audible or monitored lane chain — the maximum across active effects. Today
+  /// only the formant-preserving octaver contributes (~21 ms); `0` when no
+  /// octaver is engaged. Purely informational (see [fxAddedLatencyMs]); never
+  /// feeds [recordOffsetFrames] or any compensation.
+  final int fxAddedLatencyFrames;
+
+  /// [fxAddedLatencyFrames] expressed in milliseconds at the current
+  /// [sampleRate]; `0` when no effect adds latency or the rate is unknown.
+  double get fxAddedLatencyMs =>
+      sampleRate > 0 ? fxAddedLatencyFrames * 1000 / sampleRate : 0;
+
   /// Global master output gain in `0..1`, applied post-mix to the final output.
   /// Unity (`1.0`) by default and after every fresh start.
   final double masterGain;
@@ -495,6 +510,7 @@ class EngineSnapshot {
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
           recordOffsetFrames == other.recordOffsetFrames &&
+          fxAddedLatencyFrames == other.fxAddedLatencyFrames &&
           masterGain == other.masterGain &&
           activeBackend == other.activeBackend &&
           _listEquals(tracks, other.tracks);
@@ -518,6 +534,7 @@ class EngineSnapshot {
     masterLengthFrames,
     masterPositionFrames,
     recordOffsetFrames,
+    fxAddedLatencyFrames,
     masterGain,
     activeBackend,
     ...tracks,

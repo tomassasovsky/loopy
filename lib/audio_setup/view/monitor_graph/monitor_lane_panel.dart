@@ -25,6 +25,7 @@ class MonitorLanePanel extends StatelessWidget {
     required this.onSetType,
     required this.onSetParam,
     required this.onRemoveEffect,
+    this.addedLatencyMs = 0,
     super.key,
   });
 
@@ -58,6 +59,9 @@ class MonitorLanePanel extends StatelessWidget {
   final ValueChanged<TrackEffectType> onSetType;
   final void Function(int param, double value) onSetParam;
   final VoidCallback onRemoveEffect;
+
+  /// The engine's reported added latency (ms) for the octaver monitoring hint.
+  final double addedLatencyMs;
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +163,7 @@ class MonitorLanePanel extends StatelessWidget {
                 keyPrefix: 'monitorGraph',
                 fx: selectedFx!,
                 accentColor: surface.accent,
+                addedLatencyMs: addedLatencyMs,
                 onSetType: onSetType,
                 onSetParam: onSetParam,
                 onRemove: onRemoveEffect,

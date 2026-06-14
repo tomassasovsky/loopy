@@ -19,6 +19,7 @@ class EffectParamsEditor extends StatelessWidget {
     required this.onSetType,
     required this.onSetParam,
     required this.onRemove,
+    this.addedLatencyMs = 0,
     super.key,
   });
 
@@ -27,6 +28,27 @@ class EffectParamsEditor extends StatelessWidget {
 
   /// The effect being edited.
   final TrackEffect fx;
+
+  /// The engine's reported added latency in milliseconds (from the snapshot).
+  /// Used only to display the phase-vocoder monitoring-lag hint; `0` suppresses
+  /// it (e.g. the engine is stopped or no octaver is engaged).
+  final double addedLatencyMs;
+
+  /// Whether [fx] is an octaver currently in phase-vocoder mode — the
+  /// high-latency algorithm the hint steers performers away from for live
+  /// monitoring. The mode parameter is found by its [ParamReadout] so it stays
+  /// correct if the parameter order ever changes; `< 0.5` is the phase vocoder,
+  /// `>= 0.5` PSOLA.
+  bool get _isPhaseVocoderOctaver {
+    if (fx.type != TrackEffectType.octaver) return false;
+    final params = fx.type.params;
+    for (var p = 0; p < params.length && p < fx.params.length; p++) {
+      if (params[p].readout == ParamReadout.octaverMode) {
+        return fx.params[p] < 0.5;
+      }
+    }
+    return false;
+  }
 
   /// The editor's accent colour.
   final Color accentColor;
@@ -104,6 +126,38 @@ class EffectParamsEditor extends StatelessWidget {
               value: fx.params[p],
               sliderTheme: sliderTheme,
               onChanged: (v) => onSetParam(p, v),
+            ),
+          // Two independent gates: [_isPhaseVocoderOctaver] is the per-editor
+          // check that *this* effect is the high-latency mode, while
+          // [addedLatencyMs] (> 0) is the engine-wide report that an octaver is
+          // actually engaged and adding lag. Both must hold, so the hint never
+          // shows for a PSOLA octaver or while the engine reports no latency.
+          if (_isPhaseVocoderOctaver && addedLatencyMs > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 14,
+                    color: surface.textSecondary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      key: Key('${keyPrefix}_octaverLatencyHint'),
+                      l10n.octaverLatencyHint(
+                        addedLatencyMs.toStringAsFixed(0),
+                      ),
+                      style: TextStyle(
+                        color: surface.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),

@@ -316,6 +316,7 @@ class LooperRepository {
       devicePresent: s.devicePresent,
       excludedInputMask: s.excludedInputMask,
       recordOffsetFrames: s.recordOffsetFrames,
+      fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: s.activeBackend,
     ),
   );
