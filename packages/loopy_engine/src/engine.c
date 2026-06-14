@@ -285,6 +285,7 @@ static void handle_clear(le_engine* e, int32_t ch) {
   t->record_pos = 0;
   t->start_iter = 0;
   t->pending_record = 0;
+  t->od_gain = 0.0f;
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_track_set_len(t, 0);
@@ -1471,6 +1472,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const float master_gain = load_f32(&e->a_master_gain_bits);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  /* Overdub punch declick: ramp the layered input in/out over ~10 ms so a punch
+   * (in or out, including the instant rec/dub auto-dub) never bakes a step into
+   * the loop buffer. One linear step per frame, settling in od_fade_frames. */
+  int32_t od_fade_frames = sr / 100;
+  if (od_fade_frames < 1) od_fade_frames = 1;
+  const float od_step = 1.0f / (float)od_fade_frames;
   /* Loopback-labelled input channels are never recorded, monitored, or
    * metered (they carry our own output and would otherwise inflate the meter). */
   const uint32_t excluded =
@@ -1693,7 +1700,32 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * lane's mono contribution into the output channels its mask selects. */
     for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] = 0.0f;
 
+    /* The punch fade only engages once the loop is long enough to host a full
+     * fade-in plus fade-out tail with steady audio between them; shorter loops
+     * (sub-20 ms — not musically a loop) snap straight to the target, preserving
+     * the exact unfaded write the deterministic tests rely on. */
+    const int od_fade_on = e->clock.length >= 2 * od_fade_frames;
     for (int t = 0; t < tc; ++t) {
+      /* Advance this track's overdub punch envelope once per frame (shared by
+       * every lane): ramp toward 1 while OVERDUBBING, toward 0 otherwise. When a
+       * punch-out flips the state to PLAYING the envelope is still > 0, so the
+       * write below keeps layering a tapering tail until it reaches 0 — a
+       * click-free punch-out (the player's still-live input fades out, rather
+       * than the loop cutting at the punch point). */
+      const float od_target =
+          (st[t] == LE_TRACK_OVERDUBBING) ? 1.0f : 0.0f;
+      float od_gain = e->tracks[t].od_gain;
+      if (!od_fade_on) {
+        od_gain = od_target;
+      } else if (od_gain < od_target) {
+        od_gain += od_step;
+        if (od_gain > od_target) od_gain = od_target;
+      } else if (od_gain > od_target) {
+        od_gain -= od_step;
+        if (od_gain < od_target) od_gain = od_target;
+      }
+      e->tracks[t].od_gain = od_gain;
+
       for (int l = 0; l < lane_n[t]; ++l) {
         /* Clean single-input capture: a lane records exactly its assigned
          * hardware input — never an average of several — or silence when it has
@@ -1727,15 +1759,18 @@ void le_engine_process(le_engine* e, float* output, const float* input,
               lbuf[w] = insample;
             }
           }
-        } else if (st[t] == LE_TRACK_OVERDUBBING) {
-          /* Mix the existing loop (read before write); record the live input at
-           * the compensated position in the current segment for the next pass. */
+        } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
+          /* Mix the existing loop (read before write). Layer the live input at
+           * the compensated position, scaled by the punch envelope so it ramps
+           * in on punch-in and out on punch-out (od_gain keeps the write alive
+           * for the fade-out tail after the state has already returned to
+           * PLAYING). od_gain == 0 in steady playback, so this is a plain read. */
           loopsample = lbuf[seg_base[t] + pos];
-          const int32_t w =
-              seg_base[t] + comp_pos(pos, offset, e->clock.length);
-          lbuf[w] += insample;
-        } else if (st[t] == LE_TRACK_PLAYING) {
-          loopsample = lbuf[seg_base[t] + pos];
+          if (od_gain > 0.0f) {
+            const int32_t w =
+                seg_base[t] + comp_pos(pos, offset, e->clock.length);
+            lbuf[w] += insample * od_gain;
+          }
         }
 
         /* The lane's mono output: its dry loop content at the lane's playback
@@ -1838,9 +1873,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
     /* Advance the record heads, then the master transport. An auto-multiple
      * track grows freely and is rounded up only when stopped; a fixed-multiple
-     * track auto-finalizes after exactly K base loops, continuing into overdub
-     * or playback per rec/dub. All cap at the per-track buffer. */
-    const int32_t fin_end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
+     * track auto-finalizes after exactly K base loops. A track recorded over an
+     * existing master always continues into overdub when it auto-finalizes — so
+     * layering stays live rather than auto-stopping to playback the moment the
+     * loop completes; the rec/dub toggle governs only the master's second-press
+     * finalize, not this auto-finish. All cap at the per-track buffer. */
     for (int t = 0; t < tc; ++t) {
       if (st[t] != LE_TRACK_RECORDING) continue;
       le_track* tr = &e->tracks[t];
@@ -1854,9 +1891,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         const int32_t eff = le_effective_multiple(e, t);
         const int32_t base = e->clock.length;
         if (eff >= 1 && tr->record_pos - tr->record_start >= eff * base) {
-          finalize_new_track(e, tr, fin_end);
+          finalize_new_track(e, tr, LE_TRACK_OVERDUBBING);
         } else if (tr->record_pos >= e->max_loop_frames) {
-          finalize_new_track(e, tr, LE_TRACK_PLAYING);
+          finalize_new_track(e, tr, LE_TRACK_OVERDUBBING);
         }
       }
     }

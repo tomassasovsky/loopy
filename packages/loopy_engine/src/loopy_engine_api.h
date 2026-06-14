@@ -568,7 +568,10 @@ LE_EXPORT int32_t le_engine_set_default_multiple(le_engine* engine,
 
 /* Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
  * with a record press continues into overdub instead of playback. A stop press
- * always ends in playback/stopped. */
+ * always ends in playback/stopped. Independent of this setting, a track recorded
+ * over an existing master that auto-finishes (reaches its loop length with no
+ * press) always continues into overdub, so layering stays live rather than
+ * auto-stopping to playback the moment the loop completes. */
 LE_EXPORT int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled);
 
 /* Sets the global master output gain (clamped to 0..1), applied post-mix to the
