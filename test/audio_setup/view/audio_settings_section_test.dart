@@ -25,16 +25,9 @@ void main() {
     cubit = _MockAudioSetupCubit();
     final repository = _MockLooperRepository();
     when(
-      () => repository.setMonitorInput(
+      () => repository.setMonitorInputEnabled(
         input: any(named: 'input'),
         enabled: any(named: 'enabled'),
-        outputMask: any(named: 'outputMask'),
-      ),
-    ).thenReturn(EngineResult.ok);
-    when(
-      () => repository.setMonitorDry(
-        input: any(named: 'input'),
-        dryOutputMask: any(named: 'dryOutputMask'),
       ),
     ).thenReturn(EngineResult.ok);
     when(

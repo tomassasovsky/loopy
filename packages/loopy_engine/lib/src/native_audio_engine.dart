@@ -475,10 +475,9 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setMonitorInput({
+  EngineResult setMonitorInputEnabled({
     required int input,
     required bool enabled,
-    required int outputMask,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
@@ -486,44 +485,75 @@ class NativeAudioEngine implements AudioEngine {
         _engine,
         input,
         enabled ? 1 : 0,
-        outputMask,
       ),
     );
   }
 
   @override
-  EngineResult setMonitorInputDry({
+  EngineResult setMonitorLaneCount({
     required int input,
-    required int dryOutputMask,
+    required int count,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_input_dry(_engine, input, dryOutputMask),
+      _bindings.le_engine_set_monitor_lane_count(_engine, input, count),
     );
   }
 
   @override
-  EngineResult setMonitorInputVolume({
+  EngineResult setMonitorLaneOutput({
     required int input,
+    required int lane,
+    required int mask,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_lane_output(_engine, input, lane, mask),
+    );
+  }
+
+  @override
+  EngineResult setMonitorLaneVolume({
+    required int input,
+    required int lane,
     required double volume,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_input_volume(_engine, input, volume),
+      _bindings.le_engine_set_monitor_lane_volume(_engine, input, lane, volume),
     );
   }
 
   @override
-  EngineResult setMonitorInputFx({
+  EngineResult setMonitorLaneMute({
     required int input,
+    required int lane,
+    required bool muted,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_lane_mute(
+        _engine,
+        input,
+        lane,
+        muted ? 1 : 0,
+      ),
+    );
+  }
+
+  @override
+  EngineResult setMonitorLaneFx({
+    required int input,
+    required int lane,
     required int index,
     required TrackEffectType type,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_input_fx(
+      _bindings.le_engine_set_monitor_lane_fx(
         _engine,
         input,
+        lane,
         index,
         type.code,
       ),
@@ -531,28 +561,36 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult setMonitorInputFxCount({
+  EngineResult setMonitorLaneFxCount({
     required int input,
+    required int lane,
     required int count,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_input_fx_count(_engine, input, count),
+      _bindings.le_engine_set_monitor_lane_fx_count(
+        _engine,
+        input,
+        lane,
+        count,
+      ),
     );
   }
 
   @override
-  EngineResult setMonitorInputFxParam({
+  EngineResult setMonitorLaneFxParam({
     required int input,
+    required int lane,
     required int index,
     required int param,
     required double value,
   }) {
     _checkAlive();
     return EngineResult.fromCode(
-      _bindings.le_engine_set_monitor_input_fx_param(
+      _bindings.le_engine_set_monitor_lane_fx_param(
         _engine,
         input,
+        lane,
         index,
         param,
         value,

@@ -3,22 +3,25 @@ import 'dart:math' as math;
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:routing_graph/routing_graph.dart';
 
+/// One row of the monitor graph: a hardware input and one of its lane indices.
+/// Records have value equality, so two rows are equal iff both fields match.
+typedef MonitorRow = ({int input, int lane});
+
 /// Pure geometry for one frame of the monitor graph: node positions, card
 /// positions, and the wires. Computed once per build from the monitor state, so
 /// the build method composes widgets instead of threading a dozen coordinates
 /// around.
 ///
-/// Each monitored input has two parallel sends: the **effected (wet)** signal
-/// runs through the chain to its outputs, and the **clean (dry)** signal leaves
-/// from the bottom centre of the monitor node to its own outputs.
+/// Structurally identical to the track lane graph: one row per `(input, lane)`,
+/// each a node + its own effect chain, single per-lane-coloured edges over a
+/// multi-row layout. There is no wet/dry duality — a lane with no effects is
+/// simply the clean (dry) path.
 @immutable
 class MonitorGraphLayout {
   const MonitorGraphLayout._({
     required this.rows,
     required this.cardXs,
     required this.edges,
-    required this.wetUnion,
-    required this.dryUnion,
     required this.canvasWidth,
     required this.canvasHeight,
     required this.inX,
@@ -27,134 +30,98 @@ class MonitorGraphLayout {
     required this.excludedMask,
     required int inCount,
     required int outCount,
-    required Map<int, double> rowCenterY,
+    required double rowsTop,
   }) : _inCount = inCount,
        _outCount = outCount,
-       _rowCenterY = rowCenterY;
+       _rowsTop = rowsTop;
 
   factory MonitorGraphLayout.compute({
     required MonitorState state,
     required int inCount,
     required int outCount,
     required int excludedMask,
-    required int? focused,
-    required Color wetColor,
-    required Color dryColor,
+    required MonitorRow? focused,
+    required List<Color> palette,
   }) {
     bool isExcluded(int c) => excludedMask & (1 << c) != 0;
-    final rows = [
+    final rows = <MonitorRow>[
       for (var c = 0; c < inCount; c++)
-        if (state.forInput(c).enabled && !isExcluded(c)) c,
+        if (state.forInput(c).enabled && !isExcluded(c))
+          for (var l = 0; l < state.forInput(c).laneCount; l++)
+            (input: c, lane: l),
     ];
 
     const inX = padding;
     const nodeX = inX + channelChipWidth + fanGutter;
 
-    final cardXs = <int, List<double>>{};
+    final cardXs = [
+      for (final row in rows)
+        cardColumnXs(
+          startX: cardStartX,
+          count: state.forInput(row.input).lane(row.lane).effects.length,
+          cardW: cardWidth,
+          gap: cardGap,
+        ),
+    ];
+    double addBtnXFor(int r) =>
+        cardXs[r].isEmpty ? cardStartX : cardXs[r].last + cardWidth + cardGap;
     var widestRight = cardStartX;
-    for (final c in rows) {
-      final xs = cardColumnXs(
-        startX: cardStartX,
-        count: state.forInput(c).effects.length,
-        cardW: cardWidth,
-        gap: cardGap,
-      );
-      cardXs[c] = xs;
-      final rowRight =
-          (xs.isEmpty ? cardStartX : xs.last + cardWidth + cardGap) +
-          addSlotWidth;
-      widestRight = math.max(widestRight, rowRight);
+    for (var r = 0; r < rows.length; r++) {
+      widestRight = math.max(widestRight, addBtnXFor(r) + addSlotWidth);
     }
     final railX = widestRight;
     final outX = railX + fanGutter;
     final canvasWidth = outX + channelChipWidth + padding;
 
-    final rowsBlockHeight = rows.length * monitorRowHeight;
+    final rowsBlockHeight = rows.length * rowHeight;
     final channelsHeight = math.max(inCount, outCount) * channelRowHeight;
     final canvasHeight =
         math.max(rowsBlockHeight, channelsHeight) + padding * 2;
     final rowsTop = (canvasHeight - rowsBlockHeight) / 2;
 
     double chYAt(int i, int count) => canvasHeight / count * (i + 0.5);
-    double rowYAt(int r) =>
-        rowsTop + r * monitorRowHeight + monitorRowHeight / 2;
-    final rowCenterY = {
-      for (var r = 0; r < rows.length; r++) rows[r]: rowYAt(r),
-    };
+    double rowYAt(int r) => rowsTop + r * rowHeight + rowHeight / 2;
+    Color laneColorAt(int lane) => palette[lane % palette.length];
 
-    var wetUnion = 0;
-    var dryUnion = 0;
     final edges = <GraphEdge>[];
     for (var r = 0; r < rows.length; r++) {
-      final c = rows[r];
-      final m = state.forInput(c);
+      final row = rows[r];
+      final laneState = state.forInput(row.input).lane(row.lane);
       final y = rowYAt(r);
-      final faded = focused != null && focused != c;
-      wetUnion |= m.enabled ? m.outputMask : 0;
-      dryUnion |= m.enabled ? m.dryOutputMask : 0;
-
-      // input feed → monitor node
-      if (!isExcluded(c)) {
+      final color = laneColorAt(row.lane);
+      final faded = focused != null && focused != row;
+      // input feed → lane node
+      if (!isExcluded(row.input)) {
         edges.add(
           GraphEdge(
-            Offset(inX + channelChipWidth, chYAt(c, inCount)),
+            Offset(inX + channelChipWidth, chYAt(row.input, inCount)),
             Offset(nodeX, y),
-            color: wetColor,
+            color: color,
             faded: faded,
           ),
         );
       }
-      // wet path: node → cards → last
-      final xs = cardXs[c]!;
+      // node → cards → tail
+      final xs = cardXs[r];
       edges.addAll(
         chainEdges(
-          nodeRight: nodeX + monitorNodeWidth,
+          nodeRight: nodeX + nodeWidth,
           y: y,
           cardXs: xs,
           cardW: cardWidth,
-          color: wetColor,
+          color: color,
           faded: faded,
         ),
       );
-      final rightX = xs.isEmpty
-          ? nodeX + monitorNodeWidth
-          : xs.last + cardWidth;
-      const dryX = nodeX + monitorNodeWidth / 2;
-      final dryCardBottom = y + monitorNodeHeight / 2;
-      final dryY = y + dryDrop;
-      // The dry send drops below the node, then turns to run across. End the
-      // drop a knee-radius past the corner so the painter can round the 90°
-      // turn; the fan then continues the horizontal from that point.
-      const dryAcrossX = dryX + dryCornerRadius;
-      if (m.dryOutputMask != 0) {
-        edges.add(
-          GraphEdge(
-            Offset(dryX, dryCardBottom),
-            Offset(dryAcrossX, dryY),
-            color: dryColor,
-            knee: Offset(dryX, dryY),
-            faded: faded,
-            dashed: true,
-          ),
-        );
-      }
-      // Two parallel sends: wet from the chain tail, dry from below the
-      // monitor node (90° down then across), each fanned to its own outputs.
+      final rightX = xs.isEmpty ? nodeX + nodeWidth : xs.last + cardWidth;
       edges.addAll(
         fanEdges(
           sends: [
             GraphSend(
               originX: rightX,
               originY: y,
-              mask: m.outputMask,
-              color: wetColor,
-            ),
-            GraphSend(
-              originX: dryAcrossX,
-              originY: dryY,
-              mask: m.dryOutputMask,
-              color: dryColor,
-              dashed: true,
+              mask: laneState.outputMask,
+              color: color,
             ),
           ],
           railX: railX,
@@ -170,8 +137,6 @@ class MonitorGraphLayout {
       rows: rows,
       cardXs: cardXs,
       edges: edges,
-      wetUnion: wetUnion,
-      dryUnion: dryUnion,
       canvasWidth: canvasWidth,
       canvasHeight: canvasHeight,
       inX: inX,
@@ -180,46 +145,37 @@ class MonitorGraphLayout {
       excludedMask: excludedMask,
       inCount: inCount,
       outCount: outCount,
-      rowCenterY: rowCenterY,
+      rowsTop: rowsTop,
     );
   }
 
-  // Geometry constants. Inputs/outputs are small "channel" chips; a monitored
-  // input is a wider node feeding a horizontal chain of effect cards. The card
+  // Geometry constants. Inputs/outputs are small "channel" chips; each monitor
+  // lane is a wider node feeding a horizontal chain of effect cards. The card
   // footprint comes from the shared kit metrics (kRoutingCard*).
   static const double channelChipWidth = 54;
   static const double channelChipHeight = 24;
   static const double channelRowHeight = 32; // vertical pitch between chips
-  static const double monitorNodeWidth = 128;
-  static const double monitorNodeHeight = 50;
-  static const double monitorRowHeight = 80; // vertical pitch between rows
+  static const double nodeWidth = 128;
+  static const double nodeHeight = 50;
+  static const double rowHeight = 84; // vertical pitch between lane rows
   static const double cardWidth = kRoutingCardWidth;
   static const double cardGap = kRoutingCardGap;
-  static const double fanGutter = 150; // input→node / rail→output gutter
-  static const double addSlotWidth = kRoutingAddSlot; // add-effect button slot
-  static const double padding = 16; // canvas padding
-  // The dry edge leaves below the node so it clears the cards.
-  static const double dryDrop = kRoutingCardHeight / 2 + 15;
-  // Radius of the dry send's rounded drop→across corner. Kept under the drop
-  // height so the painter's clamp leaves a little straight run before the turn.
-  static const double dryCornerRadius = 6;
+  static const double fanGutter = 120; // input→node / rail→output gutter
+  static const double addSlotWidth = kRoutingAddSlot;
+  static const double padding = 16;
 
   /// The x of the first effect card (also the empty-chain drop spot).
   static const double cardStartX =
-      padding + channelChipWidth + fanGutter + monitorNodeWidth + cardGap;
+      padding + channelChipWidth + fanGutter + nodeWidth + cardGap;
 
-  /// Monitored input indices, in input order (one middle row each).
-  final List<int> rows;
+  /// The graph's rows, in `(input, lane)` order.
+  final List<MonitorRow> rows;
 
-  /// Per monitored input: the x of each effect card.
-  final Map<int, List<double>> cardXs;
+  /// Per row: the x of each effect card.
+  final List<List<double>> cardXs;
 
   /// The wires to paint.
   final List<GraphEdge> edges;
-
-  /// Outputs reached by any monitor's wet / dry send (for node colouring).
-  final int wetUnion;
-  final int dryUnion;
 
   final double canvasWidth;
   final double canvasHeight;
@@ -230,20 +186,14 @@ class MonitorGraphLayout {
 
   final int _inCount;
   final int _outCount;
-
-  /// Per monitored input: its row's vertical centre on the canvas.
-  final Map<int, double> _rowCenterY;
+  final double _rowsTop;
 
   bool excluded(int c) => excludedMask & (1 << c) != 0;
   double inY(int c) => canvasHeight / _inCount * (c + 0.5);
   double outY(int c) => canvasHeight / _outCount * (c + 0.5);
-  double rowY(int input) => _rowCenterY[input]!;
-  double addFxX(int input) {
-    final xs = cardXs[input]!;
-    return xs.isEmpty
-        ? nodeX + monitorNodeWidth + cardGap
-        : xs.last + cardWidth + cardGap;
-  }
+  double rowY(int r) => _rowsTop + r * rowHeight + rowHeight / 2;
+  double addFxX(int r) =>
+      cardXs[r].isEmpty ? cardStartX : cardXs[r].last + cardWidth + cardGap;
 
   /// Re-fit identity: a structural value list (compared with `listEquals`), so
   /// the canvas re-fits only when the row/effect counts or channel counts
@@ -251,6 +201,7 @@ class MonitorGraphLayout {
   List<Object?> get fitIdentity => [
     _inCount,
     _outCount,
-    for (final c in rows) cardXs[c]!.length,
+    rows.length,
+    for (final xs in cardXs) xs.length,
   ];
 }

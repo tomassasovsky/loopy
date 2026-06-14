@@ -1065,169 +1065,72 @@ class LoopyEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, int, int, int, double)
       >();
 
-  /// Enables or disables live monitoring of hardware input [input] and routes it
-  /// to the output channels set in [output_mask] (bit c => output channel c). Bits
-  /// beyond the output range are ignored; a loopback-excluded input is never
-  /// monitored.
+  /// Enables or disables live monitoring of hardware input [input]. When enabled,
+  /// the input's active lanes each route per their own output mask; a loopback-
+  /// excluded input is never monitored regardless of [enabled].
   int le_engine_set_monitor_input(
     ffi.Pointer<le_engine> engine,
     int input,
     int enabled,
-    int output_mask,
   ) {
     return _le_engine_set_monitor_input(
       engine,
       input,
       enabled,
-      output_mask,
     );
   }
 
   late final _le_engine_set_monitor_inputPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Int32,
-          )
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
         >
       >('le_engine_set_monitor_input');
   late final _le_engine_set_monitor_input = _le_engine_set_monitor_inputPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Routes monitor input [input]'s CLEAN (pre-effects) signal to the output
-  /// channels set in [dry_output_mask], independent of its effected route (see
-  /// le_engine_set_monitor_input). This is a parallel dry send: the clean input
-  /// goes to these outputs while the effected signal goes to its own outputs, so
-  /// an input can be heard dry and wet at once on different outputs. `0` disables
-  /// the dry send (the default). The dry signal is never recorded.
-  int le_engine_set_monitor_input_dry(
-    ffi.Pointer<le_engine> engine,
-    int input,
-    int dry_output_mask,
-  ) {
-    return _le_engine_set_monitor_input_dry(
-      engine,
-      input,
-      dry_output_mask,
-    );
-  }
-
-  late final _le_engine_set_monitor_input_dryPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
-        >
-      >('le_engine_set_monitor_input_dry');
-  late final _le_engine_set_monitor_input_dry =
-      _le_engine_set_monitor_input_dryPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
-
-  /// Sets monitor input [input]'s output gain to [volume] (clamped to 0..1),
-  /// applied equally to both its effected and dry sends. The default is 1.0
-  /// (unity); lower it to tame the +6 dB that results from routing both the wet
-  /// and dry sends to the same output.
-  int le_engine_set_monitor_input_volume(
-    ffi.Pointer<le_engine> engine,
-    int input,
-    double volume,
-  ) {
-    return _le_engine_set_monitor_input_volume(
-      engine,
-      input,
-      volume,
-    );
-  }
-
-  late final _le_engine_set_monitor_input_volumePtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
-        >
-      >('le_engine_set_monitor_input_volume');
-  late final _le_engine_set_monitor_input_volume =
-      _le_engine_set_monitor_input_volumePtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
-
-  /// Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input] to [type].
-  /// Changing the type resets that entry's DSP state; LE_FX_DELAY lazily allocates
-  /// the entry's delay line (on this calling thread) and seeds the type's default
-  /// parameters. Use le_engine_set_monitor_input_fx_count to make entries active.
-  int le_engine_set_monitor_input_fx(
-    ffi.Pointer<le_engine> engine,
-    int input,
-    int index,
-    int type,
-  ) {
-    return _le_engine_set_monitor_input_fx(
-      engine,
-      input,
-      index,
-      type,
-    );
-  }
-
-  late final _le_engine_set_monitor_input_fxPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Int32,
-          )
-        >
-      >('le_engine_set_monitor_input_fx');
-  late final _le_engine_set_monitor_input_fx =
-      _le_engine_set_monitor_input_fxPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
-
-  /// Sets monitor input [input]'s active chain length to [count] (0..LE_FX_MAX):
-  /// only entries [0, count) are processed, in order.
-  int le_engine_set_monitor_input_fx_count(
+  /// Sets monitor input [input]'s active lane count to [count] (clamped
+  /// 1..LE_MAX_LANES). New lanes default to full stereo output, unity volume,
+  /// unmuted, and an empty (clean) effect chain.
+  int le_engine_set_monitor_lane_count(
     ffi.Pointer<le_engine> engine,
     int input,
     int count,
   ) {
-    return _le_engine_set_monitor_input_fx_count(
+    return _le_engine_set_monitor_lane_count(
       engine,
       input,
       count,
     );
   }
 
-  late final _le_engine_set_monitor_input_fx_countPtr =
+  late final _le_engine_set_monitor_lane_countPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
         >
-      >('le_engine_set_monitor_input_fx_count');
-  late final _le_engine_set_monitor_input_fx_count =
-      _le_engine_set_monitor_input_fx_countPtr
+      >('le_engine_set_monitor_lane_count');
+  late final _le_engine_set_monitor_lane_count =
+      _le_engine_set_monitor_lane_countPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor input [input]'s chain
-  /// entry [index] to [value] (clamped to 0..1). Its meaning depends on the
-  /// entry's le_fx_type.
-  int le_engine_set_monitor_input_fx_param(
+  /// Routes monitor input [input]'s lane [lane] to the output channels set in
+  /// [mask] (bit c => output channel c). Bits beyond the output range are ignored.
+  int le_engine_set_monitor_lane_output(
     ffi.Pointer<le_engine> engine,
     int input,
-    int index,
-    int param,
-    double value,
+    int lane,
+    int mask,
   ) {
-    return _le_engine_set_monitor_input_fx_param(
+    return _le_engine_set_monitor_lane_output(
       engine,
       input,
-      index,
-      param,
-      value,
+      lane,
+      mask,
     );
   }
 
-  late final _le_engine_set_monitor_input_fx_paramPtr =
+  late final _le_engine_set_monitor_lane_outputPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(
@@ -1235,14 +1138,179 @@ class LoopyEngineBindings {
             ffi.Int32,
             ffi.Int32,
             ffi.Int32,
+          )
+        >
+      >('le_engine_set_monitor_lane_output');
+  late final _le_engine_set_monitor_lane_output =
+      _le_engine_set_monitor_lane_outputPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Sets monitor input [input]'s lane [lane] output gain to [volume] (clamped to
+  /// 0..1). The default is 1.0 (unity).
+  int le_engine_set_monitor_lane_volume(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int lane,
+    double volume,
+  ) {
+    return _le_engine_set_monitor_lane_volume(
+      engine,
+      input,
+      lane,
+      volume,
+    );
+  }
+
+  late final _le_engine_set_monitor_lane_volumePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
             ffi.Float,
           )
         >
-      >('le_engine_set_monitor_input_fx_param');
-  late final _le_engine_set_monitor_input_fx_param =
-      _le_engine_set_monitor_input_fx_paramPtr
+      >('le_engine_set_monitor_lane_volume');
+  late final _le_engine_set_monitor_lane_volume =
+      _le_engine_set_monitor_lane_volumePtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+
+  /// Mutes or unmutes monitor input [input]'s lane [lane].
+  int le_engine_set_monitor_lane_mute(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int lane,
+    int muted,
+  ) {
+    return _le_engine_set_monitor_lane_mute(
+      engine,
+      input,
+      lane,
+      muted,
+    );
+  }
+
+  late final _le_engine_set_monitor_lane_mutePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_monitor_lane_mute');
+  late final _le_engine_set_monitor_lane_mute =
+      _le_engine_set_monitor_lane_mutePtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input]'s lane
+  /// [lane] to [type]. Changing the type resets that entry's DSP state;
+  /// LE_FX_DELAY lazily allocates the entry's delay line and seeds the type's
+  /// default parameters. Use le_engine_set_monitor_lane_fx_count to make entries
+  /// active.
+  int le_engine_set_monitor_lane_fx(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int lane,
+    int index,
+    int type,
+  ) {
+    return _le_engine_set_monitor_lane_fx(
+      engine,
+      input,
+      lane,
+      index,
+      type,
+    );
+  }
+
+  late final _le_engine_set_monitor_lane_fxPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_monitor_lane_fx');
+  late final _le_engine_set_monitor_lane_fx = _le_engine_set_monitor_lane_fxPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
+
+  /// Sets monitor input [input]'s lane [lane] active chain length to [count]
+  /// (0..LE_FX_MAX): only entries [0, count) are processed, in order.
+  int le_engine_set_monitor_lane_fx_count(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int lane,
+    int count,
+  ) {
+    return _le_engine_set_monitor_lane_fx_count(
+      engine,
+      input,
+      lane,
+      count,
+    );
+  }
+
+  late final _le_engine_set_monitor_lane_fx_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_set_monitor_lane_fx_count');
+  late final _le_engine_set_monitor_lane_fx_count =
+      _le_engine_set_monitor_lane_fx_countPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor input [input]'s lane
+  /// [lane] chain entry [index] to [value] (clamped to 0..1). Its meaning depends
+  /// on the entry's le_fx_type.
+  int le_engine_set_monitor_lane_fx_param(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int lane,
+    int index,
+    int param,
+    double value,
+  ) {
+    return _le_engine_set_monitor_lane_fx_param(
+      engine,
+      input,
+      lane,
+      index,
+      param,
+      value,
+    );
+  }
+
+  late final _le_engine_set_monitor_lane_fx_paramPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Float,
+          )
+        >
+      >('le_engine_set_monitor_lane_fx_param');
+  late final _le_engine_set_monitor_lane_fx_param =
+      _le_engine_set_monitor_lane_fx_paramPtr
           .asFunction<
-            int Function(ffi.Pointer<le_engine>, int, int, int, double)
+            int Function(ffi.Pointer<le_engine>, int, int, int, int, double)
           >();
 
   /// Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
@@ -1534,24 +1602,30 @@ enum le_command_code {
   /// arg_f = 0/1.
   LE_CMD_SET_LANE_MUTE(29),
 
-  /// enable + route a hardware input's monitor.
-  /// arg_f = input | (enabled << 8),
-  /// arg_i = output bitmask.
+  /// enable/disable a hardware input's monitor.
+  /// arg_i = input, arg_f = enabled (0/1).
   LE_CMD_SET_MONITOR_INPUT(30),
 
-  /// set a monitor input's chain entry type
+  /// set a monitor lane's chain entry type
   /// (and reset its DSP state). arg_i =
-  /// (input << 8) | index, arg_f = le_fx_type.
-  LE_CMD_SET_MONITOR_INPUT_FX(31),
+  /// (input<<16)|(lane<<8)|index, arg_f = le_fx_type.
+  LE_CMD_SET_MONITOR_LANE_FX(31),
 
-  /// set a monitor input's active chain
-  /// length. arg_i = (input<<8)|count.
-  LE_CMD_SET_MONITOR_INPUT_FX_COUNT(32),
+  /// set a monitor lane's active chain length.
+  /// arg_i = (input<<16)|(lane<<8)|count.
+  LE_CMD_SET_MONITOR_LANE_FX_COUNT(32),
 
-  /// route a monitor input's CLEAN (pre-FX)
-  /// signal to a second set of outputs.
-  /// arg_f = input, arg_i = dry bitmask.
-  LE_CMD_SET_MONITOR_INPUT_DRY(33);
+  /// monitor lane playback destinations.
+  /// arg_f = input*LE_MAX_LANES+lane, arg_i = output bitmask.
+  LE_CMD_SET_MONITOR_LANE_OUTPUT(33),
+
+  /// monitor lane gain.
+  /// arg_i = input*LE_MAX_LANES+lane, arg_f = 0..1.
+  LE_CMD_SET_MONITOR_LANE_VOLUME(34),
+
+  /// monitor lane mute.
+  /// arg_i = input*LE_MAX_LANES+lane, arg_f = 0/1.
+  LE_CMD_SET_MONITOR_LANE_MUTE(35);
 
   final int value;
   const le_command_code(this.value);
@@ -1579,9 +1653,11 @@ enum le_command_code {
     28 => LE_CMD_SET_LANE_VOLUME,
     29 => LE_CMD_SET_LANE_MUTE,
     30 => LE_CMD_SET_MONITOR_INPUT,
-    31 => LE_CMD_SET_MONITOR_INPUT_FX,
-    32 => LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
-    33 => LE_CMD_SET_MONITOR_INPUT_DRY,
+    31 => LE_CMD_SET_MONITOR_LANE_FX,
+    32 => LE_CMD_SET_MONITOR_LANE_FX_COUNT,
+    33 => LE_CMD_SET_MONITOR_LANE_OUTPUT,
+    34 => LE_CMD_SET_MONITOR_LANE_VOLUME,
+    35 => LE_CMD_SET_MONITOR_LANE_MUTE,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }

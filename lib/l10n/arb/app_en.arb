@@ -163,7 +163,6 @@
             }
         }
     },
-    "liveNotRecorded": "live · not recorded",
     "unmuteLaneTooltip": "Unmute lane",
     "muteLaneTooltip": "Mute lane",
     "removeLaneTooltip": "Remove lane",
@@ -188,11 +187,6 @@
     "removeEffectTooltip": "Remove effect",
     "inputMonitoringTitle": "Input monitoring",
     "monitorGraphHint": "Tap an input to monitor it, then tap outputs to send it there.",
-    "effectedSegment": "Effected",
-    "drySegment": "Dry",
-    "monitorVolumeLabel": "Level",
-    "legendEffectedWet": "effected (wet) → outs",
-    "legendCleanDry": "clean (dry) → outs",
     "configureInputMonitoring": "Configure input monitoring",
     "monitorRoutingIntro": "Monitor inputs live through their own effects (wet) and/or as a clean dry send — routed to the outputs you pick. Never recorded.",
     "startEngineForMonitorChannels": "Start the engine to choose monitor channels.",

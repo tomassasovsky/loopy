@@ -166,6 +166,19 @@ class SettingsRepository {
   Future<void> saveMonitorMigratedV1() =>
       _store.setBool(_monitorMigratedV1Key, value: true);
 
+  static const String _monitorMigratedV2Key = 'monitor.migrated_v2';
+
+  /// Whether the one-time single-route → multi-lane monitor migration (v2) has
+  /// already run. Defaults to `false` so a fresh install runs (and no-ops) it
+  /// once. Runs after v1 (the global → per-input step) so a cold upgrade folds
+  /// both in order.
+  Future<bool> loadMonitorMigratedV2() async =>
+      await _store.getBool(_monitorMigratedV2Key) ?? false;
+
+  /// Marks the v2 monitor-lane migration done so it never re-runs.
+  Future<void> saveMonitorMigratedV2() =>
+      _store.setBool(_monitorMigratedV2Key, value: true);
+
   /// Saves the audio [config] so the engine can auto-start with it next launch.
   Future<void> saveAudioConfig(StoredAudioConfig config) async {
     await _store.setInt(_audioSampleRateKey, config.sampleRate);
@@ -276,13 +289,31 @@ class SettingsRepository {
   Future<void> saveTrackMultiple(int channel, int multiple) =>
       _store.setInt(_trackMultipleKey(channel), multiple);
 
+  // Legacy single-route monitor keys (one route per input). No longer written
+  // by the live app; read once by the v2 lane migration and then cleared. The
+  // v1 courtesy migration still writes monitor_input.N (global flag →
+  // per-input) before v2 converts it to lanes.
   String _monitorInputKey(int input) => 'monitor_input.$input';
   String _monitorInputDryKey(int input) => 'monitor_input_dry.$input';
   String _monitorInputVolKey(int input) => 'monitor_input_vol.$input';
   String _monitorInputFxKey(int input) => 'monitor_input_fx.$input';
 
-  /// Loads hardware [input]'s live-monitor routing as `(enabled, outputMask)`,
-  /// or `null` if it was never saved.
+  // Per-(input, lane) monitor keys (the multi-lane model the live app uses).
+  String _monitorInputEnabledKey(int input) => 'monitor_input_enabled.$input';
+  String _monitorLaneCountKey(int input) => 'monitor_lane_count.$input';
+  String _monitorLaneOutKey(int input, int lane) =>
+      'monitor_lane_out.$input.$lane';
+  String _monitorLaneVolKey(int input, int lane) =>
+      'monitor_lane_vol.$input.$lane';
+  String _monitorLaneMuteKey(int input, int lane) =>
+      'monitor_lane_mute.$input.$lane';
+  String _monitorLaneFxKey(int input, int lane) =>
+      'monitor_lane_fx.$input.$lane';
+
+  /// Loads hardware [input]'s LEGACY single-route monitor routing as
+  /// `(enabled, outputMask)`, or `null` if it was never saved. Read only by the
+  /// v1 courtesy migration and the v2 lane migration; the live app reads the
+  /// per-(input, lane) keys.
   ///
   /// Packed into one int: a negative value means disabled; a non-negative value
   /// is the output bitmask of an enabled monitor.
@@ -292,39 +323,94 @@ class SettingsRepository {
     return value < 0 ? (false, 0x3) : (true, value);
   }
 
-  /// Saves hardware [input]'s live-monitor routing (enabled + output bitmask).
+  /// Saves hardware [input]'s legacy single-route monitor routing. Written only
+  /// by the v1 courtesy migration (global flag → per-input); the v2 migration
+  /// then converts it to lanes.
   Future<void> saveMonitorInput(
     int input, {
     required bool enabled,
     required int outputMask,
   }) => _store.setInt(_monitorInputKey(input), enabled ? outputMask : -1);
 
-  /// Loads hardware [input]'s monitor dry-send output bitmask (`0` = off, the
-  /// default when never saved).
+  /// Loads hardware [input]'s legacy monitor dry-send output bitmask
+  /// (`0` = off). Read only by the v2 lane migration.
   Future<int> loadMonitorInputDry(int input) async =>
       await _store.getInt(_monitorInputDryKey(input)) ?? 0;
 
-  /// Saves hardware [input]'s monitor dry-send output bitmask.
-  Future<void> saveMonitorInputDry(int input, int dryOutputMask) =>
-      _store.setInt(_monitorInputDryKey(input), dryOutputMask);
-
-  /// Loads hardware [input]'s monitor output gain (`0..1`), or `null` if it was
-  /// never saved (the caller defaults to unity `1.0`).
+  /// Loads hardware [input]'s legacy monitor output gain (`0..1`), or `null` if
+  /// it was never saved. Read only by the v2 lane migration.
   Future<double?> loadMonitorInputVolume(int input) =>
       _store.getDouble(_monitorInputVolKey(input));
 
-  /// Saves hardware [input]'s monitor output gain (`0..1`).
-  Future<void> saveMonitorInputVolume(int input, double volume) =>
-      _store.setDouble(_monitorInputVolKey(input), volume);
-
-  /// Loads hardware [input]'s persisted monitor effect chain as an opaque
-  /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.
+  /// Loads hardware [input]'s legacy monitor effect chain as an opaque encoded
+  /// string (see `encodeTrackEffects`), or `null`. Read only by the v2 lane
+  /// migration.
   Future<String?> loadMonitorInputEffects(int input) =>
       _store.getString(_monitorInputFxKey(input));
 
-  /// Saves hardware [input]'s [encoded] monitor effect chain.
-  Future<void> saveMonitorInputEffects(int input, String encoded) =>
-      _store.setString(_monitorInputFxKey(input), encoded);
+  /// Clears hardware [input]'s legacy single-route monitor keys once the v2
+  /// lane migration has converted them to lane keys.
+  Future<void> clearLegacyMonitorInput(int input) async {
+    await _store.remove(_monitorInputKey(input));
+    await _store.remove(_monitorInputDryKey(input));
+    await _store.remove(_monitorInputVolKey(input));
+    await _store.remove(_monitorInputFxKey(input));
+  }
+
+  /// Loads hardware [input]'s monitor enable flag, or `null` if never saved.
+  Future<bool?> loadMonitorInputEnabled(int input) =>
+      _store.getBool(_monitorInputEnabledKey(input));
+
+  /// Saves hardware [input]'s monitor enable flag (the input-level gate).
+  Future<void> saveMonitorInputEnabled(int input, {required bool enabled}) =>
+      _store.setBool(_monitorInputEnabledKey(input), value: enabled);
+
+  /// Loads hardware [input]'s active monitor lane count, or `null` if never
+  /// saved (the caller defaults to `1`).
+  Future<int?> loadMonitorLaneCount(int input) =>
+      _store.getInt(_monitorLaneCountKey(input));
+
+  /// Saves hardware [input]'s active monitor lane count.
+  Future<void> saveMonitorLaneCount(int input, int count) =>
+      _store.setInt(_monitorLaneCountKey(input), count);
+
+  /// Loads monitor [input]'s lane [lane] output bitmask, or `null` if never
+  /// saved (the caller defaults to full stereo `0x3`).
+  Future<int?> loadMonitorLaneOutput(int input, int lane) =>
+      _store.getInt(_monitorLaneOutKey(input, lane));
+
+  /// Saves monitor [input]'s lane [lane] output bitmask.
+  Future<void> saveMonitorLaneOutput(int input, int lane, int mask) =>
+      _store.setInt(_monitorLaneOutKey(input, lane), mask);
+
+  /// Loads monitor [input]'s lane [lane] output gain (`0..1`), or `null` if
+  /// never saved (the caller defaults to unity `1.0`).
+  Future<double?> loadMonitorLaneVolume(int input, int lane) =>
+      _store.getDouble(_monitorLaneVolKey(input, lane));
+
+  /// Saves monitor [input]'s lane [lane] output gain (`0..1`).
+  Future<void> saveMonitorLaneVolume(int input, int lane, double volume) =>
+      _store.setDouble(_monitorLaneVolKey(input, lane), volume);
+
+  /// Loads monitor [input]'s lane [lane] mute flag, or `null` if never saved.
+  Future<bool?> loadMonitorLaneMute(int input, int lane) =>
+      _store.getBool(_monitorLaneMuteKey(input, lane));
+
+  /// Saves monitor [input]'s lane [lane] mute flag.
+  Future<void> saveMonitorLaneMute(
+    int input,
+    int lane, {
+    required bool muted,
+  }) => _store.setBool(_monitorLaneMuteKey(input, lane), value: muted);
+
+  /// Loads monitor [input]'s lane [lane] effect chain as an opaque encoded
+  /// string (see `encodeTrackEffects`), or `null` if none is saved.
+  Future<String?> loadMonitorLaneEffects(int input, int lane) =>
+      _store.getString(_monitorLaneFxKey(input, lane));
+
+  /// Saves monitor [input]'s lane [lane] [encoded] effect chain.
+  Future<void> saveMonitorLaneEffects(int input, int lane, String encoded) =>
+      _store.setString(_monitorLaneFxKey(input, lane), encoded);
 
   String _trackNameKey(int channel) => 'track_name.$channel';
 

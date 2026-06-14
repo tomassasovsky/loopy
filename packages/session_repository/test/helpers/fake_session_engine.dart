@@ -213,35 +213,50 @@ class FakeSessionEngine implements AudioEngine {
     required double value,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorInput({
+  EngineResult setMonitorInputEnabled({
     required int input,
     required bool enabled,
-    required int outputMask,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorInputDry({
-    required int input,
-    required int dryOutputMask,
-  }) => EngineResult.ok;
-  @override
-  EngineResult setMonitorInputVolume({
-    required int input,
-    required double volume,
-  }) => EngineResult.ok;
-  @override
-  EngineResult setMonitorInputFx({
-    required int input,
-    required int index,
-    required TrackEffectType type,
-  }) => EngineResult.ok;
-  @override
-  EngineResult setMonitorInputFxCount({
+  EngineResult setMonitorLaneCount({
     required int input,
     required int count,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorInputFxParam({
+  EngineResult setMonitorLaneOutput({
     required int input,
+    required int lane,
+    required int mask,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorLaneVolume({
+    required int input,
+    required int lane,
+    required double volume,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorLaneMute({
+    required int input,
+    required int lane,
+    required bool muted,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorLaneFx({
+    required int input,
+    required int lane,
+    required int index,
+    required TrackEffectType type,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorLaneFxCount({
+    required int input,
+    required int lane,
+    required int count,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorLaneFxParam({
+    required int input,
+    required int lane,
     required int index,
     required int param,
     required double value,

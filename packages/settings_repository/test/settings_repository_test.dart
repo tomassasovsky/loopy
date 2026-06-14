@@ -157,42 +157,70 @@ void main() {
     });
   });
 
-  group('monitor inputs', () {
-    test('returns null when nothing is stored', () async {
-      expect(await repository.loadMonitorInput(0), isNull);
-      expect(await repository.loadMonitorInputEffects(0), isNull);
+  group('monitor lanes', () {
+    test('per-input enable flag defaults to null and round-trips', () async {
+      expect(await repository.loadMonitorInputEnabled(0), isNull);
+      await repository.saveMonitorInputEnabled(0, enabled: true);
+      expect(await repository.loadMonitorInputEnabled(0), isTrue);
+      expect(await repository.loadMonitorInputEnabled(1), isNull);
     });
 
-    test('round-trips an enabled monitor routing', () async {
+    test('lane count defaults to null and round-trips per input', () async {
+      expect(await repository.loadMonitorLaneCount(0), isNull);
+      await repository.saveMonitorLaneCount(0, 2);
+      expect(await repository.loadMonitorLaneCount(0), 2);
+      expect(await repository.loadMonitorLaneCount(1), isNull);
+    });
+
+    test('lane output mask round-trips per (input, lane)', () async {
+      expect(await repository.loadMonitorLaneOutput(0, 1), isNull);
+      await repository.saveMonitorLaneOutput(0, 1, 0x2);
+      expect(await repository.loadMonitorLaneOutput(0, 1), 0x2);
+      // A different lane of the same input is independent.
+      expect(await repository.loadMonitorLaneOutput(0, 0), isNull);
+    });
+
+    test('lane volume round-trips per (input, lane)', () async {
+      expect(await repository.loadMonitorLaneVolume(0, 0), isNull);
+      await repository.saveMonitorLaneVolume(0, 0, 0.5);
+      expect(await repository.loadMonitorLaneVolume(0, 0), 0.5);
+    });
+
+    test('lane mute round-trips per (input, lane)', () async {
+      expect(await repository.loadMonitorLaneMute(0, 0), isNull);
+      await repository.saveMonitorLaneMute(0, 0, muted: true);
+      expect(await repository.loadMonitorLaneMute(0, 0), isTrue);
+    });
+
+    test('lane effects round-trip the encoded chain per (input, lane)',
+        () async {
+      expect(await repository.loadMonitorLaneEffects(0, 0), isNull);
+      await repository.saveMonitorLaneEffects(0, 0, '[{"type":1}]');
+      expect(await repository.loadMonitorLaneEffects(0, 0), '[{"type":1}]');
+      expect(await repository.loadMonitorLaneEffects(0, 1), isNull);
+    });
+
+    test('the v2 migration flag defaults to false and round-trips', () async {
+      expect(await repository.loadMonitorMigratedV2(), isFalse);
+      await repository.saveMonitorMigratedV2();
+      expect(await repository.loadMonitorMigratedV2(), isTrue);
+    });
+  });
+
+  group('legacy monitor keys (migration only)', () {
+    test('legacy single-route routing round-trips', () async {
+      expect(await repository.loadMonitorInput(0), isNull);
       await repository.saveMonitorInput(0, enabled: true, outputMask: 0x2);
       expect(await repository.loadMonitorInput(0), (true, 0x2));
     });
 
-    test('a disabled monitor decodes back as disabled', () async {
-      await repository.saveMonitorInput(1, enabled: false, outputMask: 0x3);
-      final routing = await repository.loadMonitorInput(1);
-      expect(routing?.$1, isFalse);
-    });
-
-    test('round-trips the encoded monitor chain per input', () async {
-      await repository.saveMonitorInputEffects(0, '[{"type":1}]');
-      expect(await repository.loadMonitorInputEffects(0), '[{"type":1}]');
-      expect(await repository.loadMonitorInputEffects(1), isNull);
-    });
-
-    test('the dry-send mask defaults to 0 and round-trips per input', () async {
+    test('clearLegacyMonitorInput removes the four legacy keys', () async {
+      await repository.saveMonitorInput(0, enabled: true, outputMask: 0x2);
+      await repository.clearLegacyMonitorInput(0);
+      expect(await repository.loadMonitorInput(0), isNull);
       expect(await repository.loadMonitorInputDry(0), 0);
-      await repository.saveMonitorInputDry(0, 0x2);
-      expect(await repository.loadMonitorInputDry(0), 0x2);
-      expect(await repository.loadMonitorInputDry(1), 0);
-    });
-
-    test('the monitor volume defaults to null and round-trips per input',
-        () async {
       expect(await repository.loadMonitorInputVolume(0), isNull);
-      await repository.saveMonitorInputVolume(0, 0.5);
-      expect(await repository.loadMonitorInputVolume(0), 0.5);
-      expect(await repository.loadMonitorInputVolume(1), isNull);
+      expect(await repository.loadMonitorInputEffects(0), isNull);
     });
   });
 
