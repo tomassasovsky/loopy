@@ -166,6 +166,33 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
   t->start_iter = 0;
 }
 
+/* Seam-crossfade overlap length (~10 ms): the frames captured past the loop
+ * point and folded into the head. Also the minimum half-loop the master must
+ * span to be eligible (it needs head + tail room plus steady audio between). */
+static int32_t seam_xfade_frames(const le_engine* e) {
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  return sr / 100;
+}
+
+/* Requests finalize of the *defining master* at its current length. When the
+ * loop is long enough and the buffer has room, this defers the finalize: the
+ * track keeps RECORDING F more frames so the seam can be crossfaded (see
+ * finalize_master_xfade), preserving the recorded length exactly. Otherwise
+ * (short loop, no room, or a finalize already in flight) it finalizes now. */
+static void request_master_finalize(le_engine* e, le_track* t,
+                                    int32_t end_state) {
+  if (t->xfade_capture > 0) return; /* already deferring — ignore re-entry */
+  const int32_t F = seam_xfade_frames(e);
+  const int32_t len = t->record_pos;
+  if (F > 0 && len >= 2 * F && len + F <= e->max_loop_frames) {
+    t->xfade_len = len;
+    t->xfade_end_state = end_state;
+    t->xfade_capture = F; /* stay RECORDING; the per-frame advance counts down */
+  } else {
+    finalize_master(e, t, end_state);
+  }
+}
+
 /* Finalizes a non-defining track that recorded freely across one or more base
  * loops: rounds its length UP to the nearest whole base loop (the locked #4
  * behaviour), publishes the multiple, and moves it to `end_state`. A track that
@@ -214,6 +241,13 @@ static void close_active_capture(le_engine* e, int32_t except_ch) {
     const int32_t st = load_i32(&tr->a_state);
     if (st == LE_TRACK_RECORDING) {
       if (e->clock.length == 0) {
+        /* Hand-off is immediate (one capturer): if this master was mid seam-
+         * crossfade deferral, lock its intended length and finalize now without
+         * the crossfade rather than keep it recording alongside the new track. */
+        if (tr->xfade_capture > 0) {
+          tr->record_pos = tr->xfade_len;
+          tr->xfade_capture = 0;
+        }
         finalize_master(e, tr, LE_TRACK_PLAYING); /* defines the master loop */
       } else {
         finalize_new_track(e, tr, LE_TRACK_PLAYING); /* round up to whole loops */
@@ -262,7 +296,7 @@ static void handle_record(le_engine* e, int32_t ch) {
        * playback/stopped (handle_stop), never overdub. */
       const int32_t end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
       if (e->clock.length == 0) {
-        finalize_master(e, t, end);
+        request_master_finalize(e, t, end); /* defers for the seam crossfade */
       } else {
         finalize_new_track(e, t, end);
       }
@@ -287,7 +321,7 @@ static void handle_stop(le_engine* e, int32_t ch) {
   const int32_t st = load_i32(&t->a_state);
   if (st == LE_TRACK_RECORDING) {
     if (e->clock.length == 0) {
-      finalize_master(e, t, LE_TRACK_STOPPED);
+      request_master_finalize(e, t, LE_TRACK_STOPPED); /* defers for crossfade */
     } else {
       finalize_new_track(e, t, LE_TRACK_STOPPED); /* round up to whole loops */
     }
@@ -311,6 +345,7 @@ static void handle_clear(le_engine* e, int32_t ch) {
   t->start_iter = 0;
   t->pending_record = 0;
   t->od_gain = 0.0f;
+  t->xfade_capture = 0; /* cancel any in-flight seam-crossfade deferral */
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_track_set_len(t, 0);
@@ -349,6 +384,31 @@ static void handle_clear(le_engine* e, int32_t ch) {
 #ifndef LE_PI
 #define LE_PI 3.14159265358979323846f
 #endif
+
+/* Completes a deferred crossfade-finalize of the defining master (set up by
+ * request_master_finalize once xfade_capture frames of overlap are captured).
+ * Equal-power crossfade of the captured continuation [len, len+F) into the loop
+ * head [0, F): each head sample morphs from the continuation (which follows
+ * len-1 naturally) into the original head, so the wrap len-1 -> 0 is continuous
+ * and no power dips. The loop is then finalized at exactly `len`. */
+static void finalize_master_xfade(le_engine* e, le_track* t) {
+  const int32_t len = t->xfade_len;
+  const int32_t F = seam_xfade_frames(e);
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    float* b = t->lanes[l].pool[load_i32(&t->lanes[l].a_live)];
+    if (b == NULL) continue;
+    for (int32_t i = 0; i < F; ++i) {
+      const float x = (float)i / (float)F;        /* 0..1 across the fade */
+      const float w_in = sinf(0.5f * LE_PI * x);  /* original head fades in */
+      const float w_out = cosf(0.5f * LE_PI * x); /* continuation fades out */
+      b[i] = b[len + i] * w_out + b[i] * w_in;
+    }
+  }
+  t->record_pos = len; /* finalize at the intended length, not len+F */
+  t->xfade_capture = 0;
+  finalize_master(e, t, t->xfade_end_state);
+}
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER) ------------------------------------
  *
@@ -1947,7 +2007,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       le_track* tr = &e->tracks[t];
       if (e->clock.length == 0) {
         tr->record_pos++;
-        if (tr->record_pos >= e->max_loop_frames) {
+        if (tr->xfade_capture > 0) {
+          /* Deferred seam crossfade: keep capturing the overlap past the loop
+           * point, then fold it into the head and finalize at the intended
+           * length. The buffer room was checked when the deferral was armed. */
+          if (--tr->xfade_capture == 0) finalize_master_xfade(e, tr);
+        } else if (tr->record_pos >= e->max_loop_frames) {
           finalize_master(e, tr, LE_TRACK_PLAYING);
         }
       } else {
@@ -2127,6 +2192,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->record_pos = 0;
     tr->record_start = 0;
     tr->start_iter = 0;
+    tr->od_gain = 0.0f;
+    tr->xfade_capture = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
     engine->target_multiple[t] = 0; /* inherit the global default multiple */
 

@@ -231,6 +231,17 @@ typedef struct le_track {
                   * leaves the loop buffer without a step discontinuity (a click)
                   * at the punch points / loop seam. Drives the fade-out tail that
                   * keeps writing for a few ms after the track is back in PLAYING. */
+
+  /* Deferred crossfade-finalize of the defining master (audio-thread-local). On
+   * the finalize press the master keeps RECORDING `xfade_capture` more frames —
+   * the continuation of the performance just past the loop point — into
+   * [xfade_len, xfade_len + F). When the count hits 0 that overlap is
+   * equal-power crossfaded into the loop head so the wrap (xfade_len-1 -> 0) is
+   * click-free, and the loop is finalized at exactly xfade_len (length, and so
+   * tempo/quantize, are preserved). 0 == not deferring (immediate finalize). */
+  int32_t xfade_capture;
+  int32_t xfade_len;
+  int32_t xfade_end_state;
 } le_track;
 
 struct le_engine {

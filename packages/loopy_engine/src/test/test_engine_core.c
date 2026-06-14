@@ -581,10 +581,13 @@ static void test_overdub_punch_no_click(void) {
   const int N = 2000; /* > 2*480, so the fade engages */
 
   /* Silent base loop of N frames. The defining record finalizes only on the
-   * second press (cap is well above N), so the master is exactly N frames. */
+   * second press (cap is well above N); at this length it defers ~10 ms to
+   * capture the seam-crossfade overlap, so feed a little past the press to let
+   * the finalize complete. Master is exactly N frames (length preserved). */
   le_engine_record(e, 0);
   feed_const(e, 0.0f, N, NULL, NULL);
-  le_engine_record(e, 0); /* finalize -> PLAYING, master == N, silent */
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL); /* > seam overlap (480 @ 48k) */
   drain(e);
 
   /* Punch in, overdub a constant 0.8 over half the loop, punch out — but keep
@@ -682,6 +685,72 @@ static void test_overdub_feedback_decays_layers(void) {
 
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Feeds `count` frames of a rising ramp (frame k -> (start + k) * slope) through
+ * the engine in 64-frame chunks, optionally capturing output (NULL to discard).
+ * slope 0 feeds silence — handy for reading the loop back. */
+static void feed_ramp(le_engine* e, int start, float slope, int count,
+                      float* cap, int* capn) {
+  float in[64];
+  float out[64];
+  int done = 0;
+  while (done < count) {
+    const int n = (count - done) < 64 ? (count - done) : 64;
+    for (int i = 0; i < n; ++i) in[i] = (float)(start + done + i) * slope;
+    le_engine_process(e, out, in, (uint32_t)n);
+    if (cap != NULL) {
+      for (int i = 0; i < n; ++i) cap[(*capn)++] = out[i];
+    }
+    done += n;
+  }
+}
+
+/* A freshly recorded master loop must wrap without a click. Recording a rising
+ * ramp leaves a hard seam (buf[N-1] ~ 0.8 -> buf[0] = 0); the deferred seam
+ * crossfade folds the captured continuation into the head so the wrap is smooth,
+ * while the loop length is preserved exactly (tempo/quantize unchanged). */
+static void test_master_seam_crossfade_no_click(void) {
+  printf("test_master_seam_crossfade_no_click\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 2000;              /* > 2*480, so the crossfade engages */
+  const float s = 0.8f / (float)N; /* ramp slope: buf[i] == i*s, a hard seam */
+
+  le_engine_record(e, 0);
+  feed_ramp(e, 0, s, N, NULL, NULL); /* record [0, N) as a rising ramp */
+  le_engine_record(e, 0);            /* finalize: defers to capture the overlap */
+  feed_ramp(e, N, s, 600, NULL, NULL); /* continue the ramp past the loop point */
+  drain(e);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.master_length_frames == N); /* length preserved exactly */
+
+  float loop[2000];
+  int n = 0;
+  feed_ramp(e, 0, 0.0f, N, loop, &n); /* read the loop back (silence in) */
+  CHECK(n == N);
+
+  /* Every step, the seam (loop[0] vs loop[N-1]) included, stays tiny — the raw
+   * ramp seam would jump ~0.8. Max-delta over the captured loop is rotation-
+   * invariant, so it holds regardless of the readback's start phase. */
+  float max_delta = fabsf(loop[0] - loop[N - 1]);
+  for (int i = 1; i < N; ++i) {
+    const float d = fabsf(loop[i] - loop[i - 1]);
+    if (d > max_delta) max_delta = d;
+  }
+  printf("  seam: max sample delta=%.4f\n", max_delta);
+  CHECK(max_delta < 0.05f);
+
+  /* The recorded ramp survives (the loop was not silenced by the crossfade). */
+  float peak = 0.0f;
+  for (int i = 0; i < N; ++i) {
+    if (fabsf(loop[i]) > peak) peak = fabsf(loop[i]);
+  }
+  CHECK(peak > 0.5f);
 
   le_engine_destroy(e);
 }
@@ -4552,6 +4621,7 @@ int main(void) {
   test_overdub_punch_no_click();
   test_master_limiter_caps_and_transparent();
   test_overdub_feedback_decays_layers();
+  test_master_seam_crossfade_no_click();
   test_record_is_exclusive();
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();
