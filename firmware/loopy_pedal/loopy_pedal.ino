@@ -24,23 +24,39 @@
 
 #include "pedal_protocol.h"
 
-// ---- hardware layout (adjust to the physical build; see README pin map) -----
+// ---- hardware layout — matches the physical "aquiles LoopStation" wiring -----
 
-// FastLED ring + indicators. The first PEDAL_TRACK_COUNT LEDs are the per-track
-// indicators (all 8 tracks; the active bank is the rendered set), the next is
-// the global/mode LED, and the remainder form the loop-position ring.
-static const uint8_t kLedPin = 6;
+// The WS2812B strip is 19 LEDs on pin D2: a 12-LED loop-position ring (indices
+// 0..11) followed by 7 indicator LEDs (mode, the 4 active-bank tracks, clear,
+// and the bank LED). This mirrors the original firmware's LED map.
+static const uint8_t kLedPin = 2;
 static const uint8_t kNumLeds = 19;
-static const uint8_t kGlobalLed = PEDAL_TRACK_COUNT; // index 8
-static const uint8_t kRingStart = PEDAL_TRACK_COUNT + 1; // index 9
-static const uint8_t kRingCount = kNumLeds - kRingStart; // 10
+static const uint8_t kRingStart = 0;  // loop-position ring = LEDs 0..11
+static const uint8_t kRingCount = 12;
+static const uint8_t kModeLed = 12;   // global / mode color
+static const uint8_t kTrackLed0 = 13; // active-bank tracks 1..4 = LEDs 13..16
+static const uint8_t kClearLed = 17;  // lit during a clear fade
+static const uint8_t kBankLed = 18;   // lit when bank B is active
 static CRGB g_leds[kNumLeds];
 
-// The 10 footswitches, indexed by PEDAL_BTN_*; active-low with INPUT_PULLUP.
+// The 10 footswitches, indexed by PEDAL_BTN_* (recPlay, stop, undo, mode,
+// track1..4, clear, bank); active-low with INPUT_PULLUP. Matches the original
+// wiring D3..D12 (the original "Next" switch on A2 is dropped in this layout).
 static const uint8_t kButtonPins[PEDAL_BTN_COUNT] = {
-    2, 3, 4, 5, 7, 8, 9, 10, 11, 12};
-static const uint8_t kEncoderPinA = A0;
-static const uint8_t kEncoderPinB = A1;
+    3,  // recPlay
+    4,  // stop
+    5,  // undo
+    6,  // mode
+    7,  // track1
+    8,  // track2
+    9,  // track3
+    10, // track4
+    11, // clear
+    12, // bank
+};
+// Rotary encoder: clock A0, data A1 (the push switch on A2 is unused in v1).
+static const uint8_t kEncoderClk = A0;
+static const uint8_t kEncoderDat = A1;
 
 static const unsigned long kDebounceMs = 10;
 static const uint8_t kMidiChannel = 0; // channel 1 (0-based on the wire)
@@ -60,7 +76,7 @@ static unsigned long g_lastLoopTopMs = 0;
 
 static bool g_btnState[PEDAL_BTN_COUNT];
 static unsigned long g_btnChangedMs[PEDAL_BTN_COUNT];
-static uint8_t g_encPrev = 0;
+static uint8_t g_encClkPrev = 0;
 
 // ---- MIDI out ---------------------------------------------------------------
 
@@ -182,15 +198,22 @@ static void renderRing() {
 }
 
 static void render() {
+  renderRing(); // the loop-position ring, LEDs 0..11
   if (g_haveFrame) {
-    for (uint8_t i = 0; i < PEDAL_TRACK_COUNT; i++) {
-      g_leds[i] = ledColor(g_frame.track_leds[i]);
+    // Show the active bank's 4 tracks on the physical Tr1..Tr4 LEDs.
+    const uint8_t base = g_frame.active_bank * 4; // bank A: 0..3, bank B: 4..7
+    for (uint8_t i = 0; i < 4; i++) {
+      g_leds[kTrackLed0 + i] = ledColor(g_frame.track_leds[base + i]);
     }
-    g_leds[kGlobalLed] = globalColor(g_frame.global_color);
+    g_leds[kModeLed] = globalColor(g_frame.global_color);
+    g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Blue : CRGB::Black;
+    g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;
   } else {
-    for (uint8_t i = 0; i <= kGlobalLed; i++) g_leds[i] = CRGB::Black;
+    g_leds[kModeLed] = CRGB::Black;
+    g_leds[kClearLed] = CRGB::Black;
+    g_leds[kBankLed] = CRGB::Black;
+    for (uint8_t i = 0; i < 4; i++) g_leds[kTrackLed0 + i] = CRGB::Black;
   }
-  renderRing();
 
   // Poll MIDI immediately before and after the interrupt-blocking show().
   pollMidiIn();
@@ -214,18 +237,15 @@ static void pollButtons() {
   }
 }
 
-// Minimal quadrature decode: emit +/-1 detent per state transition.
+// Encoder decode, matching the original firmware: on each clock edge, the data
+// line's level vs. the clock gives the direction. Emits one relative ±1 CC per
+// edge.
 static void pollEncoder() {
-  const uint8_t a = (digitalRead(kEncoderPinA) == HIGH) ? 1 : 0;
-  const uint8_t b = (digitalRead(kEncoderPinB) == HIGH) ? 1 : 0;
-  const uint8_t state = (uint8_t)((a << 1) | b);
-  if (state == g_encPrev) return;
-  // Gray-code direction: compare the new state to the previous.
-  static const int8_t kStep[4][4] = {
-      {0, -1, 1, 0}, {1, 0, 0, -1}, {-1, 0, 0, 1}, {0, 1, -1, 0}};
-  const int8_t delta = kStep[g_encPrev][state];
-  g_encPrev = state;
-  if (delta == 0) return;
+  const uint8_t clk = (digitalRead(kEncoderClk) == HIGH) ? 1 : 0;
+  if (clk == g_encClkPrev) return;
+  g_encClkPrev = clk;
+  const uint8_t dat = (digitalRead(kEncoderDat) == HIGH) ? 1 : 0;
+  const int delta = (dat != clk) ? 1 : -1;
   uint8_t msg[3];
   const int len = pedal_encode_encoder(delta, kMidiChannel, msg);
   sendBytes(msg, len);
@@ -243,8 +263,9 @@ void setup() {
     g_btnState[i] = false;
     g_btnChangedMs[i] = 0;
   }
-  pinMode(kEncoderPinA, INPUT_PULLUP);
-  pinMode(kEncoderPinB, INPUT_PULLUP);
+  pinMode(kEncoderClk, INPUT_PULLUP);
+  pinMode(kEncoderDat, INPUT_PULLUP);
+  g_encClkPrev = (digitalRead(kEncoderClk) == HIGH) ? 1 : 0;
 
   // Brief startup sweep so the user sees the pedal is alive before loopy binds.
   for (uint8_t i = 0; i < kNumLeds; i++) {

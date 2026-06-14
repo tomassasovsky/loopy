@@ -65,25 +65,28 @@ at power-on to fall back to serial mode for re-uploading the sketch.
 
 ## Pin map & LED order
 
-Defaults in `loopy_pedal.ino` — adjust the constants to the physical build.
+Set in `loopy_pedal.ino` to match the original "aquiles LoopStation" wiring
+(verified on hardware).
 
-**LEDs** — a single `WS2812B` strip on pin `D6`, 19 LEDs:
+**LEDs** — a single `WS2812B` strip on pin `D2`, 19 LEDs:
 
 | index | role |
 |-------|------|
-| 0–7 | the 8 track indicators (the active bank is the rendered set) |
-| 8 | global / mode color |
-| 9–18 | the 10-LED loop-position ring (one revolution per loop) |
+| 0–11 | the 12-LED loop-position ring (one revolution per loop) |
+| 12 | global / mode color |
+| 13–16 | the active bank's 4 track indicators (Tr1–Tr4) |
+| 17 | clear-fade indicator |
+| 18 | bank indicator (lit for bank B) |
 
 **Footswitches** — active-low (`INPUT_PULLUP`), one note each (matching
 `PedalButton`):
 
 | pin | button | note |
 |-----|--------|------|
-| D2 | Rec/Play | 0 |
-| D3 | Stop | 1 |
-| D4 | Undo | 2 |
-| D5 | Mode | 3 |
+| D3 | Rec/Play | 0 |
+| D4 | Stop | 1 |
+| D5 | Undo | 2 |
+| D6 | Mode | 3 |
 | D7 | Track 1 | 4 |
 | D8 | Track 2 | 5 |
 | D9 | Track 3 | 6 |
@@ -91,8 +94,9 @@ Defaults in `loopy_pedal.ino` — adjust the constants to the physical build.
 | D11 | Clear | 8 |
 | D12 | Bank | 9 |
 
-**Encoder** — quadrature on `A0`/`A1`, sends relative CC `0x10` (binary-offset);
-loopy maps it to the master output gain.
+**Encoder** — quadrature on `A0` (clock) / `A1` (data), sends relative CC `0x10`
+(binary-offset); loopy maps it to the master output gain. The original "Next"
+switch (`A2`) is dropped in this layout.
 
 ## Contract test (host, no board)
 
