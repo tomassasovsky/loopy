@@ -20,7 +20,7 @@ void main() {
       final controllerRepository = ControllerRepository(sources: const []);
       final sessionRepository = SessionRepository(engine: FakeAudioEngine());
       final settings = SettingsRepository(store: FakeKeyValueStore());
-      final bank = BankCubit(settings: settings);
+      final bank = BankCubit();
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
 

@@ -6,7 +6,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
@@ -232,19 +231,10 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
     final big = context.watch<BigPictureCubit>();
-    final bankEnabled = context.watch<BankCubit>().state.enabled;
     return [
       Text(l10n.tracksIntro, style: setupBody),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.tracksGroupLabel),
-      const SizedBox(height: 12),
-      SetupToggleRow(
-        toggleKey: const Key('bpSettings_bank_switch'),
-        title: l10n.secondBankTitle,
-        subtitle: l10n.secondBankSubtitle,
-        value: bankEnabled,
-        onChanged: (on) => context.read<BankCubit>().setEnabled(value: on),
-      ),
       const SizedBox(height: 12),
       for (var i = 0; i < big.state.names.length; i++) ...[
         SetupTrackNameRow(

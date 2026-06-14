@@ -127,10 +127,8 @@
     "defaultLabel": "Default",
     "routingIntro": "How audio is wired: hardware inputs flow into tracks, and tracks play out to hardware outputs. Loopback inputs are struck through — they are never recorded. Click a track to select it, then click an input or output to connect or disconnect it.",
     "signalFlowGroupLabel": "SIGNAL FLOW",
-    "tracksIntro": "Enable the second bank and rename tracks.",
+    "tracksIntro": "Rename tracks.",
     "tracksGroupLabel": "TRACKS",
-    "secondBankTitle": "Second bank (8 tracks)",
-    "secondBankSubtitle": "Adds a second bank of four tracks, switchable as A / B",
     "inputChannelLabel": "In {channelNumber}",
     "@inputChannelLabel": {
         "placeholders": {

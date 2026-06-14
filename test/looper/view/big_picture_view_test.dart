@@ -30,7 +30,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
     bigPicture = BigPictureCubit(settings: settings);
-    bank = BankCubit(settings: settings);
+    bank = BankCubit();
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
   });
@@ -83,10 +83,7 @@ void main() {
     verify(() => bloc.add(const LooperStopPressed(0))).called(1);
   });
 
-  testWidgets('with the bank enabled, shows one bank and switches A/B', (
-    tester,
-  ) async {
-    await bank.setEnabled(value: true);
+  testWidgets('shows one bank of four and switches A/B', (tester) async {
     seed(
       LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
     );
