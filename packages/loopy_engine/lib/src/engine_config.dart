@@ -6,35 +6,35 @@ import 'package:meta/meta.dart';
 
 /// Which device backend the engine should open.
 ///
-/// Mirrors the native `le_audio_backend` enum. [asio] is opt-in and only
-/// available in a `LOOPY_ENABLE_ASIO` build (the real backend lands in Part 2);
-/// today every choice resolves to the default miniaudio path.
+/// Mirrors the native `le_audio_backend` enum. On Windows the engine forces
+/// [asio]; [miniaudio] is the cross-platform path used on macOS and Linux.
 enum AudioBackend {
-  /// The default miniaudio backend for the platform (WASAPI on Windows, Core
-  /// Audio on macOS, the Linux preference list).
-  wasapi,
+  /// The platform's default miniaudio backend (Core Audio on macOS, the Linux
+  /// preference list; on Windows the engine forces [asio] instead).
+  miniaudio,
 
-  /// Opt-in Windows ASIO. Accepted but treated as [wasapi] until Part 2.
+  /// Windows ASIO. Forced on Windows so capture/playback go through the ASIO
+  /// driver rather than the shared OS mixer.
   asio;
 
   /// The native `le_audio_backend` integer for this backend.
   int toNative() => switch (this) {
-    AudioBackend.wasapi => 0,
+    AudioBackend.miniaudio => 0,
     AudioBackend.asio => 1,
   };
 
   /// Maps a native `le_audio_backend` integer to an [AudioBackend]; unknown
-  /// values fall back to [wasapi].
+  /// values fall back to [miniaudio].
   static AudioBackend fromNative(int value) => switch (value) {
     1 => AudioBackend.asio,
-    _ => AudioBackend.wasapi,
+    _ => AudioBackend.miniaudio,
   };
 }
 
 /// Requested audio device configuration passed to `AudioEngine.start`.
 ///
-/// Any field left at `0` (or `false` for [passthrough]) defers to the device
-/// default. This is the pure-Dart counterpart of the native `le_config` struct.
+/// Any field left at `0` defers to the device default. This is the pure-Dart
+/// counterpart of the native `le_config` struct.
 @immutable
 class EngineConfig {
   /// Creates an [EngineConfig].
@@ -43,13 +43,11 @@ class EngineConfig {
     this.bufferFrames = 0,
     this.inputChannels = 0,
     this.outputChannels = 0,
-    this.passthrough = false,
     this.maxLoopFrames = 0,
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.exclusive = false,
-    this.backend = AudioBackend.wasapi,
+    this.backend = AudioBackend.miniaudio,
     this.asioDriver = '',
   });
 
@@ -69,9 +67,6 @@ class EngineConfig {
   /// Clamped to the engine maximum.
   final int outputChannels;
 
-  /// Whether captured input should be copied straight to the output.
-  final bool passthrough;
-
   /// Per-track loop buffer cap in frames, or `0` for the engine default
   /// (about two minutes at the device sample rate).
   final int maxLoopFrames;
@@ -90,20 +85,13 @@ class EngineConfig {
   /// default. Ignored when [useLoopbackCapture] resolves a loopback device.
   final String captureDeviceId;
 
-  /// Whether to request OS-exclusive device access (WASAPI exclusive mode on
-  /// Windows: bypasses the mixer, native format, no resampling). The engine
-  /// falls back to shared mode automatically if exclusive is refused; the
-  /// negotiated result is reported via `EngineSnapshot.exclusiveActive`. No
-  /// effect on backends without an exclusive concept.
-  final bool exclusive;
-
-  /// Which device backend to open. Defaults to [AudioBackend.wasapi] (the
-  /// platform's default miniaudio backend); [AudioBackend.asio] is opt-in and
-  /// only honored in Part 2.
+  /// Which device backend to open. Defaults to [AudioBackend.miniaudio] (the
+  /// platform's default miniaudio backend); on Windows the engine forces
+  /// [AudioBackend.asio].
   final AudioBackend backend;
 
   /// Selected ASIO driver name, used only when [backend] is
-  /// [AudioBackend.asio] (Part 2). Empty and ignored on the default path.
+  /// [AudioBackend.asio]. Empty and ignored on the miniaudio path.
   final String asioDriver;
 
   /// Writes this configuration into a native [le_config] struct in [ptr].
@@ -113,10 +101,8 @@ class EngineConfig {
       ..buffer_frames = bufferFrames
       ..input_channels = inputChannels
       ..output_channels = outputChannels
-      ..passthrough = passthrough ? 1 : 0
       ..max_loop_frames = maxLoopFrames
       ..use_loopback_capture = useLoopbackCapture ? 1 : 0
-      ..exclusive = exclusive ? 1 : 0
       ..backend = backend.toNative();
     writeNativeString(ptr.ref.playback_device_id, playbackDeviceId);
     writeNativeString(ptr.ref.capture_device_id, captureDeviceId);
@@ -132,12 +118,10 @@ class EngineConfig {
           bufferFrames == other.bufferFrames &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
-          passthrough == other.passthrough &&
           maxLoopFrames == other.maxLoopFrames &&
           useLoopbackCapture == other.useLoopbackCapture &&
           playbackDeviceId == other.playbackDeviceId &&
           captureDeviceId == other.captureDeviceId &&
-          exclusive == other.exclusive &&
           backend == other.backend &&
           asioDriver == other.asioDriver;
 
@@ -147,12 +131,10 @@ class EngineConfig {
     bufferFrames,
     inputChannels,
     outputChannels,
-    passthrough,
     maxLoopFrames,
     useLoopbackCapture,
     playbackDeviceId,
     captureDeviceId,
-    exclusive,
     backend,
     asioDriver,
   );
@@ -162,10 +144,10 @@ class EngineConfig {
       'EngineConfig(sampleRate: $sampleRate, '
       'bufferFrames: $bufferFrames, inputChannels: $inputChannels, '
       'outputChannels: $outputChannels, '
-      'passthrough: $passthrough, maxLoopFrames: $maxLoopFrames, '
+      'maxLoopFrames: $maxLoopFrames, '
       'useLoopbackCapture: $useLoopbackCapture, '
       'playbackDeviceId: $playbackDeviceId, '
       'captureDeviceId: $captureDeviceId, '
-      'exclusive: $exclusive, backend: ${backend.name}, '
+      'backend: ${backend.name}, '
       'asioDriver: $asioDriver)';
 }

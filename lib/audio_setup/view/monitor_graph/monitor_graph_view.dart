@@ -288,6 +288,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
               wireDry: _wireDry,
               selectedFx: _selectedEffect(state),
               onWireModeChanged: (dry) => setState(() => _wireDry = dry),
+              onVolumeChanged: (v) => unawaited(_cubit.setVolume(_focused!, v)),
               onStop: () {
                 final f = _focused!;
                 unawaited(_cubit.setEnabled(f, enabled: false));

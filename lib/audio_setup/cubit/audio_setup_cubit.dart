@@ -7,46 +7,83 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'audio_setup_state.dart';
 
-/// Manages audio device options (sample rate, buffer size, input monitoring),
-/// starts/stops the engine through the repository, and surfaces live engine
-/// status and latency measurements.
+/// Manages audio device options (backend, device, sample rate, buffer size).
+/// Persisting a change reopens the device (or starts a stopped/failed engine
+/// when the config is startable — there is no manual Start/Stop), and the cubit
+/// surfaces live engine status and latency measurements.
 class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// Creates an [AudioSetupCubit] backed by [repository], persisting per-device
   /// latency calibration through [settings].
   AudioSetupCubit({
     required LooperRepository repository,
     required SettingsRepository settings,
-    required bool defaultExclusive,
+    bool asioSelectable = false,
+    List<AudioDevice> initialAsioDrivers = const [],
   }) : _repository = repository,
        _settings = settings,
-       _defaultExclusive = defaultExclusive,
+       _asioSelectable = asioSelectable,
        super(const AudioSetupState()) {
     _subscription = _repository.looperState.listen(_onLooperState);
+
+    // The ASIO driver list is enumerated once at process start (before the
+    // engine auto-starts) and injected here, so the picker stays populated even
+    // when ASIO is already live (re-probing would tear the stream down — R1).
+    final drivers = _loadAsioDrivers(
+      _repository.state.status,
+      cached: initialAsioDrivers,
+    );
 
     // Hydrate from the repository immediately — [looperState] is a broadcast
     // stream that does not replay, so a new cubit would otherwise show defaults
     // until the next engine tick even when the device is already open.
-    emit(
-      _projectFromRepository(
-        _repository.state,
-        current: state.copyWith(
-          loopback: _repository.detectLoopback(),
-          devices: _repository.devices(),
-        ),
-        hydrateConfig: true,
+    var initial = _projectFromRepository(
+      _repository.state,
+      current: state.copyWith(
+        loopback: _repository.detectLoopback(),
+        devices: _repository.devices(),
+        asioDrivers: drivers,
+        // Prefer the startup enumeration; when none was injected (non-Windows
+        // or a test/interactive build) the freshly probed list is the cache.
+        cachedAsioDrivers: initialAsioDrivers.isNotEmpty
+            ? initialAsioDrivers
+            : drivers,
+        // Windows runs ASIO exclusively: the UI hides the backend selector /
+        // pickers and the backend is coerced to ASIO on hydrate.
+        asioOnly: _asioSelectable,
       ),
+      hydrateConfig: true,
     );
+    // On Windows the resolved driver may offer a different rate/buffer set than
+    // the generic defaults, so snap the selection into it (mirrors a driver
+    // switch) — otherwise the chips would show no selection.
+    if (initial.asioOnly) initial = _snapRateAndBuffer(initial);
+    emit(initial);
   }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   late final StreamSubscription<LooperState> _subscription;
 
-  /// The platform default for OS-exclusive device access (Windows => on),
-  /// injected by the presentation layer (`platformDefaultExclusive`) so this
-  /// cubit holds no OS policy and stays free of Flutter imports. Used as the
-  /// exclusive-intent fallback when no saved config exists.
-  final bool _defaultExclusive;
+  /// Whether the ASIO backend is selectable on this platform (Windows only),
+  /// injected by the presentation layer (`platformAsioSelectable`) so the cubit
+  /// holds no OS policy and stays free of Flutter imports. ASIO is offered when
+  /// is true and at least one driver enumerated.
+  final bool _asioSelectable;
+
+  /// Enumerates the installed ASIO drivers for the backend selector, honoring
+  /// the R1 re-entrancy contract: the ASIO host SDK loads one process-global
+  /// driver, so we never probe while a device is already running on ASIO (that
+  /// would tear down the live stream). While ASIO is live we fall back to the
+  /// [cached] list (enumerated at startup) instead of returning `[]`, so the
+  /// picker stays populated. Returns `[]` off Windows.
+  List<AudioDevice> _loadAsioDrivers(
+    EngineStatus status, {
+    List<AudioDevice> cached = const [],
+  }) {
+    if (!_asioSelectable) return const [];
+    if (status.activeBackend == AudioBackend.asio) return cached;
+    return _repository.asioDrivers();
+  }
 
   /// The device profile we've loaded a saved offset for, to load only once.
   String? _hydratedDeviceKey;
@@ -77,21 +114,51 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     _persistAndApply();
   }
 
-  /// Toggles input monitoring. Persists the choice and, when the engine is
-  /// running, reopens the device so it takes effect immediately.
-  void setMonitorInput({required bool monitorInput}) {
-    if (monitorInput == state.monitorInput) return;
-    emit(state.copyWith(monitorInput: monitorInput));
+  /// Selects the device [backend] (macOS/Linux only — Windows is ASIO-only and
+  /// ignores this). Switching to ASIO defaults the driver to the first
+  /// enumerated one when none is chosen yet; the miniaudio device ids are kept
+  /// dormant (restored on a switch back). Persists the intent and, when
+  /// running, reopens the device so the change takes effect now.
+  void setBackend(AudioBackend backend) {
+    if (state.asioOnly || backend == state.backend) return;
+    final driver =
+        backend == AudioBackend.asio &&
+            state.asioDriver.isEmpty &&
+            state.asioDrivers.isNotEmpty
+        ? state.asioDrivers.first.id
+        : state.asioDriver;
+    emit(
+      _snapRateAndBuffer(
+        state.copyWith(backend: backend, asioDriver: driver),
+      ),
+    );
     _persistAndApply();
   }
 
-  /// Toggles OS-exclusive device access (full device control on Windows).
-  /// Persists the intent and, when running, reopens the device so it engages
-  /// (or disengages) now — a reopen that falls back to shared still succeeds.
-  void setExclusive({required bool exclusive}) {
-    if (exclusive == state.exclusive) return;
-    emit(state.copyWith(exclusive: exclusive));
+  /// Selects the ASIO driver to open (an id from `state.asioDrivers`). Persists
+  /// the choice and, when running, reopens the device on it now.
+  void setAsioDriver(String driverId) {
+    if (driverId == state.asioDriver) return;
+    emit(_snapRateAndBuffer(state.copyWith(asioDriver: driverId)));
     _persistAndApply();
+  }
+
+  /// Clamps the requested sample rate / buffer size into the offered options for
+  /// [next] (a driver's real ASIO set, or the generic list). So switching to a
+  /// backend/driver that doesn't allow the current value lands on a valid one
+  /// rather than leaving no chip selected. The choice lists are never empty
+  /// (they fall back to the static lists), so `.first` is safe.
+  AudioSetupState _snapRateAndBuffer(AudioSetupState next) {
+    final rates = next.sampleRateChoices;
+    final buffers = next.bufferChoices;
+    return next.copyWith(
+      sampleRate: rates.contains(next.sampleRate)
+          ? next.sampleRate
+          : rates.first,
+      bufferFrames: buffers.contains(next.bufferFrames)
+          ? next.bufferFrames
+          : buffers.first,
+    );
   }
 
   /// Sets the maximum per-track loop length in whole [minutes] (`0` = engine
@@ -133,23 +200,59 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     _persistAndApply();
   }
 
-  /// Persists the current options and, when the engine is running, reopens the
-  /// device so a config change (device, monitoring, loop cap) takes effect now;
-  /// otherwise it is used on the next start / auto-start.
+  /// Persists the current options and (re)starts the engine whenever the config
+  /// is startable — from any status, not only while running. With no manual
+  /// Start/Stop, this is the sole recovery path: changing a setting from a
+  /// stopped/error state boots the engine. A reopen stops the current device
+  /// first. An incomplete (non-startable) config is persisted but never boots
+  /// audio. On a failed open, sets the error status (surfaced by the banner).
   void _persistAndApply() {
     unawaited(_settings.saveAudioConfig(_storedConfig()));
+    if (!_isStartable) return;
     if (state.status == AudioSetupStatus.running) {
       _repository.stopEngine();
-      final result = _repository.startEngine(_engineConfig());
-      if (!result.isOk) {
-        emit(
-          state.copyWith(
-            status: AudioSetupStatus.error,
-            error: AudioSetupError.openDeviceFailed,
-            errorDetail: result.name,
-          ),
-        );
-      }
+    }
+    final result = _repository.startEngine(_engineConfig());
+    if (result.isOk) {
+      // Clear any prior error: a successful (re)start recovers from a failed
+      // open, so a stale banner must not linger.
+      emit(state.copyWith(status: AudioSetupStatus.running, clearError: true));
+      _autoMeasureIfLoopback();
+    } else {
+      emit(
+        state.copyWith(
+          status: AudioSetupStatus.error,
+          error: AudioSetupError.openDeviceFailed,
+          errorDetail: result.name,
+        ),
+      );
+    }
+  }
+
+  /// Whether the current options form a config the engine can actually open.
+  /// "Startable" = a positive sample rate and buffer **and** a resolvable
+  /// device: under ASIO, the selected driver must be present in the enumerated
+  /// list; otherwise an empty device id is the valid system default. Persisting
+  /// an incomplete config (e.g. ASIO selected with no driver) must not boot
+  /// audio.
+  bool get _isStartable {
+    if (state.sampleRate <= 0 || state.bufferFrames <= 0) return false;
+    if (state.isAsio) {
+      return state.asioDriver.isNotEmpty &&
+          state.cachedAsioDrivers.any((d) => d.id == state.asioDriver);
+    }
+    return true;
+  }
+
+  /// Auto-measures round-trip latency whenever the capture path carries our own
+  /// output back: a routable loopback capture device, or an interface with
+  /// dedicated loopback channels (e.g. a Scarlett's "Loop 1/2", reported via the
+  /// excluded-input mask). The measured offset is persisted per device by
+  /// [_syncLatencyPersistence].
+  void _autoMeasureIfLoopback() {
+    if ((state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty) ||
+        _repository.state.status.excludedInputMask != 0) {
+      _repository.measureLatency();
     }
   }
 
@@ -159,29 +262,32 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     bufferFrames: state.bufferFrames,
     // Channel counts left at 0 (device default): a multichannel interface
     // opens with all its channels; the negotiated counts are reported back.
-    passthrough: state.monitorInput,
-    exclusive: state.exclusive,
     maxLoopFrames: _maxLoopFrames(state.maxLoopMinutes, state.sampleRate),
     // An explicitly chosen input device always wins: only auto-route capture to
     // a detected loopback when the user has not pinned a capture device.
     // Otherwise, on hosts where every output exposes a "monitor" capture source
     // (e.g. PipeWire), the loopback auto-route would silently commandeer the
-    // capture path and ignore the selected interface.
+    // capture path and ignore the selected interface. Backend loopback is also
+    // irrelevant under ASIO (ASIO holds the device), so force it off there.
     useLoopbackCapture:
-        state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty,
+        !state.isAsio &&
+        state.loopback.isAutoRoutable &&
+        state.captureDeviceId.isEmpty,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
+    backend: state.backend,
+    asioDriver: state.asioDriver,
   );
 
   /// The persisted form of the current options + device selection.
   StoredAudioConfig _storedConfig() => StoredAudioConfig(
     sampleRate: state.sampleRate,
     bufferFrames: state.bufferFrames,
-    monitorInput: state.monitorInput,
-    exclusive: state.exclusive,
     maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
+    backend: state.backend,
+    asioDriver: state.asioDriver,
   );
 
   /// Converts a minute cap to engine frames at [sampleRate]; `0` (engine
@@ -195,39 +301,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       frames == null || frames <= 0 || sampleRate <= 0
       ? 0
       : (frames / (60 * sampleRate)).round();
-
-  /// Opens the audio device with the current options.
-  void start() {
-    final result = _repository.startEngine(_engineConfig());
-    if (result.isOk) {
-      emit(state.copyWith(status: AudioSetupStatus.running));
-      // Remember these options so the engine can auto-start on the next launch.
-      unawaited(_settings.saveAudioConfig(_storedConfig()));
-      // Auto-measure round-trip latency whenever the capture path carries our
-      // own output back: a routable loopback capture device, or an interface
-      // with dedicated loopback channels (e.g. a Scarlett's "Loop 1/2", now
-      // open and reported via the excluded-input mask). The measured offset is
-      // persisted per device by _syncLatencyPersistence.
-      if ((state.loopback.isAutoRoutable && state.captureDeviceId.isEmpty) ||
-          _repository.state.status.excludedInputMask != 0) {
-        _repository.measureLatency();
-      }
-    } else {
-      emit(
-        state.copyWith(
-          status: AudioSetupStatus.error,
-          error: AudioSetupError.startAudioFailed,
-          errorDetail: result.name,
-        ),
-      );
-    }
-  }
-
-  /// Closes the audio device.
-  void stop() {
-    _repository.stopEngine();
-    emit(state.copyWith(status: AudioSetupStatus.stopped));
-  }
 
   /// Triggers a loopback round-trip latency measurement.
   void measureLatency() => _repository.measureLatency();
@@ -249,8 +322,12 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// lost/restored banner trigger for a pinned device. The system default is
   /// not flagged (it is never auto-restarted, so a banner would be noise).
   void _detectConnectivity(EngineStatus status) {
+    // A selected ASIO driver counts as "pinned" too, so losing it raises the
+    // banner the same way a lost miniaudio device does.
     final pinned =
-        state.playbackDeviceId.isNotEmpty || state.captureDeviceId.isNotEmpty;
+        state.playbackDeviceId.isNotEmpty ||
+        state.captureDeviceId.isNotEmpty ||
+        (state.isAsio && state.asioDriver.isNotEmpty);
     final present = status.devicePresent;
     final previous = _lastDevicePresent;
     _lastDevicePresent = present;
@@ -336,15 +413,6 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
               fallback: current.bufferFrames,
             )
           : current.bufferFrames,
-      monitorInput: hydrateConfig
-          ? lastConfig?.passthrough ?? current.monitorInput
-          : current.monitorInput,
-      // Hydrate the requested exclusive intent; an unconfigured engine falls
-      // back to the platform default (Windows => on). The negotiated reality is
-      // read separately from engineStatus.exclusiveActive.
-      exclusive: hydrateConfig
-          ? lastConfig?.exclusive ?? _defaultExclusive
-          : current.exclusive,
       maxLoopMinutes: hydrateConfig
           ? _maxLoopMinutes(lastConfig?.maxLoopFrames, resolvedSampleRate)
           : current.maxLoopMinutes,
@@ -354,6 +422,23 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       captureDeviceId: hydrateConfig
           ? lastConfig?.captureDeviceId ?? current.captureDeviceId
           : current.captureDeviceId,
+      // Hydrate the requested backend + ASIO driver intent; the negotiated
+      // reality is read separately from engineStatus.activeBackend. On Windows
+      // (asioOnly) the backend is hardwired to ASIO, coercing a saved
+      // backend=miniaudio, and the driver is resolved against the enumeration.
+      backend: hydrateConfig
+          ? (current.asioOnly
+                ? AudioBackend.asio
+                : lastConfig?.backend ?? AudioBackend.miniaudio)
+          : current.backend,
+      asioDriver: hydrateConfig
+          ? (current.asioOnly
+                ? _resolveAsioDriver(
+                    lastConfig?.asioDriver ?? '',
+                    current.cachedAsioDrivers,
+                  )
+                : lastConfig?.asioDriver ?? current.asioDriver)
+          : current.asioDriver,
       engineStatus: engineStatus,
       status: engineStatus.isConnected
           ? AudioSetupStatus.running
@@ -361,6 +446,14 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           ? AudioSetupStatus.error
           : AudioSetupStatus.stopped,
     );
+  }
+
+  /// Resolves the ASIO driver to open on Windows: keeps [saved] when it is
+  /// still enumerated, otherwise falls back to the first enumerated driver, or
+  /// empty when none are installed (the no-driver case).
+  String _resolveAsioDriver(String saved, List<AudioDevice> drivers) {
+    if (drivers.any((d) => d.id == saved)) return saved;
+    return drivers.isEmpty ? '' : drivers.first.id;
   }
 
   int _resolvedOption({

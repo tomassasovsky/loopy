@@ -115,16 +115,11 @@ void main() {
     });
   });
 
-  test('AppTheme maps every meter state in both modes and both themes', () {
-    final themes = [
-      AppTheme.desktop.extension<LooperTheme>()!,
-      AppTheme.bigPicture.extension<LooperTheme>()!,
-    ];
-    for (final theme in themes) {
-      for (final state in LooperMeterState.values) {
-        expect(theme.recordMeterColors[state], isNotNull);
-        expect(theme.playMeterColors[state], isNotNull);
-      }
+  test('AppTheme maps every meter state in both record and play modes', () {
+    final theme = AppTheme.bigPicture.extension<LooperTheme>()!;
+    for (final state in LooperMeterState.values) {
+      expect(theme.recordMeterColors[state], isNotNull);
+      expect(theme.playMeterColors[state], isNotNull);
     }
     expect(AppTheme.bigPicture.useMaterial3, isTrue);
   });

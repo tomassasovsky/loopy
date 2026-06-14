@@ -121,10 +121,12 @@ class MockAudioEngine implements AudioEngine {
       latencyState: _latencyState,
       measuredLatencyMs: _measuredLatencyMs,
       recordOffsetFrames: _recordOffsetFrames,
-      // The mock always "succeeds": exclusive access is granted exactly as
-      // requested (no real device to refuse it). The fallback-display path is
-      // covered by tests that seed an EngineStatus directly, not via the mock.
-      exclusiveActive: _running && (_activeConfig?.exclusive ?? false),
+      // The mock echoes the requested backend as the negotiated one (ASIO
+      // "succeeds"), so the requested-ASIO/reality-miniaudio fallback is NOT
+      // exercised here — the widget test seeds that state directly.
+      activeBackend: _running
+          ? (_activeConfig?.backend ?? AudioBackend.miniaudio)
+          : AudioBackend.miniaudio,
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -145,6 +147,23 @@ class MockAudioEngine implements AudioEngine {
       name: deviceLabel,
       isDefault: true,
       isInput: true,
+    ),
+  ];
+
+  @override
+  List<AudioDevice> enumerateAsioDrivers() => const [
+    // One deterministic fake duplex driver (18 in / 20 out), so UI development
+    // and tests can drive the ASIO backend selector without real hardware. The
+    // buffer/rate sets are a small fake of what a driver probe reports.
+    AudioDevice(
+      id: 'mock-asio',
+      name: 'Mock ASIO Device',
+      isDefault: false,
+      isInput: false,
+      inputChannels: 18,
+      outputChannels: 20,
+      bufferSizes: [128, 256, 512],
+      sampleRates: [48000, 96000],
     ),
   ];
 
@@ -295,6 +314,12 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setMonitorInputDry({
     required int input,
     required int dryOutputMask,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
   }) => _requireRunning();
 
   @override

@@ -5,7 +5,7 @@
  * opaque handle; no C++; no callbacks into Dart. The audio callback that backs
  * this API performs no allocation, locking, or I/O (see engine.c).
  *
- * Scope: device lifecycle, duplex passthrough, level metering, a loopback
+ * Scope: device lifecycle, per-input live monitoring, level metering, a loopback
  * round-trip latency harness, the lock-free command ring, and a multi-track,
  * multi-lane looper. Each track owns up to LE_MAX_LANES lanes; a lane records
  * one hardware input into its own clean mono buffer (never merged with sibling
@@ -65,14 +65,14 @@ typedef enum le_track_state {
  * round-trip. A physical loopback cable remains the only true analog measure. */
 typedef enum le_loopback_kind {
   LE_LOOPBACK_NONE = 0,
-  LE_LOOPBACK_WASAPI = 1,   /* Windows WASAPI output loopback (built-in) */
+  LE_LOOPBACK_BACKEND = 1,   /* device backend's built-in output loopback */
   LE_LOOPBACK_MONITOR = 2,  /* PulseAudio "Monitor of ..." source (Linux) */
   LE_LOOPBACK_VIRTUAL = 3,  /* named virtual driver (BlackHole, VB-Cable, ...) */
 } le_loopback_kind;
 
 /* Result of loopback detection. `device_name` is the capture device to open for
- * an auto-measurement (empty for WASAPI's built-in loopback, which the duplex
- * engine does not auto-route). */
+ * an auto-measurement (empty for the backend's built-in loopback, which the
+ * duplex engine does not auto-route). */
 typedef struct le_loopback_info {
   int32_t available; /* 0/1 */
   int32_t kind;      /* le_loopback_kind */
@@ -139,6 +139,9 @@ typedef enum le_command_code {
   LE_CMD_SET_MONITOR_INPUT_DRY = 33, /* route a monitor input's CLEAN (pre-FX)
                                       * signal to a second set of outputs.
                                       * arg_f = input, arg_i = dry bitmask. */
+  LE_CMD_SET_MONITOR_INPUT_VOLUME = 34, /* monitor output gain applied to both
+                                         * the wet and dry sends.
+                                         * arg_i = input, arg_f = 0..1. */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -160,7 +163,10 @@ typedef enum le_command_code {
  *   TREMOLO: p0 = rate, p1 = depth
  *   OCTAVER: p0 = shift (0 = -2 oct, .5 = unison, 1 = +2 oct), p1 = tone,
  *            p2 = mix                                  (time-domain pitch shift)
- *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats) */
+ *   ECHO:    p0 = time, p1 = feedback, p2 = mix  (tape-style, damped repeats)
+ *   REVERB:  p0 = size, p1 = damping, p2 = mix   (Schroeder room tail; a mono
+ *            input yields a decorrelated stereo tail spread across the first two
+ *            output channels of the lane/monitor mask) */
 typedef enum le_fx_type {
   LE_FX_NONE = 0,
   LE_FX_DRIVE = 1,
@@ -169,16 +175,16 @@ typedef enum le_fx_type {
   LE_FX_TREMOLO = 4,
   LE_FX_OCTAVER = 5,
   LE_FX_ECHO = 6,
+  LE_FX_REVERB = 7,
 } le_fx_type;
 
 /* Which device backend to open. The default (0) opens miniaudio's default
- * backend for the platform (WASAPI on Windows, Core Audio on macOS, the Linux
- * preference list). ASIO is opt-in and only available in a LOOPY_ENABLE_ASIO
- * build (the real backend lands in Part 2); the fields below are accepted and
- * ignored until then. */
+ * backend for the platform (Core Audio on macOS, the Linux preference list).
+ * On Windows the engine forces ASIO, which is only available in a
+ * LOOPY_ENABLE_ASIO build. */
 typedef enum le_audio_backend {
-  LE_BACKEND_WASAPI = 0, /* default: miniaudio's default backend (WASAPI/CoreAudio/ALSA) */
-  LE_BACKEND_ASIO = 1,   /* opt-in Windows ASIO (Part 2; requires LOOPY_ENABLE_ASIO) */
+  LE_BACKEND_MINIAUDIO = 0, /* default: miniaudio's default platform backend */
+  LE_BACKEND_ASIO = 1,   /* Windows ASIO (requires LOOPY_ENABLE_ASIO) */
 } le_audio_backend;
 
 /* A hardware audio device discovered by enumeration (le_enumerate_*).
@@ -192,8 +198,17 @@ typedef struct le_device_info {
   char id[256];
   char name[256];
   int32_t is_default;      /* 0/1 */
-  int32_t input_channels;  /* 0 = unknown (WASAPI); an ASIO probe fills it in Part 2 */
+  int32_t input_channels;  /* 0 = unknown (miniaudio); an ASIO probe fills it */
   int32_t output_channels; /* 0 = unknown */
+  /* ASIO-only: the driver's selectable buffer sizes and supported sample rates,
+   * probed by le_enumerate_asio_drivers so the UI can offer the driver's real
+   * options instead of a generic list. Count 0 for non-ASIO devices (the UI
+   * then keeps its default lists). Sizes/rates are ascending; the buffer set
+   * always includes the driver's preferred size. */
+  int32_t asio_buffer_sizes[8];
+  int32_t asio_buffer_count;
+  int32_t asio_sample_rates[8];
+  int32_t asio_sample_rate_count;
 } le_device_info;
 
 /* Requested device configuration. Any channel field set to 0 uses the device
@@ -201,7 +216,6 @@ typedef struct le_device_info {
 typedef struct le_config {
   int32_t sample_rate;
   int32_t buffer_frames;
-  int32_t passthrough;     /* 1 = copy captured input straight to the output */
   int32_t max_loop_frames; /* per-track buffer cap; 0 => default (8 min @ sr) */
   int32_t use_loopback_capture; /* 1 = capture from a detected loopback device */
   int32_t input_channels;  /* hardware capture channels (0 => device default) */
@@ -211,12 +225,7 @@ typedef struct le_config {
    * overrides capture_device_id when a loopback device is detected. */
   char playback_device_id[256];
   char capture_device_id[256];
-  /* 1 = request OS-exclusive device access (WASAPI exclusive mode on Windows:
-   * bypasses the Windows mixer, native format, no resampling). Falls back to
-   * shared automatically if the OS/hardware refuses exclusive. No effect on
-   * backends without an exclusive concept; default 0 (shared, unchanged). */
-  int32_t exclusive;
-  /* le_audio_backend to open; 0 (LE_BACKEND_WASAPI) selects the default
+  /* le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
    * miniaudio path. Accepted and ignored until the ASIO backend lands. */
   int32_t backend;
   /* Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
@@ -323,13 +332,8 @@ typedef struct le_snapshot {
    * player heard. Auto-set by a latency measurement; manually overridable. */
   int32_t record_offset_frames;
 
-  /* 1 = the device is actually open in OS-exclusive mode; 0 = shared (including
-   * an exclusive request that fell back to shared). Lets the UI show the real
-   * negotiated mode versus what was requested (le_config.exclusive). */
-  int32_t exclusive_active;
-
-  /* le_audio_backend actually running (negotiated). In Part 2, a requested-ASIO
-   * open that fell back to WASAPI reports WASAPI here. Always WASAPI today. */
+  /* le_audio_backend actually running (negotiated). On Windows this is always
+   * ASIO; on macOS/Linux it is the miniaudio backend. */
   int32_t active_backend;
 
   /* Tracks. */
@@ -344,8 +348,9 @@ typedef struct le_engine le_engine;
 LE_EXPORT const char* le_version(void);
 
 /* Detects a cable-free loopback capture path (PulseAudio monitor / virtual
- * driver / WASAPI) by enumerating capture devices. Fills *out and returns LE_OK,
- * or LE_ERR_INVALID for a null argument / enumeration failure. */
+ * driver / backend built-in loopback) by enumerating capture devices. Fills
+ * *out and returns LE_OK, or LE_ERR_INVALID for a null argument / enumeration
+ * failure. */
 LE_EXPORT int32_t le_detect_loopback(le_loopback_info* out);
 
 /* Enumerates the host's playback (output) devices into `out`, a caller-allocated
@@ -359,6 +364,21 @@ LE_EXPORT int32_t le_enumerate_playback_devices(le_device_info* out, int32_t max
 /* Like le_enumerate_playback_devices but for capture (input) devices. */
 LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
                                                int32_t* count);
+
+/* Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
+ * count into *count. Each entry is one duplex driver: `id` and `name` are the
+ * driver name and `input_channels`/`output_channels` are probed from the driver
+ * (so the picker can show "18 in / 20 out" before opening). A driver that fails
+ * to probe is omitted; the call degrades to *count = 0 rather than erroring.
+ *
+ * Only the LOOPY_ENABLE_ASIO Windows build enumerates real drivers; every other
+ * build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
+ * loads a single process-global driver, so this MUST NOT be called while an ASIO
+ * device is open (it would tear down the live stream) — the Dart layer only
+ * enumerates while stopped or running on the miniaudio backend. Returns LE_OK,
+ * or LE_ERR_INVALID for a null argument / non-positive `max`. */
+LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
+                                            int32_t* count);
 
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
@@ -570,6 +590,14 @@ LE_EXPORT int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
 LE_EXPORT int32_t le_engine_set_monitor_input_dry(le_engine* engine,
                                                   int32_t input,
                                                   int32_t dry_output_mask);
+
+/* Sets monitor input [input]'s output gain to [volume] (clamped to 0..1),
+ * applied equally to both its effected and dry sends. The default is 1.0
+ * (unity); lower it to tame the +6 dB that results from routing both the wet
+ * and dry sends to the same output. */
+LE_EXPORT int32_t le_engine_set_monitor_input_volume(le_engine* engine,
+                                                     int32_t input,
+                                                     float volume);
 
 /* Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input] to [type].
  * Changing the type resets that entry's DSP state; LE_FX_DELAY lazily allocates

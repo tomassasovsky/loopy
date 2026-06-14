@@ -80,8 +80,8 @@ abstract interface class AudioEngine {
   EngineSnapshot snapshot();
 
   /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
-  /// driver / WASAPI) for auto-measuring latency. The result captures the
-  /// digital round-trip only (see [LoopbackInfo]).
+  /// driver / backend built-in loopback) for auto-measuring latency. The result
+  /// captures the digital round-trip only (see [LoopbackInfo]).
   LoopbackInfo detectLoopback();
 
   /// Enumerates the host's audio devices — playback (output) and capture
@@ -89,6 +89,20 @@ abstract interface class AudioEngine {
   /// [AudioDevice.isDefault]. Safe to call while the engine is running. Returns
   /// an empty list when enumeration fails.
   List<AudioDevice> enumerateDevices();
+
+  /// Enumerates the installed ASIO drivers, each as a single **duplex**
+  /// [AudioDevice] (`isInput: false`) carrying its probed
+  /// [AudioDevice.inputChannels] / [AudioDevice.outputChannels] so the picker
+  /// can show "18 in / 20 out" before the device is opened. One ASIO driver
+  /// drives all I/O, so these are never partitioned by direction like
+  /// [enumerateDevices]. Returns an empty list off Windows, on the default
+  /// (non-ASIO) build, or when no ASIO driver is installed.
+  ///
+  /// RE-ENTRANCY: the ASIO host SDK loads a single process-global driver, so
+  /// this must NOT be called while the engine is running on the ASIO backend —
+  /// probing would tear down the live stream. Call only while stopped or while
+  /// running on the miniaudio backend (the presentation layer enforces this).
+  List<AudioDevice> enumerateAsioDrivers();
 
   /// Triggers a single loopback round-trip latency measurement. The result is
   /// surfaced asynchronously via [snapshot]'s latency fields.
@@ -239,6 +253,14 @@ abstract interface class AudioEngine {
   EngineResult setMonitorInputDry({
     required int input,
     required int dryOutputMask,
+  });
+
+  /// Sets monitor [input]'s output gain ([volume], clamped to `0..1`), applied
+  /// equally to both its effected and dry sends. Defaults to `1.0` (unity);
+  /// lower it to tame the +6 dB from routing both sends to the same output.
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
   });
 
   /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on monitor input [input]

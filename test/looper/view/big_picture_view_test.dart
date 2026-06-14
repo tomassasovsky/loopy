@@ -9,7 +9,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
-import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -18,33 +17,22 @@ import '../../helpers/helpers.dart';
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
-class _MockUiModeCubit extends MockCubit<UiMode> implements UiModeCubit {}
-
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 void main() {
   late LooperBloc bloc;
-  late UiModeCubit uiMode;
   late BigPictureCubit bigPicture;
   late BankCubit bank;
   late LooperRepository repository;
   late SettingsRepository settings;
 
-  setUpAll(() => registerFallbackValue(UiMode.desktop));
-
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
-    uiMode = _MockUiModeCubit();
     bigPicture = BigPictureCubit(settings: settings);
     bank = BankCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
-    whenListen(
-      uiMode,
-      const Stream<UiMode>.empty(),
-      initialState: UiMode.bigPicture,
-    );
   });
 
   void seed(LooperState state) {
@@ -52,26 +40,24 @@ void main() {
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
   }
 
-  Future<void> pump(WidgetTester tester, {ThemeData? theme}) =>
-      tester.pumpWidget(
-        MaterialApp(
-          theme: theme ?? AppTheme.bigPicture,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: RepositoryProvider<LooperRepository>.value(
-            value: repository,
-            child: MultiBlocProvider(
-              providers: [
-                BlocProvider<LooperBloc>.value(value: bloc),
-                BlocProvider<UiModeCubit>.value(value: uiMode),
-                BlocProvider<BigPictureCubit>.value(value: bigPicture),
-                BlocProvider<BankCubit>.value(value: bank),
-              ],
-              child: const BigPictureView(),
-            ),
-          ),
+  Future<void> pump(WidgetTester tester) => tester.pumpWidget(
+    MaterialApp(
+      theme: AppTheme.bigPicture,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: RepositoryProvider<LooperRepository>.value(
+        value: repository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider<LooperBloc>.value(value: bloc),
+            BlocProvider<BigPictureCubit>.value(value: bigPicture),
+            BlocProvider<BankCubit>.value(value: bank),
+          ],
+          child: const BigPictureView(),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
@@ -179,6 +165,13 @@ void main() {
       await tester.pump();
       verify(() => bloc.add(const LooperClearAllPressed())).called(1);
     });
+
+    testWidgets('F toggles fullscreen without error', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.pump();
+    });
   });
 
   testWidgets('renaming a track updates its label', (tester) async {
@@ -203,8 +196,7 @@ void main() {
   });
 
   group('play-mode visuals', () {
-    final desktop = AppTheme.desktop;
-    final looper = desktop.extension<LooperTheme>()!;
+    final looper = AppTheme.bigPicture.extension<LooperTheme>()!;
 
     // The meter Container inside a track tile (the _PeakBar's fill).
     Container barOf(WidgetTester tester, int channel) =>
@@ -242,7 +234,7 @@ void main() {
           ],
         ),
       );
-      await pump(tester, theme: desktop);
+      await pump(tester);
       expect(
         barOf(tester, 0).color,
         looper.meterColor(LooperMeterState.recording, playMode: false),
@@ -256,7 +248,7 @@ void main() {
     testWidgets('play mode uses the play-mode meter table', (tester) async {
       bigPicture.toggleMode(); // record -> play
       seed(const LooperState(tracks: [Track(state: TrackState.playing)]));
-      await pump(tester, theme: desktop);
+      await pump(tester);
       expect(
         barOf(tester, 0).color,
         looper.meterColor(LooperMeterState.playing, playMode: true),
@@ -269,7 +261,7 @@ void main() {
           tracks: [Track(state: TrackState.playing, muted: true)],
         ),
       );
-      await pump(tester, theme: desktop);
+      await pump(tester);
       expect(
         barOf(tester, 0).color,
         looper.meterColor(LooperMeterState.muted, playMode: false),
@@ -327,6 +319,33 @@ void main() {
       );
       final decoration = tile.decoration! as BoxDecoration;
       expect(decoration.boxShadow, anyOf(isNull, isEmpty));
+    });
+  });
+
+  group('audio-not-running affordance', () {
+    testWidgets('shows when the engine is not connected', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      expect(
+        find.byKey(const Key('bigpicture_audioNotRunning')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is hidden once the engine is connected', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track()],
+          status: EngineStatus(isConnected: true),
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        find.byKey(const Key('bigpicture_audioNotRunning')),
+        findsNothing,
+      );
     });
   });
 }

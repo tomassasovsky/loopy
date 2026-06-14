@@ -12,6 +12,7 @@ import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/window/window_chrome.dart';
 
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
 /// of tall colored track columns, each a level meter with an editable name.
@@ -64,6 +65,12 @@ class _BigPictureViewState extends State<BigPictureView> {
                     ],
                   ),
                   const SizedBox(height: 14),
+                  // With no first-run gate, a stopped engine lands here; a
+                  // full-width affordance opens settings to (re)start it.
+                  if (!state.status.isConnected) ...[
+                    const _AudioNotRunningBanner(),
+                    const SizedBox(height: 14),
+                  ],
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -105,8 +112,9 @@ class _BigPictureViewState extends State<BigPictureView> {
   /// beep) and dispatched to the looper; modifier combos other than undo/redo
   /// pass through to OS / menu shortcuts.
   ///
-  /// Both modes: `M` switch mode · `S` settings · `Space` play/pause all ·
-  /// `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo.
+  /// Both modes: `M` switch mode · `S` settings · `F` fullscreen · `Space`
+  /// play/pause all · `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or
+  /// `Shift+Z`) redo.
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Play mode: `1`–`8` select + mute/unmute.
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -150,6 +158,10 @@ class _BigPictureViewState extends State<BigPictureView> {
     }
     if (key == LogicalKeyboardKey.keyS) {
       unawaited(openLoopySettings());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyF) {
+      unawaited(toggleLoopyFullScreen());
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {
@@ -229,6 +241,38 @@ class _BigPictureViewState extends State<BigPictureView> {
       return id - LogicalKeyboardKey.digit0.keyId;
     }
     return null;
+  }
+}
+
+/// A full-width affordance shown when the engine isn't running (no first-run
+/// gate exists anymore). Tapping it opens settings, where the engine can be
+/// (re)started by choosing a device.
+class _AudioNotRunningBanner extends StatelessWidget {
+  const _AudioNotRunningBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        key: const Key('bigpicture_audioNotRunning'),
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => unawaited(openLoopySettings()),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, size: 18),
+              const SizedBox(width: 10),
+              Expanded(child: Text(context.l10n.engineStoppedBanner)),
+              const Icon(Icons.settings, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

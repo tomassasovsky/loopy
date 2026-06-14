@@ -19,6 +19,7 @@ extension EngineLocalizations on AppLocalizations {
     TrackEffectType.tremolo => effectTremolo,
     TrackEffectType.octaver => effectOctaver,
     TrackEffectType.echo => effectEcho,
+    TrackEffectType.reverb => effectReverb,
   };
 
   String effectParamLabel(String englishLabel) => switch (englishLabel) {
@@ -33,6 +34,8 @@ extension EngineLocalizations on AppLocalizations {
     'Depth' => paramDepth,
     'Shift' => paramShift,
     'Tone' => paramTone,
+    'Size' => paramSize,
+    'Damping' => paramDamping,
     _ => englishLabel,
   };
 
@@ -48,7 +51,7 @@ extension EngineLocalizations on AppLocalizations {
   }
 
   String loopbackKindLabel(LoopbackKind kind) => switch (kind) {
-    LoopbackKind.wasapi => loopbackKindWasapi,
+    LoopbackKind.backendLoopback => loopbackKindBackend,
     LoopbackKind.monitor => loopbackKindMonitor,
     LoopbackKind.virtualDevice => loopbackKindVirtualDevice,
     LoopbackKind.none => '',

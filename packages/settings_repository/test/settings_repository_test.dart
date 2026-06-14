@@ -107,21 +107,6 @@ void main() {
     );
   });
 
-  group('ui mode', () {
-    test('round-trips a saved mode name', () async {
-      await repository.saveUiMode('bigPicture');
-      expect(await repository.loadUiMode(), 'bigPicture');
-    });
-
-    test('tolerates and clears a legacy int value', () async {
-      // An earlier build stored the mode as an int under the same key.
-      await store.setInt('ui_mode', 1);
-      expect(await repository.loadUiMode(), isNull);
-      // The stale key is dropped so it does not keep failing.
-      expect(store.values.containsKey('ui_mode'), isFalse);
-    });
-  });
-
   group('track names', () {
     test('round-trips a saved name', () async {
       await repository.saveTrackName(2, 'VOX');
@@ -201,6 +186,14 @@ void main() {
       expect(await repository.loadMonitorInputDry(0), 0x2);
       expect(await repository.loadMonitorInputDry(1), 0);
     });
+
+    test('the monitor volume defaults to null and round-trips per input',
+        () async {
+      expect(await repository.loadMonitorInputVolume(0), isNull);
+      await repository.saveMonitorInputVolume(0, 0.5);
+      expect(await repository.loadMonitorInputVolume(0), 0.5);
+      expect(await repository.loadMonitorInputVolume(1), isNull);
+    });
   });
 
   group('audio config', () {
@@ -212,17 +205,24 @@ void main() {
       const config = StoredAudioConfig(
         sampleRate: 96000,
         bufferFrames: 256,
-        monitorInput: false,
       );
       await repository.saveAudioConfig(config);
       expect(await repository.loadAudioConfig(), config);
+    });
+
+    test('does not write the removed legacy audio.monitor_input key', () async {
+      // Monitoring is now the per-input routing graph; saving an audio config
+      // must never resurrect the legacy global flag.
+      await repository.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      expect(store.values.containsKey('audio.monitor_input'), isFalse);
     });
 
     test('round-trips requested channel counts', () async {
       const config = StoredAudioConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        monitorInput: true,
         inputChannels: 2,
         outputChannels: 4,
       );
@@ -244,7 +244,6 @@ void main() {
       const config = StoredAudioConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        monitorInput: true,
         playbackDeviceId: 'out-device-1',
         captureDeviceId: 'in-device-2',
       );
@@ -262,79 +261,92 @@ void main() {
       expect(loaded?.captureDeviceId, '');
     });
 
-    test(
-      'defaults the toggles to true when only rate/buffer are set',
-      () async {
-        await store.setInt('audio.sample_rate', 44100);
-        await store.setInt('audio.buffer_frames', 64);
-        expect(
-          await repository.loadAudioConfig(),
-          const StoredAudioConfig(
-            sampleRate: 44100,
-            bufferFrames: 64,
-            monitorInput: true,
-          ),
-        );
-      },
-    );
+    test('does not write the removed audio.exclusive key', () async {
+      // OS-exclusive mode is gone (Windows is ASIO-only); saving must never
+      // resurrect the legacy key.
+      await repository.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      expect(store.values.containsKey('audio.exclusive'), isFalse);
+    });
 
-    test('round-trips the exclusive intent', () async {
+    test('round-trips the backend and ASIO driver', () async {
       const config = StoredAudioConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        monitorInput: true,
-        exclusive: true,
+        backend: AudioBackend.asio,
+        asioDriver: 'Focusrite USB ASIO',
       );
       await repository.saveAudioConfig(config);
       final loaded = await repository.loadAudioConfig();
-      expect(loaded?.exclusive, isTrue);
+      expect(loaded?.backend, AudioBackend.asio);
+      expect(loaded?.asioDriver, 'Focusrite USB ASIO');
+    });
+
+    test('defaults backend to miniaudio and driver empty when unset', () async {
+      await store.setInt('audio.sample_rate', 44100);
+      await store.setInt('audio.buffer_frames', 64);
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.backend, AudioBackend.miniaudio);
+      expect(loaded?.asioDriver, '');
+    });
+
+    test('resolves an unknown stored backend name to miniaudio', () async {
+      // Forward-compat: a newer build may write a backend name this build does
+      // not know. It must resolve to miniaudio rather than throwing.
+      await store.setInt('audio.sample_rate', 48000);
+      await store.setInt('audio.buffer_frames', 128);
+      await store.setString('audio.backend', 'some_future_backend');
+      final loaded = await repository.loadAudioConfig();
+      expect(loaded?.backend, AudioBackend.miniaudio);
     });
 
     test(
-      'defaults exclusive to false in the stored struct when unset',
+      'ignores legacy audio.merge_to_mono / monitor_input keys on load',
       () async {
-        await store.setInt('audio.sample_rate', 44100);
-        await store.setInt('audio.buffer_frames', 64);
-        final loaded = await repository.loadAudioConfig();
-        expect(loaded?.exclusive, isFalse);
-      },
-    );
-
-    test(
-      'loadAudioExclusive is null when never set, and reflects the saved value',
-      () async {
-        // Never set: the caller (presentation layer) applies the platform
-        // default; the repository reports "unset" as null rather than a guess.
-        expect(await repository.loadAudioExclusive(), isNull);
-        await repository.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-            monitorInput: true,
-            exclusive: true,
-          ),
+        // Both features were removed; an old store may still carry the keys.
+        // Loading must succeed and read neither into the stored config.
+        await store.setInt('audio.sample_rate', 48000);
+        await store.setInt('audio.buffer_frames', 128);
+        await store.setBool('audio.monitor_input', value: true);
+        await store.setBool('audio.merge_to_mono', value: true);
+        expect(
+          await repository.loadAudioConfig(),
+          const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
         );
-        expect(await repository.loadAudioExclusive(), isTrue);
       },
     );
 
-    test('ignores a legacy audio.merge_to_mono key on load', () async {
-      // The merge-to-mono feature was removed; an old store may still carry the
-      // key. Loading must succeed and simply not read it. monitorInput is set
-      // to false (against the legacy bool's true) so the assertion fails if the
-      // stale key were ever wired back into a real field.
+    test('a stale ui_mode key does not break config load', () async {
+      // The UI-mode feature was removed; an old store may still carry the key.
+      // Loading the audio config must succeed and never read it.
+      await store.setString('ui_mode', 'desktop');
       await store.setInt('audio.sample_rate', 48000);
       await store.setInt('audio.buffer_frames', 128);
-      await store.setBool('audio.monitor_input', value: false);
-      await store.setBool('audio.merge_to_mono', value: true);
       expect(
         await repository.loadAudioConfig(),
-        const StoredAudioConfig(
-          sampleRate: 48000,
-          bufferFrames: 128,
-          monitorInput: false,
-        ),
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
       );
+    });
+  });
+
+  group('legacy monitor migration accessors', () {
+    test(
+      'loadLegacyMonitorInput reads the legacy audio.monitor_input key',
+      () async {
+        // loadAudioConfig no longer reads this key; only the migration does.
+        expect(await repository.loadLegacyMonitorInput(), isNull);
+        await store.setBool('audio.monitor_input', value: false);
+        expect(await repository.loadLegacyMonitorInput(), isFalse);
+        await store.setBool('audio.monitor_input', value: true);
+        expect(await repository.loadLegacyMonitorInput(), isTrue);
+      },
+    );
+
+    test('monitor-migrated flag defaults to false and round-trips', () async {
+      expect(await repository.loadMonitorMigratedV1(), isFalse);
+      await repository.saveMonitorMigratedV1();
+      expect(await repository.loadMonitorMigratedV1(), isTrue);
     });
   });
 
@@ -443,7 +455,6 @@ void main() {
         const config = StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
           maxLoopMinutes: 5,
         );
         await repository.saveAudioConfig(config);

@@ -4,6 +4,7 @@ library;
 
 export 'package:loopy_engine/loopy_engine.dart'
     show
+        AudioBackend,
         AudioDevice,
         EngineConfig,
         EngineResult,
@@ -16,6 +17,7 @@ export 'package:loopy_engine/loopy_engine.dart'
         TrackState,
         decodeTrackEffects,
         encodeTrackEffects,
+        kMaxInputs,
         kMaxLanes,
         kTrackEffectMax,
         kTrackEffectParams;

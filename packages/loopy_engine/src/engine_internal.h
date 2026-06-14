@@ -22,6 +22,13 @@ extern "C" {
  * references an ASIO symbol. Not part of the FFI surface. */
 const le_device_backend* le_select_backend(int32_t backend);
 
+/* Publishes the "device present + running" lifecycle flags after a backend's
+ * start() succeeds (release stores, mirroring the miniaudio backend). Exists so a
+ * device backend implemented in a C++ TU (the opt-in ASIO backend) can mark the
+ * engine started without including the _Atomic struct definition in
+ * engine_private.h, keeping all atomic access in C. Not part of the FFI surface. */
+void le_engine_mark_started(le_engine* engine);
+
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /
  * `output_channels` are each clamped to LE_MAX_CHANNELS and `max_loop_frames` to
@@ -37,7 +44,8 @@ void le_engine_process(le_engine* engine, float* output, const float* input,
                        uint32_t frames);
 
 /* Classifies a capture device by name into a loopback kind (name heuristic
- * only; WASAPI detection is context-level). Pure and unit-testable. */
+ * only; backend built-in loopback detection is context-level). Pure and
+ * unit-testable. */
 le_loopback_kind le_classify_capture_device(const char* name);
 
 /* Whether a Core Audio channel label marks a loopback channel (case-insensitive
@@ -45,19 +53,48 @@ le_loopback_kind le_classify_capture_device(const char* name);
  * loopback. */
 int le_label_is_loopback(const char* label);
 
-/* Outcome of the share-mode fallback decision (see le_decide_share_fallback). */
-typedef enum {
-  LE_SHARE_DONE_EXCLUSIVE, /* exclusive requested and the first init succeeded */
-  LE_SHARE_RETRY_SHARED,   /* exclusive requested but failed: retry in shared */
-  LE_SHARE_DONE_SHARED,    /* exclusive not requested: shared as-is */
-} le_share_decision;
+/* ---- ASIO bridge math (pure, platform-agnostic; defined in engine.c) ---- *
+ *
+ * ASIO hands the device callback non-interleaved, per-channel blocks in the
+ * driver's native sample format, whereas le_engine_process works on one
+ * interleaved f32 buffer. These two helpers absorb both differences and are the
+ * riskiest part of the ASIO backend, so they live in the portable core (no ASIO
+ * headers) and are unit-tested off-thread without any hardware. */
 
-/* Pure share-mode fallback decision, factored out so the retry logic is testable
- * without opening a device. Given whether exclusive access was requested and
- * whether the first (exclusive) device init succeeded, decides what to do.
- * Not part of the FFI surface. */
-le_share_decision le_decide_share_fallback(int requested_exclusive,
-                                           int first_init_ok);
+/* Native sample format of one ASIO channel block, mirroring the ASIOSampleType
+ * values the backend actually handles (all little-endian). */
+typedef enum le_sample_fmt {
+  LE_SMP_I16, /* ASIOSTInt16LSB   — 16-bit signed PCM */
+  LE_SMP_I24, /* ASIOSTInt24LSB   — packed 24-bit signed PCM (3 bytes/sample) */
+  LE_SMP_I32, /* ASIOSTInt32LSB   — 32-bit signed PCM */
+  LE_SMP_F32, /* ASIOSTFloat32LSB — 32-bit float */
+} le_sample_fmt;
+
+/* Scatters one ASIO input channel's native block into the interleaved f32 buffer
+ * le_engine_process reads: for each frame f, converts native_block[f] (format
+ * `fmt`) to f32 and writes it to out_interleaved[f * channel_count + chan]. The
+ * block holds `frames` samples; the source stride is the format's byte width. */
+void le_deinterleave_in(float* out_interleaved, const void* native_block,
+                        le_sample_fmt fmt, int chan, int channel_count,
+                        int frames);
+
+/* Gathers channel `chan` out of the interleaved f32 buffer le_engine_process
+ * produced (in_interleaved[f * channel_count + chan]) and writes it, converted
+ * to `fmt` (clamped to the format's range), into one ASIO output channel's
+ * native block. The inverse of le_deinterleave_in for f32 (exact round-trip). */
+void le_interleave_out(void* native_block, const float* in_interleaved,
+                       le_sample_fmt fmt, int chan, int channel_count,
+                       int frames);
+
+/* Snaps a requested buffer size to a size the ASIO driver actually allows, given
+ * its (min, max, preferred, granularity) from ASIOGetBufferSize. granularity:
+ *   -1 => powers of two only (snap to the nearest power of two in [min,max]);
+ *    0 => the driver offers only `preferred` (always returned);
+ *   >0 => linear steps from `min` (snap to the nearest min + k*granularity).
+ * A request outside [min,max] (un-honorable) falls back to `preferred`. Pure and
+ * unit-tested; used once at open so the device never fails over a chip choice. */
+int32_t le_asio_pick_buffer(int32_t requested, int32_t min, int32_t max,
+                            int32_t preferred, int32_t granularity);
 
 /* Per-channel name provider: returns input channel [channel]'s label (or NULL
  * if unavailable). `ctx` is caller state (e.g. an ASIO driver handle or, in

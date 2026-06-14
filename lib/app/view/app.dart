@@ -12,8 +12,8 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
-import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
+import 'package:loopy/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -26,8 +26,8 @@ class App extends StatelessWidget {
   ///
   /// The repositories and [waveformWindow] are injected so tests can supply
   /// fakes / a no-op window service instead of the native device and a real
-  /// second OS window. [needsSetup] is `true` on a first run (no saved audio
-  /// config), routing to the audio setup flow before the looper.
+  /// second OS window. [initialAsioDrivers] is the ASIO driver list enumerated
+  /// at startup, cached by the audio-setup cubit for the picker.
   const App({
     required this.repository,
     required this.controllerRepository,
@@ -35,7 +35,7 @@ class App extends StatelessWidget {
     required this.waveformWindow,
     required this.sessionRepository,
     required this.sessionDirectory,
-    this.needsSetup = false,
+    this.initialAsioDrivers = const [],
     super.key,
   });
 
@@ -51,8 +51,9 @@ class App extends StatelessWidget {
   /// Manages the secondary output-waveform window.
   final WaveformWindowService waveformWindow;
 
-  /// Whether to show the audio setup flow before the looper (first run).
-  final bool needsSetup;
+  /// The ASIO drivers enumerated at startup, cached by the audio-setup cubit so
+  /// the picker stays populated even while ASIO holds the device (R1).
+  final List<AudioDevice> initialAsioDrivers;
 
   /// The shared session repository (save/load + export), sharing the engine.
   final SessionRepository sessionRepository;
@@ -71,15 +72,6 @@ class App extends StatelessWidget {
       ],
       child: MultiBlocProvider(
         providers: [
-          BlocProvider(
-            create: (context) {
-              final cubit = UiModeCubit(
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
           BlocProvider(
             create: (context) {
               final cubit = BigPictureCubit(
@@ -128,6 +120,11 @@ class App extends StatelessWidget {
             },
           ),
           BlocProvider(
+            // Not lazy: the monitor graph page is the only widget that reads
+            // this cubit, but the saved per-input monitors must be applied to
+            // the engine at startup — otherwise monitoring stays off until the
+            // user opens "configure input monitoring".
+            lazy: false,
             create: (context) {
               final cubit = MonitorCubit(
                 repository: context.read<LooperRepository>(),
@@ -154,13 +151,13 @@ class App extends StatelessWidget {
             create: (context) => AudioSetupCubit(
               repository: context.read<LooperRepository>(),
               settings: context.read<SettingsRepository>(),
-              defaultExclusive: platformDefaultExclusive,
+              asioSelectable: platformAsioSelectable,
+              initialAsioDrivers: initialAsioDrivers,
             ),
           ),
         ],
         child: _AppView(
           waveformWindow: waveformWindow,
-          needsSetup: needsSetup,
           sessionDirectory: sessionDirectory,
         ),
       ),
@@ -173,12 +170,10 @@ class App extends StatelessWidget {
 class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
-    required this.needsSetup,
     required this.sessionDirectory,
   });
 
   final WaveformWindowService waveformWindow;
-  final bool needsSetup;
   final Future<String> Function() sessionDirectory;
 
   @override
@@ -210,13 +205,11 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
-  /// Waits for persisted UI preferences before opening the waveform window so
-  /// a disabled preference does not flash a second OS window on launch.
+  /// Waits for the persisted waveform-window preference before opening the
+  /// window so a disabled preference does not flash a second OS window on
+  /// launch.
   Future<void> _bootstrapWindow() async {
-    await Future.wait([
-      context.read<WaveformWindowCubit>().load(),
-      context.read<UiModeCubit>().load(),
-    ]);
+    await context.read<WaveformWindowCubit>().load();
     if (!mounted) return;
     await _syncWindow();
   }
@@ -228,13 +221,11 @@ class _AppViewState extends State<_AppView> {
     super.dispose();
   }
 
-  /// Opens the secondary waveform window when big-picture mode is active and
-  /// the window is enabled; closes it otherwise.
+  /// Opens the secondary waveform window when it is enabled; closes it
+  /// otherwise.
   Future<void> _syncWindow() async {
     if (!mounted) return;
-    final mode = context.read<UiModeCubit>().state;
-    final enabled = context.read<WaveformWindowCubit>().state;
-    final shouldOpen = mode == UiMode.bigPicture && enabled;
+    final shouldOpen = context.read<WaveformWindowCubit>().state;
     if (shouldOpen) {
       await widget.waveformWindow.open(
         title: _l10n.outputWaveformWindowTitle,
@@ -314,10 +305,6 @@ class _AppViewState extends State<_AppView> {
   Widget build(BuildContext context) {
     return MultiBlocListener(
       listeners: [
-        BlocListener<UiModeCubit, UiMode>(
-          listenWhen: (previous, current) => previous != current,
-          listener: (_, _) => unawaited(_syncWindow()),
-        ),
         BlocListener<WaveformWindowCubit, bool>(
           listenWhen: (previous, current) => previous != current,
           listener: (_, _) => unawaited(_syncWindow()),
@@ -328,63 +315,32 @@ class _AppViewState extends State<_AppView> {
           listener: (_, state) => _showConnectivityBanner(state),
         ),
       ],
-      child: BlocBuilder<UiModeCubit, UiMode>(
-        builder: (context, mode) {
-          return MaterialApp(
-            scaffoldMessengerKey: _messengerKey,
-            navigatorKey: loopyNavigatorKey,
-            theme: mode == UiMode.bigPicture
-                ? AppTheme.bigPicture
-                : AppTheme.desktop,
-            localizationsDelegates: AppLocalizations.localizationsDelegates,
-            supportedLocales: AppLocalizations.supportedLocales,
-            home: _RootView(
-              needsSetup: widget.needsSetup,
-              sessionDirectory: widget.sessionDirectory,
-            ),
-            debugShowCheckedModeBanner: false,
-            builder: (context, child) {
-              var app = child ?? const SizedBox.shrink();
-              if (defaultTargetPlatform == TargetPlatform.macOS) {
-                app = PlatformMenuBar(menus: _menus(context), child: app);
-              }
-              return app;
-            },
-          );
+      child: MaterialApp(
+        scaffoldMessengerKey: _messengerKey,
+        navigatorKey: loopyNavigatorKey,
+        theme: AppTheme.bigPicture,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Builder(
+          builder: (context) {
+            final page = LooperPage(sessionDirectory: widget.sessionDirectory);
+            if (!loopyUsesFlutterTitleBar) return page;
+            return LoopyWindowChromeShell(
+              title: context.l10n.appMenuLabel,
+              backgroundColor: AppTheme.bigPicture.scaffoldBackgroundColor,
+              body: page,
+            );
+          },
+        ),
+        debugShowCheckedModeBanner: false,
+        builder: (context, child) {
+          var app = child ?? const SizedBox.shrink();
+          if (defaultTargetPlatform == TargetPlatform.macOS) {
+            app = PlatformMenuBar(menus: _menus(context), child: app);
+          }
+          return app;
         },
       ),
-    );
-  }
-}
-
-/// On a first run, shows the audio setup as the start screen until the engine
-/// connects, then hands off to the looper. Otherwise shows the looper directly.
-class _RootView extends StatefulWidget {
-  const _RootView({required this.needsSetup, required this.sessionDirectory});
-
-  final bool needsSetup;
-  final Future<String> Function() sessionDirectory;
-
-  @override
-  State<_RootView> createState() => _RootViewState();
-}
-
-class _RootViewState extends State<_RootView> {
-  late bool _inSetup = widget.needsSetup;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_inSetup) {
-      return LooperPage(sessionDirectory: widget.sessionDirectory);
-    }
-    // The AudioSetupCubit is provided at the app shell, so the setup screen
-    // listens to the shared instance for the connect → hand-off to the looper.
-    return BlocListener<AudioSetupCubit, AudioSetupState>(
-      listenWhen: (previous, current) =>
-          !previous.engineStatus.isConnected &&
-          current.engineStatus.isConnected,
-      listener: (_, _) => setState(() => _inSetup = false),
-      child: const AudioSetupView(),
     );
   }
 }

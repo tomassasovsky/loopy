@@ -8,7 +8,6 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
-import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -22,7 +21,6 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 
 void main() {
   late SettingsRepository settings;
-  late UiModeCubit uiMode;
   late BigPictureCubit bigPicture;
   late WaveformWindowCubit waveformWindow;
   late BankCubit bank;
@@ -35,7 +33,6 @@ void main() {
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
-    uiMode = UiModeCubit(settings: settings);
     bigPicture = BigPictureCubit(settings: settings);
     waveformWindow = WaveformWindowCubit(settings: settings);
     bank = BankCubit(settings: settings);
@@ -88,7 +85,6 @@ void main() {
         ],
         child: MultiBlocProvider(
           providers: [
-            BlocProvider<UiModeCubit>.value(value: uiMode),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),
@@ -212,24 +208,13 @@ void main() {
     verify(() => repository.setQuantize(enabled: true)).called(1);
   });
 
-  testWidgets('the Big Picture switch reflects the current mode', (
-    tester,
-  ) async {
-    await pump(tester);
-
-    final toggle = tester.widget<Switch>(
-      find.byKey(const Key('bpSettings_bigPicture_switch')),
-    );
-    expect(toggle.value, isTrue); // default is big picture
-  });
-
   testWidgets('selecting a section tab shows only that section', (
     tester,
   ) async {
     await pump(tester);
-    // Defaults to the View section.
+    // Defaults to the View section (the waveform-window toggle lives there).
     expect(
-      find.byKey(const Key('bpSettings_bigPicture_switch')),
+      find.byKey(const Key('bpSettings_waveformWindow_switch')),
       findsOneWidget,
     );
     expect(find.byKey(const Key('bpSettings_bank_switch')), findsNothing);
@@ -237,7 +222,10 @@ void main() {
     await tester.tap(find.byKey(const Key('bpSettings_tab_tracks')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('bpSettings_bank_switch')), findsOneWidget);
-    expect(find.byKey(const Key('bpSettings_bigPicture_switch')), findsNothing);
+    expect(
+      find.byKey(const Key('bpSettings_waveformWindow_switch')),
+      findsNothing,
+    );
 
     await tester.tap(find.byKey(const Key('bpSettings_tab_audio')));
     await tester.pumpAndSettle();
@@ -280,7 +268,6 @@ void main() {
         ],
         child: MultiBlocProvider(
           providers: [
-            BlocProvider<UiModeCubit>.value(value: uiMode),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),

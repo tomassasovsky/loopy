@@ -36,8 +36,9 @@ class LoopyEngineBindings {
       .asFunction<ffi.Pointer<ffi.Char> Function()>();
 
   /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
-  /// driver / WASAPI) by enumerating capture devices. Fills *out and returns LE_OK,
-  /// or LE_ERR_INVALID for a null argument / enumeration failure.
+  /// driver / backend built-in loopback) by enumerating capture devices. Fills
+  /// *out and returns LE_OK, or LE_ERR_INVALID for a null argument / enumeration
+  /// failure.
   int le_detect_loopback(
     ffi.Pointer<le_loopback_info> out,
   ) {
@@ -109,6 +110,45 @@ class LoopyEngineBindings {
         >
       >('le_enumerate_capture_devices');
   late final _le_enumerate_capture_devices = _le_enumerate_capture_devicesPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Enumerates the installed ASIO drivers into `out` (room for `max`), writing the
+  /// count into *count. Each entry is one duplex driver: `id` and `name` are the
+  /// driver name and `input_channels`/`output_channels` are probed from the driver
+  /// (so the picker can show "18 in / 20 out" before opening). A driver that fails
+  /// to probe is omitted; the call degrades to *count = 0 rather than erroring.
+  ///
+  /// Only the LOOPY_ENABLE_ASIO Windows build enumerates real drivers; every other
+  /// build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
+  /// loads a single process-global driver, so this MUST NOT be called while an ASIO
+  /// device is open (it would tear down the live stream) — the Dart layer only
+  /// enumerates while stopped or running on the miniaudio backend. Returns
+  /// LE_OK, or LE_ERR_INVALID for a null argument / non-positive `max`.
+  int le_enumerate_asio_drivers(
+    ffi.Pointer<le_device_info> out,
+    int max,
+    ffi.Pointer<ffi.Int32> count,
+  ) {
+    return _le_enumerate_asio_drivers(
+      out,
+      max,
+      count,
+    );
+  }
+
+  late final _le_enumerate_asio_driversPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_device_info>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_enumerate_asio_drivers');
+  late final _le_enumerate_asio_drivers = _le_enumerate_asio_driversPtr
       .asFunction<
         int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
       >();
@@ -1085,6 +1125,32 @@ class LoopyEngineBindings {
       _le_engine_set_monitor_input_dryPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets monitor input [input]'s output gain to [volume] (clamped to 0..1),
+  /// applied equally to both its effected and dry sends. The default is 1.0
+  /// (unity); lower it to tame the +6 dB that results from routing both the wet
+  /// and dry sends to the same output.
+  int le_engine_set_monitor_input_volume(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    double volume,
+  ) {
+    return _le_engine_set_monitor_input_volume(
+      engine,
+      input,
+      volume,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_volumePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_monitor_input_volume');
+  late final _le_engine_set_monitor_input_volume =
+      _le_engine_set_monitor_input_volumePtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
+
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input] to [type].
   /// Changing the type resets that entry's DSP state; LE_FX_DELAY lazily allocates
   /// the entry's delay line (on this calling thread) and seeds the type's default
@@ -1354,8 +1420,8 @@ enum le_track_state {
 enum le_loopback_kind {
   LE_LOOPBACK_NONE(0),
 
-  /// Windows WASAPI output loopback (built-in)
-  LE_LOOPBACK_WASAPI(1),
+  /// device backend's built-in output loopback
+  LE_LOOPBACK_BACKEND(1),
 
   /// PulseAudio "Monitor of ..." source (Linux)
   LE_LOOPBACK_MONITOR(2),
@@ -1368,7 +1434,7 @@ enum le_loopback_kind {
 
   static le_loopback_kind fromValue(int value) => switch (value) {
     0 => LE_LOOPBACK_NONE,
-    1 => LE_LOOPBACK_WASAPI,
+    1 => LE_LOOPBACK_BACKEND,
     2 => LE_LOOPBACK_MONITOR,
     3 => LE_LOOPBACK_VIRTUAL,
     _ => throw ArgumentError('Unknown value for le_loopback_kind: $value'),
@@ -1376,8 +1442,8 @@ enum le_loopback_kind {
 }
 
 /// Result of loopback detection. `device_name` is the capture device to open for
-/// an auto-measurement (empty for WASAPI's built-in loopback, which the duplex
-/// engine does not auto-route).
+/// an auto-measurement (empty for the backend's built-in loopback, which the
+/// duplex engine does not auto-route).
 final class le_loopback_info extends ffi.Struct {
   /// 0/1
   @ffi.Int32()
@@ -1538,13 +1604,30 @@ final class le_device_info extends ffi.Struct {
   @ffi.Int32()
   external int is_default;
 
-  /// 0 = unknown (WASAPI); an ASIO probe fills it in Part 2
+  /// 0 = unknown (miniaudio); an ASIO probe fills it
   @ffi.Int32()
   external int input_channels;
 
   /// 0 = unknown
   @ffi.Int32()
   external int output_channels;
+
+  /// ASIO-only: the driver's selectable buffer sizes and supported sample rates,
+  /// probed by le_enumerate_asio_drivers so the UI can offer the driver's real
+  /// options instead of a generic list. Count 0 for non-ASIO devices (the UI
+  /// then keeps its default lists). Sizes/rates are ascending; the buffer set
+  /// always includes the driver's preferred size.
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> asio_buffer_sizes;
+
+  @ffi.Int32()
+  external int asio_buffer_count;
+
+  @ffi.Array.multi([8])
+  external ffi.Array<ffi.Int32> asio_sample_rates;
+
+  @ffi.Int32()
+  external int asio_sample_rate_count;
 }
 
 /// Requested device configuration. Any channel field set to 0 uses the device
@@ -1555,10 +1638,6 @@ final class le_config extends ffi.Struct {
 
   @ffi.Int32()
   external int buffer_frames;
-
-  /// 1 = copy captured input straight to the output
-  @ffi.Int32()
-  external int passthrough;
 
   /// per-track buffer cap; 0 => default (8 min @ sr)
   @ffi.Int32()
@@ -1585,20 +1664,13 @@ final class le_config extends ffi.Struct {
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> capture_device_id;
 
-  /// 1 = request OS-exclusive device access (WASAPI exclusive mode on Windows:
-  /// bypasses the Windows mixer, native format, no resampling). Falls back to
-  /// shared automatically if the OS/hardware refuses exclusive. No effect on
-  /// backends without an exclusive concept; default 0 (shared, unchanged).
-  @ffi.Int32()
-  external int exclusive;
-
-  /// le_audio_backend to open; 0 (LE_BACKEND_WASAPI) selects the default
-  /// miniaudio path. Accepted and ignored until the ASIO backend lands.
+  /// le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
+  /// miniaudio path. On Windows the engine forces ASIO.
   @ffi.Int32()
   external int backend;
 
-  /// Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
-  /// ignored on the default path.
+  /// Selected ASIO driver name (used by the ASIO backend). Empty and
+  /// ignored on the miniaudio path.
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> asio_driver;
 }
@@ -1775,14 +1847,8 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int record_offset_frames;
 
-  /// 1 = the device is actually open in OS-exclusive mode; 0 = shared (including
-  /// an exclusive request that fell back to shared). Lets the UI show the real
-  /// negotiated mode versus what was requested (le_config.exclusive).
-  @ffi.Int32()
-  external int exclusive_active;
-
-  /// le_audio_backend actually running (negotiated). In Part 2, a requested-ASIO
-  /// open that fell back to WASAPI reports WASAPI here. Always WASAPI today.
+  /// le_audio_backend actually running (negotiated). On Windows this is always
+  /// ASIO; on macOS/Linux it is the miniaudio backend.
   @ffi.Int32()
   external int active_backend;
 

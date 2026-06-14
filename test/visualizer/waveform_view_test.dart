@@ -26,7 +26,7 @@ void main() {
     );
     addTearDown(frame.dispose);
 
-    await tester.pumpWidget(WaveformWindowApp(frame: frame));
+    await tester.pumpWidget(WaveformWindowApp(frame: frame, title: 'Output'));
     await tester.pump();
 
     expect(find.byType(WaveformView), findsOneWidget);

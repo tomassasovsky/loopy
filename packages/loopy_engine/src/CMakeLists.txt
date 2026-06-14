@@ -56,7 +56,7 @@ target_include_directories(loopy_engine PRIVATE
 target_compile_definitions(loopy_engine PUBLIC DART_SHARED_LIB)
 
 if(WIN32)
-  # miniaudio's WASAPI/DirectSound backends need COM + the multimedia timer.
+  # miniaudio's Windows device backends need COM + the multimedia timer.
   target_link_libraries(loopy_engine PRIVATE ole32 winmm)
 elseif(UNIX AND NOT APPLE)
   # miniaudio dlopen()s ALSA/PulseAudio/JACK at runtime; we only need libc bits.
@@ -64,35 +64,54 @@ elseif(UNIX AND NOT APPLE)
   target_link_libraries(loopy_engine PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
 endif()
 
-# --- Opt-in Windows ASIO per-channel label probe ---------------------------
+# --- Windows ASIO (duplex backend + per-channel label probe) ---------------
 #
-# OFF by default: the standard build is byte-for-byte unchanged and needs no
-# ASIO SDK. When ON (Windows only), the engine reads per-input-channel names via
-# ASIO to exclude "Loopback" inputs the way macOS does via Core Audio.
+# ON by default on Windows: the engine opens ASIO for full-channel-count duplex
+# audio and reads per-input-channel names to exclude "Loopback" inputs the way
+# macOS does via Core Audio. macOS/Linux keep the miniaudio backend (OFF there).
 #
-# The Steinberg ASIO SDK is GPLv3-or-proprietary and MUST NOT be vendored into
-# this MIT repo. It is user-supplied via LOOPY_ASIO_SDK_DIR and .gitignored; the
-# MIT boundary is enforced by this OFF default + .gitignore + review, NOT by CI
-# (license_check.yaml scans Dart deps only). See docs/WINDOWS_ASIO.md.
-option(LOOPY_ENABLE_ASIO "Build the opt-in Windows ASIO channel-label probe" OFF)
-set(LOOPY_ASIO_SDK_DIR "" CACHE PATH
-  "Path to a user-supplied Steinberg ASIO SDK (only used when LOOPY_ENABLE_ASIO=ON)")
+# The Steinberg ASIO SDK is vendored under third_party/asiosdk (this repo is
+# GPLv3; the Steinberg license file is kept intact alongside it). ASIO is built
+# by default on Windows; macOS/Linux keep the miniaudio backend (OFF there).
+if(WIN32)
+  option(LOOPY_ENABLE_ASIO "Build Windows ASIO support" ON)
+else()
+  option(LOOPY_ENABLE_ASIO "Build Windows ASIO support" OFF)
+endif()
+# The Flutter Windows build drives this CMake through the plugin and cannot
+# forward -D cache flags, so honor an env override for the enable flag (e.g. a
+# non-ASIO CI build): set LOOPY_ENABLE_ASIO=OFF to skip it. The env value is
+# applied after option() so it wins over a stale cached value too.
+if(DEFINED ENV{LOOPY_ENABLE_ASIO} AND NOT "$ENV{LOOPY_ENABLE_ASIO}" STREQUAL "")
+  set(LOOPY_ENABLE_ASIO "$ENV{LOOPY_ENABLE_ASIO}")
+endif()
+
+# The Steinberg ASIO SDK is vendored and used as-is — the path is fixed, not
+# configurable. A plain (non-cache) variable resolved every configure to a
+# normalized absolute path, so it can never go stale and is found regardless of
+# where CMake is invoked from.
+get_filename_component(LOOPY_ASIO_SDK_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/asiosdk" ABSOLUTE)
 
 if(LOOPY_ENABLE_ASIO)
   if(NOT WIN32)
     message(FATAL_ERROR "LOOPY_ENABLE_ASIO is Windows-only.")
   endif()
-  if(NOT LOOPY_ASIO_SDK_DIR OR NOT EXISTS "${LOOPY_ASIO_SDK_DIR}")
+  if(NOT EXISTS "${LOOPY_ASIO_SDK_DIR}")
     message(FATAL_ERROR
-      "LOOPY_ENABLE_ASIO=ON requires LOOPY_ASIO_SDK_DIR to point at a local "
-      "Steinberg ASIO SDK. See docs/WINDOWS_ASIO.md.")
+      "LOOPY_ENABLE_ASIO=ON but the vendored Steinberg ASIO SDK is missing at "
+      "${LOOPY_ASIO_SDK_DIR} (a broken or partial checkout?). Restore it. "
+      "See docs/WINDOWS_ASIO.md.")
   endif()
-  # The probe and the SDK host glue are C++.
+  # The probe, the duplex device backend, and the SDK host glue are C++.
   enable_language(CXX)
   # Standard ASIO SDK layout (asio_sdk/common, host, host/pc). Adjust the paths
-  # here if your SDK is laid out differently.
+  # here if your SDK is laid out differently. win_asio_device.cpp (Part 2) is the
+  # real ASIO duplex backend selected by le_select_backend; it links the SAME SDK
+  # host objects as the label probe — no new SDK sources are needed.
   target_sources(loopy_engine PRIVATE
     win_asio_labels.cpp
+    win_asio_device.cpp
     "${LOOPY_ASIO_SDK_DIR}/common/asio.cpp"
     "${LOOPY_ASIO_SDK_DIR}/host/asiodrivers.cpp"
     "${LOOPY_ASIO_SDK_DIR}/host/pc/asiolist.cpp"
@@ -103,4 +122,16 @@ if(LOOPY_ENABLE_ASIO)
     "${LOOPY_ASIO_SDK_DIR}/host/pc"
   )
   target_compile_definitions(loopy_engine PRIVATE LOOPY_ENABLE_ASIO)
+  # The SDK host glue (asiolist.cpp) calls the Win32 registry/char APIs with ANSI
+  # `char*` string literals, but the Flutter Windows build defines UNICODE, which
+  # binds those names to the wide (…W) variants and fails to compile. The SDK is
+  # an ANSI codebase, so compile its sources with UNICODE/_UNICODE undefined
+  # (MSVC `/U`). Our own ASIO TUs use no …A/…W string APIs, so they keep UNICODE.
+  if(MSVC)
+    set_source_files_properties(
+      "${LOOPY_ASIO_SDK_DIR}/common/asio.cpp"
+      "${LOOPY_ASIO_SDK_DIR}/host/asiodrivers.cpp"
+      "${LOOPY_ASIO_SDK_DIR}/host/pc/asiolist.cpp"
+      PROPERTIES COMPILE_OPTIONS "/UUNICODE;/U_UNICODE")
+  endif()
 endif()

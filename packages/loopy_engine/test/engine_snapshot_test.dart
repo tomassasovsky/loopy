@@ -29,7 +29,7 @@ void main() {
       expect(snapshot.framesProcessed, 0);
       expect(snapshot.latencyState, LatencyState.idle);
       expect(snapshot.measuredLatencyMs, -1);
-      expect(snapshot.activeBackend, AudioBackend.wasapi);
+      expect(snapshot.activeBackend, AudioBackend.miniaudio);
     });
   });
 
@@ -256,7 +256,6 @@ void main() {
           ..master_length_frames = 96000
           ..master_position_frames = 1200
           ..record_offset_frames = 480
-          ..exclusive_active = 1
           ..active_backend = 1
           ..track_count = 2;
 
@@ -285,7 +284,6 @@ void main() {
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
         expect(snapshot.recordOffsetFrames, 480);
-        expect(snapshot.exclusiveActive, isTrue);
         expect(snapshot.activeBackend, AudioBackend.asio);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.
@@ -311,31 +309,31 @@ void main() {
       }
     });
 
-    test('exclusive_active maps to exclusiveActive (default 0 => false)', () {
+    test('active_backend maps to activeBackend (default 0 => miniaudio)', () {
       final ptr = calloc<le_snapshot>();
       try {
-        // Zero-initialized struct: exclusive_active defaults to 0 => shared.
+        // Zero-initialized struct: active_backend defaults to 0 => miniaudio.
         expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).exclusiveActive,
-          isFalse,
+          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
+          AudioBackend.miniaudio,
         );
-        ptr.ref.exclusive_active = 1;
+        ptr.ref.active_backend = 1;
         expect(
-          EngineSnapshot.fromNative(ptr.ref, const []).exclusiveActive,
-          isTrue,
+          EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
+          AudioBackend.asio,
         );
       } finally {
         calloc.free(ptr);
       }
     });
 
-    test('active_backend maps to activeBackend (default 0 => wasapi)', () {
+    test('active_backend maps to activeBackend (1 => asio)', () {
       final ptr = calloc<le_snapshot>();
       try {
-        // Zero-initialized struct: active_backend defaults to 0 => wasapi.
+        // Zero-initialized struct: active_backend defaults to 0 => miniaudio.
         expect(
           EngineSnapshot.fromNative(ptr.ref, const []).activeBackend,
-          AudioBackend.wasapi,
+          AudioBackend.miniaudio,
         );
         ptr.ref.active_backend = 1;
         expect(
@@ -376,7 +374,7 @@ void main() {
     // short-circuited by `identical`, exercising every field comparison.
     EngineSnapshot build({
       bool devicePresent = true,
-      AudioBackend activeBackend = AudioBackend.wasapi,
+      AudioBackend activeBackend = AudioBackend.miniaudio,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -428,7 +426,7 @@ void main() {
     test('toString surfaces key fields', () {
       const snapshot = EngineSnapshot.initial();
       expect(snapshot.toString(), contains('running: false'));
-      expect(snapshot.toString(), contains('backend: wasapi'));
+      expect(snapshot.toString(), contains('backend: miniaudio'));
     });
   });
 }

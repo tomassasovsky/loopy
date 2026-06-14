@@ -6,6 +6,10 @@ import 'package:meta/meta.dart';
 /// `LE_MAX_LANES`. Referenced (not re-typed) so it can never drift from the C.
 const int kMaxLanes = LE_MAX_LANES;
 
+/// The maximum number of monitorable hardware inputs, mirroring the native
+/// `LE_MAX_INPUTS`. Referenced (not re-typed) so it can never drift from the C.
+const int kMaxInputs = LE_MAX_INPUTS;
+
 /// Phase of the loopback round-trip latency harness.
 ///
 /// Mirrors the native `le_latency_state` enum.
@@ -314,8 +318,7 @@ class EngineSnapshot {
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
-    this.exclusiveActive = false,
-    this.activeBackend = AudioBackend.wasapi,
+    this.activeBackend = AudioBackend.miniaudio,
     this.tracks = const [],
   });
 
@@ -338,8 +341,7 @@ class EngineSnapshot {
       masterLengthFrames = 0,
       masterPositionFrames = 0,
       recordOffsetFrames = 0,
-      exclusiveActive = false,
-      activeBackend = AudioBackend.wasapi,
+      activeBackend = AudioBackend.miniaudio,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -368,7 +370,6 @@ class EngineSnapshot {
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
     recordOffsetFrames: native.record_offset_frames,
-    exclusiveActive: native.exclusive_active != 0,
     activeBackend: AudioBackend.fromNative(native.active_backend),
     tracks: tracks,
   );
@@ -430,13 +431,9 @@ class EngineSnapshot {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
-  /// Whether the device is actually open in OS-exclusive mode. `false` for
-  /// shared mode, including an exclusive request that fell back to shared.
-  final bool exclusiveActive;
-
   /// The device backend actually running (negotiated). Always
-  /// [AudioBackend.wasapi] today; in Part 2 a requested-ASIO open that fell
-  /// back reports [AudioBackend.wasapi] here.
+  /// [AudioBackend.miniaudio] today; in Part 2 a requested-ASIO open that fell
+  /// back reports [AudioBackend.miniaudio] here.
   final AudioBackend activeBackend;
 
   /// Per-track snapshots (length == active track count).
@@ -491,7 +488,6 @@ class EngineSnapshot {
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
           recordOffsetFrames == other.recordOffsetFrames &&
-          exclusiveActive == other.exclusiveActive &&
           activeBackend == other.activeBackend &&
           _listEquals(tracks, other.tracks);
 
@@ -514,7 +510,6 @@ class EngineSnapshot {
     masterLengthFrames,
     masterPositionFrames,
     recordOffsetFrames,
-    exclusiveActive,
     activeBackend,
     ...tracks,
   ]);

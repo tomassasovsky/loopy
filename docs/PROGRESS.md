@@ -188,9 +188,11 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   **auto-rounded up** to whole base loops on stop (buffer zeroed on the control
   thread so a rounded-up tail is silent). Per-track `multiple` in the snapshot;
   `×N` chip in the UI.
-- **Theming + Big Picture mode** (Phase 4 slice): two Material 3 themes via a
-  `LooperTheme` `ThemeExtension` (dark-neutral **Desktop**, neon-on-black **Big
-  Picture**); `UiModeCubit` persists the mode (as a string). Big Picture is a
+- **Theming + Big Picture mode** (Phase 4 slice): Material 3 theming via a
+  `LooperTheme` `ThemeExtension` (neon-on-black **Big Picture**). _(The
+  dark-neutral Desktop theme, the desktop `LooperView`, and the `UiMode`
+  toggle were later removed — Big Picture is the single UI mode.)_ Big Picture
+  is a
   Chewie-Monsta-style row of tall colored track columns (per-track number,
   loop-waveform thumbnail, editable persisted name via `BigPictureCubit`,
   selection highlight, per-track accent / red recording) **plus a second OS
@@ -207,9 +209,9 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   loads it and starts the engine; if none is saved (first run) the **Audio Setup
   page is the start screen** until the engine connects, then it hands off to the
   looper.
-- **Big Picture is the default look** (`UiModeCubit` defaults to `bigPicture`).
+- **Big Picture is the only look** (the `UiMode` toggle was removed).
   A dedicated, minimal **Big Picture settings page** (rename tracks, reach audio
-  setup, toggle the waveform window, switch to Desktop) is reachable from the
+  setup, toggle the waveform window) is reachable from the
   performance view by **right-click** or the **`S` key**, and from the **macOS
   system menu bar** (`PlatformMenuBar`, ⌘,). A persisted `WaveformWindowCubit`
   gates the secondary window. The chromeless big-picture exit button was removed
@@ -226,7 +228,7 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   persisted **bank-enable** toggle (default off = one bank of four); when on, the
   eight tracks show as two banks of four (A / B), one bank visible at a time.
   `BankCubit` (app-wide) holds enabled + active bank; Big Picture shows an A|B
-  switch, desktop `LooperView` an app-bar A/B toggle.
+  switch.
 - **Performance keyboard + Record/Play modes** — handled in the Big Picture
   `Focus` (plain keys consumed so macOS does not beep). `M` switches mode (a
   REC/PLAY indicator shows it); `1`–`8` select a track (auto-revealing its bank);
@@ -304,10 +306,11 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
     was broken. Fixed behind the platform seam (`le_platform_device_id_to_str`):
     Windows converts wchar→UTF-8, macOS/Linux keep the verbatim copy. Regression
     test `test_device_id_to_str`.
-- **Windows per-channel labels — ASIO opt-in scaffolding (PR2).** `LOOPY_ENABLE_ASIO`
-  CMake option (**OFF by default**; default build byte-for-byte unchanged) +
-  `LOOPY_ASIO_SDK_DIR` for a **user-supplied, non-vendored** (MIT/GPLv3) ASIO SDK,
-  `.gitignore`d. New `win_asio_labels.cpp` probe reads `ASIOGetChannelInfo().name`
+- **Windows per-channel labels — ASIO scaffolding (PR2).** `LOOPY_ENABLE_ASIO`
+  CMake option. _(The Steinberg ASIO SDK was later **vendored** under
+  `packages/loopy_engine/third_party/asiosdk` and the repo relicensed to GPLv3,
+  so ASIO now builds **on by default on Windows** — see docs/WINDOWS_ASIO.md.)_
+  `win_asio_labels.cpp` probe reads `ASIOGetChannelInfo().name`
   and reuses the portable, unit-tested `le_excluded_mask_from_names` /
   `le_label_is_loopback`; dispatched from `engine_windows.c` under the flag,
   degrading to `0` on any failure/ambiguity. Docs: `docs/WINDOWS_ASIO.md`.
@@ -350,6 +353,33 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `test_select_backend_defaults_to_miniaudio`, `test_backend_struct_defaults`,
   enumeration asserts `input_channels == 0`, and Dart round-trip/equality for
   the new fields.
+- **ASIO duplex backend (ASIO Part 2 — opt-in, off by default).** The real ASIO
+  capture/playback backend behind Part 1's seam, so a pro interface runs at its
+  **full channel count** (e.g. 18 in / 20 out) that WASAPI never exposes. New
+  **`win_asio_device.cpp`** (`#if LOOPY_ENABLE_ASIO`) exposes
+  `le_asio_backend`: load the driver → negotiate rate/buffer → run its real-time
+  `bufferSwitch` feeding the **unchanged** `le_engine_process`. ASIO's
+  per-channel native-format buffers are bridged to the engine's interleaved f32
+  by the pure, unit-tested `le_deinterleave_in`/`le_interleave_out` (Int16/24/32,
+  Float32 LSB) + `le_asio_pick_buffer` (snap-to-allowed-size); scratch is
+  pre-allocated at open so the RT contract holds. `le_select_backend` returns
+  `&le_asio_backend` under the `#if` (default build still links no ASIO symbol);
+  `le_engine_start` **falls back to WASAPI** once on any ASIO open failure, and
+  `le_snapshot.active_backend` reports the negotiated reality. New
+  `le_enumerate_asio_drivers` FFI symbol (real probe in the `#if`, stub returning
+  0 in `engine.c` otherwise) — **regen ffigen** (`dart run ffigen` + `dart
+  format`; diff is just the one function). **R1 re-entrancy**: enumeration never
+  probes while ASIO is the running backend (native reports the open driver; the
+  cubit refuses to enumerate while `activeBackend == asio`); teardown clears the
+  callback's engine pointer only after `ASIOStop` returns. Dart/UI: a **backend
+  selector** + ASIO **driver picker** in audio setup, `AudioBackend`/`asioDriver`
+  persistence (forward-compat name read), auto-start relaunch-into-ASIO, and a
+  fallback status row. New tests: native bridge round-trips / `le_asio_pick_buffer`
+  granularity / enumerate stub; Dart `enumerateAsioDrivers` duplex tagging,
+  `StoredAudioConfig` round-trip + unknown-name guard, cubit
+  `setBackend`/`setAsioDriver`/hydration/no-reprobe-while-asio, and audio-setup
+  widget selector/driver-swap/fallback. **Hardware spike still required before
+  merge** (real Focusrite: full count, audio integrity, fallback, persistence).
 - **Sessions + WAV export** (Phase 4 slice): `session_repository` saves/restores
   `.loopy` bundles (a JSON manifest + 32-bit-float stem WAVs + a mixdown) and
   exports mixdown / per-track stems. Native `le_engine_export_track` /
