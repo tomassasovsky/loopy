@@ -547,6 +547,25 @@ static void test_latency_compensation(void) {
   le_engine_destroy(e);
 }
 
+/* Feeds `count` frames of constant `value` through the engine in 64-frame
+ * chunks. When `cap` is non-NULL the per-frame output is appended into it,
+ * advancing *capn; pass cap=NULL/capn=NULL to discard. */
+static void feed_const(le_engine* e, float value, int count, float* cap,
+                       int* capn) {
+  float in[64];
+  float out[64];
+  int left = count;
+  while (left > 0) {
+    const int n = left < 64 ? left : 64;
+    for (int i = 0; i < n; ++i) in[i] = value;
+    le_engine_process(e, out, in, (uint32_t)n);
+    if (cap != NULL) {
+      for (int i = 0; i < n; ++i) cap[(*capn)++] = out[i];
+    }
+    left -= n;
+  }
+}
+
 /* Overdub punch-in/punch-out must not bake a step discontinuity (a click) into
  * the loop buffer. A real-length loop (long enough to host the ~10 ms declick
  * fade) is overdubbed with a constant level over half a pass and then punched
@@ -555,46 +574,35 @@ static void test_latency_compensation(void) {
  * loop seam — while still reaching the full overdub level in the steady middle. */
 static void test_overdub_punch_no_click(void) {
   printf("test_overdub_punch_no_click\n");
-  le_engine* e = make_configured_engine(); /* 48k: declick fade == 480 frames */
-  const int N = 2000;                      /* > 2*480, so the fade engages */
-  float in[64];
-  float out[64];
+  /* A real-length loop: cap must exceed N (make_configured_engine caps at 1000,
+   * which would auto-finalize the master mid-feed). 48k: declick fade == 480. */
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 2000; /* > 2*480, so the fade engages */
 
-  /* Feed `count` frames of constant `value`, optionally capturing the output
-   * into `cap` at `*capn` (NULL to discard). Chunks to the 64-frame scratch. */
-#define FEED(value, count, cap, capn)                                   \
-  do {                                                                  \
-    int _left = (count);                                                \
-    while (_left > 0) {                                                 \
-      int _n = _left < 64 ? _left : 64;                                 \
-      for (int _i = 0; _i < _n; ++_i) in[_i] = (value);                 \
-      le_engine_process(e, out, in, (uint32_t)_n);                      \
-      if ((cap) != NULL) {                                             \
-        for (int _i = 0; _i < _n; ++_i) (cap)[(*(capn))++] = out[_i];   \
-      }                                                                 \
-      _left -= _n;                                                      \
-    }                                                                   \
-  } while (0)
-
-  /* Silent base loop of N frames. */
+  /* Silent base loop of N frames. The defining record finalizes only on the
+   * second press (cap is well above N); at this length it defers ~10 ms to
+   * capture the seam-crossfade overlap, so feed a little past the press to let
+   * the finalize complete. Master is exactly N frames (length preserved). */
   le_engine_record(e, 0);
-  FEED(0.0f, N, NULL, NULL);
-  le_engine_record(e, 0); /* finalize -> PLAYING, master == N, silent */
+  feed_const(e, 0.0f, N, NULL, NULL);
+  le_engine_record(e, 0);
+  feed_const(e, 0.0f, 512, NULL, NULL); /* > seam overlap (480 @ 48k) */
   drain(e);
 
   /* Punch in, overdub a constant 0.8 over half the loop, punch out — but keep
    * feeding 0.8 (the player is still strumming) so the fade-out tail has live
    * input to taper, then ride out the rest of the loop. */
   le_engine_record(e, 0); /* -> OVERDUBBING */
-  FEED(0.8f, N / 2, NULL, NULL);
+  feed_const(e, 0.8f, N / 2, NULL, NULL);
   le_engine_record(e, 0); /* punch out -> PLAYING (fade-out tail begins) */
-  FEED(0.8f, N / 2, NULL, NULL);
+  feed_const(e, 0.8f, N / 2, NULL, NULL);
   drain(e);
 
   /* Read the recorded loop back (silence in; od_gain settled to 0 -> pure read). */
   float loop[2000];
   int n = 0;
-  FEED(0.0f, N, loop, &n);
+  feed_const(e, 0.0f, N, loop, &n);
   CHECK(n == N);
 
   /* No click: the largest single-sample jump (seam included) stays tiny — a
@@ -615,7 +623,135 @@ static void test_overdub_punch_no_click(void) {
   }
   CHECK(fabsf(peak - 0.8f) < 0.01f);
 
-#undef FEED
+  le_engine_destroy(e);
+}
+
+/* The master limiter caps the output at its ceiling when the mix would exceed
+ * it, is bit-transparent below the ceiling, and is fully bypassed when off. */
+static void test_master_limiter_caps_and_transparent(void) {
+  printf("test_master_limiter_caps_and_transparent\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  /* A loop that plays back at 0.8. */
+  le_engine_record(e, 0);
+  process_const(e, 0.8f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  /* Transparent: ceiling 0.99 > 0.8, so playback is unchanged. */
+  le_engine_set_limiter(e, 1, 0.99f);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 0.8f) < 1e-6f);
+
+  /* Limiting: ceiling 0.5 < 0.8, so every sample is pinned to 0.5 (instant
+   * attack — even the first frame, 0.8 * (0.5/0.8) == 0.5). */
+  le_engine_set_limiter(e, 1, 0.5f);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 0.5f) < 1e-4f);
+
+  /* Off: full 0.8 passes again. */
+  le_engine_set_limiter(e, 0, 0.5f);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 0.8f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Overdub feedback < 1.0 scales the existing layer before summing the new input,
+ * so a layer that would reach 2.0 under classic additive overdub lands lower. */
+static void test_overdub_feedback_decays_layers(void) {
+  printf("test_overdub_feedback_decays_layers\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  le_engine_set_overdub_feedback(e, 0.5f);
+  drain(e);
+
+  /* Base loop of 1.0. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  /* Overdub +1.0: the write head becomes 1.0 * 0.5 + 1.0 == 1.5, not 2.0. */
+  le_engine_record(e, 0); /* -> OVERDUBBING */
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* -> PLAYING */
+  drain(e);
+
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Feeds `count` frames of a rising ramp (frame k -> (start + k) * slope) through
+ * the engine in 64-frame chunks, optionally capturing output (NULL to discard).
+ * slope 0 feeds silence — handy for reading the loop back. */
+static void feed_ramp(le_engine* e, int start, float slope, int count,
+                      float* cap, int* capn) {
+  float in[64];
+  float out[64];
+  int done = 0;
+  while (done < count) {
+    const int n = (count - done) < 64 ? (count - done) : 64;
+    for (int i = 0; i < n; ++i) in[i] = (float)(start + done + i) * slope;
+    le_engine_process(e, out, in, (uint32_t)n);
+    if (cap != NULL) {
+      for (int i = 0; i < n; ++i) cap[(*capn)++] = out[i];
+    }
+    done += n;
+  }
+}
+
+/* A freshly recorded master loop must wrap without a click. Recording a rising
+ * ramp leaves a hard seam (buf[N-1] ~ 0.8 -> buf[0] = 0); the deferred seam
+ * crossfade folds the captured continuation into the head so the wrap is smooth,
+ * while the loop length is preserved exactly (tempo/quantize unchanged). */
+static void test_master_seam_crossfade_no_click(void) {
+  printf("test_master_seam_crossfade_no_click\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 48000);
+  const int N = 2000;              /* > 2*480, so the crossfade engages */
+  const float s = 0.8f / (float)N; /* ramp slope: buf[i] == i*s, a hard seam */
+
+  le_engine_record(e, 0);
+  feed_ramp(e, 0, s, N, NULL, NULL); /* record [0, N) as a rising ramp */
+  le_engine_record(e, 0);            /* finalize: defers to capture the overlap */
+  feed_ramp(e, N, s, 600, NULL, NULL); /* continue the ramp past the loop point */
+  drain(e);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  CHECK(snap.master_length_frames == N); /* length preserved exactly */
+
+  float loop[2000];
+  int n = 0;
+  feed_ramp(e, 0, 0.0f, N, loop, &n); /* read the loop back (silence in) */
+  CHECK(n == N);
+
+  /* Every step, the seam (loop[0] vs loop[N-1]) included, stays tiny — the raw
+   * ramp seam would jump ~0.8. Max-delta over the captured loop is rotation-
+   * invariant, so it holds regardless of the readback's start phase. */
+  float max_delta = fabsf(loop[0] - loop[N - 1]);
+  for (int i = 1; i < N; ++i) {
+    const float d = fabsf(loop[i] - loop[i - 1]);
+    if (d > max_delta) max_delta = d;
+  }
+  printf("  seam: max sample delta=%.4f\n", max_delta);
+  CHECK(max_delta < 0.05f);
+
+  /* The recorded ramp survives (the loop was not silenced by the crossfade). */
+  float peak = 0.0f;
+  for (int i = 0; i < N; ++i) {
+    if (fabsf(loop[i]) > peak) peak = fabsf(loop[i]);
+  }
+  CHECK(peak > 0.5f);
+
   le_engine_destroy(e);
 }
 
@@ -4483,6 +4619,9 @@ int main(void) {
   test_looper_multitrack();
   test_latency_compensation();
   test_overdub_punch_no_click();
+  test_master_limiter_caps_and_transparent();
+  test_overdub_feedback_decays_layers();
+  test_master_seam_crossfade_no_click();
   test_record_is_exclusive();
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();

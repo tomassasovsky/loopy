@@ -917,7 +917,10 @@ class LoopyEngineBindings {
 
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback. A stop press
-  /// always ends in playback/stopped.
+  /// always ends in playback/stopped. Independent of this setting, a track recorded
+  /// over an existing master that auto-finishes (reaches its loop length with no
+  /// press) always continues into overdub, so layering stays live rather than
+  /// auto-stopping to playback the moment the loop completes.
   int le_engine_set_rec_dub(
     ffi.Pointer<le_engine> engine,
     int enabled,
@@ -958,6 +961,58 @@ class LoopyEngineBindings {
       >('le_engine_set_master_gain');
   late final _le_engine_set_master_gain = _le_engine_set_master_gainPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Enables/disables the master peak limiter and sets its ceiling (clamped to
+  /// (0,1], default 0.99). The limiter is applied post master-gain so the summed
+  /// output of all tracks, overdub layers, and monitoring cannot exceed the ceiling
+  /// and hard-clip in the driver; below the ceiling it is bit-transparent. OFF by
+  /// default and after every fresh configure (the host app turns it on).
+  int le_engine_set_limiter(
+    ffi.Pointer<le_engine> engine,
+    int enabled,
+    double ceiling,
+  ) {
+    return _le_engine_set_limiter(
+      engine,
+      enabled,
+      ceiling,
+    );
+  }
+
+  late final _le_engine_set_limiterPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_limiter');
+  late final _le_engine_set_limiter = _le_engine_set_limiterPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
+
+  /// Sets the overdub feedback coefficient (clamped to [0,1], default 1.0). While a
+  /// track is overdubbing, its existing content at the write head is scaled by this
+  /// before the new layer is summed in: 1.0 is the classic additive overdub (older
+  /// layers persist forever and can build toward clipping); below 1.0 decays older
+  /// layers each pass so the loop self-limits. Applies only during overdub passes,
+  /// never plain playback.
+  int le_engine_set_overdub_feedback(
+    ffi.Pointer<le_engine> engine,
+    double feedback,
+  ) {
+    return _le_engine_set_overdub_feedback(
+      engine,
+      feedback,
+    );
+  }
+
+  late final _le_engine_set_overdub_feedbackPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)
+        >
+      >('le_engine_set_overdub_feedback');
+  late final _le_engine_set_overdub_feedback =
+      _le_engine_set_overdub_feedbackPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
 
   /// Enables sound-activated recording: a record press on an empty track waits and
   /// begins capturing the first frame the input level crosses the threshold. A

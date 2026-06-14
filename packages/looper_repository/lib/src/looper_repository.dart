@@ -348,7 +348,11 @@ class LooperRepository {
         ..setRecDub(enabled: _recDub)
         ..setAutoRecord(enabled: _autoRecord)
         ..setDefaultMultiple(multiple: _defaultMultiple)
-        ..setMasterGain(_masterGain);
+        ..setMasterGain(_masterGain)
+        // Master peak limiter on by default: a fresh start resets it to off, so
+        // re-assert it here (like the rest) to guard the summed output against
+        // driver clipping. No UI yet — this is a safety default.
+        ..setLimiter(enabled: true);
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
