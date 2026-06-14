@@ -53,6 +53,17 @@ le_loopback_kind le_classify_capture_device(const char* name);
  * loopback. */
 int le_label_is_loopback(const char* label);
 
+/* YIN pitch detector for the PSOLA octaver (mode >= 0.5). Runs the cumulative-
+ * mean-normalized difference function over `n` contiguous samples of `x` at `sr`
+ * Hz, searching the vocal band (~60-1000 Hz), and returns a sub-sample period
+ * estimate (parabolic-interpolated, in samples) in *out_period and a voicing
+ * confidence in [0,1] (1 = perfectly periodic) in *out_voiced. Returns 1 when the
+ * frame reads as confidently voiced, else 0 (silence or aperiodic). Pure (no
+ * engine state) and unit-tested directly so the octave-error guard is verifiable
+ * independently of the lossy grain synthesis. Defined in engine.c. */
+int le_psola_detect(const float* x, int n, int sr, float* out_period,
+                    float* out_voiced);
+
 /* ---- ASIO bridge math (pure, platform-agnostic; defined in engine.c) ---- *
  *
  * ASIO hands the device callback non-interleaved, per-channel blocks in the

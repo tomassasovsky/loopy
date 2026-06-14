@@ -338,6 +338,13 @@ static void handle_clear(le_engine* e, int32_t ch) {
 #define LE_PV_BINS (LE_PV_N / 2 + 1)
 #define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
 
+/* --- PSOLA octaver (mode >= 0.5) -------------------------------------------- */
+#define LE_PSOLA_AHOP 256    /* re-run pitch detection every this many samples */
+#define LE_PSOLA_WIN 1600    /* YIN analysis window (integration + max lag) */
+#define LE_PSOLA_MAXLAG 800  /* longest lag searched (60 Hz at 48 kHz) */
+#define LE_PSOLA_THRESH 0.15f /* YIN absolute threshold for the first dip */
+#define LE_PSOLA_THMAX 300   /* grain half-width cap: 2*THMAX < LE_PV_N (fits OLA) */
+
 /* Read-only Hann window shared by every octaver instance (analysis + synthesis
  * window). Built once under a guarded init; never per-instance state. */
 static float le_hann[LE_PV_N];
@@ -566,18 +573,194 @@ static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int ca
   return y;
 }
 
-/* PSOLA pitch shift — part 4. Stubbed to the delay-matched dry tap so the `mode`
- * toggle is wired but inert: switching to PSOLA in this PR yields a clean,
- * latency-matched passthrough (not silence) until part 4 implements the real
- * shifter. The latency matches le_pv_tick (LE_PV_N) so the mix stays aligned. */
+/* YIN pitch detector (see engine_internal.h). Plain autocorrelation peak-picking
+ * is prone to octave errors — a sub/multiple of the true period correlates nearly
+ * as well — and a mis-spaced grain wrecks both pitch and formants, so the modest
+ * extra cost of YIN's cumulative-mean normalization is worth it here. */
+int le_psola_detect(const float* x, int n, int sr, float* out_period,
+                    float* out_voiced) {
+  *out_period = 0.0f;
+  *out_voiced = 0.0f;
+  int minlag = sr / 1000; /* ~1000 Hz ceiling */
+  if (minlag < 2) minlag = 2;
+  int maxlag = sr / 60; /* ~60 Hz floor */
+  if (maxlag > LE_PSOLA_MAXLAG) maxlag = LE_PSOLA_MAXLAG;
+  if (maxlag > n / 2) maxlag = n / 2;
+  if (maxlag <= minlag) return 0;
+  const int integ = n - maxlag; /* difference-function integration length */
+
+  /* Silence floor: never run the detector on the noise floor (avoids reporting a
+   * spurious "pitch" for hiss); a quiet frame reads as unvoiced. */
+  double energy = 0.0;
+  for (int i = 0; i < integ; ++i) energy += (double)x[i] * (double)x[i];
+  if (energy < (double)integ * 1e-7) return 0;
+
+  /* Difference function d(tau), then its cumulative-mean normalization d'(tau). */
+  float dp[LE_PSOLA_MAXLAG + 1];
+  dp[0] = 1.0f;
+  double cum = 0.0;
+  for (int tau = 1; tau <= maxlag; ++tau) {
+    double sum = 0.0;
+    for (int i = 0; i < integ; ++i) {
+      const float diff = x[i] - x[i + tau];
+      sum += (double)diff * (double)diff;
+    }
+    cum += sum;
+    dp[tau] = cum > 0.0 ? (float)(sum * (double)tau / cum) : 1.0f;
+  }
+
+  /* First dip below the absolute threshold, walked down to its local minimum;
+   * fall back to the global minimum (low confidence) when nothing crosses. */
+  int tau = -1;
+  for (int t = minlag; t <= maxlag; ++t) {
+    if (dp[t] < LE_PSOLA_THRESH) {
+      while (t + 1 <= maxlag && dp[t + 1] < dp[t]) ++t;
+      tau = t;
+      break;
+    }
+  }
+  if (tau < 0) {
+    float best = dp[minlag];
+    tau = minlag;
+    for (int t = minlag + 1; t <= maxlag; ++t) {
+      if (dp[t] < best) {
+        best = dp[t];
+        tau = t;
+      }
+    }
+  }
+
+  /* Parabolic interpolation around the chosen lag for a sub-sample period. */
+  float period = (float)tau;
+  if (tau > minlag && tau < maxlag) {
+    const float s0 = dp[tau - 1];
+    const float s1 = dp[tau];
+    const float s2 = dp[tau + 1];
+    const float denom = s0 + s2 - 2.0f * s1;
+    if (fabsf(denom) > 1e-9f) period = (float)tau + 0.5f * (s0 - s2) / denom;
+  }
+
+  float conf = 1.0f - dp[tau];
+  if (conf < 0.0f) conf = 0.0f;
+  if (conf > 1.0f) conf = 1.0f;
+  *out_period = period;
+  *out_voiced = conf;
+  return conf > 0.5f ? 1 : 0;
+}
+
+/* Added latency (frames) of the active octaver. Single source of truth, read in
+ * two places: the dry-delay match in fx_octaver (D2), and — per the part-5 plan —
+ * the control thread, which folds it into the published snapshot so the UI can
+ * warn about monitoring lag. PSOLA reuses the LE_PV_N OLA accumulator (the no-
+ * extra-allocation budget part 3 fixed), and by construction its grain centers sit
+ * LE_PV_N behind the head, so its latency equals the phase vocoder's; both modes
+ * therefore report LE_PV_N and the dry tap does not jump on a switch. The argument
+ * is the per-mode seam a future dedicated PSOLA buffer (lower latency) would use. */
+static int le_octaver_latency(const le_octaver_state* o) {
+  (void)o;
+  return LE_PV_N;
+}
+
+/* TD-PSOLA pitch shift (mode >= 0.5). Grains are repositioned but never resampled,
+ * so the grain's spectral shape — the formants — stays fixed while the epoch
+ * repetition rate changes the pitch. Lowest-latency, most natural on solo voice;
+ * polyphonic/transient input reads as unvoiced (low YIN confidence) and falls back
+ * to the delay-matched dry, and silence collapses to dry (~0). A one-pole-smoothed
+ * confidence drives a soft voiced<->unvoiced crossfade (no dry<->wet chatter). The
+ * synthesis OLA reuses o->out as a circular accumulator (PSOLA's circular access
+ * and the phase vocoder's linear+memmove access never coexist — the mode switch
+ * resets the shared buffer at the gain-dip bottom; no new allocation either way).
+ *
+ * Analysis marks are uniform (period-spaced), not true glottal-closure instants —
+ * the plan's deliberate "it's an effect, not speech-synthesis" choice. The cost is
+ * that a pulse-less, near-pure tone (e.g. a flute/whistle/sine) can self-cancel on
+ * a large up-shift, where same-period grains land antiphase; harmonic-rich voice
+ * (the documented sweet spot) has localized epochs and reinforces. */
 static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
                            int cap, float ratio) {
-  (void)o;
-  (void)ratio;
-  int idx = head - LE_PV_N + 1;
-  idx %= cap;
-  if (idx < 0) idx += cap;
-  return fifo[idx];
+  if (o->out == NULL) return 0.0f;
+  const int N = LE_PV_N;
+  const int sr = cap; /* the fx ring is 1 s long, so cap == sample rate */
+
+  /* 1. Emit one sample from the circular OLA accumulator, clearing it behind. */
+  const int rp = o->out_pos;
+  const float y = o->out[rp];
+  o->out[rp] = 0.0f;
+  o->out_pos = (rp + 1 >= N) ? 0 : rp + 1;
+
+  /* 2. Periodic pitch analysis: YIN over a contiguous copy of the FIFO tail. */
+  if (--o->hop_count <= 0) {
+    o->hop_count = LE_PSOLA_AHOP;
+    float win[LE_PSOLA_WIN];
+    for (int i = 0; i < LE_PSOLA_WIN; ++i) {
+      int idx = head - (LE_PSOLA_WIN - 1) + i;
+      idx %= cap;
+      if (idx < 0) idx += cap;
+      win[i] = fifo[idx];
+    }
+    float p = 0.0f;
+    float vc = 0.0f;
+    le_psola_detect(win, LE_PSOLA_WIN, sr, &p, &vc);
+    o->voiced += 0.35f * (vc - o->voiced); /* smooth -> chatter-free soft gate */
+    if (p > 0.0f) {                        /* hold last period through gaps */
+      o->period = o->period <= 0.0f ? p : o->period + 0.5f * (p - o->period);
+    }
+  }
+
+  /* 3. Synthesis: marks recede from the head one sample per tick; at each
+   *    synthesis mark deposit a Hann grain whose source snaps to the nearest
+   *    analysis mark, so the grain spacing (pitch) changes by `ratio` while the
+   *    grain shape (formant envelope) does not. */
+  o->in_epoch += 1;
+  if (--o->out_epoch <= 0) {
+    float pf = o->period; /* sub-sample period: sets the grain spacing (pitch) */
+    if (pf < 2.0f) pf = 2.0f;
+    if (pf > (float)LE_PSOLA_MAXLAG) pf = (float)LE_PSOLA_MAXLAG;
+    float ps = pf / ratio; /* synthesis spacing -> output pitch = ratio * f0 */
+    if (ps < 1.0f) ps = 1.0f;
+    /* Integer countdown to the next deposit; sub-sample spacing is fine to round
+     * here — the pitch error is < 1 sample over a period and is inaudible. */
+    o->out_epoch += (int)(ps + 0.5f);
+
+    const int pi = (int)(pf + 0.5f); /* integer period: the analysis-mark grid step */
+    int th = pi;
+    if (th > LE_PSOLA_THMAX) th = LE_PSOLA_THMAX;
+    const int c = N / 2;  /* grain center offset ahead of the read pointer */
+    const int dn = N - c; /* nominal source distance behind the head */
+    /* Snap the analysis mark to the nearest of the period-spaced grid near dn. */
+    while (o->in_epoch - dn > pi / 2) o->in_epoch -= pi;
+    while (dn - o->in_epoch > pi / 2) o->in_epoch += pi;
+    if (o->in_epoch < th) o->in_epoch = th; /* keep the grain read causal */
+    if (o->in_epoch > cap - 1 - th) o->in_epoch = cap - 1 - th;
+
+    /* COLA gain: Hann area (= th) over the hop (= ps) keeps the overlap-add near
+     * unity across the shift; clamp so a clamped grain cannot blow up. */
+    float gain = ps / (float)th;
+    if (gain > 2.0f) gain = 2.0f;
+    for (int j = -th; j <= th; ++j) {
+      const float wf =
+          0.5f - 0.5f * cosf(LE_PI * (float)(j + th) / (float)th); /* Hann */
+      int src = head - o->in_epoch + j;
+      src %= cap;
+      if (src < 0) src += cap;
+      int dst = rp + c + j;
+      dst %= N;
+      if (dst < 0) dst += N;
+      o->out[dst] += gain * wf * fifo[src];
+    }
+  }
+
+  /* 4. Soft voiced/unvoiced gate (D4): crossfade the grain voice against the
+   *    delay-matched dry by the smoothed confidence. Silence -> voiced ~0 and the
+   *    dry tap is ~0, so the output collapses to silence (no grain buzz). */
+  int didx = head - le_octaver_latency(o) + 1;
+  didx %= cap;
+  if (didx < 0) didx += cap;
+  const float dry = fifo[didx];
+  float wv = (o->voiced - 0.3f) / 0.3f; /* soft gate around conf ~0.3..0.6 */
+  if (wv < 0.0f) wv = 0.0f;
+  if (wv > 1.0f) wv = 1.0f;
+  return wv * y + (1.0f - wv) * dry;
 }
 
 /* Formant-preserving octaver. Writes the newest sample to the slot's FIFO ring,
@@ -633,9 +816,10 @@ static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
   lp += a * (wet - lp);
   fx->fx_lp[slot][chan] = lp;
 
-  /* Delay-matched dry (D2): the wet latency is the constant LE_PV_N, so read the
-   * dry tap LE_PV_N samples behind the newest, keeping the mix comb-free. */
-  int dry_idx = head - LE_PV_N + 1;
+  /* Delay-matched dry (D2): read the dry tap behind the newest by the active
+   * mode's added latency (le_octaver_latency) so the mix stays comb-free. Both
+   * modes report LE_PV_N today, so the dry tap does not jump on a mode switch. */
+  int dry_idx = head - le_octaver_latency(o) + 1;
   dry_idx %= cap;
   if (dry_idx < 0) dry_idx += cap;
   const float dry = buf[dry_idx];
