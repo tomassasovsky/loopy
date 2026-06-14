@@ -220,6 +220,9 @@ class FakeAudioEngine implements AudioEngine {
   bool? lastRecDub;
   bool? lastAutoRecord;
 
+  /// The last value passed to [setMasterGain].
+  double? lastMasterGain;
+
   @override
   EngineResult setTrackMultiple({required int channel, required int multiple}) {
     trackMultiple[channel] = multiple;
@@ -235,6 +238,12 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult setRecDub({required bool enabled}) {
     lastRecDub = enabled;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setMasterGain(double gain) {
+    lastMasterGain = gain;
     return EngineResult.ok;
   }
 

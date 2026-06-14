@@ -190,6 +190,8 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setRecDub({required bool enabled}) => EngineResult.ok;
   @override
+  EngineResult setMasterGain(double gain) => EngineResult.ok;
+  @override
   EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
   @override
   EngineResult setLaneFx({

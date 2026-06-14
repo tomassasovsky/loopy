@@ -755,6 +755,13 @@ static void apply_command(le_engine* e, const le_command* cmd) {
                   cmd->arg_f != 0.0f ? 1 : 0);
       }
       break;
+    case LE_CMD_SET_MASTER_GAIN: {
+      float g = cmd->arg_f;
+      if (g < 0.0f) g = 0.0f;
+      if (g > 1.0f) g = 1.0f;
+      store_f32(&e->a_master_gain_bits, g);
+      break;
+    }
     case LE_CMD_SET_RECORD_OFFSET: {
       const int32_t frames = cmd->arg_i > 0 ? cmd->arg_i : 0;
       store_i32(&e->a_record_offset, frames);
@@ -1047,6 +1054,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd);
+
+  /* Global master output gain, read once per block after draining the ring so a
+   * mid-block change applies from the next block (no per-frame atomic load). */
+  const float master_gain = load_f32(&e->a_master_gain_bits);
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   /* Loopback-labelled input channels are never recorded, monitored, or
@@ -1369,6 +1380,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
 
+    /* Apply the global master gain post-mix, before metering and the loop-viz
+     * tap, so meters and the waveform reflect what the listener actually hears.
+     * The latency-calibration pulse path above bypasses this (it `continue`s to
+     * the next frame), keeping the measurement tone at its fixed amplitude. */
+    if (master_gain != 1.0f) {
+      for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= master_gain;
+    }
+
     /* Output metering for this frame. */
     for (int c = 0; c < ch_out; ++c) {
       const float sample = out[f * ch_out + c];
@@ -1645,6 +1664,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   }
 
   store_i32(&engine->a_record_offset, 0); /* re-measured per session */
+  store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
 
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
@@ -2103,6 +2123,7 @@ le_engine* le_engine_create(void) {
   if (engine == NULL) return NULL;
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   return engine;
 }
 
@@ -2285,6 +2306,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
+  out->master_gain = load_f32(&engine->a_master_gain_bits);
   out->active_backend = load_i32(&engine->a_active_backend);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
@@ -2716,6 +2738,13 @@ int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
   engine->rec_dub = enabled ? 1 : 0;
   return LE_OK;
+}
+
+int32_t le_engine_set_master_gain(le_engine* engine, float gain) {
+  /* Posted through the ring (drained on the audio thread, which clamps to 0..1
+   * and publishes to a_master_gain_bits) so it orders with the rest of the
+   * command stream, exactly like le_engine_set_track_volume. */
+  return le_push(engine, LE_CMD_SET_MASTER_GAIN, 0, gain);
 }
 
 int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {

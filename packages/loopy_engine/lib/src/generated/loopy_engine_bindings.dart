@@ -124,8 +124,8 @@ class LoopyEngineBindings {
   /// build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
   /// loads a single process-global driver, so this MUST NOT be called while an ASIO
   /// device is open (it would tear down the live stream) — the Dart layer only
-  /// enumerates while stopped or running on the miniaudio backend. Returns
-  /// LE_OK, or LE_ERR_INVALID for a null argument / non-positive `max`.
+  /// enumerates while stopped or running on the miniaudio backend. Returns LE_OK,
+  /// or LE_ERR_INVALID for a null argument / non-positive `max`.
   int le_enumerate_asio_drivers(
     ffi.Pointer<le_device_info> out,
     int max,
@@ -937,6 +937,28 @@ class LoopyEngineBindings {
   late final _le_engine_set_rec_dub = _le_engine_set_rec_dubPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Sets the global master output gain (clamped to 0..1), applied post-mix to the
+  /// final output after all tracks/lanes/monitors have summed in. Unity (1.0) by
+  /// default and after every fresh configure; published in le_snapshot.master_gain.
+  int le_engine_set_master_gain(
+    ffi.Pointer<le_engine> engine,
+    double gain,
+  ) {
+    return _le_engine_set_master_gain(
+      engine,
+      gain,
+    );
+  }
+
+  late final _le_engine_set_master_gainPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)
+        >
+      >('le_engine_set_master_gain');
+  late final _le_engine_set_master_gain = _le_engine_set_master_gainPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
   /// Enables sound-activated recording: a record press on an empty track waits and
   /// begins capturing the first frame the input level crosses the threshold. A
   /// second press before then cancels. Disabling cancels tracks still waiting.
@@ -1090,8 +1112,10 @@ class LoopyEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// Sets monitor input [input]'s active lane count to [count] (clamped
-  /// 1..LE_MAX_LANES). New lanes default to full stereo output, unity volume,
-  /// unmuted, and an empty (clean) effect chain.
+  /// 1..LE_MAX_LANES) on the calling (control) thread, mirroring
+  /// le_engine_set_lane_count. New lanes default to full stereo output, unity
+  /// volume, unmuted, and an empty (clean) effect chain. Shrinking stops the
+  /// dropped lanes from sounding.
   int le_engine_set_monitor_lane_count(
     ffi.Pointer<le_engine> engine,
     int input,
@@ -1207,10 +1231,10 @@ class LoopyEngineBindings {
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input]'s lane
-  /// [lane] to [type]. Changing the type resets that entry's DSP state;
-  /// LE_FX_DELAY lazily allocates the entry's delay line and seeds the type's
-  /// default parameters. Use le_engine_set_monitor_lane_fx_count to make entries
-  /// active.
+  /// [lane] to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
+  /// lazily allocates the entry's delay line (on this calling thread) and seeds the
+  /// type's default parameters. Use le_engine_set_monitor_lane_fx_count to make
+  /// entries active.
   int le_engine_set_monitor_lane_fx(
     ffi.Pointer<le_engine> engine,
     int input,
@@ -1606,26 +1630,34 @@ enum le_command_code {
   /// arg_i = input, arg_f = enabled (0/1).
   LE_CMD_SET_MONITOR_INPUT(30),
 
-  /// set a monitor lane's chain entry type
-  /// (and reset its DSP state). arg_i =
-  /// (input<<16)|(lane<<8)|index, arg_f = le_fx_type.
+  /// set a monitor lane's chain entry type (and
+  /// reset its DSP state). arg_i =
+  /// (input<<16)|(lane<<8)|index,
+  /// arg_f = le_fx_type.
   LE_CMD_SET_MONITOR_LANE_FX(31),
 
-  /// set a monitor lane's active chain length.
-  /// arg_i = (input<<16)|(lane<<8)|count.
+  /// set a monitor lane's active chain
+  /// length. arg_i =
+  /// (input<<16)|(lane<<8)|count.
   LE_CMD_SET_MONITOR_LANE_FX_COUNT(32),
 
   /// monitor lane playback destinations.
-  /// arg_f = input*LE_MAX_LANES+lane, arg_i = output bitmask.
+  /// arg_f = input*LE_MAX_LANES+lane,
+  /// arg_i = output bitmask.
   LE_CMD_SET_MONITOR_LANE_OUTPUT(33),
 
   /// monitor lane gain.
-  /// arg_i = input*LE_MAX_LANES+lane, arg_f = 0..1.
+  /// arg_i = input*LE_MAX_LANES+lane,
+  /// arg_f = 0..1.
   LE_CMD_SET_MONITOR_LANE_VOLUME(34),
 
   /// monitor lane mute.
-  /// arg_i = input*LE_MAX_LANES+lane, arg_f = 0/1.
-  LE_CMD_SET_MONITOR_LANE_MUTE(35);
+  /// arg_i = input*LE_MAX_LANES+lane,
+  /// arg_f = 0/1.
+  LE_CMD_SET_MONITOR_LANE_MUTE(35),
+
+  /// global post-mix output gain. arg_f = 0..1.
+  LE_CMD_SET_MASTER_GAIN(36);
 
   final int value;
   const le_command_code(this.value);
@@ -1658,6 +1690,7 @@ enum le_command_code {
     33 => LE_CMD_SET_MONITOR_LANE_OUTPUT,
     34 => LE_CMD_SET_MONITOR_LANE_VOLUME,
     35 => LE_CMD_SET_MONITOR_LANE_MUTE,
+    36 => LE_CMD_SET_MASTER_GAIN,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -1741,12 +1774,12 @@ final class le_config extends ffi.Struct {
   external ffi.Array<ffi.Char> capture_device_id;
 
   /// le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-  /// miniaudio path. On Windows the engine forces ASIO.
+  /// miniaudio path. Accepted and ignored until the ASIO backend lands.
   @ffi.Int32()
   external int backend;
 
-  /// Selected ASIO driver name (used by the ASIO backend). Empty and
-  /// ignored on the miniaudio path.
+  /// Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
+  /// ignored on the default path.
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> asio_driver;
 }
@@ -1922,6 +1955,12 @@ final class le_snapshot extends ffi.Struct {
   /// player heard. Auto-set by a latency measurement; manually overridable.
   @ffi.Int32()
   external int record_offset_frames;
+
+  /// Global master output gain (0..1) applied post-mix to the final output, after
+  /// every track/lane/monitor lane has summed in. 1.0 (unity) by default and on
+  /// every fresh configure. Set via le_engine_set_master_gain.
+  @ffi.Float()
+  external double master_gain;
 
   /// le_audio_backend actually running (negotiated). On Windows this is always
   /// ASIO; on macOS/Linux it is the miniaudio backend.

@@ -318,6 +318,7 @@ class EngineSnapshot {
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
+    this.masterGain = 1,
     this.activeBackend = AudioBackend.miniaudio,
     this.tracks = const [],
   });
@@ -341,6 +342,7 @@ class EngineSnapshot {
       masterLengthFrames = 0,
       masterPositionFrames = 0,
       recordOffsetFrames = 0,
+      masterGain = 1,
       activeBackend = AudioBackend.miniaudio,
       tracks = const [];
 
@@ -370,6 +372,7 @@ class EngineSnapshot {
     masterLengthFrames: native.master_length_frames,
     masterPositionFrames: native.master_position_frames,
     recordOffsetFrames: native.record_offset_frames,
+    masterGain: native.master_gain,
     activeBackend: AudioBackend.fromNative(native.active_backend),
     tracks: tracks,
   );
@@ -431,6 +434,10 @@ class EngineSnapshot {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
+  /// Global master output gain in `0..1`, applied post-mix to the final output.
+  /// Unity (`1.0`) by default and after every fresh start.
+  final double masterGain;
+
   /// The device backend actually running (negotiated). Always
   /// [AudioBackend.miniaudio] today; in Part 2 a requested-ASIO open that fell
   /// back reports [AudioBackend.miniaudio] here.
@@ -488,6 +495,7 @@ class EngineSnapshot {
           masterLengthFrames == other.masterLengthFrames &&
           masterPositionFrames == other.masterPositionFrames &&
           recordOffsetFrames == other.recordOffsetFrames &&
+          masterGain == other.masterGain &&
           activeBackend == other.activeBackend &&
           _listEquals(tracks, other.tracks);
 
@@ -510,6 +518,7 @@ class EngineSnapshot {
     masterLengthFrames,
     masterPositionFrames,
     recordOffsetFrames,
+    masterGain,
     activeBackend,
     ...tracks,
   ]);

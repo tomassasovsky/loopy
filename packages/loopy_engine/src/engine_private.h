@@ -261,6 +261,11 @@ struct le_engine {
 
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
+  /* Global master output gain (float bits, 0..1), applied post-mix to the final
+   * output. Written by the control thread (LE_CMD_SET_MASTER_GAIN), read once
+   * per process() on the audio thread. Unity (1.0) by default / on configure. */
+  _Atomic uint32_t a_master_gain_bits;
+
   /* Tracks. */
   le_track tracks[LE_MAX_TRACKS];
   int32_t track_count;

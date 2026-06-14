@@ -199,6 +199,12 @@ abstract interface class AudioEngine {
   /// with a record press continues into overdub instead of playback.
   EngineResult setRecDub({required bool enabled});
 
+  /// Sets the global master output [gain] (clamped by the engine to `0..1`),
+  /// applied post-mix to the final output after all tracks, lanes, and monitor
+  /// lanes have summed in. Unity (`1.0`) by default and after every fresh
+  /// start; the current value is published in [EngineSnapshot.masterGain].
+  EngineResult setMasterGain(double gain);
+
   /// Enables sound-activated recording: a record press on an empty track waits
   /// and begins capturing once the input level crosses the threshold.
   EngineResult setAutoRecord({required bool enabled});
