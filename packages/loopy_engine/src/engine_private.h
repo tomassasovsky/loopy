@@ -56,7 +56,7 @@ extern "C" {
  * generic one-pole low-pass memory (ECHO feedback damping, OCTAVER tone);
  * grain_phase is the OCTAVER pitch-shifter's read phase within a grain. A slot
  * is only ever one type at a time, so these reuse freely. Each lane and each
- * live monitor input owns one of these, running its own non-destructive chain. */
+ * live monitor lane owns one of these, running its own non-destructive chain. */
 /* Reverb (LE_FX_REVERB) is a Schroeder/Freeverb network: a bank of parallel
  * damped comb filters summed into a chain of series allpass diffusers. It runs
  * LE_REV_BANKS of those in parallel — a left and a right whose delay lines are
@@ -117,24 +117,40 @@ typedef struct le_lane {
   le_fx_state fx;
 } le_lane;
 
-/* One hardware input's live monitor route (engine-level, one slot per input).
+/* One live monitor lane — an independent parallel monitoring path for one input.
  *
- * When a_enabled, the input's live sample is run through this route's own
- * effect chain and summed into the output channels a_output_mask selects. The
- * monitored signal is NEVER recorded and is independent of all track state, so
- * an input can be monitored whether or not any track records or plays it. This
- * replaces the old global monitor-FX bus and monitor-follows-a-track model. */
-typedef struct le_monitor_input {
-  _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
-  _Atomic uint32_t a_output_mask; /* output channels the effected route plays to */
-  _Atomic uint32_t a_dry_output_mask; /* outputs the CLEAN (pre-FX) signal goes
-                                       * to — a parallel dry send (0 = off) */
-  _Atomic uint32_t a_vol_bits; /* monitor output gain (float bits, 0..1) applied
-                                * to both the wet and dry sends */
+ * Mirrors le_lane exactly, minus the recording buffers: monitoring is live-only
+ * and never recorded, so a lane carries no pool/undo/length state. Each lane
+ * runs the input's live sample through its own non-destructive effect chain
+ * (stageless, on its own `fx` state) at its own volume and routes the result to
+ * the output channels a_output_mask selects, unless a_muted. A lane with an
+ * empty effect chain is the clean (dry) path — there is no special-case dry
+ * concept; "wet + dry" is simply an FX lane plus a no-FX lane. */
+typedef struct le_monitor_lane {
+  _Atomic uint32_t a_output_mask; /* output channels this lane plays to */
+  _Atomic uint32_t a_vol_bits;    /* lane gain (float bits, 0..1) */
+  _Atomic int32_t a_muted;        /* 0/1 per-lane mute */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   le_fx_state fx;
+} le_monitor_lane;
+
+/* One hardware input's live monitor (engine-level, one slot per input).
+ *
+ * When a_enabled, the input's live sample is fanned out across lane_count
+ * independent monitor lanes, each with its own effect chain, routing, volume,
+ * and mute. The monitored signal is NEVER recorded and is independent of all
+ * track state, so an input can be monitored whether or not any track records or
+ * plays it. Input-level enable gates the whole input (and honours loopback
+ * exclusion + the latency-measurement suppress/restore); per-lane mute gates
+ * each lane — exactly the le_track / le_lane model. */
+typedef struct le_monitor_input {
+  _Atomic int32_t a_enabled; /* 0/1 live monitoring on for this input */
+  int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
+                       * int, like le_track.lane_count — not an atomic, not a
+                       * ring command. */
+  le_monitor_lane lanes[LE_MAX_LANES];
 } le_monitor_input;
 
 /* One looper track: a multi-lane container that owns the transport, the shared

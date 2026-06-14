@@ -1625,10 +1625,10 @@ static void test_quantize_overdub_fires_on_grid(void) {
   le_engine_destroy(e);
 }
 
-/* A per-input monitor routes its hardware input live through its own effect
- * chain to the outputs its mask selects, independent of any track. */
-static void test_monitor_input_routes_live_through_chain(void) {
-  printf("test_monitor_input_routes_live_through_chain\n");
+/* A monitor lane routes its hardware input live through its own effect chain to
+ * the outputs its mask selects, independent of any track. */
+static void test_monitor_lane_routes_live_through_chain(void) {
+  printf("test_monitor_lane_routes_live_through_chain\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
   float out[2 * LOOP_N];
@@ -1638,20 +1638,21 @@ static void test_monitor_input_routes_live_through_chain(void) {
     in[i * 2 + 1] = 9.0f; /* channel 1 (not monitored) */
   }
 
-  /* Monitor input 0 to output 0 only, no effects: out 0 == 1.0, out 1 silent
-   * (input 1 is not monitored). */
-  CHECK(le_engine_set_monitor_input(e, 0, 1, 0x1) == LE_OK);
+  /* Enable input 0, route lane 0 to output 0 only, no effects: out 0 == 1.0,
+   * out 1 silent (input 1 is not monitored). */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 0, 0x1) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
     CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
   }
 
-  /* Engage a unity drive on the monitor chain: out 0 == tanh(1.0). */
-  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE) == LE_OK);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f); /* 1x pre-gain */
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f); /* unity level */
-  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK);
+  /* Engage a unity drive on lane 0's chain: out 0 == tanh(1.0). */
+  CHECK(le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* unity level */
+  CHECK(le_engine_set_monitor_lane_fx_count(e, 0, 0, 1) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f);
@@ -1660,10 +1661,11 @@ static void test_monitor_input_routes_live_through_chain(void) {
   le_engine_destroy(e);
 }
 
-/* A monitor's dry send routes the CLEAN input to its own outputs in parallel
- * with the effected route, so an input is heard wet and dry at once. */
-static void test_monitor_input_dry_send(void) {
-  printf("test_monitor_input_dry_send\n");
+/* Two lanes from one input run in parallel to different outputs: an FX lane
+ * (wet) and a no-FX lane (the clean/dry path — the old "dry send" with no
+ * special case). They route independently and sum where masks overlap. */
+static void test_monitor_two_lanes_wet_and_clean(void) {
+  printf("test_monitor_two_lanes_wet_and_clean\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
   float out[2 * LOOP_N];
@@ -1673,29 +1675,32 @@ static void test_monitor_input_dry_send(void) {
     in[i * 2 + 1] = 0.0f;
   }
 
-  /* Monitor input 0: unity drive to out 0 (wet), clean dry send to out 1. */
-  CHECK(le_engine_set_monitor_input(e, 0, 1, 0x1) == LE_OK);
-  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f); /* 1x pre-gain */
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f); /* unity level */
-  le_engine_set_monitor_input_fx_count(e, 0, 1);
-  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x2) == LE_OK);
+  /* Input 0, two lanes: lane 0 = unity drive to out 0 (wet); lane 1 = no FX
+   * to out 1 (the clean/dry path). */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_count(e, 0, 2) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 0, 0x1) == LE_OK);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* unity level */
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 1, 0x2) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f); /* wet on out 0 */
-    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);        /* dry on out 1 */
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);        /* clean on out 1 */
   }
 
-  /* Disabling the dry send (mask 0) silences out 1; out 0 stays wet. */
-  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x0) == LE_OK);
+  /* Route the clean lane nowhere (mask 0): out 1 falls silent, out 0 unchanged. */
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 1, 0x0) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f);
     CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
   }
 
-  /* Wet and dry sharing the same output sum: out 0 == tanh(1.0) + 1.0. */
-  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x1) == LE_OK);
+  /* Both lanes sharing one output sum: out 0 == tanh(1.0) + 1.0. */
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 1, 0x1) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - (tanhf(1.0f) + 1.0f)) < 1e-5f);
@@ -1704,11 +1709,10 @@ static void test_monitor_input_dry_send(void) {
   le_engine_destroy(e);
 }
 
-/* The monitor output gain trims both the wet and dry sends equally, so it can
- * tame the +6 dB from routing both sends (with no effects, wet == dry) to one
- * output. */
-static void test_monitor_input_volume(void) {
-  printf("test_monitor_input_volume\n");
+/* A monitor lane's gain scales only that lane; clamps to [0, 1]; invalid
+ * (input, lane) args are rejected. */
+static void test_monitor_lane_volume(void) {
+  printf("test_monitor_lane_volume\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
   float out[2 * LOOP_N];
@@ -1718,39 +1722,157 @@ static void test_monitor_input_volume(void) {
     in[i * 2 + 1] = 0.0f;
   }
 
-  /* Input 0, no effects: wet (clean) AND dry both routed to out 0. At unity
-   * volume they sum to 2.0 (the +6 dB the gain exists to tame). */
-  CHECK(le_engine_set_monitor_input(e, 0, 1, 0x1) == LE_OK);
-  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x1) == LE_OK);
-  le_engine_process(e, out, in, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
-  }
-
-  /* Half volume scales both sends: 0.5 + 0.5 = 1.0 (back to unity). */
-  CHECK(le_engine_set_monitor_input_volume(e, 0, 0.5f) == LE_OK);
+  /* Input 0, lane 0 clean to out 0: unity == 1.0. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 0, 0x1) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
   }
 
-  /* Silencing the monitor (volume 0) drops both sends to nothing. */
-  CHECK(le_engine_set_monitor_input_volume(e, 0, 0.0f) == LE_OK);
+  /* Half volume scales the lane: 0.5. */
+  CHECK(le_engine_set_monitor_lane_volume(e, 0, 0, 0.5f) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.5f) < 1e-6f);
+  }
+
+  /* Volume 0 silences the lane. */
+  CHECK(le_engine_set_monitor_lane_volume(e, 0, 0, 0.0f) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
   }
 
-  /* Out-of-range volumes clamp to [0, 1]; a null/invalid input is rejected. */
-  CHECK(le_engine_set_monitor_input_volume(e, 0, 2.0f) == LE_OK); /* clamps 1 */
+  /* Out-of-range volume clamps to 1; invalid args rejected. */
+  CHECK(le_engine_set_monitor_lane_volume(e, 0, 0, 2.0f) == LE_OK); /* -> 1 */
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f); /* unity again */
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
   }
-  CHECK(le_engine_set_monitor_input_volume(NULL, 0, 0.5f) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_volume(e, -1, 0.5f) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_volume(e, LE_MAX_INPUTS, 0.5f) ==
+  CHECK(le_engine_set_monitor_lane_volume(NULL, 0, 0, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_volume(e, -1, 0, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_volume(e, LE_MAX_INPUTS, 0, 0.5f) ==
         LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_volume(e, 0, -1, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_volume(e, 0, LE_MAX_LANES, 0.5f) ==
+        LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
+/* Per-lane mute silences only that lane; the input's other lanes keep sounding. */
+static void test_monitor_per_lane_mute(void) {
+  printf("test_monitor_per_lane_mute\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+
+  /* Input 0, two clean lanes both to out 0: sum == 2.0. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_count(e, 0, 2) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 0, 0x1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 1, 0x1) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+  }
+
+  /* Mute lane 0: only lane 1 sounds == 1.0. */
+  CHECK(le_engine_set_monitor_lane_mute(e, 0, 0, 1) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+  }
+
+  /* Mute lane 1 too: silent. */
+  CHECK(le_engine_set_monitor_lane_mute(e, 0, 1, 1) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+  }
+
+  /* Unmute lane 0: back to 1.0. */
+  CHECK(le_engine_set_monitor_lane_mute(e, 0, 0, 0) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Growing a monitor's lane count adds a default clean lane (full stereo output,
+ * unity, no FX). */
+static void test_monitor_lane_count_growth_adds_clean_lane(void) {
+  printf("test_monitor_lane_count_growth_adds_clean_lane\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+
+  /* Input 0, single lane routed to out 0 only. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 0, 0x1) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);
+  }
+
+  /* Grow to two lanes: the new lane 0 default (full stereo 0x3, clean) adds the
+   * input to BOTH outputs. out 0 == 1.0 (lane 0) + 1.0 (lane 1) == 2.0; out 1
+   * == 1.0 (lane 1's default stereo output). */
+  CHECK(le_engine_set_monitor_lane_count(e, 0, 2) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Shrinking a monitor's lane count stops the dropped lanes from sounding (the
+ * surviving lanes are unaffected). */
+static void test_monitor_lane_count_shrink_silences_dropped_lane(void) {
+  printf("test_monitor_lane_count_shrink_silences_dropped_lane\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+
+  /* Input 0, two lanes: lane 0 → out 0, lane 1 → out 1. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_count(e, 0, 2) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 0, 0x1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 1, 0x2) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f); /* lane 0 */
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f); /* lane 1 */
+  }
+
+  /* Shrink to one lane: lane 1 no longer sounds; lane 0 is unaffected. */
+  CHECK(le_engine_set_monitor_lane_count(e, 0, 1) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f); /* dropped */
+  }
 
   le_engine_destroy(e);
 }
@@ -1766,7 +1888,8 @@ static void test_latency_restores_monitoring(void) {
   le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
 
   /* Enable monitoring of input 0 -> output 0, and apply it before measuring. */
-  CHECK(le_engine_set_monitor_input(e, 0, 1, 0x1) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, 0, 0x1) == LE_OK);
   drain(e);
 
   /* Run a measurement to completion (the pulse returns on the loopback ch1). */
@@ -1801,20 +1924,19 @@ static void test_latency_restores_monitoring(void) {
   le_engine_destroy(e);
 }
 
-/* The dry send, like the effected route, is never printed into a recording:
- * a track records its raw input even while a dry monitor send is active. */
-static void test_monitor_input_dry_not_recorded(void) {
-  printf("test_monitor_input_dry_not_recorded\n");
+/* A clean (no-FX) monitor lane is never printed into a recording: a track
+ * records its raw input even while that input is being monitored clean. */
+static void test_monitor_clean_lane_not_recorded(void) {
+  printf("test_monitor_clean_lane_not_recorded\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000);
   float out[2 * LOOP_N];
 
-  /* Monitor input 0 with a dry send to both outputs (no effects). */
-  le_engine_set_monitor_input(e, 0, 1, 0x0); /* enabled, wet routes nowhere */
-  le_engine_set_monitor_input_dry(e, 0, 0x3);
+  /* Monitor input 0 with a single clean lane to both outputs (no effects). */
+  le_engine_set_monitor_input(e, 0, 1); /* lane 0 defaults to full stereo */
   drain(e);
 
-  /* Record input 0 (1.0) on track 0 while the dry send is active. */
+  /* Record input 0 (1.0) on track 0 while the clean lane is active. */
   float in[2 * LOOP_N];
   for (int i = 0; i < LOOP_N; ++i) {
     in[i * 2 + 0] = 1.0f;
@@ -1825,8 +1947,8 @@ static void test_monitor_input_dry_not_recorded(void) {
   le_engine_record(e, 0); /* finalize -> PLAYING */
   drain(e);
 
-  /* Playback over silence: the loop is the raw 1.0 (the dry send added nothing
-   * to the recording — it would read 2.0 if dry had been printed in). */
+  /* Playback over silence: the loop is the raw 1.0 (the clean lane added nothing
+   * to the recording — it would read 2.0 if it had been printed in). */
   float zin[2 * LOOP_N] = {0};
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
@@ -1845,12 +1967,12 @@ static void test_monitor_input_not_recorded(void) {
   le_engine_configure(e, 48000, 2, 2, 1000);
   float out[2 * LOOP_N];
 
-  /* Monitor input 0 through a unity drive (distinct from the dry signal). */
-  le_engine_set_monitor_input(e, 0, 1, 0x3);
-  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f);
-  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  /* Monitor input 0 through a unity drive on lane 0 (distinct from the dry). */
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.0f);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 1, 1.0f);
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
   drain(e);
 
   /* Record input 0 (1.0) on track 0 while monitoring it. */
@@ -1888,13 +2010,15 @@ static void test_two_monitored_inputs_dont_interfere(void) {
     in[i * 2 + 1] = 2.0f;
   }
 
-  /* Input 0 -> out 0 through a unity drive; input 1 -> out 1 dry. */
-  le_engine_set_monitor_input(e, 0, 1, 0x1);
-  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f);
-  le_engine_set_monitor_input_fx_count(e, 0, 1);
-  CHECK(le_engine_set_monitor_input(e, 1, 1, 0x2) == LE_OK);
+  /* Input 0 -> out 0 through a unity drive; input 1 -> out 1 clean. */
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.0f);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 1, 1.0f);
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_output(e, 1, 0, 0x2) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f); /* in0 driven on out0 */
@@ -1917,8 +2041,8 @@ static void test_monitor_disable_and_excluded(void) {
     in[i * 2 + 1] = 0.0f;
   }
 
-  /* Enabled: input 0 on both outputs. */
-  le_engine_set_monitor_input(e, 0, 1, 0x3);
+  /* Enabled: input 0 on both outputs (lane 0 defaults to full stereo). */
+  le_engine_set_monitor_input(e, 0, 1);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
@@ -1926,7 +2050,7 @@ static void test_monitor_disable_and_excluded(void) {
   }
 
   /* Disabled: silent. */
-  CHECK(le_engine_set_monitor_input(e, 0, 0, 0x3) == LE_OK);
+  CHECK(le_engine_set_monitor_input(e, 0, 0) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
@@ -1935,7 +2059,7 @@ static void test_monitor_disable_and_excluded(void) {
 
   /* Excluded channel 0: enabling it monitors nothing (it carries our output). */
   le_engine_set_excluded_input_mask_for_test(e, 0x1);
-  le_engine_set_monitor_input(e, 0, 1, 0x3);
+  le_engine_set_monitor_input(e, 0, 1);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
@@ -1965,8 +2089,9 @@ static void test_monitor_and_playback_sum(void) {
   le_engine_record(e, 0); /* finalize -> PLAYING */
   drain(e);
 
-  /* Monitor input 1 (live) to both outputs while the loop plays. */
-  CHECK(le_engine_set_monitor_input(e, 1, 1, 0x3) == LE_OK);
+  /* Monitor input 1 (live) to both outputs while the loop plays (lane 0
+   * defaults to full stereo). */
+  CHECK(le_engine_set_monitor_input(e, 1, 1) == LE_OK);
 
   /* Live input 1 = 2.0; input 0 silent (the loop is the source on out 0+1).
    * Each output = loop playback (1.0) + live monitor (2.0) = 3.0. */
@@ -2521,29 +2646,44 @@ static void test_fx_rejects_invalid_args(void) {
   le_engine_destroy(e);
 }
 
-/* The monitor-input FX setters reject a null engine, an out-of-range input /
- * index / type, and a bad param index; values clamp rather than erroring. */
-static void test_monitor_input_fx_rejects_invalid_args(void) {
-  printf("test_monitor_input_fx_rejects_invalid_args\n");
+/* The monitor-lane setters reject a null engine and out-of-range input / lane /
+ * index / type / param args; values clamp rather than erroring. */
+static void test_monitor_lane_fx_rejects_invalid_args(void) {
+  printf("test_monitor_lane_fx_rejects_invalid_args\n");
   le_engine* e = make_configured_engine();
 
-  CHECK(le_engine_set_monitor_input(NULL, 0, 1, 0x1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input(e, -1, 1, 0x1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input(e, LE_MAX_INPUTS, 1, 0x1) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx(NULL, 0, 0, LE_FX_DRIVE) ==
+  CHECK(le_engine_set_monitor_input(NULL, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input(e, -1, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input(e, LE_MAX_INPUTS, 1) == LE_ERR_INVALID);
+
+  /* Lane count clamps to [1, LE_MAX_LANES]; bad input rejected. */
+  CHECK(le_engine_set_monitor_lane_count(e, -1, 2) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_count(e, LE_MAX_INPUTS, 2) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_count(e, 0, 999) == LE_OK); /* clamps */
+
+  /* Lane-addressed setters reject an out-of-range (input, lane). */
+  CHECK(le_engine_set_monitor_lane_output(e, -1, 0, 0x1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_output(e, 0, LE_MAX_LANES, 0x1) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx(e, -1, 0, LE_FX_DRIVE) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx(e, 0, LE_FX_MAX, LE_FX_DRIVE) ==
+  CHECK(le_engine_set_monitor_lane_mute(e, 0, -1, 1) == LE_ERR_INVALID);
+
+  CHECK(le_engine_set_monitor_lane_fx(NULL, 0, 0, 0, LE_FX_DRIVE) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, 99) == LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx_param(e, 0, -1, 0, 0.5f) ==
+  CHECK(le_engine_set_monitor_lane_fx(e, -1, 0, 0, LE_FX_DRIVE) ==
         LE_ERR_INVALID);
-  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, LE_FX_PARAMS, 0.5f) ==
+  CHECK(le_engine_set_monitor_lane_fx(e, 0, LE_MAX_LANES, 0, LE_FX_DRIVE) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_fx(e, 0, 0, LE_FX_MAX, LE_FX_DRIVE) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_fx(e, 0, 0, 0, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_fx_param(e, 0, 0, -1, 0, 0.5f) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, LE_FX_PARAMS, 0.5f) ==
         LE_ERR_INVALID);
 
   /* Over-range values clamp; an over-large count clamps to LE_FX_MAX. */
-  CHECK(le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 5.0f) == LE_OK);
-  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 999) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 5.0f) == LE_OK);
+  CHECK(le_engine_set_monitor_lane_fx_count(e, 0, 0, 999) == LE_OK);
 
   le_engine_destroy(e);
 }
@@ -3147,11 +3287,14 @@ int main(void) {
   test_quantize_track_override_forces_on();
   test_quantize_track_override_forces_off();
   test_quantize_track_override_inherits();
-  test_monitor_input_routes_live_through_chain();
-  test_monitor_input_dry_send();
-  test_monitor_input_volume();
+  test_monitor_lane_routes_live_through_chain();
+  test_monitor_two_lanes_wet_and_clean();
+  test_monitor_lane_volume();
+  test_monitor_per_lane_mute();
+  test_monitor_lane_count_growth_adds_clean_lane();
+  test_monitor_lane_count_shrink_silences_dropped_lane();
   test_latency_restores_monitoring();
-  test_monitor_input_dry_not_recorded();
+  test_monitor_clean_lane_not_recorded();
   test_monitor_input_not_recorded();
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();
@@ -3221,7 +3364,7 @@ int main(void) {
   test_fx_nondestructive_and_colors_playback();
   test_fx_muted_track_is_silent();
   test_fx_rejects_invalid_args();
-  test_monitor_input_fx_rejects_invalid_args();
+  test_monitor_lane_fx_rejects_invalid_args();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

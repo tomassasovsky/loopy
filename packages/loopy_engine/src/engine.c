@@ -514,6 +514,23 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
   for (int i = 0; i < LE_REV_APS * LE_REV_BANKS; ++i) fx->rev_ap_pos[s][i] = 0;
 }
 
+/* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
+ * phase, delay read head, one-pole memory, grain phase, reverb lines) so a
+ * freshly engaged effect starts clean — no filter blow-up from stale
+ * integrators, no delay-read of old content. Does NOT free or allocate the
+ * delay ring; the control thread owns its lifetime. Shared by le_lane_reset,
+ * le_monitor_lane_reset, and the SET_*_FX ring handlers (which reset one slot
+ * when its type changes), removing what was a copy-pasted clear in each. */
+static void le_fx_entry_reset(le_fx_state* fx, int slot) {
+  fx->svf_ic1[slot] = 0.0f;
+  fx->svf_ic2[slot] = 0.0f;
+  fx->lfo[slot] = 0.0f;
+  fx->delay_pos[slot] = 0;
+  fx->fx_lp[slot] = 0.0f;
+  fx->grain_phase[slot] = 0.0f;
+  le_fx_clear_reverb(fx, slot);
+}
+
 /* Schroeder/Freeverb reverb: LE_REV_COMBS parallel damped comb filters are
  * summed and run through LE_REV_APS series allpass diffusers, producing a dense
  * decaying tail rather than the discrete repeats of DELAY/ECHO. Two such banks
@@ -789,15 +806,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       }
       le_lane* ln = &e->tracks[ch].lanes[lane];
       store_i32(&ln->a_fx_type[index], (int32_t)cmd->arg_f);
-      /* Reset the entry's DSP state so a freshly engaged effect starts clean (no
-       * filter blow-up from stale integrators, no delay-read of old content). */
-      ln->fx.svf_ic1[index] = 0.0f;
-      ln->fx.svf_ic2[index] = 0.0f;
-      ln->fx.lfo[index] = 0.0f;
-      ln->fx.delay_pos[index] = 0;
-      ln->fx.fx_lp[index] = 0.0f;
-      ln->fx.grain_phase[index] = 0.0f;
-      le_fx_clear_reverb(&ln->fx, index);
+      /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
+      le_fx_entry_reset(&ln->fx, index);
       break;
     }
     case LE_CMD_SET_LANE_FX_COUNT: {
@@ -863,73 +873,86 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     /* ---- per-input live monitor ----
-     * SET_MONITOR_INPUT carries the input index + enabled bit in arg_f and the
-     * 32-bit output mask in arg_i (so the mask round-trips exactly); the FX
-     * commands pack (input << 8) | index/count in arg_i. */
+     * SET_MONITOR_INPUT carries the input index in arg_i and the enabled bit in
+     * arg_f (input-level gate only — no mask now that routing is per-lane). The
+     * per-lane commands mirror the track lane commands: the FX commands field-
+     * pack (input<<16)|(lane<<8)|index in arg_i (type in arg_f); output/volume/
+     * mute use the flat index input*LE_MAX_LANES+lane, carrying the 32-bit mask /
+     * float value in the other arg so it round-trips exactly. */
     case LE_CMD_SET_MONITOR_INPUT: {
-      const int32_t iv = (int32_t)cmd->arg_f;
-      const int32_t input = iv & 0xFF;
-      const int32_t enabled = (iv >> 8) & 1;
+      const int32_t input = cmd->arg_i;
       if (input < 0 || input >= LE_MAX_INPUTS) break;
       const uint32_t excluded = atomic_load_explicit(
           &e->a_excluded_input_mask, memory_order_relaxed);
       /* A loopback-excluded input is never monitored (it carries our output). */
-      const int on = (excluded & (1u << input)) ? 0 : enabled;
-      const uint32_t valid = e->out_channels >= 32
-                                 ? 0xFFFFFFFFu
-                                 : ((1u << e->out_channels) - 1u);
-      atomic_store_explicit(&e->monitors[input].a_output_mask,
-                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+      const int on = (excluded & (1u << input)) ? 0 : (cmd->arg_f != 0.0f);
       store_i32(&e->monitors[input].a_enabled, on);
       break;
     }
-    case LE_CMD_SET_MONITOR_INPUT_DRY: {
-      /* No excluded-input recheck (unlike SET_MONITOR_INPUT): the dry send is
-       * gated by mon_on in process(), which already drops loopback inputs. */
-      const int32_t input = (int32_t)cmd->arg_f & 0xFF;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
+    case LE_CMD_SET_MONITOR_LANE_FX: {
+      const int32_t input = (cmd->arg_i >> 16) & 0xFF;
+      const int32_t lane = (cmd->arg_i >> 8) & 0xFF;
+      const int32_t index = cmd->arg_i & 0xFF;
+      if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
+          lane >= LE_MAX_LANES || index < 0 || index >= LE_FX_MAX) {
+        break;
+      }
+      le_monitor_lane* ln = &e->monitors[input].lanes[lane];
+      store_i32(&ln->a_fx_type[index], (int32_t)cmd->arg_f);
+      /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
+      le_fx_entry_reset(&ln->fx, index);
+      break;
+    }
+    case LE_CMD_SET_MONITOR_LANE_FX_COUNT: {
+      const int32_t input = (cmd->arg_i >> 16) & 0xFF;
+      const int32_t lane = (cmd->arg_i >> 8) & 0xFF;
+      int32_t count = cmd->arg_i & 0xFF;
+      if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
+          lane >= LE_MAX_LANES) {
+        break;
+      }
+      if (count < 0) count = 0;
+      if (count > LE_FX_MAX) count = LE_FX_MAX;
+      store_i32(&e->monitors[input].lanes[lane].a_fx_count, count);
+      break;
+    }
+    case LE_CMD_SET_MONITOR_LANE_OUTPUT: {
+      const int32_t idx = (int32_t)cmd->arg_f;
+      const int32_t input = idx / LE_MAX_LANES;
+      const int32_t lane = idx % LE_MAX_LANES;
+      if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
+          lane >= LE_MAX_LANES) {
+        break;
+      }
       const uint32_t valid = e->out_channels >= 32
                                  ? 0xFFFFFFFFu
                                  : ((1u << e->out_channels) - 1u);
-      atomic_store_explicit(&e->monitors[input].a_dry_output_mask,
+      atomic_store_explicit(&e->monitors[input].lanes[lane].a_output_mask,
                             (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
       break;
     }
-    case LE_CMD_SET_MONITOR_INPUT_VOLUME: {
-      const int32_t input = cmd->arg_i;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
+    case LE_CMD_SET_MONITOR_LANE_VOLUME: {
+      const int32_t input = cmd->arg_i / LE_MAX_LANES;
+      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
+          lane >= LE_MAX_LANES) {
+        break;
+      }
       float v = cmd->arg_f;
       if (v < 0.0f) v = 0.0f;
       if (v > 1.0f) v = 1.0f;
-      store_f32(&e->monitors[input].a_vol_bits, v);
+      store_f32(&e->monitors[input].lanes[lane].a_vol_bits, v);
       break;
     }
-    case LE_CMD_SET_MONITOR_INPUT_FX: {
-      const int32_t input = (cmd->arg_i >> 8) & 0xFF;
-      const int32_t index = cmd->arg_i & 0xFF;
-      if (input < 0 || input >= LE_MAX_INPUTS || index < 0 ||
-          index >= LE_FX_MAX) {
+    case LE_CMD_SET_MONITOR_LANE_MUTE: {
+      const int32_t input = cmd->arg_i / LE_MAX_LANES;
+      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
+          lane >= LE_MAX_LANES) {
         break;
       }
-      le_monitor_input* m = &e->monitors[input];
-      store_i32(&m->a_fx_type[index], (int32_t)cmd->arg_f);
-      /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
-      m->fx.svf_ic1[index] = 0.0f;
-      m->fx.svf_ic2[index] = 0.0f;
-      m->fx.lfo[index] = 0.0f;
-      m->fx.delay_pos[index] = 0;
-      m->fx.fx_lp[index] = 0.0f;
-      m->fx.grain_phase[index] = 0.0f;
-      le_fx_clear_reverb(&m->fx, index);
-      break;
-    }
-    case LE_CMD_SET_MONITOR_INPUT_FX_COUNT: {
-      const int32_t input = (cmd->arg_i >> 8) & 0xFF;
-      int32_t count = cmd->arg_i & 0xFF;
-      if (input < 0 || input >= LE_MAX_INPUTS) break;
-      if (count < 0) count = 0;
-      if (count > LE_FX_MAX) count = LE_FX_MAX;
-      store_i32(&e->monitors[input].a_fx_count, count);
+      store_i32(&e->monitors[input].lanes[lane].a_muted,
+                cmd->arg_f != 0.0f ? 1 : 0);
       break;
     }
     case LE_CMD_COMMIT_SESSION: {
@@ -1064,30 +1087,46 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     }
   }
 
-  /* Per-input live monitors, snapshotted the same way. mon_on/mon_out gate the
-   * monitor pass per hardware input; the chain is stageless. */
+  /* Per-input live monitors: each enabled input fans out across mon_lane_n[c]
+   * independent lanes, snapshotted per (input, lane) exactly like the track
+   * lanes above. mon_on gates the whole input (loopback exclusion + enable);
+   * per-lane mute/volume/output/chain drive each lane. has_fx gates the chain so
+   * a lane with no effects routes the clean (dry) sample. Same per-buffer
+   * snapshot — no per-frame atomic re-reads. */
   int mon_on[LE_MAX_INPUTS] = {0};
-  uint32_t mon_out[LE_MAX_INPUTS];
-  uint32_t mon_dry_out[LE_MAX_INPUTS];
-  float mon_vol[LE_MAX_INPUTS];
-  int32_t mon_fx_count[LE_MAX_INPUTS];
-  int32_t mon_fx_type[LE_MAX_INPUTS][LE_FX_MAX];
-  float mon_fx_params[LE_MAX_INPUTS][LE_FX_MAX][LE_FX_PARAMS];
+  int32_t mon_lane_n[LE_MAX_INPUTS] = {0};
+  uint32_t mon_out[LE_MAX_INPUTS][LE_MAX_LANES];
+  float mon_vol[LE_MAX_INPUTS][LE_MAX_LANES];
+  int mon_mut[LE_MAX_INPUTS][LE_MAX_LANES];
+  int32_t mon_fx_count[LE_MAX_INPUTS][LE_MAX_LANES];
+  int32_t mon_fx_type[LE_MAX_INPUTS][LE_MAX_LANES][LE_FX_MAX];
+  float mon_fx_params[LE_MAX_INPUTS][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS];
+  int mon_has_fx[LE_MAX_INPUTS][LE_MAX_LANES];
   for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
     le_monitor_input* m = &e->monitors[c];
     mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
-    mon_out[c] = atomic_load_explicit(&m->a_output_mask, memory_order_relaxed);
-    mon_dry_out[c] =
-        atomic_load_explicit(&m->a_dry_output_mask, memory_order_relaxed);
-    mon_vol[c] = load_f32(&m->a_vol_bits);
-    int32_t n = load_i32(&m->a_fx_count);
-    if (n < 0) n = 0;
-    if (n > LE_FX_MAX) n = LE_FX_MAX;
-    mon_fx_count[c] = n;
-    for (int s = 0; s < n; ++s) {
-      mon_fx_type[c][s] = load_i32(&m->a_fx_type[s]);
-      for (int p = 0; p < LE_FX_PARAMS; ++p) {
-        mon_fx_params[c][s][p] = load_f32(&m->a_fx_param[s][p]);
+    int32_t ln_n = m->lane_count;
+    if (ln_n < 1) ln_n = 1;
+    if (ln_n > LE_MAX_LANES) ln_n = LE_MAX_LANES;
+    mon_lane_n[c] = ln_n;
+    for (int l = 0; l < ln_n; ++l) {
+      le_monitor_lane* ln = &m->lanes[l];
+      mon_out[c][l] =
+          atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
+      mon_vol[c][l] = load_f32(&ln->a_vol_bits);
+      mon_mut[c][l] = load_i32(&ln->a_muted);
+      mon_has_fx[c][l] = 0;
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n < 0) n = 0;
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      mon_fx_count[c][l] = n;
+      for (int s = 0; s < n; ++s) {
+        const int32_t ty = load_i32(&ln->a_fx_type[s]);
+        mon_fx_type[c][l][s] = ty;
+        if (ty != LE_FX_NONE) mon_has_fx[c][l] = 1;
+        for (int p = 0; p < LE_FX_PARAMS; ++p) {
+          mon_fx_params[c][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
+        }
       }
     }
   }
@@ -1296,34 +1335,32 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
 
-    /* Per-input live monitoring: each enabled hardware input is run through its
-     * own (stageless) effect chain and summed into the outputs its mask selects,
-     * live and independent of every track. The monitored signal is never
-     * recorded. Effects run every frame an input is enabled so delay tails / LFO
-     * phase stay continuous. */
+    /* Per-input live monitoring: each enabled hardware input fans out across its
+     * lanes. Each unmuted lane runs the input's clean live sample through its own
+     * (stageless) effect chain at its own volume and sums into the outputs its
+     * mask selects — a lane with no effects routes the clean sample (the dry
+     * path), an FX lane its processed signal (stereo-aware: a reverb spreads
+     * across the first two masked outputs). Live and independent of every track;
+     * never recorded. Effects run every frame so delay tails / LFO phase stay
+     * continuous. */
     if (in) {
       for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
         if (!mon_on[c]) continue;
         const float clean = in[f * ch_in + c];
-        float msample = clean;
-        float msample_r = clean;
-        int wet_stereo = 0;
-        if (mon_fx_count[c] > 0) {
-          msample = fx_apply_chain(&e->monitors[c].fx, sr, fx_cap, msample,
-                                   mon_fx_count[c], mon_fx_type[c],
-                                   mon_fx_params[c], &msample_r, &wet_stereo);
-        }
-        /* The monitor output gain trims both sends equally (post-FX), so the
-         * user can pull back the +6 dB from routing wet + dry to one output. */
-        const float g = mon_vol[c];
-        /* Effected route to its outputs (stereo-aware: a reverb spreads across
-         * the first two); the parallel dry send routes the clean (pre-FX) sample
-         * to its own outputs — dry + wet at once. The dry stays mono. */
-        le_fx_route(out, f, ch_out, mon_out[c], msample * g, msample_r * g,
-                    wet_stereo);
-        const float dry = clean * g;
-        for (int oc = 0; oc < ch_out; ++oc) {
-          if (mon_dry_out[c] & (1u << oc)) out[f * ch_out + oc] += dry;
+        for (int l = 0; l < mon_lane_n[c]; ++l) {
+          if (mon_mut[c][l]) continue;
+          float msample = clean;
+          float msample_r = clean;
+          int wet_stereo = 0;
+          if (mon_has_fx[c][l]) {
+            msample = fx_apply_chain(&e->monitors[c].lanes[l].fx, sr, fx_cap,
+                                     msample, mon_fx_count[c][l],
+                                     mon_fx_type[c][l], mon_fx_params[c][l],
+                                     &msample_r, &wet_stereo);
+          }
+          const float g = mon_vol[c][l];
+          le_fx_route(out, f, ch_out, mon_out[c][l], msample * g, msample_r * g,
+                      wet_stereo);
         }
       }
     }
@@ -1481,40 +1518,39 @@ static void le_lane_reset(le_lane* ln, int32_t input_channel) {
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&ln->a_fx_param[s][p], 0.0f);
     }
-    ln->fx.svf_ic1[s] = 0.0f;
-    ln->fx.svf_ic2[s] = 0.0f;
-    ln->fx.lfo[s] = 0.0f;
     free(ln->fx.delay[s]);
     ln->fx.delay[s] = NULL;
-    ln->fx.delay_pos[s] = 0;
-    ln->fx.fx_lp[s] = 0.0f;
-    ln->fx.grain_phase[s] = 0.0f;
-    le_fx_clear_reverb(&ln->fx, s);
+    le_fx_entry_reset(&ln->fx, s);
   }
 }
 
-/* Resets a live monitor input to defaults (disabled, full stereo output, empty
- * chain), clearing its effect DSP state and releasing its delay lines. */
+/* Resets a live monitor lane to defaults (full stereo output, unity volume,
+ * unmuted, empty/clean chain), clearing its effect DSP state and releasing its
+ * delay lines. Used at configure and when a monitor's lane count grows. */
+static void le_monitor_lane_reset(le_monitor_lane* ln) {
+  atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
+  store_f32(&ln->a_vol_bits, 1.0f);
+  store_i32(&ln->a_muted, 0);
+  store_i32(&ln->a_fx_count, 0);
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    store_i32(&ln->a_fx_type[s], LE_FX_NONE);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&ln->a_fx_param[s][p], 0.0f);
+    }
+    free(ln->fx.delay[s]);
+    ln->fx.delay[s] = NULL;
+    le_fx_entry_reset(&ln->fx, s);
+  }
+}
+
+/* Resets a live monitor input to defaults: disabled, a single default (clean)
+ * lane. Resets every lane slot (not just the active one) so a later grow starts
+ * from a clean lane. */
 static void le_monitor_input_reset(le_monitor_input* m) {
   store_i32(&m->a_enabled, 0);
-  atomic_store_explicit(&m->a_output_mask, 0x3u, memory_order_relaxed);
-  atomic_store_explicit(&m->a_dry_output_mask, 0u, memory_order_relaxed);
-  store_f32(&m->a_vol_bits, 1.0f);
-  store_i32(&m->a_fx_count, 0);
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    store_i32(&m->a_fx_type[s], LE_FX_NONE);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      store_f32(&m->a_fx_param[s][p], 0.0f);
-    }
-    m->fx.svf_ic1[s] = 0.0f;
-    m->fx.svf_ic2[s] = 0.0f;
-    m->fx.lfo[s] = 0.0f;
-    free(m->fx.delay[s]);
-    m->fx.delay[s] = NULL;
-    m->fx.delay_pos[s] = 0;
-    m->fx.fx_lp[s] = 0.0f;
-    m->fx.grain_phase[s] = 0.0f;
-    le_fx_clear_reverb(&m->fx, s);
+  m->lane_count = 1;
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    le_monitor_lane_reset(&m->lanes[l]);
   }
 }
 
@@ -2061,8 +2097,10 @@ void le_engine_destroy(le_engine* engine) {
     }
   }
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
-    for (int s = 0; s < LE_FX_MAX; ++s) {
-      free(engine->monitors[c].fx.delay[s]);
+    for (int l = 0; l < LE_MAX_LANES; ++l) {
+      for (int s = 0; s < LE_FX_MAX; ++s) {
+        free(engine->monitors[c].lanes[l].fx.delay[s]);
+      }
     }
   }
   free(engine->lat_buf);
@@ -2782,63 +2820,102 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
-                                    int32_t enabled, int32_t output_mask) {
+                                    int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
-  const int32_t iv = (input & 0xFF) | (enabled ? 0x100 : 0);
-  return le_push(engine, LE_CMD_SET_MONITOR_INPUT, output_mask, (float)iv);
+  return le_push(engine, LE_CMD_SET_MONITOR_INPUT, input,
+                 enabled ? 1.0f : 0.0f);
 }
 
-int32_t le_engine_set_monitor_input_dry(le_engine* engine, int32_t input,
-                                        int32_t dry_output_mask) {
+/* Plain-int control-thread setter, mirroring le_engine_set_lane_count. Monitor
+ * lanes carry no recording buffers, so a grow only resets the newly activated
+ * lanes to clean defaults (before bumping lane_count, so the audio thread never
+ * reads an uninitialised lane); no allocation. */
+int32_t le_engine_set_monitor_lane_count(le_engine* engine, int32_t input,
+                                         int32_t count) {
   if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_MONITOR_INPUT_DRY, dry_output_mask,
-                 (float)input);
+  if (count < 1) count = 1;
+  if (count > LE_MAX_LANES) count = LE_MAX_LANES;
+  le_monitor_input* m = &engine->monitors[input];
+  int32_t old = m->lane_count;
+  if (old < 1) old = 1;
+  if (old > LE_MAX_LANES) old = LE_MAX_LANES;
+  for (int32_t l = old; l < count; ++l) le_monitor_lane_reset(&m->lanes[l]);
+  m->lane_count = count;
+  return LE_OK;
 }
 
-int32_t le_engine_set_monitor_input_volume(le_engine* engine, int32_t input,
-                                           float volume) {
-  if (engine == NULL) return LE_ERR_INVALID;
+/* The monitor-lane setters address the lane by the same packed index
+ * `input * LE_MAX_LANES + lane` the track lane setters use: output carries the
+ * index in arg_f so the 32-bit mask rides in arg_i; volume/mute carry the index
+ * in arg_i so the float value rides in arg_f. */
+int32_t le_engine_set_monitor_lane_output(le_engine* engine, int32_t input,
+                                          int32_t lane, int32_t mask) {
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_MONITOR_INPUT_VOLUME, input, volume);
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_MONITOR_LANE_OUTPUT, mask,
+                 (float)(input * LE_MAX_LANES + lane));
 }
 
-int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
-                                       int32_t index, int32_t type) {
+int32_t le_engine_set_monitor_lane_volume(le_engine* engine, int32_t input,
+                                          int32_t lane, float volume) {
+  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_MONITOR_LANE_VOLUME,
+                 input * LE_MAX_LANES + lane, volume);
+}
+
+int32_t le_engine_set_monitor_lane_mute(le_engine* engine, int32_t input,
+                                        int32_t lane, int32_t muted) {
+  if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_MONITOR_LANE_MUTE,
+                 input * LE_MAX_LANES + lane, muted ? 1.0f : 0.0f);
+}
+
+int32_t le_engine_set_monitor_lane_fx(le_engine* engine, int32_t input,
+                                      int32_t lane, int32_t index, int32_t type) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (type < LE_FX_NONE || type > LE_FX_REVERB) return LE_ERR_INVALID;
-  le_monitor_input* m = &engine->monitors[input];
-  if (le_fx_prepare_entry(&m->fx, m->a_fx_type, m->a_fx_param, index, type,
+  le_monitor_lane* ln = &engine->monitors[input].lanes[lane];
+  if (le_fx_prepare_entry(&ln->fx, ln->a_fx_type, ln->a_fx_param, index, type,
                           engine->fx_delay_frames) != LE_OK) {
     return LE_ERR_INVALID;
   }
-  return le_push(engine, LE_CMD_SET_MONITOR_INPUT_FX, (input << 8) | index,
-                 (float)type);
+  return le_push(engine, LE_CMD_SET_MONITOR_LANE_FX,
+                 (input << 16) | (lane << 8) | index, (float)type);
 }
 
-int32_t le_engine_set_monitor_input_fx_count(le_engine* engine, int32_t input,
-                                             int32_t count) {
+int32_t le_engine_set_monitor_lane_fx_count(le_engine* engine, int32_t input,
+                                            int32_t lane, int32_t count) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
-  return le_push(engine, LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
-                 (input << 8) | count, 0.0f);
+  return le_push(engine, LE_CMD_SET_MONITOR_LANE_FX_COUNT,
+                 (input << 16) | (lane << 8) | count, 0.0f);
 }
 
-int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
-                                             int32_t index, int32_t param,
-                                             float value) {
+int32_t le_engine_set_monitor_lane_fx_param(le_engine* engine, int32_t input,
+                                            int32_t lane, int32_t index,
+                                            int32_t param, float value) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (index < 0 || index >= LE_FX_MAX) return LE_ERR_INVALID;
   if (param < 0 || param >= LE_FX_PARAMS) return LE_ERR_INVALID;
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
-  store_f32(&engine->monitors[input].a_fx_param[index][param], value);
+  store_f32(&engine->monitors[input].lanes[lane].a_fx_param[index][param],
+            value);
   return LE_OK;
 }
 
