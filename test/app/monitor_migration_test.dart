@@ -143,7 +143,7 @@ void main() {
 
           await runMonitorMigration(settings);
 
-          // The second run did not re-convert (no legacy key to read) and did 
+          // The second run did not re-convert (no legacy key to read) and did
           // not clobber the user's edit.
           expect(await settings.loadMonitorLaneOutput(0, 0), 0x4);
         },
@@ -153,7 +153,7 @@ void main() {
         'a store on v1 but not v2 still converts on the next launch',
         () async {
           // A device that shipped with v1 (its done-flag set, the legacy
-          // per-input key already written) but has never run v2. The next 
+          // per-input key already written) but has never run v2. The next
           // launch must skip v1 and still fold the legacy route into lanes.
           await settings.saveMonitorMigratedV1();
           await settings.saveMonitorInput(0, enabled: true, outputMask: 0x2);
