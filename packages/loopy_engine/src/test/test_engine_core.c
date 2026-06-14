@@ -3424,6 +3424,44 @@ static void test_lane_setters_reject_invalid_args(void) {
   le_engine_destroy(e);
 }
 
+/* Widening LE_FX_PARAMS from 3 to 4 must leave EVERY non-octaver effect inert in
+ * the new slot: p3 is never read, so its value cannot change the output. Two
+ * identically-driven engines — one with p3 = 0 (the default), one with p3 = 1 —
+ * must produce byte-for-byte identical output across many blocks (so stateful
+ * delay/echo/reverb tails are exercised too). This is the M3 "identical after
+ * the widening" guard. Index 3 is also now a valid param (rejected before the
+ * widening). The octaver is excluded — it will read p3 in parts 3-4. */
+static void test_fx_fourth_param_is_inert(void) {
+  printf("test_fx_fourth_param_is_inert\n");
+  CHECK(LE_FX_PARAMS == 4);
+
+  const int32_t types[] = {LE_FX_DRIVE,   LE_FX_FILTER, LE_FX_DELAY,
+                           LE_FX_TREMOLO, LE_FX_ECHO,   LE_FX_REVERB};
+  for (int t = 0; t < (int)(sizeof(types) / sizeof(types[0])); ++t) {
+    le_engine* a = make_configured_engine();
+    le_engine* b = make_configured_engine();
+    establish_loop(a, 1.0f);
+    establish_loop(b, 1.0f);
+
+    le_engine_set_lane_fx(a, 0, 0, 0, types[t]); /* seeds p3 = 0 */
+    le_engine_set_lane_fx(b, 0, 0, 0, types[t]);
+    CHECK(le_engine_set_lane_fx_param(b, 0, 0, 0, 3, 1.0f) == LE_OK); /* drive p3 */
+    le_engine_set_lane_fx_count(a, 0, 0, 1);
+    le_engine_set_lane_fx_count(b, 0, 0, 1);
+
+    float oa[64];
+    float ob[64];
+    for (int block = 0; block < 8; ++block) {
+      process_const(a, 0.0f, 64, oa);
+      process_const(b, 0.0f, 64, ob);
+      for (int i = 0; i < 64; ++i) CHECK(oa[i] == ob[i]); /* byte-for-byte */
+    }
+
+    le_engine_destroy(a);
+    le_engine_destroy(b);
+  }
+}
+
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
@@ -3620,6 +3658,7 @@ int main(void) {
   test_fx_stereo_chain_independent_lr_state();
   test_fx_stereo_ring_retained_across_type_reorder();
   test_monitor_lane_fx_rejects_invalid_args();
+  test_fx_fourth_param_is_inert();
   test_fft_roundtrip();
 
   if (g_failures == 0) {

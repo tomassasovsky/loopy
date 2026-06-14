@@ -1942,7 +1942,7 @@ const int LE_MAX_CHANNELS = 32;
 
 const int LE_FX_MAX = 8;
 
-const int LE_FX_PARAMS = 3;
+const int LE_FX_PARAMS = 4;
 
 const int LE_MAX_TRACKS = 8;
 
