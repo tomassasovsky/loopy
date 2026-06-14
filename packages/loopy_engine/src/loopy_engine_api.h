@@ -683,6 +683,78 @@ LE_EXPORT int32_t le_engine_import_track(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_commit_session(le_engine* engine,
                                            int32_t base_frames);
 
+/* ---- native USB MIDI input (foot-pedal control) ---- *
+ *
+ * A self-contained capture seam, independent of the audio engine lifecycle: it
+ * enumerates the host's MIDI *input* ports, opens one, and pushes raw Note/CC
+ * messages to a registered callback for the Dart controller pipeline to map
+ * (CC 80-83 -> record/stop/undo/clear by default). Captured natively on all
+ * three desktop OSes (CoreMIDI / ALSA sequencer / WinMM) so the footswitch ->
+ * action latency stays tight and consistent.
+ *
+ * SysEx / real-time / aftertouch / pitch-bend / program-change are dropped at
+ * the native layer, so the callback only ever sees Note On/Off and Control
+ * Change. The OS MIDI callback does no allocation, locking, or blocking I/O on
+ * its hot path (it parses + pushes to a lock-free SPSC ring); a drain step
+ * invokes the callback off that thread. Entirely separate from the audio
+ * command ring -- never a second producer on it. */
+
+/* A MIDI input port discovered by le_midi_enumerate.
+ *
+ * `id` is a per-OS stable token for re-selecting the same device across replug:
+ * the CoreMIDI kMIDIPropertyUniqueID (macOS), or the port name (ALSA, WinMM).
+ * `name` is the human-readable label. `is_default` marks a system-preferred
+ * input where the OS exposes one (always 0 on ALSA/WinMM, which have none). */
+typedef struct le_midi_info {
+  char id[256];
+  char name[256];
+  int32_t is_default; /* 0/1 */
+} le_midi_info;
+
+/* Raw MIDI input callback: one Note On/Off or Control Change message.
+ * `status` carries the message type in its high nibble and the channel in its
+ * low nibble; `data1`/`data2` are the two data bytes (CC number/value or note/
+ * velocity). `ts_us` is a per-OS monotonic capture timestamp in microseconds,
+ * carried for future quantization (unused by the default control path).
+ *
+ * Invoked off the OS MIDI thread via the drain step. With Dart's
+ * NativeCallable.listener the delivery is marshalled onto the isolate event
+ * loop, so the registered function may run any Dart code. */
+typedef void (*le_midi_event_cb)(uint8_t status, uint8_t data1, uint8_t data2,
+                                 uint64_t ts_us);
+
+/* Opaque MIDI capture handle (one open input port at a time). */
+typedef struct le_midi le_midi;
+
+/* Allocates a MIDI capture handle bound to the compiled-in per-OS backend.
+ * Returns NULL on allocation failure or when no backend is available for the
+ * platform. */
+LE_EXPORT le_midi* le_midi_create(void);
+
+/* Closes any open port and frees the handle. Safe to call with NULL. */
+LE_EXPORT void le_midi_destroy(le_midi* m);
+
+/* Enumerates the host's MIDI input ports into `out` (room for `max` entries),
+ * writing the number filled into *count (clamped to `max`). Returns LE_OK, or
+ * LE_ERR_INVALID for a null argument / non-positive `max`. Degrades to
+ * *count = 0, LE_OK when the platform has no backend or no ports. Uses a
+ * transient OS handle, so it is safe to call while a port is open. */
+LE_EXPORT int32_t le_midi_enumerate(le_midi_info* out, int32_t max,
+                                    int32_t* count);
+
+/* Opens the input port whose `id` matches an `id` from le_midi_enumerate and
+ * begins capture, delivering messages to `cb`. Re-opening switches the device
+ * (the previous port is closed first), so this is idempotent for re-selection.
+ * Returns LE_OK, LE_ERR_INVALID (null handle / cb), LE_ERR_DEVICE (port not
+ * found or could not be opened, e.g. in use). */
+LE_EXPORT int32_t le_midi_open(le_midi* m, const char* id,
+                               le_midi_event_cb cb);
+
+/* Stops capture and closes the open port. Idempotent (a no-op when nothing is
+ * open). After it returns the callback registered by le_midi_open is guaranteed
+ * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle). */
+LE_EXPORT int32_t le_midi_close(le_midi* m);
+
 #ifdef __cplusplus
 }
 #endif
