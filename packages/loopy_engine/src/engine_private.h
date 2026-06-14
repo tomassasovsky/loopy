@@ -69,14 +69,22 @@ extern "C" {
 #define LE_REV_APS 4
 #define LE_REV_BANKS 2
 
+/* Per-slot DSP state is carried per channel ([slot][chan], chan 0 = left,
+ * 1 = right) so the whole chain runs in full stereo: a slot colours its left and
+ * right independently. A mono source seeds l == r, so a symmetric chain produces
+ * l == r and is audibly unchanged. The delay-ringed effects (DELAY / ECHO /
+ * OCTAVER) own a ring per channel (delay[slot][0] and [1]); the REVERB packs its
+ * two stereo banks into the single ring delay[slot][0] (delay[slot][1] stays
+ * NULL), reading both banks from xl / xr — see fx_reverb. The rev_* arrays
+ * already hold both banks (LE_REV_BANKS == 2) and stay per-slot. */
 typedef struct le_fx_state {
-  float svf_ic1[LE_FX_MAX];
-  float svf_ic2[LE_FX_MAX];
-  float lfo[LE_FX_MAX];
-  float* delay[LE_FX_MAX];
-  int32_t delay_pos[LE_FX_MAX];
-  float fx_lp[LE_FX_MAX];
-  float grain_phase[LE_FX_MAX];
+  float svf_ic1[LE_FX_MAX][2];
+  float svf_ic2[LE_FX_MAX][2];
+  float lfo[LE_FX_MAX][2];
+  float* delay[LE_FX_MAX][2];
+  int32_t delay_pos[LE_FX_MAX][2];
+  float fx_lp[LE_FX_MAX][2];
+  float grain_phase[LE_FX_MAX][2];
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
