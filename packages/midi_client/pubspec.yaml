@@ -1,0 +1,26 @@
+name: midi_client
+description: >-
+  MIDI controller source for Loopy: enumerates and opens native USB MIDI input
+  devices over the loopy_engine FFI seam and feeds raw inputs to the
+  controller_repository as a ControllerSource.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  controller_repository:
+    path: ../controller_repository
+  ffi: ^2.1.3
+  flutter:
+    sdk: flutter
+  loopy_engine:
+    path: ../loopy_engine
+  meta: ^1.16.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.2.0
