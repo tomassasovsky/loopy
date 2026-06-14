@@ -2,6 +2,7 @@
 // ignore_for_file: non_constant_identifier_names
 
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:loopy_engine/loopy_engine_ffi.dart';
@@ -18,7 +19,12 @@ class FakeLoopyEngineBindings implements LoopyEngineBindings {
     List<MidiDevice> devices = const [],
     this.createReturnsNull = false,
     this.openResult = 0,
-  }) : devices = List.of(devices);
+    List<MidiDevice> outDevices = const [],
+    this.outCreateReturnsNull = false,
+    this.outOpenResult = 0,
+    this.sendResult = 0,
+  }) : devices = List.of(devices),
+       outDevices = List.of(outDevices);
 
   /// The devices [le_midi_enumerate] reports.
   List<MidiDevice> devices;
@@ -28,6 +34,24 @@ class FakeLoopyEngineBindings implements LoopyEngineBindings {
 
   /// The result code [le_midi_open] returns.
   int openResult;
+
+  /// The devices [le_midi_out_enumerate] reports.
+  List<MidiDevice> outDevices;
+
+  /// When `true`, [le_midi_out_create] returns `nullptr` (alloc failure).
+  bool outCreateReturnsNull;
+
+  /// The result code [le_midi_out_open] returns.
+  int outOpenResult;
+
+  /// The result code [le_midi_out_send] returns.
+  int sendResult;
+
+  /// The id passed to the most recent [le_midi_out_open].
+  String? lastOutOpenedId;
+
+  /// Every payload passed to [le_midi_out_send], in order.
+  final List<Uint8List> sent = [];
 
   /// Ordered log of MIDI calls, e.g. `create`, `open`, `close`, `destroy`.
   final List<String> calls = [];
@@ -82,6 +106,59 @@ class FakeLoopyEngineBindings implements LoopyEngineBindings {
   int le_midi_close(Pointer<le_midi> m) {
     calls.add('close');
     return 0;
+  }
+
+  /// The sentinel handle from [le_midi_out_create].
+  static final Pointer<le_midi_out> _outHandle =
+      Pointer<le_midi_out>.fromAddress(0x4F);
+
+  @override
+  Pointer<le_midi_out> le_midi_out_create() {
+    calls.add('out_create');
+    return outCreateReturnsNull ? nullptr : _outHandle;
+  }
+
+  @override
+  void le_midi_out_destroy(Pointer<le_midi_out> m) {
+    calls.add('out_destroy');
+  }
+
+  @override
+  int le_midi_out_enumerate(
+    Pointer<le_midi_info> out,
+    int max,
+    Pointer<Int32> count,
+  ) {
+    calls.add('out_enumerate');
+    final n = outDevices.length < max ? outDevices.length : max;
+    for (var i = 0; i < n; i++) {
+      final device = outDevices[i];
+      writeNativeString((out + i).ref.id, device.id);
+      writeNativeString((out + i).ref.name, device.name);
+      (out + i).ref.is_default = device.isDefault ? 1 : 0;
+    }
+    count.value = n;
+    return 0;
+  }
+
+  @override
+  int le_midi_out_open(Pointer<le_midi_out> m, Pointer<Char> id) {
+    calls.add('out_open');
+    lastOutOpenedId = id.cast<Utf8>().toDartString();
+    return outOpenResult;
+  }
+
+  @override
+  int le_midi_out_close(Pointer<le_midi_out> m) {
+    calls.add('out_close');
+    return 0;
+  }
+
+  @override
+  int le_midi_out_send(Pointer<le_midi_out> m, Pointer<Uint8> data, int len) {
+    calls.add('out_send');
+    sent.add(Uint8List.fromList(data.asTypedList(len)));
+    return sendResult;
   }
 
   @override

@@ -244,4 +244,22 @@ void main() {
       expect(PedalCodec.decodeFrame(buildStateSysEx(payload)), isNull);
     });
   });
+
+  group('PedalCodec outbound control messages', () {
+    test('encodeIdentityRequest is the Universal Identity Request', () {
+      expect(PedalCodec.encodeIdentityRequest(), [
+        0xF0,
+        0x7E,
+        0x7F,
+        0x06,
+        0x01,
+        0xF7,
+      ]);
+    });
+
+    test('encodeLoopTop is the single Start real-time byte', () {
+      expect(PedalCodec.encodeLoopTop(), [PedalCodec.loopTopPulse]);
+      expect(PedalCodec.loopTopPulse, 0xFA);
+    });
+  });
 }
