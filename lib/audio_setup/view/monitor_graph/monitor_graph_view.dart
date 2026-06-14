@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_channel_chip.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_layout.dart';
@@ -13,26 +14,38 @@ import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
 /// Opens the input-monitoring routing graph as a full-screen page (so it has
-/// room instead of a cramped panel). Re-provides the [MonitorCubit] into the
-/// pushed route, which lives under the root navigator.
+/// room instead of a cramped panel). Re-provides the [MonitorCubit] and
+/// [AudioSetupCubit] into the pushed route (it lives under the root navigator):
+/// the latter drives the octaver monitoring-lag hint live, so engaging a
+/// phase-vocoder octaver here surfaces the hint without reopening the page.
 Future<void> showMonitorRoutingPage({
   required BuildContext context,
   required int inputChannels,
   required int outputChannels,
   int excludedInputMask = 0,
 }) {
-  final cubit = context.read<MonitorCubit>();
+  final monitor = context.read<MonitorCubit>();
+  final audioSetup = context.read<AudioSetupCubit>();
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => BlocProvider.value(
-        value: cubit,
+      builder: (_) => MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: monitor),
+          BlocProvider.value(value: audioSetup),
+        ],
         child: Scaffold(
           key: const Key('monitorRouting_page'),
           appBar: AppBar(title: Text(context.l10n.inputMonitoringTitle)),
-          body: MonitorGraphView(
-            inputChannels: inputChannels,
-            outputChannels: outputChannels,
-            excludedInputMask: excludedInputMask,
+          body: BlocBuilder<AudioSetupCubit, AudioSetupState>(
+            buildWhen: (a, b) =>
+                a.engineStatus.fxAddedLatencyMs !=
+                b.engineStatus.fxAddedLatencyMs,
+            builder: (context, state) => MonitorGraphView(
+              inputChannels: inputChannels,
+              outputChannels: outputChannels,
+              excludedInputMask: excludedInputMask,
+              addedLatencyMs: state.engineStatus.fxAddedLatencyMs,
+            ),
           ),
         ),
       ),
@@ -63,6 +76,7 @@ class MonitorGraphView extends StatefulWidget {
     required this.inputChannels,
     required this.outputChannels,
     this.excludedInputMask = 0,
+    this.addedLatencyMs = 0,
     super.key,
   });
 
@@ -72,6 +86,9 @@ class MonitorGraphView extends StatefulWidget {
 
   /// Loopback inputs, drawn dimmed and never monitorable.
   final int excludedInputMask;
+
+  /// The engine's reported added latency (ms) for the octaver monitoring hint.
+  final double addedLatencyMs;
 
   @override
   State<MonitorGraphView> createState() => _MonitorGraphViewState();
@@ -366,6 +383,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
         _cubit.removeEffect(focus.input, focus.lane, selected.index);
         setState(() => _selected = null);
       },
+      addedLatencyMs: widget.addedLatencyMs,
     );
   }
 }

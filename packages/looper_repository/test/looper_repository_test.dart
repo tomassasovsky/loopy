@@ -281,6 +281,27 @@ void main() {
       );
       expect(buildRepo().state.status.excludedInputMask, 0x2);
     });
+
+    test('projects fx added latency onto EngineStatus (frames + ms)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        inputChannels: 2,
+        outputChannels: 2,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+        fxAddedLatencyFrames: 1024,
+      );
+      final status = buildRepo().state.status;
+      expect(status.fxAddedLatencyFrames, 1024);
+      expect(status.fxAddedLatencyMs, closeTo(1024 * 1000 / 48000, 1e-9));
+    });
   });
 
   group('looperState stream', () {

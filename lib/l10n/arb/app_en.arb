@@ -346,6 +346,14 @@
     "paramMode": "Mode",
     "octaverModePhaseVocoder": "Phase Vocoder",
     "octaverModePsola": "PSOLA",
+    "octaverLatencyHint": "Phase Vocoder adds ~{ms} ms — use PSOLA for live monitoring",
+    "@octaverLatencyHint": {
+        "placeholders": {
+            "ms": {
+                "type": "String"
+            }
+        }
+    },
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {

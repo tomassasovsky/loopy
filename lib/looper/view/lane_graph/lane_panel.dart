@@ -21,6 +21,7 @@ class LanePanel extends StatelessWidget {
     required this.onSetType,
     required this.onSetParam,
     required this.onRemoveEffect,
+    this.addedLatencyMs = 0,
     super.key,
   });
 
@@ -48,6 +49,9 @@ class LanePanel extends StatelessWidget {
   final void Function(int lane, int index, TrackEffectType type) onSetType;
   final void Function(int lane, int index, int param, double value) onSetParam;
   final void Function(int lane, int index) onRemoveEffect;
+
+  /// The engine's reported added latency (ms) for the octaver monitoring hint.
+  final double addedLatencyMs;
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +145,7 @@ class LanePanel extends StatelessWidget {
               keyPrefix: 'laneGraph',
               fx: lanes[sel.lane].effects[sel.index],
               accentColor: surface.accent,
+              addedLatencyMs: addedLatencyMs,
               onSetType: (t) => onSetType(sel.lane, sel.index, t),
               onSetParam: (p, v) => onSetParam(sel.lane, sel.index, p, v),
               onRemove: () => onRemoveEffect(sel.lane, sel.index),

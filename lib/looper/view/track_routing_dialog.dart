@@ -532,6 +532,7 @@ class _LaneListState extends State<_LaneList> {
       onRemoveEffect: _removeEffect,
       onAddLane: _addLane,
       onRemoveLane: _removeLane,
+      addedLatencyMs: _bloc.state.status.fxAddedLatencyMs,
     );
   }
 }

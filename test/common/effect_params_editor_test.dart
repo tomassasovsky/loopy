@@ -6,16 +6,29 @@ import 'package:loopy/common/effect_params_editor.dart';
 import '../helpers/pump_app.dart';
 
 void main() {
-  Widget editorFor(TrackEffect fx) => Scaffold(
+  Widget editorFor(TrackEffect fx, {double addedLatencyMs = 0}) => Scaffold(
     body: EffectParamsEditor(
       keyPrefix: 'laneGraph',
       fx: fx,
       accentColor: Colors.blue,
+      addedLatencyMs: addedLatencyMs,
       onSetType: (_) {},
       onSetParam: (_, _) {},
       onRemove: () {},
     ),
   );
+
+  // A PV-mode octaver keeps the default Mode (0.0); a PSOLA octaver sets it to
+  // 1.0. (Shift, Tone, Mix are irrelevant to the latency hint.)
+  TrackEffect octaver({required bool psola}) {
+    final mode = psola ? 1.0 : 0.0;
+    return TrackEffect(
+      type: TrackEffectType.octaver,
+      params: [0.25, 0.5, 0.5, mode],
+    );
+  }
+
+  const hintKey = Key('laneGraph_octaverLatencyHint');
 
   group('EffectParamsEditor', () {
     testWidgets('octaver renders a discrete two-state Mode control', (
@@ -59,6 +72,54 @@ void main() {
 
       expect(find.byKey(const Key('laneGraph_fxParam2')), findsOneWidget);
       expect(find.byKey(const Key('laneGraph_fxParam3')), findsNothing);
+    });
+
+    group('phase-vocoder latency hint', () {
+      testWidgets('shows for a PV octaver when the engine reports latency', (
+        tester,
+      ) async {
+        await tester.pumpApp(
+          editorFor(octaver(psola: false), addedLatencyMs: 21.3),
+        );
+
+        expect(find.byKey(hintKey), findsOneWidget);
+        // The hint names PSOLA as the low-latency alternative and rounds the
+        // reported ms for display (21.3 -> "21").
+        final hint = tester.widget<Text>(find.byKey(hintKey));
+        expect(hint.data, contains('21'));
+        expect(hint.data, contains('PSOLA'));
+      });
+
+      testWidgets('hides when the engine reports no added latency', (
+        tester,
+      ) async {
+        // A PV octaver that the engine has not engaged (e.g. stopped) reports
+        // 0 ms — no lag to warn about.
+        await tester.pumpApp(editorFor(octaver(psola: false)));
+
+        expect(find.byKey(hintKey), findsNothing);
+      });
+
+      testWidgets('hides for a PSOLA octaver (the low-latency choice)', (
+        tester,
+      ) async {
+        await tester.pumpApp(
+          editorFor(octaver(psola: true), addedLatencyMs: 21.3),
+        );
+
+        expect(find.byKey(hintKey), findsNothing);
+      });
+
+      testWidgets('hides for a non-octaver effect', (tester) async {
+        await tester.pumpApp(
+          editorFor(
+            TrackEffect(type: TrackEffectType.delay),
+            addedLatencyMs: 21.3,
+          ),
+        );
+
+        expect(find.byKey(hintKey), findsNothing);
+      });
     });
   });
 }

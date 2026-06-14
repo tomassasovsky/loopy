@@ -17,6 +17,7 @@ class EngineStatus extends Equatable {
     this.devicePresent = false,
     this.excludedInputMask = 0,
     this.recordOffsetFrames = 0,
+    this.fxAddedLatencyFrames = 0,
     this.activeBackend = AudioBackend.miniaudio,
   });
 
@@ -62,6 +63,18 @@ class EngineStatus extends Equatable {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
+  /// Added latency (frames) of the highest-latency effect engaged in any
+  /// audible or monitored lane chain — the maximum across active effects. Today
+  /// only the formant-preserving octaver contributes; `0` when no octaver is
+  /// engaged. Purely informational (see [fxAddedLatencyMs]); it never feeds
+  /// [recordOffsetFrames] or any compensation.
+  final int fxAddedLatencyFrames;
+
+  /// [fxAddedLatencyFrames] expressed in milliseconds at the current
+  /// [sampleRate]; `0` when no effect adds latency or the rate is unknown.
+  double get fxAddedLatencyMs =>
+      sampleRate > 0 ? fxAddedLatencyFrames * 1000 / sampleRate : 0;
+
   /// The device backend actually running (negotiated) — the reality behind the
   /// requested [EngineConfig.backend] intent. On Windows this is always
   /// [AudioBackend.asio]; on macOS/Linux it is [AudioBackend.miniaudio].
@@ -84,6 +97,7 @@ class EngineStatus extends Equatable {
     devicePresent,
     excludedInputMask,
     recordOffsetFrames,
+    fxAddedLatencyFrames,
     activeBackend,
   ];
 }

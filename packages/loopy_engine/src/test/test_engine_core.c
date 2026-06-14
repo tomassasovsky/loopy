@@ -4162,6 +4162,62 @@ static void test_octaver_psola_no_chatter(void) {
   free(out);
 }
 
+/* Part 5: the snapshot surfaces the octaver's added latency (frames) so the UI
+ * can warn about monitoring lag. A PV octaver on a monitor lane reports LE_PV_N
+ * (1024, engine.c); a chain with no octaver reports 0. Informational only — the
+ * record offset stays untouched (compensation is out of scope). */
+static void test_octaver_added_latency(void) {
+  printf("test_octaver_added_latency\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  /* No effects engaged: nothing adds latency, and the record offset is unset. */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 0);
+  CHECK(s.record_offset_frames == 0);
+
+  /* Engage a PV octaver on a monitor lane -> LE_PV_N frames of added latency. */
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 3, 0.0f); /* PV mode */
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 1024); /* == LE_PV_N */
+  CHECK(s.record_offset_frames == 0);       /* compensation untouched */
+
+  /* Switching the same octaver to PSOLA reports the same latency (both modes
+   * read LE_PV_N today, so the dry tap does not jump on a mode switch). */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 3, 1.0f); /* PSOLA mode */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 1024);
+
+  /* Disengage the chain -> the reported latency falls back to 0. */
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 0);
+
+  /* An octaver on a record-route lane (audible on playback) is reported too:
+   * the snapshot's latency is the max across every audible/monitored chain, so
+   * the hint also fires in the track lane editor, not just the monitor graph. */
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 3, 0.0f); /* PV mode */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 1024);
+
+  le_engine_set_lane_fx_count(e, 0, 0, 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.fx_added_latency_frames == 0);
+
+  le_engine_destroy(e);
+}
+
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
@@ -4372,6 +4428,7 @@ int main(void) {
   test_octaver_psola_pitch_detect();
   test_octaver_psola_voice_and_fallback();
   test_octaver_psola_no_chatter();
+  test_octaver_added_latency();
   test_fft_roundtrip();
 
   if (g_failures == 0) {
