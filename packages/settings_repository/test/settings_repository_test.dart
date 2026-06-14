@@ -380,6 +380,39 @@ void main() {
     });
   });
 
+  group('midi device', () {
+    test('returns null when nothing is stored', () async {
+      expect(await repository.loadMidiDevice(), isNull);
+    });
+
+    test('round-trips a saved id + name', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      final loaded = await repository.loadMidiDevice();
+      expect(loaded?.id, '12345');
+      expect(loaded?.name, 'FCB1010');
+    });
+
+    test('defaults the name to empty when only the id was stored', () async {
+      await store.setString('midi.input_device_id', 'port-1');
+      final loaded = await repository.loadMidiDevice();
+      expect(loaded?.id, 'port-1');
+      expect(loaded?.name, '');
+    });
+
+    test('treats an empty saved id as no selection', () async {
+      await repository.saveMidiDevice(id: '', name: '');
+      expect(await repository.loadMidiDevice(), isNull);
+    });
+
+    test('clearMidiDevice removes both keys', () async {
+      await repository.saveMidiDevice(id: '12345', name: 'FCB1010');
+      await repository.clearMidiDevice();
+      expect(await repository.loadMidiDevice(), isNull);
+      expect(store.values.containsKey('midi.input_device_id'), isFalse);
+      expect(store.values.containsKey('midi.input_device_name'), isFalse);
+    });
+  });
+
   group('waveform window', () {
     test('defaults to enabled when unset', () async {
       expect(await repository.loadShowWaveformWindow(), isTrue);

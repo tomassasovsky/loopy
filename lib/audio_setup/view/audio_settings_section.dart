@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
+import 'package:loopy/audio_setup/view/midi_device_picker.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_view.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
@@ -77,6 +78,11 @@ class AudioSettingsSection extends StatelessWidget {
             onSelected: cubit.setCaptureDevice,
           ),
         ],
+        // The MIDI foot-controller picker is independent of the audio backend,
+        // so it shows in every mode — including Windows ASIO-only, where the
+        // audio device pickers are hidden.
+        const SizedBox(height: 28),
+        const MidiDevicePicker(),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),

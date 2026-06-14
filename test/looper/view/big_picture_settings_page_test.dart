@@ -19,12 +19,16 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
+class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
+    implements MidiSetupCubit {}
+
 void main() {
   late SettingsRepository settings;
   late BigPictureCubit bigPicture;
   late WaveformWindowCubit waveformWindow;
   late BankCubit bank;
   late AudioSetupCubit audioSetup;
+  late MidiSetupCubit midiSetup;
   late RefreshRateCubit refreshRate;
   late QuantizeCubit quantize;
   late MonitorCubit monitor;
@@ -38,6 +42,13 @@ void main() {
     bank = BankCubit();
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(const AudioSetupState());
+    midiSetup = _MockMidiSetupCubit();
+    when(() => midiSetup.state).thenReturn(const MidiSetupState());
+    whenListen(
+      midiSetup,
+      const Stream<MidiSetupState>.empty(),
+      initialState: const MidiSetupState(),
+    );
     repository = _MockLooperRepository();
     when(() => repository.state).thenReturn(
       const LooperState(
@@ -88,6 +99,7 @@ void main() {
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+            BlocProvider<MidiSetupCubit>.value(value: midiSetup),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
@@ -258,6 +270,7 @@ void main() {
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+            BlocProvider<MidiSetupCubit>.value(value: midiSetup),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),

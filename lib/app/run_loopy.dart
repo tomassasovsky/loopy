@@ -3,6 +3,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
+import 'package:loopy/app/midi_bootstrap.dart';
 import 'package:loopy/app/monitor_migration.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
@@ -38,7 +39,14 @@ Future<void> runLoopy(
   // the session repository (which only reads/writes its loop PCM).
   final engine = createEngine?.call() ?? NativeAudioEngine();
   final repository = LooperRepository(engine: engine);
-  final controllerRepository = ControllerRepository(sources: const []);
+  // The native MIDI source feeds the controller pipeline; it is null when no
+  // MIDI backend is available (e.g. the mock flavor), in which case the looper
+  // runs with no controller source. The waveform sub-window already returned
+  // above, so it never opens MIDI.
+  final midiSource = createMidiSource();
+  final controllerRepository = ControllerRepository(
+    sources: [?midiSource],
+  );
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
   final sessionRepository = SessionRepository(engine: engine);
 
@@ -67,6 +75,7 @@ Future<void> runLoopy(
     () => App(
       repository: repository,
       controllerRepository: controllerRepository,
+      midiSource: midiSource,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: sessionRepository,

@@ -13,16 +13,27 @@ import '../../helpers/helpers.dart';
 class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
+class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
+    implements MidiSetupCubit {}
+
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 void main() {
   late AudioSetupCubit cubit;
+  late MidiSetupCubit midi;
   late MonitorCubit monitor;
   late QuantizeCubit quantize;
   late RecordOptionsCubit recordOptions;
 
   setUp(() {
     cubit = _MockAudioSetupCubit();
+    midi = _MockMidiSetupCubit();
+    when(() => midi.state).thenReturn(const MidiSetupState());
+    whenListen(
+      midi,
+      const Stream<MidiSetupState>.empty(),
+      initialState: const MidiSetupState(),
+    );
     final repository = _MockLooperRepository();
     when(
       () => repository.setMonitorInputEnabled(
@@ -64,6 +75,7 @@ void main() {
     MultiBlocProvider(
       providers: [
         BlocProvider<AudioSetupCubit>.value(value: cubit),
+        BlocProvider<MidiSetupCubit>.value(value: midi),
         BlocProvider<MonitorCubit>.value(value: monitor),
         BlocProvider<QuantizeCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
@@ -419,6 +431,20 @@ void main() {
       expect(
         find.byKey(const Key('audioSettings_asioDriver_picker')),
         findsNothing,
+      );
+    });
+
+    testWidgets('the MIDI picker stays visible in ASIO-only mode', (
+      tester,
+    ) async {
+      // MIDI is independent of the audio backend, so the foot-controller
+      // section shows even though the audio device pickers are hidden.
+      seed(asioState());
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('midiSettings_section')),
+        findsOneWidget,
       );
     });
   });

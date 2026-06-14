@@ -14,6 +14,7 @@ import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/window/window_chrome.dart';
+import 'package:midi_client/midi_client.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -35,6 +36,7 @@ class App extends StatelessWidget {
     required this.waveformWindow,
     required this.sessionRepository,
     required this.sessionDirectory,
+    this.midiSource,
     this.initialAsioDrivers = const [],
     super.key,
   });
@@ -44,6 +46,11 @@ class App extends StatelessWidget {
 
   /// The shared controller repository (MIDI/GPIO → looper actions).
   final ControllerRepository controllerRepository;
+
+  /// The long-lived native MIDI source (owned by [controllerRepository]), or
+  /// `null` when no MIDI backend is available. The MIDI-setup cubit borrows it
+  /// for enumerate/open/close and activity; it never disposes it.
+  final MidiControllerSource? midiSource;
 
   /// The shared settings repository (persists latency calibration + config).
   final SettingsRepository settings;
@@ -145,6 +152,18 @@ class App extends StatelessWidget {
               settings: context.read<SettingsRepository>(),
               asioSelectable: platformAsioSelectable,
               initialAsioDrivers: initialAsioDrivers,
+            ),
+          ),
+          // Eager (not lazy): the MIDI-setup cubit performs the launch
+          // auto-reconnect of the saved foot controller, so it must be created
+          // on startup, not only when the settings page first reads it. It
+          // holds no audio dependency — switching/losing MIDI never restarts
+          // the engine.
+          BlocProvider(
+            lazy: false,
+            create: (context) => MidiSetupCubit(
+              source: midiSource,
+              settings: context.read<SettingsRepository>(),
             ),
           ),
         ],
@@ -279,6 +298,47 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
+  /// The MIDI analog of [_showConnectivityBanner]: a persistent disconnect
+  /// banner when the pinned foot controller is unplugged, replaced by a
+  /// transient "reconnected" snackbar when it returns. Independent of the audio
+  /// device banner above (a separate messenger entry).
+  void _showMidiConnectivityBanner(MidiSetupState state) {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+    final l10n = _l10n;
+    final name = state.connectivityDeviceName.isEmpty
+        ? state.selectedName
+        : state.connectivityDeviceName;
+    switch (state.connectivity) {
+      case MidiConnectivity.lost:
+        messenger.showMaterialBanner(
+          MaterialBanner(
+            key: const Key('app_midiLost_banner'),
+            content: Text(l10n.midiDisconnectedBanner(name)),
+            leading: const Icon(Icons.piano_off_outlined),
+            actions: [
+              TextButton(
+                onPressed: messenger.clearMaterialBanners,
+                child: Text(l10n.dismiss),
+              ),
+            ],
+          ),
+        );
+      case MidiConnectivity.restored:
+        messenger
+          ..clearMaterialBanners()
+          ..showSnackBar(
+            SnackBar(
+              key: const Key('app_midiRestored_snackbar'),
+              content: Text(l10n.midiReconnectedSnackbar(name)),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+      case MidiConnectivity.none:
+        break;
+    }
+  }
+
   List<PlatformMenuItem> _menus(BuildContext context) => [
     PlatformMenu(
       label: context.l10n.appMenuLabel,
@@ -305,6 +365,11 @@ class _AppViewState extends State<_AppView> {
           listenWhen: (previous, current) =>
               previous.deviceConnectivity != current.deviceConnectivity,
           listener: (_, state) => _showConnectivityBanner(state),
+        ),
+        BlocListener<MidiSetupCubit, MidiSetupState>(
+          listenWhen: (previous, current) =>
+              previous.connectivity != current.connectivity,
+          listener: (_, state) => _showMidiConnectivityBanner(state),
         ),
       ],
       child: MaterialApp(
