@@ -127,8 +127,7 @@ void main() {
       verify: (cubit) async {
         expect(cubit.state.forInput(0).lane(0).volume, 0.5);
         verify(
-          () =>
-              repository.setMonitorLaneVolume(input: 0, lane: 0, volume: 0.5),
+          () => repository.setMonitorLaneVolume(input: 0, lane: 0, volume: 0.5),
         ).called(1);
         expect(await settings.loadMonitorLaneVolume(0, 0), 0.5);
       },
@@ -280,8 +279,7 @@ void main() {
           () => repository.setMonitorLaneOutput(input: 0, lane: 0, mask: 0x2),
         ).called(1);
         verify(
-          () =>
-              repository.setMonitorLaneVolume(input: 0, lane: 0, volume: 0.4),
+          () => repository.setMonitorLaneVolume(input: 0, lane: 0, volume: 0.4),
         ).called(1);
         verify(
           () => repository.setMonitorLaneEffects(
