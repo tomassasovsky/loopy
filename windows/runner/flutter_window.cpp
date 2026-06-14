@@ -1,8 +1,11 @@
 #include "flutter_window.h"
 
+#include <desktop_multi_window/desktop_multi_window_plugin.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "sub_window_plugin_registrant.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +28,17 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+
+  // Register non-multi-window plugins for secondary engines. Sub-windows already
+  // register `desktop_multi_window` before this callback; calling the full
+  // RegisterPlugins there re-attaches the main window and clears the inter-window
+  // channel handler, leaving the output waveform window blank.
+  DesktopMultiWindowSetWindowCreatedCallback([](void* controller) {
+    auto* view_controller =
+        reinterpret_cast<flutter::FlutterViewController*>(controller);
+    RegisterSubWindowPlugins(view_controller->engine());
+  });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
 }

@@ -13,6 +13,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
+import 'package:loopy/window/window_chrome.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -119,6 +120,11 @@ class App extends StatelessWidget {
             },
           ),
           BlocProvider(
+            // Not lazy: the monitor graph page is the only widget that reads
+            // this cubit, but the saved per-input monitors must be applied to
+            // the engine at startup — otherwise monitoring stays off until the
+            // user opens "configure input monitoring".
+            lazy: false,
             create: (context) {
               final cubit = MonitorCubit(
                 repository: context.read<LooperRepository>(),
@@ -315,7 +321,17 @@ class _AppViewState extends State<_AppView> {
         theme: AppTheme.bigPicture,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: LooperPage(sessionDirectory: widget.sessionDirectory),
+        home: Builder(
+          builder: (context) {
+            final page = LooperPage(sessionDirectory: widget.sessionDirectory);
+            if (!loopyUsesFlutterTitleBar) return page;
+            return LoopyWindowChromeShell(
+              title: context.l10n.appMenuLabel,
+              backgroundColor: AppTheme.bigPicture.scaffoldBackgroundColor,
+              body: page,
+            );
+          },
+        ),
         debugShowCheckedModeBanner: false,
         builder: (context, child) {
           var app = child ?? const SizedBox.shrink();

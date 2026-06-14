@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:flutter/widgets.dart';
+import 'package:loopy/visualizer/waveform_window_args.dart';
+import 'package:loopy/visualizer/waveform_window_channel.dart';
 
 /// Manages the secondary output-waveform window: opening/closing it and pushing
 /// waveform frames to it. Injected into the app so tests use a no-op.
@@ -25,52 +25,82 @@ abstract interface class WaveformWindowService {
 }
 
 /// Opens a real second OS window via `desktop_multi_window` and streams
-/// waveform frames to it over the plugin's method channel.
+/// waveform frames to it over [waveformWindowChannel].
 class DesktopMultiWindowWaveformService implements WaveformWindowService {
-  int? _windowId;
+  WindowController? _controller;
+  static Completer<void>? _readyCompleter;
+  static var _mainChannelRegistered = false;
 
   /// Closes sub-windows left over from a hot restart. Dart state is reset but
   /// native windows from `desktop_multi_window` survive.
   static Future<void> closeOrphanWindows() async {
-    final ids = await DesktopMultiWindow.getAllSubWindowIds();
-    for (final id in ids) {
-      await WindowController.fromWindowId(id).close();
+    await _ensureMainChannelRegistered();
+    final current = await WindowController.fromCurrentEngine();
+    for (final controller in await WindowController.getAll()) {
+      if (controller.windowId == current.windowId) continue;
+      if (WaveformWindowArgs.isWaveformWindow(controller.arguments)) {
+        await waveformWindowChannel
+            .invokeMethod('window_close')
+            .catchError((Object _) => null);
+      }
     }
   }
 
   @override
-  bool get isOpen => _windowId != null;
+  bool get isOpen => _controller != null;
+
+  static Future<void> _ensureMainChannelRegistered() async {
+    if (_mainChannelRegistered) return;
+    await waveformWindowChannel.setMethodCallHandler((call) async {
+      if (call.method == waveformWindowReadyMethod) {
+        _readyCompleter?.complete();
+      }
+      return null;
+    });
+    _mainChannelRegistered = true;
+  }
 
   @override
   Future<void> open({String title = 'Loopy — Output'}) async {
-    if (_windowId != null) return;
+    if (_controller != null) return;
     await closeOrphanWindows();
-    final controller = await DesktopMultiWindow.createWindow(
-      jsonEncode({'view': 'waveform'}),
+    await _ensureMainChannelRegistered();
+
+    _readyCompleter = Completer<void>();
+    final controller = await WindowController.create(
+      WindowConfiguration(
+        arguments: WaveformWindowArgs.encode(title: title),
+      ),
     );
-    _windowId = controller.windowId;
-    await controller.setFrame(const Offset(120, 120) & const Size(960, 320));
-    await controller.setTitle(title);
+    _controller = controller;
+
+    await _readyCompleter!.future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {},
+    );
     await controller.show();
   }
 
   @override
   Future<void> close() async {
-    _windowId = null;
+    _controller = null;
+    _readyCompleter = null;
+    await waveformWindowChannel
+        .invokeMethod('window_close')
+        .catchError((Object _) => null);
     await closeOrphanWindows();
   }
 
   @override
   void pushWaveform(Float32List samples, double progress) {
-    final id = _windowId;
-    if (id == null) return;
-    // Fire-and-forget; the next frame supersedes any dropped one. Ignore errors
-    // (e.g. the brief window before the new window registers its handler).
+    if (_controller == null) return;
     unawaited(
-      DesktopMultiWindow.invokeMethod(id, 'waveform', {
-        'samples': samples,
-        'progress': progress,
-      }).catchError((Object _) => null),
+      waveformWindowChannel
+          .invokeMethod('waveform', {
+            'samples': samples,
+            'progress': progress,
+          })
+          .catchError((Object _) => null),
     );
   }
 }

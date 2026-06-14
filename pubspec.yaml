@@ -12,7 +12,7 @@ dependencies:
   bloc: ^9.2.1
   controller_repository:
     path: packages/controller_repository
-  desktop_multi_window: ^0.2.0
+  desktop_multi_window: ^0.3.0
   equatable: ^2.0.7
   flutter:
     sdk: flutter
@@ -32,6 +32,7 @@ dependencies:
   settings_repository:
     path: packages/settings_repository
   url_launcher: ^6.3.0
+  window_manager: ^0.5.1
 
 dev_dependencies:
   bloc_lint: ^0.4.1
