@@ -175,6 +175,7 @@
     "paramMode": "Modo",
     "octaverModePhaseVocoder": "Vocoder de fase",
     "octaverModePsola": "PSOLA",
+    "octaverLatencyHint": "El vocoder de fase añade ~{ms} ms — usa PSOLA para monitoreo en vivo",
     "pitchUnison": "Unísono",
     "pitchOctaves": "{sign}{count} oct",
     "pitchSemitones": "{sign}{count} st",

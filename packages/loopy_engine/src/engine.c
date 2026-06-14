@@ -2698,6 +2698,46 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->lane_count = le_lanes_active(tr);
 }
 
+/* Max added latency (frames) across every active octaver in any record-route or
+ * monitor lane chain — the value the snapshot surfaces so the UI can warn about
+ * monitoring lag (part 5). Scanned here on the control thread (a render-rate
+ * poll) rather than cached on an fx-change atomic: an fx's type and count are
+ * committed by the audio thread's ring handler, so a control-thread setter can't
+ * see the post-commit chain — a pull-time scan of the published a_fx_type /
+ * a_fx_count atomics is the only race-free seam. The audio thread never reads
+ * this. Today only the octaver contributes (le_octaver_latency); the max keeps
+ * it forward-compatible, and a chain with no octaver yields 0. */
+static int32_t le_max_fx_latency(le_engine* engine) {
+  int32_t max_lat = 0;
+  for (int32_t t = 0; t < engine->track_count; ++t) {
+    le_track* tr = &engine->tracks[t];
+    for (int32_t l = 0; l < tr->lane_count; ++l) {
+      le_lane* ln = &tr->lanes[l];
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      for (int32_t s = 0; s < n; ++s) {
+        if (load_i32(&ln->a_fx_type[s]) != LE_FX_OCTAVER) continue;
+        const int32_t lat = le_octaver_latency(&ln->fx.oct[s][0]);
+        if (lat > max_lat) max_lat = lat;
+      }
+    }
+  }
+  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+    le_monitor_input* m = &engine->monitors[c];
+    for (int32_t l = 0; l < m->lane_count; ++l) {
+      le_monitor_lane* ln = &m->lanes[l];
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      for (int32_t s = 0; s < n; ++s) {
+        if (load_i32(&ln->a_fx_type[s]) != LE_FX_OCTAVER) continue;
+        const int32_t lat = le_octaver_latency(&ln->fx.oct[s][0]);
+        if (lat > max_lat) max_lat = lat;
+      }
+    }
+  }
+  return max_lat;
+}
+
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
@@ -2721,6 +2761,7 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->master_length_frames = load_i32(&engine->a_master_len);
   out->master_position_frames = load_i32(&engine->a_master_pos);
   out->record_offset_frames = load_i32(&engine->a_record_offset);
+  out->fx_added_latency_frames = le_max_fx_latency(engine);
   out->master_gain = load_f32(&engine->a_master_gain_bits);
   out->active_backend = load_i32(&engine->a_active_backend);
   out->track_count = engine->track_count;

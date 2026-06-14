@@ -38,6 +38,7 @@ class LaneGraphView extends StatefulWidget {
     required this.onAddLane,
     required this.onRemoveLane,
     this.excludedInputMask = 0,
+    this.addedLatencyMs = 0,
     super.key,
   });
 
@@ -50,6 +51,9 @@ class LaneGraphView extends StatefulWidget {
 
   /// Loopback inputs, drawn dimmed and never wired.
   final int excludedInputMask;
+
+  /// The engine's reported added latency (ms) for the octaver monitoring hint.
+  final double addedLatencyMs;
 
   /// The selected (open-in-the-editor) effect, as `(lane, index)`, or null.
   final ({int lane, int index})? selectedEffect;
@@ -261,6 +265,7 @@ class _LaneGraphViewState extends State<LaneGraphView> {
           onSetType: widget.onSetType,
           onSetParam: widget.onSetParam,
           onRemoveEffect: widget.onRemoveEffect,
+          addedLatencyMs: widget.addedLatencyMs,
         ),
       ],
     );
