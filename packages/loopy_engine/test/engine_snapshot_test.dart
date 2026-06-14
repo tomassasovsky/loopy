@@ -29,6 +29,7 @@ void main() {
       expect(snapshot.framesProcessed, 0);
       expect(snapshot.latencyState, LatencyState.idle);
       expect(snapshot.measuredLatencyMs, -1);
+      expect(snapshot.masterGain, 1);
       expect(snapshot.activeBackend, AudioBackend.miniaudio);
     });
   });
@@ -256,6 +257,7 @@ void main() {
           ..master_length_frames = 96000
           ..master_position_frames = 1200
           ..record_offset_frames = 480
+          ..master_gain = 0.5
           ..active_backend = 1
           ..track_count = 2;
 
@@ -284,6 +286,7 @@ void main() {
         expect(snapshot.measuredLatencyMs, closeTo(7.5, 1e-9));
         expect(snapshot.masterLengthFrames, 96000);
         expect(snapshot.recordOffsetFrames, 480);
+        expect(snapshot.masterGain, closeTo(0.5, 1e-6));
         expect(snapshot.activeBackend, AudioBackend.asio);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.
@@ -375,6 +378,7 @@ void main() {
     EngineSnapshot build({
       bool devicePresent = true,
       AudioBackend activeBackend = AudioBackend.miniaudio,
+      double masterGain = 1,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -387,6 +391,7 @@ void main() {
       outputRms: 0,
       latencyState: LatencyState.idle,
       measuredLatencyMs: -1,
+      masterGain: masterGain,
       activeBackend: activeBackend,
     );
 
@@ -404,6 +409,10 @@ void main() {
         build(),
         isNot(equals(build(activeBackend: AudioBackend.asio))),
       );
+    });
+
+    test('masterGain participates in equality', () {
+      expect(build(), isNot(equals(build(masterGain: 0.5))));
     });
 
     test('differing snapshots are not equal', () {

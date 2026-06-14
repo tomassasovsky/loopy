@@ -155,6 +155,7 @@ typedef enum le_command_code {
   LE_CMD_SET_MONITOR_LANE_MUTE = 35,   /* monitor lane mute.
                                         * arg_i = input*LE_MAX_LANES+lane,
                                         * arg_f = 0/1. */
+  LE_CMD_SET_MASTER_GAIN = 36, /* global post-mix output gain. arg_f = 0..1. */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -347,6 +348,11 @@ typedef struct le_snapshot {
    * written this many frames earlier in the loop so it aligns with what the
    * player heard. Auto-set by a latency measurement; manually overridable. */
   int32_t record_offset_frames;
+
+  /* Global master output gain (0..1) applied post-mix to the final output, after
+   * every track/lane/monitor lane has summed in. 1.0 (unity) by default and on
+   * every fresh configure. Set via le_engine_set_master_gain. */
+  float master_gain;
 
   /* le_audio_backend actually running (negotiated). On Windows this is always
    * ASIO; on macOS/Linux it is the miniaudio backend. */
@@ -553,6 +559,12 @@ LE_EXPORT int32_t le_engine_set_default_multiple(le_engine* engine,
  * with a record press continues into overdub instead of playback. A stop press
  * always ends in playback/stopped. */
 LE_EXPORT int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled);
+
+/* Sets the global master output gain (clamped to 0..1), applied post-mix to the
+ * final output after all tracks/lanes/monitors have summed in. Unity (1.0) by
+ * default and after every fresh configure; published in le_snapshot.master_gain.
+ */
+LE_EXPORT int32_t le_engine_set_master_gain(le_engine* engine, float gain);
 
 /* Enables sound-activated recording: a record press on an empty track waits and
  * begins capturing the first frame the input level crosses the threshold. A

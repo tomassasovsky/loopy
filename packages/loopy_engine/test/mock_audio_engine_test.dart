@@ -65,6 +65,32 @@ void main() {
       }
     });
 
+    test(
+      'master gain defaults to unity, clamps, and surfaces in the snapshot',
+      () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().masterGain, 1);
+
+        expect(engine.setMasterGain(0.25), EngineResult.ok);
+        expect(engine.snapshot().masterGain, closeTo(0.25, 1e-6));
+
+        // Out-of-range values clamp to 0..1, mirroring the native engine.
+        engine.setMasterGain(-1);
+        expect(engine.snapshot().masterGain, 0);
+        engine.setMasterGain(2);
+        expect(engine.snapshot().masterGain, 1);
+      },
+    );
+
+    test('a fresh start resets the master gain to unity', () {
+      engine
+        ..start(engine.defaultConfig)
+        ..setMasterGain(0.5)
+        ..stop()
+        ..start(engine.defaultConfig);
+      expect(engine.snapshot().masterGain, 1);
+    });
+
     test('reflects lane routing in snapshots', () {
       engine
         ..start(engine.defaultConfig)

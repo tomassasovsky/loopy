@@ -59,6 +59,7 @@ class MockAudioEngine implements AudioEngine {
   LatencyState _latencyState = LatencyState.idle;
   double _measuredLatencyMs = -1;
   int _recordOffsetFrames = 0;
+  double _masterGain = 1;
 
   final List<_MockTrack> _tracks = List<_MockTrack>.generate(
     LE_MAX_TRACKS,
@@ -89,6 +90,7 @@ class MockAudioEngine implements AudioEngine {
     _framesProcessed = 0;
     _latencyState = LatencyState.idle;
     _measuredLatencyMs = -1;
+    _masterGain = 1; // unity on every fresh start, mirroring the native engine
     return EngineResult.ok;
   }
 
@@ -121,6 +123,7 @@ class MockAudioEngine implements AudioEngine {
       latencyState: _latencyState,
       measuredLatencyMs: _measuredLatencyMs,
       recordOffsetFrames: _recordOffsetFrames,
+      masterGain: _masterGain,
       // The mock echoes the requested backend as the negotiated one (ASIO
       // "succeeds"), so the requested-ASIO/reality-miniaudio fallback is NOT
       // exercised here — the widget test seeds that state directly.
@@ -275,6 +278,14 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   EngineResult setRecDub({required bool enabled}) => _requireRunning();
+
+  @override
+  EngineResult setMasterGain(double gain) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _masterGain = gain.clamp(0.0, 1.0);
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setAutoRecord({required bool enabled}) => _requireRunning();

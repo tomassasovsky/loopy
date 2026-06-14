@@ -462,6 +462,51 @@ void main() {
       expect(engine.trackMultiple[1], 3);
     });
 
+    test('setMasterGain is deferred until running, then re-applied', () {
+      // Not running yet: the value is remembered but not pushed to the engine,
+      // and the call still reports success.
+      final repo = buildRepo();
+      expect(repo.setMasterGain(0.5), EngineResult.ok);
+      expect(engine.lastMasterGain, isNull);
+
+      // A start re-applies the remembered gain so it survives device changes.
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastMasterGain, 0.5);
+    });
+
+    test('setMasterGain re-applies on every restart (device change)', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterGain(0.4);
+      expect(engine.lastMasterGain, 0.4);
+
+      // A restart (e.g. a reconnect or device switch) resets the engine, so the
+      // remembered gain must be pushed again — this is why it is stored.
+      engine.lastMasterGain = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastMasterGain, 0.4);
+    });
+
+    test('setMasterGain applies immediately while running', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      // The start re-applied the default (unity).
+      expect(engine.lastMasterGain, 1.0);
+
+      repo.setMasterGain(0.25);
+      expect(engine.lastMasterGain, 0.25);
+    });
+
+    test('setMasterGain clamps to 0..1 before reaching the engine', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMasterGain(2);
+      expect(engine.lastMasterGain, 1.0);
+      repo.setMasterGain(-1);
+      expect(engine.lastMasterGain, 0.0);
+    });
+
     test('a per-lane effects chain is deferred then re-applied on start', () {
       final repo = buildRepo()
         ..setTrackEffects(
@@ -540,34 +585,36 @@ void main() {
       expect(engine.monitorLaneFxCount[(0, 0)], 1);
     });
 
-    test('a monitor lane param tweak updates the entry without resetting it',
-        () {
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setMonitorLaneEffects(
+    test(
+      'a monitor lane param tweak updates the entry without resetting it',
+      () {
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setMonitorLaneEffects(
+            input: 0,
+            lane: 0,
+            effects: [TrackEffect(type: TrackEffectType.drive)],
+          );
+        engine.calls.clear();
+
+        repo.setMonitorLaneEffectParam(
           input: 0,
           lane: 0,
-          effects: [TrackEffect(type: TrackEffectType.drive)],
+          index: 0,
+          param: 0,
+          value: 0.9,
         );
-      engine.calls.clear();
+        expect(engine.monitorLaneFxParam[(0, 0, 0, 0)], 0.9);
+        // No setMonitorLaneFx (which would reset DSP) — only the granular call.
+        expect(engine.calls, isNot(contains('setMonitorLaneFx')));
+        expect(engine.calls, contains('setMonitorLaneFxParam'));
 
-      repo.setMonitorLaneEffectParam(
-        input: 0,
-        lane: 0,
-        index: 0,
-        param: 0,
-        value: 0.9,
-      );
-      expect(engine.monitorLaneFxParam[(0, 0, 0, 0)], 0.9);
-      // No setMonitorLaneFx (which would reset DSP) — only the granular call.
-      expect(engine.calls, isNot(contains('setMonitorLaneFx')));
-      expect(engine.calls, contains('setMonitorLaneFxParam'));
-
-      // The tweak is remembered and re-applied on restart.
-      engine.monitorLaneFxParam.clear();
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneFxParam[(0, 0, 0, 0)], 0.9);
-    });
+        // The tweak is remembered and re-applied on restart.
+        engine.monitorLaneFxParam.clear();
+        repo.startEngine(const EngineConfig());
+        expect(engine.monitorLaneFxParam[(0, 0, 0, 0)], 0.9);
+      },
+    );
 
     test('setMonitorLaneOutput routes a lane and reapplies on restart', () {
       final repo = buildRepo()
@@ -641,15 +688,17 @@ void main() {
       expect(engine.trackMultiple.containsKey(1), isFalse);
     });
 
-    test('a per-input monitor enable is deferred until running, then applied',
-        () {
-      final repo = buildRepo()
-        ..setMonitorInputEnabled(input: 1, enabled: true);
-      expect(engine.monitorInputEnabled, isEmpty); // not running yet
+    test(
+      'a per-input monitor enable is deferred until running, then applied',
+      () {
+        final repo = buildRepo()
+          ..setMonitorInputEnabled(input: 1, enabled: true);
+        expect(engine.monitorInputEnabled, isEmpty); // not running yet
 
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorInputEnabled[1], isTrue);
-    });
+        repo.startEngine(const EngineConfig());
+        expect(engine.monitorInputEnabled[1], isTrue);
+      },
+    );
 
     test('setMonitorLaneCount remembers, defers, and re-applies on start', () {
       final repo = buildRepo()..setMonitorLaneCount(input: 2, count: 3);
