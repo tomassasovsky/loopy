@@ -231,6 +231,17 @@ typedef struct le_track {
                   * leaves the loop buffer without a step discontinuity (a click)
                   * at the punch points / loop seam. Drives the fade-out tail that
                   * keeps writing for a few ms after the track is back in PLAYING. */
+
+  /* Deferred crossfade-finalize of the defining master (audio-thread-local). On
+   * the finalize press the master keeps RECORDING `xfade_capture` more frames —
+   * the continuation of the performance just past the loop point — into
+   * [xfade_len, xfade_len + F). When the count hits 0 that overlap is
+   * equal-power crossfaded into the loop head so the wrap (xfade_len-1 -> 0) is
+   * click-free, and the loop is finalized at exactly xfade_len (length, and so
+   * tempo/quantize, are preserved). 0 == not deferring (immediate finalize). */
+  int32_t xfade_capture;
+  int32_t xfade_len;
+  int32_t xfade_end_state;
 } le_track;
 
 struct le_engine {
@@ -296,6 +307,21 @@ struct le_engine {
    * output. Written by the control thread (LE_CMD_SET_MASTER_GAIN), read once
    * per process() on the audio thread. Unity (1.0) by default / on configure. */
   _Atomic uint32_t a_master_gain_bits;
+
+  /* Master peak limiter, applied post-gain to the additive mix so the summed
+   * output (many tracks + overdub layers + monitoring) cannot hard-clip in the
+   * driver. Feed-forward, no lookahead: instant attack (clamp this frame to the
+   * ceiling) + smooth release. OFF by default so the deterministic native tests
+   * see the raw mix; the app enables it. ceiling is float bits in (0,1]. */
+  _Atomic int32_t a_limiter_enabled;
+  _Atomic uint32_t a_limiter_ceiling_bits;
+  float lim_gain; /* audio-thread-local smoothed gain reduction (1 = no cut) */
+
+  /* Overdub feedback: the existing loop content at the write head is scaled by
+   * this before the new input is layered in, so stacked overdubs can't grow
+   * without bound. Unity (1.0) by default == the classic additive overdub (and
+   * what the native tests assert); < 1.0 decays older layers. Float bits. */
+  _Atomic uint32_t a_overdub_fb_bits;
 
   /* Tracks. */
   le_track tracks[LE_MAX_TRACKS];

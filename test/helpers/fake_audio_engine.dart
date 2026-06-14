@@ -253,6 +253,13 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
+      EngineResult.ok;
+
+  @override
+  EngineResult setOverdubFeedback(double feedback) => EngineResult.ok;
+
   /// Per-(channel, lane, index) effect type passed to [setLaneFx].
   final Map<(int, int, int), TrackEffectType> laneFx = {};
 

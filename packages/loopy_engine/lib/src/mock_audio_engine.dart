@@ -288,6 +288,13 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
+      _requireRunning();
+
+  @override
+  EngineResult setOverdubFeedback(double feedback) => _requireRunning();
+
+  @override
   EngineResult setAutoRecord({required bool enabled}) => _requireRunning();
 
   @override

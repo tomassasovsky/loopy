@@ -580,6 +580,23 @@ LE_EXPORT int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled);
  */
 LE_EXPORT int32_t le_engine_set_master_gain(le_engine* engine, float gain);
 
+/* Enables/disables the master peak limiter and sets its ceiling (clamped to
+ * (0,1], default 0.99). The limiter is applied post master-gain so the summed
+ * output of all tracks, overdub layers, and monitoring cannot exceed the ceiling
+ * and hard-clip in the driver; below the ceiling it is bit-transparent. OFF by
+ * default and after every fresh configure (the host app turns it on). */
+LE_EXPORT int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
+                                        float ceiling);
+
+/* Sets the overdub feedback coefficient (clamped to [0,1], default 1.0). While a
+ * track is overdubbing, its existing content at the write head is scaled by this
+ * before the new layer is summed in: 1.0 is the classic additive overdub (older
+ * layers persist forever and can build toward clipping); below 1.0 decays older
+ * layers each pass so the loop self-limits. Applies only during overdub passes,
+ * never plain playback. */
+LE_EXPORT int32_t le_engine_set_overdub_feedback(le_engine* engine,
+                                                 float feedback);
+
 /* Enables sound-activated recording: a record press on an empty track waits and
  * begins capturing the first frame the input level crosses the threshold. A
  * second press before then cancels. Disabling cancels tracks still waiting. */

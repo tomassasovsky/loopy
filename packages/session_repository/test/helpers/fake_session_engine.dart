@@ -194,6 +194,11 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
   @override
+  EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
+      EngineResult.ok;
+  @override
+  EngineResult setOverdubFeedback(double feedback) => EngineResult.ok;
+  @override
   EngineResult setLaneFx({
     required int channel,
     required int lane,
