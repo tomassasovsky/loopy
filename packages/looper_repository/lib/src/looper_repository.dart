@@ -73,6 +73,11 @@ class LooperRepository {
   bool _recDub = false;
   bool _autoRecord = false;
 
+  /// The desired global master output gain (`0..1`), re-applied to the engine
+  /// on every successful (re)start so it survives device changes and
+  /// reconnects. Unity (`1.0`) until set.
+  double _masterGain = 1;
+
   /// Per-track active lane count (absent => 1). Remembered and re-applied on
   /// every successful (re)start.
   final Map<int, int> _laneCount = {};
@@ -341,7 +346,8 @@ class LooperRepository {
       _engine
         ..setRecDub(enabled: _recDub)
         ..setAutoRecord(enabled: _autoRecord)
-        ..setDefaultMultiple(multiple: _defaultMultiple);
+        ..setDefaultMultiple(multiple: _defaultMultiple)
+        ..setMasterGain(_masterGain);
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
@@ -853,6 +859,15 @@ class LooperRepository {
     _recDub = enabled;
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setRecDub(enabled: enabled);
+  }
+
+  /// Sets the global master output gain (`0..1`, clamped by the engine).
+  /// Remembered and re-applied on every (re)start so it survives device changes
+  /// and reconnects.
+  EngineResult setMasterGain(double gain) {
+    _masterGain = gain.clamp(0.0, 1.0);
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMasterGain(_masterGain);
   }
 
   /// Enables global sound-activated recording. Remembered and re-applied on

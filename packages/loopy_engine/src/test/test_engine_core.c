@@ -345,6 +345,71 @@ static void test_looper_volume_and_mute(void) {
   le_engine_destroy(e);
 }
 
+static void test_master_gain_scales_output(void) {
+  printf("test_master_gain_scales_output\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* PLAYING, loop == 1.0 */
+  drain(e);
+
+  /* Unity by default: the loop plays back untouched and the snapshot agrees. */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.master_gain - 1.0f) < 1e-6f);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  /* Half gain halves the output and is published in the snapshot. */
+  CHECK(le_engine_set_master_gain(e, 0.5f) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 0.5f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.master_gain - 0.5f) < 1e-6f);
+
+  /* Below 0 clamps to silence. */
+  CHECK(le_engine_set_master_gain(e, -1.0f) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.master_gain) < 1e-6f);
+
+  /* Above 1 clamps to unity. */
+  CHECK(le_engine_set_master_gain(e, 2.0f) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.master_gain - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_master_gain_rejects_null(void) {
+  printf("test_master_gain_rejects_null\n");
+  CHECK(le_engine_set_master_gain(NULL, 0.5f) == LE_ERR_INVALID);
+}
+
+static void test_master_gain_resets_on_configure(void) {
+  printf("test_master_gain_resets_on_configure\n");
+  le_engine* e = make_configured_engine();
+  float out[8];
+
+  CHECK(le_engine_set_master_gain(e, 0.3f) == LE_OK);
+  drain(e); /* apply the ring command */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.master_gain - 0.3f) < 1e-6f);
+
+  /* A fresh configure (a new device session) returns the gain to unity. */
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.master_gain - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
 static void test_looper_clear(void) {
   printf("test_looper_clear\n");
   le_engine* e = make_configured_engine();
@@ -3567,6 +3632,9 @@ int main(void) {
   test_looper_overdub_and_undo();
   test_looper_multilevel_undo();
   test_looper_volume_and_mute();
+  test_master_gain_scales_output();
+  test_master_gain_rejects_null();
+  test_master_gain_resets_on_configure();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();

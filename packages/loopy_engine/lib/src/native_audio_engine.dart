@@ -421,6 +421,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMasterGain(double gain) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_master_gain(_engine, gain),
+    );
+  }
+
+  @override
   EngineResult setAutoRecord({required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(
