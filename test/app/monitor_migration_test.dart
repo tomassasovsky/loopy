@@ -86,7 +86,8 @@ void main() {
         'a wet + dry legacy route becomes lane 0 (wet) + lane 1 (clean)',
         () async {
           // Effected route to out 0, a parallel dry send to out 1, gain 0.5.
-          // Seed the legacy store directly (the live app no longer writes these).
+          // Seed the legacy store directly (the live app no longer writes
+          // these).
           await settings.saveMonitorInput(0, enabled: true, outputMask: 0x1);
           await store.setInt('monitor_input_dry.0', 0x2);
           await store.setDouble('monitor_input_vol.0', 0.5);
@@ -142,8 +143,8 @@ void main() {
 
           await runMonitorMigration(settings);
 
-          // The second run did not re-convert (no legacy key to read) and did not
-          // clobber the user's edit.
+          // The second run did not re-convert (no legacy key to read) and did 
+          // not clobber the user's edit.
           expect(await settings.loadMonitorLaneOutput(0, 0), 0x4);
         },
       );
@@ -152,8 +153,8 @@ void main() {
         'a store on v1 but not v2 still converts on the next launch',
         () async {
           // A device that shipped with v1 (its done-flag set, the legacy
-          // per-input key already written) but has never run v2. The next launch
-          // must skip v1 and still fold the legacy route into lanes.
+          // per-input key already written) but has never run v2. The next 
+          // launch must skip v1 and still fold the legacy route into lanes.
           await settings.saveMonitorMigratedV1();
           await settings.saveMonitorInput(0, enabled: true, outputMask: 0x2);
 
