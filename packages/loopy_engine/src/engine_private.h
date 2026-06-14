@@ -226,6 +226,11 @@ typedef struct le_track {
   uint64_t start_iter; /* loop_iteration when this track's recording began */
   int32_t record_start; /* record_pos when this capture began, so a fixed-length
                          * track can auto-finalize after exactly K base loops. */
+  float od_gain; /* audio-thread-local overdub punch envelope (0..1). Ramps up on
+                  * punch-in and down on punch-out so the layered input enters and
+                  * leaves the loop buffer without a step discontinuity (a click)
+                  * at the punch points / loop seam. Drives the fade-out tail that
+                  * keeps writing for a few ms after the track is back in PLAYING. */
 } le_track;
 
 struct le_engine {
@@ -333,10 +338,14 @@ struct le_engine {
   int default_multiple;
   int target_multiple[LE_MAX_TRACKS];
 
-  /* When `rec_dub` is set, finalizing a recording with a record press continues
-   * into overdub instead of playback (the second-press "rec/dub" mode). A stop
-   * still ends in playback/stopped. Control-thread default, read on the audio
-   * thread via the finalize end-state. */
+  /* When `rec_dub` is set, finalizing a recording with a record (second) press
+   * continues into overdub instead of playback (the second-press "rec/dub"
+   * mode). A stop still ends in playback/stopped. Independently of this flag, a
+   * track recorded over an existing master that auto-finishes (reaches its loop
+   * length with no press) always continues into overdub, so layering stays live
+   * rather than auto-stopping to playback the moment the loop completes.
+   * Control-thread default, read on the audio thread via the finalize
+   * end-state. */
   int rec_dub;
 
   /* When `auto_record` is set, a record press on an empty track arms a

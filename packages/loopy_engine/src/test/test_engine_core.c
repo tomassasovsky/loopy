@@ -547,6 +547,78 @@ static void test_latency_compensation(void) {
   le_engine_destroy(e);
 }
 
+/* Overdub punch-in/punch-out must not bake a step discontinuity (a click) into
+ * the loop buffer. A real-length loop (long enough to host the ~10 ms declick
+ * fade) is overdubbed with a constant level over half a pass and then punched
+ * out while the input is still live; the recorded loop must ramp the layer in
+ * and out smoothly — no large sample-to-sample jump anywhere, including the
+ * loop seam — while still reaching the full overdub level in the steady middle. */
+static void test_overdub_punch_no_click(void) {
+  printf("test_overdub_punch_no_click\n");
+  le_engine* e = make_configured_engine(); /* 48k: declick fade == 480 frames */
+  const int N = 2000;                      /* > 2*480, so the fade engages */
+  float in[64];
+  float out[64];
+
+  /* Feed `count` frames of constant `value`, optionally capturing the output
+   * into `cap` at `*capn` (NULL to discard). Chunks to the 64-frame scratch. */
+#define FEED(value, count, cap, capn)                                   \
+  do {                                                                  \
+    int _left = (count);                                                \
+    while (_left > 0) {                                                 \
+      int _n = _left < 64 ? _left : 64;                                 \
+      for (int _i = 0; _i < _n; ++_i) in[_i] = (value);                 \
+      le_engine_process(e, out, in, (uint32_t)_n);                      \
+      if ((cap) != NULL) {                                             \
+        for (int _i = 0; _i < _n; ++_i) (cap)[(*(capn))++] = out[_i];   \
+      }                                                                 \
+      _left -= _n;                                                      \
+    }                                                                   \
+  } while (0)
+
+  /* Silent base loop of N frames. */
+  le_engine_record(e, 0);
+  FEED(0.0f, N, NULL, NULL);
+  le_engine_record(e, 0); /* finalize -> PLAYING, master == N, silent */
+  drain(e);
+
+  /* Punch in, overdub a constant 0.8 over half the loop, punch out — but keep
+   * feeding 0.8 (the player is still strumming) so the fade-out tail has live
+   * input to taper, then ride out the rest of the loop. */
+  le_engine_record(e, 0); /* -> OVERDUBBING */
+  FEED(0.8f, N / 2, NULL, NULL);
+  le_engine_record(e, 0); /* punch out -> PLAYING (fade-out tail begins) */
+  FEED(0.8f, N / 2, NULL, NULL);
+  drain(e);
+
+  /* Read the recorded loop back (silence in; od_gain settled to 0 -> pure read). */
+  float loop[2000];
+  int n = 0;
+  FEED(0.0f, N, loop, &n);
+  CHECK(n == N);
+
+  /* No click: the largest single-sample jump (seam included) stays tiny — a
+   * step would be ~0.8. The fade spreads 0.8 over ~480 frames (~0.0017/frame). */
+  float max_delta = fabsf(loop[0] - loop[N - 1]); /* the loop seam */
+  for (int i = 1; i < N; ++i) {
+    const float d = fabsf(loop[i] - loop[i - 1]);
+    if (d > max_delta) max_delta = d;
+  }
+  printf("  punch: max sample delta=%.4f\n", max_delta);
+  CHECK(max_delta < 0.05f);
+
+  /* The layer still reaches full level in the steady middle of the overdubbed
+   * half (past the fade-in, before the punch-out). Find the loudest sample. */
+  float peak = 0.0f;
+  for (int i = 0; i < N; ++i) {
+    if (fabsf(loop[i]) > peak) peak = fabsf(loop[i]);
+  }
+  CHECK(fabsf(peak - 0.8f) < 0.01f);
+
+#undef FEED
+  le_engine_destroy(e);
+}
+
 static void test_record_is_exclusive(void) {
   printf("test_record_is_exclusive\n");
   le_engine* e = make_configured_engine();
@@ -2296,14 +2368,16 @@ static void test_default_multiple_applies_to_inheriting_tracks(void) {
   le_engine_destroy(e);
 }
 
-/* A fixed-multiple track auto-finalizes after exactly K base loops without a
- * manual press: into playback by default, or overdub under rec/dub. */
+/* A track recorded over an existing master auto-finalizes after exactly K base
+ * loops without a manual press, and always continues into overdub — layering
+ * stays live rather than auto-stopping to playback. The rec/dub toggle governs
+ * only the master's second-press finalize, so this holds with rec/dub off too. */
 static void test_fixed_multiple_auto_finalizes(void) {
   printf("test_fixed_multiple_auto_finalizes\n");
   float out[64];
   le_snapshot s;
 
-  /* x1 -> stops and plays after one base loop. */
+  /* x1, rec/dub off -> overdubs after one base loop (keeps layering). */
   le_engine* e = make_configured_engine();
   establish_master(e, out); /* base == LOOP_N, master at the loop top */
   le_engine_set_track_multiple(e, 1, 1);
@@ -2311,12 +2385,12 @@ static void test_fixed_multiple_auto_finalizes(void) {
   drain(e); /* RECORDING from position 0 */
   process_const(e, 2.0f, LOOP_N, out); /* exactly one base loop */
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* auto-finalized, no press */
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING); /* auto-finalized, no press */
   CHECK(s.tracks[1].multiple == 1);
   CHECK(s.tracks[1].length_frames == LOOP_N);
   le_engine_destroy(e);
 
-  /* x2 + rec/dub -> continues into overdub after two base loops. */
+  /* x2 + rec/dub on -> also continues into overdub after two base loops. */
   le_engine* e2 = make_configured_engine();
   establish_master(e2, out);
   le_engine_set_rec_dub(e2, 1);
@@ -2355,6 +2429,45 @@ static void test_rec_dub_continues_into_overdub(void) {
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[1].state == LE_TRACK_STOPPED);
+
+  le_engine_destroy(e);
+}
+
+/* The reported flow, rec/dub off: record the master on tr0 and stop it to
+ * playback, then record a second track that auto-finishes at the loop length.
+ * It must continue into overdub (keep layering), not auto-stop to playback —
+ * while a manual second press on a subsequent track still finalizes to playback
+ * (the rec/dub toggle, off here, governs that press). */
+static void test_new_track_autofinish_overdubs_with_rec_dub_off(void) {
+  printf("test_new_track_autofinish_overdubs_with_rec_dub_off\n");
+  le_engine* e = make_configured_engine(); /* rec/dub off by default */
+  float out[64];
+  le_snapshot s;
+
+  /* tr0 defines the master, finalized to playback by a record press. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize master -> PLAYING (rec/dub off) */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* tr1 is one base loop long and auto-finishes with no second press: it must
+   * land in OVERDUBBING, not PLAYING. */
+  le_engine_set_track_multiple(e, 1, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  process_const(e, 2.0f, LOOP_N, out); /* exactly one base loop -> auto-finish */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+
+  /* A manual second press on tr2 still finalizes to playback with rec/dub off. */
+  le_engine_record(e, 2);
+  process_const(e, 3.0f, LOOP_N, out);
+  le_engine_record(e, 2); /* manual finalize -> PLAYING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_PLAYING);
 
   le_engine_destroy(e);
 }
@@ -3437,7 +3550,7 @@ static void test_multi_lane_loop_multiple(void) {
   le_engine_process(e, out, in, LOOP_N); /* segment 1 -> auto-finalize */
   drain(e);
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING); /* auto-finish keeps layering */
   CHECK(s.tracks[1].multiple == 2);
   CHECK(s.tracks[1].lane_count == 2);
 
@@ -4329,6 +4442,7 @@ int main(void) {
   test_default_multiple_applies_to_inheriting_tracks();
   test_fixed_multiple_auto_finalizes();
   test_rec_dub_continues_into_overdub();
+  test_new_track_autofinish_overdubs_with_rec_dub_off();
   test_auto_record_starts_on_signal();
   test_quantize_track_override_forces_on();
   test_quantize_track_override_forces_off();
@@ -4368,6 +4482,7 @@ int main(void) {
   test_looper_requires_configure();
   test_looper_multitrack();
   test_latency_compensation();
+  test_overdub_punch_no_click();
   test_record_is_exclusive();
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();

@@ -171,6 +171,56 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperUndoPressed removes the layer when the track has overdubs',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [
+        Track(),
+        Track(
+          channel: 1,
+          state: TrackState.playing,
+          lengthFrames: 100,
+          undoDepth: 2,
+        ),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperUndoPressed(1)),
+    verify: (_) {
+      verify(() => repository.undo(channel: 1)).called(1);
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperUndoPressed clears a track that has only its base loop',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [
+        Track(),
+        Track(channel: 1, state: TrackState.playing, lengthFrames: 100),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperUndoPressed(1)),
+    verify: (_) {
+      verify(() => repository.clear(channel: 1)).called(1);
+      verifyNever(() => repository.undo(channel: any(named: 'channel')));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperUndoPressed on an empty track forwards to undo, not clear',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [Track(), Track(channel: 1)],
+    ),
+    act: (bloc) => bloc.add(const LooperUndoPressed(1)),
+    verify: (_) {
+      verify(() => repository.undo(channel: 1)).called(1);
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperVolumeChanged forwards the new volume and channel',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperVolumeChanged(3, 0.5)),

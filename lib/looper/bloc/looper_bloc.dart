@@ -38,9 +38,16 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperClearPressed>(
       (event, _) => _repository.clear(channel: event.channel),
     );
-    on<LooperUndoPressed>(
-      (event, _) => _repository.undo(channel: event.channel),
-    );
+    on<LooperUndoPressed>((event, _) {
+      // A track with content but no overdub layers has nothing to undo; undo
+      // would be a no-op. Treat U there as "clear this track" so a single press
+      // discards the lone base loop instead of doing nothing.
+      if (_hasOnlyBaseLoop(event.channel)) {
+        _repository.clear(channel: event.channel);
+      } else {
+        _repository.undo(channel: event.channel);
+      }
+    });
     on<LooperRedoPressed>(
       (event, _) => _repository.redo(channel: event.channel),
     );
@@ -181,6 +188,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       channel >= 0 &&
       channel < state.tracks.length &&
       state.tracks[channel].muted;
+
+  /// Whether [channel] holds a single recorded loop with no overdub layers to
+  /// undo — the case where `U` clears the track instead of removing a layer.
+  bool _hasOnlyBaseLoop(int channel) {
+    if (channel < 0 || channel >= state.tracks.length) return false;
+    final track = state.tracks[channel];
+    return track.hasContent && !track.canUndo;
+  }
 
   bool _laneMuted(int channel, int lane) {
     if (channel < 0 || channel >= state.tracks.length) return false;

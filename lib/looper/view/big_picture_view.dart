@@ -178,6 +178,8 @@ class _BigPictureViewState extends State<BigPictureView> {
       context.read<BigPictureCubit>().select(currentBank == 0 ? 4 : 0);
       return KeyEventResult.handled;
     }
+    // `U` undoes the latest overdub layer; on a track that holds only its base
+    // loop (nothing to undo) it clears the track instead. The bloc decides.
     if (key == LogicalKeyboardKey.keyU) {
       context.read<LooperBloc>().add(LooperUndoPressed(selected));
       return KeyEventResult.handled;
