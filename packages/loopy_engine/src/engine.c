@@ -27,6 +27,7 @@
 #include "engine_miniaudio.h"
 #include "engine_platform.h"
 #include "engine_private.h"
+#include "fft.h" /* header-only FFT primitive for the phase-vocoder octaver */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
@@ -323,6 +324,25 @@ static void handle_clear(le_engine* e, int32_t ch) {
 #define LE_PI 3.14159265358979323846f
 #endif
 
+/* --- Phase-vocoder octaver (LE_FX_OCTAVER) ------------------------------------
+ *
+ * The octaver is a streaming STFT phase vocoder that shifts pitch while holding
+ * the formant (spectral) envelope fixed, so a shifted voice neither combs
+ * (granular overlap) nor chipmunks (resampled formants). The chain still calls
+ * the effect one sample at a time; internally it buffers input in the slot's
+ * delay ring, runs one FFT frame every LE_PV_HOP samples, and emits a
+ * latency-delayed sample. All heavy buffers are control-thread allocated; the
+ * audio thread never allocates. See part-3 plan for the full derivation. */
+#define LE_PV_N 1024             /* STFT window (power of two) */
+#define LE_PV_HOP 256            /* 4x overlap (HOP = N/4: the clean-PV minimum) */
+#define LE_PV_BINS (LE_PV_N / 2 + 1)
+#define LE_PV_LIFTER (LE_PV_N / 24) /* ~42: cepstral envelope lifter cutoff */
+
+/* Read-only Hann window shared by every octaver instance (analysis + synthesis
+ * window). Built once under a guarded init; never per-instance state. */
+static float le_hann[LE_PV_N];
+static int le_hann_ready;
+
 /* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
 static float fx_drive(float x, const float* p) {
   const float drive = 1.0f + p[0] * 29.0f; /* 1x .. 30x pre-gain */
@@ -400,52 +420,230 @@ static float fx_read_frac(const float* buf, int cap, int head, float d) {
   return buf[i0] + frac * (buf[i1] - buf[i0]);
 }
 
-/* Octaver: a time-domain pitch shifter. Two read taps a half-grain apart walk
- * the input ring at rate (1 - ratio) and are Hann-crossfaded (the two windows
- * sum to 1, so the wrap is silent), turning input frequency f into ratio * f.
- * p0 = shift (0 = two octaves down, 0.5 = unison, 1 = two octaves up — so it
- * covers up and down, one or many octaves, and the intervals between), p1 = tone
- * (low-pass on the shifted voice), p2 = dry/wet mix. The grain ring is the
- * control-thread-allocated fx_delay line; grain_phase is the read phase and
- * fx_lp the tone memory. */
+/* Wraps a phase value into [-pi, pi] in O(1) — the raw per-hop phase deviation
+ * (phase - k*expct) can be hundreds of radians for high bins, so a subtract loop
+ * would spin many times per bin per hop. */
+static float le_wrap_pi(float x) {
+  const float two_pi = 2.0f * LE_PI;
+  return x - two_pi * roundf(x / two_pi);
+}
+
+/* Zeros the octaver's per-mode DSP runtime (phase history, synthesis
+ * accumulator, hop counter) without touching the heap-buffer allocation or the
+ * smoothed params / current mode. Used on a mode switch and on entry reset; safe
+ * with NULL buffers (a slot that is not an octaver). */
+static void le_pv_reset_runtime(le_octaver_state* o) {
+  o->hop_count = 0;
+  o->out_pos = 0;
+  o->in_epoch = 0;
+  o->out_epoch = 0;
+  o->period = 0.0f;
+  o->voiced = 0.0f;
+  if (o->out != NULL) memset(o->out, 0, sizeof(float) * LE_PV_N);
+  if (o->last_phase != NULL) memset(o->last_phase, 0, sizeof(float) * LE_PV_BINS);
+  if (o->sum_phase != NULL) memset(o->sum_phase, 0, sizeof(float) * LE_PV_BINS);
+}
+
+/* Runs one STFT analysis/synthesis frame: windows the newest LE_PV_N FIFO
+ * samples, shifts the harmonic structure by `ratio` while holding the cepstral
+ * formant envelope fixed in frequency, and overlap-adds the result into o->out.
+ * Called once per LE_PV_HOP samples from le_pv_tick. All scratch is stack-local
+ * (bounded; no allocation). `head` indexes the newest FIFO sample.
+ *
+ * Cost per hop per channel: four length-N FFTs — analysis (le_rfft_fwd), the two
+ * cepstrum transforms (le_fft inverse + forward), and synthesis (le_rfft_inv).
+ * Stack peak ~60 KB at N = 1024 (the locals below ~27 KB plus the fixed ~32 KB
+ * scratch inside one le_rfft_* call, which run sequentially, not nested); this
+ * scales with N, so a future bump to N = 2048 must re-check constrained
+ * (e.g. plugin-host) audio-thread stack budgets. */
+static void le_octaver_frame(le_octaver_state* o, const float* fifo, int head,
+                             int cap, float ratio) {
+  float win[LE_PV_N];
+  float re[LE_PV_BINS];
+  float im[LE_PV_BINS];
+  float mag[LE_PV_BINS];
+  float freq[LE_PV_BINS];
+  float env[LE_PV_BINS];
+  float syn_mag[LE_PV_BINS];
+  float syn_freq[LE_PV_BINS];
+  float cr[LE_PV_N];
+  float ci[LE_PV_N];
+
+  const float expct = 2.0f * LE_PI * (float)LE_PV_HOP / (float)LE_PV_N;
+  const float osamp = (float)LE_PV_N / (float)LE_PV_HOP;
+
+  /* 1. Hann-window the newest N samples (win[N-1] is the freshest). */
+  for (int i = 0; i < LE_PV_N; ++i) {
+    int idx = head - LE_PV_N + 1 + i;
+    idx %= cap;
+    if (idx < 0) idx += cap;
+    win[i] = fifo[idx] * le_hann[i];
+  }
+  le_rfft_fwd(win, re, im, LE_PV_N);
+
+  /* 2. Per-bin magnitude + true frequency (in bins) from the phase advance. */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    const float r = re[k];
+    const float im_k = im[k];
+    mag[k] = sqrtf(r * r + im_k * im_k);
+    const float phase = atan2f(im_k, r);
+    float d = phase - o->last_phase[k];
+    o->last_phase[k] = phase;
+    d -= (float)k * expct;
+    d = le_wrap_pi(d);
+    freq[k] = (float)k + osamp * d / (2.0f * LE_PI);
+  }
+
+  /* 3. Formant envelope: lifter the low-quefrency cepstrum of log|X|. The full
+   *    symmetric log-magnitude round-trips through a complex FFT pair (inverse
+   *    then forward == * N), so the net 1/N is divided back out below. */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    cr[k] = logf(mag[k] + 1e-9f);
+    ci[k] = 0.0f;
+  }
+  for (int k = 1; k < LE_PV_N / 2; ++k) {
+    cr[LE_PV_N - k] = cr[k];
+    ci[LE_PV_N - k] = 0.0f;
+  }
+  le_fft(cr, ci, LE_PV_N, 1); /* -> cepstrum (real, even) */
+  for (int q = LE_PV_LIFTER; q <= LE_PV_N - LE_PV_LIFTER; ++q) {
+    cr[q] = 0.0f;
+    ci[q] = 0.0f;
+  }
+  le_fft(cr, ci, LE_PV_N, 0); /* -> N * smoothed log-magnitude */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    env[k] = expf(cr[k] / (float)LE_PV_N);
+  }
+
+  /* 4. Whiten (mag/env), shift bins by `ratio`, then re-apply the envelope at
+   *    the DESTINATION bin so the formants stay fixed in frequency. */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    syn_mag[k] = 0.0f;
+    syn_freq[k] = 0.0f;
+  }
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    const int j = (int)((float)k * ratio + 0.5f);
+    if (j >= 0 && j < LE_PV_BINS) {
+      const float res = mag[k] / (env[k] + 1e-9f);
+      syn_mag[j] += res * env[j];
+      syn_freq[j] = freq[k] * ratio;
+    }
+  }
+
+  /* 5. Accumulate synthesis phase (advance per hop = 2*pi*freq*HOP/N) and
+   *    rebuild the half spectrum. */
+  for (int k = 0; k < LE_PV_BINS; ++k) {
+    o->sum_phase[k] +=
+        2.0f * LE_PI * syn_freq[k] * (float)LE_PV_HOP / (float)LE_PV_N;
+    re[k] = syn_mag[k] * cosf(o->sum_phase[k]);
+    im[k] = syn_mag[k] * sinf(o->sum_phase[k]);
+  }
+
+  /* 6. Inverse transform, synthesis-window, overlap-add. The Hann analysis x
+   *    Hann synthesis window at 4x overlap sums to 1.5 — divide for unity. */
+  le_rfft_inv(re, im, win, LE_PV_N);
+  const float norm = 1.0f / 1.5f;
+  for (int i = 0; i < LE_PV_N; ++i) {
+    o->out[i] += win[i] * le_hann[i] * norm;
+  }
+}
+
+/* Emits one phase-vocoder output sample (latency LE_PV_N), running a fresh frame
+ * at each hop boundary and streaming the synthesis accumulator out by one sample
+ * per call, shifting it down by a hop once a block is fully emitted. */
+static float le_pv_tick(le_octaver_state* o, const float* fifo, int head, int cap,
+                        float ratio) {
+  if (o->out == NULL) return 0.0f;
+  if (o->hop_count == 0) {
+    le_octaver_frame(o, fifo, head, cap, ratio);
+  }
+  const float y = o->out[o->hop_count];
+  if (++o->hop_count >= LE_PV_HOP) {
+    memmove(o->out, o->out + LE_PV_HOP, sizeof(float) * (LE_PV_N - LE_PV_HOP));
+    memset(o->out + (LE_PV_N - LE_PV_HOP), 0, sizeof(float) * LE_PV_HOP);
+    o->hop_count = 0;
+  }
+  return y;
+}
+
+/* PSOLA pitch shift — part 4. Stubbed to the delay-matched dry tap so the `mode`
+ * toggle is wired but inert: switching to PSOLA in this PR yields a clean,
+ * latency-matched passthrough (not silence) until part 4 implements the real
+ * shifter. The latency matches le_pv_tick (LE_PV_N) so the mix stays aligned. */
+static float le_psola_tick(le_octaver_state* o, const float* fifo, int head,
+                           int cap, float ratio) {
+  (void)o;
+  (void)ratio;
+  int idx = head - LE_PV_N + 1;
+  idx %= cap;
+  if (idx < 0) idx += cap;
+  return fifo[idx];
+}
+
+/* Formant-preserving octaver. Writes the newest sample to the slot's FIFO ring,
+ * then mixes a delay-matched dry tap (head - LE_PV_N) with a wet voice from the
+ * phase vocoder (mode p3 < 0.5) or PSOLA (part 4, currently silent). p0 = shift
+ * (0 = -2 oct, 0.5 = unison, 1 = +2 oct), p1 = tone (one-pole darkening of the
+ * wet voice), p2 = dry/wet mix, p3 = mode. Params are one-pole smoothed
+ * (zipper-free) and a mode switch runs an equal-power gain dip while the DSP
+ * runtime resets. The ring length `cap` equals the sample rate (1 s), used here
+ * as the time base for the smoothing / dip constants. */
 static float fx_octaver(le_fx_state* fx, int slot, int chan, int cap, float x,
                         const float* p) {
   float* buf = fx->delay[slot][chan];
-  if (buf == NULL || cap <= 4) return x;
-  int w = cap / 32; /* grain window: ~30 ms of the 1 s ring */
-  if (w < 2) w = 2;
-  const float wf = (float)w;
+  le_octaver_state* o = &fx->oct[slot][chan];
+  if (buf == NULL || o->out == NULL || cap < LE_PV_N + 1) return x;
 
-  /* Write the dry input at the head, then advance. */
+  /* Write the newest sample at the head, then advance. */
   const int head = fx->delay_pos[slot][chan];
   buf[head] = x;
   int npos = head + 1;
   if (npos >= cap) npos = 0;
   fx->delay_pos[slot][chan] = npos;
 
-  /* Pitch ratio over +-2 octaves, unison at p0 = 0.5. The read phase walks at
-   * (1 - ratio) per sample so the playback rate becomes the ratio. */
-  const float semis = (p[0] - 0.5f) * 48.0f;
-  const float ratio = powf(2.0f, semis / 12.0f);
-  float ph = fx->grain_phase[slot][chan] + (1.0f - ratio);
-  while (ph >= wf) ph -= wf;
-  while (ph < 0.0f) ph += wf;
-  fx->grain_phase[slot][chan] = ph;
+  /* Zipper-free param smoothing (~5 ms one-pole; cap == sample rate). */
+  const float sc = 1.0f / (0.005f * (float)cap);
+  o->sm_shift += sc * (p[0] - o->sm_shift);
+  o->sm_tone += sc * (p[1] - o->sm_tone);
+  o->sm_mix += sc * (p[2] - o->sm_mix);
 
-  const float ph2 = ph >= wf * 0.5f ? ph - wf * 0.5f : ph + wf * 0.5f;
-  const float g1 = 0.5f * (1.0f - cosf(2.0f * LE_PI * ph / wf));
-  const float g2 = 0.5f * (1.0f - cosf(2.0f * LE_PI * ph2 / wf));
-  const float wet = g1 * fx_read_frac(buf, cap, head, ph) +
-                    g2 * fx_read_frac(buf, cap, head, ph2);
+  /* Mode switch (D1): equal-power gain dip, ~15 ms per leg — fade the wet out,
+   * reset the DSP runtime at the bottom, then fade back in on the new mode. */
+  const int requested = p[3] >= 0.5f ? 1 : 0;
+  const float xstep = 1.0f / (0.015f * (float)cap);
+  if (requested != o->cur_mode) {
+    o->xfade -= xstep;
+    if (o->xfade <= 0.0f) {
+      o->xfade = 0.0f;
+      o->cur_mode = requested;
+      le_pv_reset_runtime(o);
+    }
+  } else if (o->xfade < 1.0f) {
+    o->xfade += xstep;
+    if (o->xfade > 1.0f) o->xfade = 1.0f;
+  }
 
-  /* Tone: a one-pole low-pass that opens up as p1 rises. */
-  const float a = 0.05f + 0.9f * p[1];
+  const float ratio = powf(2.0f, (o->sm_shift - 0.5f) * 48.0f / 12.0f);
+  const float wet = o->cur_mode == 0 ? le_pv_tick(o, buf, head, cap, ratio)
+                                     : le_psola_tick(o, buf, head, cap, ratio);
+
+  /* Tone: a one-pole low-pass on the wet voice that opens up as p1 rises. */
+  const float a = 0.05f + 0.9f * o->sm_tone;
   float lp = fx->fx_lp[slot][chan];
   lp += a * (wet - lp);
   fx->fx_lp[slot][chan] = lp;
 
-  const float mix = p[2];
-  return x * (1.0f - mix) + lp * mix;
+  /* Delay-matched dry (D2): the wet latency is the constant LE_PV_N, so read the
+   * dry tap LE_PV_N samples behind the newest, keeping the mix comb-free. */
+  int dry_idx = head - LE_PV_N + 1;
+  dry_idx %= cap;
+  if (dry_idx < 0) dry_idx += cap;
+  const float dry = buf[dry_idx];
+
+  /* Equal-power gain-dip envelope on the wet leg (g == 1 when steady). */
+  const float g = sinf(o->xfade * 0.5f * LE_PI);
+  const float mix = o->sm_mix;
+  return dry * (1.0f - mix) + g * lp * mix;
 }
 
 /* Tape-style echo. Three things set it apart from the clean digital delay: a
@@ -515,12 +713,17 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
 }
 
 /* Clears chain slot [slot]'s audio-thread DSP state (filter integrators, LFO
- * phase, delay read head, one-pole memory, grain phase, reverb lines) so a
- * freshly engaged effect starts clean — no filter blow-up from stale
- * integrators, no delay-read of old content. Does NOT free or allocate the
- * delay ring; the control thread owns its lifetime. Shared by le_lane_reset,
- * le_monitor_lane_reset, and the SET_*_FX ring handlers (which reset one slot
- * when its type changes), removing what was a copy-pasted clear in each. */
+ * phase, delay read head, one-pole memory, octaver phase-vocoder runtime, reverb
+ * lines) so a freshly engaged effect starts clean — no filter blow-up from stale
+ * integrators, no delay-read of old content. Does NOT free or allocate the delay
+ * ring or octaver buffers; the control thread owns their lifetime. Shared by
+ * le_lane_reset, le_monitor_lane_reset, and the SET_*_FX ring handlers (which
+ * reset one slot when its type changes), removing what was a copy-pasted clear.
+ *
+ * RT note: this runs on the AUDIO THREAD (the SET_*_FX ring handlers). For an
+ * allocated octaver slot it now memsets the three phase-vocoder buffers
+ * (~16 KB/channel). That is bounded and fires only on a discrete type-change
+ * event (never per sample), consistent with the existing reverb-line clears. */
 static void le_fx_entry_reset(le_fx_state* fx, int slot) {
   for (int chan = 0; chan < 2; ++chan) {
     fx->svf_ic1[slot][chan] = 0.0f;
@@ -528,9 +731,33 @@ static void le_fx_entry_reset(le_fx_state* fx, int slot) {
     fx->lfo[slot][chan] = 0.0f;
     fx->delay_pos[slot][chan] = 0;
     fx->fx_lp[slot][chan] = 0.0f;
-    fx->grain_phase[slot][chan] = 0.0f;
+    le_octaver_state* o = &fx->oct[slot][chan];
+    o->sm_shift = 0.5f; /* unison: the smoother ramps up from no shift, not -2 oct */
+    o->sm_tone = 0.0f;
+    o->sm_mix = 0.0f; /* starts dry, so the param ramp-in is inaudible */
+    o->cur_mode = 0;  /* phase vocoder */
+    o->xfade = 1.0f;  /* steady (no gain dip) */
+    le_pv_reset_runtime(o);
   }
   le_fx_clear_reverb(fx, slot);
+}
+
+/* Frees a chain slot's octaver phase-vocoder heap buffers (both channels) and
+ * nulls them. Control-thread only (lane/monitor reset and engine destroy), where
+ * the audio thread is no longer reading the slot — mirroring how the delay rings
+ * are freed. Like the rings, the buffers are KEPT (not freed) across an in-place
+ * retype so a retype-back reuses them; freeing on retype would race the audio
+ * thread still processing the slot before the type-change command is observed. */
+static void le_fx_free_octaver(le_fx_state* fx, int slot) {
+  for (int chan = 0; chan < 2; ++chan) {
+    le_octaver_state* o = &fx->oct[slot][chan];
+    free(o->out);
+    o->out = NULL;
+    free(o->last_phase);
+    o->last_phase = NULL;
+    free(o->sum_phase);
+    o->sum_phase = NULL;
+  }
 }
 
 /* Schroeder/Freeverb reverb: LE_REV_COMBS parallel damped comb filters are
@@ -1526,6 +1753,7 @@ static void le_lane_reset(le_lane* ln, int32_t input_channel) {
     ln->fx.delay[s][0] = NULL;
     free(ln->fx.delay[s][1]);
     ln->fx.delay[s][1] = NULL;
+    le_fx_free_octaver(&ln->fx, s);
     le_fx_entry_reset(&ln->fx, s);
   }
 }
@@ -1547,6 +1775,7 @@ static void le_monitor_lane_reset(le_monitor_lane* ln) {
     ln->fx.delay[s][0] = NULL;
     free(ln->fx.delay[s][1]);
     ln->fx.delay[s][1] = NULL;
+    le_fx_free_octaver(&ln->fx, s);
     le_fx_entry_reset(&ln->fx, s);
   }
 }
@@ -2123,6 +2352,7 @@ void le_engine_destroy(le_engine* engine) {
       for (int s = 0; s < LE_FX_MAX; ++s) {
         free(ln->fx.delay[s][0]);
         free(ln->fx.delay[s][1]);
+        le_fx_free_octaver(&ln->fx, s);
       }
     }
   }
@@ -2131,6 +2361,7 @@ void le_engine_destroy(le_engine* engine) {
       for (int s = 0; s < LE_FX_MAX; ++s) {
         free(engine->monitors[c].lanes[l].fx.delay[s][0]);
         free(engine->monitors[c].lanes[l].fx.delay[s][1]);
+        le_fx_free_octaver(&engine->monitors[c].lanes[l].fx, s);
       }
     }
   }
@@ -2799,26 +3030,51 @@ static int32_t le_fx_prepare_entry(le_fx_state* fx, _Atomic int32_t* a_type,
                          type == LE_FX_OCTAVER || type == LE_FX_REVERB;
   /* Reverb uses only ring 0; the other ringed types use both channels. */
   const int needs_right = needs_ring && type != LE_FX_REVERB;
+  const int needs_pv = type == LE_FX_OCTAVER;
+
+  /* N2 — explicit OOM free-order. This one call can make up to 8 allocations
+   * (2 delay rings + 6 phase-vocoder buffers: out/last_phase/sum_phase per
+   * channel). Record the slot of each buffer THIS call newly allocates; on any
+   * failure, free exactly those in reverse order and null them, never touching a
+   * ring or buffer the slot already owned from a prior type. */
+  float** owned[8];
+  int n_owned = 0;
+  const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
+
   if (needs_ring) {
-    const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
-    int allocated0 = 0;
     if (fx->delay[index][0] == NULL) {
-      float* line = (float*)calloc((size_t)cap, sizeof(float));
-      if (line == NULL) return LE_ERR_INVALID;
-      fx->delay[index][0] = line;
-      allocated0 = 1;
+      fx->delay[index][0] = (float*)calloc((size_t)cap, sizeof(float));
+      if (fx->delay[index][0] == NULL) goto oom;
+      owned[n_owned++] = &fx->delay[index][0];
     }
     if (needs_right && fx->delay[index][1] == NULL) {
-      float* line = (float*)calloc((size_t)cap, sizeof(float));
-      if (line == NULL) {
-        /* Roll back only what this call allocated; keep a pre-existing [0]. */
-        if (allocated0) {
-          free(fx->delay[index][0]);
-          fx->delay[index][0] = NULL;
-        }
-        return LE_ERR_INVALID;
+      fx->delay[index][1] = (float*)calloc((size_t)cap, sizeof(float));
+      if (fx->delay[index][1] == NULL) goto oom;
+      owned[n_owned++] = &fx->delay[index][1];
+    }
+  }
+  if (needs_pv) {
+    /* Build the shared analysis/synthesis window once (guarded). Control-thread
+     * only, before this slot can be processed, so the audio thread's read is
+     * safe via the ring's release/acquire publication of the type change. */
+    le_hann_init(le_hann, LE_PV_N, &le_hann_ready);
+    for (int chan = 0; chan < 2; ++chan) {
+      le_octaver_state* o = &fx->oct[index][chan];
+      if (o->out == NULL) {
+        o->out = (float*)calloc((size_t)LE_PV_N, sizeof(float));
+        if (o->out == NULL) goto oom;
+        owned[n_owned++] = &o->out;
       }
-      fx->delay[index][1] = line;
+      if (o->last_phase == NULL) {
+        o->last_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+        if (o->last_phase == NULL) goto oom;
+        owned[n_owned++] = &o->last_phase;
+      }
+      if (o->sum_phase == NULL) {
+        o->sum_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+        if (o->sum_phase == NULL) goto oom;
+        owned[n_owned++] = &o->sum_phase;
+      }
     }
   }
   if (load_i32(a_type + index) != type) {
@@ -2829,6 +3085,15 @@ static int32_t le_fx_prepare_entry(le_fx_state* fx, _Atomic int32_t* a_type,
     }
   }
   return LE_OK;
+
+oom:
+  /* Free only what this call allocated, in reverse order; keep pre-existing
+   * buffers the slot already owned. The slot stays its previous type. */
+  for (int i = n_owned - 1; i >= 0; --i) {
+    free(*owned[i]);
+    *owned[i] = NULL;
+  }
+  return LE_ERR_INVALID;
 }
 
 int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,

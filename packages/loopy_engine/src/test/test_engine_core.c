@@ -3462,6 +3462,366 @@ static void test_fx_fourth_param_is_inert(void) {
   }
 }
 
+/* ---- phase-vocoder octaver (LE_FX_OCTAVER) ---- */
+
+#define OCT_SR 48000
+/* Mirrors engine.c's internal LE_PV_N (the phase-vocoder window / latency); kept
+ * local because that constant is private to the engine translation unit. */
+#define OCT_PV_N 1024
+
+/* A fixed formant envelope: a resonance near 1 kHz (Gaussian in log-frequency).
+ * A harmonic tone shaped by it has a spectral centroid that a formant-preserving
+ * shift must hold roughly fixed — a naive resample would drag it with the pitch. */
+static float oct_formant(float f) {
+  const float x = log2f((f + 1.0f) / 1000.0f) / 0.9f;
+  return expf(-0.5f * x * x);
+}
+
+/* Fills buf with a harmonic tone at f0 shaped by oct_formant, peak-normalized. */
+static void oct_harmonic(float* buf, int n, float f0) {
+  for (int i = 0; i < n; ++i) buf[i] = 0.0f;
+  for (int k = 1; (float)k * f0 < (float)OCT_SR * 0.45f; ++k) {
+    const float f = (float)k * f0;
+    const float a = oct_formant(f);
+    for (int i = 0; i < n; ++i) {
+      buf[i] += a * sinf(2.0f * LE_FFT_PI * f * (float)i / (float)OCT_SR);
+    }
+  }
+  float peak = 0.0f;
+  for (int i = 0; i < n; ++i) {
+    const float m = fabsf(buf[i]);
+    if (m > peak) peak = m;
+  }
+  if (peak > 0.0f) {
+    for (int i = 0; i < n; ++i) buf[i] *= 0.5f / peak;
+  }
+}
+
+/* Runs `total` samples of `in` through one octaver on a mono monitor lane (full
+ * wet, tone open, PV mode) at the given shift, capturing the output. */
+static void oct_run(float shift, const float* in, int total, float* out) {
+  le_engine* e = le_engine_create();
+  const int blk = 2048;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, shift); /* shift */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 1, 1.0f);  /* tone open */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 1.0f);  /* full wet */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 3, 0.0f);  /* PV mode */
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+  int done = 0;
+  while (done < total) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+  le_engine_destroy(e);
+}
+
+/* Fundamental via autocorrelation. The first lag whose correlation reaches 90%
+ * of the global peak is the true period: this avoids the octave error where a
+ * sparse harmonic series (e.g. an octave-up signal whose partials are also even
+ * multiples of the original f0) correlates equally at the longer period. */
+static float oct_detect_f0(const float* x, int n) {
+  const int minlag = OCT_SR / 1000;
+  const int maxlag = OCT_SR / 70;
+  double best = 0.0;
+  for (int lag = minlag; lag <= maxlag; ++lag) {
+    double s = 0.0;
+    for (int i = 0; i + lag < n; ++i) s += (double)x[i] * (double)x[i + lag];
+    if (s > best) best = s;
+  }
+  for (int lag = minlag; lag <= maxlag; ++lag) {
+    double s = 0.0;
+    for (int i = 0; i + lag < n; ++i) s += (double)x[i] * (double)x[i + lag];
+    if (s >= 0.9 * best) return (float)OCT_SR / (float)lag;
+  }
+  return (float)OCT_SR / (float)maxlag;
+}
+
+/* Spectral centroid (Hz), averaged over 1024-sample Hann frames at 50% overlap. */
+static float oct_centroid(const float* x, int n) {
+  enum { F = 1024 };
+  float win[F];
+  float re[F / 2 + 1];
+  float im[F / 2 + 1];
+  double num = 0.0;
+  double den = 0.0;
+  for (int start = 0; start + F <= n; start += F / 2) {
+    for (int i = 0; i < F; ++i) {
+      const float w = 0.5f - 0.5f * cosf(2.0f * LE_FFT_PI * (float)i / (float)F);
+      win[i] = x[start + i] * w;
+    }
+    le_rfft_fwd(win, re, im, F);
+    for (int k = 1; k <= F / 2; ++k) {
+      const float mag = sqrtf(re[k] * re[k] + im[k] * im[k]);
+      num += (double)((float)k * (float)OCT_SR / (float)F) * mag;
+      den += mag;
+    }
+  }
+  return den > 0.0 ? (float)(num / den) : 0.0f;
+}
+
+/* Octave up/down shifts the fundamental by the ratio while a formant-preserving
+ * vocoder holds the spectral centroid near the input's — measurably unlike a
+ * naive resample, whose centroid tracks the pitch. */
+static void test_octaver_pv_shifts_pitch_preserves_formant(void) {
+  printf("test_octaver_pv_shifts_pitch_preserves_formant\n");
+  const int total = 24000;
+  const int skip = 12000;
+  const int an = total - skip;
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+  oct_harmonic(in, total, 220.0f);
+  const float cin = oct_centroid(in + skip, an);
+
+  oct_run(0.75f, in, total, out); /* octave up: ratio 2 */
+  const float f0_up = oct_detect_f0(out + skip, an);
+  const float c_up = oct_centroid(out + skip, an);
+  printf("  up: f0=%.1f (want 440) centroid=%.1f in=%.1f\n", f0_up, c_up, cin);
+  CHECK(fabsf(f0_up - 440.0f) < 30.0f);
+  CHECK(fabsf(c_up - cin) < 0.35f * cin); /* formant centroid held */
+  CHECK(c_up < 1.6f * cin);               /* not a naive resample (~2x) */
+
+  oct_run(0.25f, in, total, out); /* octave down: ratio 0.5 */
+  const float f0_dn = oct_detect_f0(out + skip, an);
+  const float c_dn = oct_centroid(out + skip, an);
+  printf("  down: f0=%.1f (want 110) centroid=%.1f\n", f0_dn, c_dn);
+  CHECK(fabsf(f0_dn - 110.0f) < 20.0f);
+  CHECK(fabsf(c_dn - cin) < 0.45f * cin);
+
+  free(in);
+  free(out);
+}
+
+/* Window-size gate: a low (100 Hz) fundamental octave-up still preserves the
+ * centroid at N = 1024. If this fails the documented fix is N = 2048. */
+static void test_octaver_pv_low_fundamental(void) {
+  printf("test_octaver_pv_low_fundamental\n");
+  const int total = 24000;
+  const int skip = 12000;
+  const int an = total - skip;
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+  oct_harmonic(in, total, 100.0f);
+  const float cin = oct_centroid(in + skip, an);
+
+  /* The window-size gate is centroid (formant) preservation; f0 is not asserted
+   * here because a 100 Hz fundamental sits near the N = 1024 resolution floor and
+   * its octave-up partials (even multiples of 100) make autocorrelation octave-
+   * ambiguous. The 220 Hz test above already pins the shift ratio. */
+  oct_run(0.75f, in, total, out);
+  const float c = oct_centroid(out + skip, an);
+  printf("  low-f0: centroid=%.1f in=%.1f\n", c, cin);
+  CHECK(fabsf(c - cin) < 0.45f * cin);
+  CHECK(c < 1.7f * cin);
+
+  free(in);
+  free(out);
+}
+
+/* Mono coherence (D5): identical left/right in -> identical out (each channel is
+ * deterministic and the chain runs them with separate but identically-seeded
+ * state). */
+static void test_octaver_mono_coherent(void) {
+  printf("test_octaver_mono_coherent\n");
+  /* Two output channels are needed so the chain runs the octaver on both the
+   * left and right of a mono-seeded input and we can compare the two results. */
+  le_engine* e = le_engine_create();
+  const int blk = 2048;
+  le_engine_configure(e, OCT_SR, 2, 2, blk); /* 2-in, 2-out */
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x3); /* both outputs */
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.75f);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 1.0f);
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+
+  float* in = (float*)malloc(sizeof(float) * (size_t)(2 * blk));
+  float* out = (float*)malloc(sizeof(float) * (size_t)(2 * blk));
+  for (int pass = 0; pass < 8; ++pass) {
+    for (int i = 0; i < blk; ++i) {
+      const float s = 0.4f * sinf(2.0f * LE_FFT_PI * 220.0f *
+                                  (float)(pass * blk + i) / (float)OCT_SR);
+      in[i * 2 + 0] = s;
+      in[i * 2 + 1] = s;
+    }
+    le_engine_process(e, out, in, (uint32_t)blk);
+    for (int i = 0; i < blk; ++i) {
+      CHECK(out[i * 2 + 0] == out[i * 2 + 1]);
+    }
+  }
+  free(in);
+  free(out);
+  le_engine_destroy(e);
+}
+
+/* Delay-matched dry (D2): the dry tap is delayed by the same LE_PV_N as the wet
+ * voice, so the two stay time-aligned in the mix instead of combing (the old
+ * granular octaver mixed a zero-delay dry against a delayed wet). An impulse on
+ * the dry-only path (mix = 0) emerges delayed by ~LE_PV_N, not at t = 0. */
+static void test_octaver_mix_no_comb(void) {
+  printf("test_octaver_mix_no_comb\n");
+  const int total = 2 * OCT_PV_N;
+  float* in = (float*)calloc((size_t)total, sizeof(float));
+  float* out = (float*)calloc((size_t)total, sizeof(float));
+  in[0] = 1.0f; /* unit impulse at t = 0 */
+
+  le_engine* e = le_engine_create();
+  const int blk = 512;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.5f); /* unison */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 0.0f); /* dry only */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 3, 0.0f);
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+  int done = 0;
+  while (done < total) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+  le_engine_destroy(e);
+
+  /* Find the dry impulse in the output; it must arrive near LE_PV_N, not at 0. */
+  int peak = 0;
+  for (int i = 0; i < total; ++i) {
+    if (fabsf(out[i]) > fabsf(out[peak])) peak = i;
+  }
+  printf("  dry-delay: impulse at out[%d] (want ~%d)\n", peak, OCT_PV_N - 1);
+  CHECK(abs(peak - OCT_PV_N) <= 2); /* delay-matched to the wet latency (N-1) */
+  CHECK(out[0] == 0.0f);           /* not a zero-delay dry (the old comb bug) */
+
+  free(in);
+  free(out);
+}
+
+/* Zipper-free (H3): dragging shift and mix full-range produces no clicks — the
+ * sample-to-sample delta stays bounded well below a discontinuity. */
+static void test_octaver_param_smoothing_no_zipper(void) {
+  printf("test_octaver_param_smoothing_no_zipper\n");
+  le_engine* e = le_engine_create();
+  const int blk = 1024;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 1.0f);
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+
+  float in[1024];
+  float out[1024];
+  float prev = 0.0f;
+  float max_delta = 0.0f;
+  for (int pass = 0; pass < 24; ++pass) {
+    const float shift = (pass % 2 == 0) ? 0.25f : 0.75f;
+    le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, shift);
+    le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 1, (pass % 2) ? 0.0f : 1.0f);
+    le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, (pass % 2) ? 0.2f : 1.0f);
+    for (int i = 0; i < blk; ++i) {
+      in[i] = 0.4f * sinf(2.0f * LE_FFT_PI * 220.0f *
+                          (float)(pass * blk + i) / (float)OCT_SR);
+    }
+    le_engine_process(e, out, in, (uint32_t)blk);
+    if (pass >= 4) { /* past warm-up */
+      for (int i = 0; i < blk; ++i) {
+        const float d = fabsf(out[i] - prev);
+        if (d > max_delta) max_delta = d;
+        prev = out[i];
+      }
+    } else {
+      prev = out[blk - 1];
+    }
+  }
+  printf("  zipper: max sample delta=%.4f\n", max_delta);
+  CHECK(max_delta < 0.2f); /* a click would be a large jump */
+  le_engine_destroy(e);
+}
+
+/* Lifecycle (M1): reorder/retype/remove an octaver slot under processing — the
+ * engine survives, output stays finite, and a different effect later landing on
+ * the slot is unaffected. */
+static void test_octaver_lifecycle(void) {
+  printf("test_octaver_lifecycle\n");
+  le_engine* e = le_engine_create();
+  const int blk = 512;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x1);
+
+  float in[512];
+  float out[512];
+  for (int i = 0; i < blk; ++i) {
+    in[i] = 0.4f * sinf(2.0f * LE_FFT_PI * 220.0f * (float)i / (float)OCT_SR);
+  }
+
+  const int32_t seq[] = {LE_FX_OCTAVER, LE_FX_DRIVE, LE_FX_OCTAVER,
+                         LE_FX_NONE,    LE_FX_REVERB, LE_FX_OCTAVER};
+  for (int t = 0; t < (int)(sizeof(seq) / sizeof(seq[0])); ++t) {
+    CHECK(le_engine_set_monitor_lane_fx(e, 0, 0, 0, seq[t]) == LE_OK);
+    le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 1.0f);
+    le_engine_set_monitor_lane_fx_count(e, 0, 0, seq[t] == LE_FX_NONE ? 0 : 1);
+    for (int pass = 0; pass < 6; ++pass) {
+      le_engine_process(e, out, in, (uint32_t)blk);
+      for (int i = 0; i < blk; ++i) {
+        CHECK(isfinite(out[i]));
+        CHECK(fabsf(out[i]) < 8.0f); /* bounded, no blow-up */
+      }
+    }
+  }
+  le_engine_destroy(e);
+}
+
+/* Mode switch (D1): toggling p3 (PV <-> PSOLA) runs the equal-power gain dip and
+ * resets the DSP runtime. The PSOLA leg is a delay-matched dry stub here, so the
+ * switch must stay finite and click-free — the dip bounds the sample-to-sample
+ * delta across both legs. */
+static void test_octaver_mode_switch(void) {
+  printf("test_octaver_mode_switch\n");
+  le_engine* e = le_engine_create();
+  const int blk = 1024;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.75f); /* octave up */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 1.0f);  /* full wet */
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+
+  float in[1024];
+  float out[1024];
+  float prev = 0.0f;
+  float max_delta = 0.0f;
+  for (int pass = 0; pass < 20; ++pass) {
+    /* PV for 5 passes, PSOLA for 5, repeating — exercises both switch legs. */
+    const float mode = ((pass / 5) % 2 == 0) ? 0.0f : 1.0f;
+    le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 3, mode);
+    for (int i = 0; i < blk; ++i) {
+      in[i] = 0.4f * sinf(2.0f * LE_FFT_PI * 220.0f *
+                          (float)(pass * blk + i) / (float)OCT_SR);
+    }
+    le_engine_process(e, out, in, (uint32_t)blk);
+    for (int i = 0; i < blk; ++i) {
+      CHECK(isfinite(out[i]));
+      CHECK(fabsf(out[i]) < 4.0f);
+      if (pass >= 1) {
+        const float d = fabsf(out[i] - prev);
+        if (d > max_delta) max_delta = d;
+      }
+      prev = out[i];
+    }
+  }
+  printf("  mode-switch: max sample delta=%.4f\n", max_delta);
+  CHECK(max_delta < 0.3f); /* equal-power dip masks the discontinuity */
+  le_engine_destroy(e);
+}
+
 /* ---- FFT primitive (fft.h) ---- */
 
 /* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
@@ -3659,6 +4019,13 @@ int main(void) {
   test_fx_stereo_ring_retained_across_type_reorder();
   test_monitor_lane_fx_rejects_invalid_args();
   test_fx_fourth_param_is_inert();
+  test_octaver_pv_shifts_pitch_preserves_formant();
+  test_octaver_pv_low_fundamental();
+  test_octaver_mono_coherent();
+  test_octaver_mix_no_comb();
+  test_octaver_param_smoothing_no_zipper();
+  test_octaver_lifecycle();
+  test_octaver_mode_switch();
   test_fft_roundtrip();
 
   if (g_failures == 0) {
