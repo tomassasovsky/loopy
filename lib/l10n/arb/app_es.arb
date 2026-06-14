@@ -377,5 +377,61 @@
                 "type": "int"
             }
         }
+    },
+    "midiInputGroup": "PEDAL MIDI",
+    "midiNoDevicesFound": "No se encontraron dispositivos de entrada MIDI",
+    "midiNone": "Ninguno",
+    "midiDeviceNotFound": "{deviceName} (no encontrado)",
+    "@midiDeviceNotFound": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiStatusNone": "Sin dispositivo MIDI: el looper funciona con teclado y ratón.",
+    "midiStatusConnecting": "Conectando…",
+    "midiStatusConnected": "Conectado: {deviceName}",
+    "@midiStatusConnected": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiStatusDeviceGone": "{deviceName} no encontrado: se reconectará al conectarlo.",
+    "@midiStatusDeviceGone": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiStatusOpenFailed": "No se pudo abrir {deviceName} (¿en uso por otra app?).",
+    "@midiStatusOpenFailed": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiRequiredCcsHint": "CC 80 grabar · 81 detener · 82 deshacer · 83 borrar",
+    "midiActivityActive": "Actividad MIDI",
+    "midiActivityIdle": "Esperando entrada MIDI",
+    "midiDisconnectedBanner": "Controlador MIDI «{deviceName}» desconectado: se reconectará al conectarlo.",
+    "@midiDisconnectedBanner": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiReconnectedSnackbar": "Controlador MIDI «{deviceName}» reconectado.",
+    "@midiReconnectedSnackbar": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
     }
 }

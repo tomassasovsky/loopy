@@ -377,5 +377,61 @@
             }
         }
     },
-    "outputWaveformWindowTitle": "Loopy — Output"
+    "outputWaveformWindowTitle": "Loopy — Output",
+    "midiInputGroup": "MIDI FOOT CONTROLLER",
+    "midiNoDevicesFound": "No MIDI input devices found",
+    "midiNone": "None",
+    "midiDeviceNotFound": "{deviceName} (not found)",
+    "@midiDeviceNotFound": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiStatusNone": "No MIDI device — the looper runs from the keyboard and mouse.",
+    "midiStatusConnecting": "Connecting…",
+    "midiStatusConnected": "Connected: {deviceName}",
+    "@midiStatusConnected": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiStatusDeviceGone": "{deviceName} not found — it will reconnect when plugged in.",
+    "@midiStatusDeviceGone": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiStatusOpenFailed": "Could not open {deviceName} (in use by another app?).",
+    "@midiStatusOpenFailed": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiRequiredCcsHint": "CC 80 record · 81 stop · 82 undo · 83 clear",
+    "midiActivityActive": "MIDI activity",
+    "midiActivityIdle": "Waiting for MIDI input",
+    "midiDisconnectedBanner": "MIDI controller \"{deviceName}\" disconnected — it will reconnect when plugged in.",
+    "@midiDisconnectedBanner": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "midiReconnectedSnackbar": "MIDI controller \"{deviceName}\" reconnected.",
+    "@midiReconnectedSnackbar": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    }
 }

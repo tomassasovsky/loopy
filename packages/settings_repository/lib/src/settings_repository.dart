@@ -195,6 +195,37 @@ class SettingsRepository {
     await _store.setString(_audioAsioDriverKey, config.asioDriver);
   }
 
+  static const String _midiInputDeviceIdKey = 'midi.input_device_id';
+  static const String _midiInputDeviceNameKey = 'midi.input_device_name';
+
+  /// Loads the pinned MIDI input device as `(id, name)`, or `null` when none
+  /// has been selected (a fresh install, or after picking "None"). The `id` is
+  /// the per-OS stable token used to re-open the device on launch; `name` is
+  /// the human-readable label kept so a "last device not found" status can name
+  /// it even while the device is absent. Additive flat keys, like `audio.*`.
+  Future<({String id, String name})?> loadMidiDevice() async {
+    final id = await _store.getString(_midiInputDeviceIdKey);
+    if (id == null || id.isEmpty) return null;
+    final name = await _store.getString(_midiInputDeviceNameKey) ?? '';
+    return (id: id, name: name);
+  }
+
+  /// Pins the MIDI input device [id]/[name] so it auto-reconnects next launch.
+  Future<void> saveMidiDevice({
+    required String id,
+    required String name,
+  }) async {
+    await _store.setString(_midiInputDeviceIdKey, id);
+    await _store.setString(_midiInputDeviceNameKey, name);
+  }
+
+  /// Clears the pinned MIDI input device (the "None" selection), so the looper
+  /// relaunches with no MIDI device attached.
+  Future<void> clearMidiDevice() async {
+    await _store.remove(_midiInputDeviceIdKey);
+    await _store.remove(_midiInputDeviceNameKey);
+  }
+
   static const String _showWaveformWindowKey = 'big_picture.waveform_window';
 
   /// Whether the secondary output-waveform window should open in big-picture
