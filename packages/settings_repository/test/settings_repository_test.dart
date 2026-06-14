@@ -192,13 +192,15 @@ void main() {
       expect(await repository.loadMonitorLaneMute(0, 0), isTrue);
     });
 
-    test('lane effects round-trip the encoded chain per (input, lane)',
-        () async {
-      expect(await repository.loadMonitorLaneEffects(0, 0), isNull);
-      await repository.saveMonitorLaneEffects(0, 0, '[{"type":1}]');
-      expect(await repository.loadMonitorLaneEffects(0, 0), '[{"type":1}]');
-      expect(await repository.loadMonitorLaneEffects(0, 1), isNull);
-    });
+    test(
+      'lane effects round-trip the encoded chain per (input, lane)',
+      () async {
+        expect(await repository.loadMonitorLaneEffects(0, 0), isNull);
+        await repository.saveMonitorLaneEffects(0, 0, '[{"type":1}]');
+        expect(await repository.loadMonitorLaneEffects(0, 0), '[{"type":1}]');
+        expect(await repository.loadMonitorLaneEffects(0, 1), isNull);
+      },
+    );
 
     test('the v2 migration flag defaults to false and round-trips', () async {
       expect(await repository.loadMonitorMigratedV2(), isFalse);
@@ -386,17 +388,6 @@ void main() {
     test('round-trips a saved preference', () async {
       await repository.saveShowWaveformWindow(value: false);
       expect(await repository.loadShowWaveformWindow(), isFalse);
-    });
-  });
-
-  group('bank enabled', () {
-    test('defaults to enabled when unset', () async {
-      expect(await repository.loadBankEnabled(), isTrue);
-    });
-
-    test('round-trips a saved preference', () async {
-      await repository.saveBankEnabled(value: true);
-      expect(await repository.loadBankEnabled(), isTrue);
     });
   });
 

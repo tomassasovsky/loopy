@@ -81,15 +81,7 @@ class App extends StatelessWidget {
               return cubit;
             },
           ),
-          BlocProvider(
-            create: (context) {
-              final cubit = BankCubit(
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
+          BlocProvider(create: (context) => BankCubit()),
           BlocProvider(
             create: (context) {
               final cubit = WaveformWindowCubit(

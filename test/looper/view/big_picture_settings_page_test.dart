@@ -35,7 +35,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bigPicture = BigPictureCubit(settings: settings);
     waveformWindow = WaveformWindowCubit(settings: settings);
-    bank = BankCubit(settings: settings);
+    bank = BankCubit();
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(const AudioSetupState());
     repository = _MockLooperRepository();
@@ -111,20 +111,6 @@ void main() {
 
     expect(waveformWindow.state, isFalse);
     expect(await settings.loadShowWaveformWindow(), isFalse);
-  });
-
-  testWidgets('toggling the second bank persists it', (tester) async {
-    await pump(tester);
-    expect(bank.state.enabled, isTrue);
-
-    // Bank + track controls live under the Tracks section.
-    await tester.tap(find.byKey(const Key('bpSettings_tab_tracks')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('bpSettings_bank_switch')));
-    await tester.pumpAndSettle();
-
-    expect(bank.state.enabled, isFalse);
-    expect(await settings.loadBankEnabled(), isFalse);
   });
 
   testWidgets('renaming a track updates the list and persists it', (
@@ -216,11 +202,12 @@ void main() {
       find.byKey(const Key('bpSettings_waveformWindow_switch')),
       findsOneWidget,
     );
-    expect(find.byKey(const Key('bpSettings_bank_switch')), findsNothing);
+    expect(find.byKey(const Key('bpSettings_trackName_0')), findsNothing);
 
     await tester.tap(find.byKey(const Key('bpSettings_tab_tracks')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('bpSettings_bank_switch')), findsOneWidget);
+    // The Tracks section renders the per-track rename rows.
+    expect(find.byKey(const Key('bpSettings_trackName_0')), findsOneWidget);
     expect(
       find.byKey(const Key('bpSettings_waveformWindow_switch')),
       findsNothing,
@@ -237,7 +224,7 @@ void main() {
       find.byKey(const Key('audioSettings_measure_button')),
       findsOneWidget,
     );
-    expect(find.byKey(const Key('bpSettings_bank_switch')), findsNothing);
+    expect(find.byKey(const Key('bpSettings_trackName_0')), findsNothing);
 
     await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
     await tester.pumpAndSettle();

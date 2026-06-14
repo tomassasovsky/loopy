@@ -57,10 +57,8 @@ class _BigPictureViewState extends State<BigPictureView> {
                   Row(
                     children: [
                       _ModeIndicator(mode: big.mode),
-                      if (bank.enabled) ...[
-                        const SizedBox(width: 12),
-                        _BankSwitch(active: bank.activeBank),
-                      ],
+                      const SizedBox(width: 12),
+                      _BankSwitch(active: bank.activeBank),
                       const Spacer(),
                     ],
                   ),
@@ -190,13 +188,10 @@ class _BigPictureViewState extends State<BigPictureView> {
     final digit = _digitOf(key);
     if (digit != null) {
       final channel = digit - 1;
-      final bankEnabled = context.read<BankCubit>().state.enabled;
-      if (channel <= (bankEnabled ? 7 : 3)) {
-        if (bankEnabled) {
-          context.read<BankCubit>().selectBank(
-            channel ~/ BankState.tracksPerBank,
-          );
-        }
+      if (channel <= 7) {
+        context.read<BankCubit>().selectBank(
+          channel ~/ BankState.tracksPerBank,
+        );
         big.select(channel);
         if (big.state.mode == PerformanceMode.play) {
           bloc.add(LooperMuteToggled(channel));
