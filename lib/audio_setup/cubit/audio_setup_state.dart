@@ -47,7 +47,7 @@ class AudioSetupState extends Equatable {
     this.devices = const [],
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.wasapi,
+    this.backend = AudioBackend.miniaudio,
     this.asioDriver = '',
     this.asioDrivers = const [],
     this.cachedAsioDrivers = const [],
@@ -87,8 +87,8 @@ class AudioSetupState extends Equatable {
   /// Selected capture device id, or empty for the system default.
   final String captureDeviceId;
 
-  /// The requested device backend (intent). Defaults to [AudioBackend.wasapi];
-  /// [AudioBackend.asio] is selectable only on Windows with drivers present.
+  /// The requested device backend (intent). Defaults to
+  /// [AudioBackend.miniaudio]; [AudioBackend.asio] is forced on Windows.
   /// The negotiated reality is read from [engineStatus]'s `activeBackend`.
   final AudioBackend backend;
 
@@ -106,7 +106,7 @@ class AudioSetupState extends Equatable {
   final List<AudioDevice> cachedAsioDrivers;
 
   /// Whether this platform runs ASIO exclusively (Windows): the backend is
-  /// hardwired to ASIO, there is no WASAPI selector or device picker, and the
+  /// hardwired to ASIO, there is no backend selector or device picker, and the
   /// no-driver / ASIO4ALL affordances apply. `false` on macOS/Linux.
   final bool asioOnly;
 

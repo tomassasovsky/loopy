@@ -12,6 +12,7 @@ import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/window/window_chrome.dart';
 
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
 /// of tall colored track columns, each a level meter with an editable name.
@@ -111,8 +112,9 @@ class _BigPictureViewState extends State<BigPictureView> {
   /// beep) and dispatched to the looper; modifier combos other than undo/redo
   /// pass through to OS / menu shortcuts.
   ///
-  /// Both modes: `M` switch mode · `S` settings · `Space` play/pause all ·
-  /// `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo.
+  /// Both modes: `M` switch mode · `S` settings · `F` fullscreen · `Space`
+  /// play/pause all · `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or
+  /// `Shift+Z`) redo.
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Play mode: `1`–`8` select + mute/unmute.
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -156,6 +158,10 @@ class _BigPictureViewState extends State<BigPictureView> {
     }
     if (key == LogicalKeyboardKey.keyS) {
       unawaited(openLoopySettings());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyF) {
+      unawaited(toggleLoopyFullScreen());
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {

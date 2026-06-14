@@ -224,6 +224,11 @@ class FakeSessionEngine implements AudioEngine {
     required int dryOutputMask,
   }) => EngineResult.ok;
   @override
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
+  }) => EngineResult.ok;
+  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,

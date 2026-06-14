@@ -35,7 +35,12 @@ enum TrackEffectType {
   octaver(5, 'Octaver'),
 
   /// Tape-style echo with damped, smearing repeats.
-  echo(6, 'Echo');
+  echo(6, 'Echo'),
+
+  /// Schroeder/Freeverb room reverb — a dense, smooth decaying tail. Spreads a
+  /// mono source into a stereo tail across the first two channels of its output
+  /// route, so it is best placed last in a chain.
+  reverb(7, 'Reverb');
 
   const TrackEffectType(this.code, this.label);
 
@@ -87,6 +92,11 @@ enum TrackEffectType {
       TrackEffectParam('Feedback'),
       TrackEffectParam('Mix'),
     ],
+    TrackEffectType.reverb => const [
+      TrackEffectParam('Size'),
+      TrackEffectParam('Damping'),
+      TrackEffectParam('Mix'),
+    ],
   };
 
   /// Labels for this type's parameters, in order. A convenience over [params].
@@ -103,6 +113,7 @@ enum TrackEffectType {
     TrackEffectType.tremolo => const [0.3, 0.7, 0],
     TrackEffectType.octaver => const [0.25, 0.5, 0.5],
     TrackEffectType.echo => const [0.45, 0.5, 0.35],
+    TrackEffectType.reverb => const [0.5, 0.5, 0.35],
   };
 }
 

@@ -323,6 +323,19 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-input monitor volume passed to [setMonitorInputVolume].
+  final Map<int, double> monitorInputVolume = {};
+
+  @override
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
+  }) {
+    monitorInputVolume[input] = volume;
+    calls.add('setMonitorInputVolume');
+    return EngineResult.ok;
+  }
+
   /// Per-(input, index) effect type passed to [setMonitorInputFx].
   final Map<(int, int), TrackEffectType> monitorInputFx = {};
 

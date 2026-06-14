@@ -40,7 +40,7 @@ class AudioSettingsSection extends StatelessWidget {
           _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
           const SizedBox(height: 20),
         ],
-        // Windows runs ASIO exclusively: one driver picker, no WASAPI selector
+        // Windows runs ASIO exclusively: one driver picker, no backend selector
         // or device pickers. With no driver installed, an ASIO4ALL affordance
         // shows instead. macOS/Linux keep the output + input device pickers.
         if (state.asioOnly) ...[

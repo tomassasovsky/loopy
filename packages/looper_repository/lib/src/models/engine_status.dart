@@ -17,7 +17,7 @@ class EngineStatus extends Equatable {
     this.devicePresent = false,
     this.excludedInputMask = 0,
     this.recordOffsetFrames = 0,
-    this.activeBackend = AudioBackend.wasapi,
+    this.activeBackend = AudioBackend.miniaudio,
   });
 
   /// Active device name, or empty when stopped.
@@ -62,9 +62,9 @@ class EngineStatus extends Equatable {
   /// Record-offset latency compensation in frames (auto-set by a measurement).
   final int recordOffsetFrames;
 
-  /// The device backend actually running (negotiated). A requested-ASIO open
-  /// that fell back to WASAPI reports [AudioBackend.wasapi] here — the reality
-  /// behind the requested [EngineConfig.backend] intent.
+  /// The device backend actually running (negotiated) — the reality behind the
+  /// requested [EngineConfig.backend] intent. On Windows this is always
+  /// [AudioBackend.asio]; on macOS/Linux it is [AudioBackend.miniaudio].
   final AudioBackend activeBackend;
 
   /// Whether a latency measurement has completed.

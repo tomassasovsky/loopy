@@ -3,7 +3,7 @@
  *
  * Declares the one entry point the Windows platform seam (engine_windows.c)
  * calls when the engine is built with LOOPY_ENABLE_ASIO. Capture/playback stay
- * on miniaudio/WASAPI; ASIO is used *only* to read channel names so the engine
+ * on miniaudio; ASIO is used *only* to read channel names so the engine
  * can exclude "Loopback"-labelled inputs the same way macOS does via Core Audio.
  *
  * Purely internal: NOT part of the FFI surface (loopy_engine_api.h) or ffigen.
@@ -19,11 +19,11 @@ extern "C" {
 #endif
 
 /* Excluded-input-channel mask read from ASIO per-channel names for the device
- * identified by `uid` (the miniaudio/WASAPI device id from enumeration). Bit c
+ * identified by `uid` (the miniaudio device id from enumeration). Bit c
  * is set when input channel c's ASIO name matches le_label_is_loopback.
  *
  * Returns 0 — exclude nothing — on ANY failure or ambiguity (no ASIO driver,
- * driver load/init fails, or the WASAPI uid cannot be matched to exactly one
+ * driver load/init fails, or the uid cannot be matched to exactly one
  * ASIO driver). Rule: prefer no-match over wrong-match — a false-positive mask
  * (excluding the wrong channels) is worse than the no-op default.
  *

@@ -150,8 +150,8 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   }
 
   /* Open the device in shared mode (miniaudio's default on every backend). The
-   * OS mixer owns the device; this is the unchanged behaviour on macOS/Linux and
-   * the only Windows WASAPI mode now that full device control goes through ASIO. */
+   * OS mixer owns the device; this is the behaviour on macOS/Linux. On Windows
+   * full device control goes through ASIO instead, not this path. */
   ma_result init_result = ma_device_init(pContext, &cfg, &engine->device);
   if (init_result != MA_SUCCESS) {
     le_uninit_context(engine);
@@ -170,7 +170,7 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   out->output_channels = neg_out;
   out->buffer_frames =
       (int32_t)engine->device.playback.internalPeriodSizeInFrames;
-  out->active_backend = LE_BACKEND_WASAPI;
+  out->active_backend = LE_BACKEND_MINIAUDIO;
   /* The loopback-excluded mask is computed in le_engine_start from the resolved
    * capture-device UID for this path; the backend reports none here. */
   out->excluded_input_mask = 0;

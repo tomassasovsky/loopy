@@ -12,10 +12,6 @@ import 'package:window_manager/window_manager.dart';
 /// playhead position.
 typedef WaveformFrame = ({Float32List samples, double progress});
 
-/// Whether the waveform window uses a Flutter-drawn title bar instead of the
-/// native one (Windows only).
-bool get waveformWindowUsesFlutterTitleBar => loopyUsesFlutterTitleBar;
-
 /// Entrypoint for the secondary waveform window — a separate Flutter engine
 /// spawned by `desktop_multi_window`. It owns no audio engine; the main window
 /// pushes `waveform` frames to it over [waveformWindowChannel].
@@ -109,10 +105,8 @@ class WaveformWindowApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.bigPicture,
-      home: Scaffold(
-        appBar: waveformWindowUsesFlutterTitleBar
-            ? LoopyWindowTitleBar(title: title)
-            : null,
+      home: LoopyWindowChromeShell(
+        title: title,
         body: Padding(
           padding: const EdgeInsets.all(24),
           child: ValueListenableBuilder<WaveformFrame>(

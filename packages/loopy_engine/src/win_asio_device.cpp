@@ -4,7 +4,8 @@
  * Built ONLY when LOOPY_ENABLE_ASIO is set (see CMakeLists.txt + docs/
  * WINDOWS_ASIO.md). Implements the le_device_backend seam with a real ASIO
  * capture/playback device so a pro multichannel interface (e.g. an 18-in/20-out
- * Focusrite) runs at its full channel count, which WASAPI never exposes.
+ * Focusrite) runs at its full channel count, which the shared OS mixer never
+ * exposes.
  *
  * What this TU absorbs so the engine core never sees ASIO's quirks:
  *   1. Non-interleaved, per-channel buffers      -> le_deinterleave_in / _out
@@ -89,7 +90,7 @@ AsioState g_asio;
 // Maps an ASIO native sample type to the engine's le_sample_fmt. Returns false
 // for a format outside the common Int16/Int24/Int32/Float32 set (per-driver
 // format edge cases are an explicit out-of-scope follow-up); the caller then
-// fails the open so the dispatcher falls back to WASAPI rather than play noise.
+// fails the open loudly (Windows is ASIO-only) rather than play noise.
 bool map_format(ASIOSampleType type, le_sample_fmt* out) {
   switch (type) {
     case ASIOSTInt16LSB: *out = LE_SMP_I16; return true;

@@ -579,6 +579,25 @@ void main() {
       expect(engine.monitorInputDry[1], 0x1);
     });
 
+    test('setMonitorVolume applies the gain and reapplies on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorVolume(input: 0, volume: 0.5);
+      expect(engine.monitorInputVolume[0], 0.5);
+
+      // Remembered and re-applied on the next start.
+      engine.monitorInputVolume.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorInputVolume[0], 0.5);
+    });
+
+    test('setMonitorVolume is remembered before the engine starts', () {
+      final repo = buildRepo()..setMonitorVolume(input: 1, volume: 0.25);
+      expect(engine.monitorInputVolume, isEmpty); // not running yet
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorInputVolume[1], 0.25);
+    });
+
     test('an empty monitor chain zeroes the input count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())

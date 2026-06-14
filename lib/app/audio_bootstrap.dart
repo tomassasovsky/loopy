@@ -41,9 +41,10 @@ Future<AutoStartResult> tryAutoStartEngine({
   }
   // On Windows (ASIO-only) the engine always runs ASIO, and the driver is found
   // automatically: keep the saved one if it is still enumerated, otherwise fall
-  // back to the first installed driver. This heals a config saved as WASAPI or
-  // with a stale/empty driver (e.g. from an earlier build), so the app finds
-  // the installed driver on its own — the user can still switch it in settings.
+  // back to the first installed driver. This heals a config saved with the
+  // miniaudio backend or a stale/empty driver (e.g. from an earlier build), so
+  // the app finds the installed driver on its own — the user can still switch
+  // it in settings.
   // With no driver installed at all, land stopped (the looper shows the
   // no-driver / ASIO4ALL affordance), mirroring the first-run path. The coercion
   // mirrors the cubit's hydration so the engine and the UI never disagree.

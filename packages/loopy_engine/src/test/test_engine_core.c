@@ -28,7 +28,7 @@
  *   /tmp/loopy_core_tests
  *
  * Build & run (Windows, from a VS x64 dev prompt): MSVC needs
- * /experimental:c11atomics for <stdatomic.h>; WASAPI links ole32 + winmm.
+ * /experimental:c11atomics for <stdatomic.h>; miniaudio links ole32 + winmm.
  *   cl /std:c11 /experimental:c11atomics /D_CRT_SECURE_NO_WARNINGS ^
  *     /I src /I src/miniaudio ^
  *     src\test\test_engine_core.c src\engine.c src\lockfree_ring.c ^
@@ -982,9 +982,9 @@ static void test_enumerate_devices_runs(void) {
     CHECK(strlen(devices[i].id) < sizeof(devices[i].id));     /* NUL-terminated */
     CHECK(strlen(devices[i].name) < sizeof(devices[i].name)); /* NUL-terminated */
     CHECK(devices[i].is_default == 0 || devices[i].is_default == 1);
-    /* WASAPI/miniaudio enumeration reports no per-device channel count, so
+    /* miniaudio enumeration reports no per-device channel count, so
      * device_info_copy must zero these — never leak stack garbage as a count.
-     * An ASIO probe fills them in Part 2 (0 = unknown). */
+     * An ASIO probe fills them in (0 = unknown). */
     CHECK(devices[i].input_channels == 0);
     CHECK(devices[i].output_channels == 0);
   }
@@ -1008,7 +1008,7 @@ static void test_enumerate_devices_runs(void) {
 /* The device-id serializer (engine_platform.h) turns a backend id into a
  * printable token used to match a user-selected device back to its native id.
  * On the char-string backends (CoreAudio/ALSA/PulseAudio) it copies verbatim;
- * on Windows/WASAPI it converts the wchar endpoint string to UTF-8. The Windows
+ * on Windows it converts the wchar endpoint string to UTF-8. The Windows
  * branch is the regression guard for the bug where reading the wchar id as a
  * narrow char* collapsed every device id to its first character (e.g. "{"),
  * making every device indistinguishable and crashing the device dropdown. */
@@ -1023,7 +1023,7 @@ static void test_device_id_to_str(void) {
   CHECK(out[0] == 'x');
 
 #if defined(_WIN32)
-  /* WASAPI: the full wchar endpoint string survives as UTF-8, not truncated. */
+  /* Windows: the full wchar endpoint string survives as UTF-8, not truncated. */
   memset(&id, 0, sizeof(id));
   wcsncpy((wchar_t*)&id, L"{0.0.1.00000000}.{abcd}",
           sizeof(id) / sizeof(wchar_t) - 1);
@@ -1047,9 +1047,9 @@ static void test_device_id_to_str(void) {
  * the default build never depends on an ASIO symbol. */
 static void test_select_backend_defaults_to_miniaudio(void) {
   printf("test_select_backend_defaults_to_miniaudio\n");
-  const le_device_backend* wasapi = le_select_backend(LE_BACKEND_WASAPI);
+  const le_device_backend* miniaudio = le_select_backend(LE_BACKEND_MINIAUDIO);
   const le_device_backend* asio = le_select_backend(LE_BACKEND_ASIO);
-  CHECK(wasapi == &le_miniaudio_backend);
+  CHECK(miniaudio == &le_miniaudio_backend);
   CHECK(asio == &le_miniaudio_backend);
   /* An unknown/out-of-range choice still resolves to the miniaudio backend. */
   CHECK(le_select_backend(42) == &le_miniaudio_backend);
@@ -1060,27 +1060,27 @@ static void test_select_backend_defaults_to_miniaudio(void) {
   CHECK(le_miniaudio_backend.close != NULL);
 }
 
-/* The grown FFI structs default to the WASAPI path when zero-initialized
- * (le_config) and a fresh engine publishes active_backend == WASAPI in its
+/* The grown FFI structs default to the miniaudio path when zero-initialized
+ * (le_config) and a fresh engine publishes active_backend == miniaudio in its
  * snapshot. Guards against the new fields ever defaulting to a non-zero / non-
- * WASAPI value that would silently change behavior. */
+ * miniaudio value that would silently change behavior. */
 static void test_backend_struct_defaults(void) {
   printf("test_backend_struct_defaults\n");
   le_config cfg;
   memset(&cfg, 0, sizeof(cfg));
-  CHECK(cfg.backend == LE_BACKEND_WASAPI); /* 0 */
+  CHECK(cfg.backend == LE_BACKEND_MINIAUDIO); /* 0 */
   CHECK(cfg.asio_driver[0] == '\0');
 
   le_engine* engine = le_engine_create();
   CHECK(engine != NULL);
   if (engine != NULL) {
     /* Configure without opening a device: the snapshot reports the negotiated
-     * defaults, including the WASAPI active backend. */
+     * defaults, including the miniaudio active backend. */
     CHECK(le_engine_configure(engine, 48000, 2, 2, 48000) == LE_OK);
     le_snapshot snap;
     memset(&snap, 0, sizeof(snap));
     le_engine_get_snapshot(engine, &snap);
-    CHECK(snap.active_backend == LE_BACKEND_WASAPI);
+    CHECK(snap.active_backend == LE_BACKEND_MINIAUDIO);
     le_engine_destroy(engine);
   }
 }
@@ -1704,6 +1704,57 @@ static void test_monitor_input_dry_send(void) {
   le_engine_destroy(e);
 }
 
+/* The monitor output gain trims both the wet and dry sends equally, so it can
+ * tame the +6 dB from routing both sends (with no effects, wet == dry) to one
+ * output. */
+static void test_monitor_input_volume(void) {
+  printf("test_monitor_input_volume\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 0.0f;
+  }
+
+  /* Input 0, no effects: wet (clean) AND dry both routed to out 0. At unity
+   * volume they sum to 2.0 (the +6 dB the gain exists to tame). */
+  CHECK(le_engine_set_monitor_input(e, 0, 1, 0x1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_dry(e, 0, 0x1) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+  }
+
+  /* Half volume scales both sends: 0.5 + 0.5 = 1.0 (back to unity). */
+  CHECK(le_engine_set_monitor_input_volume(e, 0, 0.5f) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+  }
+
+  /* Silencing the monitor (volume 0) drops both sends to nothing. */
+  CHECK(le_engine_set_monitor_input_volume(e, 0, 0.0f) == LE_OK);
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
+  }
+
+  /* Out-of-range volumes clamp to [0, 1]; a null/invalid input is rejected. */
+  CHECK(le_engine_set_monitor_input_volume(e, 0, 2.0f) == LE_OK); /* clamps 1 */
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f); /* unity again */
+  }
+  CHECK(le_engine_set_monitor_input_volume(NULL, 0, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input_volume(e, -1, 0.5f) == LE_ERR_INVALID);
+  CHECK(le_engine_set_monitor_input_volume(e, LE_MAX_INPUTS, 0.5f) ==
+        LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
 /* A latency measurement temporarily suppresses input monitoring (to break the
  * out->cable->in->monitor->out feedback loop during the pulse), then RESTORES
  * it when the measurement finishes — monitoring must resume, not stop forever. */
@@ -2273,6 +2324,91 @@ static void test_fx_delay_is_silent_until_time(void) {
   le_engine_destroy(e);
 }
 
+/* Reverb is a dense decaying tail, not discrete repeats: at full wet the output
+ * starts silent (the wet path carries only reflections, the lines start empty)
+ * then a sustained, bounded tail builds as reflections accumulate; at zero mix
+ * it passes the dry signal through untouched. */
+static void test_fx_reverb_builds_a_tail(void) {
+  printf("test_fx_reverb_builds_a_tail\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  establish_loop(e, 1.0f); /* the loop plays a constant 1.0 */
+
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.6f); /* size */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.5f); /* damping */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 0.0f); /* mix = fully dry */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+
+  /* Dry: the loop passes through unchanged. */
+  process_const(e, 0.0f, 64, out);
+  for (int i = 0; i < 64; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  /* Full wet: the first reflected sample is still silent (shortest comb line is
+   * far longer than the blocks processed so far). */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* mix = fully wet */
+  process_const(e, 0.0f, 64, out);
+  CHECK(fabsf(out[0]) < 1e-6f);
+
+  /* Process ~12.8 k more frames: a real tail appears, stays finite, and never
+   * blows up despite the comb feedback. */
+  float peak = 0.0f;
+  int sustained = 0;
+  for (int b = 0; b < 200; ++b) {
+    process_const(e, 0.0f, 64, out);
+    for (int i = 0; i < 64; ++i) {
+      const float a = fabsf(out[i]);
+      if (a > peak) peak = a;
+      if (a > 1e-4f) sustained++;
+      CHECK(out[i] == out[i]); /* never NaN */
+      CHECK(a < 8.0f);         /* stable, never blows up */
+    }
+  }
+  CHECK(peak > 0.05f);     /* a genuine tail developed */
+  CHECK(sustained > 2000); /* dense and sustained, not a lone blip */
+
+  le_engine_destroy(e);
+}
+
+/* Reverb turns a mono source into a decorrelated stereo tail: routed to two
+ * output channels, the left and right tails both develop but are not identical
+ * (the right bank's lines are offset by the stereo spread). A lane with one
+ * output instead gets the collapsed (L+R)/2 mono sum (covered above). */
+static void test_fx_reverb_is_stereo(void) {
+  printf("test_fx_reverb_is_stereo\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* mono in, STEREO out */
+  float out[128];                            /* 2 channels * 64 frames */
+  establish_loop(e, 1.0f); /* track 0 plays a constant 1.0 to outs 0 + 1 */
+
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.6f); /* size */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.3f); /* damping */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* mix = fully wet */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+
+  float peak_l = 0.0f;
+  float peak_r = 0.0f;
+  float max_diff = 0.0f;
+  for (int b = 0; b < 200; ++b) { /* ~12.8 k frames */
+    process_const(e, 0.0f, 64, out);
+    for (int i = 0; i < 64; ++i) {
+      const float l = out[i * 2 + 0];
+      const float r = out[i * 2 + 1];
+      if (fabsf(l) > peak_l) peak_l = fabsf(l);
+      if (fabsf(r) > peak_r) peak_r = fabsf(r);
+      if (fabsf(l - r) > max_diff) max_diff = fabsf(l - r);
+      CHECK(l == l && r == r);              /* never NaN */
+      CHECK(fabsf(l) < 8.0f && fabsf(r) < 8.0f); /* stable */
+    }
+  }
+  CHECK(peak_l > 0.05f);   /* a tail on the left */
+  CHECK(peak_r > 0.05f);   /* a tail on the right */
+  CHECK(max_diff > 0.01f); /* the two are decorrelated, not a dup */
+
+  le_engine_destroy(e);
+}
+
 static void test_fx_tremolo_modulates_amplitude(void) {
   printf("test_fx_tremolo_modulates_amplitude\n");
   le_engine* e = make_configured_engine();
@@ -2370,6 +2506,11 @@ static void test_fx_rejects_invalid_args(void) {
   CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, LE_FX_PARAMS, 0.5f) ==
         LE_ERR_INVALID);
   CHECK(le_engine_set_lane_fx_count(e, 0, LE_MAX_LANES, 1) == LE_ERR_INVALID);
+
+  /* LE_FX_REVERB is the current highest type: accepted, while one past it is
+   * rejected — locking the validated upper bound. */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB) == LE_OK);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB + 1) == LE_ERR_INVALID);
 
   /* Out-of-range parameter values clamp to [0, 1] rather than erroring; an
    * over-large count clamps to LE_FX_MAX. */
@@ -3008,6 +3149,7 @@ int main(void) {
   test_quantize_track_override_inherits();
   test_monitor_input_routes_live_through_chain();
   test_monitor_input_dry_send();
+  test_monitor_input_volume();
   test_latency_restores_monitoring();
   test_monitor_input_dry_not_recorded();
   test_monitor_input_not_recorded();
@@ -3070,6 +3212,8 @@ int main(void) {
   test_fx_bypass_is_transparent();
   test_fx_count_gates_the_chain();
   test_fx_drive_saturates();
+  test_fx_reverb_builds_a_tail();
+  test_fx_reverb_is_stereo();
   test_fx_filter_attenuates_low_cutoff();
   test_fx_delay_is_silent_until_time();
   test_fx_tremolo_modulates_amplitude();

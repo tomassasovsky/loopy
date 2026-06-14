@@ -15,7 +15,7 @@ class StoredAudioConfig {
     this.maxLoopMinutes = 0,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.wasapi,
+    this.backend = AudioBackend.miniaudio,
     this.asioDriver = '',
   });
 
@@ -42,7 +42,7 @@ class StoredAudioConfig {
   /// Pinned capture device id (empty => system default).
   final String captureDeviceId;
 
-  /// The persisted device-backend intent. Defaults to [AudioBackend.wasapi].
+  /// The persisted device-backend intent. Defaults to [AudioBackend.miniaudio].
   /// ASIO availability is a presentation-layer decision (Windows + an installed
   /// driver), so the repository stays platform-agnostic and holds only intent.
   final AudioBackend backend;
@@ -145,9 +145,9 @@ class SettingsRepository {
 
   /// Resolves a stored backend name to an [AudioBackend], forward-compatibly:
   /// an unknown name (e.g. a value written by a newer build) resolves to
-  /// [AudioBackend.wasapi] rather than throwing (a defensive read).
+  /// [AudioBackend.miniaudio] rather than throwing (a defensive read).
   AudioBackend _backendFromName(String? name) =>
-      AudioBackend.values.asNameMap()[name] ?? AudioBackend.wasapi;
+      AudioBackend.values.asNameMap()[name] ?? AudioBackend.miniaudio;
 
   /// Loads the legacy global input-monitor flag, or `null` if it was never set.
   /// Only the one-time monitor migration reads this — the live app no longer
@@ -278,6 +278,7 @@ class SettingsRepository {
 
   String _monitorInputKey(int input) => 'monitor_input.$input';
   String _monitorInputDryKey(int input) => 'monitor_input_dry.$input';
+  String _monitorInputVolKey(int input) => 'monitor_input_vol.$input';
   String _monitorInputFxKey(int input) => 'monitor_input_fx.$input';
 
   /// Loads hardware [input]'s live-monitor routing as `(enabled, outputMask)`,
@@ -306,6 +307,15 @@ class SettingsRepository {
   /// Saves hardware [input]'s monitor dry-send output bitmask.
   Future<void> saveMonitorInputDry(int input, int dryOutputMask) =>
       _store.setInt(_monitorInputDryKey(input), dryOutputMask);
+
+  /// Loads hardware [input]'s monitor output gain (`0..1`), or `null` if it was
+  /// never saved (the caller defaults to unity `1.0`).
+  Future<double?> loadMonitorInputVolume(int input) =>
+      _store.getDouble(_monitorInputVolKey(input));
+
+  /// Saves hardware [input]'s monitor output gain (`0..1`).
+  Future<void> saveMonitorInputVolume(int input, double volume) =>
+      _store.setDouble(_monitorInputVolKey(input), volume);
 
   /// Loads hardware [input]'s persisted monitor effect chain as an opaque
   /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.

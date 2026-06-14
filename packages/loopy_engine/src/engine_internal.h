@@ -44,7 +44,8 @@ void le_engine_process(le_engine* engine, float* output, const float* input,
                        uint32_t frames);
 
 /* Classifies a capture device by name into a loopback kind (name heuristic
- * only; WASAPI detection is context-level). Pure and unit-testable. */
+ * only; backend built-in loopback detection is context-level). Pure and
+ * unit-testable. */
 le_loopback_kind le_classify_capture_device(const char* name);
 
 /* Whether a Core Audio channel label marks a loopback channel (case-insensitive

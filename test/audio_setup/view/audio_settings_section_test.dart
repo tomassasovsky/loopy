@@ -378,7 +378,7 @@ void main() {
       ),
     );
 
-    testWidgets('no WASAPI backend selector on Windows', (tester) async {
+    testWidgets('no backend selector on Windows', (tester) async {
       seed(asioState());
       await pumpSection(tester);
       expect(
@@ -386,12 +386,12 @@ void main() {
         findsNothing,
       );
       expect(
-        find.byKey(const Key('audioSettings_backend_wasapi')),
+        find.byKey(const Key('audioSettings_backend_miniaudio')),
         findsNothing,
       );
     });
 
-    testWidgets('the ASIO driver picker replaces the WASAPI pickers', (
+    testWidgets('the ASIO driver picker replaces the device pickers', (
       tester,
     ) async {
       seed(asioState());

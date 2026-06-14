@@ -47,7 +47,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
         cachedAsioDrivers: initialAsioDrivers.isNotEmpty
             ? initialAsioDrivers
             : drivers,
-        // Windows runs ASIO exclusively: the UI hides the WASAPI selector /
+        // Windows runs ASIO exclusively: the UI hides the backend selector /
         // pickers and the backend is coerced to ASIO on hydrate.
         asioOnly: _asioSelectable,
       ),
@@ -116,7 +116,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// Selects the device [backend] (macOS/Linux only — Windows is ASIO-only and
   /// ignores this). Switching to ASIO defaults the driver to the first
-  /// enumerated one when none is chosen yet; the WASAPI device ids are kept
+  /// enumerated one when none is chosen yet; the miniaudio device ids are kept
   /// dormant (restored on a switch back). Persists the intent and, when
   /// running, reopens the device so the change takes effect now.
   void setBackend(AudioBackend backend) {
@@ -267,7 +267,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // a detected loopback when the user has not pinned a capture device.
     // Otherwise, on hosts where every output exposes a "monitor" capture source
     // (e.g. PipeWire), the loopback auto-route would silently commandeer the
-    // capture path and ignore the selected interface. WASAPI loopback is also
+    // capture path and ignore the selected interface. Backend loopback is also
     // irrelevant under ASIO (ASIO holds the device), so force it off there.
     useLoopbackCapture:
         !state.isAsio &&
@@ -323,7 +323,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   /// not flagged (it is never auto-restarted, so a banner would be noise).
   void _detectConnectivity(EngineStatus status) {
     // A selected ASIO driver counts as "pinned" too, so losing it raises the
-    // banner the same way a lost WASAPI device does.
+    // banner the same way a lost miniaudio device does.
     final pinned =
         state.playbackDeviceId.isNotEmpty ||
         state.captureDeviceId.isNotEmpty ||
@@ -425,11 +425,11 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
       // Hydrate the requested backend + ASIO driver intent; the negotiated
       // reality is read separately from engineStatus.activeBackend. On Windows
       // (asioOnly) the backend is hardwired to ASIO, coercing a saved
-      // backend=wasapi, and the driver is resolved against the enumeration.
+      // backend=miniaudio, and the driver is resolved against the enumeration.
       backend: hydrateConfig
           ? (current.asioOnly
                 ? AudioBackend.asio
-                : lastConfig?.backend ?? AudioBackend.wasapi)
+                : lastConfig?.backend ?? AudioBackend.miniaudio)
           : current.backend,
       asioDriver: hydrateConfig
           ? (current.asioOnly

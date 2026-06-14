@@ -503,6 +503,17 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_monitor_input_volume(_engine, input, volume),
+    );
+  }
+
+  @override
   EngineResult setMonitorInputFx({
     required int input,
     required int index,

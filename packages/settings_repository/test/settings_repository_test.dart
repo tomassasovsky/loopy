@@ -186,6 +186,14 @@ void main() {
       expect(await repository.loadMonitorInputDry(0), 0x2);
       expect(await repository.loadMonitorInputDry(1), 0);
     });
+
+    test('the monitor volume defaults to null and round-trips per input',
+        () async {
+      expect(await repository.loadMonitorInputVolume(0), isNull);
+      await repository.saveMonitorInputVolume(0, 0.5);
+      expect(await repository.loadMonitorInputVolume(0), 0.5);
+      expect(await repository.loadMonitorInputVolume(1), isNull);
+    });
   });
 
   group('audio config', () {
@@ -275,22 +283,22 @@ void main() {
       expect(loaded?.asioDriver, 'Focusrite USB ASIO');
     });
 
-    test('defaults backend to WASAPI and driver to empty when unset', () async {
+    test('defaults backend to miniaudio and driver empty when unset', () async {
       await store.setInt('audio.sample_rate', 44100);
       await store.setInt('audio.buffer_frames', 64);
       final loaded = await repository.loadAudioConfig();
-      expect(loaded?.backend, AudioBackend.wasapi);
+      expect(loaded?.backend, AudioBackend.miniaudio);
       expect(loaded?.asioDriver, '');
     });
 
-    test('resolves an unknown stored backend name to WASAPI', () async {
+    test('resolves an unknown stored backend name to miniaudio', () async {
       // Forward-compat: a newer build may write a backend name this build does
-      // not know. It must resolve to WASAPI rather than throwing.
+      // not know. It must resolve to miniaudio rather than throwing.
       await store.setInt('audio.sample_rate', 48000);
       await store.setInt('audio.buffer_frames', 128);
       await store.setString('audio.backend', 'some_future_backend');
       final loaded = await repository.loadAudioConfig();
-      expect(loaded?.backend, AudioBackend.wasapi);
+      expect(loaded?.backend, AudioBackend.miniaudio);
     });
 
     test(

@@ -33,8 +33,7 @@ class AudioDevice {
   final bool isInput;
 
   /// The device's hardware capture channel count, or `0` when unknown (the
-  /// WASAPI/miniaudio enumeration path reports `0`; an ASIO probe fills it in
-  /// Part 2).
+  /// miniaudio enumeration path reports `0`; an ASIO probe fills it in).
   final int inputChannels;
 
   /// The device's hardware playback channel count, or `0` when unknown.

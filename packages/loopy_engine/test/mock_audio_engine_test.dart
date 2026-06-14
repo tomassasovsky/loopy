@@ -19,12 +19,12 @@ void main() {
     });
 
     test('snapshot echoes the requested backend (no fallback in the mock)', () {
-      // Stopped, or started on WASAPI, the negotiated backend is WASAPI.
-      expect(engine.snapshot().activeBackend, AudioBackend.wasapi);
+      // Stopped, or started on miniaudio, the negotiated backend is miniaudio.
+      expect(engine.snapshot().activeBackend, AudioBackend.miniaudio);
       engine.start(engine.defaultConfig);
-      expect(engine.snapshot().activeBackend, AudioBackend.wasapi);
+      expect(engine.snapshot().activeBackend, AudioBackend.miniaudio);
       // Started on ASIO, the mock "succeeds" and reports ASIO as negotiated —
-      // the requested-ASIO/reality-WASAPI fallback is never exercised here.
+      // the requested-ASIO/reality-miniaudio fallback is never exercised here.
       engine
         ..stop()
         ..start(
@@ -58,7 +58,7 @@ void main() {
         equals({MockAudioEngine.deviceId}),
       );
       // The mock does not probe per-device channel counts, so they read 0
-      // (unknown) — matching the native WASAPI enumeration path.
+      // (unknown) — matching the native miniaudio enumeration path.
       for (final device in devices) {
         expect(device.inputChannels, 0);
         expect(device.outputChannels, 0);

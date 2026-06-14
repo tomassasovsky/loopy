@@ -668,7 +668,7 @@ void main() {
       when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
       final cubit = buildCubit(asioSelectable: true);
       addTearDown(cubit.close);
-      // No WASAPI choice on Windows: the backend is hardwired to ASIO and the
+      // No backend choice on Windows: the backend is hardwired to ASIO and the
       // first enumerated driver is selected.
       expect(cubit.state.backend, AudioBackend.asio);
       expect(cubit.state.asioDriver, 'Focusrite USB ASIO');
@@ -698,7 +698,7 @@ void main() {
     });
 
     blocTest<AudioSetupCubit, AudioSetupState>(
-      'a reopen on ASIO forces WASAPI loopback off',
+      'a reopen on ASIO forces backend loopback off',
       setUp: () {
         when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
         // An auto-routable loopback (so without the ASIO guard the reopen would
@@ -734,7 +734,7 @@ void main() {
       setUp: () =>
           when(repository.asioDrivers).thenReturn(const [mockAsioDriver]),
       build: () => buildCubit(asioSelectable: true),
-      act: (cubit) => cubit.setBackend(AudioBackend.wasapi),
+      act: (cubit) => cubit.setBackend(AudioBackend.miniaudio),
       expect: () => const <AudioSetupState>[],
     );
 
@@ -773,7 +773,7 @@ void main() {
       expect(cubit.state.isAsio, isTrue);
     });
 
-    test('coerces a stale saved backend=wasapi to ASIO on Windows', () {
+    test('coerces a stale saved backend=miniaudio to ASIO on Windows', () {
       when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
       // A config saved before the ASIO-only switch (or on a different OS).
       when(() => repository.lastEngineConfig).thenReturn(

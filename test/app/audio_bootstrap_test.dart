@@ -131,11 +131,11 @@ void main() {
       );
 
       test(
-        'heals a stale saved backend=wasapi to the installed driver',
+        'heals a stale saved backend=miniaudio to the installed driver',
         () async {
           debugDefaultTargetPlatformOverride = TargetPlatform.windows;
           engine.asioDrivers = const [focusrite];
-          // A config saved before the ASIO-only switch (WASAPI, no driver).
+          // A config saved before the ASIO-only switch (miniaudio, no driver).
           await settings.saveAudioConfig(
             const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
           );

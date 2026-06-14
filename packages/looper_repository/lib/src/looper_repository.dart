@@ -93,6 +93,9 @@ class LooperRepository {
 
   /// Per-input monitor dry-send output bitmask (`0`/absent = no dry send).
   final Map<int, int> _monitorDry = {};
+
+  /// Per-input monitor output gain (absent = unity `1.0`).
+  final Map<int, double> _monitorVolume = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
 
   /// Reconnect supervision: while these are non-null a pinned device is absent
@@ -378,6 +381,10 @@ class LooperRepository {
         (input, mask) =>
             _engine.setMonitorInputDry(input: input, dryOutputMask: mask),
       );
+      _monitorVolume.forEach(
+        (input, volume) =>
+            _engine.setMonitorInputVolume(input: input, volume: volume),
+      );
       _monitorEffects.keys.forEach(_applyMonitorEffects);
     }
     return result;
@@ -537,6 +544,18 @@ class LooperRepository {
       input: input,
       dryOutputMask: dryOutputMask,
     );
+  }
+
+  /// Sets monitor [input]'s output gain ([volume], `0..1`), applied to both its
+  /// effected and dry sends. Remembered and re-applied on every (re)start;
+  /// takes effect immediately only while running.
+  EngineResult setMonitorVolume({
+    required int input,
+    required double volume,
+  }) {
+    _monitorVolume[input] = volume;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMonitorInputVolume(input: input, volume: volume);
   }
 
   /// Reads the loop waveform (peaks indexed by loop position, `0..1`) of the

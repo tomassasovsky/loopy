@@ -16,7 +16,7 @@ void main() {
       expect(config.outputChannels, 0);
       expect(config.playbackDeviceId, '');
       expect(config.captureDeviceId, '');
-      expect(config.backend, AudioBackend.wasapi);
+      expect(config.backend, AudioBackend.miniaudio);
       expect(config.asioDriver, '');
     });
   });
@@ -29,15 +29,15 @@ void main() {
     });
 
     test('maps the native enum values explicitly', () {
-      expect(AudioBackend.wasapi.toNative(), 0);
+      expect(AudioBackend.miniaudio.toNative(), 0);
       expect(AudioBackend.asio.toNative(), 1);
-      expect(AudioBackend.fromNative(0), AudioBackend.wasapi);
+      expect(AudioBackend.fromNative(0), AudioBackend.miniaudio);
       expect(AudioBackend.fromNative(1), AudioBackend.asio);
     });
 
-    test('unknown native values fall back to wasapi', () {
-      expect(AudioBackend.fromNative(-1), AudioBackend.wasapi);
-      expect(AudioBackend.fromNative(99), AudioBackend.wasapi);
+    test('unknown native values fall back to miniaudio', () {
+      expect(AudioBackend.fromNative(-1), AudioBackend.miniaudio);
+      expect(AudioBackend.fromNative(99), AudioBackend.miniaudio);
     });
   });
 
@@ -73,12 +73,12 @@ void main() {
       }
     });
 
-    test('defaults write the WASAPI backend and an empty asio driver', () {
+    test('defaults write the miniaudio backend and an empty asio driver', () {
       const config = EngineConfig();
       final ptr = calloc<le_config>();
       try {
         config.writeTo(ptr);
-        expect(ptr.ref.backend, 0); // AudioBackend.wasapi
+        expect(ptr.ref.backend, 0); // AudioBackend.miniaudio
         expect(readNativeString(ptr.ref.asio_driver), '');
       } finally {
         calloc.free(ptr);

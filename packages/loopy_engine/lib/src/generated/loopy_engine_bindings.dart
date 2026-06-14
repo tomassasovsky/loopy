@@ -36,8 +36,9 @@ class LoopyEngineBindings {
       .asFunction<ffi.Pointer<ffi.Char> Function()>();
 
   /// Detects a cable-free loopback capture path (PulseAudio monitor / virtual
-  /// driver / WASAPI) by enumerating capture devices. Fills *out and returns LE_OK,
-  /// or LE_ERR_INVALID for a null argument / enumeration failure.
+  /// driver / backend built-in loopback) by enumerating capture devices. Fills
+  /// *out and returns LE_OK, or LE_ERR_INVALID for a null argument / enumeration
+  /// failure.
   int le_detect_loopback(
     ffi.Pointer<le_loopback_info> out,
   ) {
@@ -123,8 +124,8 @@ class LoopyEngineBindings {
   /// build is a stub returning *count = 0, LE_OK. RE-ENTRANCY: the ASIO host SDK
   /// loads a single process-global driver, so this MUST NOT be called while an ASIO
   /// device is open (it would tear down the live stream) — the Dart layer only
-  /// enumerates while stopped or running on WASAPI. Returns LE_OK, or LE_ERR_INVALID
-  /// for a null argument / non-positive `max`.
+  /// enumerates while stopped or running on the miniaudio backend. Returns
+  /// LE_OK, or LE_ERR_INVALID for a null argument / non-positive `max`.
   int le_enumerate_asio_drivers(
     ffi.Pointer<le_device_info> out,
     int max,
@@ -1124,6 +1125,32 @@ class LoopyEngineBindings {
       _le_engine_set_monitor_input_dryPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets monitor input [input]'s output gain to [volume] (clamped to 0..1),
+  /// applied equally to both its effected and dry sends. The default is 1.0
+  /// (unity); lower it to tame the +6 dB that results from routing both the wet
+  /// and dry sends to the same output.
+  int le_engine_set_monitor_input_volume(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    double volume,
+  ) {
+    return _le_engine_set_monitor_input_volume(
+      engine,
+      input,
+      volume,
+    );
+  }
+
+  late final _le_engine_set_monitor_input_volumePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
+        >
+      >('le_engine_set_monitor_input_volume');
+  late final _le_engine_set_monitor_input_volume =
+      _le_engine_set_monitor_input_volumePtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
+
   /// Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input] to [type].
   /// Changing the type resets that entry's DSP state; LE_FX_DELAY lazily allocates
   /// the entry's delay line (on this calling thread) and seeds the type's default
@@ -1393,8 +1420,8 @@ enum le_track_state {
 enum le_loopback_kind {
   LE_LOOPBACK_NONE(0),
 
-  /// Windows WASAPI output loopback (built-in)
-  LE_LOOPBACK_WASAPI(1),
+  /// device backend's built-in output loopback
+  LE_LOOPBACK_BACKEND(1),
 
   /// PulseAudio "Monitor of ..." source (Linux)
   LE_LOOPBACK_MONITOR(2),
@@ -1407,7 +1434,7 @@ enum le_loopback_kind {
 
   static le_loopback_kind fromValue(int value) => switch (value) {
     0 => LE_LOOPBACK_NONE,
-    1 => LE_LOOPBACK_WASAPI,
+    1 => LE_LOOPBACK_BACKEND,
     2 => LE_LOOPBACK_MONITOR,
     3 => LE_LOOPBACK_VIRTUAL,
     _ => throw ArgumentError('Unknown value for le_loopback_kind: $value'),
@@ -1415,8 +1442,8 @@ enum le_loopback_kind {
 }
 
 /// Result of loopback detection. `device_name` is the capture device to open for
-/// an auto-measurement (empty for WASAPI's built-in loopback, which the duplex
-/// engine does not auto-route).
+/// an auto-measurement (empty for the backend's built-in loopback, which the
+/// duplex engine does not auto-route).
 final class le_loopback_info extends ffi.Struct {
   /// 0/1
   @ffi.Int32()
@@ -1577,7 +1604,7 @@ final class le_device_info extends ffi.Struct {
   @ffi.Int32()
   external int is_default;
 
-  /// 0 = unknown (WASAPI); an ASIO probe fills it
+  /// 0 = unknown (miniaudio); an ASIO probe fills it
   @ffi.Int32()
   external int input_channels;
 
@@ -1637,13 +1664,13 @@ final class le_config extends ffi.Struct {
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> capture_device_id;
 
-  /// le_audio_backend to open; 0 (LE_BACKEND_WASAPI) selects the default
-  /// miniaudio path. Accepted and ignored until the ASIO backend lands.
+  /// le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
+  /// miniaudio path. On Windows the engine forces ASIO.
   @ffi.Int32()
   external int backend;
 
-  /// Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
-  /// ignored on the default path.
+  /// Selected ASIO driver name (used by the ASIO backend). Empty and
+  /// ignored on the miniaudio path.
   @ffi.Array.multi([256])
   external ffi.Array<ffi.Char> asio_driver;
 }
@@ -1820,8 +1847,8 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int record_offset_frames;
 
-  /// le_audio_backend actually running (negotiated). In Part 2, a requested-ASIO
-  /// open that fell back to WASAPI reports WASAPI here. Always WASAPI today.
+  /// le_audio_backend actually running (negotiated). On Windows this is always
+  /// ASIO; on macOS/Linux it is the miniaudio backend.
   @ffi.Int32()
   external int active_backend;
 

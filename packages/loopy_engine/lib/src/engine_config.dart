@@ -6,28 +6,28 @@ import 'package:meta/meta.dart';
 
 /// Which device backend the engine should open.
 ///
-/// Mirrors the native `le_audio_backend` enum. [asio] is opt-in and only
-/// available in a `LOOPY_ENABLE_ASIO` build (the real backend lands in Part 2);
-/// today every choice resolves to the default miniaudio path.
+/// Mirrors the native `le_audio_backend` enum. On Windows the engine forces
+/// [asio]; [miniaudio] is the cross-platform path used on macOS and Linux.
 enum AudioBackend {
-  /// The default miniaudio backend for the platform (WASAPI on Windows, Core
-  /// Audio on macOS, the Linux preference list).
-  wasapi,
+  /// The platform's default miniaudio backend (Core Audio on macOS, the Linux
+  /// preference list; on Windows the engine forces [asio] instead).
+  miniaudio,
 
-  /// Opt-in Windows ASIO. Accepted but treated as [wasapi] until Part 2.
+  /// Windows ASIO. Forced on Windows so capture/playback go through the ASIO
+  /// driver rather than the shared OS mixer.
   asio;
 
   /// The native `le_audio_backend` integer for this backend.
   int toNative() => switch (this) {
-    AudioBackend.wasapi => 0,
+    AudioBackend.miniaudio => 0,
     AudioBackend.asio => 1,
   };
 
   /// Maps a native `le_audio_backend` integer to an [AudioBackend]; unknown
-  /// values fall back to [wasapi].
+  /// values fall back to [miniaudio].
   static AudioBackend fromNative(int value) => switch (value) {
     1 => AudioBackend.asio,
-    _ => AudioBackend.wasapi,
+    _ => AudioBackend.miniaudio,
   };
 }
 
@@ -47,7 +47,7 @@ class EngineConfig {
     this.useLoopbackCapture = false,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.backend = AudioBackend.wasapi,
+    this.backend = AudioBackend.miniaudio,
     this.asioDriver = '',
   });
 
@@ -85,13 +85,13 @@ class EngineConfig {
   /// default. Ignored when [useLoopbackCapture] resolves a loopback device.
   final String captureDeviceId;
 
-  /// Which device backend to open. Defaults to [AudioBackend.wasapi] (the
-  /// platform's default miniaudio backend); [AudioBackend.asio] is opt-in and
-  /// only honored in Part 2.
+  /// Which device backend to open. Defaults to [AudioBackend.miniaudio] (the
+  /// platform's default miniaudio backend); on Windows the engine forces
+  /// [AudioBackend.asio].
   final AudioBackend backend;
 
   /// Selected ASIO driver name, used only when [backend] is
-  /// [AudioBackend.asio] (Part 2). Empty and ignored on the default path.
+  /// [AudioBackend.asio]. Empty and ignored on the miniaudio path.
   final String asioDriver;
 
   /// Writes this configuration into a native [le_config] struct in [ptr].

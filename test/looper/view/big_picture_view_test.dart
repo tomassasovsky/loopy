@@ -165,6 +165,13 @@ void main() {
       await tester.pump();
       verify(() => bloc.add(const LooperClearAllPressed())).called(1);
     });
+
+    testWidgets('F toggles fullscreen without error', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.pump();
+    });
   });
 
   testWidgets('renaming a track updates its label', (tester) async {

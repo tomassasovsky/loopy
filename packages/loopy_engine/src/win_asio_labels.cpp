@@ -9,7 +9,7 @@
  *
  * Scope and guarantees:
  *   - Label probe ONLY. Capture/playback never touch ASIO — they stay on
- *     miniaudio/WASAPI. This file opens the ASIO driver briefly, reads names,
+ *     miniaudio. This file opens the ASIO driver briefly, reads names,
  *     and closes it.
  *   - Degrades to 0 (exclude nothing) on ANY failure or ambiguity. The feature
  *     being unavailable is correct behaviour; the engine never errors because a
@@ -20,10 +20,11 @@
  * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is vendored
  * under third_party/asiosdk (this repo is GPL-3.0-or-later).
  *
- * The ASIO↔WASAPI device-matching heuristic below is deliberately conservative
+ * The ASIO↔miniaudio device-matching heuristic below is deliberately conservative
  * pending the PR2 hardware spike (does the interface expose a name that reliably
- * maps a WASAPI uid to one ASIO driver?). Until that is answered on real
- * hardware, multi-driver rigs fall through to 0 rather than risk a wrong match.
+ * maps a miniaudio device id to one ASIO driver?). Until that is answered on
+ * real hardware, multi-driver rigs fall through to 0 rather than risk a wrong
+ * match.
  */
 #if defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)
 
@@ -92,9 +93,9 @@ bool contains_ci_ascii(const char* haystack, const char* needle) {
 // Chooses the ASIO driver index for `uid`, or -1 if none / ambiguous.
 //
 // A single installed driver is unambiguous and used directly. With several
-// drivers we look for exactly one whose name relates to the WASAPI `uid`; any
+// drivers we look for exactly one whose name relates to the miniaudio `uid`; any
 // other count (zero or 2+ matches) returns -1 so the caller degrades to no-op.
-// The WASAPI uid is an opaque endpoint string, so this match is best-effort and
+// The uid is an opaque endpoint string, so this match is best-effort and
 // the precise rule is the spike's open question — bias is toward no-match.
 int choose_driver(char* const* names, long driver_count, const char* uid) {
   if (driver_count <= 0) return -1;

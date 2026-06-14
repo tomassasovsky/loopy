@@ -56,7 +56,7 @@ target_include_directories(loopy_engine PRIVATE
 target_compile_definitions(loopy_engine PUBLIC DART_SHARED_LIB)
 
 if(WIN32)
-  # miniaudio's WASAPI/DirectSound backends need COM + the multimedia timer.
+  # miniaudio's Windows device backends need COM + the multimedia timer.
   target_link_libraries(loopy_engine PRIVATE ole32 winmm)
 elseif(UNIX AND NOT APPLE)
   # miniaudio dlopen()s ALSA/PulseAudio/JACK at runtime; we only need libc bits.

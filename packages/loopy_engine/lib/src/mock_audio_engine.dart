@@ -122,11 +122,11 @@ class MockAudioEngine implements AudioEngine {
       measuredLatencyMs: _measuredLatencyMs,
       recordOffsetFrames: _recordOffsetFrames,
       // The mock echoes the requested backend as the negotiated one (ASIO
-      // "succeeds"), so the requested-ASIO/reality-WASAPI fallback is NOT
+      // "succeeds"), so the requested-ASIO/reality-miniaudio fallback is NOT
       // exercised here — the widget test seeds that state directly.
       activeBackend: _running
-          ? (_activeConfig?.backend ?? AudioBackend.wasapi)
-          : AudioBackend.wasapi,
+          ? (_activeConfig?.backend ?? AudioBackend.miniaudio)
+          : AudioBackend.miniaudio,
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -314,6 +314,12 @@ class MockAudioEngine implements AudioEngine {
   EngineResult setMonitorInputDry({
     required int input,
     required int dryOutputMask,
+  }) => _requireRunning();
+
+  @override
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
   }) => _requireRunning();
 
   @override

@@ -190,6 +190,7 @@
     "monitorGraphHint": "Tap an input to monitor it, then tap outputs to send it there.",
     "effectedSegment": "Effected",
     "drySegment": "Dry",
+    "monitorVolumeLabel": "Level",
     "legendEffectedWet": "effected (wet) → outs",
     "legendCleanDry": "clean (dry) → outs",
     "configureInputMonitoring": "Configure input monitoring",
@@ -284,7 +285,7 @@
             }
         }
     },
-    "loopbackKindWasapi": "WASAPI",
+    "loopbackKindBackend": "loopback",
     "loopbackKindMonitor": "monitor",
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Failed to open device: {errorName}",
@@ -336,6 +337,7 @@
     "effectTremolo": "Tremolo",
     "effectOctaver": "Octaver",
     "effectEcho": "Echo",
+    "effectReverb": "Reverb",
     "paramDrive": "Drive",
     "paramLevel": "Level",
     "paramCutoff": "Cutoff",
@@ -347,6 +349,8 @@
     "paramDepth": "Depth",
     "paramShift": "Shift",
     "paramTone": "Tone",
+    "paramSize": "Size",
+    "paramDamping": "Damping",
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {

@@ -318,7 +318,7 @@ class EngineSnapshot {
     this.masterLengthFrames = 0,
     this.masterPositionFrames = 0,
     this.recordOffsetFrames = 0,
-    this.activeBackend = AudioBackend.wasapi,
+    this.activeBackend = AudioBackend.miniaudio,
     this.tracks = const [],
   });
 
@@ -341,7 +341,7 @@ class EngineSnapshot {
       masterLengthFrames = 0,
       masterPositionFrames = 0,
       recordOffsetFrames = 0,
-      activeBackend = AudioBackend.wasapi,
+      activeBackend = AudioBackend.miniaudio,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -432,8 +432,8 @@ class EngineSnapshot {
   final int recordOffsetFrames;
 
   /// The device backend actually running (negotiated). Always
-  /// [AudioBackend.wasapi] today; in Part 2 a requested-ASIO open that fell
-  /// back reports [AudioBackend.wasapi] here.
+  /// [AudioBackend.miniaudio] today; in Part 2 a requested-ASIO open that fell
+  /// back reports [AudioBackend.miniaudio] here.
   final AudioBackend activeBackend;
 
   /// Per-track snapshots (length == active track count).
