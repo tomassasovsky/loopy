@@ -2733,6 +2733,10 @@ int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
 /* Musical default parameters for a freshly engaged effect type (so picking an
  * effect sounds like something before the user tweaks it). */
 static void le_fx_default_params(int32_t type, float out[LE_FX_PARAMS]) {
+  /* p3 is inert for every type today: non-octaver effects never read it, and the
+   * octaver's mode (< .5 = phase vocoder) only wakes up in the formant-preserving
+   * rewrite. Seed it to 0 everywhere so a later read never returns garbage. */
+  out[3] = 0.0f;
   switch (type) {
     case LE_FX_DRIVE:
       out[0] = 0.5f; /* drive */
@@ -2758,6 +2762,7 @@ static void le_fx_default_params(int32_t type, float out[LE_FX_PARAMS]) {
       out[0] = 0.25f; /* shift: one octave down */
       out[1] = 0.5f;  /* tone */
       out[2] = 0.5f;  /* mix */
+      /* p3 (mode) stays 0 = phase vocoder, seeded above; inert until parts 3-4 */
       break;
     case LE_FX_ECHO:
       out[0] = 0.45f; /* time */

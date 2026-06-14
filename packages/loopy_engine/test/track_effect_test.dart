@@ -29,14 +29,15 @@ void main() {
 
     test('fromJson ignores a legacy stage key', () {
       // Older persisted chains stored a `stage` integer; it must decode
-      // cleanly now that the pre/post model is gone.
+      // cleanly now that the pre/post model is gone. The length-3 params from
+      // that era are padded to the current width with the type's default.
       final fx = TrackEffect.fromJson(const {
         'type': 4,
         'stage': 1,
         'params': [0.4, 0.5, 0.6],
       });
       expect(fx.type, TrackEffectType.tremolo);
-      expect(fx.params, [0.4, 0.5, 0.6]);
+      expect(fx.params, [0.4, 0.5, 0.6, 0]);
     });
 
     test(
@@ -66,6 +67,39 @@ void main() {
         params: [0.9, 0, 0],
       );
       expect(() => copy.params[0] = 0, throwsUnsupportedError);
+    });
+
+    test('fromJson pads a pre-rewrite 3-param chain to the current width', () {
+      // A chain saved by the 3-param build: the octaver gains its new `mode`
+      // slot, which must default to 0.0 (phase vocoder), not leave the list
+      // short or read garbage.
+      final fx = TrackEffect.fromJson({
+        'type': TrackEffectType.octaver.code,
+        'params': const [0.25, 0.5, 0.5],
+      });
+      expect(fx.type, TrackEffectType.octaver);
+      expect(fx.params, [0.25, 0.5, 0.5, 0]);
+      expect(fx.params, hasLength(kTrackEffectParams));
+      expect(fx.params.last, 0.0); // mode == phase vocoder
+    });
+
+    test('fromJson pads with the type default, not a blanket zero', () {
+      // delay's p2 default is 0.35; a 2-param save pads p2 from the default and
+      // p3 from the (zero) default, proving the per-type pad (not a blanket 0).
+      final fx = TrackEffect.fromJson({
+        'type': TrackEffectType.delay.code,
+        'params': const [0.1, 0.2],
+      });
+      expect(fx.params, [0.1, 0.2, 0.35, 0]);
+    });
+
+    test('fromJson truncates an over-long params list', () {
+      final fx = TrackEffect.fromJson({
+        'type': TrackEffectType.drive.code,
+        'params': const [0.1, 0.2, 0.3, 0.4, 0.5],
+      });
+      expect(fx.params, [0.1, 0.2, 0.3, 0.4]);
+      expect(fx.params, hasLength(kTrackEffectParams));
     });
 
     test('fromJson falls back to defaults when params is not a list', () {
@@ -101,6 +135,12 @@ void main() {
   });
 
   group('TrackEffectType', () {
+    test('kTrackEffectParams mirrors the native LE_FX_PARAMS width', () {
+      // Pins the Dart side of the cross-language contract (the native test
+      // asserts LE_FX_PARAMS == 4 in turn).
+      expect(kTrackEffectParams, 4);
+    });
+
     test('fromCode maps known codes and falls back to none', () {
       for (final type in TrackEffectType.values) {
         expect(TrackEffectType.fromCode(type.code), type);
@@ -125,7 +165,8 @@ void main() {
 
     test('reverb exposes size, damping and mix', () {
       expect(TrackEffectType.reverb.paramLabels, ['Size', 'Damping', 'Mix']);
-      expect(TrackEffectType.reverb.defaultParams, [0.5, 0.5, 0.35]);
+      // The fourth slot is the inert, shared trailing param.
+      expect(TrackEffectType.reverb.defaultParams, [0.5, 0.5, 0.35, 0]);
     });
 
     test('codes are unique', () {
@@ -139,31 +180,40 @@ void main() {
       }
     });
 
-    test('the octaver Shift is a discrete, formatted pitch control', () {
+    test('the octaver Shift is a discrete, pitch-readout control', () {
       final shift = TrackEffectType.octaver.params.first;
       expect(shift.label, 'Shift');
       expect(shift.divisions, 48); // one step per semitone across +-2 octaves
-      expect(shift.format, isNotNull);
+      expect(shift.readout, ParamReadout.pitchShift);
     });
-  });
 
-  group('formatPitchShift', () {
-    test('reads unison, semitones, and whole octaves from the 0..1 range', () {
-      expect(formatPitchShift(0.5), 'Unison');
-      expect(formatPitchShift(0.25), '-1 oct'); // -12 semitones
-      expect(formatPitchShift(0.75), '+1 oct'); // +12 semitones
-      expect(formatPitchShift(0), '-2 oct');
-      expect(formatPitchShift(1), '+2 oct');
-      // 7 semitones up: 0.5 + 7/48.
-      expect(formatPitchShift(0.5 + 7 / 48), '+7 st');
+    test('the octaver exposes a discrete two-state Mode control', () {
+      final mode = TrackEffectType.octaver.params.last;
+      expect(mode.label, 'Mode');
+      expect(mode.divisions, 1); // two states: phase vocoder / PSOLA
+      expect(mode.readout, ParamReadout.octaverMode);
+    });
+
+    test('non-octaver params carry no readout', () {
+      for (final type in TrackEffectType.values) {
+        if (type == TrackEffectType.octaver) continue;
+        for (final p in type.params) {
+          expect(p.readout, ParamReadout.none);
+        }
+      }
     });
   });
 
   group('encode/decode chain', () {
     test('round-trips an ordered chain', () {
+      // Params are at the current width, so decode (which normalizes) round-
+      // trips them exactly.
       final chain = [
         TrackEffect(type: TrackEffectType.drive),
-        TrackEffect(type: TrackEffectType.delay, params: const [0.5, 0.4, 0.3]),
+        TrackEffect(
+          type: TrackEffectType.delay,
+          params: const [0.5, 0.4, 0.3, 0],
+        ),
       ];
       final decoded = decodeTrackEffects(encodeTrackEffects(chain));
       expect(decoded, chain);
@@ -180,7 +230,8 @@ void main() {
       final decoded = decodeTrackEffects(legacy);
       expect(decoded, hasLength(1));
       expect(decoded.first.type, TrackEffectType.filter);
-      expect(decoded.first.params, [0.2, 0.3, 0]);
+      // The length-3 legacy params are padded to the current width.
+      expect(decoded.first.params, [0.2, 0.3, 0, 0]);
     });
 
     test('empty or malformed input yields an empty chain', () {

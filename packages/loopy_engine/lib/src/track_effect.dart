@@ -10,7 +10,7 @@ const int kTrackEffectMax = 8;
 
 /// The number of normalized (`0..1`) parameters each effect exposes. Mirrors
 /// the native `LE_FX_PARAMS`.
-const int kTrackEffectParams = 3;
+const int kTrackEffectParams = 4;
 
 /// A built-in effect type. The integer [code] matches the native
 /// `le_fx_type` enum, and each type interprets its [kTrackEffectParams]
@@ -81,11 +81,18 @@ enum TrackEffectType {
       TrackEffectParam('Depth'),
     ],
     // Shift snaps to whole semitones across the engine's +-2 octave range, with
-    // a centre detent at unison, and reads out as a pitch interval.
+    // a centre detent at unison, and reads out as a pitch interval. Mode is a
+    // two-state toggle (phase vocoder / PSOLA) — stored but inert until the
+    // formant-preserving rewrite reads it.
     TrackEffectType.octaver => const [
-      TrackEffectParam('Shift', divisions: 48, format: formatPitchShift),
+      TrackEffectParam(
+        'Shift',
+        divisions: 48,
+        readout: ParamReadout.pitchShift,
+      ),
       TrackEffectParam('Tone'),
       TrackEffectParam('Mix'),
+      TrackEffectParam('Mode', divisions: 1, readout: ParamReadout.octaverMode),
     ],
     TrackEffectType.echo => const [
       TrackEffectParam('Time'),
@@ -106,15 +113,30 @@ enum TrackEffectType {
   /// the type is freshly engaged. Mirrors the engine's `le_fx_default_params`
   /// so the UI sliders match what the engine seeds.
   List<double> get defaultParams => switch (this) {
-    TrackEffectType.none => const [0, 0, 0],
-    TrackEffectType.drive => const [0.5, 0.8, 0],
-    TrackEffectType.filter => const [0.5, 0.2, 0],
-    TrackEffectType.delay => const [0.35, 0.35, 0.35],
-    TrackEffectType.tremolo => const [0.3, 0.7, 0],
-    TrackEffectType.octaver => const [0.25, 0.5, 0.5],
-    TrackEffectType.echo => const [0.45, 0.5, 0.35],
-    TrackEffectType.reverb => const [0.5, 0.5, 0.35],
+    TrackEffectType.none => const [0, 0, 0, 0],
+    TrackEffectType.drive => const [0.5, 0.8, 0, 0],
+    TrackEffectType.filter => const [0.5, 0.2, 0, 0],
+    TrackEffectType.delay => const [0.35, 0.35, 0.35, 0],
+    TrackEffectType.tremolo => const [0.3, 0.7, 0, 0],
+    // p3 = mode: 0 selects the phase vocoder (inert until parts 3-4).
+    TrackEffectType.octaver => const [0.25, 0.5, 0.5, 0],
+    TrackEffectType.echo => const [0.45, 0.5, 0.35, 0],
+    TrackEffectType.reverb => const [0.5, 0.5, 0.35, 0],
   };
+}
+
+/// How a parameter's `0..1` value is read out in the UI, in its own units, when
+/// the bare number isn't meaningful on its own. The UI maps each kind to a
+/// localized string; [none] shows no readout.
+enum ParamReadout {
+  /// No unit readout — the slider alone is enough.
+  none,
+
+  /// A pitch interval (e.g. "Unison", "+7 st", "-1 oct").
+  pitchShift,
+
+  /// The octaver algorithm mode (phase vocoder / PSOLA).
+  octaverMode,
 }
 
 /// How one effect parameter should be presented in the UI.
@@ -122,13 +144,16 @@ enum TrackEffectType {
 /// The value itself is always a normalized `0..1` double (see [TrackEffect]);
 /// this only describes the control. [divisions], when set, snaps the slider to
 /// that many discrete steps so a musical parameter lands on exact values rather
-/// than floating between them. [format], when set, renders the normalized value
-/// as a human-readable string in the parameter's own units (e.g. a pitch
-/// interval) for a live readout.
+/// than floating between them. [readout] selects a human-readable unit readout
+/// (e.g. a pitch interval) shown live beside the slider.
 @immutable
 class TrackEffectParam {
   /// Creates a parameter descriptor.
-  const TrackEffectParam(this.label, {this.divisions, this.format});
+  const TrackEffectParam(
+    this.label, {
+    this.divisions,
+    this.readout = ParamReadout.none,
+  });
 
   /// A short name for the control.
   final String label;
@@ -137,22 +162,8 @@ class TrackEffectParam {
   /// continuous control.
   final int? divisions;
 
-  /// Formats a normalized `0..1` value as a display string, or `null` when the
-  /// raw value needs no readout.
-  final String Function(double value)? format;
-}
-
-/// Formats an octaver Shift value (normalized `0..1`, `0.5` = unison) as a
-/// pitch interval. Mirrors the engine, which maps the parameter across `+-24`
-/// semitones, so whole semitones land on exact intervals (and multiples of 12
-/// on whole octaves).
-String formatPitchShift(double value) {
-  final semitones = ((value - 0.5) * 48).round();
-  if (semitones == 0) return 'Unison';
-  final sign = semitones > 0 ? '+' : '-';
-  final magnitude = semitones.abs();
-  if (magnitude % 12 == 0) return '$sign${magnitude ~/ 12} oct';
-  return '$sign$magnitude st';
+  /// How the value should be read out in its own units, or [ParamReadout.none].
+  final ParamReadout readout;
 }
 
 /// One entry in an effects chain: a [type] with its [params] (normalized
@@ -171,14 +182,23 @@ class TrackEffect {
   /// Rebuilds a [TrackEffect] from [toJson] output; unknown codes fall back to
   /// safe defaults. A legacy `stage` key (from the removed pre/post model) is
   /// ignored, so older persisted chains still decode.
+  ///
+  /// The decoded `params` are normalized to [kTrackEffectParams]: a list saved
+  /// by a narrower build is padded with the type's own `defaultParams` (so a
+  /// future non-zero default round-trips, and the octaver's new `mode` lands on
+  /// phase vocoder), and an over-long list is truncated.
   factory TrackEffect.fromJson(Map<String, dynamic> json) {
+    final type = TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0);
     final rawParams = json['params'];
-    final params = rawParams is List
-        ? [for (final v in rawParams) (v as num).toDouble()]
-        : null;
+    if (rawParams is! List) return TrackEffect(type: type);
+    final decoded = [for (final v in rawParams) (v as num).toDouble()];
+    final defaults = type.defaultParams;
     return TrackEffect(
-      type: TrackEffectType.fromCode((json['type'] as num?)?.toInt() ?? 0),
-      params: params,
+      type: type,
+      params: [
+        for (var i = 0; i < kTrackEffectParams; i++)
+          i < decoded.length ? decoded[i] : defaults[i],
+      ],
     );
   }
 
