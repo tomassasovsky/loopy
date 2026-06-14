@@ -140,9 +140,7 @@ void main() {
               BlocProvider<WaveformWindowCubit>.value(
                 value: WaveformWindowCubit(settings: settings),
               ),
-              BlocProvider<BankCubit>.value(
-                value: BankCubit(settings: settings),
-              ),
+              BlocProvider<BankCubit>.value(value: BankCubit()),
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
               BlocProvider<RefreshRateCubit>.value(
                 value: RefreshRateCubit(
