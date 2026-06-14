@@ -46,6 +46,7 @@
 #include "engine_internal.h"
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
+#include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
@@ -3423,6 +3424,99 @@ static void test_lane_setters_reject_invalid_args(void) {
   le_engine_destroy(e);
 }
 
+/* ---- FFT primitive (fft.h) ---- */
+
+/* Verifies the header-only FFT in isolation, before the phase vocoder (part 3)
+ * consumes it: a random round-trip, a single-sine single-peak, an impulse's flat
+ * spectrum, the 1/n scaling via a constant's DC, and the shared Hann table. */
+static void test_fft_roundtrip(void) {
+  printf("test_fft_roundtrip\n");
+  enum { N = 1024 };
+  float x[N];
+  float y[N];
+  float re[N / 2 + 1];
+  float im[N / 2 + 1];
+
+  /* Deterministic pseudo-random signal in [-1, 1] (LCG; no global rand state). */
+  uint32_t seed = 0x1234567u;
+  for (int i = 0; i < N; ++i) {
+    seed = seed * 1664525u + 1013904223u;
+    x[i] = (float)(seed >> 8) / (float)(1u << 23) - 1.0f;
+  }
+
+  /* Round-trip reconstructs the signal to within a small epsilon. */
+  le_rfft_fwd(x, re, im, N);
+  le_rfft_inv(re, im, y, N);
+  float max_err = 0.0f;
+  for (int i = 0; i < N; ++i) {
+    float e = fabsf(y[i] - x[i]);
+    if (e > max_err) max_err = e;
+  }
+  CHECK(max_err < 1e-4f);
+
+  /* A pure sine at bin k yields a single dominant magnitude peak at bin k. */
+  const int k = 17;
+  for (int i = 0; i < N; ++i) {
+    x[i] = sinf(2.0f * LE_FFT_PI * (float)k * (float)i / (float)N);
+  }
+  le_rfft_fwd(x, re, im, N);
+  float peak = 0.0f;
+  int peak_bin = -1;
+  for (int b = 0; b <= N / 2; ++b) {
+    float mag = re[b] * re[b] + im[b] * im[b];
+    if (mag > peak) {
+      peak = mag;
+      peak_bin = b;
+    }
+  }
+  CHECK(peak_bin == k);
+  /* Immediate neighbours are negligible against the peak. */
+  float left = re[k - 1] * re[k - 1] + im[k - 1] * im[k - 1];
+  float right = re[k + 1] * re[k + 1] + im[k + 1] * im[k + 1];
+  CHECK(left < peak * 1e-3f);
+  CHECK(right < peak * 1e-3f);
+  /* The Nyquist bin's imaginary part is zero for a real signal. */
+  CHECK(fabsf(im[N / 2]) < 1e-4f);
+
+  /* A unit impulse has a flat magnitude spectrum (|X[b]| == 1 for every bin). */
+  for (int i = 0; i < N; ++i) x[i] = 0.0f;
+  x[0] = 1.0f;
+  le_rfft_fwd(x, re, im, N);
+  for (int b = 0; b <= N / 2; ++b) {
+    float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
+    CHECK(fabsf(mag - 1.0f) < 1e-4f);
+  }
+
+  /* A constant input is pure DC, and the inverse is correctly 1/n-scaled: the
+   * constant round-trips to itself. */
+  for (int i = 0; i < N; ++i) x[i] = 0.75f;
+  le_rfft_fwd(x, re, im, N);
+  CHECK(fabsf(re[0] - 0.75f * (float)N) < 1e-2f); /* DC == sum == 0.75 * N */
+  CHECK(fabsf(im[0]) < 1e-4f);
+  for (int b = 1; b <= N / 2; ++b) {
+    float mag = sqrtf(re[b] * re[b] + im[b] * im[b]);
+    CHECK(mag < 1e-3f); /* no energy outside DC */
+  }
+  le_rfft_inv(re, im, y, N);
+  for (int i = 0; i < N; ++i) CHECK(fabsf(y[i] - 0.75f) < 1e-4f);
+
+  /* Shared Hann table: built once, guarded by the ready flag. Endpoints are the
+   * troughs (0), the centre is the crest (1), and the window is symmetric. */
+  float hann[N];
+  int ready = 0;
+  le_hann_init(hann, N, &ready);
+  CHECK(ready == 1);
+  CHECK(fabsf(hann[0]) < 1e-6f);
+  CHECK(fabsf(hann[N / 2] - 1.0f) < 1e-6f);
+  /* Periodic Hann is symmetric about the centre: hann[i] == hann[N-i] for the
+   * interior bins (i from 1, since hann[N] is out of range / the period wrap). */
+  for (int i = 1; i < N / 2; ++i) CHECK(fabsf(hann[i] - hann[N - i]) < 1e-6f);
+  /* A second call with the flag still set is a no-op: poisoned input survives. */
+  hann[3] = -42.0f;
+  le_hann_init(hann, N, &ready);
+  CHECK(hann[3] == -42.0f);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -3526,6 +3620,7 @@ int main(void) {
   test_fx_stereo_chain_independent_lr_state();
   test_fx_stereo_ring_retained_across_type_reorder();
   test_monitor_lane_fx_rejects_invalid_args();
+  test_fft_roundtrip();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
