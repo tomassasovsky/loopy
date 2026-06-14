@@ -11,10 +11,14 @@ import 'package:loopy/app/app.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
+import 'package:midi_client/midi_client.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
+
+class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 class _RecordingWindowService implements WaveformWindowService {
   int openCalls = 0;
@@ -239,6 +243,47 @@ void main() {
       expect(find.byKey(const Key('app_deviceLost_banner')), findsNothing);
 
       // Flush the transient "reconnected" snackbar timer.
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('shows a MIDI disconnect banner when the pinned controller is '
+        'unplugged, then clears it on replug', (tester) async {
+      const pedal = MidiDevice(id: 'm1', name: 'FCB1010');
+      var enumerated = const <MidiDevice>[pedal];
+      final source = _MockMidiSource();
+      when(source.enumerate).thenAnswer((_) => enumerated);
+      when(() => source.open(any())).thenReturn(0);
+      when(source.close).thenReturn(0);
+      when(() => source.activity).thenAnswer((_) => const Stream.empty());
+
+      // Pin the pedal so the launch hydrate connects it.
+      await settings.saveMidiDevice(id: 'm1', name: 'FCB1010');
+
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiSource: source,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Unplug: the next hotplug poll (2 s) marks it gone and banners it.
+      enumerated = const [];
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('app_midiLost_banner')), findsOneWidget);
+
+      // Replug: the banner clears and a transient snackbar shows.
+      enumerated = const [pedal];
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('app_midiLost_banner')), findsNothing);
+
       await tester.pump(const Duration(seconds: 4));
     });
   });
