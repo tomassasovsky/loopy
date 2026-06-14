@@ -3690,9 +3690,9 @@ static void test_octaver_pv_low_fundamental(void) {
 
 /* Mono coherence (D5): identical left/right in -> identical out (each channel is
  * deterministic and the chain runs them with separate but identically-seeded
- * state). */
-static void test_octaver_mono_coherent(void) {
-  printf("test_octaver_mono_coherent\n");
+ * state). Checked for BOTH modes — PV (mode = 0) and PSOLA (mode = 1) — since each
+ * runs its own per-channel DSP state. */
+static void oct_mono_coherent_mode(float mode) {
   /* Two output channels are needed so the chain runs the octaver on both the
    * left and right of a mono-seeded input and we can compare the two results. */
   le_engine* e = le_engine_create();
@@ -3703,6 +3703,7 @@ static void test_octaver_mono_coherent(void) {
   le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
   le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, 0.75f);
   le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 1.0f);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 3, mode); /* PV or PSOLA */
   le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
 
   float* in = (float*)malloc(sizeof(float) * (size_t)(2 * blk));
@@ -3722,6 +3723,12 @@ static void test_octaver_mono_coherent(void) {
   free(in);
   free(out);
   le_engine_destroy(e);
+}
+
+static void test_octaver_mono_coherent(void) {
+  printf("test_octaver_mono_coherent\n");
+  oct_mono_coherent_mode(0.0f); /* phase vocoder */
+  oct_mono_coherent_mode(1.0f); /* PSOLA */
 }
 
 /* Delay-matched dry (D2): the dry tap is delayed by the same LE_PV_N as the wet
@@ -3762,6 +3769,44 @@ static void test_octaver_mix_no_comb(void) {
   printf("  dry-delay: impulse at out[%d] (want ~%d)\n", peak, OCT_PV_N - 1);
   CHECK(abs(peak - OCT_PV_N) <= 2); /* delay-matched to the wet latency (N-1) */
   CHECK(out[0] == 0.0f);           /* not a zero-delay dry (the old comb bug) */
+
+  /* PSOLA leg (D2): the dry tap re-matches on a mode switch because both modes
+   * report the same added latency, so an impulse through PSOLA at mix = 0.5 still
+   * lands the dry energy near LE_PV_N (comb-free) — never at t = 0. An impulse is
+   * unvoiced, so PSOLA's own voice is gated to the delay-matched dry, keeping the
+   * whole response time-aligned. */
+  memset(out, 0, sizeof(float) * (size_t)total);
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e2, 0, 1);
+  le_engine_set_monitor_lane_output(e2, 0, 0, 0x1);
+  le_engine_set_monitor_lane_fx(e2, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e2, 0, 0, 0, 0, 0.5f); /* unison */
+  le_engine_set_monitor_lane_fx_param(e2, 0, 0, 0, 1, 1.0f); /* tone open */
+  le_engine_set_monitor_lane_fx_param(e2, 0, 0, 0, 2, 0.5f); /* equal dry/wet */
+  le_engine_set_monitor_lane_fx_param(e2, 0, 0, 0, 3, 1.0f); /* PSOLA */
+  le_engine_set_monitor_lane_fx_count(e2, 0, 0, 1);
+  done = 0;
+  while (done < total) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e2, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+  le_engine_destroy(e2);
+  int ppeak = 0;
+  for (int i = 0; i < total; ++i) {
+    if (fabsf(out[i]) > fabsf(out[ppeak])) ppeak = i;
+  }
+  printf("  psola dry-delay: impulse at out[%d] (want ~%d)\n", ppeak, OCT_PV_N - 1);
+  CHECK(abs(ppeak - OCT_PV_N) <= 4); /* still delay-matched in PSOLA mode */
+  /* No early (pre-latency) energy spike: the mix is not combing a zero-delay dry
+   * against a delayed wet. */
+  float early = 0.0f;
+  for (int i = 0; i < OCT_PV_N - 64; ++i) {
+    if (fabsf(out[i]) > early) early = fabsf(out[i]);
+  }
+  CHECK(early < 0.05f);
 
   free(in);
   free(out);
@@ -3843,12 +3888,14 @@ static void test_octaver_lifecycle(void) {
   le_engine_destroy(e);
 }
 
-/* Mode switch (D1): toggling p3 (PV <-> PSOLA) runs the equal-power gain dip and
- * resets the DSP runtime. The PSOLA leg is a delay-matched dry stub here, so the
- * switch must stay finite and click-free — the dip bounds the sample-to-sample
- * delta across both legs. */
-static void test_octaver_mode_switch(void) {
-  printf("test_octaver_mode_switch\n");
+/* Mode switch (D1): toggling p3 runs the equal-power gain dip and resets the DSP
+ * runtime. Both legs are real now (PV phase vocoder <-> PSOLA grain shifter), and
+ * the test alternates so it exercises BOTH directions (PV->PSOLA and PSOLA->PV).
+ * The switch must stay finite and click-free — the dip bounds the sample-to-sample
+ * delta — and because both modes report the same added latency the dry tap does
+ * not jump, so the dry leg adds no discontinuity either. */
+static void test_octaver_mode_switch_no_click(void) {
+  printf("test_octaver_mode_switch_no_click\n");
   le_engine* e = le_engine_create();
   const int blk = 1024;
   le_engine_configure(e, OCT_SR, 1, 1, blk);
@@ -3885,6 +3932,234 @@ static void test_octaver_mode_switch(void) {
   printf("  mode-switch: max sample delta=%.4f\n", max_delta);
   CHECK(max_delta < 0.3f); /* equal-power dip masks the discontinuity */
   le_engine_destroy(e);
+}
+
+/* PSOLA-mode runner: full wet, tone open, PSOLA (mode = 1) at the given shift. */
+static void oct_run_psola(float shift, const float* in, int total, float* out) {
+  le_engine* e = le_engine_create();
+  const int blk = 2048;
+  le_engine_configure(e, OCT_SR, 1, 1, blk);
+  le_engine_set_monitor_input(e, 0, 1);
+  le_engine_set_monitor_lane_output(e, 0, 0, 0x1);
+  le_engine_set_monitor_lane_fx(e, 0, 0, 0, LE_FX_OCTAVER);
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 0, shift); /* shift */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 1, 1.0f);  /* tone open */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 2, 1.0f);  /* full wet */
+  le_engine_set_monitor_lane_fx_param(e, 0, 0, 0, 3, 1.0f);  /* PSOLA mode */
+  le_engine_set_monitor_lane_fx_count(e, 0, 0, 1);
+  int done = 0;
+  while (done < total) {
+    int n = total - done;
+    if (n > blk) n = blk;
+    le_engine_process(e, out + done, in + done, (uint32_t)n);
+    done += n;
+  }
+  le_engine_destroy(e);
+}
+
+/* PSOLA pitch detector (YIN): the engine-internal le_psola_detect reports the true
+ * period within tolerance across the vocal band with NO octave error (the half/
+ * double-period trap that plain autocorrelation falls into), reads noise as
+ * unvoiced, and — crucially for the soft voiced<->unvoiced gate — yields a SMOOTH,
+ * monotone-graded confidence as a tone is buried in noise. A graded confidence fed
+ * through the tick's one-pole smoothing cannot flap dry<->wet frame to frame, which
+ * is what the no-chatter (hysteresis) criterion asks for. */
+static void test_octaver_psola_pitch_detect(void) {
+  printf("test_octaver_psola_pitch_detect\n");
+  enum { W = 1600 };
+  float* b = (float*)malloc(sizeof(float) * (size_t)W);
+  float* noise = (float*)malloc(sizeof(float) * (size_t)W);
+
+  /* No octave error: detected period within 5% of the true period, 80..400 Hz. */
+  const float f0s[] = {80.0f, 110.0f, 150.0f, 200.0f, 260.0f, 330.0f, 400.0f};
+  for (int k = 0; k < (int)(sizeof(f0s) / sizeof(f0s[0])); ++k) {
+    oct_harmonic(b, W, f0s[k]);
+    float period = 0.0f;
+    float voiced = 0.0f;
+    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    const float truep = (float)OCT_SR / f0s[k];
+    printf("  f0=%.0f -> period=%.1f (true %.1f) voiced=%.2f\n", f0s[k], period,
+           truep, voiced);
+    CHECK(fabsf(period - truep) < 0.05f * truep); /* no half/double period */
+    CHECK(voiced > 0.8f);                         /* clean tone reads voiced */
+  }
+
+  /* A shared noise vector, so scaling it gives a deterministic, monotone sweep. */
+  uint32_t rng = 0x1234567u;
+  for (int i = 0; i < W; ++i) {
+    rng = rng * 1664525u + 1013904223u;
+    noise[i] = ((float)(rng >> 9) / (float)(1u << 23)) * 2.0f - 1.0f; /* [-1,1) */
+  }
+
+  /* Aperiodic noise -> unvoiced (so the gate falls back to dry, D4). */
+  for (int i = 0; i < W; ++i) b[i] = 0.4f * noise[i];
+  {
+    float period = 0.0f;
+    float voiced = 0.0f;
+    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    printf("  noise -> voiced=%.2f\n", voiced);
+    CHECK(voiced < 0.4f);
+  }
+
+  /* Graded confidence (anti-chatter foundation): a 200 Hz tone progressively
+   * buried in the SAME noise yields a monotone-decreasing confidence with no
+   * bistable jump — a smoothly varying gate input, never a hard 0/1 flip. */
+  float prevc = 2.0f;
+  float span_hi = 0.0f;
+  float span_lo = 1.0f;
+  for (int s = 0; s <= 5; ++s) {
+    const float nz = 0.1f * (float)s;
+    for (int i = 0; i < W; ++i) {
+      b[i] = 0.4f * sinf(2.0f * LE_FFT_PI * 200.0f * (float)i / (float)OCT_SR) +
+             nz * noise[i];
+    }
+    float period = 0.0f;
+    float voiced = 0.0f;
+    le_psola_detect(b, W, OCT_SR, &period, &voiced);
+    printf("  noise=%.1f -> voiced=%.2f\n", nz, voiced);
+    CHECK(voiced <= prevc + 0.02f); /* monotone non-increasing */
+    prevc = voiced;
+    if (voiced > span_hi) span_hi = voiced;
+    if (voiced < span_lo) span_lo = voiced;
+  }
+  CHECK(span_hi - span_lo > 0.3f); /* genuinely graded, not stuck at 0 or 1 */
+
+  free(noise);
+  free(b);
+}
+
+/* PSOLA voice + fallback (D4): a voiced harmonic tone shifts up an octave with the
+ * formant (spectral centroid) preserved — like the phase vocoder, at lower
+ * latency; silence -> silence (no buzz); aperiodic noise -> the delay-matched dry
+ * (no grain artifacts). Polyphonic input stays finite/bounded (degrades, never
+ * glitches). Up-shift is PSOLA's documented sweet spot; extreme down-shift degrades
+ * and is not asserted here. */
+static void test_octaver_psola_voice_and_fallback(void) {
+  printf("test_octaver_psola_voice_and_fallback\n");
+  const int total = 48000;
+  const int skip = 24000;
+  const int an = total - skip;
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+
+  /* Voiced: 200 Hz harmonic tone, octave up (ratio 2). */
+  oct_harmonic(in, total, 200.0f);
+  const float cin = oct_centroid(in + skip, an);
+  oct_run_psola(0.75f, in, total, out);
+  const float f0 = oct_detect_f0(out + skip, an);
+  const float c = oct_centroid(out + skip, an);
+  printf("  voiced up: f0=%.1f (want 400) centroid=%.1f in=%.1f\n", f0, c, cin);
+  CHECK(fabsf(f0 - 400.0f) < 40.0f);   /* pitch shifted up an octave */
+  CHECK(fabsf(c - cin) < 0.35f * cin); /* formant centroid held */
+  CHECK(c < 1.6f * cin);               /* not a naive resample (~2x) */
+
+  /* Silence -> silence (no grain buzz). */
+  for (int i = 0; i < total; ++i) in[i] = 0.0f;
+  oct_run_psola(0.75f, in, total, out);
+  float speak = 0.0f;
+  for (int i = skip; i < total; ++i) {
+    if (fabsf(out[i]) > speak) speak = fabsf(out[i]);
+  }
+  printf("  silence peak=%.6f\n", speak);
+  CHECK(speak < 1e-4f);
+
+  /* Aperiodic noise -> delay-matched dry passthrough (D4): the output tracks the
+   * input delayed by the octaver latency, not a buzzy grain voice. */
+  uint32_t rng = 0x0badf00du;
+  for (int i = 0; i < total; ++i) {
+    rng = rng * 1664525u + 1013904223u;
+    in[i] = 0.3f * (((float)(rng >> 9) / (float)(1u << 23)) * 2.0f - 1.0f);
+  }
+  oct_run_psola(0.75f, in, total, out);
+  double err = 0.0;
+  double ref = 0.0;
+  for (int i = skip; i < total; ++i) {
+    /* PSOLA reports the same added latency as PV (le_octaver_latency), so the dry
+     * tap sits OCT_PV_N - 1 behind the newest sample in both modes. */
+    const float dry = in[i - (OCT_PV_N - 1)];
+    err += (double)(out[i] - dry) * (out[i] - dry);
+    ref += (double)dry * dry;
+  }
+  const float rel = (float)sqrt(err / ref);
+  printf("  noise vs delayed-dry rel-err=%.3f\n", rel);
+  CHECK(rel < 0.2f);
+
+  /* Polyphonic (two inharmonic notes): degrades without glitching — finite and
+   * bounded, no blow-up. */
+  for (int i = 0; i < total; ++i) {
+    in[i] = 0.25f * sinf(2.0f * LE_FFT_PI * 196.0f * (float)i / (float)OCT_SR) +
+            0.25f * sinf(2.0f * LE_FFT_PI * 277.0f * (float)i / (float)OCT_SR);
+  }
+  oct_run_psola(0.75f, in, total, out);
+  float ppeak = 0.0f;
+  int bad = 0;
+  for (int i = 0; i < total; ++i) {
+    if (!isfinite(out[i])) bad++;
+    if (fabsf(out[i]) > ppeak) ppeak = fabsf(out[i]);
+  }
+  printf("  polyphonic peak=%.3f nonfinite=%d\n", ppeak, bad);
+  CHECK(bad == 0);
+  CHECK(ppeak < 2.0f);
+
+  free(in);
+  free(out);
+}
+
+/* No dry<->wet chatter (AC3), end to end: a STEADY borderline-voiced signal (a
+ * harmonic tone half-buried in noise, YIN confidence hovering ~0.5) is driven
+ * through the full le_psola_tick gate in PSOLA mode. The one-pole-smoothed
+ * confidence holds the soft gate at a steady blend, so the per-block output level
+ * stays stable — it does NOT alternate between a fully-wet and a fully-dry block
+ * (which a per-frame flapping gate would produce). Complements the detector-level
+ * graded-confidence check in test_octaver_psola_pitch_detect: that proves the gate
+ * INPUT is smoothly graded; this proves the gate OUTPUT does not flap. */
+static void test_octaver_psola_no_chatter(void) {
+  printf("test_octaver_psola_no_chatter\n");
+  const int total = 72000;
+  const int skip = 36000; /* past warm-up + confidence settling */
+  float* in = (float*)malloc(sizeof(float) * (size_t)total);
+  float* out = (float*)malloc(sizeof(float) * (size_t)total);
+
+  /* 200 Hz harmonic tone + deterministic noise -> borderline confidence. */
+  float* tone = (float*)malloc(sizeof(float) * (size_t)total);
+  oct_harmonic(tone, total, 200.0f);
+  uint32_t rng = 0x13572468u;
+  for (int i = 0; i < total; ++i) {
+    rng = rng * 1664525u + 1013904223u;
+    const float n = ((float)(rng >> 9) / (float)(1u << 23)) * 2.0f - 1.0f;
+    in[i] = tone[i] + 0.3f * n;
+  }
+  free(tone);
+  oct_run_psola(0.75f, in, total, out);
+
+  /* Per-analysis-block (256-sample) RMS; a steady gate keeps its coefficient of
+   * variation low. A gate flapping wet<->dry every frame would swing the block
+   * level by ~3x (cv > ~0.5). */
+  const int B = 256;
+  double sum = 0.0;
+  double sum2 = 0.0;
+  int cnt = 0;
+  int bad = 0;
+  for (int s = skip; s + B <= total; s += B) {
+    double e = 0.0;
+    for (int i = 0; i < B; ++i) {
+      if (!isfinite(out[s + i])) bad++;
+      e += (double)out[s + i] * out[s + i];
+    }
+    const double r = sqrt(e / B);
+    sum += r;
+    sum2 += r * r;
+    cnt++;
+  }
+  const double mean = sum / cnt;
+  const double cv = sqrt(sum2 / cnt - mean * mean) / mean;
+  printf("  borderline blockRMS mean=%.4f cv=%.3f nonfinite=%d\n", mean, cv, bad);
+  CHECK(bad == 0);
+  CHECK(mean > 0.02f);  /* output is live, not gated to silence */
+  CHECK(cv < 0.4f);     /* steady gate -> no frame-rate flapping */
+
+  free(in);
+  free(out);
 }
 
 /* ---- FFT primitive (fft.h) ---- */
@@ -4093,7 +4368,10 @@ int main(void) {
   test_octaver_mix_no_comb();
   test_octaver_param_smoothing_no_zipper();
   test_octaver_lifecycle();
-  test_octaver_mode_switch();
+  test_octaver_mode_switch_no_click();
+  test_octaver_psola_pitch_detect();
+  test_octaver_psola_voice_and_fallback();
+  test_octaver_psola_no_chatter();
   test_fft_roundtrip();
 
   if (g_failures == 0) {
