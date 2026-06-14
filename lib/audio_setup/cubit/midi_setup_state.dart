@@ -45,6 +45,7 @@ class MidiSetupState extends Equatable {
     this.status = MidiSetupStatus.none,
     this.connectivity = MidiConnectivity.none,
     this.connectivityDeviceName = '',
+    this.activityTick = 0,
     this.errorDetail,
   });
 
@@ -67,6 +68,11 @@ class MidiSetupState extends Equatable {
   /// Name of the device involved in the latest [connectivity] transition.
   final String connectivityDeviceName;
 
+  /// A monotonically increasing counter bumped on every raw (pre-mapping) MIDI
+  /// message, so the activity indicator can blink without the cubit exposing a
+  /// stream. The value itself is meaningless; only its changes matter.
+  final int activityTick;
+
   /// Native result detail (e.g. result name) when [status] is
   /// [MidiSetupStatus.error].
   final String? errorDetail;
@@ -86,6 +92,7 @@ class MidiSetupState extends Equatable {
     MidiSetupStatus? status,
     MidiConnectivity? connectivity,
     String? connectivityDeviceName,
+    int? activityTick,
     String? errorDetail,
     bool clearError = false,
   }) {
@@ -97,6 +104,7 @@ class MidiSetupState extends Equatable {
       connectivity: connectivity ?? this.connectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
+      activityTick: activityTick ?? this.activityTick,
       // [clearError] resets the detail on a successful open, since a nullable
       // field cannot otherwise be cleared through `?? this`.
       errorDetail: clearError ? null : (errorDetail ?? this.errorDetail),
@@ -111,6 +119,7 @@ class MidiSetupState extends Equatable {
     status,
     connectivity,
     connectivityDeviceName,
+    activityTick,
     errorDetail,
   ];
 }

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,14 +21,10 @@ void main() {
 
   setUp(() {
     cubit = _MockMidiSetupCubit();
-    when(() => cubit.activity).thenAnswer((_) => null);
     when(() => cubit.select(any())).thenAnswer((_) async {});
   });
 
-  void seed(MidiSetupState state, {Stream<RawControllerInput>? activity}) {
-    if (activity != null) {
-      when(() => cubit.activity).thenAnswer((_) => activity);
-    }
+  void seed(MidiSetupState state) {
     when(() => cubit.state).thenReturn(state);
     whenListen(
       cubit,
@@ -155,24 +150,22 @@ void main() {
     verify(() => cubit.select('')).called(1);
   });
 
-  testWidgets('the activity indicator blinks on a raw input and is labelled', (
-    tester,
-  ) async {
-    final activity = StreamController<RawControllerInput>.broadcast();
-    addTearDown(activity.close);
-    seed(const MidiSetupState(devices: [dev1]), activity: activity.stream);
+  testWidgets('the activity indicator blinks on an activity tick and is '
+      'labelled', (tester) async {
+    final states = StreamController<MidiSetupState>.broadcast();
+    addTearDown(states.close);
+    const initial = MidiSetupState(devices: [dev1]);
+    when(() => cubit.state).thenReturn(initial);
+    whenListen(cubit, states.stream, initialState: initial);
     await pumpPicker(tester);
 
     // Idle until a message arrives (screen-reader labelled, not color-only).
     expect(find.text('Waiting for MIDI input'), findsOneWidget);
 
-    activity.add(
-      const RawControllerInput(
-        kind: ControllerSourceKind.midiCc,
-        id: 80,
-        value: 127,
-      ),
-    );
+    // A bumped activity tick drives the blink (the cubit exposes no stream).
+    const bumped = MidiSetupState(devices: [dev1], activityTick: 1);
+    when(() => cubit.state).thenReturn(bumped);
+    states.add(bumped);
     await tester.pump();
     expect(find.text('MIDI activity'), findsOneWidget);
 

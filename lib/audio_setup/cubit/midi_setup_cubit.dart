@@ -34,6 +34,9 @@ class MidiSetupCubit extends Cubit<MidiSetupState> {
   }) : _source = source,
        _settings = settings,
        super(const MidiSetupState()) {
+    // Mirror the source's raw (pre-mapping) activity into the state as a tick,
+    // so the indicator can blink without the cubit exposing a stream.
+    _activitySub = source?.activity.listen((_) => _onActivity());
     // Populate the picker immediately so it never flashes empty while the saved
     // selection loads (enumerate is a cheap synchronous native call).
     emit(MidiSetupState(devices: source?.enumerate() ?? const []));
@@ -49,14 +52,16 @@ class MidiSetupCubit extends Cubit<MidiSetupState> {
   final MidiControllerSource? _source;
   final SettingsRepository _settings;
   Timer? _pollTimer;
+  StreamSubscription<RawControllerInput>? _activitySub;
 
   /// Previous pinned-device presence, to detect lost/restored transitions.
   /// `null` until the first observation, or while nothing is pinned.
   bool? _lastSelectedPresent;
 
-  /// The raw, pre-mapping MIDI activity stream for a UI indicator, or `null`
-  /// when no MIDI backend is available.
-  Stream<RawControllerInput>? get activity => _source?.activity;
+  /// Bumps the activity tick so the indicator blinks. The tick value is opaque;
+  /// only the change is observed.
+  void _onActivity() =>
+      emit(state.copyWith(activityTick: state.activityTick + 1));
 
   /// Loads the saved selection and reconnects it when present, tolerating a
   /// "saved device absent" launch (the selection is retained, status gone).
@@ -205,6 +210,7 @@ class MidiSetupCubit extends Cubit<MidiSetupState> {
   @override
   Future<void> close() {
     _pollTimer?.cancel();
+    unawaited(_activitySub?.cancel());
     // The source is owned by the ControllerRepository (it disposes it); the
     // cubit only borrows it, so it must not be disposed here.
     return super.close();

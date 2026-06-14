@@ -75,12 +75,11 @@ void main() {
       expect(cubit.state.selectedId, '');
     });
 
-    test('pipes the source activity stream to the indicator', () async {
+    test('a raw activity message bumps the activity tick', () async {
       final cubit = await hydrated();
       addTearDown(cubit.close);
+      final before = cubit.state.activityTick;
 
-      final received = <RawControllerInput>[];
-      final sub = cubit.activity!.listen(received.add);
       activity.add(
         const RawControllerInput(
           kind: ControllerSourceKind.midiCc,
@@ -90,8 +89,7 @@ void main() {
       );
       await pumpEventQueue();
 
-      expect(received, hasLength(1));
-      await sub.cancel();
+      expect(cubit.state.activityTick, before + 1);
     });
   });
 
@@ -247,11 +245,13 @@ void main() {
       await cubit.select('id-2');
       await cubit.selectNone();
 
-      // The cubit has no LooperRepository collaborator at all; its only native
-      // calls are open/close/enumerate on the MIDI source.
+      // The cubit has no LooperRepository collaborator at all; its only
+      // interactions are open/close/enumerate (and reading the activity stream
+      // once at construction) on the MIDI source.
       verify(() => source.open(any())).called(2);
       verify(source.close).called(1);
       verify(() => source.enumerate()).called(greaterThanOrEqualTo(1));
+      verify(() => source.activity).called(greaterThanOrEqualTo(1));
       verifyNoMoreInteractions(source);
     });
   });

@@ -43,7 +43,6 @@ void main() {
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(const AudioSetupState());
     midiSetup = _MockMidiSetupCubit();
-    when(() => midiSetup.activity).thenAnswer((_) => null);
     when(() => midiSetup.state).thenReturn(const MidiSetupState());
     whenListen(
       midiSetup,

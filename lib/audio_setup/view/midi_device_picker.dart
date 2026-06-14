@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/audio_setup/cubit/midi_setup_cubit.dart';
@@ -36,7 +35,7 @@ class MidiDevicePicker extends StatelessWidget {
         const SizedBox(height: 12),
         _MidiStatusLine(state: state),
         const SizedBox(height: 12),
-        MidiActivityIndicator(activity: cubit.activity),
+        const MidiActivityIndicator(),
         const SizedBox(height: 12),
         Text(l10n.midiRequiredCcsHint, style: setupBody),
       ],
@@ -170,43 +169,20 @@ class _MidiStatusLine extends StatelessWidget {
 
 /// A blink indicator for raw (pre-mapping) MIDI input: it lights up briefly on
 /// every recognized Note/CC message so the user can confirm the pedal is
-/// talking, even when a message is unmapped. Not color-only — it pairs an icon
-/// with a text label and a screen-reader [Semantics] announcement.
+/// talking, even when a message is unmapped. Driven by [MidiSetupState]'s
+/// `activityTick` (so the cubit exposes no stream). Not color-only — it pairs
+/// an icon with a text label and a screen-reader [Semantics] announcement.
 class MidiActivityIndicator extends StatefulWidget {
-  /// Creates a [MidiActivityIndicator] driven by [activity]; a `null` stream
-  /// (no MIDI backend) renders a steady idle state.
-  const MidiActivityIndicator({required this.activity, super.key});
-
-  /// The raw activity stream from [MidiSetupCubit.activity].
-  final Stream<RawControllerInput>? activity;
+  /// Creates a [MidiActivityIndicator].
+  const MidiActivityIndicator({super.key});
 
   @override
   State<MidiActivityIndicator> createState() => _MidiActivityIndicatorState();
 }
 
 class _MidiActivityIndicatorState extends State<MidiActivityIndicator> {
-  StreamSubscription<RawControllerInput>? _subscription;
   Timer? _blinkTimer;
   bool _active = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _subscribe();
-  }
-
-  @override
-  void didUpdateWidget(MidiActivityIndicator oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.activity != widget.activity) {
-      unawaited(_subscription?.cancel());
-      _subscribe();
-    }
-  }
-
-  void _subscribe() {
-    _subscription = widget.activity?.listen((_) => _flash());
-  }
 
   void _flash() {
     _blinkTimer?.cancel();
@@ -219,7 +195,6 @@ class _MidiActivityIndicatorState extends State<MidiActivityIndicator> {
   @override
   void dispose() {
     _blinkTimer?.cancel();
-    unawaited(_subscription?.cancel());
     super.dispose();
   }
 
@@ -230,21 +205,26 @@ class _MidiActivityIndicatorState extends State<MidiActivityIndicator> {
     final color = _active
         ? context.surface.accent
         : context.surface.textSecondary;
-    return Semantics(
-      liveRegion: true,
-      label: label,
-      child: ExcludeSemantics(
-        child: Row(
-          key: const Key('midiSettings_activity'),
-          children: [
-            Icon(
-              _active ? Icons.circle : Icons.circle_outlined,
-              size: 12,
-              color: color,
-            ),
-            const SizedBox(width: 8),
-            Text(label, style: setupBody.copyWith(color: color)),
-          ],
+    return BlocListener<MidiSetupCubit, MidiSetupState>(
+      listenWhen: (previous, current) =>
+          previous.activityTick != current.activityTick,
+      listener: (_, _) => _flash(),
+      child: Semantics(
+        liveRegion: true,
+        label: label,
+        child: ExcludeSemantics(
+          child: Row(
+            key: const Key('midiSettings_activity'),
+            children: [
+              Icon(
+                _active ? Icons.circle : Icons.circle_outlined,
+                size: 12,
+                color: color,
+              ),
+              const SizedBox(width: 8),
+              Text(label, style: setupBody.copyWith(color: color)),
+            ],
+          ),
         ),
       ),
     );
