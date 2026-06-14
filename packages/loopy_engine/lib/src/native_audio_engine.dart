@@ -429,6 +429,22 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_limiter(_engine, enabled ? 1 : 0, ceiling),
+    );
+  }
+
+  @override
+  EngineResult setOverdubFeedback(double feedback) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_overdub_feedback(_engine, feedback),
+    );
+  }
+
+  @override
   EngineResult setAutoRecord({required bool enabled}) {
     _checkAlive();
     return EngineResult.fromCode(
