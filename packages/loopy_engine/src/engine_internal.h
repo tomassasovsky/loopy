@@ -134,6 +134,17 @@ int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
 void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
                                               int32_t channel, int32_t count);
 
+/* Drives track [channel] lane [lane]'s effect chain once with an explicit stereo
+ * pair (*l, *r), writing the processed pair back in place. The device paths seed
+ * the chain l == r from a mono source, so this is the only way a test can feed a
+ * decorrelated (l != r) input — e.g. an impulse on one channel only — to prove
+ * each delay-ringed slot keeps independent left/right ring state. Reads the
+ * lane's published chain config (type/params/count); the caller must have drained
+ * any pending SET_*_FX commands so the entries' DSP state is reset. Not part of
+ * the FFI surface. */
+void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
+                                      int32_t lane, float* l, float* r);
+
 #ifdef __cplusplus
 }
 #endif

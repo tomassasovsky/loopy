@@ -2646,6 +2646,164 @@ static void test_fx_rejects_invalid_args(void) {
   le_engine_destroy(e);
 }
 
+/* Regression guard for the reported Reverb -> Drive bug. The old engine only
+ * spread to stereo on the reverb and processed every later effect on the left
+ * channel alone, so a drive after a reverb saturated the left while the right
+ * passed through clean (audibly lopsided). With the full-stereo chain the drive
+ * must colour BOTH channels.
+ *
+ * Two identical runs: reverb only, then reverb -> drive. The drive sits
+ * downstream of the reverb and never feeds back into it, so the reverb tail is
+ * bit-identical between runs; comparing the driven output against the clean
+ * reverb output isolates exactly what the drive did to each channel. */
+static void test_fx_reverb_then_mono_effect_is_stereo(void) {
+  printf("test_fx_reverb_then_mono_effect_is_stereo\n");
+  /* WARM blocks of 64 frames let the reverb tail (shortest comb ~1116 samples)
+   * fully develop into a dense, sustained level before we sample it. */
+  const int WARM = 200; /* ~12.8 k frames */
+  float rev_l[64], rev_r[64], drv_l[64], drv_r[64];
+
+  /* Run A: reverb only — capture the steady-state stereo tail. */
+  {
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, 48000, 1, 2, 1000); /* mono in, STEREO out */
+    float out[128];
+    establish_loop(e, 1.0f); /* constant 1.0 to outs 0 + 1 */
+    le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB);
+    le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.6f); /* size */
+    le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.3f); /* damping */
+    le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* fully wet */
+    le_engine_set_lane_fx_count(e, 0, 0, 1);
+    for (int b = 0; b < WARM; ++b) process_const(e, 0.0f, 64, out);
+    process_const(e, 0.0f, 64, out);
+    for (int i = 0; i < 64; ++i) {
+      rev_l[i] = out[i * 2 + 0];
+      rev_r[i] = out[i * 2 + 1];
+    }
+    le_engine_destroy(e);
+  }
+
+  /* Run B: reverb -> drive (max pre-gain) — identical reverb input. */
+  {
+    le_engine* e = le_engine_create();
+    le_engine_configure(e, 48000, 1, 2, 1000);
+    float out[128];
+    establish_loop(e, 1.0f);
+    le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB);
+    le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.6f);
+    le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.3f);
+    le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f);
+    le_engine_set_lane_fx(e, 0, 0, 1, LE_FX_DRIVE);
+    le_engine_set_lane_fx_param(e, 0, 0, 1, 0, 1.0f); /* 30x pre-gain */
+    le_engine_set_lane_fx_param(e, 0, 0, 1, 1, 1.0f); /* unity output level */
+    le_engine_set_lane_fx_count(e, 0, 0, 2);
+    for (int b = 0; b < WARM; ++b) process_const(e, 0.0f, 64, out);
+    process_const(e, 0.0f, 64, out);
+    for (int i = 0; i < 64; ++i) {
+      drv_l[i] = out[i * 2 + 0];
+      drv_r[i] = out[i * 2 + 1];
+    }
+    le_engine_destroy(e);
+  }
+
+  float diff_l = 0.0f, diff_r = 0.0f, peak_l = 0.0f, peak_r = 0.0f;
+  for (int i = 0; i < 64; ++i) {
+    diff_l += fabsf(drv_l[i] - rev_l[i]);
+    diff_r += fabsf(drv_r[i] - rev_r[i]);
+    if (fabsf(drv_l[i]) > peak_l) peak_l = fabsf(drv_l[i]);
+    if (fabsf(drv_r[i]) > peak_r) peak_r = fabsf(drv_r[i]);
+  }
+  /* The drive moved BOTH channels off their clean reverb value — the bug left
+   * the right channel passing through untouched (diff_r would be exactly 0). The
+   * 0.1 floor is far above float noise yet far below the real per-channel delta:
+   * at 30x pre-gain tanh saturates the sustained tail, so each channel's summed
+   * change over 64 frames is order ~1, not ~0.1. */
+  CHECK(diff_l > 0.1f);
+  CHECK(diff_r > 0.1f);
+  /* and pushed both toward the saturation level (|tanh| -> 1), not just one. */
+  CHECK(peak_l > 0.5f);
+  CHECK(peak_r > 0.5f);
+}
+
+/* Drives a fresh DELAY chain with an impulse on a single channel, returning the
+ * tap on that channel after `d` samples and the largest leak onto the other
+ * channel. A fresh engine per call keeps each ring's contents clean. */
+static void impulse_through_delay(int on_right, int d, float* tap,
+                                  float* max_off) {
+  le_engine* e = make_configured_engine();
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, (float)d / 47999.0f); /* ~d frames */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f);               /* no feedback */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f);              /* full wet */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  drain(e); /* allocate both rings + reset DSP state before driving the chain */
+
+  *tap = 0.0f;
+  *max_off = 0.0f;
+  for (int n = 0; n <= d; ++n) {
+    float l = (!on_right && n == 0) ? 1.0f : 0.0f;
+    float r = (on_right && n == 0) ? 1.0f : 0.0f;
+    le_engine_lane_fx_chain_for_test(e, 0, 0, &l, &r);
+    const float sig = on_right ? r : l; /* the impulse's own channel */
+    const float off = on_right ? l : r; /* the other channel */
+    if (n == d) *tap = sig;
+    if (fabsf(off) > *max_off) *max_off = fabsf(off);
+  }
+  le_engine_destroy(e);
+}
+
+/* Proves the [slot][1] ring is wired and fully independent of [slot][0]: an
+ * impulse on one channel taps only that channel after the delay time, never
+ * leaking onto the other. A shared/interleaved ring would cross-talk. */
+static void test_fx_stereo_chain_independent_lr_state(void) {
+  printf("test_fx_stereo_chain_independent_lr_state\n");
+  const int d = 10;
+  float tap, max_off;
+
+  impulse_through_delay(0, d, &tap, &max_off); /* impulse on L only */
+  CHECK(fabsf(tap - 1.0f) < 1e-6f);            /* the L tap returns */
+  CHECK(max_off < 1e-6f);                      /* R never saw the L impulse */
+
+  impulse_through_delay(1, d, &tap, &max_off); /* impulse on R only */
+  CHECK(fabsf(tap - 1.0f) < 1e-6f);            /* the R tap returns */
+  CHECK(max_off < 1e-6f);                      /* L never saw the R impulse */
+}
+
+/* Acceptance: one slot reordered DELAY -> REVERB -> DELAY within its lifetime
+ * reuses its rings without leaking, double-allocating, or misreading. The first
+ * DELAY allocates both rings; REVERB keeps ring[0] and retains ring[1] (it never
+ * frees it); the second DELAY reuses both. After the round trip the delay must
+ * still tap correctly with the right channel fully independent — proving ring[1]
+ * survived and was reused — and destroy must free each retained ring exactly
+ * once (no double-free). */
+static void test_fx_stereo_ring_retained_across_type_reorder(void) {
+  printf("test_fx_stereo_ring_retained_across_type_reorder\n");
+  le_engine* e = make_configured_engine();
+  const int d = 10;
+
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY);  /* allocates [0] and [1] */
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_REVERB); /* keeps [0], retains [1] */
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DELAY);  /* reuses both rings */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, (float)d / 47999.0f);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.0f); /* no feedback */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 2, 1.0f); /* full wet */
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  drain(e);
+
+  float tap = 0.0f, max_off = 0.0f;
+  for (int n = 0; n <= d; ++n) {
+    float l = (n == 0) ? 1.0f : 0.0f;
+    float r = 0.0f;
+    le_engine_lane_fx_chain_for_test(e, 0, 0, &l, &r);
+    if (n == d) tap = l;
+    if (fabsf(r) > max_off) max_off = fabsf(r);
+  }
+  CHECK(fabsf(tap - 1.0f) < 1e-6f); /* the delay still taps after the reorder */
+  CHECK(max_off < 1e-6f);           /* the reused R ring is still independent */
+
+  le_engine_destroy(e); /* must free each retained ring exactly once */
+}
+
 /* The monitor-lane setters reject a null engine and out-of-range input / lane /
  * index / type / param args; values clamp rather than erroring. */
 static void test_monitor_lane_fx_rejects_invalid_args(void) {
@@ -3364,6 +3522,9 @@ int main(void) {
   test_fx_nondestructive_and_colors_playback();
   test_fx_muted_track_is_silent();
   test_fx_rejects_invalid_args();
+  test_fx_reverb_then_mono_effect_is_stereo();
+  test_fx_stereo_chain_independent_lr_state();
+  test_fx_stereo_ring_retained_across_type_reorder();
   test_monitor_lane_fx_rejects_invalid_args();
 
   if (g_failures == 0) {
