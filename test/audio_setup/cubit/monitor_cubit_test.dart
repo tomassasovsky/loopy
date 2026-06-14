@@ -32,6 +32,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setMonitorVolume(
+        input: any(named: 'input'),
+        volume: any(named: 'volume'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setMonitorEffects(
         input: any(named: 'input'),
         effects: any(named: 'effects'),
@@ -118,6 +124,27 @@ void main() {
     );
 
     blocTest<MonitorCubit, MonitorState>(
+      'setVolume updates, applies, and persists the monitor gain',
+      build: build,
+      act: (cubit) async {
+        await cubit.setEnabled(0, enabled: true);
+        await cubit.setVolume(0, 0.5);
+      },
+      verify: (cubit) async {
+        expect(cubit.state.forInput(0).volume, 0.5);
+        verify(
+          () => repository.setMonitorVolume(input: 0, volume: 0.5),
+        ).called(1);
+        expect(await settings.loadMonitorInputVolume(0), 0.5);
+      },
+    );
+
+    test('a fresh monitor defaults to unity volume', () {
+      final cubit = build();
+      expect(cubit.state.forInput(0).volume, 1.0);
+    });
+
+    blocTest<MonitorCubit, MonitorState>(
       'inputs are independent of one another',
       build: build,
       act: (cubit) async {
@@ -136,6 +163,7 @@ void main() {
       setUp: () async {
         await settings.saveMonitorInput(0, enabled: true, outputMask: 0x2);
         await settings.saveMonitorInputDry(0, 0x1);
+        await settings.saveMonitorInputVolume(0, 0.4);
         await settings.saveMonitorInputEffects(
           0,
           encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
@@ -148,6 +176,7 @@ void main() {
         expect(monitor.enabled, isTrue);
         expect(monitor.outputMask, 0x2);
         expect(monitor.dryOutputMask, 0x1);
+        expect(monitor.volume, 0.4);
         expect(monitor.effects.single.type, TrackEffectType.delay);
         verify(
           () => repository.setMonitorInput(
@@ -158,6 +187,9 @@ void main() {
         ).called(1);
         verify(
           () => repository.setMonitorDry(input: 0, dryOutputMask: 0x1),
+        ).called(1);
+        verify(
+          () => repository.setMonitorVolume(input: 0, volume: 0.4),
         ).called(1);
         verify(
           () => repository.setMonitorEffects(

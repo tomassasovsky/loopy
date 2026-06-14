@@ -42,34 +42,9 @@ const _playMeterColors = <LooperMeterState, Color>{
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 
-/// The two Loopy visual themes: a refined dark-neutral **Desktop** theme for
-/// the working layout, and a high-contrast neon-on-black **Big Picture** theme
+/// Loopy's visual theme: a high-contrast neon-on-black **Big Picture** theme
 /// for the performance/visualizer windows.
 abstract final class AppTheme {
-  /// Dark-neutral desktop theme with a single teal accent.
-  static ThemeData get desktop {
-    const seed = Color(0xFF1FB6A6);
-    final scheme = ColorScheme.fromSeed(
-      seedColor: seed,
-      brightness: Brightness.dark,
-    );
-    return _base(scheme).copyWith(
-      extensions: [
-        const LooperTheme(
-          tileBackground: Color(0xFF1B1E24),
-          tileBorder: Color(0xFF2C313A),
-          waveformColor: Color(0xFF35D6C4),
-          waveformBackground: Color(0xFF14161B),
-          recordColor: Color(0xFFFF5252),
-          recordMeterColors: _recordMeterColors,
-          playMeterColors: _playMeterColors,
-        ),
-        SurfaceTheme.dark,
-        routingGraphThemeFromSurface(SurfaceTheme.dark),
-      ],
-    );
-  }
-
   /// Neon-on-near-black performance theme (Chewie-Monsta vibe).
   static ThemeData get bigPicture {
     const scheme = ColorScheme.dark(

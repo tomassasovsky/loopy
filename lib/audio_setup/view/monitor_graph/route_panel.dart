@@ -16,6 +16,7 @@ class RoutePanel extends StatelessWidget {
     required this.wireDry,
     required this.selectedFx,
     required this.onWireModeChanged,
+    required this.onVolumeChanged,
     required this.onStop,
     required this.onSetType,
     required this.onSetParam,
@@ -34,6 +35,9 @@ class RoutePanel extends StatelessWidget {
 
   /// Picks which send an output tap wires.
   final ValueChanged<bool> onWireModeChanged;
+
+  /// Sets the focused input's monitor output gain (`0..1`).
+  final ValueChanged<double> onVolumeChanged;
 
   /// Stops monitoring the focused input.
   final VoidCallback onStop;
@@ -106,6 +110,41 @@ class RoutePanel extends StatelessWidget {
                 ),
               ],
             ),
+          if (focused && m != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(
+                  Icons.volume_up_outlined,
+                  size: 16,
+                  color: surface.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  l10n.monitorVolumeLabel,
+                  style: TextStyle(color: surface.textSecondary, fontSize: 13),
+                ),
+                Expanded(
+                  child: Slider(
+                    key: const Key('monitorGraph_volume'),
+                    value: m.volume.clamp(0.0, 1.0),
+                    onChanged: onVolumeChanged,
+                  ),
+                ),
+                SizedBox(
+                  width: 40,
+                  child: Text(
+                    '${(m.volume.clamp(0.0, 1.0) * 100).round()}%',
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: surface.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (focused && selectedFx != null) ...[
             const SizedBox(height: 10),
             EffectParamsEditor(

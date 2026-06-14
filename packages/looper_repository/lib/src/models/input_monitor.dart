@@ -14,6 +14,7 @@ class InputMonitor extends Equatable {
     this.enabled = false,
     this.outputMask = 0x3,
     this.dryOutputMask = 0,
+    this.volume = 1,
     this.effects = const [],
   });
 
@@ -32,6 +33,10 @@ class InputMonitor extends Equatable {
   /// at once on different outputs.
   final int dryOutputMask;
 
+  /// Output gain (`0..1`) applied to both the effected and dry sends. `1.0` is
+  /// unity; lower it to tame the +6 dB from routing both sends to one output.
+  final double volume;
+
   /// The monitor's live effect chain, in processing order. Never recorded.
   final List<TrackEffect> effects;
 
@@ -40,12 +45,14 @@ class InputMonitor extends Equatable {
     bool? enabled,
     int? outputMask,
     int? dryOutputMask,
+    double? volume,
     List<TrackEffect>? effects,
   }) => InputMonitor(
     input: input,
     enabled: enabled ?? this.enabled,
     outputMask: outputMask ?? this.outputMask,
     dryOutputMask: dryOutputMask ?? this.dryOutputMask,
+    volume: volume ?? this.volume,
     effects: effects ?? this.effects,
   );
 
@@ -55,6 +62,7 @@ class InputMonitor extends Equatable {
     enabled,
     outputMask,
     dryOutputMask,
+    volume,
     effects,
   ];
 }

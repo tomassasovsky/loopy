@@ -25,13 +25,189 @@ void main() {
       addTearDown(repository.dispose);
     });
 
-    test('returns false and does not start when no config is saved', () async {
-      final started = await tryAutoStartEngine(
-        repository: repository,
-        settings: settings,
+    group('first run (no saved config)', () {
+      tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      const asioDriver = AudioDevice(
+        id: 'Focusrite USB ASIO',
+        name: 'Focusrite USB ASIO',
+        isDefault: false,
+        isInput: false,
+        inputChannels: 18,
+        outputChannels: 20,
+        sampleRates: [48000, 96000],
+        bufferSizes: [128, 256],
       );
-      expect(started, isFalse);
-      expect(engine.startCalls, 0);
+
+      test('macOS/Linux opens the system default and persists it', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isTrue);
+        expect(engine.startCalls, 1);
+        // A zero-config open (sample rate / buffer left at the device default).
+        expect(engine.lastConfig, const EngineConfig());
+        // Persisted so the next launch takes the saved-config path.
+        expect(await settings.loadAudioConfig(), isNotNull);
+      });
+
+      test('macOS/Linux lands stopped when the default open fails', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        engine.startResult = EngineResult.device;
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+      });
+
+      test('Windows starts on the first ASIO driver and caches it', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [asioDriver];
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isTrue);
+        // The enumerated list is returned for the cubit's picker cache.
+        expect(result.asioDrivers, const [asioDriver]);
+        expect(engine.lastConfig?.backend, AudioBackend.asio);
+        expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+        expect(engine.lastConfig?.sampleRate, 48000);
+        expect(engine.lastConfig?.bufferFrames, 128);
+        final saved = await settings.loadAudioConfig();
+        expect(saved?.backend, AudioBackend.asio);
+        expect(saved?.asioDriver, 'Focusrite USB ASIO');
+      });
+
+      test('Windows with no ASIO driver lands stopped', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [];
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+        expect(engine.startCalls, 0);
+      });
+
+      test('Windows lands stopped when the ASIO driver open fails', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine
+          ..asioDrivers = const [asioDriver]
+          ..startResult = EngineResult.device;
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+        // The drivers are still enumerated and returned for the picker cache.
+        expect(result.asioDrivers, const [asioDriver]);
+      });
+    });
+
+    group('saved config on Windows (auto-finds ASIO)', () {
+      tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      const focusrite = AudioDevice(
+        id: 'Focusrite USB ASIO',
+        name: 'Focusrite USB ASIO',
+        isDefault: false,
+        isInput: false,
+        inputChannels: 18,
+        outputChannels: 20,
+      );
+
+      test(
+        'heals a stale saved backend=miniaudio to the installed driver',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+          engine.asioDrivers = const [focusrite];
+          // A config saved before the ASIO-only switch (miniaudio, no driver).
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.lastConfig?.backend, AudioBackend.asio);
+          expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+        },
+      );
+
+      test('keeps the saved driver when it is still installed', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [focusrite];
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            backend: AudioBackend.asio,
+            asioDriver: 'Focusrite USB ASIO',
+          ),
+        );
+
+        await tryAutoStartEngine(repository: repository, settings: settings);
+
+        expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+      });
+
+      test(
+        'falls back to the first driver when the saved one is gone',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+          engine.asioDrivers = const [focusrite];
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(
+              sampleRate: 48000,
+              bufferFrames: 128,
+              backend: AudioBackend.asio,
+              asioDriver: 'Some Removed Interface',
+            ),
+          );
+
+          await tryAutoStartEngine(repository: repository, settings: settings);
+
+          expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
+        },
+      );
+
+      test('lands stopped when no ASIO driver is installed', () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        engine.asioDrivers = const [];
+        await settings.saveAudioConfig(
+          const StoredAudioConfig(
+            sampleRate: 48000,
+            bufferFrames: 128,
+            backend: AudioBackend.asio,
+            asioDriver: 'Focusrite USB ASIO',
+          ),
+        );
+
+        final result = await tryAutoStartEngine(
+          repository: repository,
+          settings: settings,
+        );
+
+        expect(result.started, isFalse);
+        expect(engine.startCalls, 0);
+      });
     });
 
     test('restores saved per-track routing on launch', () async {
@@ -39,7 +215,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Save lane-0 routing for channel 1 only; channel 0 has none (exercises
@@ -66,7 +241,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       // Only channel 1 had saved routing, restored onto lane 0.
       expect(engine.laneInput[(1, 0)], 1);
       expect(engine.laneOutput[(1, 0)], 0x4);
@@ -77,7 +252,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Track 0 lane 0 = a two-effect chain (filter, then delay with a feedback
@@ -112,7 +286,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       expect(engine.laneFx[(0, 0, 0)], TrackEffectType.filter);
       expect(engine.laneFx[(0, 0, 1)], TrackEffectType.delay);
       expect(engine.laneFxCount[(0, 0)], 2);
@@ -124,7 +298,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Track 0 has two lanes; lane 1 carries its own input, output, mix, and
@@ -158,7 +331,7 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       expect(engine.laneCount[0], 2);
       expect(engine.laneInput[(0, 1)], 2);
       expect(engine.laneOutput[(0, 1)], 0x2);
@@ -172,7 +345,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 96000,
           bufferFrames: 256,
-          monitorInput: false,
         ),
       );
 
@@ -181,15 +353,36 @@ void main() {
         settings: settings,
       );
 
-      expect(started, isTrue);
+      expect(started.started, isTrue);
       expect(engine.startCalls, 1);
       expect(engine.lastConfig?.sampleRate, 96000);
       expect(engine.lastConfig?.bufferFrames, 256);
-      expect(engine.lastConfig?.passthrough, isFalse);
       // Channel counts left at 0 (device default) so the interface opens with
       // all its channels; the negotiated counts come back via the snapshot.
       expect(engine.lastConfig?.inputChannels, 0);
       expect(engine.lastConfig?.outputChannels, 0);
+    });
+
+    test('relaunches into the saved ASIO backend + driver', () async {
+      // The auto-start config assembly is duplicated from the cubit's
+      // _engineConfig; this guards against the two diverging on backend/driver.
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+        ),
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.lastConfig?.backend, AudioBackend.asio);
+      expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
     });
 
     test('restores the saved latency offset for the device', () async {
@@ -197,7 +390,6 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
       // Saved under the profile the running engine reports (the fake's default
@@ -226,7 +418,6 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            monitorInput: true,
           ),
         );
         // No saved latency offset for this profile.
@@ -253,7 +444,6 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            monitorInput: true,
             captureDeviceId: 'clarett-in',
           ),
         );
@@ -288,7 +478,6 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            monitorInput: true,
           ),
         );
 
@@ -298,53 +487,12 @@ void main() {
       },
     );
 
-    group('exclusive-access resolution (platform default)', () {
-      tearDown(() => debugDefaultTargetPlatformOverride = null);
-
-      // A saved config with the exclusive key never written (older config or a
-      // fresh device): loadAudioConfig succeeds on rate+buffer, exclusive
-      // unset, so the platform default applies.
-      Future<void> saveConfigWithoutExclusiveKey() async {
-        await store.setInt('audio.sample_rate', 48000);
-        await store.setInt('audio.buffer_frames', 128);
-      }
-
-      test('defaults to exclusive on Windows when unset', () async {
-        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-        await saveConfigWithoutExclusiveKey();
-        await tryAutoStartEngine(repository: repository, settings: settings);
-        expect(engine.lastConfig?.exclusive, isTrue);
-      });
-
-      test('defaults to shared off Windows when unset', () async {
-        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-        await saveConfigWithoutExclusiveKey();
-        await tryAutoStartEngine(repository: repository, settings: settings);
-        expect(engine.lastConfig?.exclusive, isFalse);
-      });
-
-      test('a saved exclusive intent wins over the platform default', () async {
-        // Saved OFF must win even on Windows (where the default is on).
-        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-        await settings.saveAudioConfig(
-          const StoredAudioConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-            monitorInput: true,
-          ),
-        );
-        await tryAutoStartEngine(repository: repository, settings: settings);
-        expect(engine.lastConfig?.exclusive, isFalse);
-      });
-    });
-
     test('returns false when the engine fails to start', () async {
       engine.startResult = EngineResult.device;
       await settings.saveAudioConfig(
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          monitorInput: true,
         ),
       );
 
@@ -352,7 +500,7 @@ void main() {
         repository: repository,
         settings: settings,
       );
-      expect(started, isFalse);
+      expect(started.started, isFalse);
     });
   });
 }

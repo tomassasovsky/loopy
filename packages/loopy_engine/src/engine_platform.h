@@ -45,7 +45,7 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
 /* Serializes a miniaudio device id into a printable, round-trippable token used
  * to match a user-selected device back to its native id. On the string-id
  * backends (CoreAudio, ALSA, PulseAudio, …) the union's active member is a
- * NUL-terminated char string, so a plain copy is exact. On Windows the WASAPI id
+ * NUL-terminated char string, so a plain copy is exact. On Windows the device id
  * is a wchar_t string and must be converted to UTF-8 — reading it as a narrow
  * char* stops at the first UTF-16 NUL byte and collapses every id to its first
  * character. Writes at most `cap` bytes including the NUL. */

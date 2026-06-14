@@ -11,10 +11,10 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
-    // Register plugins for every secondary window's engine too, so the
-    // waveform window can talk over desktop_multi_window's method channel.
+    // Register non-multi-window plugins for secondary engines. Sub-windows
+    // already register `desktop_multi_window` before this callback.
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
-      RegisterGeneratedPlugins(registry: controller)
+      RegisterSubWindowPlugins(registry: controller)
     }
 
     super.awakeFromNib()

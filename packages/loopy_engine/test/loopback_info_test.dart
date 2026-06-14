@@ -20,7 +20,7 @@ void main() {
   group('LoopbackKind.fromCode', () {
     test('maps each known code', () {
       expect(LoopbackKind.fromCode(0), LoopbackKind.none);
-      expect(LoopbackKind.fromCode(1), LoopbackKind.wasapi);
+      expect(LoopbackKind.fromCode(1), LoopbackKind.backendLoopback);
       expect(LoopbackKind.fromCode(2), LoopbackKind.monitor);
       expect(LoopbackKind.fromCode(3), LoopbackKind.virtualDevice);
       expect(LoopbackKind.fromCode(99), LoopbackKind.none);
@@ -69,15 +69,15 @@ void main() {
       }
     });
 
-    test('WASAPI loopback is available but not auto-routable', () {
+    test('backend loopback is available but not auto-routable', () {
       final ptr = calloc<le_loopback_info>();
       try {
         ptr.ref
           ..available = 1
           ..kind = 1;
-        // No device name written (built-in WASAPI path).
+        // No device name written (built-in backend loopback path).
         final info = LoopbackInfo.fromNative(ptr);
-        expect(info.kind, LoopbackKind.wasapi);
+        expect(info.kind, LoopbackKind.backendLoopback);
         expect(info.isAutoRoutable, isFalse);
       } finally {
         calloc.free(ptr);

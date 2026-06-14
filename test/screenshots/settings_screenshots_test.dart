@@ -12,7 +12,6 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
 import 'package:loopy/theme/theme.dart';
-import 'package:loopy/ui_mode/ui_mode.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -135,9 +134,6 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
-              BlocProvider<UiModeCubit>.value(
-                value: UiModeCubit(settings: settings),
-              ),
               BlocProvider<BigPictureCubit>.value(
                 value: BigPictureCubit(settings: settings),
               ),

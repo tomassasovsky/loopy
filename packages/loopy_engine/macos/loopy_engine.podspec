@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
 A hand-written miniaudio-based looping engine exposed to Dart over FFI.
                        DESC
   s.homepage         = 'https://github.com/loopy-dev/loopy'
-  s.license          = { :type => 'MIT', :file => '../LICENSE' }
+  s.license          = { :type => 'GPL-3.0-or-later', :file => '../LICENSE' }
   s.author           = { 'Loopy' => 'dev@loopy.dev' }
   s.source           = { :path => '.' }
 

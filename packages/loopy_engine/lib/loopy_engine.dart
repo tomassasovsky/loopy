@@ -15,6 +15,7 @@ export 'src/engine_snapshot.dart'
         LatencyState,
         TrackSnapshot,
         TrackState,
+        kMaxInputs,
         kMaxLanes;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mock_audio_engine.dart' show MockAudioEngine;

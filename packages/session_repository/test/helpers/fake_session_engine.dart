@@ -146,6 +146,8 @@ class FakeSessionEngine implements AudioEngine {
   @override
   List<AudioDevice> enumerateDevices() => const [];
   @override
+  List<AudioDevice> enumerateAsioDrivers() => const [];
+  @override
   EngineResult measureLatency() => EngineResult.ok;
   @override
   EngineResult record({int channel = 0}) => EngineResult.ok;
@@ -220,6 +222,11 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setMonitorInputDry({
     required int input,
     required int dryOutputMask,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
   }) => EngineResult.ok;
   @override
   EngineResult setMonitorInputFx({

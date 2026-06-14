@@ -57,6 +57,18 @@ extern "C" {
  * grain_phase is the OCTAVER pitch-shifter's read phase within a grain. A slot
  * is only ever one type at a time, so these reuse freely. Each lane and each
  * live monitor input owns one of these, running its own non-destructive chain. */
+/* Reverb (LE_FX_REVERB) is a Schroeder/Freeverb network: a bank of parallel
+ * damped comb filters summed into a chain of series allpass diffusers. It runs
+ * LE_REV_BANKS of those in parallel — a left and a right whose delay lines are
+ * offset by the Freeverb "stereo spread" so their tails decorrelate, turning a
+ * mono input into a wide stereo tail. All the lines are packed into the slot's
+ * single `delay` ring at fixed offsets; rev_comb_pos / rev_ap_pos are the
+ * per-line write heads (left bank first, then right) and rev_comb_lp the
+ * per-comb damping (one-pole low-pass) memory. */
+#define LE_REV_COMBS 8
+#define LE_REV_APS 4
+#define LE_REV_BANKS 2
+
 typedef struct le_fx_state {
   float svf_ic1[LE_FX_MAX];
   float svf_ic2[LE_FX_MAX];
@@ -65,6 +77,9 @@ typedef struct le_fx_state {
   int32_t delay_pos[LE_FX_MAX];
   float fx_lp[LE_FX_MAX];
   float grain_phase[LE_FX_MAX];
+  int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
+  float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
+  int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
 } le_fx_state;
 
 /* One recordable input lane — the fundamental unit of captured audio.
@@ -114,6 +129,8 @@ typedef struct le_monitor_input {
   _Atomic uint32_t a_output_mask; /* output channels the effected route plays to */
   _Atomic uint32_t a_dry_output_mask; /* outputs the CLEAN (pre-FX) signal goes
                                        * to — a parallel dry send (0 = off) */
+  _Atomic uint32_t a_vol_bits; /* monitor output gain (float bits, 0..1) applied
+                                * to both the wet and dry sends */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
@@ -188,14 +205,10 @@ struct le_engine {
   _Atomic int32_t a_buffer_frames;
   _Atomic int32_t a_in_channels;    /* negotiated hardware capture channels */
   _Atomic int32_t a_out_channels;   /* negotiated hardware playback channels */
-  /* 1 when the device opened in OS-exclusive mode, 0 for shared (incl. an
-   * exclusive request that fell back). Set once at device open in
-   * le_engine_start; published in the snapshot. */
-  _Atomic int32_t a_exclusive_active;
   /* le_audio_backend actually running, published in the snapshot. Set to
-   * LE_BACKEND_WASAPI in the configure/reset path and republished at device
+   * LE_BACKEND_MINIAUDIO in the configure/reset path and republished at device
    * open from the backend's negotiated le_device_open_result.active_backend
-   * (always WASAPI today). */
+   * (ASIO on Windows, miniaudio on macOS/Linux). */
   _Atomic int32_t a_active_backend;
   /* Input channels whose Core Audio label marks them as loopback; never
    * recorded, monitored, or routable. Computed once at device open. */
@@ -292,9 +305,13 @@ struct le_engine {
   float* lat_buf;      /* envelope capture (control-thread allocated) */
   int32_t lat_buf_cap; /* capacity in frames */
   int32_t lat_buf_pos; /* write head during a measurement */
+  /* Per-input monitor enable-states saved when a measurement begins, so the
+   * temporary monitor suppression (which avoids out->cable->in->monitor->out
+   * feedback during the pulse) is restored when the measurement finishes.
+   * Audio-thread-local: written/read only on the device callback. */
+  int32_t lat_saved_monitor_enabled[LE_MAX_INPUTS];
 
   char device_name[256];
-  int passthrough; /* input monitoring */
 
   /* Explicit context + resolved device ids, used when capturing from a detected
    * loopback device (use_loopback_capture) or when a device is pinned by id.

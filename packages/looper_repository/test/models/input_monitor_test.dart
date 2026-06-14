@@ -9,6 +9,7 @@ void main() {
       expect(monitor.enabled, isFalse);
       expect(monitor.outputMask, 0x3);
       expect(monitor.dryOutputMask, 0);
+      expect(monitor.volume, 1.0);
       expect(monitor.effects, isEmpty);
     });
 
@@ -18,22 +19,32 @@ void main() {
         enabled: true,
         outputMask: 0x1,
         dryOutputMask: 0x2,
+        volume: 0.5,
         effects: [TrackEffect(type: TrackEffectType.delay)],
       );
       expect(updated.input, 2);
       expect(updated.enabled, isTrue);
       expect(updated.outputMask, 0x1);
       expect(updated.dryOutputMask, 0x2);
+      expect(updated.volume, 0.5);
       expect(updated.effects.single.type, TrackEffectType.delay);
 
       // Omitted fields are preserved.
       expect(base.copyWith(enabled: true).outputMask, 0x3);
       expect(base.copyWith(enabled: true).dryOutputMask, 0);
+      expect(base.copyWith(enabled: true).volume, 1.0);
     });
 
     test('the dry-send mask participates in equality', () {
       expect(
         const InputMonitor(input: 0, dryOutputMask: 0x2),
+        isNot(const InputMonitor(input: 0)),
+      );
+    });
+
+    test('the volume participates in equality', () {
+      expect(
+        const InputMonitor(input: 0, volume: 0.5),
         isNot(const InputMonitor(input: 0)),
       );
     });

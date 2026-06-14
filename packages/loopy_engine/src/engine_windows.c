@@ -3,9 +3,9 @@
  * (engine_platform.h).
  *
  * The lifecycle hooks (backends/before-init/after-start/teardown) are no-ops:
- * the WASAPI/DirectSound path miniaudio selects by default needs no per-OS work.
+ * the default backend miniaudio selects on Windows needs no per-OS work.
  * Two hooks do real Windows work:
- *   - le_platform_device_id_to_str converts the WASAPI wchar device id to UTF-8
+ *   - le_platform_device_id_to_str converts the wchar device id to UTF-8
  *     (a narrow read collapses every id to its first character).
  *   - le_platform_excluded_input_mask excludes nothing by default; with the
  *     opt-in LOOPY_ENABLE_ASIO build it dispatches to the ASIO channel-label
@@ -21,7 +21,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <windows.h>  /* WideCharToMultiByte for WASAPI wchar device ids */
+#include <windows.h>  /* WideCharToMultiByte for wchar device ids */
 
 #include <stdint.h>
 
@@ -32,8 +32,7 @@
 #endif
 
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
-  /* miniaudio's default backend priority (WASAPI, then DirectSound, …) until
-   * ASIO opt-in lands. */
+  /* Use miniaudio's default backend priority for the platform. */
   *out_list = NULL;
   *out_count = 0;
 }
@@ -53,7 +52,7 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
    * 0 internally on any failure, so the contract is identical to the default. */
   return le_win_asio_excluded_mask(uid, channel_count);
 #else
-  /* Default Windows build: no per-channel label source (WASAPI/DeviceTopology
+  /* Default Windows build: no per-channel label source (the OS device API
    * cannot return channel name strings), so exclude nothing — same as Linux. */
   (void)uid;
   (void)channel_count;
@@ -63,8 +62,8 @@ uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count) {
 
 void le_platform_device_id_to_str(const ma_device_id* id, char* out,
                                   size_t cap) {
-  /* miniaudio defaults to the WASAPI backend on Windows, whose device id is a
-   * wchar_t endpoint string. Convert it to UTF-8 so ids stay unique and
+  /* miniaudio's Windows backend reports each device id as a wchar_t endpoint
+   * string. Convert it to UTF-8 so ids stay unique and
    * round-trippable; reading the union as a narrow char* (as the other
    * backends' string ids allow) would stop at the first UTF-16 NUL byte and
    * collapse every id to its first character (e.g. "{"), making every device

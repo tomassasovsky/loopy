@@ -19,7 +19,7 @@ void main() {
         ),
       );
 
-      expect(l10n.looperAppBarTitle, 'Loopy');
+      expect(l10n.appMenuLabel, 'Loopy');
       expect(l10n.saveSession, 'Save session');
       expect(l10n.trackStatePlaying, 'playing');
       expect(l10n.defaultTrackName(1), 'TRACK 1');

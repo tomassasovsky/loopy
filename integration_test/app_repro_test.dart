@@ -21,7 +21,6 @@ Future<void> main() async {
         bufferFrames: 128,
         inputChannels: 2,
         outputChannels: 2,
-        passthrough: true, // <-- matches the app default (monitorInput: true)
       ),
     );
     log('start -> ${r.name}, device "${engine.deviceName}"');

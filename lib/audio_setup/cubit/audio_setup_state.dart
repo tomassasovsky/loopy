@@ -1,12 +1,10 @@
 part of 'audio_setup_cubit.dart';
 
-/// A categorized audio-setup failure surfaced in the wizard error banner.
+/// A categorized audio-setup failure surfaced in the audio-settings error
+/// banner.
 enum AudioSetupError {
   /// The engine failed to open or reopen the device.
   openDeviceFailed,
-
-  /// The engine failed to start audio.
-  startAudioFailed,
 }
 
 /// Whether the audio device is currently open.
@@ -42,8 +40,6 @@ class AudioSetupState extends Equatable {
   const AudioSetupState({
     this.sampleRate = 48000,
     this.bufferFrames = 128,
-    this.monitorInput = true,
-    this.exclusive = false,
     this.maxLoopMinutes = 0,
     this.status = AudioSetupStatus.stopped,
     this.engineStatus = const EngineStatus(),
@@ -51,6 +47,11 @@ class AudioSetupState extends Equatable {
     this.devices = const [],
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
+    this.backend = AudioBackend.miniaudio,
+    this.asioDriver = '',
+    this.asioDrivers = const [],
+    this.cachedAsioDrivers = const [],
+    this.asioOnly = false,
     this.deviceConnectivity = DeviceConnectivity.none,
     this.connectivityDeviceName = '',
     this.error,
@@ -62,16 +63,6 @@ class AudioSetupState extends Equatable {
 
   /// Requested buffer (period) size in frames.
   final int bufferFrames;
-
-  /// Whether captured input is monitored to the output.
-  final bool monitorInput;
-
-  /// Whether OS-exclusive device access is requested (full control on Windows:
-  /// bypasses the mixer, native format). This is the user's *intent*; the
-  /// engine falls back to shared if exclusive is refused, and the negotiated
-  /// reality is read from [engineStatus]'s `exclusiveActive`. No effect off
-  /// Windows (the toggle is not shown there).
-  final bool exclusive;
 
   /// Maximum loop length per track, in whole minutes. `0` defers to the engine
   /// default. Applied on the next start (buffers are allocated at start).
@@ -96,6 +87,29 @@ class AudioSetupState extends Equatable {
   /// Selected capture device id, or empty for the system default.
   final String captureDeviceId;
 
+  /// The requested device backend (intent). Defaults to
+  /// [AudioBackend.miniaudio]; [AudioBackend.asio] is forced on Windows.
+  /// The negotiated reality is read from [engineStatus]'s `activeBackend`.
+  final AudioBackend backend;
+
+  /// The selected ASIO driver id, or empty when none is chosen. Meaningful only
+  /// when [backend] is [AudioBackend.asio].
+  final String asioDriver;
+
+  /// The installed ASIO drivers (one duplex [AudioDevice] each) for the driver
+  /// picker. Empty off Windows / on the default build.
+  final List<AudioDevice> asioDrivers;
+
+  /// The ASIO drivers enumerated once at process start, cached so the picker
+  /// stays populated even while ASIO holds the device (re-probing live would
+  /// tear the stream down — R1). [asioDrivers] falls back to this while live.
+  final List<AudioDevice> cachedAsioDrivers;
+
+  /// Whether this platform runs ASIO exclusively (Windows): the backend is
+  /// hardwired to ASIO, there is no backend selector or device picker, and the
+  /// no-driver / ASIO4ALL affordances apply. `false` on macOS/Linux.
+  final bool asioOnly;
+
   /// The most recent pinned-device connectivity transition (drives the banner).
   final DeviceConnectivity deviceConnectivity;
 
@@ -116,6 +130,39 @@ class AudioSetupState extends Equatable {
   List<AudioDevice> get captureDevices =>
       devices.where((d) => d.isInput).toList();
 
+  /// Whether the ASIO backend is the requested intent.
+  bool get isAsio => backend == AudioBackend.asio;
+
+  /// The currently selected ASIO driver from [asioDrivers], or `null` when none
+  /// matches [asioDriver].
+  AudioDevice? get selectedAsioDriver {
+    for (final driver in asioDrivers) {
+      if (driver.id == asioDriver) return driver;
+    }
+    return null;
+  }
+
+  /// The buffer-size options to offer the user: under ASIO, the selected
+  /// driver's real set (probed from the driver — e.g. a Focusrite locked to its
+  /// Focusrite Control setting); otherwise the generic [bufferSizes] list.
+  List<int> get bufferChoices {
+    final driver = selectedAsioDriver;
+    if (isAsio && driver != null && driver.bufferSizes.isNotEmpty) {
+      return driver.bufferSizes;
+    }
+    return bufferSizes;
+  }
+
+  /// The sample-rate options to offer: the selected ASIO driver's supported
+  /// rates under ASIO, otherwise the generic [sampleRates] list.
+  List<int> get sampleRateChoices {
+    final driver = selectedAsioDriver;
+    if (isAsio && driver != null && driver.sampleRates.isNotEmpty) {
+      return driver.sampleRates;
+    }
+    return sampleRates;
+  }
+
   /// Selectable sample rates.
   static const sampleRates = [44100, 48000, 96000];
 
@@ -129,8 +176,6 @@ class AudioSetupState extends Equatable {
   AudioSetupState copyWith({
     int? sampleRate,
     int? bufferFrames,
-    bool? monitorInput,
-    bool? exclusive,
     int? maxLoopMinutes,
     AudioSetupStatus? status,
     EngineStatus? engineStatus,
@@ -138,16 +183,20 @@ class AudioSetupState extends Equatable {
     List<AudioDevice>? devices,
     String? playbackDeviceId,
     String? captureDeviceId,
+    AudioBackend? backend,
+    String? asioDriver,
+    List<AudioDevice>? asioDrivers,
+    List<AudioDevice>? cachedAsioDrivers,
+    bool? asioOnly,
     DeviceConnectivity? deviceConnectivity,
     String? connectivityDeviceName,
     AudioSetupError? error,
     String? errorDetail,
+    bool clearError = false,
   }) {
     return AudioSetupState(
       sampleRate: sampleRate ?? this.sampleRate,
       bufferFrames: bufferFrames ?? this.bufferFrames,
-      monitorInput: monitorInput ?? this.monitorInput,
-      exclusive: exclusive ?? this.exclusive,
       maxLoopMinutes: maxLoopMinutes ?? this.maxLoopMinutes,
       status: status ?? this.status,
       engineStatus: engineStatus ?? this.engineStatus,
@@ -155,11 +204,18 @@ class AudioSetupState extends Equatable {
       devices: devices ?? this.devices,
       playbackDeviceId: playbackDeviceId ?? this.playbackDeviceId,
       captureDeviceId: captureDeviceId ?? this.captureDeviceId,
+      backend: backend ?? this.backend,
+      asioDriver: asioDriver ?? this.asioDriver,
+      asioDrivers: asioDrivers ?? this.asioDrivers,
+      cachedAsioDrivers: cachedAsioDrivers ?? this.cachedAsioDrivers,
+      asioOnly: asioOnly ?? this.asioOnly,
       deviceConnectivity: deviceConnectivity ?? this.deviceConnectivity,
       connectivityDeviceName:
           connectivityDeviceName ?? this.connectivityDeviceName,
-      error: error ?? this.error,
-      errorDetail: errorDetail ?? this.errorDetail,
+      // [clearError] resets the error on a successful (re)start, since nullable
+      // fields cannot otherwise be cleared through `?? this`.
+      error: clearError ? null : (error ?? this.error),
+      errorDetail: clearError ? null : (errorDetail ?? this.errorDetail),
     );
   }
 
@@ -167,8 +223,6 @@ class AudioSetupState extends Equatable {
   List<Object?> get props => [
     sampleRate,
     bufferFrames,
-    monitorInput,
-    exclusive,
     maxLoopMinutes,
     status,
     engineStatus,
@@ -176,6 +230,11 @@ class AudioSetupState extends Equatable {
     devices,
     playbackDeviceId,
     captureDeviceId,
+    backend,
+    asioDriver,
+    asioDrivers,
+    cachedAsioDrivers,
+    asioOnly,
     deviceConnectivity,
     connectivityDeviceName,
     error,

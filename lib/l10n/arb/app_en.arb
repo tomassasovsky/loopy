@@ -20,21 +20,12 @@
         }
     },
     "dismiss": "Dismiss",
-    "sessionSaved": "Session saved",
-    "sessionLoaded": "Session loaded",
     "mixdownExported": "Mixdown exported",
     "stemsExported": "Stems exported",
-    "looperAppBarTitle": "Loopy",
-    "sessionTooltip": "Session",
     "saveSession": "Save session",
     "loadSession": "Load session",
     "exportMixdown": "Export mixdown",
     "exportStems": "Export stems",
-    "playAllTooltip": "Play all",
-    "stopAllTooltip": "Stop all",
-    "bigPictureTooltip": "Big picture",
-    "audioSetupTooltip": "Audio setup",
-    "masterLoopLabel": "Master loop",
     "engineStoppedBanner": "Audio engine stopped — open setup to start.",
     "trackNumberLabel": "Track {trackNumber}",
     "@trackNumberLabel": {
@@ -53,49 +44,15 @@
         }
     },
     "ioRoutingTooltip": "I/O routing",
-    "recordButton": "Record",
-    "finishButton": "Finish",
-    "stopDubButton": "Stop dub",
-    "overdubButton": "Overdub",
     "stopButton": "Stop",
-    "playButton": "Play",
-    "undoButton": "Undo",
-    "redoButton": "Redo",
-    "clearButton": "Clear",
-    "muteTooltip": "Mute",
-    "unmuteTooltip": "Unmute",
     "trackStateEmpty": "empty",
     "trackStateRecording": "recording",
     "trackStateOverdubbing": "overdubbing",
     "trackStatePlaying": "playing",
     "trackStateStopped": "stopped",
-    "noDevice": "no device",
     "measuringLowercase": "measuring…",
     "noLoopback": "no loopback",
     "emDash": "—",
-    "engineStatusFooter": "{deviceName} · {sampleRate} Hz · {bufferFrames} frames · {inputChannels} in / {outputChannels} out · latency {latency}",
-    "@engineStatusFooter": {
-        "placeholders": {
-            "deviceName": {
-                "type": "String"
-            },
-            "sampleRate": {
-                "type": "int"
-            },
-            "bufferFrames": {
-                "type": "int"
-            },
-            "inputChannels": {
-                "type": "int"
-            },
-            "outputChannels": {
-                "type": "int"
-            },
-            "latency": {
-                "type": "String"
-            }
-        }
-    },
     "performanceModeRec": "REC",
     "performanceModePlay": "PLAY",
     "renameTrackTitle": "Rename track {trackNumber}",
@@ -148,8 +105,6 @@
     "bigPictureTitle": "Big Picture",
     "bpSettingsViewIntro": "Switch layouts, tune performance defaults, and toggle the secondary output-waveform window.",
     "viewGroupLabel": "VIEW",
-    "bigPictureModeTitle": "Big Picture mode",
-    "bigPictureModeSubtitle": "Full-screen performance layout",
     "waveformWindowTitle": "Output waveform window",
     "waveformWindowSubtitle": "Open a second window showing the whole-loop output waveform",
     "performanceGroupLabel": "PERFORMANCE",
@@ -235,36 +190,32 @@
     "monitorGraphHint": "Tap an input to monitor it, then tap outputs to send it there.",
     "effectedSegment": "Effected",
     "drySegment": "Dry",
+    "monitorVolumeLabel": "Level",
     "legendEffectedWet": "effected (wet) → outs",
     "legendCleanDry": "clean (dry) → outs",
     "configureInputMonitoring": "Configure input monitoring",
     "monitorRoutingIntro": "Monitor inputs live through their own effects (wet) and/or as a clean dry send — routed to the outputs you pick. Never recorded.",
     "startEngineForMonitorChannels": "Start the engine to choose monitor channels.",
-    "setupStepAudioEngine": "Audio engine",
-    "setupStepInput": "Input",
-    "setupStepReady": "Ready to play",
-    "audioSetupKicker": "AUDIO SETUP",
-    "audioDeviceTitle": "Audio device",
-    "audioSetupRailIntro": "Configure your interface for low-latency looping.",
-    "back": "Back",
     "startEngine": "Start engine",
-    "continueButton": "Continue",
-    "outputDeviceGroup": "Output device",
     "sampleRateGroup": "Sample rate",
     "bufferSizeGroup": "Buffer size",
-    "inputDeviceGroup": "Input device",
-    "monitorInputTitle": "Monitor input",
-    "monitorInputSubtitle": "Hear the live input through the outputs.",
-    "exclusiveModeTitle": "Exclusive mode",
-    "exclusiveModeSubtitle": "Take exclusive control of the interface for lower latency, bypassing the Windows mixer. Falls back to shared if unavailable.",
-    "exclusiveSharedFallback": "Shared mode — the device refused exclusive access.",
+    "asioDriverGroup": "ASIO driver",
+    "asioChannelCounts": "{inputs} in / {outputs} out",
+    "@asioChannelCounts": {
+        "placeholders": {
+            "inputs": {
+                "type": "int"
+            },
+            "outputs": {
+                "type": "int"
+            }
+        }
+    },
+    "noAsioDriverTitle": "No ASIO driver found",
+    "noAsioDriverMessage": "Loopy uses ASIO on Windows. Install your interface's ASIO driver, or get a generic one from ASIO4ALL, then reopen settings.",
+    "downloadAsio4all": "Get ASIO4ALL",
     "sampleRateLabel": "Sample rate",
     "bufferLabel": "Buffer",
-    "estimatedLatencyLabel": "Estimated latency",
-    "monitorInputLabel": "Monitor input",
-    "defaultDevice": "Default device",
-    "liveKicker": "LIVE",
-    "engineRunningHint": "The engine is open and ready. Stop it to reconfigure.",
     "roundTripLatencyLabel": "Round-trip latency",
     "recordOffsetLabel": "Record offset",
     "applyLabel": "Set",
@@ -334,19 +285,11 @@
             }
         }
     },
-    "loopbackKindWasapi": "WASAPI",
+    "loopbackKindBackend": "loopback",
     "loopbackKindMonitor": "monitor",
     "loopbackKindVirtualDevice": "virtual",
     "failedToOpenDevice": "Failed to open device: {errorName}",
     "@failedToOpenDevice": {
-        "placeholders": {
-            "errorName": {
-                "type": "String"
-            }
-        }
-    },
-    "failedToStartAudio": "Failed to start audio: {errorName}",
-    "@failedToStartAudio": {
         "placeholders": {
             "errorName": {
                 "type": "String"
@@ -394,6 +337,7 @@
     "effectTremolo": "Tremolo",
     "effectOctaver": "Octaver",
     "effectEcho": "Echo",
+    "effectReverb": "Reverb",
     "paramDrive": "Drive",
     "paramLevel": "Level",
     "paramCutoff": "Cutoff",
@@ -405,6 +349,8 @@
     "paramDepth": "Depth",
     "paramShift": "Shift",
     "paramTone": "Tone",
+    "paramSize": "Size",
+    "paramDamping": "Damping",
     "pitchUnison": "Unison",
     "pitchOctaves": "{sign}{count} oct",
     "@pitchOctaves": {

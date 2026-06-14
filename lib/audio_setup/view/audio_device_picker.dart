@@ -6,8 +6,7 @@ import 'package:loopy/theme/surface_theme.dart';
 /// A dark-styled dropdown that picks an audio device by id: "System default"
 /// (empty id) plus the enumerated [devices]. A selected id that is no longer
 /// present (e.g. an unplugged pinned device) falls back to the default so the
-/// dropdown value stays valid. Shared by the audio-setup wizard and the
-/// in-settings audio section.
+/// dropdown value stays valid. Used by the in-settings audio section.
 class AudioDevicePicker extends StatelessWidget {
   /// Creates an [AudioDevicePicker].
   const AudioDevicePicker({

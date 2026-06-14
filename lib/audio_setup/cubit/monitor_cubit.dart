@@ -46,17 +46,15 @@ class MonitorCubit extends Cubit<MonitorState> {
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
 
-  /// Hardware-input ceiling scanned on restore (matches the engine's
-  /// `LE_MAX_INPUTS`). Only inputs with saved state populate the map.
-  static const int _maxInputs = 8;
-
   /// Restores the persisted per-input monitors and applies them to the
   /// repository.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
+    // Scan the shared engine input ceiling ([kMaxInputs] == `LE_MAX_INPUTS`).
+    // Only inputs with saved state populate the map.
     final loaded = await Future.wait([
-      for (var input = 0; input < _maxInputs; input++) _restoreInput(input),
+      for (var input = 0; input < kMaxInputs; input++) _restoreInput(input),
     ]);
     if (isClosed) return;
     final restored = <int, InputMonitor>{};
@@ -66,10 +64,9 @@ class MonitorCubit extends Cubit<MonitorState> {
     emit(MonitorState(inputs: restored));
     for (final monitor in restored.values) {
       _applyRouting(monitor);
-      _repository.setMonitorEffects(
-        input: monitor.input,
-        effects: monitor.effects,
-      );
+      _repository
+        ..setMonitorVolume(input: monitor.input, volume: monitor.volume)
+        ..setMonitorEffects(input: monitor.input, effects: monitor.effects);
     }
   }
 
@@ -79,12 +76,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     final effects = decodeTrackEffects(
       await _settings.loadMonitorInputEffects(input),
     );
-    if (routing == null && effects.isEmpty) return null;
+    final volume = await _settings.loadMonitorInputVolume(input);
+    if (routing == null && effects.isEmpty && volume == null) return null;
     return InputMonitor(
       input: input,
       enabled: routing?.$1 ?? false,
       outputMask: routing?.$2 ?? 0x3,
       dryOutputMask: await _settings.loadMonitorInputDry(input),
+      volume: volume ?? 1.0,
       effects: effects,
     );
   }
@@ -113,6 +112,15 @@ class MonitorCubit extends Cubit<MonitorState> {
     emit(state.withInput(monitor));
     _applyRouting(monitor);
     await _persistRouting(monitor);
+  }
+
+  /// Sets and persists hardware [input]'s monitor output gain ([volume],
+  /// `0..1`), applied to both its effected and dry sends.
+  Future<void> setVolume(int input, double volume) async {
+    final monitor = state.forInput(input).copyWith(volume: volume);
+    emit(state.withInput(monitor));
+    _repository.setMonitorVolume(input: input, volume: volume);
+    await _settings.saveMonitorInputVolume(input, volume);
   }
 
   /// Appends a default effect (drive) to hardware [input]'s monitor chain.

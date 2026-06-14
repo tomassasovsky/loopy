@@ -1,12 +1,11 @@
 /*
  * engine_miniaudio.h — the miniaudio device backend (le_device_backend.h).
  *
- * Exposes the single device backend this build ships: it owns the miniaudio
- * device lifecycle (context init, pin/loopback resolution, the WASAPI
- * exclusive-mode fallback, ma_device_init/start/uninit, and the data /
- * notification callbacks) behind the le_device_backend vtable. The portable
- * core (engine.c) drives it through le_select_backend and never touches
- * ma_device_* directly.
+ * Exposes the cross-platform device backend (Core Audio on macOS, ALSA/etc. on
+ * Linux): it owns the miniaudio device lifecycle (context init, pin/loopback
+ * resolution, ma_device_init/start/uninit, and the data / notification
+ * callbacks) behind the le_device_backend vtable. The portable core (engine.c)
+ * drives it through le_select_backend and never touches ma_device_* directly.
  *
  * Purely internal: NOT part of the FFI surface (loopy_engine_api.h) or ffigen.
  */

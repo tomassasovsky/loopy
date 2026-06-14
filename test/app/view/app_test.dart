@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
-import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
@@ -86,7 +85,11 @@ void main() {
       expect(find.byType(BigPictureView), findsOneWidget);
     });
 
-    testWidgets('first run shows the audio setup start screen', (tester) async {
+    testWidgets('always lands on the looper — no first-run gate', (
+      tester,
+    ) async {
+      // The wizard and the needsSetup gate are gone; the app renders the looper
+      // directly even with no saved audio config.
       await tester.pumpWidget(
         App(
           repository: repository,
@@ -95,13 +98,11 @@ void main() {
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
           sessionDirectory: () async => '.',
-          needsSetup: true,
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(AudioSetupView), findsOneWidget);
-      expect(find.byType(LooperPage), findsNothing);
+      expect(find.byType(LooperPage), findsOneWidget);
     });
 
     testWidgets('opens the waveform window on launch in big picture', (
@@ -125,8 +126,8 @@ void main() {
       expect(windowService.isOpen, isFalse);
     });
 
-    testWidgets('right-click opens settings; switching to desktop closes the '
-        'window', (tester) async {
+    testWidgets('right-click opens settings; disabling the waveform window '
+        'closes it', (tester) async {
       final windowService = _RecordingWindowService();
       await pumpApp(tester, windowService);
       expect(windowService.isOpen, isTrue);
@@ -138,12 +139,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(BigPictureSettingsPage), findsOneWidget);
 
-      // Turn Big Picture off -> desktop layout; the waveform window closes.
-      await tester.tap(find.byKey(const Key('bpSettings_bigPicture_switch')));
+      // Disable the secondary waveform window; it closes (Big Picture is the
+      // only mode now, so the window follows this enable toggle alone).
+      await tester.tap(
+        find.byKey(const Key('bpSettings_waveformWindow_switch')),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.byType(LooperView), findsOneWidget);
       expect(windowService.isOpen, isFalse);
+
+      // Close the settings page so the global open-guard resets for the next
+      // test (the toggle no longer navigates away on its own).
+      await tester.tap(find.byKey(const Key('bpSettings_close_button')));
+      await tester.pumpAndSettle();
+
+      // The layout never swaps — Big Picture is the only mode.
+      expect(find.byType(BigPictureView), findsOneWidget);
     });
 
     testWidgets('the S key opens the settings page', (tester) async {

@@ -10,6 +10,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// The audio controls embedded in the Big Picture settings "Audio" section,
 /// driven by the shared [AudioSetupCubit]: pick the playback/capture device
@@ -32,23 +33,50 @@ class AudioSettingsSection extends StatelessWidget {
       children: [
         Text(l10n.audioSettingsIntro, style: setupBody),
         const SizedBox(height: 28),
-        SetupGroupLabel(l10n.outputDeviceGroupUpper),
-        const SizedBox(height: 12),
-        AudioDevicePicker(
-          pickerKey: 'audioSettings_playbackDevice_picker',
-          devices: state.playbackDevices,
-          selectedId: state.playbackDeviceId,
-          onSelected: cubit.setPlaybackDevice,
-        ),
-        const SizedBox(height: 24),
-        SetupGroupLabel(l10n.inputDeviceGroupUpper),
-        const SizedBox(height: 12),
-        AudioDevicePicker(
-          pickerKey: 'audioSettings_captureDevice_picker',
-          devices: state.captureDevices,
-          selectedId: state.captureDeviceId,
-          onSelected: cubit.setCaptureDevice,
-        ),
+        // Engine errors are surfaced here (the only audio surface now that the
+        // wizard is gone): a failed open/start from a setting change shows its
+        // reason inline.
+        if (state.status == AudioSetupStatus.error && state.error != null) ...[
+          _ErrorBanner(error: state.error!, detail: state.errorDetail ?? ''),
+          const SizedBox(height: 20),
+        ],
+        // Windows runs ASIO exclusively: one driver picker, no backend selector
+        // or device pickers. With no driver installed, an ASIO4ALL affordance
+        // shows instead. macOS/Linux keep the output + input device pickers.
+        if (state.asioOnly) ...[
+          if (state.cachedAsioDrivers.isEmpty)
+            const _NoAsioDriverMessage()
+          else ...[
+            SetupGroupLabel(l10n.asioDriverGroup),
+            const SizedBox(height: 12),
+            AudioDevicePicker(
+              pickerKey: 'audioSettings_asioDriver_picker',
+              // The cached enumeration stays populated even while ASIO holds
+              // the device (re-probing live would tear the stream down — R1).
+              devices: _asioDriverDevices(l10n, state.cachedAsioDrivers),
+              selectedId: state.asioDriver,
+              onSelected: cubit.setAsioDriver,
+            ),
+          ],
+        ] else ...[
+          SetupGroupLabel(l10n.outputDeviceGroupUpper),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSettings_playbackDevice_picker',
+            devices: state.playbackDevices,
+            selectedId: state.playbackDeviceId,
+            onSelected: cubit.setPlaybackDevice,
+          ),
+          const SizedBox(height: 24),
+          SetupGroupLabel(l10n.inputDeviceGroupUpper),
+          const SizedBox(height: 12),
+          AudioDevicePicker(
+            pickerKey: 'audioSettings_captureDevice_picker',
+            devices: state.captureDevices,
+            selectedId: state.captureDeviceId,
+            onSelected: cubit.setCaptureDevice,
+          ),
+        ],
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),
@@ -56,7 +84,8 @@ class AudioSettingsSection extends StatelessWidget {
           selected: state.sampleRate,
           onSelected: cubit.setSampleRate,
           options: [
-            for (final rate in AudioSetupState.sampleRates)
+            // Driver-supported rates under ASIO, else the generic list.
+            for (final rate in state.sampleRateChoices)
               SetupOption(
                 value: rate,
                 label: l10n.sampleRateHz(rate),
@@ -71,7 +100,9 @@ class AudioSettingsSection extends StatelessWidget {
           selected: state.bufferFrames,
           onSelected: cubit.setBufferFrames,
           options: [
-            for (final size in AudioSetupState.bufferSizes)
+            // Driver buffer sizes under ASIO (often a single locked size), else
+            // the generic list.
+            for (final size in state.bufferChoices)
               SetupOption(
                 value: size,
                 label: '$size',
@@ -82,15 +113,9 @@ class AudioSettingsSection extends StatelessWidget {
         ),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.monitoringGroupLabel),
-        const SizedBox(height: 12),
-        SetupToggleRow(
-          toggleKey: const Key('audioSettings_monitor_switch'),
-          title: l10n.monitorInputTitle,
-          subtitle: l10n.monitorInputSubtitle,
-          value: state.monitorInput,
-          onChanged: (on) => cubit.setMonitorInput(monitorInput: on),
-        ),
-        if (state.monitorInput) ..._monitorRouting(context, status),
+        // The per-input routing graph is the single monitor surface (each input
+        // carries its own enable), so there is no master toggle to gate it.
+        ..._monitorRouting(context, status),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.recordingGroupLabel),
         const SizedBox(height: 12),
@@ -244,6 +269,26 @@ class AudioSettingsSection extends StatelessWidget {
     ];
   }
 
+  /// The enumerated ASIO [drivers] as duplex devices labelled with their probed
+  /// channel counts (e.g. "Focusrite USB ASIO · 18 in / 20 out"), for the
+  /// driver picker shown under the ASIO backend.
+  List<AudioDevice> _asioDriverDevices(
+    AppLocalizations l10n,
+    List<AudioDevice> drivers,
+  ) => [
+    for (final d in drivers)
+      AudioDevice(
+        id: d.id,
+        name:
+            '${d.name} · '
+            '${l10n.asioChannelCounts(d.inputChannels, d.outputChannels)}',
+        isDefault: d.isDefault,
+        isInput: d.isInput,
+        inputChannels: d.inputChannels,
+        outputChannels: d.outputChannels,
+      ),
+  ];
+
   /// A friendly device name for the status row. The JACK backend (Linux) only
   /// reports a generic "Default ... Device", so prefer the name of the device
   /// the user selected; fall back to the engine's reported name.
@@ -275,6 +320,111 @@ class AudioSettingsSection extends StatelessWidget {
         LatencyState.timeout => l10n.noSignalDetected,
         LatencyState.idle => l10n.notMeasured,
       };
+}
+
+/// An inline banner showing the categorized engine error and its detail, shown
+/// in [AudioSettingsSection] when the engine failed to open/start. Ported from
+/// the removed wizard; reuses the same l10n keys.
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.error, required this.detail});
+
+  final AudioSetupError error;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    final message = switch (error) {
+      AudioSetupError.openDeviceFailed => l10n.failedToOpenDevice(detail),
+    };
+    return Container(
+      key: const Key('audioSettings_error_banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The ASIO4ALL download page — a generic ASIO driver for interfaces without
+/// their own. Linked, never bundled (its license forbids redistribution).
+final Uri _asio4allUri = Uri.parse('https://asio4all.org');
+
+/// A labelled link that opens the ASIO4ALL download page in the external
+/// browser via `url_launcher`.
+class _Asio4AllLink extends StatelessWidget {
+  const _Asio4AllLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        key: const Key('audioSettings_asio4all_link'),
+        onPressed: () => unawaited(
+          launchUrl(_asio4allUri, mode: LaunchMode.externalApplication),
+        ),
+        icon: const Icon(Icons.open_in_new, size: 16),
+        label: Text(context.l10n.downloadAsio4all),
+      ),
+    );
+  }
+}
+
+/// Shown on Windows when no ASIO driver is installed: explains that Loopy needs
+/// ASIO and offers the ASIO4ALL link (the engine cannot start with no driver).
+class _NoAsioDriverMessage extends StatelessWidget {
+  const _NoAsioDriverMessage();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      key: const Key('audioSettings_noAsioDriver'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SetupGroupLabel(l10n.asioDriverGroup),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.noAsioDriverTitle,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Text(l10n.noAsioDriverMessage, style: setupBody),
+              const SizedBox(height: 6),
+              const _Asio4AllLink(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Manual record-offset (latency compensation) entry, in frames. A fallback for

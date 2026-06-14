@@ -9,7 +9,7 @@
  *
  * Scope and guarantees:
  *   - Label probe ONLY. Capture/playback never touch ASIO — they stay on
- *     miniaudio/WASAPI. This file opens the ASIO driver briefly, reads names,
+ *     miniaudio. This file opens the ASIO driver briefly, reads names,
  *     and closes it.
  *   - Degrades to 0 (exclude nothing) on ANY failure or ambiguity. The feature
  *     being unavailable is correct behaviour; the engine never errors because a
@@ -17,13 +17,14 @@
  *   - Prefer no-match over wrong-match: a mask that excludes the WRONG channels
  *     is worse than the no-op default, so any uncertainty returns 0.
  *
- * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is NOT vendored
- * into this MIT repo. It is user-supplied via LOOPY_ASIO_SDK_DIR and .gitignored.
+ * Licensing: the Steinberg ASIO SDK is GPLv3-or-proprietary and is vendored
+ * under third_party/asiosdk (this repo is GPL-3.0-or-later).
  *
- * The ASIO↔WASAPI device-matching heuristic below is deliberately conservative
+ * The ASIO↔miniaudio device-matching heuristic below is deliberately conservative
  * pending the PR2 hardware spike (does the interface expose a name that reliably
- * maps a WASAPI uid to one ASIO driver?). Until that is answered on real
- * hardware, multi-driver rigs fall through to 0 rather than risk a wrong match.
+ * maps a miniaudio device id to one ASIO driver?). Until that is answered on
+ * real hardware, multi-driver rigs fall through to 0 rather than risk a wrong
+ * match.
  */
 #if defined(_WIN32) && defined(LOOPY_ENABLE_ASIO)
 
@@ -35,18 +36,22 @@
 #include <string.h>
 
 // User-supplied Steinberg ASIO SDK (LOOPY_ASIO_SDK_DIR on the include path).
+// asiosys.h MUST precede asio.h: it defines the platform macros asio.h reads to
+// pick its native types (e.g. ASIOSampleRate = double on Windows).
+#include "asiosys.h"
 #include "asio.h"
 #include "asiodrivers.h"
-#include "asiosys.h"
+
+// loadAsioDriver() is defined in the SDK host glue (asiodrivers.cpp) but declared
+// in no SDK header, so the host declares it itself (as hostsample.cpp does). C++
+// linkage — keep it OUTSIDE the extern "C" engine includes below.
+bool loadAsioDriver(char* name);
 
 extern "C" {
 #include "engine_internal.h"  // le_excluded_mask_from_names, le_channel_name_fn
 #include "loopy_engine_api.h"  // LE_MAX_CHANNELS
 #include "win_asio_labels.h"   // le_win_asio_excluded_mask prototype
 }
-
-// asiodrivers.h declares loadAsioDriver() and the asioDrivers global; both are
-// defined in the SDK host sources (asiodrivers.cpp) the CMake adds when ON.
 
 namespace {
 
@@ -88,9 +93,9 @@ bool contains_ci_ascii(const char* haystack, const char* needle) {
 // Chooses the ASIO driver index for `uid`, or -1 if none / ambiguous.
 //
 // A single installed driver is unambiguous and used directly. With several
-// drivers we look for exactly one whose name relates to the WASAPI `uid`; any
+// drivers we look for exactly one whose name relates to the miniaudio `uid`; any
 // other count (zero or 2+ matches) returns -1 so the caller degrades to no-op.
-// The WASAPI uid is an opaque endpoint string, so this match is best-effort and
+// The uid is an opaque endpoint string, so this match is best-effort and
 // the precise rule is the spike's open question — bias is toward no-match.
 int choose_driver(char* const* names, long driver_count, const char* uid) {
   if (driver_count <= 0) return -1;

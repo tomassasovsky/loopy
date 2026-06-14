@@ -14,8 +14,8 @@ enum LoopbackKind {
   /// No loopback path detected.
   none,
 
-  /// Windows WASAPI built-in output loopback (detected, not auto-routed).
-  wasapi,
+  /// The device backend's built-in output loopback (detected, not auto-routed).
+  backendLoopback,
 
   /// PulseAudio "Monitor of …" source (Linux).
   monitor,
@@ -26,7 +26,7 @@ enum LoopbackKind {
   /// Maps a native `le_loopback_kind` integer to a [LoopbackKind].
   static LoopbackKind fromCode(int code) => switch (code) {
     0 => LoopbackKind.none,
-    1 => LoopbackKind.wasapi,
+    1 => LoopbackKind.backendLoopback,
     2 => LoopbackKind.monitor,
     3 => LoopbackKind.virtualDevice,
     _ => LoopbackKind.none,
@@ -71,7 +71,7 @@ class LoopbackInfo {
   final LoopbackKind kind;
 
   /// The capture device to open for an auto-measurement, or empty when the
-  /// loopback is the backend's built-in path (WASAPI) that is not auto-routed.
+  /// loopback is the backend's built-in path that is not auto-routed.
   final String deviceName;
 
   /// Whether the engine can auto-route capture from this loopback (i.e. there

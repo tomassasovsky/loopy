@@ -35,23 +35,35 @@ void main() {
     when(repository.detectLoopback).thenReturn(const LoopbackInfo.none());
     when(() => repository.setRecordOffset(any())).thenReturn(EngineResult.ok);
     when(repository.devices).thenReturn(const []);
+    when(repository.asioDrivers).thenReturn(const []);
   });
 
   tearDown(() => stateController.close());
 
-  AudioSetupCubit buildCubit({bool defaultExclusive = false}) =>
-      AudioSetupCubit(
-        repository: repository,
-        settings: settings,
-        defaultExclusive: defaultExclusive,
-      );
+  AudioSetupCubit buildCubit({
+    bool asioSelectable = false,
+    List<AudioDevice> initialAsioDrivers = const [],
+  }) => AudioSetupCubit(
+    repository: repository,
+    settings: settings,
+    asioSelectable: asioSelectable,
+    initialAsioDrivers: initialAsioDrivers,
+  );
+
+  const mockAsioDriver = AudioDevice(
+    id: 'Focusrite USB ASIO',
+    name: 'Focusrite USB ASIO',
+    isDefault: false,
+    isInput: false,
+    inputChannels: 18,
+    outputChannels: 20,
+  );
 
   test('initial state has sensible defaults', () {
     final cubit = buildCubit();
     addTearDown(cubit.close);
     expect(cubit.state.sampleRate, 48000);
     expect(cubit.state.bufferFrames, 128);
-    expect(cubit.state.monitorInput, isTrue);
     expect(cubit.state.status, AudioSetupStatus.stopped);
   });
 
@@ -79,7 +91,6 @@ void main() {
     expect(cubit.state.status, AudioSetupStatus.running);
     expect(cubit.state.sampleRate, 96000);
     expect(cubit.state.bufferFrames, 256);
-    expect(cubit.state.monitorInput, isFalse);
     expect(cubit.state.engineStatus.deviceName, 'Scarlett');
   });
 
@@ -88,16 +99,17 @@ void main() {
     build: buildCubit,
     act: (cubit) => cubit
       ..setSampleRate(96000)
-      ..setBufferFrames(64)
-      ..setMonitorInput(monitorInput: false),
+      ..setBufferFrames(64),
+    // Each setter also (re)starts the engine from the stopped default (D3), so
+    // a `running` status lands between the two requested-config changes.
     expect: () => [
       isA<AudioSetupState>().having((s) => s.sampleRate, 'sampleRate', 96000),
-      isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
       isA<AudioSetupState>().having(
-        (s) => s.monitorInput,
-        'monitorInput',
-        false,
+        (s) => s.status,
+        'status',
+        AudioSetupStatus.running,
       ),
+      isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
     ],
   );
 
@@ -116,116 +128,14 @@ void main() {
       const EngineConfig(
         sampleRate: 48000,
         bufferFrames: 128,
-        passthrough: true,
       ),
     );
   }
 
   blocTest<AudioSetupCubit, AudioSetupState>(
-    'setMonitorInput while running reopens the device and persists it',
-    setUp: seedRunning,
+    'a setting change uses the selected max loop length (minutes -> frames)',
     build: buildCubit,
-    act: (cubit) => cubit.setMonitorInput(monitorInput: false),
-    expect: () => [
-      isA<AudioSetupState>().having(
-        (s) => s.monitorInput,
-        'monitorInput',
-        false,
-      ),
-    ],
-    verify: (_) async {
-      verify(repository.stopEngine).called(1);
-      verify(
-        () => repository.startEngine(
-          const EngineConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-          ),
-        ),
-      ).called(1);
-      expect((await settings.loadAudioConfig())?.monitorInput, isFalse);
-    },
-  );
-
-  group('exclusive mode', () {
-    test('defaults to the injected platform default (on) when unset', () {
-      final cubit = buildCubit(defaultExclusive: true);
-      addTearDown(cubit.close);
-      expect(cubit.state.exclusive, isTrue);
-    });
-
-    test('defaults to the injected platform default (off) when unset', () {
-      final cubit = buildCubit();
-      addTearDown(cubit.close);
-      expect(cubit.state.exclusive, isFalse);
-    });
-
-    test('hydrates the persisted intent over the platform default', () {
-      when(() => repository.lastEngineConfig).thenReturn(
-        // Saved intent (exclusive off) must win over the injected on-default.
-        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
-      );
-      final cubit = buildCubit(defaultExclusive: true);
-      addTearDown(cubit.close);
-      expect(cubit.state.exclusive, isFalse);
-    });
-
-    blocTest<AudioSetupCubit, AudioSetupState>(
-      'setExclusive while running reopens with exclusive and persists it',
-      setUp: seedRunning,
-      build: buildCubit,
-      act: (cubit) => cubit.setExclusive(exclusive: true),
-      expect: () => [
-        isA<AudioSetupState>().having((s) => s.exclusive, 'exclusive', true),
-      ],
-      verify: (_) async {
-        verify(repository.stopEngine).called(1);
-        verify(
-          () => repository.startEngine(
-            const EngineConfig(
-              sampleRate: 48000,
-              bufferFrames: 128,
-              passthrough: true,
-              exclusive: true,
-            ),
-          ),
-        ).called(1);
-        expect((await settings.loadAudioConfig())?.exclusive, isTrue);
-      },
-    );
-
-    blocTest<AudioSetupCubit, AudioSetupState>(
-      'setExclusive with the unchanged value is a no-op (no reopen)',
-      // Host default is non-Windows in tests, so initial exclusive is false.
-      build: buildCubit,
-      act: (cubit) => cubit.setExclusive(exclusive: false),
-      expect: () => const <AudioSetupState>[],
-      verify: (_) => verifyNever(repository.stopEngine),
-    );
-
-    blocTest<AudioSetupCubit, AudioSetupState>(
-      'start carries the exclusive intent through to the engine',
-      build: () => buildCubit(defaultExclusive: true),
-      act: (cubit) => cubit.start(),
-      verify: (_) => verify(
-        () => repository.startEngine(
-          const EngineConfig(
-            sampleRate: 48000,
-            bufferFrames: 128,
-            passthrough: true,
-            exclusive: true,
-          ),
-        ),
-      ).called(1),
-    );
-  });
-
-  blocTest<AudioSetupCubit, AudioSetupState>(
-    'start uses the selected max loop length (minutes -> frames)',
-    build: buildCubit,
-    act: (cubit) => cubit
-      ..setMaxLoopMinutes(5)
-      ..start(),
+    act: (cubit) => cubit.setMaxLoopMinutes(5),
     expect: () => [
       isA<AudioSetupState>().having(
         (s) => s.maxLoopMinutes,
@@ -245,7 +155,6 @@ void main() {
           const EngineConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            passthrough: true,
             maxLoopFrames: 14400000,
           ),
         ),
@@ -280,10 +189,15 @@ void main() {
   });
 
   blocTest<AudioSetupCubit, AudioSetupState>(
-    'start opens the engine with the current options',
+    'a setting change from stopped (re)starts the engine',
     build: buildCubit,
-    act: (cubit) => cubit.start(),
+    act: (cubit) => cubit.setBufferFrames(64),
     expect: () => [
+      isA<AudioSetupState>().having(
+        (s) => s.bufferFrames,
+        'bufferFrames',
+        64,
+      ),
       isA<AudioSetupState>().having(
         (s) => s.status,
         'status',
@@ -294,33 +208,60 @@ void main() {
       () => repository.startEngine(
         const EngineConfig(
           sampleRate: 48000,
-          bufferFrames: 128,
-          passthrough: true,
+          bufferFrames: 64,
         ),
       ),
     ).called(1),
   );
 
   blocTest<AudioSetupCubit, AudioSetupState>(
-    'start surfaces an error when the engine fails',
+    'a failed open surfaces an error',
     build: buildCubit,
     setUp: () => when(
       () => repository.startEngine(any()),
     ).thenReturn(EngineResult.device),
-    act: (cubit) => cubit.start(),
+    act: (cubit) => cubit.setBufferFrames(64),
     expect: () => [
+      isA<AudioSetupState>().having((s) => s.bufferFrames, 'bufferFrames', 64),
       isA<AudioSetupState>()
           .having((s) => s.status, 'status', AudioSetupStatus.error)
-          .having((s) => s.error, 'error', AudioSetupError.startAudioFailed)
+          .having((s) => s.error, 'error', AudioSetupError.openDeviceFailed)
           .having((s) => s.errorDetail, 'errorDetail', isNotNull),
     ],
   );
 
   blocTest<AudioSetupCubit, AudioSetupState>(
-    'stop closes the engine',
+    'a non-startable config (ASIO, no driver) persists but does not start',
+    // Windows with no ASIO driver: the backend is ASIO but the config is
+    // incomplete, so a setting change persists without booting audio.
+    build: () => buildCubit(asioSelectable: true),
+    act: (cubit) => cubit.setBufferFrames(64),
+    verify: (_) async {
+      verifyNever(() => repository.startEngine(any()));
+      expect((await settings.loadAudioConfig())?.backend, AudioBackend.asio);
+    },
+  );
+
+  blocTest<AudioSetupCubit, AudioSetupState>(
+    'a setting change recovers from a failed open and clears the error',
+    // The first open fails (error state), the next succeeds: the recovery path
+    // (D3) starts the engine and must clear the stale error banner.
     build: buildCubit,
-    act: (cubit) => cubit.stop(),
-    verify: (_) => verify(repository.stopEngine).called(1),
+    setUp: () {
+      var calls = 0;
+      when(() => repository.startEngine(any())).thenAnswer((_) {
+        calls++;
+        return calls == 1 ? EngineResult.device : EngineResult.ok;
+      });
+    },
+    act: (cubit) => cubit
+      ..setBufferFrames(64)
+      ..setBufferFrames(256),
+    verify: (cubit) {
+      expect(cubit.state.status, AudioSetupStatus.running);
+      expect(cubit.state.error, isNull);
+      expect(cubit.state.errorDetail, isNull);
+    },
   );
 
   blocTest<AudioSetupCubit, AudioSetupState>(
@@ -374,19 +315,18 @@ void main() {
     });
 
     blocTest<AudioSetupCubit, AudioSetupState>(
-      'start enables loopback capture and auto-measures latency',
+      'a (re)start enables loopback capture and auto-measures latency',
       build: () {
         when(repository.detectLoopback).thenReturn(routable);
         return buildCubit();
       },
-      act: (cubit) => cubit.start(),
+      act: (cubit) => cubit.setBufferFrames(64),
       verify: (_) {
         verify(
           () => repository.startEngine(
             const EngineConfig(
               sampleRate: 48000,
-              bufferFrames: 128,
-              passthrough: true,
+              bufferFrames: 64,
               useLoopbackCapture: true,
             ),
           ),
@@ -404,16 +344,14 @@ void main() {
       // The host advertises a routable loopback (as every PipeWire output
       // does), but the user pinned a real input device: capture must open on
       // it, not on the loopback, and the loopback auto-measure must be skipped.
-      act: (cubit) => cubit
-        ..setCaptureDevice('in-1')
-        ..start(),
+      // Pinning the device both changes the config and (re)starts the engine.
+      act: (cubit) => cubit.setCaptureDevice('in-1'),
       verify: (_) {
         verify(
           () => repository.startEngine(
             const EngineConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              passthrough: true,
               captureDeviceId: 'in-1',
             ),
           ),
@@ -436,21 +374,19 @@ void main() {
         );
         return buildCubit();
       },
-      act: (cubit) => cubit
-        ..setCaptureDevice('in-1')
-        ..start(),
+      act: (cubit) => cubit.setCaptureDevice('in-1'),
       verify: (_) => verify(repository.measureLatency).called(1),
     );
 
     blocTest<AudioSetupCubit, AudioSetupState>(
-      'start does not auto-measure when no loopback is detected',
+      'a (re)start does not auto-measure when no loopback is detected',
       build: buildCubit,
-      act: (cubit) => cubit.start(),
+      act: (cubit) => cubit.setBufferFrames(64),
       verify: (_) => verifyNever(repository.measureLatency),
     );
 
     blocTest<AudioSetupCubit, AudioSetupState>(
-      'start auto-measures when the device exposes loopback channels',
+      'a (re)start auto-measures when the device exposes loopback channels',
       build: () {
         // No routable loopback device, but the opened interface reports
         // dedicated loopback channels (e.g. a Scarlett's "Loop 1/2").
@@ -461,9 +397,42 @@ void main() {
         );
         return buildCubit();
       },
-      act: (cubit) => cubit.start(),
+      act: (cubit) => cubit.setBufferFrames(64),
       verify: (_) => verify(repository.measureLatency).called(1),
     );
+  });
+
+  group('ASIO driver cache (D1)', () {
+    test('exposes the injected drivers even while ASIO is live', () {
+      // ASIO already holds the device: re-probing would tear the stream down
+      // (R1), so the picker must fall back to the cached startup enumeration.
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            activeBackend: AudioBackend.asio,
+          ),
+        ),
+      );
+      final cubit = buildCubit(
+        asioSelectable: true,
+        initialAsioDrivers: const [mockAsioDriver],
+      );
+      addTearDown(cubit.close);
+
+      expect(cubit.state.asioDrivers, const [mockAsioDriver]);
+      expect(cubit.state.cachedAsioDrivers, const [mockAsioDriver]);
+      verifyNever(repository.asioDrivers);
+    });
+
+    test('probes drivers when ASIO is not the active backend', () {
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      expect(cubit.state.asioDrivers, const [mockAsioDriver]);
+      verify(repository.asioDrivers).called(1);
+    });
   });
 
   group('latency persistence', () {
@@ -655,6 +624,199 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.none);
+    });
+  });
+
+  group('asio backend', () {
+    test('loads drivers only when selectable', () {
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+
+      // Not selectable (non-Windows): drivers are never enumerated.
+      final hidden = buildCubit();
+      addTearDown(hidden.close);
+      expect(hidden.state.asioDrivers, isEmpty);
+      verifyNever(repository.asioDrivers);
+
+      // Selectable: the driver list populates so the selector can show.
+      final shown = buildCubit(asioSelectable: true);
+      addTearDown(shown.close);
+      expect(shown.state.asioDrivers, [mockAsioDriver]);
+    });
+
+    test('does not re-probe while the active backend is ASIO (R1)', () {
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+      when(() => repository.state).thenReturn(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Focusrite USB ASIO',
+            isConnected: true,
+            activeBackend: AudioBackend.asio,
+          ),
+        ),
+      );
+
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      // The ASIO host SDK loads one global driver; probing while it runs would
+      // tear down the live stream, so enumeration is skipped entirely.
+      verifyNever(repository.asioDrivers);
+      expect(cubit.state.asioDrivers, isEmpty);
+    });
+
+    test('Windows construction defaults to ASIO and the first driver', () {
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+      // No backend choice on Windows: the backend is hardwired to ASIO and the
+      // first enumerated driver is selected.
+      expect(cubit.state.backend, AudioBackend.asio);
+      expect(cubit.state.asioDriver, 'Focusrite USB ASIO');
+      expect(cubit.state.asioOnly, isTrue);
+    });
+
+    test('Windows construction snaps rate/buffer into the driver set', () {
+      when(repository.asioDrivers).thenReturn(const [
+        // A driver locked to a single buffer size / sample rate (e.g. a USB
+        // interface whose ASIO buffer is set in its own control panel).
+        AudioDevice(
+          id: 'Locked ASIO',
+          name: 'Locked ASIO',
+          isDefault: false,
+          isInput: false,
+          inputChannels: 2,
+          outputChannels: 2,
+          bufferSizes: [256],
+          sampleRates: [96000],
+        ),
+      ]);
+      // Defaults are 48000 / 128, neither offered by the driver.
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+      expect(cubit.state.sampleRate, 96000);
+      expect(cubit.state.bufferFrames, 256);
+    });
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'a reopen on ASIO forces backend loopback off',
+      setUp: () {
+        when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+        // An auto-routable loopback (so without the ASIO guard the reopen would
+        // set useLoopbackCapture) proves E8 forces it off under ASIO.
+        when(repository.detectLoopback).thenReturn(
+          const LoopbackInfo(
+            available: true,
+            kind: LoopbackKind.monitor,
+            deviceName: 'Monitor of Output',
+          ),
+        );
+        seedRunning();
+      },
+      build: () => buildCubit(asioSelectable: true),
+      act: (cubit) => cubit.setBufferFrames(64),
+      verify: (_) async {
+        verify(repository.stopEngine).called(1);
+        verify(
+          () => repository.startEngine(
+            const EngineConfig(
+              sampleRate: 48000,
+              bufferFrames: 64,
+              backend: AudioBackend.asio,
+              asioDriver: 'Focusrite USB ASIO',
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'setBackend is ignored on Windows (ASIO-only)',
+      setUp: () =>
+          when(repository.asioDrivers).thenReturn(const [mockAsioDriver]),
+      build: () => buildCubit(asioSelectable: true),
+      act: (cubit) => cubit.setBackend(AudioBackend.miniaudio),
+      expect: () => const <AudioSetupState>[],
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'setAsioDriver with the current value is a no-op (no emit)',
+      setUp: () =>
+          when(repository.asioDrivers).thenReturn(const [mockAsioDriver]),
+      build: () => buildCubit(asioSelectable: true),
+      act: (cubit) => cubit.setAsioDriver('Focusrite USB ASIO'),
+      expect: () => const <AudioSetupState>[],
+    );
+
+    blocTest<AudioSetupCubit, AudioSetupState>(
+      'setAsioDriver persists the selection',
+      setUp: () =>
+          when(repository.asioDrivers).thenReturn(const [mockAsioDriver]),
+      build: () => buildCubit(asioSelectable: true),
+      act: (cubit) => cubit.setAsioDriver('Another ASIO'),
+      verify: (_) async {
+        expect((await settings.loadAudioConfig())?.asioDriver, 'Another ASIO');
+      },
+    );
+
+    test('hydrates the persisted ASIO driver when still enumerated', () {
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+        ),
+      );
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+      expect(cubit.state.backend, AudioBackend.asio);
+      expect(cubit.state.asioDriver, 'Focusrite USB ASIO');
+      expect(cubit.state.isAsio, isTrue);
+    });
+
+    test('coerces a stale saved backend=miniaudio to ASIO on Windows', () {
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+      // A config saved before the ASIO-only switch (or on a different OS).
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+      expect(cubit.state.backend, AudioBackend.asio);
+      expect(cubit.state.asioDriver, 'Focusrite USB ASIO');
+    });
+
+    test('a lost ASIO driver raises the connectivity banner', () async {
+      when(repository.asioDrivers).thenReturn(const [mockAsioDriver]);
+      when(() => repository.lastEngineConfig).thenReturn(
+        const EngineConfig(
+          backend: AudioBackend.asio,
+          asioDriver: 'Focusrite USB ASIO',
+        ),
+      );
+      final cubit = buildCubit(asioSelectable: true);
+      addTearDown(cubit.close);
+
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            deviceName: 'Focusrite USB ASIO',
+            isConnected: true,
+            devicePresent: true,
+            activeBackend: AudioBackend.asio,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      stateController.add(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            activeBackend: AudioBackend.asio,
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
     });
   });
 }

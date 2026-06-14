@@ -11,7 +11,6 @@ export 'cubit/refresh_rate_cubit.dart';
 export 'view/big_picture_settings_page.dart';
 export 'view/big_picture_view.dart';
 export 'view/looper_page.dart';
-export 'view/looper_view.dart';
 export 'view/tracks_routing_graph/routing_edit.dart';
 export 'view/tracks_routing_graph/routing_graph.dart';
 export 'view/tracks_routing_graph/tracks_routing_graph_view.dart';

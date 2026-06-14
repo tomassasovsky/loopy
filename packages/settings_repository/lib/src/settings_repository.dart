@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
+import 'package:loopy_engine/loopy_engine.dart';
 
 /// A persisted audio device configuration, used to auto-start the engine on
 /// launch with the user's last-used options.
@@ -9,13 +10,13 @@ class StoredAudioConfig {
   const StoredAudioConfig({
     required this.sampleRate,
     required this.bufferFrames,
-    required this.monitorInput,
     this.inputChannels = 0,
     this.outputChannels = 0,
     this.maxLoopMinutes = 0,
     this.playbackDeviceId = '',
     this.captureDeviceId = '',
-    this.exclusive = false,
+    this.backend = AudioBackend.miniaudio,
+    this.asioDriver = '',
   });
 
   /// Requested sample rate in Hz.
@@ -23,9 +24,6 @@ class StoredAudioConfig {
 
   /// Requested buffer (period) size in frames.
   final int bufferFrames;
-
-  /// Whether captured input is monitored to the output.
-  final bool monitorInput;
 
   /// Requested hardware capture channel count (`0` => device default).
   final int inputChannels;
@@ -44,12 +42,14 @@ class StoredAudioConfig {
   /// Pinned capture device id (empty => system default).
   final String captureDeviceId;
 
-  /// Whether OS-exclusive device access was requested. This is the persisted
-  /// *intent*; the negotiated reality is reported live by the engine. The
-  /// platform default for an unset stored value (Windows => on) is resolved by
-  /// the caller (presentation layer), not here — this field's `false` is only a
-  /// construction default.
-  final bool exclusive;
+  /// The persisted device-backend intent. Defaults to [AudioBackend.miniaudio].
+  /// ASIO availability is a presentation-layer decision (Windows + an installed
+  /// driver), so the repository stays platform-agnostic and holds only intent.
+  final AudioBackend backend;
+
+  /// The selected ASIO driver name (used only when [backend] is
+  /// [AudioBackend.asio]). Empty on the default path.
+  final String asioDriver;
 
   @override
   bool operator ==(Object other) =>
@@ -58,33 +58,33 @@ class StoredAudioConfig {
           runtimeType == other.runtimeType &&
           sampleRate == other.sampleRate &&
           bufferFrames == other.bufferFrames &&
-          monitorInput == other.monitorInput &&
           inputChannels == other.inputChannels &&
           outputChannels == other.outputChannels &&
           maxLoopMinutes == other.maxLoopMinutes &&
           playbackDeviceId == other.playbackDeviceId &&
           captureDeviceId == other.captureDeviceId &&
-          exclusive == other.exclusive;
+          backend == other.backend &&
+          asioDriver == other.asioDriver;
 
   @override
   int get hashCode => Object.hash(
     sampleRate,
     bufferFrames,
-    monitorInput,
     inputChannels,
     outputChannels,
     maxLoopMinutes,
     playbackDeviceId,
     captureDeviceId,
-    exclusive,
+    backend,
+    asioDriver,
   );
 }
 
 /// Persists user/device settings via a [KeyValueStore].
 ///
 /// Stores the per-device record-offset latency calibration, the last-used audio
-/// device configuration (so the engine can auto-start on launch), the UI mode,
-/// per-track display names, and big-picture view preferences.
+/// device configuration (so the engine can auto-start on launch), per-track
+/// display names, and big-picture view preferences.
 class SettingsRepository {
   /// Creates a [SettingsRepository] backed by [store].
   const SettingsRepository({required KeyValueStore store}) : _store = store;
@@ -110,34 +110,19 @@ class SettingsRepository {
     required int frames,
   }) => _store.setInt(_latencyKey(device, sampleRate, bufferFrames), frames);
 
-  static const String _uiModeKey = 'ui_mode';
-
-  /// Loads the saved UI-mode name, or `null` if none has been stored.
-  ///
-  /// Tolerates a legacy value of a different type (an earlier build stored the
-  /// mode as an int): the stale key is dropped and `null` is returned rather
-  /// than throwing a type-cast error from the store.
-  Future<String?> loadUiMode() async {
-    try {
-      return await _store.getString(_uiModeKey);
-    } on Object {
-      await _store.remove(_uiModeKey);
-      return null;
-    }
-  }
-
-  /// Saves the UI-mode [name].
-  Future<void> saveUiMode(String name) => _store.setString(_uiModeKey, name);
-
   static const String _audioSampleRateKey = 'audio.sample_rate';
   static const String _audioBufferFramesKey = 'audio.buffer_frames';
+  // Legacy global input-monitor flag. No longer part of [StoredAudioConfig]:
+  // monitoring is now the per-input routing graph (the `monitor_input.N` keys).
+  // Read only by the one-time monitor migration via [loadLegacyMonitorInput].
   static const String _audioMonitorKey = 'audio.monitor_input';
   static const String _audioInputChannelsKey = 'audio.input_channels';
   static const String _audioOutputChannelsKey = 'audio.output_channels';
   static const String _audioMaxLoopMinutesKey = 'audio.max_loop_minutes';
   static const String _audioPlaybackDeviceIdKey = 'audio.playback_device_id';
   static const String _audioCaptureDeviceIdKey = 'audio.capture_device_id';
-  static const String _audioExclusiveKey = 'audio.exclusive';
+  static const String _audioBackendKey = 'audio.backend';
+  static const String _audioAsioDriverKey = 'audio.asioDriver';
 
   /// Loads the last-used audio configuration, or `null` if none has been saved
   /// yet (a first run, so the setup flow should be shown).
@@ -148,27 +133,43 @@ class SettingsRepository {
     return StoredAudioConfig(
       sampleRate: sampleRate,
       bufferFrames: bufferFrames,
-      monitorInput: await _store.getBool(_audioMonitorKey) ?? true,
       inputChannels: await _store.getInt(_audioInputChannelsKey) ?? 0,
       outputChannels: await _store.getInt(_audioOutputChannelsKey) ?? 0,
       maxLoopMinutes: await _store.getInt(_audioMaxLoopMinutesKey) ?? 0,
       playbackDeviceId: await _store.getString(_audioPlaybackDeviceIdKey) ?? '',
       captureDeviceId: await _store.getString(_audioCaptureDeviceIdKey) ?? '',
-      exclusive: await _store.getBool(_audioExclusiveKey) ?? false,
+      backend: _backendFromName(await _store.getString(_audioBackendKey)),
+      asioDriver: await _store.getString(_audioAsioDriverKey) ?? '',
     );
   }
 
-  /// Loads the requested exclusive-access intent, or `null` if it has never
-  /// been set. Kept separate (and nullable) from [loadAudioConfig] so callers
-  /// can tell "never chosen" apart from "explicitly off" and apply the platform
-  /// default (Windows => on) themselves — the repository holds no OS policy.
-  Future<bool?> loadAudioExclusive() => _store.getBool(_audioExclusiveKey);
+  /// Resolves a stored backend name to an [AudioBackend], forward-compatibly:
+  /// an unknown name (e.g. a value written by a newer build) resolves to
+  /// [AudioBackend.miniaudio] rather than throwing (a defensive read).
+  AudioBackend _backendFromName(String? name) =>
+      AudioBackend.values.asNameMap()[name] ?? AudioBackend.miniaudio;
+
+  /// Loads the legacy global input-monitor flag, or `null` if it was never set.
+  /// Only the one-time monitor migration reads this — the live app no longer
+  /// persists it (monitoring is the per-input routing graph). Nullable so the
+  /// migration can tell "never configured" apart from an explicit choice.
+  Future<bool?> loadLegacyMonitorInput() => _store.getBool(_audioMonitorKey);
+
+  static const String _monitorMigratedV1Key = 'monitor.migrated_v1';
+
+  /// Whether the one-time legacy-monitor migration has already run. Defaults to
+  /// `false` so a fresh install runs (and no-ops) it once.
+  Future<bool> loadMonitorMigratedV1() async =>
+      await _store.getBool(_monitorMigratedV1Key) ?? false;
+
+  /// Marks the one-time legacy-monitor migration done so it never re-runs.
+  Future<void> saveMonitorMigratedV1() =>
+      _store.setBool(_monitorMigratedV1Key, value: true);
 
   /// Saves the audio [config] so the engine can auto-start with it next launch.
   Future<void> saveAudioConfig(StoredAudioConfig config) async {
     await _store.setInt(_audioSampleRateKey, config.sampleRate);
     await _store.setInt(_audioBufferFramesKey, config.bufferFrames);
-    await _store.setBool(_audioMonitorKey, value: config.monitorInput);
     await _store.setInt(_audioInputChannelsKey, config.inputChannels);
     await _store.setInt(_audioOutputChannelsKey, config.outputChannels);
     await _store.setInt(_audioMaxLoopMinutesKey, config.maxLoopMinutes);
@@ -177,7 +178,8 @@ class SettingsRepository {
       config.playbackDeviceId,
     );
     await _store.setString(_audioCaptureDeviceIdKey, config.captureDeviceId);
-    await _store.setBool(_audioExclusiveKey, value: config.exclusive);
+    await _store.setString(_audioBackendKey, config.backend.name);
+    await _store.setString(_audioAsioDriverKey, config.asioDriver);
   }
 
   static const String _showWaveformWindowKey = 'big_picture.waveform_window';
@@ -276,6 +278,7 @@ class SettingsRepository {
 
   String _monitorInputKey(int input) => 'monitor_input.$input';
   String _monitorInputDryKey(int input) => 'monitor_input_dry.$input';
+  String _monitorInputVolKey(int input) => 'monitor_input_vol.$input';
   String _monitorInputFxKey(int input) => 'monitor_input_fx.$input';
 
   /// Loads hardware [input]'s live-monitor routing as `(enabled, outputMask)`,
@@ -304,6 +307,15 @@ class SettingsRepository {
   /// Saves hardware [input]'s monitor dry-send output bitmask.
   Future<void> saveMonitorInputDry(int input, int dryOutputMask) =>
       _store.setInt(_monitorInputDryKey(input), dryOutputMask);
+
+  /// Loads hardware [input]'s monitor output gain (`0..1`), or `null` if it was
+  /// never saved (the caller defaults to unity `1.0`).
+  Future<double?> loadMonitorInputVolume(int input) =>
+      _store.getDouble(_monitorInputVolKey(input));
+
+  /// Saves hardware [input]'s monitor output gain (`0..1`).
+  Future<void> saveMonitorInputVolume(int input, double volume) =>
+      _store.setDouble(_monitorInputVolKey(input), volume);
 
   /// Loads hardware [input]'s persisted monitor effect chain as an opaque
   /// encoded string (see `encodeTrackEffects`), or `null` if none is saved.

@@ -87,7 +87,7 @@ clang -std=c11 -Wall -Wextra -I src -I src/miniaudio \
 
 ```dart
 final engine = NativeAudioEngine();
-final result = engine.start(const EngineConfig(passthrough: true));
+final result = engine.start(const EngineConfig(sampleRate: 48000));
 if (result.isOk) {
   final snap = engine.snapshot(); // levels, frame counters, latency
   engine.measureLatency();        // requires an output→input loopback

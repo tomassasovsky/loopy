@@ -120,6 +120,12 @@ void main() {
       // chains; they must never drift.
       expect(TrackEffectType.octaver.code, 5);
       expect(TrackEffectType.echo.code, 6);
+      expect(TrackEffectType.reverb.code, 7);
+    });
+
+    test('reverb exposes size, damping and mix', () {
+      expect(TrackEffectType.reverb.paramLabels, ['Size', 'Damping', 'Mix']);
+      expect(TrackEffectType.reverb.defaultParams, [0.5, 0.5, 0.35]);
     });
 
     test('codes are unique', () {

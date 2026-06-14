@@ -60,6 +60,15 @@ class FakeAudioEngine implements AudioEngine {
     return devices;
   }
 
+  /// Drivers returned by [enumerateAsioDrivers].
+  List<AudioDevice> asioDrivers = const [];
+
+  @override
+  List<AudioDevice> enumerateAsioDrivers() {
+    calls.add('enumerateAsioDrivers');
+    return asioDrivers;
+  }
+
   @override
   EngineResult measureLatency() {
     calls.add('measureLatency');
@@ -311,6 +320,19 @@ class FakeAudioEngine implements AudioEngine {
   }) {
     monitorInputDry[input] = dryOutputMask;
     calls.add('setMonitorInputDry');
+    return EngineResult.ok;
+  }
+
+  /// Per-input monitor volume passed to [setMonitorInputVolume].
+  final Map<int, double> monitorInputVolume = {};
+
+  @override
+  EngineResult setMonitorInputVolume({
+    required int input,
+    required double volume,
+  }) {
+    monitorInputVolume[input] = volume;
+    calls.add('setMonitorInputVolume');
     return EngineResult.ok;
   }
 

@@ -192,15 +192,36 @@ void main() {
     verify(() => cubit.setRecordOffset(257)).called(1);
   });
 
-  testWidgets('toggling monitor input forwards to the cubit', (tester) async {
-    seed(runningState); // monitorInput defaults to true
-    await pumpSection(tester);
+  testWidgets(
+    'per-input monitor routing is shown with no master toggle gating it',
+    (tester) async {
+      seed(
+        const AudioSetupState(
+          status: AudioSetupStatus.running,
+          engineStatus: EngineStatus(
+            deviceName: 'Scarlett 4i4',
+            sampleRate: 48000,
+            bufferFrames: 128,
+            isConnected: true,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+        ),
+      );
+      await pumpSection(tester);
 
-    final toggle = find.byKey(const Key('audioSettings_monitor_switch'));
-    await tester.ensureVisible(toggle);
-    await tester.tap(toggle);
-    verify(() => cubit.setMonitorInput(monitorInput: false)).called(1);
-  });
+      // The redundant master "Monitor input" toggle is gone; the per-input
+      // routing entry (with its own per-input enable) is always available.
+      expect(
+        find.byKey(const Key('audioSettings_monitor_switch')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_openMonitorGraph')),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('opens the input-monitoring graph as a full page', (
     tester,
@@ -325,5 +346,117 @@ void main() {
 
     expect(find.text('Not running'), findsOneWidget);
     expect(find.text('Not measured'), findsOneWidget);
+  });
+
+  group('asio backend (Windows ASIO-only)', () {
+    const focusrite = AudioDevice(
+      id: 'Focusrite USB ASIO',
+      name: 'Focusrite USB ASIO',
+      isDefault: false,
+      isInput: false,
+      inputChannels: 18,
+      outputChannels: 20,
+    );
+
+    AudioSetupState asioState({
+      List<AudioDevice> drivers = const [focusrite],
+      String driver = 'Focusrite USB ASIO',
+    }) => AudioSetupState(
+      status: AudioSetupStatus.running,
+      asioOnly: true,
+      backend: AudioBackend.asio,
+      asioDriver: driver,
+      cachedAsioDrivers: drivers,
+      engineStatus: const EngineStatus(
+        deviceName: 'Focusrite USB ASIO',
+        sampleRate: 48000,
+        bufferFrames: 128,
+        isConnected: true,
+        inputChannels: 18,
+        outputChannels: 20,
+        activeBackend: AudioBackend.asio,
+      ),
+    );
+
+    testWidgets('no backend selector on Windows', (tester) async {
+      seed(asioState());
+      await pumpSection(tester);
+      expect(
+        find.byKey(const Key('audioSettings_backend_asio')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_backend_miniaudio')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the ASIO driver picker replaces the device pickers', (
+      tester,
+    ) async {
+      seed(asioState());
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_asioDriver_picker')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_playbackDevice_picker')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_captureDevice_picker')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('no driver shows the ASIO4ALL message', (tester) async {
+      seed(asioState(drivers: const [], driver: ''));
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_noAsioDriver')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_asio4all_link')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('audioSettings_asioDriver_picker')),
+        findsNothing,
+      );
+    });
+  });
+
+  group('error banner', () {
+    testWidgets('renders the engine error and detail when status is error', (
+      tester,
+    ) async {
+      seed(
+        const AudioSetupState(
+          status: AudioSetupStatus.error,
+          error: AudioSetupError.openDeviceFailed,
+          errorDetail: 'device',
+        ),
+      );
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_error_banner')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is absent when there is no error', (tester) async {
+      seed(runningState);
+      await pumpSection(tester);
+
+      expect(
+        find.byKey(const Key('audioSettings_error_banner')),
+        findsNothing,
+      );
+    });
   });
 }
