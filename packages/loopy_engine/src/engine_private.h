@@ -52,11 +52,12 @@ extern "C" {
  * integrators; lfo is an LFO phase (0..1, TREMOLO depth / ECHO wow); delay is a
  * lazily allocated ring
  * (the control thread allocates before posting the command) of fx_delay_frames
- * samples (shared by DELAY, ECHO, and the OCTAVER's grain ring); fx_lp is a
- * generic one-pole low-pass memory (ECHO feedback damping, OCTAVER tone);
- * grain_phase is the OCTAVER pitch-shifter's read phase within a grain. A slot
- * is only ever one type at a time, so these reuse freely. Each lane and each
- * live monitor lane owns one of these, running its own non-destructive chain. */
+ * samples (shared by DELAY, ECHO, and the OCTAVER's input FIFO); fx_lp is a
+ * generic one-pole low-pass memory (ECHO feedback damping, OCTAVER tone). The
+ * OCTAVER's phase-vocoder working set lives in the `oct` sub-state (its heap
+ * buffers are control-thread allocated alongside the delay ring). A slot is only
+ * ever one type at a time, so these reuse freely. Each lane and each live
+ * monitor lane owns one of these, running its own non-destructive chain. */
 /* Reverb (LE_FX_REVERB) is a Schroeder/Freeverb network: a bank of parallel
  * damped comb filters summed into a chain of series allpass diffusers. It runs
  * LE_REV_BANKS of those in parallel — a left and a right whose delay lines are
@@ -68,6 +69,31 @@ extern "C" {
 #define LE_REV_COMBS 8
 #define LE_REV_APS 4
 #define LE_REV_BANKS 2
+
+/* The OCTAVER's phase-vocoder (and, in part 4, PSOLA) working set for one chain
+ * slot on one channel. The three pointers are heap buffers the control thread
+ * allocates when the slot becomes OCTAVER (sized by the LE_PV_* constants in
+ * engine.c) and frees on retype/reset/destroy; everything else is plain scalar
+ * state the audio thread owns. The PSOLA fields are defined now but unused until
+ * part 4, so that PR needs no struct/ABI change. */
+typedef struct le_octaver_state {
+  float* out;        /* synthesis overlap-add accumulator, length LE_PV_N */
+  float* last_phase; /* previous analysis phase per bin, length LE_PV_BINS */
+  float* sum_phase;  /* accumulated synthesis phase per bin, length LE_PV_BINS */
+  int32_t hop_count; /* samples emitted in the current hop block */
+  int32_t out_pos;   /* reserved read/write phase (PSOLA, part 4) */
+  /* PSOLA (part 4; zero-initialized and unused here). */
+  float period;
+  float voiced;
+  int32_t in_epoch;
+  int32_t out_epoch;
+  /* Shared: per-sample param smoothing + mode-switch gain-dip (D1/D2/H3). */
+  float sm_shift;
+  float sm_tone;
+  float sm_mix;
+  int32_t cur_mode; /* 0 = phase vocoder, 1 = PSOLA */
+  float xfade;      /* equal-power gain-dip envelope during a mode switch (1 = steady) */
+} le_octaver_state;
 
 /* Per-slot DSP state is carried per channel ([slot][chan], chan 0 = left,
  * 1 = right) so the whole chain runs in full stereo: a slot colours its left and
@@ -84,7 +110,7 @@ typedef struct le_fx_state {
   float* delay[LE_FX_MAX][2];
   int32_t delay_pos[LE_FX_MAX][2];
   float fx_lp[LE_FX_MAX][2];
-  float grain_phase[LE_FX_MAX][2];
+  le_octaver_state oct[LE_FX_MAX][2];
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
