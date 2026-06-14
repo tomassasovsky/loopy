@@ -11,10 +11,12 @@ import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/window/window_chrome.dart';
 import 'package:midi_client/midi_client.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -37,6 +39,7 @@ class App extends StatelessWidget {
     required this.sessionRepository,
     required this.sessionDirectory,
     this.midiSource,
+    this.pedalRepository,
     this.initialAsioDrivers = const [],
     super.key,
   });
@@ -51,6 +54,12 @@ class App extends StatelessWidget {
   /// `null` when no MIDI backend is available. The MIDI-setup cubit borrows it
   /// for enumerate/open/close and activity; it never disposes it.
   final MidiControllerSource? midiSource;
+
+  /// The bidirectional pedal repository (MIDI output + reused input capture),
+  /// or `null` when none was built — a no-op transport is substituted so pedal
+  /// cubit always exists and its settings picker shows an empty state. Owned by
+  /// the [PedalCubit], which disposes it.
+  final PedalRepository? pedalRepository;
 
   /// The shared settings repository (persists latency calibration + config).
   final SettingsRepository settings;
@@ -165,6 +174,26 @@ class App extends StatelessWidget {
               source: midiSource,
               settings: context.read<SettingsRepository>(),
             ),
+          ),
+          // Eager (not lazy): the pedal cubit auto-binds the saved output
+          // device on launch and starts projecting LED frames, so it must be at
+          // startup. It drives the shared BankCubit on a bank toggle (loopy is
+          // the single source of truth for the active bank).
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final bankCubit = context.read<BankCubit>();
+              final cubit = PedalCubit(
+                pedal:
+                    pedalRepository ??
+                    PedalRepository(const NoopPedalTransport()),
+                looper: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+                onBankSelected: bankCubit.selectBank,
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
           ),
         ],
         child: _AppView(

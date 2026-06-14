@@ -3,6 +3,7 @@
 library;
 
 export 'src/native_pedal_transport.dart';
+export 'src/noop_pedal_transport.dart';
 export 'src/pedal_button.dart';
 export 'src/pedal_codec.dart';
 export 'src/pedal_event.dart';

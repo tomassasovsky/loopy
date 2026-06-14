@@ -441,5 +441,27 @@
                 "type": "String"
             }
         }
-    }
+    },
+    "pedalOutputGroup": "PEDAL LED FEEDBACK",
+    "pedalNone": "None",
+    "pedalNoOutputs": "No MIDI output devices found",
+    "pedalStatusNone": "No pedal output — footswitches still work; only LED feedback is off.",
+    "pedalStatusConnecting": "Connecting…",
+    "pedalStatusBound": "Sending LED frames to {deviceName}",
+    "@pedalStatusBound": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalStatusError": "Could not open {deviceName} (in use by another app?).",
+    "@pedalStatusError": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalOutputHint": "Pick the pedal's MIDI output so loopy can drive its LEDs. Its footswitches use the MIDI input above."
 }

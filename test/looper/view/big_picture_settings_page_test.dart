@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
@@ -22,6 +23,8 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
     implements MidiSetupCubit {}
 
+class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
+
 void main() {
   late SettingsRepository settings;
   late BigPictureCubit bigPicture;
@@ -29,6 +32,7 @@ void main() {
   late BankCubit bank;
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
+  late PedalCubit pedal;
   late RefreshRateCubit refreshRate;
   late QuantizeCubit quantize;
   late MonitorCubit monitor;
@@ -48,6 +52,15 @@ void main() {
       midiSetup,
       const Stream<MidiSetupState>.empty(),
       initialState: const MidiSetupState(),
+    );
+    pedal = _MockPedalCubit();
+    when(() => pedal.state).thenReturn(const PedalState());
+    when(pedal.availableOutputs).thenReturn(const []);
+    when(() => pedal.boundOutputId).thenReturn(null);
+    whenListen(
+      pedal,
+      const Stream<PedalState>.empty(),
+      initialState: const PedalState(),
     );
     repository = _MockLooperRepository();
     when(() => repository.state).thenReturn(
@@ -100,6 +113,7 @@ void main() {
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
+            BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
@@ -271,6 +285,7 @@ void main() {
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
+            BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
