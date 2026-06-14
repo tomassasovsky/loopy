@@ -360,8 +360,7 @@ class _LoopyChromeIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final height =
-        compact ? loopyHiddenTitleStripHeight : kWindowCaptionHeight;
+    final height = compact ? loopyHiddenTitleStripHeight : kWindowCaptionHeight;
     final width = compact ? 28.0 : 46.0;
     return Material(
       color: Colors.transparent,
