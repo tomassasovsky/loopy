@@ -65,7 +65,8 @@ C("100nF")[1, 2] += encB, gnd
 prev = ring_data
 for i in range(12):
     led = Part("LED", "WS2812B",
-               footprint="LED_SMD:LED_WS2812B-2020_2.0x2.0mm", ref=f"D{i+1}")
+               footprint="LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm",
+               ref=f"D{i+1}")
     led["VDD"] += v5
     led["VSS"] += gnd
     led["DIN"] += prev

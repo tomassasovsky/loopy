@@ -83,7 +83,7 @@ C("10uF", "Capacitor_SMD:C_0805_2012Metric")[1, 2] += v5, gnd
 # reset
 R("10k")[1, 2] += rst328, v5
 u1[29] += rst328          # PC6/RESET
-sw_rst = Part("Switch", "SW_Push", footprint="Button_Switch_SMD:SW_SPST_PTS645",
+sw_rst = Part("Switch", "SW_Push", footprint="Button_Switch_SMD:SW_Push_1P1T_NO_CK_KMR2",
               ref="SW1")
 sw_rst[1, 2] += rst328, gnd
 C("100nF")[1, 2] += dtr, rst328   # DTR auto-reset cap
@@ -176,7 +176,7 @@ u2[9] += m16_tx        # 16U2 PD3 = TXD1  -> merge
 rst16 = Net("RST_16")
 R("10k")[1, 2] += rst16, v5
 u2[24] += rst16        # PC1/~RESET
-Part("Switch", "SW_Push", footprint="Button_Switch_SMD:SW_SPST_PTS645",
+Part("Switch", "SW_Push", footprint="Button_Switch_SMD:SW_Push_1P1T_NO_CK_KMR2",
      ref="SW2")[1, 2] += rst16, gnd
 # DTR auto-reset: 16U2 drives DTR (documented pin); route a free GPIO PC7
 u2[22] += dtr          # PC7 as DTR-reset output (firmware-driven)
@@ -290,7 +290,8 @@ buf_midi[1] += gnd
 buf_midi[2] += uart_tx
 buf_midi[4] += midi_out_buf
 j_mout = Part("Connector", "DIN-5_180degree",
-              footprint="Connector_DIN:DIN-5_180degree", ref="J8")
+              footprint="Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+              ref="J8")
 R("220")[1, 2] += midi_out_buf, j_mout[5]   # TX -> DIN pin 5
 R("220")[1, 2] += v5, j_mout[4]             # +5V -> DIN pin 4
 j_mout[2] += gnd                            # DIN pin 2 = shield/GND
@@ -298,7 +299,8 @@ j_mout[2] += gnd                            # DIN pin 2 = shield/GND
 # ---- MIDI IN (opto + AND merge) --------------------------------------------
 
 j_min = Part("Connector", "DIN-5_180degree",
-             footprint="Connector_DIN:DIN-5_180degree", ref="J9")
+             footprint="Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+             ref="J9")
 opto = Part("Isolator", "H11L1",
             footprint="Package_DIP:DIP-6_W7.62mm", ref="U9")
 # H11L1: 1=anode,2=cathode,3=NC,4=GND,5=Vo,6=Vcc
@@ -337,7 +339,8 @@ R("330")[1, 2] += ind_data, ind_chain
 prev = ind_chain
 for i in range(7):
     led = Part("LED", "WS2812B",
-               footprint="LED_SMD:LED_WS2812B-2020_2.0x2.0mm", ref=f"DI{i+1}")
+               footprint="LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm",
+               ref=f"DI{i+1}")
     led["VDD"] += v5led
     led["VSS"] += gnd
     led["DIN"] += prev
