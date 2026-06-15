@@ -292,7 +292,7 @@ buf_midi[1] += gnd
 buf_midi[2] += uart_tx
 buf_midi[4] += midi_out_buf
 j_mout = Part("Connector", "DIN-5_180degree",
-              footprint="Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+              footprint="loopy:MIDI_DIN5_SDS-50J",
               ref="J8")
 R("220")[1, 2] += midi_out_buf, j_mout[5]   # TX -> DIN pin 5
 R("220")[1, 2] += v5, j_mout[4]             # +5V -> DIN pin 4
@@ -301,7 +301,7 @@ j_mout[2] += gnd                            # DIN pin 2 = shield/GND
 # ---- MIDI IN (opto + AND merge) --------------------------------------------
 
 j_min = Part("Connector", "DIN-5_180degree",
-             footprint="Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical",
+             footprint="loopy:MIDI_DIN5_SDS-50J",
              ref="J9")
 opto = Part("Isolator", "H11L1",
             footprint="Package_DIP:DIP-6_W7.62mm", ref="U9")
@@ -334,22 +334,18 @@ j5[6] += encA
 j5[7] += encB
 j5[8] += encSW
 
-# ---- indicator LED strip (7x WS2812B on the main board) --------------------
-
-ind_chain = Net("IND_D0")
-R("330")[1, 2] += ind_data, ind_chain
-prev = ind_chain
-for i in range(7):
-    led = Part("LED", "WS2812B",
-               footprint="LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm",
-               ref=f"DI{i+1}")
-    led["VDD"] += v5led
-    led["VSS"] += gnd
-    led["DIN"] += prev
-    nxt = Net(f"IND_D{i+1}")
-    led["DOUT"] += nxt
-    prev = nxt
-    C("100nF")[1, 2] += v5led, gnd
+# ---- indicator LEDs: broken out to an OFF-board strip via a 3-pin header ----
+# The mode / track1-4 / clear / X2 indicator WS2812Bs live on their own board;
+# only the series resistor + decoupling stay here. J11 carries +5V / data / GND.
+ind_out = Net("IND_DATA_OUT")
+R("330")[1, 2] += ind_data, ind_out
+j_ind = Part("Connector_Generic", "Conn_01x03",
+             footprint="Connector_JST:JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical",
+             ref="J11")
+j_ind[1] += v5led        # +5V for the off-board LED strip
+j_ind[2] += ind_out      # WS2812 data (after the 330R series resistor)
+j_ind[3] += gnd
+C("100nF")[1, 2] += v5led, gnd   # local decoupling at the header
 
 # Declare the supply rails as power-driven (KiCad PWR_FLAG equivalent): silences
 # the "insufficient drive" warnings on the supply pins.

@@ -344,20 +344,34 @@ Both boards are **placed, routed, and DRC-clean** (KiCad 10.0.3):
 
 | file | what |
 |------|------|
-| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 100×98 mm, 84 parts, 2-layer, **1091 track segs / 78 vias, DRC 0 errors / 0 unrouted** |
+| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 100×98 mm, 72 parts, 2-layer, **984 track segs / 86 vias, DRC 0 errors / 0 unrouted** |
 | `kicad/loopy_pedal_ring.kicad_pcb` (+ `.kicad_pro`) | ring board: ⌀68 mm round, 22 parts, 12-LED ring + center encoder, **287 segs / 4 vias, DRC 0 / 0 unrouted** |
 | `kicad/fab/loopy_pedal_main_gerbers.zip` | main board Gerbers + Excellon drill |
 | `kicad/fab/loopy_pedal_ring_gerbers.zip` | ring board Gerbers + Excellon drill |
 
 Both have GND copper pours on F.Cu and B.Cu, four M3 (main) / three M2 (ring)
-mounting holes, and edge-mounted connectors. Default clearance is **0.15 mm**
-(to clear the USB-C connector's inherent fine pitch); everything else routes at
-0.2 mm. Q1 reverse-protection FET is **`Transistor_FET:AO3401A`** (numbered pads
-that match SOT-23 — the generic `Q_PMOS` letter-pads do not).
+mounting holes. Default clearance is **0.15 mm** (to clear the USB-C connector's
+inherent fine pitch); everything else routes at 0.2 mm. Q1 reverse-protection
+FET is **`Transistor_FET:AO3401A`** (numbered pads that match SOT-23 — the
+generic `Q_PMOS` letter-pads do not).
 
-> Still a manual step before fab: the two MIDI **DIN-5 jacks** (J8/J9) use a
-> `PinHeader_1x05` **placeholder** (KiCad has no stock audio DIN-5). Reassign them
-> to your actual panel jack (DIN-5 or 3.5 mm TRS-A) and re-route those few nets.
+**I/O layout:** all external I/O is on the **bottom edge** — 9 V barrel, USB-C,
+and the two MIDI jacks. Internal interconnects sit elsewhere: ring + indicator
+breakout on the top edge, footswitch headers on the left edge.
+
+**MIDI jacks (J8/J9)** are real **5-pin DIN sockets** — footprint
+`loopy:MIDI_DIN5_SDS-50J` (CUI SDS-50J / Jalco YKF51-5050 compatible), in the
+local `kicad/loopy.pretty/` library. (KiCad has no stock 5-pin DIN, so it's
+hand-built from the SDS-50J pad pattern; it has no 3D body model.)
+
+**Indicator LEDs** are **not** on the main board — they break out through the
+3-pin **J11** header (`+5V_LED` / data / `GND`) to an off-board strip, with only
+the 330 Ω series resistor + decoupling staying on the main board.
+
+**3D models:** KiCad 10 ships the `L_12x12mm_H8mm` (L1) and `WS2812B-2020` (ring
+LEDs) footprints *without* their `.step` files, so they were invisible in
+renders. They're remapped to existing models (`L_Bourns_SRR1260`; `WS2812B-Mini`
+scaled to 2.0 mm) — purely cosmetic, no copper/footprint change.
 
 ### How the layout was produced (scripted pipeline)
 
