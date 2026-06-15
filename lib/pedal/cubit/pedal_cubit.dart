@@ -25,16 +25,20 @@ class PedalCubit extends Cubit<PedalState> {
   ///
   /// [onBankSelected] is called whenever the pedal changes the active bank, so
   /// the wiring layer can keep the app's `BankCubit` in sync (the pedal is the
-  /// source of truth for its own bank in v1).
+  /// source of truth for its own bank in v1). [onTrackSelected] is called with
+  /// the absolute channel whenever the pedal arms a track, so the wiring layer
+  /// can move loopy's on-screen selected track to match.
   PedalCubit({
     required PedalRepository pedal,
     required LooperRepository looper,
     required SettingsRepository settings,
     void Function(int bank)? onBankSelected,
+    void Function(int channel)? onTrackSelected,
   }) : _pedal = pedal,
        _looper = looper,
        _settings = settings,
        _onBankSelected = onBankSelected,
+       _onTrackSelected = onTrackSelected,
        super(const PedalState()) {
     _eventsSub = _pedal.events.listen(_handleEvent);
     _statusSub = _pedal.statusChanges.listen(_onBindStatus);
@@ -45,6 +49,7 @@ class PedalCubit extends Cubit<PedalState> {
   final LooperRepository _looper;
   final SettingsRepository _settings;
   final void Function(int bank)? _onBankSelected;
+  final void Function(int channel)? _onTrackSelected;
 
   late final StreamSubscription<PedalEvent> _eventsSub;
   late final StreamSubscription<PedalBindStatus> _statusSub;
@@ -170,7 +175,7 @@ class PedalCubit extends Cubit<PedalState> {
     final capturing = _capturingChannel();
     if (capturing == null) {
       // Nothing recording: pressing a track just (re)arms it.
-      _emitPedal(state.copyWith(armedTrack: channel));
+      _setArmed(channel);
     } else if (capturing == channel) {
       // Same track: finish the loop (engine cycles record).
       _looper.record(channel: channel);
@@ -179,8 +184,14 @@ class PedalCubit extends Cubit<PedalState> {
       _looper
         ..record(channel: capturing)
         ..record(channel: channel);
-      _emitPedal(state.copyWith(armedTrack: channel));
+      _setArmed(channel);
     }
+  }
+
+  /// Arms [channel] and mirrors the selection to loopy's on-screen UI.
+  void _setArmed(int channel) {
+    _emitPedal(state.copyWith(armedTrack: channel));
+    _onTrackSelected?.call(channel);
   }
 
   void _onStop() {
@@ -218,6 +229,7 @@ class PedalCubit extends Cubit<PedalState> {
     // Re-resolve the armed track to the new bank (default its first track).
     _emitPedal(state.copyWith(activeBank: nextBank, armedTrack: base));
     _onBankSelected?.call(nextBank);
+    _onTrackSelected?.call(base);
   }
 
   void _onClear() {
@@ -344,14 +356,23 @@ class PedalCubit extends Cubit<PedalState> {
       for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
         _ledFor(_trackAtIn(s, channel), armed: channel == pedal.armedTrack),
     ];
-    final recording = s.tracks.any((t) => t.isCapturing);
+    // global_color carries the ring's activity color: red while recording,
+    // amber while overdubbing, green while a loop plays, off when idle. (The
+    // pedal's Rec/Play mode is shown separately by the mode LED, from playMode.)
+    final anyRecording = s.tracks.any((t) => t.state == TrackState.recording);
+    final anyOverdub = s.tracks.any((t) => t.state == TrackState.overdubbing);
+    final anyPlaying = s.tracks.any(
+      (t) => t.state == TrackState.playing && !t.muted,
+    );
     final global = pedal.clearFadeActive
         ? GlobalColor.blue
-        : pedal.isPlayMode
-        ? GlobalColor.amber
-        : recording
+        : anyRecording
         ? GlobalColor.red
-        : GlobalColor.green;
+        : anyOverdub
+        ? GlobalColor.amber
+        : anyPlaying
+        ? GlobalColor.green
+        : GlobalColor.off;
     final sampleRate = s.status.sampleRate;
     final lengthMicros = sampleRate > 0
         ? (s.transport.masterLengthFrames * 1000000 / sampleRate).round()

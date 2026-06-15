@@ -40,6 +40,7 @@ void main() {
     late StreamController<LooperState> looperStates;
     late SettingsRepository settings;
     late List<int> bankSelections;
+    late List<int> trackSelections;
 
     setUp(() {
       transport = FakePedalTransport(
@@ -50,6 +51,7 @@ void main() {
       looperStates = StreamController<LooperState>.broadcast();
       settings = SettingsRepository(store: FakeKeyValueStore());
       bankSelections = [];
+      trackSelections = [];
 
       when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
       for (final stub in [
@@ -76,6 +78,7 @@ void main() {
       looper: looper,
       settings: settings,
       onBankSelected: bankSelections.add,
+      onTrackSelected: trackSelections.add,
     );
 
     test('Rec/Play in Rec mode drives the armed track record cycle', () async {
@@ -98,6 +101,7 @@ void main() {
         await pumpEventQueue();
 
         expect(cubit.state.armedTrack, 2); // track3 == channel 2 in bank A
+        expect(trackSelections, [2]); // mirrored to loopy's on-screen selection
         verifyNever(() => looper.record(channel: any(named: 'channel')));
         await cubit.close();
       },
@@ -169,6 +173,28 @@ void main() {
         expect(cubit.state.activeBank, 1);
         expect(cubit.state.armedTrack, 4); // first track of bank B
         expect(bankSelections, [1]);
+        expect(trackSelections, [4]); // selection follows to bank B's track 1
+        await cubit.close();
+      },
+    );
+
+    test(
+      'global_color carries the ring activity color (recording = red)',
+      () async {
+        final cubit = buildCubit();
+        await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+        transport.sent.clear();
+
+        looperStates.add(
+          _stateWith([
+            const Track(state: TrackState.recording),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+
+        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        expect(frame?.globalColor, GlobalColor.red);
         await cubit.close();
       },
     );

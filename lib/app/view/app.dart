@@ -183,6 +183,7 @@ class App extends StatelessWidget {
             lazy: false,
             create: (context) {
               final bankCubit = context.read<BankCubit>();
+              final bigPicture = context.read<BigPictureCubit>();
               final cubit = PedalCubit(
                 pedal:
                     pedalRepository ??
@@ -190,6 +191,7 @@ class App extends StatelessWidget {
                 looper: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
                 onBankSelected: bankCubit.selectBank,
+                onTrackSelected: bigPicture.select,
               );
               unawaited(cubit.load());
               return cubit;
