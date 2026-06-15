@@ -344,6 +344,12 @@ python hardware/kicad/ring_board.py   # -> ring_board.net + ring_board.erc
 2. Place per §11 → route (USB diff pair + buck loop first) → ground pours → DRC →
    **File ▸ Fabrication Outputs ▸ Gerbers**.
 
+All 25 footprints in the netlists resolve against the stock KiCad 10 libraries —
+**except** the two MIDI **DIN-5 jacks** (J8/J9), which use a `PinHeader_1x05`
+**placeholder** footprint (KiCad has no stock audio DIN-5). Reassign those to your
+actual panel jack's footprint (DIN-5 or 3.5 mm TRS-A) in the Footprint Assignment
+tool before routing the MIDI connectors.
+
 > **Auto-placement note:** SKiDL's `generate_pcb` (netlist→.kicad_pcb auto-place)
 > does **not** work here — KiCad 10's `pcbnew` Python module crashes when driven
 > standalone (`assert PgmOrNull()`), and `kinet2pcb` doesn't yet recognize the

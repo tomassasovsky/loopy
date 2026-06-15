@@ -2,7 +2,7 @@
   (version "D")
   (design
     (source "ring_board.py")
-    (date "06/15/2026 02:30 PM")
+    (date "06/15/2026 06:12 PM")
     (tool "SKiDL (2.2.3)")
     (sheet
       (number 1)
@@ -55,7 +55,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "xDaDhtT29x")
+          (name "SKiDL Tag") "0LoiIMu3Nm")
         (field
           (name "SKiDL Line") "ring_board.py:25"))
       (libsource
@@ -64,7 +64,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "ab558572-fe9e-577b-a683-6326891ea7d5"))
+      (tstamps "76224fb2-cce3-5058-b228-92764edb9760"))
     (comp
       (ref "C2")
       (value "100nF")
@@ -78,7 +78,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "gYx1ARO5y4")
+          (name "SKiDL Tag") "RrnwfR1ZVp")
         (field
           (name "SKiDL Line") "ring_board.py:25"))
       (libsource
@@ -87,7 +87,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "03fd74a1-5ce9-5096-826d-c10593b9ca71"))
+      (tstamps "f2f8152d-d378-5937-b117-e201d84229bc"))
     (comp
       (ref "C3")
       (value "100nF")
@@ -101,7 +101,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "2p_5SOV5QX")
+          (name "SKiDL Tag") "kUcOYkrQFH")
         (field
           (name "SKiDL Line") "ring_board.py:25"))
       (libsource
@@ -110,7 +110,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "1426c6c4-e37a-5aed-9f41-d12938bf2b98"))
+      (tstamps "83f68bdc-138e-5843-8d27-de7b45dcace3"))
     (comp
       (ref "C4")
       (value "100nF")
@@ -124,7 +124,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "onViYErLTK")
+          (name "SKiDL Tag") "e6OEF8gFaN")
         (field
           (name "SKiDL Line") "ring_board.py:25"))
       (libsource
@@ -133,7 +133,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "b67dbcb9-e1c1-5deb-863d-f61573b58842"))
+      (tstamps "43ba5447-8f08-5d66-b2ad-f083db693c31"))
     (comp
       (ref "C5")
       (value "100nF")
@@ -147,7 +147,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "x1o_WvAuUE")
+          (name "SKiDL Tag") "RCZxTT2FKH")
         (field
           (name "SKiDL Line") "ring_board.py:25"))
       (libsource
@@ -156,7 +156,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "0aa26047-1d59-5d96-a57d-464b1da7db4a"))
+      (tstamps "8dd36daf-d1a5-5e0c-a399-a84c50e2bed0"))
     (comp
       (ref "C6")
       (value "100nF")
@@ -170,7 +170,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "9ctK7JBzoN")
+          (name "SKiDL Tag") "yTdcIScgqC")
         (field
           (name "SKiDL Line") "ring_board.py:25"))
       (libsource
@@ -179,21 +179,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "312bb8d2-39c4-5784-9f49-0106540ff7ef"))
+      (tstamps "a0fd7841-e0d4-5c30-a1b8-1e7c9eee8389"))
     (comp
       (ref "D1")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "xO0fnoMS_H")
+          (name "SKiDL Tag") "gQkhMG92bw")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -202,21 +202,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "a340de32-801a-59b4-aa96-d141604e0298"))
+      (tstamps "6a4d1ab7-0782-5800-a172-9115308f40cd"))
     (comp
       (ref "D10")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "erEbNtyvct")
+          (name "SKiDL Tag") "k2br7pcfNc")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -225,21 +225,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "4029c883-6b05-5822-9502-8119c6e5e51e"))
+      (tstamps "0d7e92e0-3cb6-5a6d-ab47-acb87433b16a"))
     (comp
       (ref "D11")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "n4MFpPjsVc")
+          (name "SKiDL Tag") "HVBsFhFSn1")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -248,21 +248,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "63de5ecb-d559-5b62-9cf8-44583e568fe2"))
+      (tstamps "66cadc82-1d2a-509f-aca3-8fc4d686fd7f"))
     (comp
       (ref "D12")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "k0ZZakjpQP")
+          (name "SKiDL Tag") "I5VcwQfhzO")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -271,21 +271,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "4ccac146-a605-50a9-bb94-5715181074cf"))
+      (tstamps "59bdee18-3c0b-5c00-815f-26b7b33dce18"))
     (comp
       (ref "D2")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "gjhjGwKcxS")
+          (name "SKiDL Tag") "nni1qaXH9Z")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -294,21 +294,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "f972c453-1e6c-5d86-8835-01bfa43f5894"))
+      (tstamps "1764a13c-49e9-53b3-b43a-54d75c064f88"))
     (comp
       (ref "D3")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "7IXJvIFpMg")
+          (name "SKiDL Tag") "1UBtHFGuLU")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -317,21 +317,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "36b3c001-3513-5217-857f-0c4e65a91a5c"))
+      (tstamps "21dc3870-7d7f-563e-b9eb-729d9f69307a"))
     (comp
       (ref "D4")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "WGKK8OMBYu")
+          (name "SKiDL Tag") "Aayn8oQPNj")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -340,21 +340,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "0835899b-567d-5b79-8902-d8eb6c64d4dd"))
+      (tstamps "b69b2120-efc8-549d-8722-3bb2dfee1e47"))
     (comp
       (ref "D5")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "C2bSEHc4kd")
+          (name "SKiDL Tag") "Twpz96A66O")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -363,21 +363,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "a759526d-5e1e-598c-b66b-9cd34bce502f"))
+      (tstamps "3aa6a69f-2152-5b1a-96a7-6454e25ed9bd"))
     (comp
       (ref "D6")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "L0v4uZALeL")
+          (name "SKiDL Tag") "d4ZqwLgzpa")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -386,21 +386,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "2e3ea1d5-0ec0-5086-a7f5-7fb438dec3f3"))
+      (tstamps "1941d677-bfbc-596c-a853-9120678889c6"))
     (comp
       (ref "D7")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "rirALCKDhr")
+          (name "SKiDL Tag") "to9WXQfP5p")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -409,21 +409,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "314fa00a-6212-5fdd-8998-1eaf74828eb1"))
+      (tstamps "bb2fcbeb-756b-548b-ab66-65969ea39b1a"))
     (comp
       (ref "D8")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "7YW_ESS6vw")
+          (name "SKiDL Tag") "991demyRco")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -432,21 +432,21 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "2c78d0e0-0aea-5277-800b-bd9088d03a97"))
+      (tstamps "f7cee4b8-67e1-5f19-8bcb-910577624134"))
     (comp
       (ref "D9")
       (value "WS2812B")
       (description "RGB LED with integrated controller")
-      (footprint "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+      (footprint "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
       (fields
         (field
           (name "Description") "RGB LED with integrated controller")
         (field
-          (name "Footprint") "LED_SMD:LED_WS2812B-2020_2.0x2.0mm")
+          (name "Footprint") "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm")
         (field
           (name "Datasheet") "https://cdn-shop.adafruit.com/datasheets/WS2812B.pdf")
         (field
-          (name "SKiDL Tag") "XODKeRw61i")
+          (name "SKiDL Tag") "JtxXL8wAJH")
         (field
           (name "SKiDL Line") "ring_board.py:67"))
       (libsource
@@ -455,7 +455,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "326db57d-6296-58bb-9c06-20b1080f5b91"))
+      (tstamps "bef4a6fa-b1d1-57d6-9460-0c6ef77aac98"))
     (comp
       (ref "ENC1")
       (value "RotaryEncoder_Switch")
@@ -469,7 +469,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "g7sy4N1rFR")
+          (name "SKiDL Tag") "_YQlSdjflg")
         (field
           (name "SKiDL Line") "ring_board.py:50"))
       (libsource
@@ -478,7 +478,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "4991de7c-655e-5051-9fef-fdbaa524a2f1"))
+      (tstamps "6e04d69d-3a6e-567f-89f8-06c9863dfa3d"))
     (comp
       (ref "J1")
       (value "Conn_01x08")
@@ -492,7 +492,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "bahhgnTwY8")
+          (name "SKiDL Tag") "GEMMmhzLnn")
         (field
           (name "SKiDL Line") "ring_board.py:37"))
       (libsource
@@ -501,7 +501,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "980bdad5-1939-530f-8c89-a958929f37b8"))
+      (tstamps "06b3127e-941b-56c4-af4c-6e2bb9a20c98"))
     (comp
       (ref "R1")
       (value "10k")
@@ -515,7 +515,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "uR7l5T3H1M")
+          (name "SKiDL Tag") "SgR4dPQnPx")
         (field
           (name "SKiDL Line") "ring_board.py:20"))
       (libsource
@@ -524,7 +524,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "1f190dd6-e789-5a2c-bd68-3bbee1bb616f"))
+      (tstamps "c5401801-05e2-56df-bfd5-3c881ced83b2"))
     (comp
       (ref "R2")
       (value "10k")
@@ -538,7 +538,7 @@
         (field
           (name "Datasheet"))
         (field
-          (name "SKiDL Tag") "mzB29Dt47K")
+          (name "SKiDL Tag") "EPTwmjGhDq")
         (field
           (name "SKiDL Line") "ring_board.py:20"))
       (libsource
@@ -547,7 +547,7 @@
       (sheetpath
         (names "/")
         (tstamps "/"))
-      (tstamps "3db3897a-7acb-547f-9e8f-a0d1f24080fa")))
+      (tstamps "2f440149-31b9-5253-89c9-08c40839f6f9")))
   (nets
     (net
       (code 1)
