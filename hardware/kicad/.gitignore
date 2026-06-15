@@ -1,0 +1,3 @@
+# SKiDL/KiCad transient reports + symbol caches
+*.erc
+*_sklib.py
