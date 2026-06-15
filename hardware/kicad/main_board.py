@@ -223,7 +223,9 @@ vin_raw = Net("VIN_RAW")
 j2[1] += vin_raw       # center
 j2[2] += gnd           # sleeve
 # reverse-polarity P-FET (source=VIN_RAW, gate=GND, drain=+9V)
-q1 = Part("Device", "Q_PMOS", footprint="Package_TO_SOT_SMD:SOT-23", ref="Q1")
+# AO3401A: real ~4A/-30V P-MOSFET, numbered pads (1/2/3) matching SOT-23.
+q1 = Part("Transistor_FET", "AO3401A",
+          footprint="Package_TO_SOT_SMD:SOT-23", ref="Q1")
 q1["S"] += vin_raw
 q1["G"] += gnd
 q1["D"] += v9
