@@ -344,7 +344,7 @@ Both boards are **placed, routed, and DRC-clean** (KiCad 10.0.3):
 
 | file | what |
 |------|------|
-| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 94×86 mm, 72 parts, 2-layer, **1053 track segs / 111 vias, DRC 0 errors / 0 unrouted** |
+| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 94×79 mm, 72 parts, 2-layer, **905 track segs / 74 vias, DRC 0 errors / 0 unrouted** |
 | `kicad/loopy_pedal_ring.kicad_pcb` (+ `.kicad_pro`) | ring board: ⌀68 mm round, 22 parts, 12-LED ring + center encoder, **287 segs / 4 vias, DRC 0 / 0 unrouted** |
 | `kicad/fab/loopy_pedal_main_gerbers.zip` | main board Gerbers + Excellon drill |
 | `kicad/fab/loopy_pedal_ring_gerbers.zip` | ring board Gerbers + Excellon drill |
@@ -361,13 +361,15 @@ overhang ~1.5–2 mm and stay reachable from outside the enclosure. Internal
 interconnects sit elsewhere: ring + indicator breakout on the top edge,
 footswitch headers on the left edge.
 
-**MIDI jacks (J8/J9)** are real **5-pin DIN sockets** — footprint
-`loopy:MIDI_DIN5_RA` (right-angle shielded MIDI jack), in the local
-`kicad/loopy.pretty/` library (KiCad has no stock 5-pin DIN). The 5 signal pads
-sit on the standard Ø12 mm DIN contact circle, with two wide-spaced shield/
-mounting posts. A matching 3D body (`loopy.pretty/MIDI_DIN5.wrl`, generated from
-`MIDI_DIN5.scad` via OpenSCAD — box body + square flange + recessed socket) is
-attached so it shows in renders.
+**MIDI jacks (J8/J9)** are real **right-angle shielded 5-pin DIN sockets**
+(SparkFun/Tayda style) — footprint `loopy:MIDI_DIN5_RA` in the local
+`kicad/loopy.pretty/` library (KiCad has no stock 5-pin DIN). The pad pattern is
+the genuine right-angle landing pattern (pins 1/2/3 in a column, 4/5 offset),
+from [schilkp/KiCad_Devices](https://github.com/schilkp/KiCad_Devices) (MIT),
+with the two **shield/mounting posts 15 mm apart** plus two shield-ground tabs.
+A detailed 3D body (`loopy.pretty/MIDI_DIN5.wrl`, generated from `MIDI_DIN5.scad`
+via OpenSCAD — shielded box + square flange + recessed round socket + contact
+pins) is attached, oriented so the socket faces out the board edge.
 
 **MIDI IN is opto-isolated per the MIDI spec:** DIN pin 4 → 220 Ω → the **H11L1
 optocoupler (U9)**, DIN pin 5 → cathode, a **1N4148 (D2)** across the LED for
