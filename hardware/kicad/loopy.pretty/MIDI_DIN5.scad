@@ -1,30 +1,30 @@
-// 3D body for the right-angle 5-pin DIN MIDI socket (MIDI_DIN5_RA footprint).
-// Footprint: socket opening faces +X, body extends -X, pins span +/-Y.
-// KiCad VRML frame: model X = footprint X, model Y = UP (board Z),
-// model Z = footprint Y.  Footprint scale 0.3937 cancels the WRL unit factor.
-$fn = 64;
+// 3D body for the CUI SDS-50J right-angle 5-pin DIN MIDI socket.
+// Datasheet (SDS-XXJ, SDS-50J): square flange 20 x 21.1 mm x 1.8 thick, Ø19 round
+// boss, Ø7 contact circle, body ~15.8 wide x 18 deep, black PBT plastic.
+// Footprint frame: socket opening faces +X, body extends -X, +Y = up (board Z),
+// +Z = footprint Y. Footprint scale 0.3937 cancels KiCad's WRL unit factor.
+$fn = 72;
 
-bx0 = -11.5;  // body back  (model X)
-bx1 = 2.0;    // body front (model X)
-bh  = 15.0;   // body height (up, model Y)
-bz  = 8.5;    // body half-depth (model Z = footprint Y)
-ft  = 1.8;    // flange thickness
-fw  = 21.0;   // flange size (square)
-sr  = 7.6;    // socket radius
-sz  = 8.0;    // socket centre height above board
+fx  = 4.0;     // flange front face X
+ft  = 1.8;     // flange thickness
+fw  = 20.0;    // flange width  (along Z)
+fh  = 21.1;    // flange height (along Y, up)
+bd  = 18.0;    // body depth (extends -X)
+bz  = 15.8;    // body width (Z)
+bh  = 16.5;    // body height (Y)
+scz = 10.5;    // socket centre height above the board
 
-color([0.12, 0.12, 0.13]) {
-    // shielded metal body box
-    translate([bx0, 0, -bz]) cube([bx1 - bx0, bh, 2 * bz]);
-    // square front flange (faces +X)
-    translate([bx1, 0, -fw/2]) cube([ft, fw, fw]);
+// black plastic shell
+color([0.10, 0.10, 0.11]) {
+    translate([fx - ft, 0, -fw/2]) cube([ft, fh, fw]);          // square front flange
+    translate([fx - ft - bd, 0, -bz/2]) cube([bd, bh, bz]);     // body box behind flange
+    translate([fx, scz, 0]) rotate([0,90,0]) cylinder(h = 2.0, r = 9.5);   // Ø19 round boss
 }
-// metal socket ring on the flange face
-color([0.55, 0.55, 0.58])
-    translate([bx1 + ft, sz, 0]) rotate([0, 90, 0]) cylinder(h = 0.7, r = sr);
-// dark recessed socket with the 5 contact pin-holes
-color([0.04, 0.04, 0.04])
-    translate([bx1 + ft - 0.4, sz, 0]) rotate([0, 90, 0]) cylinder(h = ft + 0.6, r = sr - 1.4);
-// the 5 contact pins poking down through the PCB (model -Y), at the pad sites
+// recessed metal socket ring (Ø7 contact bore)
+color([0.45, 0.45, 0.48])
+    translate([fx + 1.5, scz, 0]) rotate([0,90,0]) cylinder(h = 0.6, r = 4.5);
+color([0.02, 0.02, 0.02])
+    translate([fx - 1.0, scz, 0]) rotate([0,90,0]) cylinder(h = 3.0, r = 3.6);
+// five contact pins poking down through the PCB at the pad sites
 for (p = [[0,7.5],[0,0],[0,-7.5],[2.5,5],[2.5,-5]])
-    color([0.7,0.7,0.72]) translate([p[0], -2.5, p[1]]) cylinder(h = 2.5, r = 0.45);
+    color([0.72,0.72,0.74]) translate([p[0], -3, p[1]]) cylinder(h = 3, r = 0.5);
