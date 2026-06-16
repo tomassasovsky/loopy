@@ -213,8 +213,8 @@ DIN-IN ─▶ H11L1 opto ─┐
 
 **Connectors:** **ten 2-pin JST-XH headers**, one per pedal — pin 1 = that
 switch's signal, pin 2 = GND — so every footswitch plugs in individually. Laid
-out in a 5×2 grid near the top of the board. Ref on silk; the function is in each
-header's value field (`FSW_…`, fab layer). Mapping:
+out in a centred 5×2 grid near the top of the board, each **silkscreen-labelled
+with its pedal function** (RECPLAY, STOP, …) plus its ref designator. Mapping:
 
 | ref | pedal | ref | pedal |
 |-----|-------|-----|-------|
@@ -354,7 +354,7 @@ Both boards are **placed, routed, and DRC-clean** (KiCad 10.0.3):
 
 | file | what |
 |------|------|
-| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 82×88 mm, 80 parts, 2-layer, **DRC 0 errors / 0 unrouted** |
+| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 82×84 mm, 80 parts, 2-layer, **DRC 0 errors / 0 unrouted** |
 | `kicad/loopy_pedal_ring.kicad_pcb` (+ `.kicad_pro`) | ring board: ⌀68 mm round, 22 parts, 12-LED ring + center encoder, **287 segs / 4 vias, DRC 0 / 0 unrouted** |
 | `kicad/fab/loopy_pedal_main_gerbers.zip` | main board Gerbers + Excellon drill |
 | `kicad/fab/loopy_pedal_ring_gerbers.zip` | ring board Gerbers + Excellon drill |
