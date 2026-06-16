@@ -20,6 +20,9 @@ _*.png
 _*.svg
 _*.txt
 
+# OpenSCAD intermediate (the .wrl it produces is committed; .scad is the source)
+*.stl
+
 # Freerouting jar + raw gerber output (zips are committed)
 _tools/
 fab/loopy_pedal_main/

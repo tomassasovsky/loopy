@@ -344,7 +344,7 @@ Both boards are **placed, routed, and DRC-clean** (KiCad 10.0.3):
 
 | file | what |
 |------|------|
-| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 100×98 mm, 72 parts, 2-layer, **984 track segs / 86 vias, DRC 0 errors / 0 unrouted** |
+| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 100×92 mm, 72 parts, 2-layer, **938 track segs / 80 vias, DRC 0 errors / 0 unrouted** |
 | `kicad/loopy_pedal_ring.kicad_pcb` (+ `.kicad_pro`) | ring board: ⌀68 mm round, 22 parts, 12-LED ring + center encoder, **287 segs / 4 vias, DRC 0 / 0 unrouted** |
 | `kicad/fab/loopy_pedal_main_gerbers.zip` | main board Gerbers + Excellon drill |
 | `kicad/fab/loopy_pedal_ring_gerbers.zip` | ring board Gerbers + Excellon drill |
@@ -356,13 +356,17 @@ FET is **`Transistor_FET:AO3401A`** (numbered pads that match SOT-23 — the
 generic `Q_PMOS` letter-pads do not).
 
 **I/O layout:** all external I/O is on the **bottom edge** — 9 V barrel, USB-C,
-and the two MIDI jacks. Internal interconnects sit elsewhere: ring + indicator
-breakout on the top edge, footswitch headers on the left edge.
+and the two MIDI jacks — each aligned to the board boundary so the openings
+overhang ~1.5–2 mm and stay reachable from outside the enclosure. Internal
+interconnects sit elsewhere: ring + indicator breakout on the top edge,
+footswitch headers on the left edge.
 
 **MIDI jacks (J8/J9)** are real **5-pin DIN sockets** — footprint
 `loopy:MIDI_DIN5_SDS-50J` (CUI SDS-50J / Jalco YKF51-5050 compatible), in the
 local `kicad/loopy.pretty/` library. (KiCad has no stock 5-pin DIN, so it's
-hand-built from the SDS-50J pad pattern; it has no 3D body model.)
+hand-built from the SDS-50J pad pattern.) A matching 3D body
+(`loopy.pretty/MIDI_DIN5.wrl`, generated from `MIDI_DIN5.scad` via OpenSCAD) is
+attached so it shows in renders.
 
 **Indicator LEDs** are **not** on the main board — they break out through the
 3-pin **J11** header (`+5V_LED` / data / `GND`) to an off-board strip, with only
