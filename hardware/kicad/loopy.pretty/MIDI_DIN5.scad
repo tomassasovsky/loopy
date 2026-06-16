@@ -13,8 +13,8 @@ $fn = 64;
 fw = 20.0;  fh = 21.1;  ft = 1.8;     // square front flange (width X, depth Y, height Z)
 bw = 15.8;  bh = 16.5;  bd = 18.0;    // body box
 sc = 10.5;                            // socket centre height (Z)
-fyf = 4.0;  boss_out = 2.0; boss_r = 9.5;   // flange front Y, Ø19 boss protrusion
-cav_r = 7.0; cav_depth = 7.0;         // plug cavity (Ø14)
+fyf = 4.0;  boss_out = 2.5; boss_r = 9.5;   // flange front Y, Ø19 boss protrusion
+cav_r = 7.5; cav_depth = 5.5;         // plug cavity (Ø15, shallow enough to see into)
 hole_r = 0.85;                        // female contact bore radius
 
 bossfront = fyf + boss_out;           // Y of boss outer face
@@ -42,20 +42,21 @@ if (part == 0) color([0.10, 0.10, 0.11]) {
     for (m = mnt) translate([m[0], m[1], -2.5]) cylinder(h = 2.5, r = 1.1);  // plastic posts
 }
 
-if (part == 1) color([0.05, 0.05, 0.06]) {
+if (part == 1) color([0.20, 0.20, 0.22]) {
     difference() {
-        union() {
-            ycyl(0, cavfloor, sc, 1.0, cav_r - 0.2);                     // cavity floor
-            difference() {                                              // cavity inner wall
-                ycyl(0, cavfloor + 0.5, sc, cav_depth - 1.0, cav_r - 0.2);
-                ycyl(0, cavfloor + 0.4, sc, cav_depth, cav_r - 0.9);
-            }
-        }
-        for (f = fan) ycyl(f[0], cavfloor - 0.5, sc + f[1], 2.0, hole_r);// bore through floor
+        ycyl(0, cavfloor, sc, cav_depth - 0.4, cav_r - 0.25);           // grey cavity insert (contrast)
+        ycyl(0, cavfloor + 1.2, sc, cav_depth, cav_r - 1.4);            // hollow the front
+        for (f = fan) ycyl(f[0], cavfloor - 0.5, sc + f[1], cav_depth, hole_r);  // 5 female bores
     }
 }
 
-if (part == 2) color([0.62, 0.62, 0.66]) {
-    for (f = fan) ycyl(f[0], cavfloor - 1.6, sc + f[1], 1.0, hole_r - 0.25);  // contact deep in bore
+if (part == 2) color([0.68, 0.68, 0.72]) {
+    // bright metal ground ring at the socket mouth - makes it read clearly as a socket
+    difference() {
+        ycyl(0, bossfront - 1.4, sc, 1.4, cav_r);
+        ycyl(0, bossfront - 1.6, sc, 2.0, cav_r - 1.1);
+        translate([-1.7, bossfront - 2, sc + cav_r - 0.9]) cube([3.4, 3, 2]);  // keyway gap
+    }
+    for (f = fan) ycyl(f[0], cavfloor + 0.6, sc + f[1], 2.2, hole_r - 0.3); // contacts near front
     for (p = concat(sig, gnd)) translate([p[0], p[1], -3.2]) cylinder(h = 3.4, r = 0.5);  // solder tails
 }
