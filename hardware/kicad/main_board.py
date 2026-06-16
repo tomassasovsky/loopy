@@ -305,15 +305,15 @@ j_min = Part("Connector", "DIN-5_180degree",
              ref="J9")
 opto = Part("Isolator", "H11L1",
             footprint="Package_DIP:DIP-6_W7.62mm", ref="U9")
-# H11L1: 1=anode,2=cathode,3=NC,4=GND,5=Vo,6=Vcc
+# H11L1 (datasheet): 1=anode, 2=cathode, 3=NC, 4=Vo (open-collector), 5=GND, 6=Vcc
 R("220")[1, 2] += j_min[4], opto[1]      # DIN pin4 (source) via 220R -> anode
 opto[2] += j_min[5]                       # DIN pin5 -> cathode
 j_min[2] += gnd                          # shield
 Part("Diode", "1N4148", footprint="Diode_SMD:D_SOD-123", ref="D2")[1, 2] += opto[1], opto[2]
-opto[6] += v5
-opto[4] += gnd
-R("10k")[1, 2] += v5, opto[5]            # pull-up on Vo
-opto[5] += midi_in_opto
+opto[6] += v5                            # Vcc
+opto[5] += gnd                           # GND
+R("10k")[1, 2] += v5, opto[4]            # pull-up on Vo (open-collector output)
+opto[4] += midi_in_opto                  # Vo -> AND-merge
 # AND-gate merge: inputs = 16U2 TXD + opto out -> 328P RXD
 andg = Part("74xGxx", "74AHCT1G08",
             footprint="Package_TO_SOT_SMD:SOT-23-5", ref="U10")
@@ -346,6 +346,10 @@ j_ind[1] += v5led        # +5V for the off-board LED strip
 j_ind[2] += ind_out      # WS2812 data (after the 330R series resistor)
 j_ind[3] += gnd
 C("100nF")[1, 2] += v5led, gnd   # local decoupling at the header
+
+# HF input bypass right at the buck IN pin (in addition to the 22uF bulk C24);
+# added last so it doesn't renumber the existing caps.
+C("100nF")[1, 2] += v9, gnd
 
 # Declare the supply rails as power-driven (KiCad PWR_FLAG equivalent): silences
 # the "insufficient drive" warnings on the supply pins.
