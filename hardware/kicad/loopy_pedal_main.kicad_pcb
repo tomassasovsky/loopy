@@ -2760,14 +2760,14 @@
 				)
 			)
 		)
-		(property "Value" "Conn_01x08"
-			(at 8.75 4.6 0)
-			(layer "F.Fab")
+		(property "Value" "RING"
+			(at 19.75 0.105 0)
+			(layer "F.SilkS")
 			(uuid "9d4b0db2-d1e7-49e1-a926-a66928100daf")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -3087,14 +3087,14 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
-			(at 0 2.55 0)
-			(layer "F.Fab")
+		(property "Value" "RST U2"
+			(at -0.255 5.375 0)
+			(layer "F.SilkS")
 			(uuid "0fb457c9-8a66-4d60-9b9a-46873b9ccec6")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -4829,14 +4829,14 @@
 				)
 			)
 		)
-		(property "Value" "Conn_02x03_Odd_Even"
-			(at 1.27 7.46 0)
-			(layer "F.Fab")
+		(property "Value" "ICSP U2"
+			(at 0.18 8.405 0)
+			(layer "F.SilkS")
 			(uuid "be757894-88b8-4bf8-8e74-983291f39756")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -8288,14 +8288,14 @@
 				)
 			)
 		)
-		(property "Value" "MIDI_DIN5_RA"
-			(at 0 5.5 0)
-			(layer "F.Fab")
+		(property "Value" "MIDI OUT"
+			(at 0 -15.955 0)
+			(layer "F.SilkS")
 			(uuid "59118a88-17b2-46a4-9097-0f75bf087fe6")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -8916,14 +8916,14 @@
 				)
 			)
 		)
-		(property "Value" "USB_C_Receptacle_USB2.0_16P"
-			(at 2.975 9.925 0)
-			(layer "F.Fab")
+		(property "Value" "USB"
+			(at 2.975 -10.925 0)
+			(layer "F.SilkS")
 			(uuid "02821da9-b9fa-4f2c-ac78-9f40c4f5e78e")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -9332,14 +9332,14 @@
 				)
 			)
 		)
-		(property "Value" "MIDI_DIN5_RA"
-			(at 0 5.5 0)
-			(layer "F.Fab")
+		(property "Value" "MIDI IN"
+			(at 0 -15.955 0)
+			(layer "F.SilkS")
 			(uuid "f0a64bff-0332-4319-8ffd-6b59b1bc6f46")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -14164,14 +14164,14 @@
 				)
 			)
 		)
-		(property "Value" "Conn_01x02"
-			(at 0 4.92 0)
-			(layer "F.Fab")
+		(property "Value" "MOCO"
+			(at 1.205 11.4 0)
+			(layer "F.SilkS")
 			(uuid "140904b1-bfc4-4525-a717-16df331ad320")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -15776,14 +15776,14 @@
 				)
 			)
 		)
-		(property "Value" "SW_Push"
-			(at 0 2.55 0)
-			(layer "F.Fab")
+		(property "Value" "RST U1"
+			(at 0.155 5.455 0)
+			(layer "F.SilkS")
 			(uuid "7c2f6b08-17bf-48e1-91bb-f84f05b68b8d")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -16305,14 +16305,14 @@
 				)
 			)
 		)
-		(property "Value" "Conn_01x03"
-			(at 2.5 4.6 0)
-			(layer "F.Fab")
+		(property "Value" "IND"
+			(at 10.5 0.105 0)
+			(layer "F.SilkS")
 			(uuid "dd2fdf4f-fa13-4961-826e-1132a32c5c86")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -16879,14 +16879,14 @@
 				)
 			)
 		)
-		(property "Value" "Conn_02x03_Odd_Even"
-			(at 1.27 7.46 0)
-			(layer "F.Fab")
+		(property "Value" "ICSP U1"
+			(at -0.21 -5.005 0)
+			(layer "F.SilkS")
 			(uuid "3681ea55-afba-483d-a0c2-84eb5278e0cc")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
@@ -18399,14 +18399,14 @@
 				)
 			)
 		)
-		(property "Value" "Barrel_Jack"
-			(at -6.2 -5.5 90)
-			(layer "F.Fab")
+		(property "Value" "9V"
+			(at 5.745 2.35 90)
+			(layer "F.SilkS")
 			(uuid "c68ef98a-4929-49b0-845a-931ba6c32f32")
 			(effects
 				(font
-					(size 1 1)
-					(thickness 0.15)
+					(size 0.8 0.8)
+					(thickness 0.12)
 				)
 			)
 		)
