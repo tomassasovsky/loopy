@@ -211,8 +211,18 @@ DIN-IN ─▶ H11L1 opto ─┐
   internal pull-up) — belt-and-suspenders with the firmware's 25 ms debounce.
 - Optional **100 Ω** series + **TVS/ESD** if the switch wiring is long.
 
-**Connectors:** two 6-pin (or one 12-pin) **screw terminals** or **JST-XH**: 10
-switch signals + 2 GND returns. Label each on the silkscreen by function.
+**Connectors:** **ten 2-pin JST-XH headers**, one per pedal — pin 1 = that
+switch's signal, pin 2 = GND — so every footswitch plugs in individually. Laid
+out in a 5×2 grid near the top of the board. Ref on silk; the function is in each
+header's value field (`FSW_…`, fab layer). Mapping:
+
+| ref | pedal | ref | pedal |
+|-----|-------|-----|-------|
+| J3  | RECPLAY | J15 | TRACK2 |
+| J4  | STOP    | J16 | TRACK3 |
+| J12 | UNDO    | J17 | TRACK4 |
+| J13 | MODE    | J18 | CLEAR  |
+| J14 | TRACK1  | J19 | BANK   |
 
 ---
 
@@ -261,7 +271,7 @@ Keep the cable ≤ ~30 cm; the 74AHCT125 buffer + doubled power pins handle the 
 | Y1,Y2 | 16 MHz crystal | HC-49/SMD | 2 |
 | J1 | USB-C receptacle (2.0) | — | 1 |
 | J2 | 2.1 mm barrel jack | — | 1 |
-| J3,J4 | footswitch terminals (6-pos) | JST-XH/screw | 2 |
+| J3,J4,J12–J19 | footswitch headers (2-pin, one per pedal) | JST-XH B2B-XH-A | 10 |
 | J5 | ring-board header (8-pin) | JST-XH | 1 |
 | J6,J7 | ICSP (2×3) | 2.54 hdr | 2 |
 | J8,J9 | MIDI IN / OUT (DIN-5 180°, or 3.5 mm TRS-A) | — | 2 |
@@ -344,7 +354,7 @@ Both boards are **placed, routed, and DRC-clean** (KiCad 10.0.3):
 
 | file | what |
 |------|------|
-| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 82×70 mm, 72 parts, 2-layer, **DRC 0 errors / 0 unrouted** |
+| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 82×88 mm, 80 parts, 2-layer, **DRC 0 errors / 0 unrouted** |
 | `kicad/loopy_pedal_ring.kicad_pcb` (+ `.kicad_pro`) | ring board: ⌀68 mm round, 22 parts, 12-LED ring + center encoder, **287 segs / 4 vias, DRC 0 / 0 unrouted** |
 | `kicad/fab/loopy_pedal_main_gerbers.zip` | main board Gerbers + Excellon drill |
 | `kicad/fab/loopy_pedal_ring_gerbers.zip` | ring board Gerbers + Excellon drill |

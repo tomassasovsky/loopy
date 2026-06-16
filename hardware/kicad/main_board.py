@@ -119,19 +119,16 @@ for name, pin in sw_pins.items():
     # hardware debounce: 100nF from the pin to GND (with the internal pull-up)
     C("100nF")[1, 2] += n, gnd
 
-# footswitch connectors (2x 6-pos): 5 switches + GND each
-j3 = Part("Connector_Generic", "Conn_01x06",
-          footprint="Connector_JST:JST_XH_B6B-XH-A_1x06_P2.50mm_Vertical", ref="J3")
-j4 = Part("Connector_Generic", "Conn_01x06",
-          footprint="Connector_JST:JST_XH_B6B-XH-A_1x06_P2.50mm_Vertical", ref="J4")
-grpA = ["RECPLAY", "STOP", "UNDO", "MODE", "TRACK1"]
-grpB = ["TRACK2", "TRACK3", "TRACK4", "CLEAR", "BANK"]
-for i, name in enumerate(grpA):
-    j3[i + 1] += sw_nets[name]
-j3[6] += gnd
-for i, name in enumerate(grpB):
-    j4[i + 1] += sw_nets[name]
-j4[6] += gnd
+# footswitch connectors: one 2-pin JST-XH per pedal (pin 1 = switch signal, pin 2 = GND)
+fsw_order = ["RECPLAY", "STOP", "UNDO", "MODE", "TRACK1",
+             "TRACK2", "TRACK3", "TRACK4", "CLEAR", "BANK"]
+fsw_refs = ["J3", "J4", "J12", "J13", "J14", "J15", "J16", "J17", "J18", "J19"]
+for name, ref in zip(fsw_order, fsw_refs):
+    jp = Part("Connector_Generic", "Conn_01x02",
+              footprint="Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical",
+              ref=ref, value="FSW_" + name)
+    jp[1] += sw_nets[name]
+    jp[2] += gnd
 
 # ICSP-328P (2x3)
 icsp1 = Part("Connector_Generic", "Conn_02x03_Odd_Even",
