@@ -116,8 +116,10 @@ for name, pin in sw_pins.items():
     n = Net("SW_" + name)
     u1[pin] += n
     sw_nets[name] = n
-    # hardware debounce: 100nF from the pin to GND (with the internal pull-up)
-    C("100nF")[1, 2] += n, gnd
+    # hardware debounce cap to GND (with the internal pull-up).  CLEAR (PB3/MOSI)
+    # and BANK (PB4/MISO) share the ICSP lines, so use a small 1nF there to keep
+    # in-system programming clean; the firmware debounces all switches anyway.
+    C("1nF" if name in ("CLEAR", "BANK") else "100nF")[1, 2] += n, gnd
 
 # footswitch connectors: one 2-pin JST-XH per pedal (pin 1 = switch signal, pin 2 = GND)
 fsw_order = ["RECPLAY", "STOP", "UNDO", "MODE", "TRACK1",
@@ -219,14 +221,15 @@ j2 = Part("Connector", "Barrel_Jack",
 vin_raw = Net("VIN_RAW")
 j2[1] += vin_raw       # center
 j2[2] += gnd           # sleeve
-# reverse-polarity P-FET (source=VIN_RAW, gate=GND, drain=+9V)
-# AO3401A: real ~4A/-30V P-MOSFET, numbered pads (1/2/3) matching SOT-23.
+# reverse-polarity P-FET, high-side: DRAIN=input (VIN_RAW), SOURCE=load (+9V),
+# GATE=GND.  The body diode then points input->load (conducts normally, blocks
+# on reverse polarity).  AO3401A: real ~4A/-30V P-MOSFET, numbered SOT-23 pads.
 q1 = Part("Transistor_FET", "AO3401A",
           footprint="Package_TO_SOT_SMD:SOT-23", ref="Q1")
-q1["S"] += vin_raw
+q1["S"] += v9
 q1["G"] += gnd
-q1["D"] += v9
-Part("Device", "D", value="TVS_SMBJ12A",
+q1["D"] += vin_raw
+Part("Device", "D", value="SMAJ12A",
      footprint="Diode_SMD:D_SMA", ref="D1")[1, 2] += gnd, v9
 C("22uF", "Capacitor_SMD:C_1206_3216Metric")[1, 2] += v9, gnd
 # AP63203WU buck: FB,EN,IN,GND,SW,BST
@@ -254,14 +257,14 @@ R("10k")[1, 2] += fbnet, gnd
 
 # Ideal-diode from buck -> +5V
 d_buck = Part("Power_Management", "LM66100DCK",
-              footprint="Package_TO_SOT_SMD:SOT-23-6", ref="U5")
+              footprint="Package_TO_SOT_SMD:SOT-363_SC-70-6", ref="U5")
 d_buck[1] += v5led   # VIN
 d_buck[6] += v5      # VOUT
 d_buck[2] += gnd     # GND
 d_buck[3] += gnd     # ~CE (enabled)
 # Ideal-diode from USB VBUS -> +5V
 d_usb = Part("Power_Management", "LM66100DCK",
-             footprint="Package_TO_SOT_SMD:SOT-23-6", ref="U6")
+             footprint="Package_TO_SOT_SMD:SOT-363_SC-70-6", ref="U6")
 d_usb[1] += vbus     # VIN
 d_usb[6] += v5       # VOUT
 d_usb[2] += gnd      # GND
