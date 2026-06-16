@@ -216,6 +216,99 @@ int32_t le_midi_open(le_midi* m, const char* id, le_midi_event_cb cb) {
   return LE_OK;
 }
 
+/* ---- MIDI output (portable core) ------------------------------------------ *
+ *
+ * Output is far simpler than input: no ring, no callback, no worker thread. The
+ * handle just remembers the selected backend and its OS state; open/close/send
+ * forward straight to the backend, which owns all OS-specific work. */
+
+struct le_midi_out {
+  const le_midi_out_backend* backend; /* compiled-in per-OS backend (may be NULL) */
+  void* backend_state;                /* OS state owned by the backend while open */
+  _Atomic int is_open;                /* 1 between a successful open and a close */
+};
+
+const le_midi_out_backend* le_midi_out_select_backend(void) {
+#if defined(__APPLE__)
+  return le_midi_apple_out_backend();
+#elif defined(__linux__)
+  return le_midi_linux_out_backend();
+#elif defined(_WIN32)
+  return le_midi_windows_out_backend();
+#else
+  return NULL;
+#endif
+}
+
+void le_midi_out_set_backend_state(le_midi_out* m, void* state) {
+  if (m != NULL) m->backend_state = state;
+}
+
+void* le_midi_out_get_backend_state(le_midi_out* m) {
+  return (m != NULL) ? m->backend_state : NULL;
+}
+
+le_midi_out* le_midi_out_create(void) {
+  le_midi_out* m = (le_midi_out*)calloc(1, sizeof(le_midi_out));
+  if (m == NULL) return NULL;
+  atomic_store_explicit(&m->is_open, 0, memory_order_relaxed);
+  m->backend = le_midi_out_select_backend();
+  m->backend_state = NULL;
+  return m;
+}
+
+int32_t le_midi_out_close(le_midi_out* m) {
+  if (m == NULL) return LE_ERR_INVALID;
+  if (m->backend != NULL && m->backend->close != NULL) {
+    m->backend->close(m); /* idempotent: no-op when no state is set */
+  }
+  m->backend_state = NULL;
+  atomic_store_explicit(&m->is_open, 0, memory_order_release);
+  return LE_OK;
+}
+
+void le_midi_out_destroy(le_midi_out* m) {
+  if (m == NULL) return;
+  le_midi_out_close(m);
+  free(m);
+}
+
+int32_t le_midi_out_enumerate(le_midi_info* out, int32_t max, int32_t* count) {
+  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
+  *count = 0;
+  const le_midi_out_backend* b = le_midi_out_select_backend();
+  if (b == NULL || b->enumerate == NULL) return LE_OK; /* no backend: empty */
+  return b->enumerate(out, max, count);
+}
+
+int32_t le_midi_out_open(le_midi_out* m, const char* id) {
+  if (m == NULL) return LE_ERR_INVALID;
+  if (m->backend == NULL || m->backend->open == NULL) return LE_ERR_DEVICE;
+
+  /* Re-opening switches devices: drop the current one first (atomic A->B). */
+  if (atomic_load_explicit(&m->is_open, memory_order_acquire)) {
+    le_midi_out_close(m);
+  }
+
+  const int32_t rc = m->backend->open(m, id);
+  if (rc != LE_OK) {
+    if (m->backend->close != NULL) m->backend->close(m);
+    m->backend_state = NULL;
+    return rc;
+  }
+  atomic_store_explicit(&m->is_open, 1, memory_order_release);
+  return LE_OK;
+}
+
+int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data, int32_t len) {
+  if (m == NULL || data == NULL || len <= 0) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&m->is_open, memory_order_acquire)) {
+    return LE_ERR_DEVICE; /* nothing open */
+  }
+  if (m->backend == NULL || m->backend->send == NULL) return LE_ERR_DEVICE;
+  return m->backend->send(m, data, len);
+}
+
 /* ---- test hooks ----------------------------------------------------------- */
 
 void le_midi_set_cb_for_test(le_midi* m, le_midi_event_cb cb) {

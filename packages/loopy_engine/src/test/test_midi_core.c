@@ -252,6 +252,57 @@ static void test_enumerate_arg_validation(void) {
   CHECK(count >= 0 && count <= 8);
 }
 
+/* ---- MIDI output seam ---------------------------------------------------- *
+ *
+ * The output path has no ring and no callback, so the host-testable surface is
+ * the FFI contract: argument validation, the not-open guard, idempotent close,
+ * and create/destroy null safety. The actual byte delivery needs a real OS port
+ * (covered by the manual per-OS smoke pass), so these never assert on a send to
+ * an open device. */
+
+static void test_midi_out_create_destroy_and_null_safety(void) {
+  printf("test_midi_out_create_destroy_and_null_safety\n");
+  le_midi_out* m = le_midi_out_create();
+  CHECK(m != NULL);
+  le_midi_out_destroy(m);
+  le_midi_out_destroy(NULL);                    /* safe */
+  CHECK(le_midi_out_close(NULL) == LE_ERR_INVALID);
+  CHECK(le_midi_out_open(NULL, "x") == LE_ERR_INVALID);
+  const uint8_t b[] = {0xB0, 80, 127};
+  CHECK(le_midi_out_send(NULL, b, 3) == LE_ERR_INVALID);
+}
+
+static void test_midi_out_enumerate_arg_validation(void) {
+  printf("test_midi_out_enumerate_arg_validation\n");
+  le_midi_info infos[8];
+  int32_t count = -1;
+  CHECK(le_midi_out_enumerate(NULL, 8, &count) == LE_ERR_INVALID);
+  CHECK(le_midi_out_enumerate(infos, 8, NULL) == LE_ERR_INVALID);
+  CHECK(le_midi_out_enumerate(infos, 0, &count) == LE_ERR_INVALID);
+  /* Valid call returns LE_OK and a non-negative, clamped count. */
+  count = -1;
+  CHECK(le_midi_out_enumerate(infos, 8, &count) == LE_OK);
+  CHECK(count >= 0 && count <= 8);
+}
+
+static void test_midi_out_send_and_open_guards(void) {
+  printf("test_midi_out_send_and_open_guards\n");
+  le_midi_out* m = le_midi_out_create();
+  CHECK(m != NULL);
+  const uint8_t msg[] = {0xB0, 80, 127};
+  /* Nothing open yet: send is a device error, not a crash. */
+  CHECK(le_midi_out_send(m, msg, 3) == LE_ERR_DEVICE);
+  /* Bad send arguments are rejected before the open check. */
+  CHECK(le_midi_out_send(m, NULL, 3) == LE_ERR_INVALID);
+  CHECK(le_midi_out_send(m, msg, 0) == LE_ERR_INVALID);
+  /* A non-existent destination id fails as a device error. */
+  CHECK(le_midi_out_open(m, "no-such-output-xyz") == LE_ERR_DEVICE);
+  /* close is idempotent even when nothing was ever opened. */
+  CHECK(le_midi_out_close(m) == LE_OK);
+  CHECK(le_midi_out_close(m) == LE_OK);
+  le_midi_out_destroy(m);
+}
+
 int main(void) {
   test_parse_control_change();
   test_parse_note_on_and_off();
@@ -264,6 +315,9 @@ int main(void) {
   test_create_destroy_and_null_safety();
   test_open_rejects_null_callback();
   test_enumerate_arg_validation();
+  test_midi_out_create_destroy_and_null_safety();
+  test_midi_out_enumerate_arg_validation();
+  test_midi_out_send_and_open_guards();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
