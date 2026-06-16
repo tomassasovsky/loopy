@@ -1,0 +1,236 @@
+{
+  "version": 1,
+  "author": "loopy",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-arduino-uno",
+      "id": "uno",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw0",
+      "top": -180,
+      "left": -40,
+      "attrs": {
+        "color": "green",
+        "label": "RECPLAY"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw1",
+      "top": -180,
+      "left": 90,
+      "attrs": {
+        "color": "green",
+        "label": "STOP"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw2",
+      "top": -180,
+      "left": 220,
+      "attrs": {
+        "color": "green",
+        "label": "UNDO"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw3",
+      "top": -180,
+      "left": 350,
+      "attrs": {
+        "color": "green",
+        "label": "MODE"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw4",
+      "top": -180,
+      "left": 480,
+      "attrs": {
+        "color": "green",
+        "label": "TRACK1"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw5",
+      "top": -300,
+      "left": -40,
+      "attrs": {
+        "color": "green",
+        "label": "TRACK2"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw6",
+      "top": -300,
+      "left": 90,
+      "attrs": {
+        "color": "green",
+        "label": "TRACK3"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw7",
+      "top": -300,
+      "left": 220,
+      "attrs": {
+        "color": "green",
+        "label": "TRACK4"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw8",
+      "top": -300,
+      "left": 350,
+      "attrs": {
+        "color": "green",
+        "label": "CLEAR"
+      }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "sw9",
+      "top": -300,
+      "left": 480,
+      "attrs": {
+        "color": "green",
+        "label": "BANK"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "sw0:1.l",
+      "uno:3",
+      "green",
+      []
+    ],
+    [
+      "sw0:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw1:1.l",
+      "uno:4",
+      "green",
+      []
+    ],
+    [
+      "sw1:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw2:1.l",
+      "uno:5",
+      "green",
+      []
+    ],
+    [
+      "sw2:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw3:1.l",
+      "uno:6",
+      "green",
+      []
+    ],
+    [
+      "sw3:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw4:1.l",
+      "uno:7",
+      "green",
+      []
+    ],
+    [
+      "sw4:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw5:1.l",
+      "uno:8",
+      "green",
+      []
+    ],
+    [
+      "sw5:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw6:1.l",
+      "uno:9",
+      "green",
+      []
+    ],
+    [
+      "sw6:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw7:1.l",
+      "uno:10",
+      "green",
+      []
+    ],
+    [
+      "sw7:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw8:1.l",
+      "uno:11",
+      "green",
+      []
+    ],
+    [
+      "sw8:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ],
+    [
+      "sw9:1.l",
+      "uno:12",
+      "green",
+      []
+    ],
+    [
+      "sw9:2.l",
+      "uno:GND.1",
+      "black",
+      []
+    ]
+  ]
+}
