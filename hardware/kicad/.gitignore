@@ -19,6 +19,7 @@ _*.py
 _*.png
 _*.svg
 _*.txt
+_*.rpt
 
 # OpenSCAD intermediate (the .wrl it produces is committed; .scad is the source)
 *.stl
