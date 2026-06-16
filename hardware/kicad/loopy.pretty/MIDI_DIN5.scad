@@ -1,18 +1,28 @@
-// 3D body for the 5-pin DIN MIDI socket (SDS-50J footprint).
-// Authored in KiCad's VRML frame: model X = footprint X, model Y = UP (board Z),
-// model Z = footprint -Y (so the socket opening, at footprint -Y, is +Z here).
-// The footprint scale 0.3937 (=1/2.54) cancels KiCad's WRL 0.1-inch unit factor,
-// so these numbers are effectively millimetres.
+// 3D body for the right-angle 5-pin DIN MIDI socket (MIDI_DIN5_RA footprint).
+// KiCad VRML frame: model X = footprint X, model Y = UP (board Z),
+// model Z = footprint Y (front-to-back). Socket opening faces the front (-Z).
+// Footprint scale 0.3937 (=1/2.54) cancels KiCad's WRL 0.1-inch unit factor.
 $fn = 56;
-cx = 7.5;     // body centre over footprint X (between the pins)
-r  = 7.6;     // shell radius (~15 mm round body)
 
-color([0.74, 0.74, 0.78]) {
-    // round metal shell: axis along model Z = footprint Y (lies flat, front-to-back)
-    translate([cx, r, 4.5]) cylinder(h = 14, r = r, center = true);
-    // rim around the socket opening (footprint -Y -> +Z)
-    translate([cx, r, 11.0]) cylinder(h = 2.5, r = r + 0.8, center = true);
+bw = 15.5;          // body width  (X)
+bh = 15.0;          // body height (up, model Y)
+by0 = -1.5;         // body front (model Z, toward the socket opening)
+by1 = 13.0;         // body back  (model Z, over the PCB)
+fw = 21.0;          // flange width
+fh = 21.0;          // flange height
+ft = 1.8;           // flange thickness
+sr = 7.6;           // socket radius
+sz = 9.0;           // socket centre height above board
+
+color([0.13, 0.13, 0.14]) {
+    // main body box
+    translate([-bw/2, 0, by0]) cube([bw, bh, by1 - by0]);
+    // square front flange
+    translate([-fw/2, 0, by0 - ft]) cube([fw, fh, ft]);
 }
-// black insert with the contact holes, recessed in the front face
-color([0.1, 0.1, 0.1])
-    translate([cx, r, 11.8]) cylinder(h = 1.2, r = r - 1.3, center = true);
+// metal socket ring on the flange face
+color([0.55, 0.55, 0.58])
+    translate([0, sz, by0 - ft - 0.3]) cylinder(h = 0.7, r = sr);
+// dark recessed socket
+color([0.04, 0.04, 0.04])
+    translate([0, sz, by0 - ft - 0.1]) cylinder(h = ft + 0.4, r = sr - 1.6);

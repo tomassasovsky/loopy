@@ -292,7 +292,7 @@ buf_midi[1] += gnd
 buf_midi[2] += uart_tx
 buf_midi[4] += midi_out_buf
 j_mout = Part("Connector", "DIN-5_180degree",
-              footprint="loopy:MIDI_DIN5_SDS-50J",
+              footprint="loopy:MIDI_DIN5_RA",
               ref="J8")
 R("220")[1, 2] += midi_out_buf, j_mout[5]   # TX -> DIN pin 5
 R("220")[1, 2] += v5, j_mout[4]             # +5V -> DIN pin 4
@@ -301,7 +301,7 @@ j_mout[2] += gnd                            # DIN pin 2 = shield/GND
 # ---- MIDI IN (opto + AND merge) --------------------------------------------
 
 j_min = Part("Connector", "DIN-5_180degree",
-             footprint="loopy:MIDI_DIN5_SDS-50J",
+             footprint="loopy:MIDI_DIN5_RA",
              ref="J9")
 opto = Part("Isolator", "H11L1",
             footprint="Package_DIP:DIP-6_W7.62mm", ref="U9")
