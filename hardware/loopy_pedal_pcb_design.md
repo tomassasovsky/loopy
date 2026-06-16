@@ -354,7 +354,7 @@ Both boards are **placed, routed, and DRC-clean** (KiCad 10.0.3):
 
 | file | what |
 |------|------|
-| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 82×90 mm, 80 parts, 2-layer, **DRC 0 errors / 0 unrouted** |
+| `kicad/loopy_pedal_main.kicad_pcb` (+ `.kicad_pro`) | main board: 82×94 mm, 80 parts, 2-layer, **DRC 0 errors / 0 unrouted** |
 | `kicad/loopy_pedal_ring.kicad_pcb` (+ `.kicad_pro`) | ring board: ⌀68 mm round, 22 parts, 12-LED ring + center encoder, **287 segs / 4 vias, DRC 0 / 0 unrouted** |
 | `kicad/fab/loopy_pedal_main_gerbers.zip` | main board Gerbers + Excellon drill |
 | `kicad/fab/loopy_pedal_ring_gerbers.zip` | ring board Gerbers + Excellon drill |
