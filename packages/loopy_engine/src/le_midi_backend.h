@@ -76,6 +76,40 @@ const le_midi_backend* le_midi_apple_backend(void);
 const le_midi_backend* le_midi_linux_backend(void);
 const le_midi_backend* le_midi_windows_backend(void);
 
+/* ---- MIDI output backend seam --------------------------------------------- *
+ *
+ * The send-side counterpart of le_midi_backend, kept entirely separate: output
+ * has no ring, no callback, and no worker thread, so the portable core (midi.c)
+ * only stores the backend pointer + its OS state and forwards open/close/send.
+ * Each backend impl lives in the SAME OS-guarded TU as its input counterpart
+ * (midi_backend_{apple,linux,windows}.c) and is selected by
+ * le_midi_out_select_backend (le_midi_internal.h). */
+typedef struct le_midi_out_backend {
+  /* Fills `out` (room for `max`) with the host's MIDI *output* ports; writes the
+   * count into *count (clamped to `max`). Returns LE_OK or an le_result error;
+   * degrades to *count = 0, LE_OK on an empty/again-unavailable host. */
+  int32_t (*enumerate)(le_midi_info* out, int32_t max, int32_t* count);
+  /* Opens the destination matching `id`. On success stores its OS state with
+   * le_midi_out_set_backend_state(m, state) and returns LE_OK; on failure leaves
+   * no state and returns an le_result error. */
+  int32_t (*open)(le_midi_out* m, const char* id);
+  /* Closes the port and releases the OS state stored on `m`; idempotent (a no-op
+   * when no state is set). Returns LE_OK or an le_result error. */
+  int32_t (*close)(le_midi_out* m);
+  /* Sends `len` raw bytes (short message or complete SysEx) to the open port.
+   * Returns LE_OK, or LE_ERR_DEVICE when nothing is open / the OS rejects it. */
+  int32_t (*send)(le_midi_out* m, const uint8_t* data, int32_t len);
+} le_midi_out_backend;
+
+/* Per-handle output backend state slot (the backend's own OS structs). */
+void le_midi_out_set_backend_state(le_midi_out* m, void* state);
+void* le_midi_out_get_backend_state(le_midi_out* m);
+
+/* ---- per-OS output backend factories (each defined only in its TU) ---- */
+const le_midi_out_backend* le_midi_apple_out_backend(void);
+const le_midi_out_backend* le_midi_linux_out_backend(void);
+const le_midi_out_backend* le_midi_windows_out_backend(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -48,6 +48,10 @@ le_midi_kind le_midi_parse(uint8_t status, uint8_t data1, uint8_t data2,
  * Mirrors le_select_backend (engine_internal.h). */
 const le_midi_backend* le_midi_select_backend(void);
 
+/* Returns the compiled-in per-OS MIDI *output* backend, or NULL when the
+ * platform has none. The send-side counterpart of le_midi_select_backend. */
+const le_midi_out_backend* le_midi_out_select_backend(void);
+
 /* Test hook: register a callback on `m` directly, without opening a device, so
  * the ring -> drain -> callback path can be exercised in isolation. */
 void le_midi_set_cb_for_test(le_midi* m, le_midi_event_cb cb);

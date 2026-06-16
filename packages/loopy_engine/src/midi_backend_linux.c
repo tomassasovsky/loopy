@@ -257,6 +257,193 @@ const le_midi_backend* le_midi_linux_backend(void) {
   return &kLeAlsaMidiBackend;
 }
 
+/* ===== MIDI output (ALSA sequencer) ======================================== *
+ *
+ * The send side: enumerate every other client's *writable* MIDI ports, create
+ * our own readable port, subscribe it to the chosen destination, and convert
+ * each outbound raw-byte message to a sequencer event with snd_midi_event, then
+ * output it directly (no queue, no worker thread). Output is synchronous from
+ * the caller's view. Identity follows the input scheme: the id is the
+ * destination client name. */
+
+/* A destination port must be writable AND subscribable-for-write to send to it. */
+#define LE_ALSA_WRITE_CAPS (SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE)
+
+typedef struct le_alsa_midi_out_state {
+  snd_seq_t* seq;
+  snd_midi_event_t* encoder; /* raw bytes -> snd_seq_event_t */
+  int my_port;
+  int dst_client;
+  int dst_port;
+} le_alsa_midi_out_state;
+
+static int32_t le_alsa_midi_out_enumerate(le_midi_info* out, int32_t max,
+                                          int32_t* count) {
+  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
+  *count = 0;
+  snd_seq_t* seq = NULL;
+  if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_OUTPUT, 0) < 0) {
+    return LE_OK; /* no sequencer available: empty list */
+  }
+  const int self = snd_seq_client_id(seq);
+
+  snd_seq_client_info_t* cinfo;
+  snd_seq_port_info_t* pinfo;
+  snd_seq_client_info_alloca(&cinfo);
+  snd_seq_port_info_alloca(&pinfo);
+  snd_seq_client_info_set_client(cinfo, -1);
+  while (snd_seq_query_next_client(seq, cinfo) >= 0 && *count < max) {
+    const int client = snd_seq_client_info_get_client(cinfo);
+    if (client == self || client == SND_SEQ_CLIENT_SYSTEM) continue;
+    const char* cname = snd_seq_client_info_get_name(cinfo);
+    snd_seq_port_info_set_client(pinfo, client);
+    snd_seq_port_info_set_port(pinfo, -1);
+    while (snd_seq_query_next_port(seq, pinfo) >= 0 && *count < max) {
+      const unsigned int caps = snd_seq_port_info_get_capability(pinfo);
+      if ((caps & LE_ALSA_WRITE_CAPS) != LE_ALSA_WRITE_CAPS) continue;
+      const char* pname = snd_seq_port_info_get_name(pinfo);
+      le_midi_info* info = &out[*count];
+      memset(info, 0, sizeof(*info));
+      snprintf(info->id, sizeof(info->id), "%s", (cname != NULL) ? cname : "");
+      snprintf(info->name, sizeof(info->name), "%s",
+               (pname != NULL) ? pname : ((cname != NULL) ? cname : ""));
+      info->is_default = 0; /* ALSA has no system-default MIDI output */
+      (*count)++;
+    }
+  }
+  snd_seq_close(seq);
+  return LE_OK;
+}
+
+/* Finds the first writable port whose client name matches `id`. */
+static int le_alsa_find_dest(snd_seq_t* seq, const char* id, int self,
+                             int* out_client, int* out_port) {
+  snd_seq_client_info_t* cinfo;
+  snd_seq_port_info_t* pinfo;
+  snd_seq_client_info_alloca(&cinfo);
+  snd_seq_port_info_alloca(&pinfo);
+  snd_seq_client_info_set_client(cinfo, -1);
+  while (snd_seq_query_next_client(seq, cinfo) >= 0) {
+    const int client = snd_seq_client_info_get_client(cinfo);
+    if (client == self || client == SND_SEQ_CLIENT_SYSTEM) continue;
+    const char* cname = snd_seq_client_info_get_name(cinfo);
+    if (cname == NULL || strcmp(cname, id) != 0) continue;
+    snd_seq_port_info_set_client(pinfo, client);
+    snd_seq_port_info_set_port(pinfo, -1);
+    while (snd_seq_query_next_port(seq, pinfo) >= 0) {
+      const unsigned int caps = snd_seq_port_info_get_capability(pinfo);
+      if ((caps & LE_ALSA_WRITE_CAPS) != LE_ALSA_WRITE_CAPS) continue;
+      *out_client = client;
+      *out_port = snd_seq_port_info_get_port(pinfo);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int32_t le_alsa_midi_out_close(le_midi_out* m) {
+  le_alsa_midi_out_state* st =
+      (le_alsa_midi_out_state*)le_midi_out_get_backend_state(m);
+  if (st == NULL) return LE_OK; /* idempotent */
+  if (st->encoder != NULL) snd_midi_event_free(st->encoder);
+  if (st->seq != NULL) {
+    if (st->my_port >= 0) snd_seq_delete_simple_port(st->seq, st->my_port);
+    snd_seq_close(st->seq);
+  }
+  free(st);
+  le_midi_out_set_backend_state(m, NULL);
+  return LE_OK;
+}
+
+static int32_t le_alsa_midi_out_open(le_midi_out* m, const char* id) {
+  if (id == NULL || id[0] == '\0') return LE_ERR_DEVICE;
+
+  le_alsa_midi_out_state* st =
+      (le_alsa_midi_out_state*)calloc(1, sizeof(le_alsa_midi_out_state));
+  if (st == NULL) return LE_ERR_DEVICE;
+  st->my_port = -1;
+  st->dst_client = -1;
+  st->dst_port = -1;
+  le_midi_out_set_backend_state(m, st); /* so a failure path can close() cleanly */
+
+  if (snd_seq_open(&st->seq, "default", SND_SEQ_OPEN_DUPLEX, 0) < 0) {
+    le_alsa_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  snd_seq_set_client_name(st->seq, "loopy");
+  const int self = snd_seq_client_id(st->seq);
+
+  st->my_port = snd_seq_create_simple_port(
+      st->seq, "loopy MIDI out",
+      SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ,
+      SND_SEQ_PORT_TYPE_APPLICATION | SND_SEQ_PORT_TYPE_MIDI_GENERIC);
+  if (st->my_port < 0) {
+    le_alsa_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+
+  if (!le_alsa_find_dest(st->seq, id, self, &st->dst_client, &st->dst_port)) {
+    le_alsa_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  if (snd_seq_connect_to(st->seq, st->my_port, st->dst_client, st->dst_port) <
+      0) {
+    le_alsa_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  if (snd_midi_event_new((size_t)256, &st->encoder) < 0) {
+    le_alsa_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  snd_midi_event_no_status(st->encoder, 1); /* always emit a full status byte */
+  return LE_OK;
+}
+
+static int32_t le_alsa_midi_out_send(le_midi_out* m, const uint8_t* data,
+                                     int32_t len) {
+  le_alsa_midi_out_state* st =
+      (le_alsa_midi_out_state*)le_midi_out_get_backend_state(m);
+  if (st == NULL || st->seq == NULL || st->encoder == NULL) return LE_ERR_DEVICE;
+
+  /* A SysEx larger than the encoder buffer would be split mid-message; grow the
+   * encoder to hold the whole payload (frames are small, this is rare). */
+  if ((size_t)len > 256) snd_midi_event_resize_buffer(st->encoder, (size_t)len);
+
+  int32_t rc = LE_OK;
+  size_t off = 0;
+  while (off < (size_t)len) {
+    snd_seq_event_t ev;
+    snd_seq_ev_clear(&ev);
+    const long consumed = snd_midi_event_encode(
+        st->encoder, data + off, (long)((size_t)len - off), &ev);
+    if (consumed <= 0) {
+      rc = LE_ERR_DEVICE;
+      break;
+    }
+    off += (size_t)consumed;
+    if (ev.type == SND_SEQ_EVENT_NONE) continue; /* needs more bytes: keep going */
+    snd_seq_ev_set_source(&ev, st->my_port);
+    snd_seq_ev_set_subs(&ev);
+    snd_seq_ev_set_direct(&ev);
+    if (snd_seq_event_output_direct(st->seq, &ev) < 0) {
+      rc = LE_ERR_DEVICE;
+      break;
+    }
+  }
+  return rc;
+}
+
+static const le_midi_out_backend kLeAlsaMidiOutBackend = {
+    le_alsa_midi_out_enumerate,
+    le_alsa_midi_out_open,
+    le_alsa_midi_out_close,
+    le_alsa_midi_out_send,
+};
+
+const le_midi_out_backend* le_midi_linux_out_backend(void) {
+  return &kLeAlsaMidiOutBackend;
+}
+
 #else
 typedef int loopy_midi_linux_tu_unused; /* keep the TU non-empty off Linux */
 #endif
