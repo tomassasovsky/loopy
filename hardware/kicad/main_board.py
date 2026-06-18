@@ -54,6 +54,8 @@ dtr = Net("DTR")
 encA = Net("ENC_A")
 encB = Net("ENC_B")
 encSW = Net("ENC_SW")
+q1g = Net("Q1_GATE")     # reverse-polarity FET gate (pull-down + Zener clamp)
+avcc16 = Net("AVCC16")   # 16U2 AVCC, filtered from +5V via a ferrite
 
 # ---- U1: ATmega328P-A (the looper MCU) -------------------------------------
 
@@ -150,7 +152,7 @@ u2 = Part("MCU_Microchip_ATmega", "ATmega16U2-A",
 u2[4] += v5              # VCC
 u2[3, 28] += gnd        # GND, UGND
 u2[31] += v5            # UVCC
-u2[32] += v5            # AVCC (via bead ideally; tie to 5V for simplicity)
+u2[32] += avcc16        # AVCC, filtered from +5V via ferrite FB2 (see end)
 C("100nF")[1, 2] += u2[4], gnd
 C("100nF")[1, 2] += u2[31], gnd
 C("1uF", "Capacitor_SMD:C_0603_1608Metric")[1, 2] += u2[27], gnd  # UCAP
@@ -227,7 +229,7 @@ j2[2] += gnd           # sleeve
 q1 = Part("Transistor_FET", "AO3401A",
           footprint="Package_TO_SOT_SMD:SOT-23", ref="Q1")
 q1["S"] += v9
-q1["G"] += gnd
+q1["G"] += q1g
 q1["D"] += vin_raw
 Part("Device", "D", value="SMAJ12A",
      footprint="Diode_SMD:D_SMA", ref="D1")[1, 2] += gnd, v9
@@ -350,6 +352,17 @@ C("100nF")[1, 2] += v5led, gnd   # local decoupling at the header
 # HF input bypass right at the buck IN pin (in addition to the 22uF bulk C24);
 # added last so it doesn't renumber the existing caps.
 C("100nF")[1, 2] += v9, gnd
+
+# 16U2 AVCC: ferrite + 100nF low-pass from +5V (was tied straight to +5V).
+Part("Device", "L", value="FerriteBead",
+     footprint="Inductor_SMD:L_0603_1608Metric", ref="FB2")[1, 2] += v5, avcc16
+C("100nF")[1, 2] += avcc16, gnd
+
+# Q1 gate protection: 100k pull-down (turns the P-FET on) + 10V Zener clamp so an
+# input transient (D1 clamps +9V to ~20V) can't drive Vgs past the AO3401 +/-12V.
+R("100k")[1, 2] += q1g, gnd
+Part("Device", "D_Zener", value="10V",
+     footprint="Diode_SMD:D_SOD-123", ref="D3")[1, 2] += q1g, v9
 
 # Declare the supply rails as power-driven (KiCad PWR_FLAG equivalent): silences
 # the "insufficient drive" warnings on the supply pins.
