@@ -7,6 +7,9 @@ project(loopy_engine_core VERSION 0.1.0 LANGUAGES C)
 
 add_library(loopy_engine SHARED
   engine.c
+  # Pure sample-format conversion + ASIO buffer-size math (S1 split from
+  # engine.c). No engine state, no device headers; unit-tested off-thread.
+  engine_convert.c
   # The miniaudio device backend (le_device_backend.h). Compiled unconditionally
   # — it is the only device backend this build ships; the opt-in ASIO backend
   # slots in behind le_select_backend later.
