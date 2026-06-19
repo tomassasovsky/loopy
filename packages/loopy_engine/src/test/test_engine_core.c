@@ -417,6 +417,29 @@ static void test_xrun_count_tallies_and_resets(void) {
   le_engine_destroy(e);
 }
 
+/* le_engine_mark_device_lost (the ASIO reset / sample-rate-change hook) flips
+ * device_present to 0 while leaving running set — the "running-but-disconnected"
+ * state the control layer reads to drive reconnection. */
+static void test_device_lost_keeps_running(void) {
+  printf("test_device_lost_keeps_running\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  le_engine_mark_started(e); /* device present + running */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.device_present == 1);
+  CHECK(s.running == 1);
+
+  le_engine_mark_device_lost(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.device_present == 0); /* lost ... */
+  CHECK(s.running == 1);        /* ... but still running, awaiting reconnect */
+
+  le_engine_mark_device_lost(NULL); /* must not crash */
+
+  le_engine_destroy(e);
+}
+
 static void test_looper_clear(void) {
   printf("test_looper_clear\n");
   le_engine* e = make_configured_engine();
@@ -4622,6 +4645,7 @@ int main(void) {
   test_master_gain_rejects_null();
   test_master_gain_resets_on_configure();
   test_xrun_count_tallies_and_resets();
+  test_device_lost_keeps_running();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();

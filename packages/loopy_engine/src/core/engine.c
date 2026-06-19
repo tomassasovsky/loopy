@@ -353,6 +353,19 @@ void le_engine_note_xrun(le_engine* engine) {
   atomic_fetch_add_explicit(&engine->a_xruns, 1u, memory_order_relaxed);
 }
 
+void le_engine_mark_device_lost(le_engine* engine) {
+  if (engine == NULL) return;
+  /* Flip presence to 0 while a_running stays 1 (running-but-disconnected),
+   * mirroring the miniaudio device-notification callback (relaxed store; a lone
+   * presence flag carrying no other state). The Dart layer reads device_present
+   * == 0 as "lost" and drives reconnection (stop -> start) from the control
+   * thread — the only correct place to tear down and re-open a device, never the
+   * driver's callback/message thread. Used by the ASIO reset-request and
+   * sample-rate-change notifications so a driver reconfigured by another app
+   * recovers instead of going silent. */
+  atomic_store_explicit(&engine->a_device_present, 0, memory_order_relaxed);
+}
+
 le_engine* le_engine_create(void) {
   le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
   if (engine == NULL) return NULL;

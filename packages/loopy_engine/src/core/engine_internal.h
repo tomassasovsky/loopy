@@ -36,6 +36,14 @@ void le_engine_mark_started(le_engine* engine);
  * field). Relaxed atomic; safe off any thread. Not part of the FFI surface. */
 void le_engine_note_xrun(le_engine* engine);
 
+/* Publishes "device lost" (a_device_present = 0, a_running untouched) so the
+ * control layer drives reconnection. Mirrors the miniaudio device-notification
+ * callback; called by the ASIO reset-request / sample-rate-change handlers so a
+ * driver reconfigured out from under us recovers via stop -> start rather than
+ * going silent. Relaxed atomic; safe off the driver's message thread. Not part
+ * of the FFI surface. */
+void le_engine_mark_device_lost(le_engine* engine);
+
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /
  * `output_channels` are each clamped to LE_MAX_CHANNELS and `max_loop_frames` to
