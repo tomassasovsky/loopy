@@ -57,10 +57,12 @@ void le_fx_entry_reset(le_fx_state* fx, int slot);
  * nulls them. Control-thread only (lane/monitor reset, engine destroy). */
 void le_fx_free_octaver(le_fx_state* fx, int slot);
 
-/* Added latency (frames) of the active octaver in slot [o]; 0 for a non-octaver
- * slot's idle state. Folded into the published snapshot so the UI can warn about
- * monitoring lag. Control thread (le_max_fx_latency). */
-int le_octaver_latency(const le_octaver_state* o);
+/* Added latency (frames) of chain slot [slot]'s effect of [type] on `fx`, looked
+ * up through the effect vtable — 0 for types that add none. Generic so a future
+ * latency-bearing effect (or hosted plugin) reports through the same seam. Folded
+ * into the published snapshot so the UI can warn about monitoring lag. Control
+ * thread (le_max_fx_latency). */
+int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type);
 
 /* Builds the shared octaver Hann window once (idempotent, guarded). Control
  * thread only, before an octaver slot can be processed; le_fx_prepare_entry

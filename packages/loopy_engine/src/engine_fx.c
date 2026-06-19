@@ -347,7 +347,7 @@ int le_psola_detect(const float* x, int n, int sr, float* out_period,
  * LE_PV_N behind the head, so its latency equals the phase vocoder's; both modes
  * therefore report LE_PV_N and the dry tap does not jump on a switch. The argument
  * is the per-mode seam a future dedicated PSOLA buffer (lower latency) would use. */
-int le_octaver_latency(const le_octaver_state* o) {
+static int le_octaver_latency(const le_octaver_state* o) {
   (void)o;
   return LE_PV_N;
 }
@@ -712,6 +712,92 @@ static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
   *out_r = xr * (1.0f - mix) + wet[1] * mix;
 }
 
+/* ---- the effect vtable ----
+ *
+ * Each built-in effect exposes a uniform stereo `process(fx, slot, sr, cap, l, r,
+ * params)` kernel and (if it adds any) a `latency`. A `static const` table indexed
+ * by le_fx_type dispatches the chain, so adding an effect is adding its kernel(s)
+ * plus one table row — and a hosted VST3/CLAP plugin can later slot in as just
+ * another row whose `process` calls the plugin host. The per-channel kernels
+ * above already carry each slot's L/R DSP state; the wrappers below adapt their
+ * varied signatures (mono-per-channel vs the stereo reverb) to the uniform one,
+ * preserving the exact left-then-right call order. Effects that ignore sr or cap
+ * cast them to void to keep the signature uniform. */
+
+static void fx_drive_process(le_fx_state* fx, int slot, int sr, int cap,
+                             float* l, float* r, const float* p) {
+  (void)fx;
+  (void)slot;
+  (void)sr;
+  (void)cap;
+  *l = fx_drive(*l, p);
+  *r = fx_drive(*r, p);
+}
+static void fx_filter_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  (void)cap;
+  *l = fx_filter(fx, slot, 0, sr, *l, p);
+  *r = fx_filter(fx, slot, 1, sr, *r, p);
+}
+static void fx_delay_process(le_fx_state* fx, int slot, int sr, int cap,
+                             float* l, float* r, const float* p) {
+  (void)sr;
+  *l = fx_delay(fx, slot, 0, cap, *l, p);
+  *r = fx_delay(fx, slot, 1, cap, *r, p);
+}
+static void fx_tremolo_process(le_fx_state* fx, int slot, int sr, int cap,
+                               float* l, float* r, const float* p) {
+  (void)cap;
+  *l = fx_tremolo(fx, slot, 0, sr, *l, p);
+  *r = fx_tremolo(fx, slot, 1, sr, *r, p);
+}
+static void fx_octaver_process(le_fx_state* fx, int slot, int sr, int cap,
+                               float* l, float* r, const float* p) {
+  (void)sr;
+  *l = fx_octaver(fx, slot, 0, cap, *l, p);
+  *r = fx_octaver(fx, slot, 1, cap, *r, p);
+}
+static void fx_echo_process(le_fx_state* fx, int slot, int sr, int cap, float* l,
+                            float* r, const float* p) {
+  *l = fx_echo(fx, slot, 0, sr, cap, *l, p);
+  *r = fx_echo(fx, slot, 1, sr, cap, *r, p);
+}
+/* Reverb is natively stereo (it cross-feeds its two banks), so its wrapper makes
+ * the one stereo call. fx_reverb computes both wet values before writing either
+ * out-param, so passing l / r as both inputs and outputs is safe. */
+static void fx_reverb_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  fx_reverb(fx, slot, sr, cap, *l, *r, p, l, r);
+}
+
+/* Octaver's added latency, adapted to the vtable's (fx, slot) signature. */
+static int fx_octaver_latency_vt(const le_fx_state* fx, int slot) {
+  return le_octaver_latency(&fx->oct[slot][0]);
+}
+
+typedef struct le_fx_vtable {
+  /* Processes one stereo sample through chain slot [slot] in place, advancing
+   * that slot's per-channel DSP state. NULL == a no-op slot (LE_FX_NONE). */
+  void (*process)(le_fx_state* fx, int slot, int sr, int cap, float* l, float* r,
+                  const float* p);
+  /* Added latency in frames for slot [slot], or NULL when the effect adds none. */
+  int (*latency)(const le_fx_state* fx, int slot);
+} le_fx_vtable;
+
+/* Indexed by le_fx_type — one row per effect. LE_FX_NONE is the all-NULL no-op
+ * (the empty-chain regression guard). */
+static const le_fx_vtable LE_FX[] = {
+    [LE_FX_NONE] = {NULL, NULL},
+    [LE_FX_DRIVE] = {fx_drive_process, NULL},
+    [LE_FX_FILTER] = {fx_filter_process, NULL},
+    [LE_FX_DELAY] = {fx_delay_process, NULL},
+    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL},
+    [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt},
+    [LE_FX_ECHO] = {fx_echo_process, NULL},
+    [LE_FX_REVERB] = {fx_reverb_process, NULL},
+};
+#define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
+
 /* Applies a chain to one stereo sample, in chain order, carrying the (l, r) pair
  * in place. The chain is stageless: every active entry processes both channels.
  * [count] is the active chain length; [types]/[params] are the per-buffer
@@ -721,45 +807,27 @@ static void fx_reverb(le_fx_state* fx, int slot, int sr, int cap, float xl,
  * per-channel DSP state, so there is no mono/stereo distinction and no ordering
  * constraint: a reverb (or any decorrelating effect) may sit anywhere in the
  * chain and every later effect still processes both channels. A mono source
- * seeds l == r, so a symmetric chain leaves l == r and is audibly unchanged. */
+ * seeds l == r, so a symmetric chain leaves l == r and is audibly unchanged.
+ * Dispatch is table-driven (LE_FX); an out-of-range or no-op (LE_FX_NONE) slot is
+ * skipped. */
 void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
                     int count, const int32_t* types,
                     const float params[LE_FX_MAX][LE_FX_PARAMS]) {
   float xl = *l;
   float xr = *r;
   for (int s = 0; s < count; ++s) {
-    switch (types[s]) {
-      case LE_FX_DRIVE:
-        xl = fx_drive(xl, params[s]);
-        xr = fx_drive(xr, params[s]);
-        break;
-      case LE_FX_FILTER:
-        xl = fx_filter(fx, s, 0, sr, xl, params[s]);
-        xr = fx_filter(fx, s, 1, sr, xr, params[s]);
-        break;
-      case LE_FX_DELAY:
-        xl = fx_delay(fx, s, 0, cap, xl, params[s]);
-        xr = fx_delay(fx, s, 1, cap, xr, params[s]);
-        break;
-      case LE_FX_TREMOLO:
-        xl = fx_tremolo(fx, s, 0, sr, xl, params[s]);
-        xr = fx_tremolo(fx, s, 1, sr, xr, params[s]);
-        break;
-      case LE_FX_OCTAVER:
-        xl = fx_octaver(fx, s, 0, cap, xl, params[s]);
-        xr = fx_octaver(fx, s, 1, cap, xr, params[s]);
-        break;
-      case LE_FX_ECHO:
-        xl = fx_echo(fx, s, 0, sr, cap, xl, params[s]);
-        xr = fx_echo(fx, s, 1, sr, cap, xr, params[s]);
-        break;
-      case LE_FX_REVERB:
-        fx_reverb(fx, s, sr, cap, xl, xr, params[s], &xl, &xr);
-        break;
-      default:
-        break;
+    const int32_t ty = types[s];
+    if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT && LE_FX[ty].process) {
+      LE_FX[ty].process(fx, s, sr, cap, &xl, &xr, params[s]);
     }
   }
   *l = xl;
   *r = xr;
+}
+
+int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {
+  if (type > LE_FX_NONE && type < LE_FX_TYPE_COUNT && LE_FX[type].latency) {
+    return LE_FX[type].latency(fx, slot);
+  }
+  return 0;
 }

@@ -62,8 +62,8 @@ static int32_t le_max_fx_latency(le_engine* engine) {
       int32_t n = load_i32(&ln->a_fx_count);
       if (n > LE_FX_MAX) n = LE_FX_MAX;
       for (int32_t s = 0; s < n; ++s) {
-        if (load_i32(&ln->a_fx_type[s]) != LE_FX_OCTAVER) continue;
-        const int32_t lat = le_octaver_latency(&ln->fx.oct[s][0]);
+        const int32_t lat =
+            le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
         if (lat > max_lat) max_lat = lat;
       }
     }
@@ -75,8 +75,8 @@ static int32_t le_max_fx_latency(le_engine* engine) {
       int32_t n = load_i32(&ln->a_fx_count);
       if (n > LE_FX_MAX) n = LE_FX_MAX;
       for (int32_t s = 0; s < n; ++s) {
-        if (load_i32(&ln->a_fx_type[s]) != LE_FX_OCTAVER) continue;
-        const int32_t lat = le_octaver_latency(&ln->fx.oct[s][0]);
+        const int32_t lat =
+            le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
         if (lat > max_lat) max_lat = lat;
       }
     }
