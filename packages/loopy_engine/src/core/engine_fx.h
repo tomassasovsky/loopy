@@ -64,10 +64,18 @@ void le_fx_free_octaver(le_fx_state* fx, int slot);
  * thread (le_max_fx_latency). */
 int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type);
 
-/* Builds the shared octaver Hann window once (idempotent, guarded). Control
- * thread only, before an octaver slot can be processed; le_fx_prepare_entry
- * calls it when a slot becomes LE_FX_OCTAVER. */
-void le_fx_ensure_hann(void);
+/* Lazily allocates chain slot [slot]'s heap buffers for effect [type] (delay
+ * rings, octaver phase-vocoder buffers, …) on the control thread, sized from
+ * [cap] (the per-slot ring capacity). Each type owns its allocation behind the
+ * effect vtable, so adding an effect needs no edit here. Returns LE_OK (incl.
+ * types that allocate nothing), or LE_ERR_INVALID on OOM (all-or-nothing — it
+ * frees whatever it allocated this call). Control thread (le_fx_prepare_entry). */
+int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap);
+
+/* Writes effect [type]'s default normalized params into out[LE_FX_PARAMS] (all
+ * zero for LE_FX_NONE / unknown). Each type owns its defaults behind the vtable.
+ * Seeded on a type change so a chain reorder does not wipe the user's tweaks. */
+void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]);
 
 #ifdef __cplusplus
 }

@@ -384,139 +384,26 @@ int32_t le_engine_set_overdub_feedback(le_engine* engine, float feedback) {
   return LE_OK;
 }
 
-/* Musical default parameters for a freshly engaged effect type (so picking an
- * effect sounds like something before the user tweaks it). */
-static void le_fx_default_params(int32_t type, float out[LE_FX_PARAMS]) {
-  /* p3 is inert for every type today: non-octaver effects never read it, and the
-   * octaver's mode (< .5 = phase vocoder) only wakes up in the formant-preserving
-   * rewrite. Seed it to 0 everywhere so a later read never returns garbage. */
-  out[3] = 0.0f;
-  switch (type) {
-    case LE_FX_DRIVE:
-      out[0] = 0.5f; /* drive */
-      out[1] = 0.8f; /* level */
-      out[2] = 0.0f;
-      break;
-    case LE_FX_FILTER:
-      out[0] = 0.5f; /* cutoff */
-      out[1] = 0.2f; /* resonance */
-      out[2] = 0.0f;
-      break;
-    case LE_FX_DELAY:
-      out[0] = 0.35f; /* time */
-      out[1] = 0.35f; /* feedback */
-      out[2] = 0.35f; /* wet mix */
-      break;
-    case LE_FX_TREMOLO:
-      out[0] = 0.3f; /* rate */
-      out[1] = 0.7f; /* depth */
-      out[2] = 0.0f;
-      break;
-    case LE_FX_OCTAVER:
-      out[0] = 0.25f; /* shift: one octave down */
-      out[1] = 0.5f;  /* tone */
-      out[2] = 0.5f;  /* mix */
-      /* p3 (mode) stays 0 = phase vocoder, seeded above; inert until parts 3-4 */
-      break;
-    case LE_FX_ECHO:
-      out[0] = 0.45f; /* time */
-      out[1] = 0.5f;  /* feedback */
-      out[2] = 0.35f; /* wet mix */
-      break;
-    case LE_FX_REVERB:
-      out[0] = 0.5f;  /* size */
-      out[1] = 0.5f;  /* damping */
-      out[2] = 0.35f; /* wet mix */
-      break;
-    default:
-      out[0] = out[1] = out[2] = 0.0f;
-      break;
-  }
-}
-
-/* Allocates the delay ring(s) for a chain entry (control thread) when its type
- * needs them, keeping each for reuse once allocated, and seeds the type's musical
- * defaults only when the type actually changes (so a reorder doesn't wipe the
- * user's tweaks). The chain is full stereo, so a delay-ringed effect (DELAY /
- * ECHO / OCTAVER) owns a ring per channel (delay[index][0] and [1]); REVERB packs
- * both its banks into the single ring delay[index][0] and leaves [1] alone (a [1]
- * retained from a prior delay-type stays for reuse on a later reorder back —
- * fx_reverb ignores it, and the reset/destroy paths free it). On a partial OOM
- * (the second ring fails) only the ring this call newly allocated is freed,
- * never a ring the slot already owned. Returns LE_OK, or LE_ERR_INVALID on
- * allocation failure. */
+/* Prepares a chain entry for [type]: lazily allocates its heap buffers and seeds
+ * the type's default params only when the type actually changes (so a reorder
+ * does not wipe the user's tweaks). The per-type allocation and defaults live
+ * behind the effect vtable (engine_fx.c: le_fx_prepare / le_fx_defaults), so this
+ * stays generic — adding an effect needs no edit here. Returns LE_OK, or
+ * LE_ERR_INVALID on allocation failure (buffers left as they were). */
 static int32_t le_fx_prepare_entry(le_fx_state* fx, _Atomic int32_t* a_type,
                                    _Atomic uint32_t a_param[][LE_FX_PARAMS],
                                    int32_t index, int32_t type,
                                    int32_t delay_cap) {
-  const int needs_ring = type == LE_FX_DELAY || type == LE_FX_ECHO ||
-                         type == LE_FX_OCTAVER || type == LE_FX_REVERB;
-  /* Reverb uses only ring 0; the other ringed types use both channels. */
-  const int needs_right = needs_ring && type != LE_FX_REVERB;
-  const int needs_pv = type == LE_FX_OCTAVER;
-
-  /* N2 — explicit OOM free-order. This one call can make up to 8 allocations
-   * (2 delay rings + 6 phase-vocoder buffers: out/last_phase/sum_phase per
-   * channel). Record the slot of each buffer THIS call newly allocates; on any
-   * failure, free exactly those in reverse order and null them, never touching a
-   * ring or buffer the slot already owned from a prior type. */
-  float** owned[8];
-  int n_owned = 0;
   const int32_t cap = delay_cap > 0 ? delay_cap : 48000;
-
-  if (needs_ring) {
-    if (fx->delay[index][0] == NULL) {
-      fx->delay[index][0] = (float*)calloc((size_t)cap, sizeof(float));
-      if (fx->delay[index][0] == NULL) goto oom;
-      owned[n_owned++] = &fx->delay[index][0];
-    }
-    if (needs_right && fx->delay[index][1] == NULL) {
-      fx->delay[index][1] = (float*)calloc((size_t)cap, sizeof(float));
-      if (fx->delay[index][1] == NULL) goto oom;
-      owned[n_owned++] = &fx->delay[index][1];
-    }
-  }
-  if (needs_pv) {
-    /* Build the shared analysis/synthesis window once (guarded). Control-thread
-     * only, before this slot can be processed, so the audio thread's read is
-     * safe via the ring's release/acquire publication of the type change. */
-    le_fx_ensure_hann();
-    for (int chan = 0; chan < 2; ++chan) {
-      le_octaver_state* o = &fx->oct[index][chan];
-      if (o->out == NULL) {
-        o->out = (float*)calloc((size_t)LE_PV_N, sizeof(float));
-        if (o->out == NULL) goto oom;
-        owned[n_owned++] = &o->out;
-      }
-      if (o->last_phase == NULL) {
-        o->last_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
-        if (o->last_phase == NULL) goto oom;
-        owned[n_owned++] = &o->last_phase;
-      }
-      if (o->sum_phase == NULL) {
-        o->sum_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
-        if (o->sum_phase == NULL) goto oom;
-        owned[n_owned++] = &o->sum_phase;
-      }
-    }
-  }
+  if (le_fx_prepare(fx, index, type, cap) != LE_OK) return LE_ERR_INVALID;
   if (load_i32(a_type + index) != type) {
     float defaults[LE_FX_PARAMS];
-    le_fx_default_params(type, defaults);
+    le_fx_defaults(type, defaults);
     for (int p = 0; p < LE_FX_PARAMS; ++p) {
       store_f32(&a_param[index][p], defaults[p]);
     }
   }
   return LE_OK;
-
-oom:
-  /* Free only what this call allocated, in reverse order; keep pre-existing
-   * buffers the slot already owned. The slot stays its previous type. */
-  for (int i = n_owned - 1; i >= 0; --i) {
-    free(*owned[i]);
-    *owned[i] = NULL;
-  }
-  return LE_ERR_INVALID;
 }
 
 int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,

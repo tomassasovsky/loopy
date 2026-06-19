@@ -30,7 +30,11 @@
 static float le_hann[LE_PV_N];
 static int le_hann_ready;
 
-void le_fx_ensure_hann(void) { le_hann_init(le_hann, LE_PV_N, &le_hann_ready); }
+/* Builds the shared octaver Hann window once (idempotent). Internal: reached only
+ * via the octaver's prepare (fx_octaver_prepare) on the control thread. */
+static void le_fx_ensure_hann(void) {
+  le_hann_init(le_hann, LE_PV_N, &le_hann_ready);
+}
 
 /* Soft-clipping overdrive: tanh saturation with a pre-gain, then output trim. */
 static float fx_drive(float x, const float* p) {
@@ -775,6 +779,128 @@ static int fx_octaver_latency_vt(const le_fx_state* fx, int slot) {
   return le_octaver_latency(&fx->oct[slot][0]);
 }
 
+/* ---- per-type lazy allocation (control thread) ----
+ *
+ * Each ringed/buffered effect lazily allocates its heap state on first use and
+ * keeps it for reuse (a reorder back to the type reuses it). All-or-nothing: on
+ * OOM each helper frees only what THIS call allocated and leaves any pre-existing
+ * buffer the slot already owned. */
+
+/* Allocates delay ring [slot][chan] if absent. 1 = newly allocated, 0 = already
+ * present, -1 = OOM. */
+static int fx_alloc_ring(le_fx_state* fx, int slot, int chan, int cap) {
+  if (fx->delay[slot][chan] != NULL) return 0;
+  fx->delay[slot][chan] = (float*)calloc((size_t)cap, sizeof(float));
+  return fx->delay[slot][chan] != NULL ? 1 : -1;
+}
+
+/* DELAY / ECHO: a stereo pair of delay rings (one per channel). */
+static int32_t fx_stereo_ring_prepare(le_fx_state* fx, int slot, int cap) {
+  const int a0 = fx_alloc_ring(fx, slot, 0, cap);
+  if (a0 < 0) return LE_ERR_INVALID;
+  if (fx_alloc_ring(fx, slot, 1, cap) < 0) {
+    if (a0 == 1) { /* free only the ring this call allocated */
+      free(fx->delay[slot][0]);
+      fx->delay[slot][0] = NULL;
+    }
+    return LE_ERR_INVALID;
+  }
+  return LE_OK;
+}
+
+/* REVERB: one ring (both stereo banks pack into delay[slot][0]; [1] is unused,
+ * and a [1] retained from a prior delay-type is left for reuse). */
+static int32_t fx_reverb_prepare(le_fx_state* fx, int slot, int cap) {
+  return fx_alloc_ring(fx, slot, 0, cap) < 0 ? LE_ERR_INVALID : LE_OK;
+}
+
+/* OCTAVER: the stereo ring plus the phase-vocoder buffers (out / last_phase /
+ * sum_phase per channel) and the shared Hann window — up to 8 allocations. Tracks
+ * each it newly makes and frees exactly those, in reverse, on any failure. */
+static int32_t fx_octaver_prepare(le_fx_state* fx, int slot, int cap) {
+  float** owned[8]; /* addresses of the pointers we null on rollback */
+  int n = 0;
+  for (int chan = 0; chan < 2; ++chan) {
+    if (fx->delay[slot][chan] == NULL) {
+      fx->delay[slot][chan] = (float*)calloc((size_t)cap, sizeof(float));
+      if (fx->delay[slot][chan] == NULL) goto oom;
+      owned[n++] = &fx->delay[slot][chan];
+    }
+  }
+  le_fx_ensure_hann(); /* control-thread; before the slot can be processed */
+  for (int chan = 0; chan < 2; ++chan) {
+    le_octaver_state* o = &fx->oct[slot][chan];
+    if (o->out == NULL) {
+      o->out = (float*)calloc((size_t)LE_PV_N, sizeof(float));
+      if (o->out == NULL) goto oom;
+      owned[n++] = &o->out;
+    }
+    if (o->last_phase == NULL) {
+      o->last_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+      if (o->last_phase == NULL) goto oom;
+      owned[n++] = &o->last_phase;
+    }
+    if (o->sum_phase == NULL) {
+      o->sum_phase = (float*)calloc((size_t)LE_PV_BINS, sizeof(float));
+      if (o->sum_phase == NULL) goto oom;
+      owned[n++] = &o->sum_phase;
+    }
+  }
+  return LE_OK;
+oom:
+  for (int i = n - 1; i >= 0; --i) {
+    free(*owned[i]);
+    *owned[i] = NULL;
+  }
+  return LE_ERR_INVALID;
+}
+
+/* ---- per-type default normalized params (seeded on a type change) ----
+ * p3 is inert for every type today and stays 0; the values match the musical
+ * defaults the chain shipped with. */
+static void fx_drive_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.5f; /* drive */
+  out[1] = 0.8f; /* level */
+  out[2] = 0.0f;
+  out[3] = 0.0f;
+}
+static void fx_filter_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.5f; /* cutoff */
+  out[1] = 0.2f; /* resonance */
+  out[2] = 0.0f;
+  out[3] = 0.0f;
+}
+static void fx_delay_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.35f; /* time */
+  out[1] = 0.35f; /* feedback */
+  out[2] = 0.35f; /* wet mix */
+  out[3] = 0.0f;
+}
+static void fx_tremolo_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.3f; /* rate */
+  out[1] = 0.7f; /* depth */
+  out[2] = 0.0f;
+  out[3] = 0.0f;
+}
+static void fx_octaver_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.25f; /* shift: one octave down */
+  out[1] = 0.5f;  /* tone */
+  out[2] = 0.5f;  /* mix */
+  out[3] = 0.0f;  /* mode = phase vocoder */
+}
+static void fx_echo_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.45f; /* time */
+  out[1] = 0.5f;  /* feedback */
+  out[2] = 0.35f; /* wet mix */
+  out[3] = 0.0f;
+}
+static void fx_reverb_defaults(float out[LE_FX_PARAMS]) {
+  out[0] = 0.5f;  /* size */
+  out[1] = 0.5f;  /* damping */
+  out[2] = 0.35f; /* wet mix */
+  out[3] = 0.0f;
+}
+
 typedef struct le_fx_vtable {
   /* Processes one stereo sample through chain slot [slot] in place, advancing
    * that slot's per-channel DSP state. NULL == a no-op slot (LE_FX_NONE). */
@@ -782,19 +908,31 @@ typedef struct le_fx_vtable {
                   const float* p);
   /* Added latency in frames for slot [slot], or NULL when the effect adds none. */
   int (*latency)(const le_fx_state* fx, int slot);
+  /* Lazily allocates slot [slot]'s heap buffers (control thread). LE_OK, or
+   * LE_ERR_INVALID on OOM (after freeing whatever it allocated this call). NULL =
+   * the type needs no allocation. */
+  int32_t (*prepare)(le_fx_state* fx, int slot, int cap);
+  /* Writes the type's default normalized params into out[LE_FX_PARAMS]; NULL =
+   * all-zero defaults. */
+  void (*defaults)(float out[LE_FX_PARAMS]);
 } le_fx_vtable;
 
-/* Indexed by le_fx_type — one row per effect. LE_FX_NONE is the all-NULL no-op
- * (the empty-chain regression guard). */
+/* Indexed by le_fx_type — one row per effect. Adding an effect is adding its
+ * kernels above + one row here. LE_FX_NONE is the all-NULL no-op (the empty-chain
+ * regression guard). */
 static const le_fx_vtable LE_FX[] = {
-    [LE_FX_NONE] = {NULL, NULL},
-    [LE_FX_DRIVE] = {fx_drive_process, NULL},
-    [LE_FX_FILTER] = {fx_filter_process, NULL},
-    [LE_FX_DELAY] = {fx_delay_process, NULL},
-    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL},
-    [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt},
-    [LE_FX_ECHO] = {fx_echo_process, NULL},
-    [LE_FX_REVERB] = {fx_reverb_process, NULL},
+    [LE_FX_NONE] = {NULL, NULL, NULL, NULL},
+    [LE_FX_DRIVE] = {fx_drive_process, NULL, NULL, fx_drive_defaults},
+    [LE_FX_FILTER] = {fx_filter_process, NULL, NULL, fx_filter_defaults},
+    [LE_FX_DELAY] =
+        {fx_delay_process, NULL, fx_stereo_ring_prepare, fx_delay_defaults},
+    [LE_FX_TREMOLO] = {fx_tremolo_process, NULL, NULL, fx_tremolo_defaults},
+    [LE_FX_OCTAVER] = {fx_octaver_process, fx_octaver_latency_vt,
+                       fx_octaver_prepare, fx_octaver_defaults},
+    [LE_FX_ECHO] =
+        {fx_echo_process, NULL, fx_stereo_ring_prepare, fx_echo_defaults},
+    [LE_FX_REVERB] =
+        {fx_reverb_process, NULL, fx_reverb_prepare, fx_reverb_defaults},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -830,4 +968,20 @@ int le_fx_added_latency(const le_fx_state* fx, int slot, int32_t type) {
     return LE_FX[type].latency(fx, slot);
   }
   return 0;
+}
+
+int32_t le_fx_prepare(le_fx_state* fx, int slot, int32_t type, int cap) {
+  if (type <= LE_FX_NONE || type >= LE_FX_TYPE_COUNT ||
+      LE_FX[type].prepare == NULL) {
+    return LE_OK; /* type needs no heap allocation */
+  }
+  return LE_FX[type].prepare(fx, slot, cap);
+}
+
+void le_fx_defaults(int32_t type, float out[LE_FX_PARAMS]) {
+  if (type > LE_FX_NONE && type < LE_FX_TYPE_COUNT && LE_FX[type].defaults) {
+    LE_FX[type].defaults(out);
+    return;
+  }
+  for (int p = 0; p < LE_FX_PARAMS; ++p) out[p] = 0.0f; /* NONE / unknown */
 }
