@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
-import 'package:midi_client/midi_client.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 
 import '../../helpers/helpers.dart';
@@ -57,7 +57,7 @@ void main() {
   });
 
   testWidgets('shows the required-CC hint', (tester) async {
-    seed(const MidiSetupState(devices: [dev1]));
+    seed(const MidiSetupState(connection: MidiConnection(devices: [dev1])));
     await pumpPicker(tester);
 
     expect(
@@ -67,7 +67,7 @@ void main() {
   });
 
   testWidgets('renders the dropdown with a single device', (tester) async {
-    seed(const MidiSetupState(devices: [dev1]));
+    seed(const MidiSetupState(connection: MidiConnection(devices: [dev1])));
     await pumpPicker(tester);
 
     expect(
@@ -83,7 +83,9 @@ void main() {
   testWidgets('lists many devices plus a None item in the menu', (
     tester,
   ) async {
-    seed(const MidiSetupState(devices: [dev1, dev2]));
+    seed(
+      const MidiSetupState(connection: MidiConnection(devices: [dev1, dev2])),
+    );
     await pumpPicker(tester);
 
     await tester.tap(find.byKey(const Key('midiSettings_device_picker')));
@@ -99,7 +101,9 @@ void main() {
   ) async {
     const dupA = MidiDevice(id: 'id-A', name: 'USB MIDI');
     const dupB = MidiDevice(id: 'id-B', name: 'USB MIDI');
-    seed(const MidiSetupState(devices: [dupA, dupB]));
+    seed(
+      const MidiSetupState(connection: MidiConnection(devices: [dupA, dupB])),
+    );
     await pumpPicker(tester);
 
     await tester.tap(find.byKey(const Key('midiSettings_device_picker')));
@@ -119,10 +123,12 @@ void main() {
   ) async {
     seed(
       const MidiSetupState(
-        devices: [dev1], // id-9 absent
-        selectedId: 'id-9',
-        selectedName: 'Ghost',
-        status: MidiSetupStatus.deviceGone,
+        connection: MidiConnection(
+          devices: [dev1], // id-9 absent
+          selectedId: 'id-9',
+          selectedName: 'Ghost',
+          status: MidiConnectionStatus.deviceGone,
+        ),
       ),
     );
     await pumpPicker(tester);
@@ -134,10 +140,12 @@ void main() {
   testWidgets('selecting None deselects the device', (tester) async {
     seed(
       const MidiSetupState(
-        devices: [dev1],
-        selectedId: 'id-1',
-        selectedName: 'FCB1010',
-        status: MidiSetupStatus.connected,
+        connection: MidiConnection(
+          devices: [dev1],
+          selectedId: 'id-1',
+          selectedName: 'FCB1010',
+          status: MidiConnectionStatus.connected,
+        ),
       ),
     );
     await pumpPicker(tester);
@@ -154,7 +162,7 @@ void main() {
       'labelled', (tester) async {
     final states = StreamController<MidiSetupState>.broadcast();
     addTearDown(states.close);
-    const initial = MidiSetupState(devices: [dev1]);
+    const initial = MidiSetupState(connection: MidiConnection(devices: [dev1]));
     when(() => cubit.state).thenReturn(initial);
     whenListen(cubit, states.stream, initialState: initial);
     await pumpPicker(tester);
@@ -163,7 +171,10 @@ void main() {
     expect(find.text('Waiting for MIDI input'), findsOneWidget);
 
     // A bumped activity tick drives the blink (the cubit exposes no stream).
-    const bumped = MidiSetupState(devices: [dev1], activityTick: 1);
+    const bumped = MidiSetupState(
+      connection: MidiConnection(devices: [dev1]),
+      activityTick: 1,
+    );
     when(() => cubit.state).thenReturn(bumped);
     states.add(bumped);
     await tester.pump();
@@ -177,7 +188,9 @@ void main() {
   testWidgets('the picker is keyboard/tap operable and emits a selection', (
     tester,
   ) async {
-    seed(const MidiSetupState(devices: [dev1, dev2]));
+    seed(
+      const MidiSetupState(connection: MidiConnection(devices: [dev1, dev2])),
+    );
     await pumpPicker(tester);
 
     await tester.tap(find.byKey(const Key('midiSettings_device_picker')));
@@ -186,5 +199,74 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(() => cubit.select('id-2')).called(1);
+  });
+
+  group('status line', () {
+    testWidgets('shows the none status by default', (tester) async {
+      seed(const MidiSetupState());
+      await pumpPicker(tester);
+
+      expect(find.textContaining('No MIDI device'), findsOneWidget);
+    });
+
+    testWidgets('shows the connecting status', (tester) async {
+      seed(
+        const MidiSetupState(
+          connection: MidiConnection(
+            selectedId: 'id-1',
+            selectedName: 'FCB1010',
+            status: MidiConnectionStatus.connecting,
+          ),
+        ),
+      );
+      await pumpPicker(tester);
+
+      expect(find.text('Connecting…'), findsOneWidget);
+    });
+
+    testWidgets('shows the connected status with the device name', (
+      tester,
+    ) async {
+      seed(
+        const MidiSetupState(
+          connection: MidiConnection(
+            devices: [dev1],
+            selectedId: 'id-1',
+            selectedName: 'FCB1010',
+            status: MidiConnectionStatus.connected,
+          ),
+        ),
+      );
+      await pumpPicker(tester);
+
+      expect(find.text('Connected: FCB1010'), findsOneWidget);
+    });
+
+    testWidgets('renders the open-failed status in the error color', (
+      tester,
+    ) async {
+      seed(
+        const MidiSetupState(
+          connection: MidiConnection(
+            devices: [dev1],
+            selectedId: 'id-1',
+            selectedName: 'FCB1010',
+            status: MidiConnectionStatus.error,
+            errorDetail: '5',
+          ),
+        ),
+      );
+      await pumpPicker(tester);
+
+      final statusFinder = find.byKey(const Key('midiSettings_status'));
+      final text = tester.widget<Text>(statusFinder);
+      expect(
+        text.data,
+        'Could not open FCB1010 (in use by another app?).',
+      );
+      // The error arm colors the line (vs the default null color).
+      final context = tester.element(statusFinder);
+      expect(text.style?.color, Theme.of(context).colorScheme.error);
+    });
   });
 }
