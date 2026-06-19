@@ -206,6 +206,123 @@ const le_midi_backend* le_midi_apple_backend(void) {
   return &kLeCoreMidiBackend;
 }
 
+/* ===== MIDI output (CoreMIDI) ============================================== *
+ *
+ * The send-side counterpart: enumerate the host's *destinations*
+ * (MIDIGetDestination), open one through our own output port, and push raw
+ * bytes — short messages and complete SysEx alike — as a single MIDIPacketList
+ * via MIDISend. No client read callback, no ring: output is synchronous from
+ * the caller's view (CoreMIDI queues the packet list and returns).
+ *
+ * Uses the classic MIDIPacketList API (MIDIPacketListInit / MIDIPacketListAdd /
+ * MIDISend) for the same reason the input side uses MIDIInputPortCreate: it is
+ * plain C with no Blocks/@available guard and compiles at the pod's 10.14
+ * deployment target (the macOS-11 MIDIEventList API would not). The identity
+ * helpers (le_core_string_prop / le_core_source_id) read endpoint properties and
+ * work on a destination endpoint exactly as on a source. */
+
+typedef struct le_core_midi_out_state {
+  MIDIClientRef client;
+  MIDIPortRef port;
+  MIDIEndpointRef dest;
+} le_core_midi_out_state;
+
+static MIDIEndpointRef le_core_find_dest(const char* id) {
+  const ItemCount n = MIDIGetNumberOfDestinations();
+  for (ItemCount i = 0; i < n; ++i) {
+    MIDIEndpointRef dst = MIDIGetDestination(i);
+    if (dst == 0) continue;
+    char buf[256];
+    le_core_source_id(dst, buf, sizeof(buf));
+    if (strcmp(buf, id) == 0) return dst;
+  }
+  return 0;
+}
+
+static int32_t le_core_midi_out_enumerate(le_midi_info* out, int32_t max,
+                                          int32_t* count) {
+  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
+  *count = 0;
+  const ItemCount n = MIDIGetNumberOfDestinations();
+  for (ItemCount i = 0; i < n && *count < max; ++i) {
+    MIDIEndpointRef dst = MIDIGetDestination(i);
+    if (dst == 0) continue;
+    le_midi_info* info = &out[*count];
+    memset(info, 0, sizeof(*info));
+    le_core_string_prop(dst, kMIDIPropertyDisplayName, info->name,
+                        sizeof(info->name));
+    le_core_source_id(dst, info->id, sizeof(info->id));
+    info->is_default = 0; /* CoreMIDI exposes no system-default output */
+    (*count)++;
+  }
+  return LE_OK;
+}
+
+static int32_t le_core_midi_out_close(le_midi_out* m) {
+  le_core_midi_out_state* st =
+      (le_core_midi_out_state*)le_midi_out_get_backend_state(m);
+  if (st == NULL) return LE_OK; /* idempotent */
+  if (st->port != 0) MIDIPortDispose(st->port);
+  if (st->client != 0) MIDIClientDispose(st->client);
+  free(st);
+  le_midi_out_set_backend_state(m, NULL);
+  return LE_OK;
+}
+
+static int32_t le_core_midi_out_open(le_midi_out* m, const char* id) {
+  if (id == NULL || id[0] == '\0') return LE_ERR_DEVICE;
+
+  le_core_midi_out_state* st =
+      (le_core_midi_out_state*)calloc(1, sizeof(le_core_midi_out_state));
+  if (st == NULL) return LE_ERR_DEVICE;
+  le_midi_out_set_backend_state(m, st);
+
+  st->dest = le_core_find_dest(id);
+  if (st->dest == 0) {
+    le_core_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  if (MIDIClientCreate(CFSTR("loopy"), NULL, NULL, &st->client) != noErr) {
+    le_core_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  if (MIDIOutputPortCreate(st->client, CFSTR("loopy MIDI out"), &st->port) !=
+      noErr) {
+    le_core_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  return LE_OK;
+}
+
+static int32_t le_core_midi_out_send(le_midi_out* m, const uint8_t* data,
+                                     int32_t len) {
+  le_core_midi_out_state* st =
+      (le_core_midi_out_state*)le_midi_out_get_backend_state(m);
+  if (st == NULL || st->port == 0 || st->dest == 0) return LE_ERR_DEVICE;
+  /* One packet list carrying the whole message. Frames are tiny (a state frame
+   * is well under 256 B); reject anything that would not fit one packet. */
+  if (len > 512) return LE_ERR_INVALID;
+  Byte storage[512 + sizeof(MIDIPacketList)];
+  MIDIPacketList* pktlist = (MIDIPacketList*)storage;
+  MIDIPacket* cur = MIDIPacketListInit(pktlist);
+  cur = MIDIPacketListAdd(pktlist, sizeof(storage), cur, 0, (ByteCount)len,
+                          (const Byte*)data);
+  if (cur == NULL) return LE_ERR_DEVICE;
+  if (MIDISend(st->port, st->dest, pktlist) != noErr) return LE_ERR_DEVICE;
+  return LE_OK;
+}
+
+static const le_midi_out_backend kLeCoreMidiOutBackend = {
+    le_core_midi_out_enumerate,
+    le_core_midi_out_open,
+    le_core_midi_out_close,
+    le_core_midi_out_send,
+};
+
+const le_midi_out_backend* le_midi_apple_out_backend(void) {
+  return &kLeCoreMidiOutBackend;
+}
+
 #else
 typedef int loopy_midi_apple_tu_unused; /* keep the TU non-empty off Apple */
 #endif

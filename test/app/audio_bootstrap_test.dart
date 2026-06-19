@@ -247,6 +247,35 @@ void main() {
       expect(engine.laneOutput[(1, 0)], 0x4);
     });
 
+    test('restores the saved global default loop multiple on launch', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      // Forced ×1: loops must stay one base loop, not auto-round-up to ×2/×4.
+      await settings.saveDefaultMultiple(1);
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.lastDefaultMultiple, 1);
+    });
+
     test('restores saved per-lane effects on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(

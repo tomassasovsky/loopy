@@ -211,6 +211,175 @@ const le_midi_backend* le_midi_windows_backend(void) {
   return &kLeWinMidiBackend;
 }
 
+/* ===== MIDI output (WinMM midiOut*) ======================================== *
+ *
+ * Mirrors the input enumeration/identity scheme on the *output* device list
+ * (midiOutGetDevCapsW). Short messages go through midiOutShortMsg; SysEx goes
+ * through midiOutPrepareHeader + midiOutLongMsg, then we spin on MHDR_DONE and
+ * Unprepare before returning, so the (stack) buffer outlives the async send and
+ * the call is effectively synchronous (frames are tiny — well under the 64 KB
+ * cap). */
+
+typedef struct le_win_midi_out_state {
+  HMIDIOUT handle;
+} le_win_midi_out_state;
+
+/* UTF-8 base name (szPname) of output device `idx`. Returns 1 on success. */
+static int le_winout_base_name(UINT idx, char* out, size_t cap) {
+  if (cap == 0) return 0;
+  out[0] = '\0';
+  MIDIOUTCAPSW caps;
+  if (midiOutGetDevCapsW(idx, &caps, sizeof(caps)) != MMSYSERR_NOERROR) {
+    return 0;
+  }
+  const int written = WideCharToMultiByte(CP_UTF8, 0, caps.szPname, -1, out,
+                                          (int)cap, NULL, NULL);
+  if (written <= 0) {
+    out[0] = '\0';
+    return 0;
+  }
+  out[cap - 1] = '\0';
+  return 1;
+}
+
+/* Disambiguated name of output device `idx`: appends "#<idx>" on a name clash,
+ * matching the input scheme so enumerate() and open() agree. */
+static void le_winout_disambiguated(UINT idx, UINT total, char* out, size_t cap) {
+  char base[256];
+  if (!le_winout_base_name(idx, base, sizeof(base))) {
+    out[0] = '\0';
+    return;
+  }
+  int duplicate = 0;
+  for (UINT j = 0; j < total; ++j) {
+    if (j == idx) continue;
+    char other[256];
+    if (le_winout_base_name(j, other, sizeof(other)) &&
+        strcmp(other, base) == 0) {
+      duplicate = 1;
+      break;
+    }
+  }
+  if (duplicate) {
+    snprintf(out, cap, "%s #%u", base, idx);
+  } else {
+    snprintf(out, cap, "%s", base);
+  }
+}
+
+static int32_t le_win_midi_out_enumerate(le_midi_info* out, int32_t max,
+                                         int32_t* count) {
+  if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
+  *count = 0;
+  const UINT total = midiOutGetNumDevs();
+  for (UINT i = 0; i < total && *count < max; ++i) {
+    char name[256];
+    le_winout_disambiguated(i, total, name, sizeof(name));
+    if (name[0] == '\0') continue; /* unreadable caps: skip */
+    le_midi_info* info = &out[*count];
+    memset(info, 0, sizeof(*info));
+    snprintf(info->id, sizeof(info->id), "%s", name); /* id == name */
+    snprintf(info->name, sizeof(info->name), "%s", name);
+    info->is_default = 0; /* WinMM has no system-default MIDI output */
+    (*count)++;
+  }
+  return LE_OK;
+}
+
+/* Resolves a persisted output id back to a current device index, or -1. */
+static int le_winout_find_index(const char* id) {
+  if (id == NULL || id[0] == '\0') return -1;
+  const UINT total = midiOutGetNumDevs();
+  for (UINT i = 0; i < total; ++i) {
+    char name[256];
+    le_winout_disambiguated(i, total, name, sizeof(name));
+    if (name[0] != '\0' && strcmp(name, id) == 0) return (int)i;
+  }
+  return -1;
+}
+
+static int32_t le_win_midi_out_close(le_midi_out* m) {
+  le_win_midi_out_state* st =
+      (le_win_midi_out_state*)le_midi_out_get_backend_state(m);
+  if (st == NULL) return LE_OK; /* idempotent */
+  if (st->handle != NULL) {
+    midiOutReset(st->handle); /* flush any pending long buffers */
+    midiOutClose(st->handle);
+  }
+  free(st);
+  le_midi_out_set_backend_state(m, NULL);
+  return LE_OK;
+}
+
+static int32_t le_win_midi_out_open(le_midi_out* m, const char* id) {
+  const int idx = le_winout_find_index(id);
+  if (idx < 0) return LE_ERR_DEVICE;
+  le_win_midi_out_state* st =
+      (le_win_midi_out_state*)calloc(1, sizeof(le_win_midi_out_state));
+  if (st == NULL) return LE_ERR_DEVICE;
+  le_midi_out_set_backend_state(m, st);
+  if (midiOutOpen(&st->handle, (UINT)idx, 0, 0, CALLBACK_NULL) !=
+      MMSYSERR_NOERROR) {
+    st->handle = NULL;
+    le_win_midi_out_close(m);
+    return LE_ERR_DEVICE;
+  }
+  return LE_OK;
+}
+
+static int32_t le_win_midi_out_send(le_midi_out* m, const uint8_t* data,
+                                    int32_t len) {
+  le_win_midi_out_state* st =
+      (le_win_midi_out_state*)le_midi_out_get_backend_state(m);
+  if (st == NULL || st->handle == NULL) return LE_ERR_DEVICE;
+
+  if (data[0] == 0xF0u) {
+    /* SysEx: prepare a header, send, wait for completion, then unprepare. The
+     * buffer is non-const for the WinMM API but is not modified by the driver. */
+    MIDIHDR hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    hdr.lpData = (LPSTR)data;
+    hdr.dwBufferLength = (DWORD)len;
+    hdr.dwBytesRecorded = (DWORD)len;
+    if (midiOutPrepareHeader(st->handle, &hdr, sizeof(hdr)) !=
+        MMSYSERR_NOERROR) {
+      return LE_ERR_DEVICE;
+    }
+    if (midiOutLongMsg(st->handle, &hdr, sizeof(hdr)) != MMSYSERR_NOERROR) {
+      midiOutUnprepareHeader(st->handle, &hdr, sizeof(hdr));
+      return LE_ERR_DEVICE;
+    }
+    /* midiOutLongMsg is asynchronous; the driver sets MHDR_DONE when finished.
+     * Spin briefly (frames are tiny) so the stack buffer stays valid. */
+    while ((hdr.dwFlags & MHDR_DONE) == 0) {
+      Sleep(0);
+    }
+    midiOutUnprepareHeader(st->handle, &hdr, sizeof(hdr));
+    return LE_OK;
+  }
+
+  /* Short message: pack up to three bytes little-endian (status, d1, d2). */
+  DWORD packed = 0;
+  for (int i = 0; i < len && i < 3; ++i) {
+    packed |= (DWORD)data[i] << (8 * i);
+  }
+  if (midiOutShortMsg(st->handle, packed) != MMSYSERR_NOERROR) {
+    return LE_ERR_DEVICE;
+  }
+  return LE_OK;
+}
+
+static const le_midi_out_backend kLeWinMidiOutBackend = {
+    le_win_midi_out_enumerate,
+    le_win_midi_out_open,
+    le_win_midi_out_close,
+    le_win_midi_out_send,
+};
+
+const le_midi_out_backend* le_midi_windows_out_backend(void) {
+  return &kLeWinMidiOutBackend;
+}
+
 #else
 typedef int loopy_midi_windows_tu_unused; /* keep the TU non-empty off Windows */
 #endif

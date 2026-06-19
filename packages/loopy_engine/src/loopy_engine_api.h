@@ -769,6 +769,61 @@ LE_EXPORT int32_t le_midi_open(le_midi* m, const char* id,
  * not to be invoked again. Returns LE_OK or LE_ERR_INVALID (null handle). */
 LE_EXPORT int32_t le_midi_close(le_midi* m);
 
+/* ---- native USB MIDI output (foot-pedal LED feedback) ---- *
+ *
+ * The send side of the same transport, kept as a fully independent handle from
+ * the input capture (le_midi above): a pedal binds one input source AND one
+ * output destination of the same physical device, but the two are separate OS
+ * ports with separate ids. This seam enumerates the host's MIDI *output* ports,
+ * opens one, and sends raw MIDI bytes to it — short channel-voice / real-time
+ * messages and System Exclusive alike. It has no callback, no ring, and no
+ * worker thread: le_midi_out_send synchronously hands the bytes to the OS.
+ *
+ * loopy uses it to push the pedal's LED state frames (checksummed 7-bit SysEx)
+ * and the loop-top real-time pulse. The bytes are sent verbatim; framing,
+ * 7-bit packing, and checksums are the Dart/firmware contract, not this layer's
+ * concern. Reuses le_midi_info for enumeration (id/name/is_default). */
+
+/* Opaque MIDI output handle (one open output port at a time). */
+typedef struct le_midi_out le_midi_out;
+
+/* Allocates a MIDI output handle bound to the compiled-in per-OS backend.
+ * Returns NULL on allocation failure or when no backend is available for the
+ * platform. */
+LE_EXPORT le_midi_out* le_midi_out_create(void);
+
+/* Closes any open port and frees the handle. Safe to call with NULL. */
+LE_EXPORT void le_midi_out_destroy(le_midi_out* m);
+
+/* Enumerates the host's MIDI output ports into `out` (room for `max` entries),
+ * writing the number filled into *count (clamped to `max`). Returns LE_OK, or
+ * LE_ERR_INVALID for a null argument / non-positive `max`. Degrades to
+ * *count = 0, LE_OK when the platform has no backend or no ports. The `id`s
+ * mirror the input seam's scheme (CoreMIDI unique id / ALSA client name / WinMM
+ * device name) but address *destinations*, so an output id is not interchangeable
+ * with an input id even for the same physical device. */
+LE_EXPORT int32_t le_midi_out_enumerate(le_midi_info* out, int32_t max,
+                                        int32_t* count);
+
+/* Opens the output port whose `id` matches an `id` from le_midi_out_enumerate.
+ * Re-opening switches the device (the previous port is closed first), so this is
+ * idempotent for re-selection. Returns LE_OK, LE_ERR_INVALID (null handle),
+ * LE_ERR_DEVICE (port not found or could not be opened). */
+LE_EXPORT int32_t le_midi_out_open(le_midi_out* m, const char* id);
+
+/* Closes the open output port. Idempotent (a no-op when nothing is open).
+ * Returns LE_OK or LE_ERR_INVALID (null handle). */
+LE_EXPORT int32_t le_midi_out_close(le_midi_out* m);
+
+/* Sends `len` raw MIDI bytes to the open port. `data` may be a short
+ * channel-voice or System real-time message (1-3 bytes) or a complete System
+ * Exclusive message (`0xF0` … `0xF7`); the backend routes long vs short
+ * appropriately. The call is synchronous — the bytes are owned only for its
+ * duration. Returns LE_OK, LE_ERR_INVALID (null handle / data, non-positive
+ * len), or LE_ERR_DEVICE (no port open or the OS rejected the send). */
+LE_EXPORT int32_t le_midi_out_send(le_midi_out* m, const uint8_t* data,
+                                   int32_t len);
+
 #ifdef __cplusplus
 }
 #endif

@@ -917,7 +917,10 @@ class LoopyEngineBindings {
 
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback. A stop press
-  /// always ends in playback/stopped.
+  /// always ends in playback/stopped. Independent of this setting, a track recorded
+  /// over an existing master that auto-finishes (reaches its loop length with no
+  /// press) always continues into overdub, so layering stays live rather than
+  /// auto-stopping to playback the moment the loop completes.
   int le_engine_set_rec_dub(
     ffi.Pointer<le_engine> engine,
     int enabled,
@@ -1542,6 +1545,145 @@ class LoopyEngineBindings {
       );
   late final _le_midi_close = _le_midi_closePtr
       .asFunction<int Function(ffi.Pointer<le_midi>)>();
+
+  /// Allocates a MIDI output handle bound to the compiled-in per-OS backend.
+  /// Returns NULL on allocation failure or when no backend is available for the
+  /// platform.
+  ffi.Pointer<le_midi_out> le_midi_out_create() {
+    return _le_midi_out_create();
+  }
+
+  late final _le_midi_out_createPtr =
+      _lookup<ffi.NativeFunction<ffi.Pointer<le_midi_out> Function()>>(
+        'le_midi_out_create',
+      );
+  late final _le_midi_out_create = _le_midi_out_createPtr
+      .asFunction<ffi.Pointer<le_midi_out> Function()>();
+
+  /// Closes any open port and frees the handle. Safe to call with NULL.
+  void le_midi_out_destroy(
+    ffi.Pointer<le_midi_out> m,
+  ) {
+    return _le_midi_out_destroy(
+      m,
+    );
+  }
+
+  late final _le_midi_out_destroyPtr =
+      _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<le_midi_out>)>>(
+        'le_midi_out_destroy',
+      );
+  late final _le_midi_out_destroy = _le_midi_out_destroyPtr
+      .asFunction<void Function(ffi.Pointer<le_midi_out>)>();
+
+  /// Enumerates the host's MIDI output ports into `out` (room for `max` entries),
+  /// writing the number filled into *count (clamped to `max`). Returns LE_OK, or
+  /// LE_ERR_INVALID for a null argument / non-positive `max`. Degrades to
+  /// *count = 0, LE_OK when the platform has no backend or no ports. The `id`s
+  /// mirror the input seam's scheme (CoreMIDI unique id / ALSA client name / WinMM
+  /// device name) but address *destinations*, so an output id is not interchangeable
+  /// with an input id even for the same physical device.
+  int le_midi_out_enumerate(
+    ffi.Pointer<le_midi_info> out,
+    int max,
+    ffi.Pointer<ffi.Int32> count,
+  ) {
+    return _le_midi_out_enumerate(
+      out,
+      max,
+      count,
+    );
+  }
+
+  late final _le_midi_out_enumeratePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_midi_info>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_midi_out_enumerate');
+  late final _le_midi_out_enumerate = _le_midi_out_enumeratePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_midi_info>, int, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Opens the output port whose `id` matches an `id` from le_midi_out_enumerate.
+  /// Re-opening switches the device (the previous port is closed first), so this is
+  /// idempotent for re-selection. Returns LE_OK, LE_ERR_INVALID (null handle),
+  /// LE_ERR_DEVICE (port not found or could not be opened).
+  int le_midi_out_open(
+    ffi.Pointer<le_midi_out> m,
+    ffi.Pointer<ffi.Char> id,
+  ) {
+    return _le_midi_out_open(
+      m,
+      id,
+    );
+  }
+
+  late final _le_midi_out_openPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Char>)
+        >
+      >('le_midi_out_open');
+  late final _le_midi_out_open = _le_midi_out_openPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Char>)
+      >();
+
+  /// Closes the open output port. Idempotent (a no-op when nothing is open).
+  /// Returns LE_OK or LE_ERR_INVALID (null handle).
+  int le_midi_out_close(
+    ffi.Pointer<le_midi_out> m,
+  ) {
+    return _le_midi_out_close(
+      m,
+    );
+  }
+
+  late final _le_midi_out_closePtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_midi_out>)>>(
+        'le_midi_out_close',
+      );
+  late final _le_midi_out_close = _le_midi_out_closePtr
+      .asFunction<int Function(ffi.Pointer<le_midi_out>)>();
+
+  /// Sends `len` raw MIDI bytes to the open port. `data` may be a short
+  /// channel-voice or System real-time message (1-3 bytes) or a complete System
+  /// Exclusive message (`0xF0` … `0xF7`); the backend routes long vs short
+  /// appropriately. The call is synchronous — the bytes are owned only for its
+  /// duration. Returns LE_OK, LE_ERR_INVALID (null handle / data, non-positive
+  /// len), or LE_ERR_DEVICE (no port open or the OS rejected the send).
+  int le_midi_out_send(
+    ffi.Pointer<le_midi_out> m,
+    ffi.Pointer<ffi.Uint8> data,
+    int len,
+  ) {
+    return _le_midi_out_send(
+      m,
+      data,
+      len,
+    );
+  }
+
+  late final _le_midi_out_sendPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_midi_out>,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+          )
+        >
+      >('le_midi_out_send');
+  late final _le_midi_out_send = _le_midi_out_sendPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_midi_out>, ffi.Pointer<ffi.Uint8>, int)
+      >();
 }
 
 /// Result codes returned by lifecycle calls.
@@ -2146,6 +2288,8 @@ typedef le_midi_event_cb =
     ffi.Pointer<ffi.NativeFunction<le_midi_event_cbFunction>>;
 
 final class le_midi extends ffi.Opaque {}
+
+final class le_midi_out extends ffi.Opaque {}
 
 const int LE_MAX_CHANNELS = 32;
 

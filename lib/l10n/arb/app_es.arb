@@ -434,5 +434,27 @@
                 "type": "String"
             }
         }
-    }
+    },
+    "pedalOutputGroup": "LED DEL PEDAL",
+    "pedalNone": "Ninguno",
+    "pedalNoOutputs": "No se encontraron dispositivos de salida MIDI",
+    "pedalStatusNone": "Sin salida de pedal — los interruptores funcionan; solo se apaga el LED.",
+    "pedalStatusConnecting": "Conectando…",
+    "pedalStatusBound": "Enviando LED a {deviceName}",
+    "@pedalStatusBound": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalStatusError": "No se pudo abrir {deviceName} (¿en uso por otra app?).",
+    "@pedalStatusError": {
+        "placeholders": {
+            "deviceName": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalOutputHint": "Elige la salida MIDI del pedal para que loopy controle sus LED. Sus interruptores usan la entrada MIDI de arriba."
 }
