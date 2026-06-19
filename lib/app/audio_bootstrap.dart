@@ -105,6 +105,13 @@ Future<AutoStartResult> tryAutoStartEngine({
     repository.measureLatency();
   }
 
+  // Restore the global default loop multiple (×N). Like the latency offset
+  // above, RecordOptionsCubit normally applies this — but that cubit is not
+  // created on the auto-start path and may not have initialized before the
+  // pedal triggers a recording, so without this a saved forced ×1 reverts to
+  // auto-round-up and loops record at ×2/×4.
+  repository.setDefaultMultiple(multiple: await settings.loadDefaultMultiple());
+
   // Restore per-track transport overrides and every lane's routing / mix /
   // effects so saved multi-lane setups are reapplied on launch (mirroring the
   // latency-offset restore above).
