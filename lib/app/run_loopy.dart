@@ -5,6 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/midi_bootstrap.dart';
 import 'package:loopy/app/monitor_migration.dart';
+import 'package:loopy/app/pedal_bootstrap.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
 import 'package:loopy/session_directory.dart';
@@ -47,6 +48,10 @@ Future<void> runLoopy(
   final controllerRepository = ControllerRepository(
     sources: [?midiSource],
   );
+  // The bidirectional pedal reuses the MIDI source's single input capture and
+  // opens its own MIDI output for LED feedback; null when no MIDI backend, in
+  // which case the pedal cubit falls back to a no-op transport.
+  final pedalRepository = createPedalRepository(midiSource);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
   final sessionRepository = SessionRepository(engine: engine);
 
@@ -76,6 +81,7 @@ Future<void> runLoopy(
       repository: repository,
       controllerRepository: controllerRepository,
       midiSource: midiSource,
+      pedalRepository: pedalRepository,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: sessionRepository,

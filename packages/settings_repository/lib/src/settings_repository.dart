@@ -226,6 +226,57 @@ class SettingsRepository {
     await _store.remove(_midiInputDeviceNameKey);
   }
 
+  static const String _pedalOutputDeviceIdKey = 'pedal.output_device_id';
+  static const String _pedalOutputDeviceNameKey = 'pedal.output_device_name';
+
+  /// Loads the pinned pedal MIDI *output* device as `(id, name)`, or `null`
+  /// when none has been selected. The pedal binds one output for its LED
+  /// state frames; this is the output counterpart of [loadMidiDevice] and pins
+  /// it so it auto-binds next launch. Additive flat keys, like `midi.*`.
+  Future<({String id, String name})?> loadPedalOutputDevice() async {
+    final id = await _store.getString(_pedalOutputDeviceIdKey);
+    if (id == null || id.isEmpty) return null;
+    final name = await _store.getString(_pedalOutputDeviceNameKey) ?? '';
+    return (id: id, name: name);
+  }
+
+  /// Pins the pedal output device [id]/[name] so it auto-binds next launch.
+  Future<void> savePedalOutputDevice({
+    required String id,
+    required String name,
+  }) async {
+    await _store.setString(_pedalOutputDeviceIdKey, id);
+    await _store.setString(_pedalOutputDeviceNameKey, name);
+  }
+
+  /// Clears the pinned pedal output device (the "None" selection).
+  Future<void> clearPedalOutputDevice() async {
+    await _store.remove(_pedalOutputDeviceIdKey);
+    await _store.remove(_pedalOutputDeviceNameKey);
+  }
+
+  static const String _pedalLongPressMsKey = 'pedal.long_press_ms';
+
+  /// Loads the pedal long-press threshold in milliseconds (Undo long-press =
+  /// redo). Defaults to `500` when unset.
+  Future<int> loadPedalLongPressMs() async =>
+      await _store.getInt(_pedalLongPressMsKey) ?? 500;
+
+  /// Saves the pedal long-press threshold in milliseconds.
+  Future<void> savePedalLongPressMs(int ms) =>
+      _store.setInt(_pedalLongPressMsKey, ms);
+
+  static const String _pedalClearFadeMsKey = 'pedal.clear_fade_ms';
+
+  /// Loads the pedal clear-all fade/guard window in milliseconds (`0` disables
+  /// the guard — Clear erases immediately). Defaults to `1000` when unset.
+  Future<int> loadPedalClearFadeMs() async =>
+      await _store.getInt(_pedalClearFadeMsKey) ?? 1000;
+
+  /// Saves the pedal clear-all fade/guard window in milliseconds.
+  Future<void> savePedalClearFadeMs(int ms) =>
+      _store.setInt(_pedalClearFadeMsKey, ms);
+
   static const String _showWaveformWindowKey = 'big_picture.waveform_window';
 
   /// Whether the secondary output-waveform window should open in big-picture
