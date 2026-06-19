@@ -18,6 +18,9 @@ add_library(loopy_engine SHARED
   # Device discovery, loopback detection, id resolution, backend selection (S1
   # split). Control thread; transient ma_context, never the live device.
   engine_devices.c
+  # Published-state snapshots + visualization reads (S1 split). Control thread;
+  # loads the per-field atomics the audio thread publishes.
+  engine_snapshot.c
   # The miniaudio device backend (le_device_backend.h). Compiled unconditionally
   # — it is the only device backend this build ships; the opt-in ASIO backend
   # slots in behind le_select_backend later.
