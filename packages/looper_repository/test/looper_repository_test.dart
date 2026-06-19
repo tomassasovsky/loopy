@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:loopy_engine/loopy_engine.dart'
+    hide ParamReadout, TrackEffect, TrackEffectParam, TrackEffectType;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -543,7 +544,7 @@ void main() {
 
       repo.startEngine(const EngineConfig());
       // Track-addressed effects map to lane 0.
-      expect(engine.laneFx[(1, 0, 0)], TrackEffectType.delay);
+      expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
       expect(engine.laneFxParam[(1, 0, 0, 1)], 0.4);
       expect(engine.laneFxCount[(1, 0)], 1);
     });
@@ -576,7 +577,7 @@ void main() {
           channel: 0,
           effects: [TrackEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.laneFx[(0, 0, 0)], TrackEffectType.drive);
+      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
 
       repo.setTrackEffects(channel: 0, effects: const []);
       expect(engine.laneFxCount[(0, 0)], 0);
@@ -601,7 +602,7 @@ void main() {
       expect(engine.monitorLaneFx, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneFx[(0, 0, 0)], TrackEffectType.delay);
+      expect(engine.monitorLaneFx[(0, 0, 0)]?.code, TrackEffectType.delay.code);
       expect(engine.monitorLaneFxParam[(0, 0, 0, 1)], 0.4);
       expect(engine.monitorLaneFxCount[(0, 0)], 1);
     });
@@ -688,7 +689,7 @@ void main() {
           lane: 0,
           effects: [TrackEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.monitorLaneFx[(0, 0, 0)], TrackEffectType.drive);
+      expect(engine.monitorLaneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
 
       // A no-FX lane is the clean (dry) path: the chain length drops to 0.
       repo.setMonitorLaneEffects(input: 0, lane: 0, effects: const []);

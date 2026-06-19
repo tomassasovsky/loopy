@@ -2,7 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:loopy_engine/loopy_engine.dart'
+    hide
+        ParamReadout,
+        TrackEffect,
+        TrackEffectParam,
+        TrackEffectType,
+        decodeTrackEffects,
+        encodeTrackEffects;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/helpers.dart';
@@ -316,8 +323,10 @@ void main() {
       );
 
       expect(started.started, isTrue);
-      expect(engine.laneFx[(0, 0, 0)], TrackEffectType.filter);
-      expect(engine.laneFx[(0, 0, 1)], TrackEffectType.delay);
+      // The repository maps domain → engine effect types at the boundary, so
+      // the engine records the engine enum; compare native codes across it.
+      expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.filter.code);
+      expect(engine.laneFx[(0, 0, 1)]?.code, TrackEffectType.delay.code);
       expect(engine.laneFxCount[(0, 0)], 2);
       expect(engine.laneFxParam[(0, 0, 1, 1)], 0.42);
     });
@@ -366,7 +375,7 @@ void main() {
       expect(engine.laneOutput[(0, 1)], 0x2);
       expect(engine.laneVol[(0, 1)], 0.4);
       expect(engine.laneMute[(0, 1)], isTrue);
-      expect(engine.laneFx[(0, 1, 0)], TrackEffectType.tremolo);
+      expect(engine.laneFx[(0, 1, 0)]?.code, TrackEffectType.tremolo.code);
     });
 
     test('starts the engine with the saved config', () async {
