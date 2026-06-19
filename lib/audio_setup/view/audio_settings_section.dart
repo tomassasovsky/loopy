@@ -10,6 +10,7 @@ import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_view.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -83,6 +84,9 @@ class AudioSettingsSection extends StatelessWidget {
         // audio device pickers are hidden.
         const SizedBox(height: 28),
         const MidiDevicePicker(),
+        // The pedal's LED-feedback output picker, likewise backend-independent.
+        const SizedBox(height: 28),
+        const PedalSettingsSection(),
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),

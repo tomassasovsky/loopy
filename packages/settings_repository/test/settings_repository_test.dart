@@ -413,6 +413,49 @@ void main() {
     });
   });
 
+  group('pedal output device', () {
+    test('returns null when nothing is stored', () async {
+      expect(await repository.loadPedalOutputDevice(), isNull);
+    });
+
+    test('round-trips a saved id + name', () async {
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      final loaded = await repository.loadPedalOutputDevice();
+      expect(loaded?.id, 'out-7');
+      expect(loaded?.name, 'Loopy Pedal');
+    });
+
+    test('treats an empty saved id as no selection', () async {
+      await repository.savePedalOutputDevice(id: '', name: '');
+      expect(await repository.loadPedalOutputDevice(), isNull);
+    });
+
+    test('clearPedalOutputDevice removes both keys', () async {
+      await repository.savePedalOutputDevice(id: 'out-7', name: 'Loopy Pedal');
+      await repository.clearPedalOutputDevice();
+      expect(await repository.loadPedalOutputDevice(), isNull);
+      expect(store.values.containsKey('pedal.output_device_id'), isFalse);
+      expect(store.values.containsKey('pedal.output_device_name'), isFalse);
+    });
+  });
+
+  group('pedal timing', () {
+    test('long-press defaults to 500 ms and round-trips', () async {
+      expect(await repository.loadPedalLongPressMs(), 500);
+      await repository.savePedalLongPressMs(750);
+      expect(await repository.loadPedalLongPressMs(), 750);
+    });
+
+    test(
+      'clear-fade defaults to 1000 ms and round-trips (0 disables)',
+      () async {
+        expect(await repository.loadPedalClearFadeMs(), 1000);
+        await repository.savePedalClearFadeMs(0);
+        expect(await repository.loadPedalClearFadeMs(), 0);
+      },
+    );
+  });
+
   group('waveform window', () {
     test('defaults to enabled when unset', () async {
       expect(await repository.loadShowWaveformWindow(), isTrue);

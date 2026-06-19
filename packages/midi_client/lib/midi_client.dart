@@ -9,3 +9,4 @@ library;
 export 'src/midi_client_base.dart' show MidiClient, MidiException;
 export 'src/midi_controller_source.dart' show MidiControllerSource;
 export 'src/midi_device.dart' show MidiDevice;
+export 'src/midi_out_client.dart' show MidiOutClient;

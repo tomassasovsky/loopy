@@ -51,6 +51,13 @@ abstract final class PedalCodec {
   /// The MIDI CC number the encoder transmits (relative, binary-offset).
   static const encoderCc = 0x10;
 
+  /// The MIDI System Real-Time "Start" status byte (`0xFA`), reused as the
+  /// loop-top pulse: loopy sends one byte at each loop top and the firmware
+  /// advances its ring one revolution per loop. A single real-time byte
+  /// survives the firmware's FastLED interrupt gap far better than multi-byte
+  /// SysEx.
+  static const loopTopPulse = 0xFA;
+
   /// The number of logical (unpacked) payload bytes in a state frame.
   static const _payloadLength = 16;
 
@@ -88,6 +95,22 @@ abstract final class PedalCodec {
       ..addByte(sysExEnd);
     return out.toBytes();
   }
+
+  /// The Universal Non-Real-Time SysEx **Identity Request**
+  /// (`F0 7E 7F 06 01 F7`). loopy broadcasts this when it binds an output port,
+  /// so a pedal can recognize the host.
+  ///
+  /// The pedal's identity *reply* is a SysEx message, which cannot be delivered
+  /// through loopy's 3-byte input capture — so the reply is **not parsed** in
+  /// v1 and binding is driven by the output port opening (see
+  /// `PedalRepository`).
+  /// The request is still sent for forward compatibility with a future
+  /// SysEx-capable inbound path.
+  static Uint8List encodeIdentityRequest() =>
+      Uint8List.fromList([0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]);
+
+  /// The single-byte [loopTopPulse] real-time message.
+  static Uint8List encodeLoopTop() => Uint8List.fromList([loopTopPulse]);
 
   /// Parses a SysEx [message] back into a [PedalStateFrame].
   ///

@@ -1,10 +1,10 @@
 import 'dart:ffi';
-import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:loopy_engine/loopy_engine_ffi.dart';
 import 'package:meta/meta.dart';
 import 'package:midi_client/src/midi_device.dart';
+import 'package:midi_client/src/native_library.dart';
 
 /// Thrown when the native MIDI handle cannot be allocated.
 class MidiException implements Exception {
@@ -16,21 +16,6 @@ class MidiException implements Exception {
 
   @override
   String toString() => 'MidiException: $message';
-}
-
-/// Opens the bundled `loopy_engine` native library for the current platform.
-///
-/// Mirrors `NativeAudioEngine`'s loader: the MIDI symbols (`le_midi_*`) are
-/// exported from the same library as the audio engine. On Apple platforms they
-/// live in the process's global namespace (static-linked into the Runner), so
-/// [DynamicLibrary.process] resolves them; on Linux/Windows the engine is a
-/// separate shared library opened by name.
-DynamicLibrary _openLibrary() {
-  if (Platform.isMacOS || Platform.isIOS) {
-    return DynamicLibrary.process();
-  }
-  if (Platform.isWindows) return DynamicLibrary.open('loopy_engine.dll');
-  return DynamicLibrary.open('libloopy_engine.so');
 }
 
 /// A thin, typed wrapper over the native `le_midi_*` capture seam.
@@ -48,7 +33,7 @@ class MidiClient {
   /// Throws a [MidiException] when the platform has no MIDI backend or the
   /// handle cannot be allocated.
   MidiClient({LoopyEngineBindings? bindings})
-    : _bindings = bindings ?? LoopyEngineBindings(_openLibrary()) {
+    : _bindings = bindings ?? LoopyEngineBindings(openLoopyEngineLibrary()) {
     _handle = _bindings.le_midi_create();
     if (_handle == nullptr) {
       throw const MidiException('failed to allocate native MIDI handle');

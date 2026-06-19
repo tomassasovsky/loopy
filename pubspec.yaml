@@ -27,6 +27,8 @@ dependencies:
   midi_client:
     path: packages/midi_client
   path_provider: ^2.1.6
+  pedal_repository:
+    path: packages/pedal_repository
   routing_graph:
     path: packages/routing_graph
   session_repository:

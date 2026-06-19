@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -16,11 +17,14 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
     implements MidiSetupCubit {}
 
+class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
+
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 void main() {
   late AudioSetupCubit cubit;
   late MidiSetupCubit midi;
+  late PedalCubit pedal;
   late MonitorCubit monitor;
   late QuantizeCubit quantize;
   late RecordOptionsCubit recordOptions;
@@ -33,6 +37,15 @@ void main() {
       midi,
       const Stream<MidiSetupState>.empty(),
       initialState: const MidiSetupState(),
+    );
+    pedal = _MockPedalCubit();
+    when(() => pedal.state).thenReturn(const PedalState());
+    when(pedal.availableOutputs).thenReturn(const []);
+    when(() => pedal.boundOutputId).thenReturn(null);
+    whenListen(
+      pedal,
+      const Stream<PedalState>.empty(),
+      initialState: const PedalState(),
     );
     final repository = _MockLooperRepository();
     when(
@@ -76,6 +89,7 @@ void main() {
       providers: [
         BlocProvider<AudioSetupCubit>.value(value: cubit),
         BlocProvider<MidiSetupCubit>.value(value: midi),
+        BlocProvider<PedalCubit>.value(value: pedal),
         BlocProvider<MonitorCubit>.value(value: monitor),
         BlocProvider<QuantizeCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
