@@ -6,6 +6,7 @@ import 'package:loopy/audio_setup/cubit/midi_setup_cubit.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 
 /// The MIDI foot-controller block in the audio/I-O settings: a device dropdown
 /// (with a "None" item and an absent-selection fallback), an empty state, a
@@ -28,12 +29,12 @@ class MidiDevicePicker extends StatelessWidget {
       children: [
         SetupGroupLabel(l10n.midiInputGroup),
         const SizedBox(height: 12),
-        if (state.devices.isEmpty && !state.hasSelection)
+        if (state.connection.devices.isEmpty && !state.connection.hasSelection)
           const _MidiEmptyState()
         else
-          _MidiDropdown(state: state, onSelected: cubit.select),
+          _MidiDropdown(connection: state.connection, onSelected: cubit.select),
         const SizedBox(height: 12),
-        _MidiStatusLine(state: state),
+        _MidiStatusLine(connection: state.connection),
         const SizedBox(height: 12),
         const MidiActivityIndicator(),
         const SizedBox(height: 12),
@@ -68,16 +69,17 @@ class _MidiEmptyState extends StatelessWidget {
 /// "(not found)") so the selection stays visible and the dropdown value stays
 /// valid — mirroring `AudioDevicePicker`'s absent-selection fallback.
 class _MidiDropdown extends StatelessWidget {
-  const _MidiDropdown({required this.state, required this.onSelected});
+  const _MidiDropdown({required this.connection, required this.onSelected});
 
-  final MidiSetupState state;
+  final MidiConnection connection;
   final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final showAbsentPinned = state.hasSelection && !state.isSelectedPresent;
-    final value = state.hasSelection ? state.selectedId : '';
+    final showAbsentPinned =
+        connection.hasSelection && !connection.isSelectedPresent;
+    final value = connection.hasSelection ? connection.selectedId : '';
 
     return Semantics(
       label: l10n.midiInputGroup,
@@ -108,7 +110,7 @@ class _MidiDropdown extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              for (final device in state.devices)
+              for (final device in connection.devices)
                 DropdownMenuItem(
                   value: device.id,
                   child: Text(
@@ -119,12 +121,12 @@ class _MidiDropdown extends StatelessWidget {
                 ),
               if (showAbsentPinned)
                 DropdownMenuItem(
-                  value: state.selectedId,
+                  value: connection.selectedId,
                   child: Text(
                     l10n.midiDeviceNotFound(
-                      state.selectedName.isEmpty
-                          ? state.selectedId
-                          : state.selectedName,
+                      connection.selectedName.isEmpty
+                          ? connection.selectedId
+                          : connection.selectedName,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -144,22 +146,25 @@ class _MidiDropdown extends StatelessWidget {
 /// A one-line status for the pinned MIDI device, exposed to screen readers via
 /// the surrounding text (semantics, not color-only).
 class _MidiStatusLine extends StatelessWidget {
-  const _MidiStatusLine({required this.state});
+  const _MidiStatusLine({required this.connection});
 
-  final MidiSetupState state;
+  final MidiConnection connection;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final name = state.selectedName.isEmpty
-        ? state.selectedId
-        : state.selectedName;
-    final (message, isError) = switch (state.status) {
-      MidiSetupStatus.none => (l10n.midiStatusNone, false),
-      MidiSetupStatus.connecting => (l10n.midiStatusConnecting, false),
-      MidiSetupStatus.connected => (l10n.midiStatusConnected(name), false),
-      MidiSetupStatus.deviceGone => (l10n.midiStatusDeviceGone(name), false),
-      MidiSetupStatus.error => (l10n.midiStatusOpenFailed(name), true),
+    final name = connection.selectedName.isEmpty
+        ? connection.selectedId
+        : connection.selectedName;
+    final (message, isError) = switch (connection.status) {
+      MidiConnectionStatus.none => (l10n.midiStatusNone, false),
+      MidiConnectionStatus.connecting => (l10n.midiStatusConnecting, false),
+      MidiConnectionStatus.connected => (l10n.midiStatusConnected(name), false),
+      MidiConnectionStatus.deviceGone => (
+        l10n.midiStatusDeviceGone(name),
+        false,
+      ),
+      MidiConnectionStatus.error => (l10n.midiStatusOpenFailed(name), true),
     };
     // A live region so connect / disconnect / open-failed transitions are
     // announced as they happen, not only on navigation (WCAG 4.1.3). A plain
