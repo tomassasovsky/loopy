@@ -31,6 +31,7 @@ void main() {
       pedal: PedalRepository(transport),
       looper: looper,
       settings: SettingsRepository(store: FakeKeyValueStore()),
+      pollInterval: Duration.zero, // no hotplug timer in widget tests
     );
 
     Future<void> pumpSection(WidgetTester tester, PedalCubit cubit) =>

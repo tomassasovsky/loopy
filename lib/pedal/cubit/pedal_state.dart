@@ -21,8 +21,8 @@ class PedalState extends Equatable {
     this.mode = PedalMode.rec,
     this.armedTrack = 0,
     this.activeBank = 0,
-    this.clearFadeActive = false,
     this.bindStatus = PedalBindStatus.none,
+    this.outputsTick = 0,
   });
 
   /// The active behavior set.
@@ -36,11 +36,12 @@ class PedalState extends Equatable {
   /// 4–7).
   final int activeBank;
 
-  /// Whether a clear-all fade is currently counting down (the abort window).
-  final bool clearFadeActive;
-
   /// The pedal output link status, mirrored for the settings UI.
   final PedalBindStatus bindStatus;
+
+  /// Bumped whenever the enumerated MIDI-output set changes, so the settings
+  /// picker re-enumerates on the next rebuild (hotplug freshness).
+  final int outputsTick;
 
   /// Whether the pedal is in Play (mixing) mode.
   bool get isPlayMode => mode == PedalMode.play;
@@ -56,15 +57,15 @@ class PedalState extends Equatable {
     PedalMode? mode,
     int? armedTrack,
     int? activeBank,
-    bool? clearFadeActive,
     PedalBindStatus? bindStatus,
+    int? outputsTick,
   }) {
     return PedalState(
       mode: mode ?? this.mode,
       armedTrack: armedTrack ?? this.armedTrack,
       activeBank: activeBank ?? this.activeBank,
-      clearFadeActive: clearFadeActive ?? this.clearFadeActive,
       bindStatus: bindStatus ?? this.bindStatus,
+      outputsTick: outputsTick ?? this.outputsTick,
     );
   }
 
@@ -73,7 +74,7 @@ class PedalState extends Equatable {
     mode,
     armedTrack,
     activeBank,
-    clearFadeActive,
     bindStatus,
+    outputsTick,
   ];
 }
