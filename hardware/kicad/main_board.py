@@ -231,8 +231,9 @@ q1 = Part("Transistor_FET", "AO3401A",
 q1["S"] += v9
 q1["G"] += q1g
 q1["D"] += vin_raw
+# Device:D pin1 = CATHODE, pin2 = ANODE.  TVS protects +9V: cathode->+9V, anode->GND.
 Part("Device", "D", value="SMAJ12A",
-     footprint="Diode_SMD:D_SMA", ref="D1")[1, 2] += gnd, v9
+     footprint="Diode_SMD:D_SMA", ref="D1")[1, 2] += v9, gnd
 C("22uF", "Capacitor_SMD:C_1206_3216Metric")[1, 2] += v9, gnd
 # AP63203WU buck: FB,EN,IN,GND,SW,BST
 u3 = Part("Regulator_Switching", "AP63203WU",
@@ -361,8 +362,9 @@ C("100nF")[1, 2] += avcc16, gnd
 # Q1 gate protection: 100k pull-down (turns the P-FET on) + 10V Zener clamp so an
 # input transient (D1 clamps +9V to ~20V) can't drive Vgs past the AO3401 +/-12V.
 R("100k")[1, 2] += q1g, gnd
+# D_Zener pin1 = CATHODE, pin2 = ANODE.  Clamp Vgs: cathode->source(+9V), anode->gate.
 Part("Device", "D_Zener", value="10V",
-     footprint="Diode_SMD:D_SOD-123", ref="D3")[1, 2] += q1g, v9
+     footprint="Diode_SMD:D_SOD-123", ref="D3")[1, 2] += v9, q1g
 
 # Declare the supply rails as power-driven (KiCad PWR_FLAG equivalent): silences
 # the "insufficient drive" warnings on the supply pins.

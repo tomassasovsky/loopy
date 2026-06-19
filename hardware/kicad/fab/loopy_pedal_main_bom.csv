@@ -1,47 +1,47 @@
 Comment,Designator,Footprint,Qty,LCSC Part #,Mount,Note
-100nF,"C1,C2,C5,C6,C8,C9,C10,C11,C12,C13,C14,C15,C16,C19,C20,C25,C28,C29,C30",C_0603_1608Metric,19,C14663,SMT,JLCPCB basic
-22pF,"C3,C4,C22,C23",C_0603_1608Metric,4,C1653,SMT,basic NP0
-10k,"R1,R4,R8,R13",R_0603_1608Metric,4,C98220,SMT,YAGEO 1%
-22uF,"C24,C26,C27",C_1206_3216Metric,3,C45783,SMT,basic 1206
-220,"R10,R11,R12",R_0603_1608Metric,3,C22962,SMT,basic 1%
-1nF,"C17,C18",C_0603_1608Metric,2,C1588,SMT,Samsung basic (ISP-safe)
-FerriteBead,"FB1,FB2",L_0603_1608Metric,2,C1017,SMT,basic
-330,"R9,R14",R_0603_1608Metric,2,C23138,SMT,basic 1%
-22,"R2,R3",R_0603_1608Metric,2,C23345,SMT,basic 1%
-5.1k,"R5,R6",R_0603_1608Metric,2,C23186,SMT,basic 1%
-SW_Push,"SW1,SW2",SW_Push_1P1T_NO_CK_KMR2,2,C269272,SMT,C&K KMR221NGLFS
-74AHCT1G125,"U4,U8",SOT-23-5,2,C7484,SMT,TI
-LM66100DCK,"U5,U6",SOT-363_SC-70-6,2,C2869734,SMT,TI SC-70-6
-16MHz,"Y1,Y2",Crystal_SMD_HC49-SD,2,C110562,SMT,YXC HC-49S
-1uF,C21,C_0603_1608Metric,1,C15849,SMT,basic
-10uF,C7,C_0805_2012Metric,1,C15850,SMT,basic
-SMAJ12A,D1,D_SMA,1,C148213,SMT,Littelfuse 400W
-1N4148,D2,D_SOD-123,1,C81598,SMT,1N4148W basic
-10V,D3,D_SOD-123,1,C216719,SMT,BZT52C10 Zener (Q1 gate clamp)
-10uH,L1,L_12x12mm_H8mm,1,C167261,SMT,Sumida CDRH127
-AO3401A,Q1,SOT-23,1,C15127,SMT,basic P-MOS
-100k,R15,R_0603_1608Metric,1,C25803,SMT,UNI-ROYAL 0603WAF1003T5E 1% (Q1 gate)
-52.3k,R7,R_0603_1608Metric,1,C23198,SMT,UNI-ROYAL
-ATmega328P-A,U1,TQFP-32_7x7mm_P0.8mm,1,C14877,SMT,main MCU
-74AHCT1G08,U10,SOT-23-5,1,C113521,SMT,TI
-ATmega16U2-A,U2,TQFP-32_7x7mm_P0.8mm,1,C59019,SMT,USB MCU
-AP63203WU,U3,SOT-23-6,1,C780769,SMT,buck
-USBLC6-2SC6,U7,SOT-23-6,1,C7519,SMT,ESD basic
-Conn_02x03_Odd_Even,"J6,J7",PinHeader_2x03_P2.54mm_Vertical,2,,THT,hand-solder / self-source
-DIN-5_180degree,"J8,J9",MIDI_DIN5_RA,2,,THT,hand-solder / self-source
-USB_C_Receptacle_USB2.0_16P,J1,USB_C_Receptacle_GCT_USB4085,1,,THT,hand-solder / self-source
-Conn_01x02,J10,PinHeader_1x02_P2.54mm_Vertical,1,,THT,hand-solder / self-source
-Conn_01x03,J11,JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical,1,,THT,hand-solder / self-source
-FSW_UNDO,J12,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_MODE,J13,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_TRACK1,J14,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_TRACK2,J15,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_TRACK3,J16,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_TRACK4,J17,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_CLEAR,J18,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_BANK,J19,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-Barrel_Jack,J2,BarrelJack_Horizontal,1,,THT,hand-solder / self-source
-FSW_RECPLAY,J3,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-FSW_STOP,J4,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch header - hand-solder
-Conn_01x08,J5,JST_XH_B8B-XH-A_1x08_P2.50mm_Vertical,1,,THT,hand-solder / self-source
-H11L1,U9,DIP-6_W7.62mm,1,C16587,THT,H11L1M opto - hand-solder
+100nF,"C1,C2,C5,C6,C8,C9,C10,C11,C12,C13,C14,C15,C16,C19,C20,C25,C28,C29,C30",C_0603_1608Metric,19,C14663,SMT,
+22pF,"C3,C4,C22,C23",C_0603_1608Metric,4,C1653,SMT,
+10k,"R1,R4,R8,R13",R_0603_1608Metric,4,C98220,SMT,
+22uF,"C24,C26,C27",C_1206_3216Metric,3,C45783,SMT,
+220,"R10,R11,R12",R_0603_1608Metric,3,C22962,SMT,
+1nF,"C17,C18",C_0603_1608Metric,2,C1588,SMT,ISP-safe
+FerriteBead,"FB1,FB2",L_0603_1608Metric,2,C1017,SMT,
+330,"R9,R14",R_0603_1608Metric,2,C23138,SMT,
+22,"R2,R3",R_0603_1608Metric,2,C23345,SMT,
+5.1k,"R5,R6",R_0603_1608Metric,2,C23186,SMT,
+SW_Push,"SW1,SW2",SW_Push_1P1T_NO_CK_KMR2,2,C269272,SMT,
+74AHCT1G125,"U4,U8",SOT-23-5,2,C7484,SMT,
+LM66100DCK,"U5,U6",SOT-363_SC-70-6,2,C2869734,SMT,SC-70-6
+16MHz,"Y1,Y2",Crystal_SMD_HC49-SD,2,C110562,SMT,
+1uF,C21,C_0603_1608Metric,1,C15849,SMT,
+10uF,C7,C_0805_2012Metric,1,C15850,SMT,
+SMAJ12A,D1,D_SMA,1,C148213,SMT,TVS
+1N4148,D2,D_SOD-123,1,C81598,SMT,
+10V,D3,D_SOD-123,1,C216719,SMT,BZT52C10 gate clamp
+10uH,L1,L_12x12mm_H8mm,1,C167261,SMT,
+AO3401A,Q1,SOT-23,1,C15127,SMT,
+100k,R15,R_0603_1608Metric,1,C25803,SMT,Q1 gate pulldown
+52.3k,R7,R_0603_1608Metric,1,C23198,SMT,buck FB
+ATmega328P-A,U1,TQFP-32_7x7mm_P0.8mm,1,C14877,SMT,
+74AHCT1G08,U10,SOT-23-5,1,C113521,SMT,
+ATmega16U2-A,U2,TQFP-32_7x7mm_P0.8mm,1,C59019,SMT,
+AP63203WU,U3,SOT-23-6,1,C780769,SMT,
+USBLC6-2SC6,U7,SOT-23-6,1,C7519,SMT,
+Conn_02x03_Odd_Even,"J6,J7",PinHeader_2x03_P2.54mm_Vertical,2,,THT,hand-solder
+DIN-5_180degree,"J8,J9",MIDI_DIN5_RA,2,,THT,hand-solder
+USB_C_Receptacle_USB2.0_16P,J1,USB_C_Receptacle_GCT_USB4085,1,,THT,hand-solder
+Conn_01x02,J10,PinHeader_1x02_P2.54mm_Vertical,1,,THT,hand-solder
+Conn_01x03,J11,JST_XH_B3B-XH-A_1x03_P2.50mm_Vertical,1,,THT,hand-solder
+FSW_UNDO,J12,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_MODE,J13,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_TRACK1,J14,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_TRACK2,J15,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_TRACK3,J16,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_TRACK4,J17,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_CLEAR,J18,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_BANK,J19,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+Barrel_Jack,J2,BarrelJack_Horizontal,1,,THT,hand-solder
+FSW_RECPLAY,J3,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+FSW_STOP,J4,JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical,1,,THT,footswitch - hand-solder
+Conn_01x08,J5,JST_XH_B8B-XH-A_1x08_P2.50mm_Vertical,1,,THT,hand-solder
+H11L1,U9,DIP-6_W7.62mm,1,C16587,THT,hand-solder
