@@ -118,3 +118,6 @@ app.*.map.json
 lib/l10n/gen/
 # Flutter golden-test diff artifacts
 test/**/failures/
+# SKiDL transient reports written to the repo root
+/skidl*.erc
+/skidl*.log
