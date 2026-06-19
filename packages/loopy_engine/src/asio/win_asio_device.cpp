@@ -212,7 +212,8 @@ long asio_messages(long selector, long value, void* /*message*/,
   switch (selector) {
     case kAsioSelectorSupported:
       // Acknowledge the queries we answer below; decline everything else.
-      if (value == kAsioEngineVersion || value == kAsioSupportsTimeInfo) {
+      if (value == kAsioEngineVersion || value == kAsioSupportsTimeInfo ||
+          value == kAsioOverload) {
         return 1L;
       }
       return 0L;
@@ -220,6 +221,12 @@ long asio_messages(long selector, long value, void* /*message*/,
       return 2L;  // ASIO 2.
     case kAsioSupportsTimeInfo:
       return 1L;  // use bufferSwitchTimeInfo (delegates to bufferSwitch).
+    case kAsioOverload:
+      // The driver detected a dropout (we missed a buffer deadline). Tally it
+      // into the published snapshot so the UI can flag glitches; the audio path
+      // itself keeps running. g_asio.engine may be null mid-teardown.
+      le_engine_note_xrun(g_asio.engine);
+      return 1L;
     case kAsioResetRequest:
       // Hot reset / device re-open is deferred (Out of Scope). Decline so the
       // driver does not expect us to re-create buffers mid-stream.

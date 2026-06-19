@@ -332,7 +332,11 @@ typedef struct le_snapshot {
    * any track input mask. Always 0 off macOS / when no label matches. */
   uint32_t excluded_input_mask;
   uint64_t frames_processed;  /* total frames seen by the callback */
-  uint32_t xrun_count;        /* reserved; xrun detection lands later (0) */
+  /* Device dropouts (xruns) since the device started, as reported by the backend.
+   * The Windows ASIO backend tallies the driver's kAsioOverload notifications;
+   * the miniaudio backends (macOS / Linux) expose no portable per-callback xrun
+   * signal, so this stays 0 there. Monotonic; cleared on each fresh start. */
+  uint32_t xrun_count;
   float input_rms;            /* 0..1 */
   float input_peak;           /* 0..1 */
   float output_rms;           /* 0..1 */

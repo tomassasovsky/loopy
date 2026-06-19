@@ -29,6 +29,13 @@ const le_device_backend* le_select_backend(int32_t backend);
  * engine_private.h, keeping all atomic access in C. Not part of the FFI surface. */
 void le_engine_mark_started(le_engine* engine);
 
+/* Increments the published xrun (dropout) tally by one. Called from a device
+ * backend's overload notification — e.g. the ASIO driver's kAsioOverload message
+ * — so the snapshot's xrun_count reflects real device starvation. A C helper for
+ * the same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
+ * field). Relaxed atomic; safe off any thread. Not part of the FFI surface. */
+void le_engine_note_xrun(le_engine* engine);
+
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /
  * `output_channels` are each clamped to LE_MAX_CHANNELS and `max_loop_frames` to

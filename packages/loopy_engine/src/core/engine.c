@@ -244,6 +244,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   }
 
   store_i32(&engine->a_record_offset, 0); /* re-measured per session */
+  atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
    * Overdub feedback unity by default == classic additive overdub. */
@@ -340,6 +341,16 @@ void le_engine_mark_started(le_engine* engine) {
   if (engine == NULL) return;
   atomic_store_explicit(&engine->a_device_present, 1, memory_order_release);
   atomic_store_explicit(&engine->a_running, 1, memory_order_release);
+}
+
+void le_engine_note_xrun(le_engine* engine) {
+  if (engine == NULL) return;
+  /* Relaxed: a monotonically-increasing dropout tally read by the snapshot
+   * poller — no other state is ordered against it. Called from the device
+   * backend's overload notification (e.g. the ASIO message thread), never from
+   * le_engine_process; exists as a C helper so a C++ backend TU need not touch
+   * the _Atomic field directly (mirrors le_engine_mark_started). */
+  atomic_fetch_add_explicit(&engine->a_xruns, 1u, memory_order_relaxed);
 }
 
 le_engine* le_engine_create(void) {
