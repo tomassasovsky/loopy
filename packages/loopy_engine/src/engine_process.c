@@ -687,6 +687,241 @@ static void le_latency_resolve(le_engine* e, int sr) {
   store_i32(&e->a_latency_state, LE_LATENCY_DONE);
 }
 
+/* ---- per-frame steps of le_engine_process ----
+ *
+ * Each is `static inline` so the compiler folds it back into the per-frame loop
+ * with no call overhead — the decomposition is for readability and unit-testing
+ * (engine_internal.h can expose thin wrappers), not a structural change to the
+ * hot path. They run in the order called in le_engine_process: the additive mix
+ * is already in `out[f*ch_out + c]` when master_bus_frame runs. */
+
+/* Master bus for one output frame: global gain, then the feed-forward peak
+ * limiter (instant attack / smooth release, bit-transparent below the ceiling),
+ * then output metering. Accumulates *out_sumsq and tracks *frame_out_peak (both
+ * start at the caller's per-block / per-frame seed). */
+static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
+                                    int ch_out, float master_gain, int limiter_on,
+                                    float limiter_ceiling, float lim_release,
+                                    float* out_sumsq, float* frame_out_peak) {
+  /* Apply the global master gain post-mix, before metering and the loop-viz
+   * tap, so meters and the waveform reflect what the listener actually hears.
+   * The latency-calibration pulse path bypasses this (it `continue`s the frame),
+   * keeping the measurement tone at its fixed amplitude. */
+  if (master_gain != 1.0f) {
+    for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= master_gain;
+  }
+
+  /* Master peak limiter (feed-forward, no lookahead): find this frame's peak,
+   * compute the gain that would pin it to the ceiling, and apply it. Instant
+   * attack — if the needed gain is below the current one, clamp down this very
+   * frame so nothing exceeds the ceiling (no overshoot); smooth release back
+   * toward unity. Below the ceiling the gain rests at 1.0, so the path is
+   * bit-transparent when nothing is clipping. */
+  if (limiter_on) {
+    float peak = 0.0f;
+    for (int c = 0; c < ch_out; ++c) {
+      const float a = fabsf(out[f * ch_out + c]);
+      if (a > peak) peak = a;
+    }
+    float target = 1.0f;
+    if (peak > limiter_ceiling && peak > 0.0f) target = limiter_ceiling / peak;
+    if (target < e->lim_gain) {
+      e->lim_gain = target; /* instant attack: no sample over the ceiling */
+    } else {
+      e->lim_gain += (target - e->lim_gain) * lim_release;
+    }
+    if (e->lim_gain != 1.0f) {
+      for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= e->lim_gain;
+    }
+  }
+
+  /* Output metering for this frame. */
+  for (int c = 0; c < ch_out; ++c) {
+    const float sample = out[f * ch_out + c];
+    *out_sumsq += sample * sample;
+    const float sa = fabsf(sample);
+    if (sa > *frame_out_peak) *frame_out_peak = sa;
+  }
+}
+
+/* Loop visualization tap for one frame: bucket the output (and per-track) peaks
+ * by loop position. When the playhead crosses into a new bucket, publish the
+ * peaks accumulated for the bucket it left, then start the new one — so each
+ * bucket holds the most recent pass over that slice of the loop. RT-safe
+ * (atomics only). Only meaningful once a master loop exists. */
+static inline void viz_tap_frame(le_engine* e, int tc, int32_t pos,
+                                 float frame_out_peak,
+                                 const float* frame_trk_peak) {
+  if (e->clock.length > 0) {
+    int32_t bucket = (int32_t)((int64_t)pos * LE_VIZ_POINTS / e->clock.length);
+    if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
+    if (bucket != e->loop_viz_bucket) {
+      const int32_t prev = e->loop_viz_bucket;
+      if (prev >= 0 && prev < LE_VIZ_POINTS) {
+        store_f32(&e->a_loop_viz[prev], e->loop_viz_accum);
+        for (int t = 0; t < tc; ++t) {
+          store_f32(&e->a_track_viz[t][prev], e->track_viz_accum[t]);
+        }
+      }
+      e->loop_viz_bucket = bucket;
+      e->loop_viz_accum = 0.0f;
+      for (int t = 0; t < tc; ++t) e->track_viz_accum[t] = 0.0f;
+    }
+    if (frame_out_peak > e->loop_viz_accum) e->loop_viz_accum = frame_out_peak;
+    for (int t = 0; t < tc; ++t) {
+      if (frame_trk_peak[t] > e->track_viz_accum[t]) {
+        e->track_viz_accum[t] = frame_trk_peak[t];
+      }
+    }
+  }
+}
+
+/* Advances the record heads and then the master transport for one frame. An
+ * auto-multiple track grows freely (rounded up only on stop); a fixed-multiple
+ * track auto-finalizes after exactly K base loops, and a track recorded over an
+ * existing master continues into overdub when it auto-finalizes. When the loop
+ * crosses its top, fires the loop-top (quantize) pending records on the grid;
+ * with nothing active, holds the transport at the top. [st] is the frame's
+ * per-track state snapshot. */
+static inline void advance_transport_frame(le_engine* e, int tc,
+                                           const int32_t* st) {
+  for (int t = 0; t < tc; ++t) {
+    if (st[t] != LE_TRACK_RECORDING) continue;
+    le_track* tr = &e->tracks[t];
+    if (e->clock.length == 0) {
+      tr->record_pos++;
+      if (tr->xfade_capture > 0) {
+        /* Deferred seam crossfade: keep capturing the overlap past the loop
+         * point, then fold it into the head and finalize at the intended
+         * length. The buffer room was checked when the deferral was armed. */
+        if (--tr->xfade_capture == 0) finalize_master_xfade(e, tr);
+      } else if (tr->record_pos >= e->max_loop_frames) {
+        finalize_master(e, tr, LE_TRACK_PLAYING);
+      }
+    } else {
+      tr->record_pos++;
+      const int32_t eff = le_effective_multiple(e, t);
+      const int32_t base = e->clock.length;
+      if (eff >= 1 && tr->record_pos - tr->record_start >= eff * base) {
+        finalize_new_track(e, tr, LE_TRACK_OVERDUBBING);
+      } else if (tr->record_pos >= e->max_loop_frames) {
+        finalize_new_track(e, tr, LE_TRACK_OVERDUBBING);
+      }
+    }
+  }
+  if (e->clock.length > 0) {
+    int any_active = 0;
+    for (int t = 0; t < tc; ++t) {
+      if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_RECORDING ||
+          st[t] == LE_TRACK_OVERDUBBING) {
+        any_active = 1;
+        break;
+      }
+    }
+    if (any_active) {
+      if (le_loop_clock_tick(&e->clock)) {
+        e->loop_iteration++;
+        /* The loop just crossed its top (position == 0). Fire loop-top
+         * (quantize) pending records here so a deferred start/finalize/overdub
+         * lands exactly on the grid. Signal-triggered arms fire above, not
+         * here. handle_record enforces one-capturer hand-off. */
+        for (int qt = 0; qt < tc; ++qt) {
+          if (e->tracks[qt].pending_record &&
+              e->tracks[qt].pending_trigger == 0) {
+            e->tracks[qt].pending_record = 0;
+            store_i32(&e->tracks[qt].a_pending, 0);
+            handle_record(e, qt);
+          }
+        }
+      }
+    } else {
+      /* Nothing is playing or recording: hold the transport at the top so the
+       * next play starts from the beginning rather than looping in silence.
+       * Resetting each track's start_iter keeps multi-loop tracks aligned to
+       * their first segment on the next play. */
+      e->clock.position = 0;
+      e->loop_iteration = 0;
+      for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
+    }
+  }
+}
+
+/* ---- per-block setup snapshots ----
+ *
+ * The per-lane / per-monitor effect chains are snapshotted ONCE per buffer: the
+ * control thread applies fx edits at buffer granularity, so the audio thread
+ * reads each lane's published type/count/params once here and works off the
+ * stack copy for the whole block (no per-frame atomic re-reads). has_fx gates the
+ * chain so a lane with no effects skips it. `static inline` so these fold into
+ * le_engine_process; out-params are the caller's stack arrays. */
+
+/* Snapshots every active track lane's effect chain into the caller's arrays. */
+static inline void snapshot_track_fx(
+    le_engine* e, int tc, const int32_t* lane_n,
+    int32_t fx_count[][LE_MAX_LANES], int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
+    float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
+    int has_fx[][LE_MAX_LANES]) {
+  for (int t = 0; t < tc; ++t) {
+    for (int l = 0; l < lane_n[t]; ++l) {
+      le_lane* ln = &e->tracks[t].lanes[l];
+      has_fx[t][l] = 0;
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n < 0) n = 0;
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      fx_count[t][l] = n;
+      for (int s = 0; s < n; ++s) {
+        const int32_t ty = load_i32(&ln->a_fx_type[s]);
+        fx_type[t][l][s] = ty;
+        if (ty != LE_FX_NONE) has_fx[t][l] = 1;
+        for (int p = 0; p < LE_FX_PARAMS; ++p) {
+          fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
+        }
+      }
+    }
+  }
+}
+
+/* Snapshots each hardware input's live-monitor lanes: the input-level enable
+ * (gated by loopback exclusion), the per-lane count, and per-lane output mask /
+ * volume / mute / effect chain — the monitor mirror of snapshot_track_fx. */
+static inline void snapshot_monitor_fx(
+    le_engine* e, int ch_in, uint32_t excluded, int* mon_on,
+    int32_t* mon_lane_n, uint32_t mon_out[][LE_MAX_LANES],
+    float mon_vol[][LE_MAX_LANES], int mon_mut[][LE_MAX_LANES],
+    int32_t mon_fx_count[][LE_MAX_LANES],
+    int32_t mon_fx_type[][LE_MAX_LANES][LE_FX_MAX],
+    float mon_fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
+    int mon_has_fx[][LE_MAX_LANES]) {
+  for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
+    le_monitor_input* m = &e->monitors[c];
+    mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
+    int32_t ln_n = m->lane_count;
+    if (ln_n < 1) ln_n = 1;
+    if (ln_n > LE_MAX_LANES) ln_n = LE_MAX_LANES;
+    mon_lane_n[c] = ln_n;
+    for (int l = 0; l < ln_n; ++l) {
+      le_monitor_lane* ln = &m->lanes[l];
+      mon_out[c][l] =
+          atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
+      mon_vol[c][l] = load_f32(&ln->a_vol_bits);
+      mon_mut[c][l] = load_i32(&ln->a_muted);
+      mon_has_fx[c][l] = 0;
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n < 0) n = 0;
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      mon_fx_count[c][l] = n;
+      for (int s = 0; s < n; ++s) {
+        const int32_t ty = load_i32(&ln->a_fx_type[s]);
+        mon_fx_type[c][l][s] = ty;
+        if (ty != LE_FX_NONE) mon_has_fx[c][l] = 1;
+        for (int p = 0; p < LE_FX_PARAMS; ++p) {
+          mon_fx_params[c][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
+        }
+      }
+    }
+  }
+}
+
 /* ---- the real-time DSP core ---- */
 
 void le_engine_process(le_engine* e, float* output, const float* input,
@@ -743,39 +978,17 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int32_t lane_n[LE_MAX_TRACKS];
   for (int t = 0; t < tc; ++t) lane_n[t] = le_lanes_active(&e->tracks[t]);
 
-  /* Per-lane effects chain, snapshotted once per buffer (control-thread writes
-   * are applied at buffer granularity). has_fx gates the playback pass so lanes
-   * with no effects skip the chain entirely. The chain is stageless — every
-   * active entry colors playback in order. */
+  /* Per-lane effect chains, snapshotted once per buffer (see snapshot_track_fx).
+   * has_fx gates the playback pass so lanes with no effects skip the chain. */
   int32_t fx_count[LE_MAX_TRACKS][LE_MAX_LANES];
   int32_t fx_type[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX];
   float fx_params[LE_MAX_TRACKS][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS];
   int has_fx[LE_MAX_TRACKS][LE_MAX_LANES];
-  for (int t = 0; t < tc; ++t) {
-    for (int l = 0; l < lane_n[t]; ++l) {
-      le_lane* ln = &e->tracks[t].lanes[l];
-      has_fx[t][l] = 0;
-      int32_t n = load_i32(&ln->a_fx_count);
-      if (n < 0) n = 0;
-      if (n > LE_FX_MAX) n = LE_FX_MAX;
-      fx_count[t][l] = n;
-      for (int s = 0; s < n; ++s) {
-        const int32_t ty = load_i32(&ln->a_fx_type[s]);
-        fx_type[t][l][s] = ty;
-        if (ty != LE_FX_NONE) has_fx[t][l] = 1;
-        for (int p = 0; p < LE_FX_PARAMS; ++p) {
-          fx_params[t][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
-        }
-      }
-    }
-  }
+  snapshot_track_fx(e, tc, lane_n, fx_count, fx_type, fx_params, has_fx);
 
-  /* Per-input live monitors: each enabled input fans out across mon_lane_n[c]
-   * independent lanes, snapshotted per (input, lane) exactly like the track
-   * lanes above. mon_on gates the whole input (loopback exclusion + enable);
-   * per-lane mute/volume/output/chain drive each lane. has_fx gates the chain so
-   * a lane with no effects routes the clean (dry) sample. Same per-buffer
-   * snapshot — no per-frame atomic re-reads. */
+  /* Per-input live monitor lanes, snapshotted once per buffer (see
+   * snapshot_monitor_fx). mon_on gates the whole input (loopback exclusion +
+   * enable); per-lane mute/volume/output/chain drive each lane. */
   int mon_on[LE_MAX_INPUTS] = {0};
   int32_t mon_lane_n[LE_MAX_INPUTS] = {0};
   uint32_t mon_out[LE_MAX_INPUTS][LE_MAX_LANES];
@@ -785,34 +998,9 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   int32_t mon_fx_type[LE_MAX_INPUTS][LE_MAX_LANES][LE_FX_MAX];
   float mon_fx_params[LE_MAX_INPUTS][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS];
   int mon_has_fx[LE_MAX_INPUTS][LE_MAX_LANES];
-  for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
-    le_monitor_input* m = &e->monitors[c];
-    mon_on[c] = load_i32(&m->a_enabled) && !(excluded & (1u << c));
-    int32_t ln_n = m->lane_count;
-    if (ln_n < 1) ln_n = 1;
-    if (ln_n > LE_MAX_LANES) ln_n = LE_MAX_LANES;
-    mon_lane_n[c] = ln_n;
-    for (int l = 0; l < ln_n; ++l) {
-      le_monitor_lane* ln = &m->lanes[l];
-      mon_out[c][l] =
-          atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
-      mon_vol[c][l] = load_f32(&ln->a_vol_bits);
-      mon_mut[c][l] = load_i32(&ln->a_muted);
-      mon_has_fx[c][l] = 0;
-      int32_t n = load_i32(&ln->a_fx_count);
-      if (n < 0) n = 0;
-      if (n > LE_FX_MAX) n = LE_FX_MAX;
-      mon_fx_count[c][l] = n;
-      for (int s = 0; s < n; ++s) {
-        const int32_t ty = load_i32(&ln->a_fx_type[s]);
-        mon_fx_type[c][l][s] = ty;
-        if (ty != LE_FX_NONE) mon_has_fx[c][l] = 1;
-        for (int p = 0; p < LE_FX_PARAMS; ++p) {
-          mon_fx_params[c][l][s][p] = load_f32(&ln->a_fx_param[s][p]);
-        }
-      }
-    }
-  }
+  snapshot_monitor_fx(e, ch_in, excluded, mon_on, mon_lane_n, mon_out, mon_vol,
+                      mon_mut, mon_fx_count, mon_fx_type, mon_fx_params,
+                      mon_has_fx);
 
   const int fx_cap = e->fx_delay_frames;
 
@@ -1074,141 +1262,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       }
     }
 
-    /* Apply the global master gain post-mix, before metering and the loop-viz
-     * tap, so meters and the waveform reflect what the listener actually hears.
-     * The latency-calibration pulse path above bypasses this (it `continue`s to
-     * the next frame), keeping the measurement tone at its fixed amplitude. */
-    if (master_gain != 1.0f) {
-      for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= master_gain;
-    }
-
-    /* Master peak limiter (feed-forward, no lookahead): find this frame's peak,
-     * compute the gain that would pin it to the ceiling, and apply it. Instant
-     * attack — if the needed gain is below the current one, clamp down this very
-     * frame so nothing exceeds the ceiling (no overshoot); smooth release back
-     * toward unity. Below the ceiling the gain rests at 1.0, so the path is
-     * bit-transparent when nothing is clipping. */
-    if (limiter_on) {
-      float peak = 0.0f;
-      for (int c = 0; c < ch_out; ++c) {
-        const float a = fabsf(out[f * ch_out + c]);
-        if (a > peak) peak = a;
-      }
-      float target = 1.0f;
-      if (peak > limiter_ceiling && peak > 0.0f) target = limiter_ceiling / peak;
-      if (target < e->lim_gain) {
-        e->lim_gain = target; /* instant attack: no sample over the ceiling */
-      } else {
-        e->lim_gain += (target - e->lim_gain) * lim_release;
-      }
-      if (e->lim_gain != 1.0f) {
-        for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= e->lim_gain;
-      }
-    }
-
-    /* Output metering for this frame. */
-    for (int c = 0; c < ch_out; ++c) {
-      const float sample = out[f * ch_out + c];
-      out_sumsq += sample * sample;
-      const float sa = fabsf(sample);
-      if (sa > frame_out_peak) frame_out_peak = sa;
-    }
-
-    /* Loop visualization tap: bucket the output (and per-track) peaks by loop
-     * position. When the playhead crosses into a new bucket, publish the peaks
-     * accumulated for the bucket it left, then start the new one — so each
-     * bucket holds the most recent pass over that slice of the loop. RT-safe
-     * (atomics only). Only meaningful once a master loop exists. */
-    if (e->clock.length > 0) {
-      int32_t bucket =
-          (int32_t)((int64_t)pos * LE_VIZ_POINTS / e->clock.length);
-      if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
-      if (bucket != e->loop_viz_bucket) {
-        const int32_t prev = e->loop_viz_bucket;
-        if (prev >= 0 && prev < LE_VIZ_POINTS) {
-          store_f32(&e->a_loop_viz[prev], e->loop_viz_accum);
-          for (int t = 0; t < tc; ++t) {
-            store_f32(&e->a_track_viz[t][prev], e->track_viz_accum[t]);
-          }
-        }
-        e->loop_viz_bucket = bucket;
-        e->loop_viz_accum = 0.0f;
-        for (int t = 0; t < tc; ++t) e->track_viz_accum[t] = 0.0f;
-      }
-      if (frame_out_peak > e->loop_viz_accum) e->loop_viz_accum = frame_out_peak;
-      for (int t = 0; t < tc; ++t) {
-        if (frame_trk_peak[t] > e->track_viz_accum[t]) {
-          e->track_viz_accum[t] = frame_trk_peak[t];
-        }
-      }
-    }
-
-    /* Advance the record heads, then the master transport. An auto-multiple
-     * track grows freely and is rounded up only when stopped; a fixed-multiple
-     * track auto-finalizes after exactly K base loops. A track recorded over an
-     * existing master always continues into overdub when it auto-finalizes — so
-     * layering stays live rather than auto-stopping to playback the moment the
-     * loop completes; the rec/dub toggle governs only the master's second-press
-     * finalize, not this auto-finish. All cap at the per-track buffer. */
-    for (int t = 0; t < tc; ++t) {
-      if (st[t] != LE_TRACK_RECORDING) continue;
-      le_track* tr = &e->tracks[t];
-      if (e->clock.length == 0) {
-        tr->record_pos++;
-        if (tr->xfade_capture > 0) {
-          /* Deferred seam crossfade: keep capturing the overlap past the loop
-           * point, then fold it into the head and finalize at the intended
-           * length. The buffer room was checked when the deferral was armed. */
-          if (--tr->xfade_capture == 0) finalize_master_xfade(e, tr);
-        } else if (tr->record_pos >= e->max_loop_frames) {
-          finalize_master(e, tr, LE_TRACK_PLAYING);
-        }
-      } else {
-        tr->record_pos++;
-        const int32_t eff = le_effective_multiple(e, t);
-        const int32_t base = e->clock.length;
-        if (eff >= 1 && tr->record_pos - tr->record_start >= eff * base) {
-          finalize_new_track(e, tr, LE_TRACK_OVERDUBBING);
-        } else if (tr->record_pos >= e->max_loop_frames) {
-          finalize_new_track(e, tr, LE_TRACK_OVERDUBBING);
-        }
-      }
-    }
-    if (e->clock.length > 0) {
-      int any_active = 0;
-      for (int t = 0; t < tc; ++t) {
-        if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_RECORDING ||
-            st[t] == LE_TRACK_OVERDUBBING) {
-          any_active = 1;
-          break;
-        }
-      }
-      if (any_active) {
-        if (le_loop_clock_tick(&e->clock)) {
-          e->loop_iteration++;
-          /* The loop just crossed its top (position == 0). Fire loop-top
-           * (quantize) pending records here so a deferred start/finalize/overdub
-           * lands exactly on the grid. Signal-triggered arms fire above, not
-           * here. handle_record enforces one-capturer hand-off. */
-          for (int qt = 0; qt < tc; ++qt) {
-            if (e->tracks[qt].pending_record &&
-                e->tracks[qt].pending_trigger == 0) {
-              e->tracks[qt].pending_record = 0;
-              store_i32(&e->tracks[qt].a_pending, 0);
-              handle_record(e, qt);
-            }
-          }
-        }
-      } else {
-        /* Nothing is playing or recording: hold the transport at the top so the
-         * next play starts from the beginning rather than looping in silence.
-         * Resetting each track's start_iter keeps multi-loop tracks aligned to
-         * their first segment on the next play. */
-        e->clock.position = 0;
-        e->loop_iteration = 0;
-        for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
-      }
-    }
+    /* Master bus (gain + limiter + output metering), then the loop-viz tap, then
+     * advance the record heads and master transport — see the static-inline step
+     * definitions above le_engine_process. The latency-calibration pulse path
+     * bypassed all of this via `continue` above. */
+    master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
+                     lim_release, &out_sumsq, &frame_out_peak);
+    viz_tap_frame(e, tc, pos, frame_out_peak, frame_trk_peak);
+    advance_transport_frame(e, tc, st);
   }
 
   /* Input RMS is normalised by the active (non-loopback) channel count only. */
