@@ -33,7 +33,7 @@ static const uint8_t kLedPin = 2;
 static const uint8_t kNumLeds = 19;
 static const uint8_t kRingStart = 0;  // loop-position ring = LEDs 0..11
 static const uint8_t kRingCount = 12;
-static const uint8_t kModeLed = 12;   // global / mode color
+static const uint8_t kModeLed = 12;   // global transport-activity color
 static const uint8_t kTrackLed0 = 13; // active-bank tracks 1..4 = LEDs 13..16
 static const uint8_t kClearLed = 17;  // lit during a clear fade
 static const uint8_t kBankLed = 18;   // lit when bank B is active
@@ -171,7 +171,7 @@ static CRGB globalColor(uint8_t color) {
     case PEDAL_GLOBAL_RED:
       return CRGB::Red;
     case PEDAL_GLOBAL_AMBER:
-      return CRGB(255, 120, 0);
+      return CRGB(255, 150, 0);
     case PEDAL_GLOBAL_BLUE:
       return CRGB::Blue;
     default:
@@ -179,48 +179,53 @@ static CRGB globalColor(uint8_t color) {
   }
 }
 
-// A ~1.5 s breathing level (floor 20..255) for the selected-track LED.
-static uint8_t breathe() {
-  const uint8_t phase = (uint8_t)((millis() / 6) & 0xFFu);
-  const uint8_t tri =
-      (phase < 128) ? (uint8_t)(phase * 2) : (uint8_t)((255 - phase) * 2);
-  return (uint8_t)(20 + ((uint16_t)tri * 220) / 255);
-}
-
 static CRGB scaled(CRGB c, uint8_t level) {
   c.nscale8_video(level);
   return c;
 }
 
+// A smooth brightness hump rotates around the ring: brightness =
+// 1 - (d/kRingWidth)^kRingShape, clamped to 0, where d is the circular distance
+// (in LEDs) from an advancing center. Independent of loop length. On stop the
+// ring FREEZES in place (the phase stops advancing) — it is never cleared and
+// never shows a blue idle dot. Tune: kRingMsPerRev (lower = faster), kRingWidth
+// (LEDs lit each side), kRingShape (2 = parabola, lower = pointier).
+static const unsigned long kRingMsPerRev = 700;
+static const float kRingWidth = 5.5f;
+static const float kRingShape = 1.5f;
+static float g_ringPhase = 0.0f;       // current center, 0..kRingCount
+static unsigned long g_ringLastMs = 0; // for dt-based phase advance
+
 static void renderRing() {
-  // The ring spins one revolution per loop, colored by the activity color loopy
-  // sends in global_color: red recording / amber overdubbing / green playing.
-  // Idle (off, or the clear-fade blue) shows a dim breathing dot.
+  // Colored by the activity color loopy sends in global_color: red recording /
+  // amber overdubbing / green playing.
   const CRGB activity = g_haveFrame ? globalColor(g_frame.global_color)
                                     : CRGB::Black;
-  const bool active = g_haveFrame && (activity.r || activity.g || activity.b) &&
+  const bool goodbye = g_haveFrame && g_frame.goodbye;
+  const bool active = g_haveFrame && !goodbye &&
+                      (activity.r || activity.g || activity.b) &&
                       g_frame.global_color != PEDAL_GLOBAL_BLUE;
-  if (!active) {
+  const unsigned long now = millis();
+  const unsigned long dt = now - g_ringLastMs;
+  g_ringLastMs = now;
+  if (goodbye) { // shutdown frame: darken the ring
     for (uint8_t i = 0; i < kRingCount; i++) g_leds[kRingStart + i] = CRGB::Black;
-    g_leds[kRingStart] = scaled(CRGB::Blue, (uint8_t)(breathe() / 4));
     return;
   }
-  // Phase: from the loop position when the loop length is known, else free-run
-  // so it still spins during the first (not-yet-closed) recording.
-  unsigned long phasePos;
-  unsigned long phaseLen;
-  if (g_frame.loop_length_micros > 0) {
-    const unsigned long loopMs = g_frame.loop_length_micros / 1000UL;
-    phaseLen = (loopMs > 0) ? loopMs : 1;
-    phasePos = (millis() - g_lastLoopTopMs) % phaseLen;
-  } else {
-    phaseLen = 750; // ~0.75 s/rev free-run before the loop closes
-    phasePos = millis() % phaseLen;
-  }
-  const uint8_t head = (uint8_t)((phasePos * kRingCount) / phaseLen);
+  if (!active) return; // idle / stopped: freeze the ring exactly as it is
+  // Advance the center only while active, so a Stop leaves it where it was.
+  g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
+  while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
   for (uint8_t i = 0; i < kRingCount; i++) {
-    const uint8_t back = (uint8_t)((head + kRingCount - i) % kRingCount);
-    const uint8_t level = (back == 0) ? 255 : (back <= 3 ? (uint8_t)(120 >> back) : 0);
+    float d = fabsf((float)i - g_ringPhase);
+    if (d > kRingCount / 2.0f) d = kRingCount - d; // wrap the short way round
+    const float dn = d / kRingWidth;
+    uint8_t level = 0;
+    if (dn < 1.0f) {
+      float b = 1.0f - powf(dn, kRingShape);
+      if (b < 0.0f) b = 0.0f;
+      level = (uint8_t)(b * 255.0f + 0.5f);
+    }
     g_leds[kRingStart + i] = scaled(activity, level);
   }
 }
@@ -228,20 +233,20 @@ static void renderRing() {
 static void render() {
   renderRing(); // the loop-position ring, LEDs 0..11
   if (g_haveFrame) {
-    // Active bank's 4 tracks on the physical Tr1..Tr4 LEDs; the selected
-    // (armed) track breathes — red/green from its state, or blue when empty in
-    // Rec mode (matching the original).
+    // Active bank's 4 tracks on the physical Tr1..Tr4 LEDs — solid color from
+    // each track's LED state. The selected/armed track is NOT highlighted here
+    // (no breathing, no blue dot); selection is shown on loopy's screen.
     const uint8_t base = g_frame.active_bank * 4; // bank A: 0..3, bank B: 4..7
     for (uint8_t i = 0; i < 4; i++) {
-      const uint8_t ledState = g_frame.track_leds[base + i];
-      CRGB color = ledColor(ledState);
-      if ((base + i) == g_frame.armed_track) {
-        if (ledState == PEDAL_LED_OFF && !g_frame.play_mode) color = CRGB::Blue;
-        color = scaled(color, breathe());
-      }
-      g_leds[kTrackLed0 + i] = color;
+      g_leds[kTrackLed0 + i] = ledColor(g_frame.track_leds[base + i]);
     }
-    g_leds[kModeLed] = g_frame.play_mode ? CRGB::Green : CRGB::Red; // Rec=red
+    // LED 12 shows transport activity from loopy's global_color: green playing,
+    // red recording, amber overdubbing, blue during a clear fade — and green
+    // when idle (off = not recording). The pedal's Rec/Play mode is no longer
+    // shown here.
+    g_leds[kModeLed] = (g_frame.global_color == PEDAL_GLOBAL_OFF)
+                           ? CRGB::Green
+                           : globalColor(g_frame.global_color);
     g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Blue : CRGB::Black;
     g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;
   } else {
