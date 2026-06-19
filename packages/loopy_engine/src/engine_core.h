@@ -70,6 +70,13 @@ int32_t le_mask_to_channel(uint32_t mask);
  * Defined in engine.c. */
 int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i, float arg_f);
 
+/* Resets a lane / monitor-lane to defaults (routing / volume / mute / effects /
+ * metering), clearing DSP state and freeing octaver buffers. Control-thread
+ * lifecycle helpers defined in engine.c, also called by the lane-count setters in
+ * engine_commands.c (le_engine_set_lane_count / set_monitor_lane_count). */
+void le_lane_reset(le_lane* ln, int32_t input_channel);
+void le_monitor_lane_reset(le_monitor_lane* ln);
+
 #ifdef __cplusplus
 }
 #endif

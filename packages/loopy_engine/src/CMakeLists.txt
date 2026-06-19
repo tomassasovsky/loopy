@@ -25,6 +25,9 @@ add_library(loopy_engine SHARED
   # machine, apply_command, the latency harness, metering/viz publication. The
   # real-time no-alloc/no-lock contract holds for this whole file.
   engine_process.c
+  # Control-thread command producers: the FFI looper/effects/routing setters,
+  # record/undo machinery, and lazy fx/lane allocation (S1 split).
+  engine_commands.c
   # The miniaudio device backend (le_device_backend.h). Compiled unconditionally
   # — it is the only device backend this build ships; the opt-in ASIO backend
   # slots in behind le_select_backend later.
