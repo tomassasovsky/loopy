@@ -13,11 +13,11 @@ description: |
 output: 'lib/src/generated/loopy_engine_bindings.dart'
 headers:
   entry-points:
-    - 'src/loopy_engine_api.h'
+    - 'src/core/loopy_engine_api.h'
   include-directives:
-    - 'src/loopy_engine_api.h'
+    - 'src/core/loopy_engine_api.h'
 compiler-opts:
-  - '-Isrc'
+  - '-Isrc/core'
 functions:
   include:
     - 'le_.*'

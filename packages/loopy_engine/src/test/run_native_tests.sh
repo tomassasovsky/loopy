@@ -12,7 +12,9 @@ cd "$(dirname "$0")/../.."   # src/test -> packages/loopy_engine
 
 OUT="${TMPDIR:-/tmp}"
 CC="${CC:-gcc}"
-STD="-std=c11 -I src -I src/miniaudio"
+# Mirror src/CMakeLists.txt's include path: every src subdir holding headers, so
+# the sources' flat `#include "x.h"` resolves.
+STD="-std=c11 -I src/core -I src/midi -I src/asio -I src/miniaudio"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm" ;;
@@ -21,11 +23,12 @@ case "$(uname -s)" in
   *) ENGINE_LIBS="-lpthread -lm"; MIDI_LIBS="-lasound -lpthread" ;;
 esac
 
-# Glob every engine TU (engine.c plus the incremental S1 split: engine_*.c, the
-# per-OS seams, and the miniaudio backend) so this list tracks the split with no
-# edits. Pairs with the fixed primitives. Mirrors src/CMakeLists.txt's library
-# sources (minus the MIDI TUs, which the engine test does not link).
-ENGINE_SRC="src/engine*.c src/lockfree_ring.c src/loop_clock.c src/miniaudio_impl.c"
+# Glob every engine TU (the core/ TUs incl. the miniaudio backend, the platform/
+# seams, and the miniaudio impl) so this tracks the split with no edits. Pairs
+# with the core primitives. Mirrors src/CMakeLists.txt's library sources (minus
+# the MIDI TUs, which the engine test does not link).
+ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
+  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c"
 
 echo "== building engine tests =="
 # shellcheck disable=SC2086
@@ -35,7 +38,7 @@ $CC $STD src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
 
 echo "== building midi tests =="
 # shellcheck disable=SC2086
-$CC $STD src/test/test_midi_core.c src/midi.c src/midi_backend_linux.c \
-  src/midi_backend_apple.c src/midi_backend_windows.c $MIDI_LIBS \
+$CC $STD src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
+  src/midi/midi_backend_apple.c src/midi/midi_backend_windows.c $MIDI_LIBS \
   -o "$OUT/loopy_midi_tests.exe"
 "$OUT/loopy_midi_tests.exe"

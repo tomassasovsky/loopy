@@ -4,4 +4,4 @@
 // engine under <plugin>/src is pulled in via this relative #include. Headers
 // referenced by the included source resolve relative to its real location
 // (../src) plus the headerSearchPath entries declared in Package.swift.
-#include "../../../../src/engine.c"
+#include "../../../../src/core/engine.c"
