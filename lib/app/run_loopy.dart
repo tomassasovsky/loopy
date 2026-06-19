@@ -13,6 +13,7 @@ import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/window/window_chrome.dart';
 import 'package:loopy_engine/loopy_engine.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -54,6 +55,14 @@ Future<void> runLoopy(
   final pedalRepository = createPedalRepository(midiSource);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
   final sessionRepository = SessionRepository(engine: engine);
+  // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
+  // persistence). Borrows the shared [midiSource] (owned by the controller
+  // pipeline) and never disposes it. Held independent of the engine so MIDI
+  // changes never restart audio.
+  final midiDeviceRepository = MidiDeviceRepository(
+    source: midiSource,
+    settings: settings,
+  );
 
   // One-time courtesy migration from the removed global passthrough monitor to
   // the per-input routing graph. Runs before the engine-start branch (and so on
@@ -80,7 +89,7 @@ Future<void> runLoopy(
     () => App(
       repository: repository,
       controllerRepository: controllerRepository,
-      midiSource: midiSource,
+      midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),

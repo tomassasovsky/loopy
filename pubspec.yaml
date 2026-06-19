@@ -26,6 +26,8 @@ dependencies:
     path: packages/loopy_engine
   midi_client:
     path: packages/midi_client
+  midi_device_repository:
+    path: packages/midi_device_repository
   path_provider: ^2.1.6
   pedal_repository:
     path: packages/pedal_repository

@@ -12,6 +12,7 @@ import 'package:loopy/looper/looper.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
 import 'package:midi_client/midi_client.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -49,6 +50,7 @@ void main() {
   group('App', () {
     late LooperRepository repository;
     late ControllerRepository controllerRepository;
+    late MidiDeviceRepository midiDeviceRepository;
     late SettingsRepository settings;
     late SessionRepository sessionRepository;
 
@@ -60,8 +62,14 @@ void main() {
       controllerRepository = ControllerRepository(sources: const []);
       settings = SettingsRepository(store: FakeKeyValueStore());
       sessionRepository = SessionRepository(engine: FakeAudioEngine());
+      // No MIDI backend by default; the MIDI-specific test below wires its own.
+      midiDeviceRepository = MidiDeviceRepository(
+        source: null,
+        settings: settings,
+      );
       addTearDown(repository.dispose);
       addTearDown(controllerRepository.dispose);
+      addTearDown(midiDeviceRepository.dispose);
     });
 
     Future<void> pumpApp(
@@ -72,6 +80,7 @@ void main() {
         App(
           repository: repository,
           controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
           settings: settings,
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
@@ -98,6 +107,7 @@ void main() {
         App(
           repository: repository,
           controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
@@ -219,6 +229,7 @@ void main() {
         App(
           repository: repo,
           controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
@@ -259,11 +270,20 @@ void main() {
       // Pin the pedal so the launch hydrate connects it.
       await settings.saveMidiDevice(id: 'm1', name: 'FCB1010');
 
+      // Wire a repository over the real mock source. The hotplug timer is
+      // disabled so the poll is driven deterministically via [refresh].
+      final midiRepo = MidiDeviceRepository(
+        source: source,
+        settings: settings,
+        pollInterval: Duration.zero,
+      );
+      addTearDown(midiRepo.dispose);
+
       await tester.pumpWidget(
         App(
           repository: repository,
           controllerRepository: controllerRepository,
-          midiSource: source,
+          midiDeviceRepository: midiRepo,
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
@@ -272,18 +292,23 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Unplug: the next hotplug poll (2 s) marks it gone and banners it.
+      // Unplug: the hotplug poll marks it gone and banners it.
       enumerated = const [];
-      await tester.pump(const Duration(seconds: 2));
+      midiRepo.refresh();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('app_midiLost_banner')), findsOneWidget);
 
       // Replug: the banner clears and a transient snackbar shows.
       enumerated = const [pedal];
-      await tester.pump(const Duration(seconds: 2));
+      midiRepo.refresh();
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('app_midiLost_banner')), findsNothing);
+      expect(
+        find.byKey(const Key('app_midiRestored_snackbar')),
+        findsOneWidget,
+      );
 
+      // Flush the transient "reconnected" snackbar timer.
       await tester.pump(const Duration(seconds: 4));
     });
   });
