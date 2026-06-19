@@ -3,8 +3,8 @@ library;
 
 export 'package:local_storage_client/local_storage_client.dart'
     show KeyValueStore, SharedPreferencesKeyValueStore;
-// AudioBackend is part of StoredAudioConfig's public API, so re-export it.
-export 'package:loopy_engine/loopy_engine.dart' show AudioBackend;
 
+// AudioBackend is a settings-layer domain enum (no longer the engine's), part
+// of StoredAudioConfig's public API.
 export 'src/settings_repository.dart'
-    show SettingsRepository, StoredAudioConfig;
+    show AudioBackend, SettingsRepository, StoredAudioConfig;

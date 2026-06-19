@@ -11,6 +11,9 @@ import 'package:loopy/app/app.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
+import 'package:loopy_engine/loopy_engine.dart'
+    as le
+    show AudioDevice, LatencyState;
 import 'package:midi_client/midi_client.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -196,7 +199,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
       );
 
@@ -215,7 +218,7 @@ void main() {
       // Pin a device so the supervisor + banner treat it as recoverable.
       engine
         ..devices = const [
-          AudioDevice(
+          le.AudioDevice(
             id: 'out-1',
             name: 'Scarlett 2i2',
             isDefault: false,

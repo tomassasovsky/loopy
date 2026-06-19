@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:looper_repository/src/models/audio_config.dart';
 
 /// Device + engine health, projected from the engine snapshot.
 class EngineStatus extends Equatable {

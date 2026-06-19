@@ -9,12 +9,18 @@ enum PedalMode {
   play,
 }
 
+/// Sentinel for [PedalState.copyWith] so a `null` [PedalState.boundOutputId]
+/// (unbound) can be set explicitly while omitting it preserves the current id.
+const Object _unsetBoundOutputId = Object();
+
 /// The pedal's behavior-machine state — everything loopy owns about the pedal
 /// that is not already in the looper snapshot.
 ///
 /// The looper transport / track phases live in `LooperState`; this carries only
 /// the pedal-facing overlay: the [mode], the [armedTrack], the [activeBank],
-/// and whether a clear fade is currently counting down.
+/// the output link status, and the host's enumerated MIDI outputs + bound
+/// destination (so the settings picker reads them from state, not via
+/// read-through accessors).
 class PedalState extends Equatable {
   /// Creates a [PedalState].
   const PedalState({
@@ -22,7 +28,8 @@ class PedalState extends Equatable {
     this.armedTrack = 0,
     this.activeBank = 0,
     this.bindStatus = PedalBindStatus.none,
-    this.outputsTick = 0,
+    this.availableOutputs = const [],
+    this.boundOutputId,
   });
 
   /// The active behavior set.
@@ -39,9 +46,12 @@ class PedalState extends Equatable {
   /// The pedal output link status, mirrored for the settings UI.
   final PedalBindStatus bindStatus;
 
-  /// Bumped whenever the enumerated MIDI-output set changes, so the settings
-  /// picker re-enumerates on the next rebuild (hotplug freshness).
-  final int outputsTick;
+  /// The host's currently enumerated MIDI output destinations, refreshed on
+  /// hotplug so the settings picker stays current.
+  final List<PedalOutput> availableOutputs;
+
+  /// The id of the currently bound output destination, or `null` when unbound.
+  final String? boundOutputId;
 
   /// Whether the pedal is in Play (mixing) mode.
   bool get isPlayMode => mode == PedalMode.play;
@@ -58,14 +68,18 @@ class PedalState extends Equatable {
     int? armedTrack,
     int? activeBank,
     PedalBindStatus? bindStatus,
-    int? outputsTick,
+    List<PedalOutput>? availableOutputs,
+    Object? boundOutputId = _unsetBoundOutputId,
   }) {
     return PedalState(
       mode: mode ?? this.mode,
       armedTrack: armedTrack ?? this.armedTrack,
       activeBank: activeBank ?? this.activeBank,
       bindStatus: bindStatus ?? this.bindStatus,
-      outputsTick: outputsTick ?? this.outputsTick,
+      availableOutputs: availableOutputs ?? this.availableOutputs,
+      boundOutputId: identical(boundOutputId, _unsetBoundOutputId)
+          ? this.boundOutputId
+          : boundOutputId as String?,
     );
   }
 
@@ -75,6 +89,7 @@ class PedalState extends Equatable {
     armedTrack,
     activeBank,
     bindStatus,
-    outputsTick,
+    availableOutputs,
+    boundOutputId,
   ];
 }
