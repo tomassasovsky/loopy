@@ -163,7 +163,7 @@ void main() {
 
     test('a Play-mode track press arms (green) / disarms (off)', () async {
       final cubit = buildCubit();
-      await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+      await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
       addTwoPlayingTracks();
       await pumpEventQueue();
       transport.emit(0x90, PedalButton.mode.note, 100); // -> Play (arms 0,1)
@@ -194,7 +194,7 @@ void main() {
 
     test('Stop in Play mode freezes all tracks but keeps armed LEDs', () async {
       final cubit = buildCubit();
-      await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+      await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
       addTwoPlayingTracks();
       await pumpEventQueue();
       transport.emit(0x90, PedalButton.mode.note, 100); // auto-arms 0, 1
@@ -270,7 +270,7 @@ void main() {
 
     test('externally emptied track drops from armed set', () async {
       final cubit = buildCubit();
-      await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+      await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
       addTwoPlayingTracks();
       await pumpEventQueue();
       transport.emit(0x90, PedalButton.mode.note, 100); // auto-arms 0, 1
@@ -317,7 +317,7 @@ void main() {
       'global_color carries the ring activity color (recording = red)',
       () async {
         final cubit = buildCubit();
-        await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+        await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
         transport.sent.clear();
 
         looperStates.add(
@@ -339,22 +339,22 @@ void main() {
       transport.outputs = const []; // saved device absent at launch
       final cubit = buildCubit();
       await cubit.load();
-      expect(cubit.boundOutputId, isNull);
+      expect(cubit.state.boundOutputId, isNull);
 
       // Appears -> reconnect binds it.
       transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
       cubit.reconnect();
-      expect(cubit.boundOutputId, 'pedal');
+      expect(cubit.state.boundOutputId, 'pedal');
 
       // Vanishes -> reconnect drops the stale handle.
       transport.outputs = const [];
       cubit.reconnect();
-      expect(cubit.boundOutputId, isNull);
+      expect(cubit.state.boundOutputId, isNull);
 
       // Reappears -> reconnect re-binds without a relaunch.
       transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
       cubit.reconnect();
-      expect(cubit.boundOutputId, 'pedal');
+      expect(cubit.state.boundOutputId, 'pedal');
       await cubit.close();
     });
 
@@ -363,29 +363,28 @@ void main() {
       await cubit.load(); // nothing saved -> no pinned device
       transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
       cubit.reconnect();
-      expect(cubit.boundOutputId, isNull);
+      expect(cubit.state.boundOutputId, isNull);
       await cubit.close();
     });
 
-    test('reconnect bumps outputsTick only on output-set changes', () async {
+    test('reconnect reflects the output set into state', () async {
       transport.outputs = const [];
       final cubit = buildCubit();
       await cubit.load();
-      final t0 = cubit.state.outputsTick;
+      expect(cubit.state.availableOutputs, isEmpty);
 
-      // Same (empty) set -> no refresh.
-      cubit.reconnect();
-      expect(cubit.state.outputsTick, t0);
-
-      // Set changes -> picker refresh tick bumps.
+      // Set changes -> the picker reads the new outputs off state.
       transport.outputs = const [MidiDevice(id: 'pedal', name: 'Pedal')];
       cubit.reconnect();
-      expect(cubit.state.outputsTick, greaterThan(t0));
+      // The repository maps the transport's MidiDevice to a domain PedalOutput.
+      expect(cubit.state.availableOutputs, const [
+        PedalOutput(id: 'pedal', name: 'Pedal'),
+      ]);
 
-      // Unchanged again -> no further bump.
-      final t1 = cubit.state.outputsTick;
+      // Vanishes -> state reflects the empty set again.
+      transport.outputs = const [];
       cubit.reconnect();
-      expect(cubit.state.outputsTick, t1);
+      expect(cubit.state.availableOutputs, isEmpty);
       await cubit.close();
     });
 
@@ -441,7 +440,7 @@ void main() {
     group('projection', () {
       test('pushes an encoded frame to the bound pedal', () async {
         final cubit = buildCubit();
-        await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+        await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
         transport.sent.clear();
 
         // Rec mode (default): the armed track (0) is red; a playing non-armed
@@ -469,7 +468,7 @@ void main() {
 
       test('sends a loop-top pulse when the playhead wraps', () async {
         final cubit = buildCubit();
-        await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+        await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
 
         looperStates.add(
           _stateWith(_emptyTracks(), masterPositionFrames: 40000),
@@ -489,13 +488,79 @@ void main() {
 
     test('close sends a goodbye frame to the bound pedal', () async {
       final cubit = buildCubit();
-      await cubit.selectOutput(const MidiDevice(id: 'out', name: 'Pedal'));
+      await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
       transport.sent.clear();
 
       await cubit.close();
 
       final frame = PedalCodec.decodeFrame(transport.sent.last);
       expect(frame?.isGoodbye, isTrue);
+    });
+
+    group('on-screen LED emulation API', () {
+      test('bindStatus bound hides on-screen emulation in the view', () async {
+        final cubit = buildCubit();
+        expect(cubit.state.bindStatus, PedalBindStatus.none);
+
+        await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
+        await pumpEventQueue();
+        expect(cubit.state.bindStatus, PedalBindStatus.bound);
+
+        await cubit.close();
+      });
+
+      test('trackLedFor mirrors projection rules in Rec mode', () async {
+        final cubit = buildCubit();
+        looperStates.add(
+          _stateWith([
+            const Track(), // ch0 armed by default -> red
+            const Track(channel: 1, state: TrackState.recording),
+            for (var i = 2; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+
+        expect(cubit.trackLedFor(0), PedalTrackLed.red);
+        expect(cubit.trackLedFor(1), PedalTrackLed.red);
+        expect(cubit.trackLedFor(2), PedalTrackLed.off);
+
+        cubit.armTrack(2);
+        expect(cubit.trackLedFor(2), PedalTrackLed.red);
+        await cubit.close();
+      });
+
+      test('trackLedFor mirrors play-set membership in Play mode', () async {
+        final cubit = buildCubit();
+        looperStates.add(
+          _stateWith([
+            const Track(state: TrackState.playing, lengthFrames: 48000),
+            const Track(
+              channel: 1,
+              state: TrackState.playing,
+              lengthFrames: 48000,
+            ),
+            for (var i = 2; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+        cubit.toggleMode(); // -> Play, auto-arms 0 and 1
+        await pumpEventQueue();
+
+        expect(cubit.trackLedFor(0), PedalTrackLed.green);
+        expect(cubit.trackLedFor(1), PedalTrackLed.green);
+
+        cubit.togglePlayArm(0);
+        expect(cubit.trackLedFor(0), PedalTrackLed.off);
+        expect(cubit.trackLedFor(1), PedalTrackLed.green);
+        await cubit.close();
+      });
+
+      test('selectBank updates armed track to the bank base channel', () async {
+        final cubit = buildCubit()..selectBank(1);
+        expect(cubit.state.activeBank, 1);
+        expect(cubit.state.armedTrack, 4);
+        await cubit.close();
+      });
     });
   });
 }

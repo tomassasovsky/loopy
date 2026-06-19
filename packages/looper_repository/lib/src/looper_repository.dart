@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
@@ -8,7 +9,17 @@ import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
 import 'package:loopy_engine/loopy_engine.dart'
-    hide ParamReadout, TrackEffect, TrackEffectParam, TrackEffectType;
+    hide
+        AudioBackend,
+        AudioDevice,
+        EngineConfig,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind,
+        ParamReadout,
+        TrackEffect,
+        TrackEffectParam,
+        TrackEffectType;
 
 /// Owns the [AudioEngine] and is the single source of looper truth.
 ///
@@ -37,12 +48,6 @@ class LooperRepository {
       onCancel: _stopPolling,
     );
   }
-
-  /// Creates a repository driving the real native miniaudio engine, so the app
-  /// composes the looper without importing the data layer (`loopy_engine`)
-  /// directly.
-  factory LooperRepository.withNativeEngine() =>
-      LooperRepository(engine: NativeAudioEngine());
 
   final AudioEngine _engine;
   final Stream<void>? _ticker;
@@ -246,7 +251,10 @@ class LooperRepository {
       _stopReconnectPolling();
       return;
     }
-    final devices = _engine.enumerateDevices();
+    final devices = _engine
+        .enumerateDevices()
+        .map(audioDeviceFromEngine)
+        .toList();
     if (!_pinnedDevicesPresent(config, devices)) {
       return; // still absent — keep waiting
     }
@@ -256,7 +264,9 @@ class LooperRepository {
     if (signature == _lastAttemptSignature) return; // already tried this set
     _lastAttemptSignature = signature;
     _engine.stop();
-    if (_engine.start(config).isOk) _stopReconnectPolling();
+    if (_engine.start(engineConfigToEngine(config)).isOk) {
+      _stopReconnectPolling();
+    }
   }
 
   /// Whether every pinned device id in [config] is present in [devices]. An
@@ -311,7 +321,7 @@ class LooperRepository {
       bufferFrames: s.bufferFrames,
       inputChannels: s.inputChannels,
       outputChannels: s.outputChannels,
-      latencyState: s.latencyState,
+      latencyState: latencyStateFromEngine(s.latencyState),
       measuredLatencyMs: s.measuredLatencyMs,
       xrunCount: s.xrunCount,
       isConnected: s.isRunning,
@@ -319,23 +329,25 @@ class LooperRepository {
       excludedInputMask: s.excludedInputMask,
       recordOffsetFrames: s.recordOffsetFrames,
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
-      activeBackend: s.activeBackend,
+      activeBackend: audioBackendFromEngine(s.activeBackend),
     ),
   );
 
   /// Enumerates the host's audio devices (playback + capture) for the picker.
-  List<AudioDevice> devices() => _engine.enumerateDevices();
+  List<AudioDevice> devices() =>
+      _engine.enumerateDevices().map(audioDeviceFromEngine).toList();
 
   /// Enumerates the installed ASIO drivers (one duplex [AudioDevice] each) for
   /// the backend selector's driver picker. Empty off Windows / the default
   /// build. Must not be called while running on the ASIO backend (the cubit
   /// enforces this — see the re-entrancy contract on
   /// [AudioEngine.enumerateAsioDrivers]).
-  List<AudioDevice> asioDrivers() => _engine.enumerateAsioDrivers();
+  List<AudioDevice> asioDrivers() =>
+      _engine.enumerateAsioDrivers().map(audioDeviceFromEngine).toList();
 
   /// Opens the audio device and starts processing.
   EngineResult startEngine(EngineConfig config) {
-    final result = _engine.start(config);
+    final result = _engine.start(engineConfigToEngine(config));
     if (result.isOk) {
       _lastEngineConfig = config;
       _intendRunning = true;
@@ -434,7 +446,8 @@ class LooperRepository {
   }
 
   /// Detects a cable-free loopback capture path for auto-measuring latency.
-  LoopbackInfo detectLoopback() => _engine.detectLoopback();
+  LoopbackInfo detectLoopback() =>
+      loopbackInfoFromEngine(_engine.detectLoopback());
 
   /// Triggers a loopback round-trip latency measurement.
   EngineResult measureLatency() => _engine.measureLatency();

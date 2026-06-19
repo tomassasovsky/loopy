@@ -1,6 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+
+/// The persisted device-backend intent. A settings-layer domain enum (mirroring
+/// the engine's backend) kept here so this repository holds no data-layer
+/// dependency; the presentation layer maps it to/from the engine backend.
+enum AudioBackend {
+  /// The platform's default miniaudio backend.
+  miniaudio,
+
+  /// Windows ASIO.
+  asio,
+}
 
 /// A persisted audio device configuration, used to auto-start the engine on
 /// launch with the user's last-used options.

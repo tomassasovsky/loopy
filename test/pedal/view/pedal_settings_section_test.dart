@@ -88,7 +88,7 @@ void main() {
 
       await pumpSection(tester, cubit);
       await cubit.selectOutput(
-        const MidiDevice(id: 'out', name: 'Loopy Pedal'),
+        const PedalOutput(id: 'out', name: 'Loopy Pedal'),
       );
       await tester.pump();
 

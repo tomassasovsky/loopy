@@ -14,8 +14,6 @@ dependencies:
     sdk: flutter
   local_storage_client:
     path: ../local_storage_client
-  loopy_engine:
-    path: ../loopy_engine
 
 dev_dependencies:
   flutter_test:
