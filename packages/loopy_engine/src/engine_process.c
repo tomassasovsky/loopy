@@ -922,6 +922,299 @@ static inline void snapshot_monitor_fx(
   }
 }
 
+/* ---- per-frame core steps ----
+ *
+ * The fused heart of the per-frame loop, lifted into named steps. Each is
+ * `static inline` and takes the per-block snapshot arrays (filled by the setup
+ * steps above) plus the per-frame index, so the moved code is byte-identical to
+ * the pre-S2 inline body — only the surrounding declarations became parameters. */
+
+/* Per-frame input stage: input metering, sound-activated (input-level) record
+ * firing, and the loopback latency harness. Returns 1 when the latency harness
+ * owns this frame (it has written `out`; the caller must skip the rest of the
+ * frame), else 0. */
+static inline int process_input_frame(le_engine* e, const float* in, float* out,
+                                      uint32_t f, int ch_in, int ch_out, int tc,
+                                      int sr, uint32_t excluded, float* in_sumsq,
+                                      float* in_peak, float* out_sumsq) {
+  float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
+  float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
+  for (int c = 0; c < ch_in; ++c) {
+    const float s = in ? in[f * ch_in + c] : 0.0f;
+    const float a = fabsf(s);
+    if (excluded & (1u << c)) {
+      /* Loopback channels carry our own output back; not recorded/monitored/
+       * metered, but they are the round-trip path the latency harness times. */
+      if (a > loop_mag) loop_mag = a;
+      continue;
+    }
+    if (a > frame_mag) frame_mag = a;
+    *in_sumsq += s * s;
+  }
+  if (frame_mag > *in_peak) *in_peak = frame_mag;
+
+  /* Sound-activated recording: a track armed for the input-level trigger starts
+   * the moment the input crosses the threshold. Fired here — after the input
+   * magnitude is known but before st[] is sampled — so this very frame is
+   * captured. */
+  for (int qt = 0; qt < tc; ++qt) {
+    if (e->tracks[qt].pending_record && e->tracks[qt].pending_trigger == 1 &&
+        frame_mag > LE_AUTO_RECORD_THRESHOLD) {
+      e->tracks[qt].pending_record = 0;
+      e->tracks[qt].pending_trigger = 0;
+      store_i32(&e->tracks[qt].a_pending, 0);
+      handle_record(e, qt);
+    }
+  }
+
+  /* The latency pulse returns on the loopback channels when the interface has
+   * them (e.g. a Scarlett's "Loop 1/2"); otherwise (a physical cable, or a
+   * routed loopback capture device) it returns on the normal inputs. */
+  const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
+
+  /* Latency harness takes over the output entirely while measuring. It emits a
+   * quiet ~10 ms pulse at the start of a fixed capture window, records the
+   * input-magnitude envelope across that window, then cross-correlates it with
+   * the pulse to find the round-trip by the correlation peak (le_latency_resolve).
+   * The peak — integrated over the whole pulse — locks onto the real echo and
+   * ignores the brief direct/crosstalk bleed a first-over-threshold test
+   * mis-reported (especially on low-latency JACK graphs). */
+  if (e->lat_active) {
+    float broadcast = 0.0f;
+    if (e->lat_emit_remaining > 0) {
+      /* A tone burst (not a DC level): AC-coupled interface inputs high-pass a
+       * constant pulse down to edge transients, leaving nothing to correlate.
+       * A 1 kHz burst returns as a sustained AC signal. */
+      const int32_t emitted =
+          (sr / LE_LATENCY_PULSE_DIV) - e->lat_emit_remaining;
+      const float phase = 2.0f * 3.14159265f * LE_LATENCY_TONE_HZ *
+                          (float)emitted / (float)sr;
+      broadcast = LE_LATENCY_PULSE_AMP * sinf(phase);
+      e->lat_emit_remaining--;
+    }
+    if (e->lat_buf != NULL && e->lat_buf_pos < e->lat_buf_cap) {
+      e->lat_buf[e->lat_buf_pos++] = lat_mag;
+    }
+    /* Resolve on the same frame the window fills (not the next): the two
+     * conditions overlap on the fill frame, so this is intentionally not an
+     * `else`. */
+    if (e->lat_buf == NULL || e->lat_buf_pos >= e->lat_buf_cap) {
+      le_latency_resolve(e, sr);
+      e->lat_active = 0;
+      /* Restore the per-input monitors suppressed at measurement start, so
+       * monitoring resumes once the pulse is done (both on a resolved peak and
+       * on a timeout — both reach this completion). */
+      for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+        store_i32(&e->monitors[c].a_enabled, e->lat_saved_monitor_enabled[c]);
+      }
+    }
+    for (int c = 0; c < ch_out; ++c) {
+      out[f * ch_out + c] = broadcast;
+      *out_sumsq += broadcast * broadcast;
+    }
+    return 1;
+  }
+  return 0;
+}
+
+/* Per-frame live monitoring: each enabled hardware input fans out across its
+ * lanes. Each unmuted lane runs the input's clean live sample through its own
+ * (stageless) effect chain at its own volume and sums into the outputs its mask
+ * selects — a lane with no effects routes the clean sample (the dry path), an FX
+ * lane its processed signal (stereo-aware: a reverb spreads across the first two
+ * masked outputs). Live and independent of every track; never recorded. Effects
+ * run every frame so delay tails / LFO phase stay continuous. */
+static inline void mix_monitors_frame(
+    le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
+    int ch_out, int sr, int fx_cap, const int* mon_on, const int32_t* mon_lane_n,
+    int mon_mut[][LE_MAX_LANES], int mon_has_fx[][LE_MAX_LANES],
+    int32_t mon_fx_count[][LE_MAX_LANES],
+    int32_t mon_fx_type[][LE_MAX_LANES][LE_FX_MAX],
+    float mon_fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
+    float mon_vol[][LE_MAX_LANES], uint32_t mon_out[][LE_MAX_LANES]) {
+  if (in) {
+    for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
+      if (!mon_on[c]) continue;
+      const float clean = in[f * ch_in + c];
+      for (int l = 0; l < mon_lane_n[c]; ++l) {
+        if (mon_mut[c][l]) continue;
+        float ml = clean;
+        float mr = clean;
+        if (mon_has_fx[c][l]) {
+          fx_apply_chain(&e->monitors[c].lanes[l].fx, sr, fx_cap, &ml, &mr,
+                         mon_fx_count[c][l], mon_fx_type[c][l],
+                         mon_fx_params[c][l]);
+        }
+        const float g = mon_vol[c][l];
+        le_fx_route(out, f, ch_out, mon_out[c][l], ml * g, mr * g);
+      }
+    }
+  }
+}
+
+/* Per-frame capture + additive playback mix: snapshots each track's per-lane
+ * playback state, records / overdubs the live input into the lane buffers at the
+ * latency-compensated write head, and sums every audible lane (through its
+ * effect chain) into `out`. Fills [st] (the per-track state snapshot the
+ * transport advance reads) and accumulates [frame_trk_peak] (per-track) and the
+ * [lane_sumsq] / [lane_peak] metering. [pos] is the playhead (read by the caller
+ * before the transport advances). */
+static inline void mix_tracks_frame(
+    le_engine* e, const float* in, float* out, uint32_t f, int ch_in,
+    int ch_out, int tc, int sr, int fx_cap, uint32_t excluded, float overdub_fb,
+    float od_step, int32_t od_fade_frames, int32_t pos, const int32_t* lane_n,
+    int has_fx[][LE_MAX_LANES], int32_t fx_count[][LE_MAX_LANES],
+    int32_t fx_type[][LE_MAX_LANES][LE_FX_MAX],
+    float fx_params[][LE_MAX_LANES][LE_FX_MAX][LE_FX_PARAMS],
+    float lane_sumsq[][LE_MAX_LANES], float lane_peak[][LE_MAX_LANES],
+    int32_t* st, float* frame_trk_peak) {
+  /* Snapshot per-lane playback state once per frame. The track state can flip
+   * only between blocks; re-reading per frame is cheap and keeps undo's
+   * control-thread a_live swap visible at frame granularity. */
+  float* buf[LE_MAX_TRACKS][LE_MAX_LANES];
+  float vol[LE_MAX_TRACKS][LE_MAX_LANES];
+  int mut[LE_MAX_TRACKS][LE_MAX_LANES];
+  int32_t lane_in[LE_MAX_TRACKS][LE_MAX_LANES];
+  uint32_t out_mask[LE_MAX_TRACKS][LE_MAX_LANES];
+  for (int t = 0; t < tc; ++t) {
+    st[t] = load_i32(&e->tracks[t].a_state);
+    for (int l = 0; l < lane_n[t]; ++l) {
+      le_lane* ln = &e->tracks[t].lanes[l];
+      buf[t][l] = ln->pool[load_i32(&ln->a_live)];
+      vol[t][l] = load_f32(&ln->a_vol_bits);
+      mut[t][l] = load_i32(&ln->a_muted);
+      lane_in[t][l] = load_i32(&ln->a_input_channel);
+      out_mask[t][l] =
+          atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
+    }
+  }
+  /* Latency compensation: captured input is recorded this many frames earlier so
+   * it aligns with what the player heard. Monitoring stays live (it is no longer
+   * folded into the loop buffer at the playhead). */
+  const int32_t offset = load_i32(&e->a_record_offset);
+
+  /* Per-track read base for this frame: a track of multiple k plays its k-th
+   * base-loop segment, cycling relative to where its recording began. k == 1
+   * (the common case) collapses to the master position. */
+  int32_t seg_base[LE_MAX_TRACKS];
+  for (int t = 0; t < tc; ++t) {
+    if (e->clock.length > 0) {
+      int32_t k = load_i32(&e->tracks[t].a_multiple);
+      if (k < 1) k = 1;
+      const uint64_t seg =
+          (e->loop_iteration - e->tracks[t].start_iter) % (uint64_t)k;
+      seg_base[t] = (int32_t)seg * e->clock.length;
+    } else {
+      seg_base[t] = 0;
+    }
+  }
+
+  /* The looper mix is additive: clear this output frame, then sum every active
+   * lane's mono contribution into the output channels its mask selects. */
+  for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] = 0.0f;
+
+  /* The punch fade only engages once the loop is long enough to host a full
+   * fade-in plus fade-out tail with steady audio between them; shorter loops
+   * (sub-20 ms — not musically a loop) snap straight to the target, preserving
+   * the exact unfaded write the deterministic tests rely on. */
+  const int od_fade_on = e->clock.length >= 2 * od_fade_frames;
+  for (int t = 0; t < tc; ++t) {
+    /* Advance this track's overdub punch envelope once per frame (shared by
+     * every lane): ramp toward 1 while OVERDUBBING, toward 0 otherwise. When a
+     * punch-out flips the state to PLAYING the envelope is still > 0, so the
+     * write below keeps layering a tapering tail until it reaches 0 — a
+     * click-free punch-out (the player's still-live input fades out, rather than
+     * the loop cutting at the punch point). */
+    const float od_target = (st[t] == LE_TRACK_OVERDUBBING) ? 1.0f : 0.0f;
+    float od_gain = e->tracks[t].od_gain;
+    if (!od_fade_on) {
+      od_gain = od_target;
+    } else if (od_gain < od_target) {
+      od_gain += od_step;
+      if (od_gain > od_target) od_gain = od_target;
+    } else if (od_gain > od_target) {
+      od_gain -= od_step;
+      if (od_gain < od_target) od_gain = od_target;
+    }
+    e->tracks[t].od_gain = od_gain;
+
+    for (int l = 0; l < lane_n[t]; ++l) {
+      /* Clean single-input capture: a lane records exactly its assigned hardware
+       * input — never an average of several — or silence when it has no input,
+       * an out-of-range/loopback-excluded channel, or no allocated buffer.
+       * Sibling lanes are never merged. */
+      const int32_t ic = lane_in[t][l];
+      float insample = 0.0f;
+      if (in && ic >= 0 && ic < ch_in && !(excluded & (1u << ic))) {
+        insample = in[f * ch_in + ic];
+      }
+
+      /* Real-time null-guard: a lane whose buffer is not yet allocated (the
+       * lazy-alloc window, or a count/alloc mismatch) records and plays nothing
+       * rather than dereferencing a NULL pool. */
+      float* lbuf = buf[t][l];
+      if (lbuf == NULL) continue;
+
+      float loopsample = 0.0f;
+      if (st[t] == LE_TRACK_RECORDING) {
+        if (e->clock.length == 0) {
+          /* defining track: no reference loop yet, so no compensation */
+          if (e->tracks[t].record_pos < e->max_loop_frames) {
+            lbuf[e->tracks[t].record_pos] = insample;
+          }
+        } else {
+          /* new track: phase-locked shared write head (record_pos ==
+           * segment*base + position), latency-compensated by dropping the first
+           * `offset` frames so it aligns with what the player heard. */
+          const int32_t w = e->tracks[t].record_pos - offset;
+          if (w >= 0 && w < e->max_loop_frames) {
+            lbuf[w] = insample;
+          }
+        }
+      } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
+        /* Mix the existing loop (read before write). Layer the live input at the
+         * compensated position, scaled by the punch envelope so it ramps in on
+         * punch-in and out on punch-out (od_gain keeps the write alive for the
+         * fade-out tail after the state has already returned to PLAYING).
+         * od_gain == 0 in steady playback, so this is a plain read. */
+        loopsample = lbuf[seg_base[t] + pos];
+        if (od_gain > 0.0f) {
+          const int32_t w =
+              seg_base[t] + comp_pos(pos, offset, e->clock.length);
+          /* Feedback scales the existing content at the write head before the new
+           * layer is summed in, bounding runaway buildup. fb == 1.0 (the default)
+           * is the classic additive `+= insample`. */
+          lbuf[w] = lbuf[w] * overdub_fb + insample * od_gain;
+        }
+      }
+
+      /* The lane's mono output: its dry loop content at the lane's playback
+       * volume while it sounds, silence otherwise, run through the lane's whole
+       * (stageless) effects chain on its `fx` state. Effects run every frame the
+       * lane has them (even on silence) so delay tails and LFO phase stay
+       * continuous; the wet result is routed only while the lane is audible. */
+      const int audible =
+          (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
+          !mut[t][l];
+      float wl = audible ? loopsample * vol[t][l] : 0.0f;
+      float wr = wl;
+      le_lane* ln = &e->tracks[t].lanes[l];
+      if (has_fx[t][l]) {
+        fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
+                       fx_type[t][l], fx_params[t][l]);
+      }
+      if (audible) {
+        le_fx_route(out, f, ch_out, out_mask[t][l], wl, wr);
+      }
+
+      const float la = fabsf(loopsample);
+      if (la > lane_peak[t][l]) lane_peak[t][l] = la;
+      if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
+      lane_sumsq[t][l] += loopsample * loopsample;
+    }
+  }
+}
+
 /* ---- the real-time DSP core ---- */
 
 void le_engine_process(le_engine* e, float* output, const float* input,
@@ -1005,262 +1298,32 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const int fx_cap = e->fx_delay_frames;
 
   for (uint32_t f = 0; f < frames; ++f) {
-    float frame_mag = 0.0f; /* max |input| over real (non-loopback) channels */
-    float loop_mag = 0.0f;  /* max |input| over loopback channels (latency tap) */
-    for (int c = 0; c < ch_in; ++c) {
-      const float s = in ? in[f * ch_in + c] : 0.0f;
-      const float a = fabsf(s);
-      if (excluded & (1u << c)) {
-        /* Loopback channels carry our own output back; not recorded/monitored/
-         * metered, but they are the round-trip path the latency harness times. */
-        if (a > loop_mag) loop_mag = a;
-        continue;
-      }
-      if (a > frame_mag) frame_mag = a;
-      in_sumsq += s * s;
-    }
-    if (frame_mag > in_peak) in_peak = frame_mag;
-
-    /* Sound-activated recording: a track armed for the input-level trigger
-     * starts the moment the input crosses the threshold. Fired here — after the
-     * input magnitude is known but before st[] is sampled below — so this very
-     * frame is captured. */
-    for (int qt = 0; qt < tc; ++qt) {
-      if (e->tracks[qt].pending_record && e->tracks[qt].pending_trigger == 1 &&
-          frame_mag > LE_AUTO_RECORD_THRESHOLD) {
-        e->tracks[qt].pending_record = 0;
-        e->tracks[qt].pending_trigger = 0;
-        store_i32(&e->tracks[qt].a_pending, 0);
-        handle_record(e, qt);
-      }
-    }
-
-    /* The latency pulse returns on the loopback channels when the interface has
-     * them (e.g. a Scarlett's "Loop 1/2"); otherwise (a physical cable, or a
-     * routed loopback capture device) it returns on the normal inputs. */
-    const float lat_mag = excluded != 0u ? loop_mag : frame_mag;
-
-    /* Latency harness takes over the output entirely while measuring. It emits
-     * a quiet ~10 ms pulse at the start of a fixed capture window, records the
-     * input-magnitude envelope across that window, then cross-correlates it with
-     * the pulse to find the round-trip by the correlation peak (le_latency_
-     * resolve). The peak — integrated over the whole pulse — locks onto the real
-     * echo and ignores the brief direct/crosstalk bleed that a first-over-
-     * threshold test mis-reported (especially on low-latency JACK graphs). */
-    if (e->lat_active) {
-      float broadcast = 0.0f;
-      if (e->lat_emit_remaining > 0) {
-        /* A tone burst (not a DC level): AC-coupled interface inputs high-pass
-         * a constant pulse down to edge transients, leaving nothing to
-         * correlate. A 1 kHz burst returns as a sustained AC signal. */
-        const int32_t emitted =
-            (sr / LE_LATENCY_PULSE_DIV) - e->lat_emit_remaining;
-        const float phase = 2.0f * 3.14159265f * LE_LATENCY_TONE_HZ *
-                            (float)emitted / (float)sr;
-        broadcast = LE_LATENCY_PULSE_AMP * sinf(phase);
-        e->lat_emit_remaining--;
-      }
-      if (e->lat_buf != NULL && e->lat_buf_pos < e->lat_buf_cap) {
-        e->lat_buf[e->lat_buf_pos++] = lat_mag;
-      }
-      /* Resolve on the same frame the window fills (not the next): the two
-       * conditions overlap on the fill frame, so this is intentionally not an
-       * `else`. */
-      if (e->lat_buf == NULL || e->lat_buf_pos >= e->lat_buf_cap) {
-        le_latency_resolve(e, sr);
-        e->lat_active = 0;
-        /* Restore the per-input monitors suppressed at measurement start, so
-         * monitoring resumes once the pulse is done (both on a resolved peak and
-         * on a timeout — both reach this completion). */
-        for (int c = 0; c < LE_MAX_INPUTS; ++c) {
-          store_i32(&e->monitors[c].a_enabled, e->lat_saved_monitor_enabled[c]);
-        }
-      }
-      for (int c = 0; c < ch_out; ++c) {
-        out[f * ch_out + c] = broadcast;
-        out_sumsq += broadcast * broadcast;
-      }
+    /* Input metering + sound-activated record + latency harness. When the harness
+     * owns the frame it has already written `out`, so skip the rest. */
+    if (process_input_frame(e, in, out, f, ch_in, ch_out, tc, sr, excluded,
+                            &in_sumsq, &in_peak, &out_sumsq)) {
       continue;
     }
 
-    /* Snapshot per-lane playback state once per frame. The track state can flip
-     * only between blocks; re-reading per frame is cheap and keeps undo's
-     * control-thread a_live swap visible at frame granularity. */
-    int32_t st[LE_MAX_TRACKS];
-    float* buf[LE_MAX_TRACKS][LE_MAX_LANES];
-    float vol[LE_MAX_TRACKS][LE_MAX_LANES];
-    int mut[LE_MAX_TRACKS][LE_MAX_LANES];
-    int32_t lane_in[LE_MAX_TRACKS][LE_MAX_LANES];
-    uint32_t out_mask[LE_MAX_TRACKS][LE_MAX_LANES];
-    for (int t = 0; t < tc; ++t) {
-      st[t] = load_i32(&e->tracks[t].a_state);
-      for (int l = 0; l < lane_n[t]; ++l) {
-        le_lane* ln = &e->tracks[t].lanes[l];
-        buf[t][l] = ln->pool[load_i32(&ln->a_live)];
-        vol[t][l] = load_f32(&ln->a_vol_bits);
-        mut[t][l] = load_i32(&ln->a_muted);
-        lane_in[t][l] = load_i32(&ln->a_input_channel);
-        out_mask[t][l] =
-            atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
-      }
-    }
-    /* Latency compensation: captured input is recorded this many frames earlier
-     * so it aligns with what the player heard. Monitoring stays live (it is no
-     * longer folded into the loop buffer at the playhead). */
-    const int32_t offset = load_i32(&e->a_record_offset);
+    /* The playhead, read before the transport advances below; also feeds the viz
+     * tap. Per-frame outputs of the mix step: st[] (states, for the transport)
+     * and the per-track / per-output peaks (for the viz tap — frame_out_peak is
+     * filled later by master_bus_frame). */
     const int32_t pos = e->clock.position;
+    int32_t st[LE_MAX_TRACKS];
+    float frame_out_peak = 0.0f;
+    float frame_trk_peak[LE_MAX_TRACKS] = {0};
 
-    /* Per-track read base for this frame: a track of multiple k plays its k-th
-     * base-loop segment, cycling relative to where its recording began. k == 1
-     * (the common case) collapses to the master position. */
-    int32_t seg_base[LE_MAX_TRACKS];
-    for (int t = 0; t < tc; ++t) {
-      if (e->clock.length > 0) {
-        int32_t k = load_i32(&e->tracks[t].a_multiple);
-        if (k < 1) k = 1;
-        const uint64_t seg =
-            (e->loop_iteration - e->tracks[t].start_iter) % (uint64_t)k;
-        seg_base[t] = (int32_t)seg * e->clock.length;
-      } else {
-        seg_base[t] = 0;
-      }
-    }
+    /* Per-lane capture + additive playback mix (see mix_tracks_frame). */
+    mix_tracks_frame(e, in, out, f, ch_in, ch_out, tc, sr, fx_cap, excluded,
+                     overdub_fb, od_step, od_fade_frames, pos, lane_n, has_fx,
+                     fx_count, fx_type, fx_params, lane_sumsq, lane_peak, st,
+                     frame_trk_peak);
 
-    float frame_out_peak = 0.0f; /* max |output| this frame, for the viz tap */
-    float frame_trk_peak[LE_MAX_TRACKS] = {0}; /* per-track, this frame */
-
-    /* The looper mix is additive: clear this output frame, then sum every active
-     * lane's mono contribution into the output channels its mask selects. */
-    for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] = 0.0f;
-
-    /* The punch fade only engages once the loop is long enough to host a full
-     * fade-in plus fade-out tail with steady audio between them; shorter loops
-     * (sub-20 ms — not musically a loop) snap straight to the target, preserving
-     * the exact unfaded write the deterministic tests rely on. */
-    const int od_fade_on = e->clock.length >= 2 * od_fade_frames;
-    for (int t = 0; t < tc; ++t) {
-      /* Advance this track's overdub punch envelope once per frame (shared by
-       * every lane): ramp toward 1 while OVERDUBBING, toward 0 otherwise. When a
-       * punch-out flips the state to PLAYING the envelope is still > 0, so the
-       * write below keeps layering a tapering tail until it reaches 0 — a
-       * click-free punch-out (the player's still-live input fades out, rather
-       * than the loop cutting at the punch point). */
-      const float od_target =
-          (st[t] == LE_TRACK_OVERDUBBING) ? 1.0f : 0.0f;
-      float od_gain = e->tracks[t].od_gain;
-      if (!od_fade_on) {
-        od_gain = od_target;
-      } else if (od_gain < od_target) {
-        od_gain += od_step;
-        if (od_gain > od_target) od_gain = od_target;
-      } else if (od_gain > od_target) {
-        od_gain -= od_step;
-        if (od_gain < od_target) od_gain = od_target;
-      }
-      e->tracks[t].od_gain = od_gain;
-
-      for (int l = 0; l < lane_n[t]; ++l) {
-        /* Clean single-input capture: a lane records exactly its assigned
-         * hardware input — never an average of several — or silence when it has
-         * no input, an out-of-range/loopback-excluded channel, or no allocated
-         * buffer. Sibling lanes are never merged. */
-        const int32_t ic = lane_in[t][l];
-        float insample = 0.0f;
-        if (in && ic >= 0 && ic < ch_in && !(excluded & (1u << ic))) {
-          insample = in[f * ch_in + ic];
-        }
-
-        /* Real-time null-guard: a lane whose buffer is not yet allocated (the
-         * lazy-alloc window, or a count/alloc mismatch) records and plays
-         * nothing rather than dereferencing a NULL pool. */
-        float* lbuf = buf[t][l];
-        if (lbuf == NULL) continue;
-
-        float loopsample = 0.0f;
-        if (st[t] == LE_TRACK_RECORDING) {
-          if (e->clock.length == 0) {
-            /* defining track: no reference loop yet, so no compensation */
-            if (e->tracks[t].record_pos < e->max_loop_frames) {
-              lbuf[e->tracks[t].record_pos] = insample;
-            }
-          } else {
-            /* new track: phase-locked shared write head (record_pos ==
-             * segment*base + position), latency-compensated by dropping the
-             * first `offset` frames so it aligns with what the player heard. */
-            const int32_t w = e->tracks[t].record_pos - offset;
-            if (w >= 0 && w < e->max_loop_frames) {
-              lbuf[w] = insample;
-            }
-          }
-        } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
-          /* Mix the existing loop (read before write). Layer the live input at
-           * the compensated position, scaled by the punch envelope so it ramps
-           * in on punch-in and out on punch-out (od_gain keeps the write alive
-           * for the fade-out tail after the state has already returned to
-           * PLAYING). od_gain == 0 in steady playback, so this is a plain read. */
-          loopsample = lbuf[seg_base[t] + pos];
-          if (od_gain > 0.0f) {
-            const int32_t w =
-                seg_base[t] + comp_pos(pos, offset, e->clock.length);
-            /* Feedback scales the existing content at the write head before the
-             * new layer is summed in, bounding runaway buildup. fb == 1.0 (the
-             * default) is the classic additive `+= insample`. */
-            lbuf[w] = lbuf[w] * overdub_fb + insample * od_gain;
-          }
-        }
-
-        /* The lane's mono output: its dry loop content at the lane's playback
-         * volume while it sounds, silence otherwise, run through the lane's whole
-         * (stageless) effects chain on its `fx` state. Effects run every frame
-         * the lane has them (even on silence) so delay tails and LFO phase stay
-         * continuous; the wet result is routed only while the lane is audible. */
-        const int audible =
-            (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_OVERDUBBING) &&
-            !mut[t][l];
-        float wl = audible ? loopsample * vol[t][l] : 0.0f;
-        float wr = wl;
-        le_lane* ln = &e->tracks[t].lanes[l];
-        if (has_fx[t][l]) {
-          fx_apply_chain(&ln->fx, sr, fx_cap, &wl, &wr, fx_count[t][l],
-                         fx_type[t][l], fx_params[t][l]);
-        }
-        if (audible) {
-          le_fx_route(out, f, ch_out, out_mask[t][l], wl, wr);
-        }
-
-        const float la = fabsf(loopsample);
-        if (la > lane_peak[t][l]) lane_peak[t][l] = la;
-        if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
-        lane_sumsq[t][l] += loopsample * loopsample;
-      }
-    }
-
-    /* Per-input live monitoring: each enabled hardware input fans out across its
-     * lanes. Each unmuted lane runs the input's clean live sample through its own
-     * (stageless) effect chain at its own volume and sums into the outputs its
-     * mask selects — a lane with no effects routes the clean sample (the dry
-     * path), an FX lane its processed signal (stereo-aware: a reverb spreads
-     * across the first two masked outputs). Live and independent of every track;
-     * never recorded. Effects run every frame so delay tails / LFO phase stay
-     * continuous. */
-    if (in) {
-      for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
-        if (!mon_on[c]) continue;
-        const float clean = in[f * ch_in + c];
-        for (int l = 0; l < mon_lane_n[c]; ++l) {
-          if (mon_mut[c][l]) continue;
-          float ml = clean;
-          float mr = clean;
-          if (mon_has_fx[c][l]) {
-            fx_apply_chain(&e->monitors[c].lanes[l].fx, sr, fx_cap, &ml, &mr,
-                           mon_fx_count[c][l], mon_fx_type[c][l],
-                           mon_fx_params[c][l]);
-          }
-          const float g = mon_vol[c][l];
-          le_fx_route(out, f, ch_out, mon_out[c][l], ml * g, mr * g);
-        }
-      }
-    }
+    /* Per-input live monitoring (see mix_monitors_frame). */
+    mix_monitors_frame(e, in, out, f, ch_in, ch_out, sr, fx_cap, mon_on,
+                       mon_lane_n, mon_mut, mon_has_fx, mon_fx_count, mon_fx_type,
+                       mon_fx_params, mon_vol, mon_out);
 
     /* Master bus (gain + limiter + output metering), then the loop-viz tap, then
      * advance the record heads and master transport — see the static-inline step
