@@ -6,7 +6,7 @@ The 328P runs the `firmware/loopy_pedal` thin-client sketch; the 16U2 runs
 dualMocoLUFA to present USB-MIDI. Powered from a 9 V DC barrel jack through an
 onboard 5 V buck, with USB providing 5 V to the logic when no 9 V is present.
 
-> The 328P + 16U2 + USB section is a near-verbatim lift of the **open-source
+> The 328P + 16U2 + USB section is a near-verbatim lift of the **open source
 > Arduino UNO R3 reference schematic** (proven). The pedal-specific additions are:
 > the 9 V→5 V **buck**, the **footswitch inputs** (with hardware RC debounce), the
 > **WS2812 LED chain** split across two boards, and the **encoder**. Reusing the UNO
