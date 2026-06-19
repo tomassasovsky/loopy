@@ -7,7 +7,7 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:settings_repository/settings_repository.dart';
+import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
 
 import '../../helpers/helpers.dart';
 
@@ -40,8 +40,6 @@ void main() {
     );
     pedal = _MockPedalCubit();
     when(() => pedal.state).thenReturn(const PedalState());
-    when(pedal.availableOutputs).thenReturn(const []);
-    when(() => pedal.boundOutputId).thenReturn(null);
     whenListen(
       pedal,
       const Stream<PedalState>.empty(),

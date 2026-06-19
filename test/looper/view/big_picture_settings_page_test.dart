@@ -57,8 +57,6 @@ void main() {
     );
     pedal = _MockPedalCubit();
     when(() => pedal.state).thenReturn(const PedalState());
-    when(pedal.availableOutputs).thenReturn(const []);
-    when(() => pedal.boundOutputId).thenReturn(null);
     whenListen(
       pedal,
       const Stream<PedalState>.empty(),

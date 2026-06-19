@@ -1,6 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:settings_repository/settings_repository.dart';
+import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
+// Settings owns its own AudioBackend; mapped to/from the looper domain backend
+// here. Prefixed only for that enum so the unprefixed one is the domain type.
+import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
+import 'package:settings_repository/settings_repository.dart'
+    as persisted
+    show AudioBackend;
 
 /// Whether the ASIO backend is selectable on this platform: Windows only (ASIO
 /// is a Windows-only API). Resolved here in the presentation layer — the single
@@ -48,9 +54,11 @@ Future<AutoStartResult> tryAutoStartEngine({
   // With no driver installed at all, land stopped (the looper shows the
   // no-driver / ASIO4ALL affordance), mirroring the first-run path. The coercion
   // mirrors the cubit's hydration so the engine and the UI never disagree.
-  final backend = platformAsioSelectable ? AudioBackend.asio : saved.backend;
+  final backend = platformAsioSelectable
+      ? AudioBackend.asio
+      : engineBackendOf(saved.backend);
   final asioDriver = platformAsioSelectable
-      ? _resolveAsioDriver(saved.asioDriver, asioDrivers)
+      ? AudioSetupCubit.resolveAsioDriver(saved.asioDriver, asioDrivers)
       : saved.asioDriver;
   if (platformAsioSelectable && asioDriver.isEmpty) {
     return (started: false, asioDrivers: asioDrivers);
@@ -207,7 +215,7 @@ Future<bool> _firstRunAutoStart({
       StoredAudioConfig(
         sampleRate: sampleRate,
         bufferFrames: bufferFrames,
-        backend: AudioBackend.asio,
+        backend: persisted.AudioBackend.asio,
         asioDriver: driver.id,
       ),
     );
@@ -233,12 +241,3 @@ Future<bool> _firstRunAutoStart({
 /// preferring the common default when the driver allows it.
 int _preferred(List<int> options, int wanted) =>
     options.isEmpty || options.contains(wanted) ? wanted : options.first;
-
-/// Resolves the ASIO driver to open on Windows: keeps [saved] when it is still
-/// enumerated, otherwise falls back to the first enumerated driver, or empty
-/// when none are installed. Mirrors `AudioSetupCubit._resolveAsioDriver` so the
-/// auto-start and the interactive UI agree on the driver.
-String _resolveAsioDriver(String saved, List<AudioDevice> drivers) {
-  if (drivers.any((d) => d.id == saved)) return saved;
-  return drivers.isEmpty ? '' : drivers.first.id;
-}
