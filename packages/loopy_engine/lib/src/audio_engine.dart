@@ -205,6 +205,21 @@ abstract interface class AudioEngine {
   /// start; the current value is published in [EngineSnapshot.masterGain].
   EngineResult setMasterGain(double gain);
 
+  /// Enables/disables the master peak limiter and sets its [ceiling] (clamped
+  /// by the engine to `(0, 1]`, default `0.99`). Applied post master-gain, it
+  /// keeps the summed output of all tracks, overdub layers, and monitoring from
+  /// exceeding the ceiling and hard-clipping in the driver; below the ceiling
+  /// it is transparent. Off by default and after every fresh start.
+  EngineResult setLimiter({required bool enabled, double ceiling = 0.99});
+
+  /// Sets the overdub [feedback] coefficient (clamped by the engine to `0..1`,
+  /// default `1.0`). While a track is overdubbing, its existing content is
+  /// scaled by this before the new layer is summed in: `1.0` is the classic
+  /// additive overdub (layers persist and can build toward clipping); below
+  /// `1.0` decays older layers each pass so the loop self-limits. Plain
+  /// playback is untouched.
+  EngineResult setOverdubFeedback(double feedback);
+
   /// Enables sound-activated recording: a record press on an empty track waits
   /// and begins capturing once the input level crosses the threshold.
   EngineResult setAutoRecord({required bool enabled});

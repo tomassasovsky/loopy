@@ -41,6 +41,31 @@
  * per OS in engine_apple.c / engine_linux.c / engine_windows.c. This file is
  * platform-agnostic — no #if defined(__APPLE__|__linux__|_WIN32) behavior. */
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+#include <pmmintrin.h> /* _MM_SET_DENORMALS_ZERO_MODE (DAZ) */
+#include <xmmintrin.h> /* _MM_SET_FLUSH_ZERO_MODE (FTZ) */
+#endif
+
+/* Flush denormals to zero on the audio thread. Decaying FX tails (reverb/delay/
+ * phase-vocoder) trend toward ~1e-30, and denormal arithmetic can be orders of
+ * magnitude slower — a CPU spike that shows up as a buffer underrun (dropout /
+ * click), not as wrong audio. FTZ+DAZ make the FPU treat those as zero. Per
+ * thread, so we set it each callback (negligible cost). No-op where unsupported;
+ * the inaudible denormals simply remain. */
+static inline void le_flush_denormals(void) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
+    defined(_M_IX86)
+  _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#elif defined(__aarch64__)
+  uint64_t fpcr;
+  __asm__ __volatile__("mrs %0, fpcr" : "=r"(fpcr));
+  fpcr |= (1ull << 24); /* FZ: flush-to-zero */
+  __asm__ __volatile__("msr fpcr, %0" : : "r"(fpcr));
+#endif
+}
+
 /* Loopback latency harness. The echo returns only mildly attenuated (~0.9 from
  * a full-scale pulse on a typical interface), so we emit a quiet calibration
  * tone rather than full scale to spare the user's monitors, and detect with a
@@ -141,6 +166,33 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
   t->start_iter = 0;
 }
 
+/* Seam-crossfade overlap length (~10 ms): the frames captured past the loop
+ * point and folded into the head. Also the minimum half-loop the master must
+ * span to be eligible (it needs head + tail room plus steady audio between). */
+static int32_t seam_xfade_frames(const le_engine* e) {
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  return sr / 100;
+}
+
+/* Requests finalize of the *defining master* at its current length. When the
+ * loop is long enough and the buffer has room, this defers the finalize: the
+ * track keeps RECORDING F more frames so the seam can be crossfaded (see
+ * finalize_master_xfade), preserving the recorded length exactly. Otherwise
+ * (short loop, no room, or a finalize already in flight) it finalizes now. */
+static void request_master_finalize(le_engine* e, le_track* t,
+                                    int32_t end_state) {
+  if (t->xfade_capture > 0) return; /* already deferring — ignore re-entry */
+  const int32_t F = seam_xfade_frames(e);
+  const int32_t len = t->record_pos;
+  if (F > 0 && len >= 2 * F && len + F <= e->max_loop_frames) {
+    t->xfade_len = len;
+    t->xfade_end_state = end_state;
+    t->xfade_capture = F; /* stay RECORDING; the per-frame advance counts down */
+  } else {
+    finalize_master(e, t, end_state);
+  }
+}
+
 /* Finalizes a non-defining track that recorded freely across one or more base
  * loops: rounds its length UP to the nearest whole base loop (the locked #4
  * behaviour), publishes the multiple, and moves it to `end_state`. A track that
@@ -189,6 +241,13 @@ static void close_active_capture(le_engine* e, int32_t except_ch) {
     const int32_t st = load_i32(&tr->a_state);
     if (st == LE_TRACK_RECORDING) {
       if (e->clock.length == 0) {
+        /* Hand-off is immediate (one capturer): if this master was mid seam-
+         * crossfade deferral, lock its intended length and finalize now without
+         * the crossfade rather than keep it recording alongside the new track. */
+        if (tr->xfade_capture > 0) {
+          tr->record_pos = tr->xfade_len;
+          tr->xfade_capture = 0;
+        }
         finalize_master(e, tr, LE_TRACK_PLAYING); /* defines the master loop */
       } else {
         finalize_new_track(e, tr, LE_TRACK_PLAYING); /* round up to whole loops */
@@ -237,7 +296,7 @@ static void handle_record(le_engine* e, int32_t ch) {
        * playback/stopped (handle_stop), never overdub. */
       const int32_t end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
       if (e->clock.length == 0) {
-        finalize_master(e, t, end);
+        request_master_finalize(e, t, end); /* defers for the seam crossfade */
       } else {
         finalize_new_track(e, t, end);
       }
@@ -262,7 +321,7 @@ static void handle_stop(le_engine* e, int32_t ch) {
   const int32_t st = load_i32(&t->a_state);
   if (st == LE_TRACK_RECORDING) {
     if (e->clock.length == 0) {
-      finalize_master(e, t, LE_TRACK_STOPPED);
+      request_master_finalize(e, t, LE_TRACK_STOPPED); /* defers for crossfade */
     } else {
       finalize_new_track(e, t, LE_TRACK_STOPPED); /* round up to whole loops */
     }
@@ -286,6 +345,7 @@ static void handle_clear(le_engine* e, int32_t ch) {
   t->start_iter = 0;
   t->pending_record = 0;
   t->od_gain = 0.0f;
+  t->xfade_capture = 0; /* cancel any in-flight seam-crossfade deferral */
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_track_set_len(t, 0);
@@ -324,6 +384,31 @@ static void handle_clear(le_engine* e, int32_t ch) {
 #ifndef LE_PI
 #define LE_PI 3.14159265358979323846f
 #endif
+
+/* Completes a deferred crossfade-finalize of the defining master (set up by
+ * request_master_finalize once xfade_capture frames of overlap are captured).
+ * Equal-power crossfade of the captured continuation [len, len+F) into the loop
+ * head [0, F): each head sample morphs from the continuation (which follows
+ * len-1 naturally) into the original head, so the wrap len-1 -> 0 is continuous
+ * and no power dips. The loop is then finalized at exactly `len`. */
+static void finalize_master_xfade(le_engine* e, le_track* t) {
+  const int32_t len = t->xfade_len;
+  const int32_t F = seam_xfade_frames(e);
+  const int32_t n = le_lanes_active(t);
+  for (int32_t l = 0; l < n; ++l) {
+    float* b = t->lanes[l].pool[load_i32(&t->lanes[l].a_live)];
+    if (b == NULL) continue;
+    for (int32_t i = 0; i < F; ++i) {
+      const float x = (float)i / (float)F;        /* 0..1 across the fade */
+      const float w_in = sinf(0.5f * LE_PI * x);  /* original head fades in */
+      const float w_out = cosf(0.5f * LE_PI * x); /* continuation fades out */
+      b[i] = b[len + i] * w_out + b[i] * w_in;
+    }
+  }
+  t->record_pos = len; /* finalize at the intended length, not len+F */
+  t->xfade_capture = 0;
+  finalize_master(e, t, t->xfade_end_state);
+}
 
 /* --- Phase-vocoder octaver (LE_FX_OCTAVER) ------------------------------------
  *
@@ -1458,6 +1543,8 @@ static void le_latency_resolve(le_engine* e, int sr) {
 
 void le_engine_process(le_engine* e, float* output, const float* input,
                        uint32_t frames) {
+  le_flush_denormals(); /* per-thread; cheap to reassert every callback */
+
   const int ch_in = e->in_channels > 0 ? e->in_channels : 1;
   const int ch_out = e->out_channels > 0 ? e->out_channels : 1;
   const int tc = e->track_count;
@@ -1470,6 +1557,16 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   /* Global master output gain, read once per block after draining the ring so a
    * mid-block change applies from the next block (no per-frame atomic load). */
   const float master_gain = load_f32(&e->a_master_gain_bits);
+
+  /* Master limiter + overdub feedback, read once per block (same rationale). */
+  const int limiter_on = load_i32(&e->a_limiter_enabled) != 0;
+  const float limiter_ceiling = load_f32(&e->a_limiter_ceiling_bits);
+  const float overdub_fb = load_f32(&e->a_overdub_fb_bits);
+  /* ~50 ms release toward unity once the signal drops below the ceiling. */
+  float lim_release = 1.0f / (0.05f * (float)(e->sample_rate > 0
+                                                  ? e->sample_rate
+                                                  : 48000));
+  if (lim_release > 1.0f) lim_release = 1.0f;
 
   const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
   /* Overdub punch declick: ramp the layered input in/out over ~10 ms so a punch
@@ -1769,7 +1866,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
           if (od_gain > 0.0f) {
             const int32_t w =
                 seg_base[t] + comp_pos(pos, offset, e->clock.length);
-            lbuf[w] += insample * od_gain;
+            /* Feedback scales the existing content at the write head before the
+             * new layer is summed in, bounding runaway buildup. fb == 1.0 (the
+             * default) is the classic additive `+= insample`. */
+            lbuf[w] = lbuf[w] * overdub_fb + insample * od_gain;
           }
         }
 
@@ -1834,6 +1934,30 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= master_gain;
     }
 
+    /* Master peak limiter (feed-forward, no lookahead): find this frame's peak,
+     * compute the gain that would pin it to the ceiling, and apply it. Instant
+     * attack — if the needed gain is below the current one, clamp down this very
+     * frame so nothing exceeds the ceiling (no overshoot); smooth release back
+     * toward unity. Below the ceiling the gain rests at 1.0, so the path is
+     * bit-transparent when nothing is clipping. */
+    if (limiter_on) {
+      float peak = 0.0f;
+      for (int c = 0; c < ch_out; ++c) {
+        const float a = fabsf(out[f * ch_out + c]);
+        if (a > peak) peak = a;
+      }
+      float target = 1.0f;
+      if (peak > limiter_ceiling && peak > 0.0f) target = limiter_ceiling / peak;
+      if (target < e->lim_gain) {
+        e->lim_gain = target; /* instant attack: no sample over the ceiling */
+      } else {
+        e->lim_gain += (target - e->lim_gain) * lim_release;
+      }
+      if (e->lim_gain != 1.0f) {
+        for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] *= e->lim_gain;
+      }
+    }
+
     /* Output metering for this frame. */
     for (int c = 0; c < ch_out; ++c) {
       const float sample = out[f * ch_out + c];
@@ -1883,7 +2007,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
       le_track* tr = &e->tracks[t];
       if (e->clock.length == 0) {
         tr->record_pos++;
-        if (tr->record_pos >= e->max_loop_frames) {
+        if (tr->xfade_capture > 0) {
+          /* Deferred seam crossfade: keep capturing the overlap past the loop
+           * point, then fold it into the head and finalize at the intended
+           * length. The buffer room was checked when the deferral was armed. */
+          if (--tr->xfade_capture == 0) finalize_master_xfade(e, tr);
+        } else if (tr->record_pos >= e->max_loop_frames) {
           finalize_master(e, tr, LE_TRACK_PLAYING);
         }
       } else {
@@ -2063,6 +2192,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->record_pos = 0;
     tr->record_start = 0;
     tr->start_iter = 0;
+    tr->od_gain = 0.0f;
+    tr->xfade_capture = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
     engine->target_multiple[t] = 0; /* inherit the global default multiple */
 
@@ -2115,6 +2246,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
 
   store_i32(&engine->a_record_offset, 0); /* re-measured per session */
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
+  /* Limiter off by default (the app enables it); ceiling just below full scale.
+   * Overdub feedback unity by default == classic additive overdub. */
+  store_i32(&engine->a_limiter_enabled, 0);
+  store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
+  engine->lim_gain = 1.0f;
+  store_f32(&engine->a_overdub_fb_bits, 1.0f);
 
   store_i32(&engine->a_sample_rate, sample_rate);
   store_i32(&engine->a_in_channels, input_channels);
@@ -2574,6 +2711,10 @@ le_engine* le_engine_create(void) {
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
+  store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
+  store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
+  engine->lim_gain = 1.0f;
+  store_f32(&engine->a_overdub_fb_bits, 1.0f); /* classic additive overdub */
   return engine;
 }
 
@@ -3249,6 +3390,26 @@ int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
       if (engine->armed_trigger[c] == 1) le_cancel_arm(engine, c);
     }
   }
+  return LE_OK;
+}
+
+int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
+                              float ceiling) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* Independent published atomics (no ordering vs. the command stream), so the
+   * control thread stores them directly. Clamp the ceiling to a sane (0,1]. */
+  if (ceiling <= 0.0f) ceiling = 0.99f;
+  if (ceiling > 1.0f) ceiling = 1.0f;
+  store_f32(&engine->a_limiter_ceiling_bits, ceiling);
+  store_i32(&engine->a_limiter_enabled, enabled ? 1 : 0);
+  return LE_OK;
+}
+
+int32_t le_engine_set_overdub_feedback(le_engine* engine, float feedback) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (feedback < 0.0f) feedback = 0.0f;
+  if (feedback > 1.0f) feedback = 1.0f;
+  store_f32(&engine->a_overdub_fb_bits, feedback);
   return LE_OK;
 }
 
