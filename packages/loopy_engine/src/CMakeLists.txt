@@ -21,6 +21,10 @@ add_library(loopy_engine SHARED
   # Published-state snapshots + visualization reads (S1 split). Control thread;
   # loads the per-field atomics the audio thread publishes.
   engine_snapshot.c
+  # THE audio-thread TU (S1 split): le_engine_process, the transport state
+  # machine, apply_command, the latency harness, metering/viz publication. The
+  # real-time no-alloc/no-lock contract holds for this whole file.
+  engine_process.c
   # The miniaudio device backend (le_device_backend.h). Compiled unconditionally
   # — it is the only device backend this build ships; the opt-in ASIO backend
   # slots in behind le_select_backend later.

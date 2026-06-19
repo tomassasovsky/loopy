@@ -20,6 +20,21 @@
 extern "C" {
 #endif
 
+/* Loopback latency harness tuning. The echo returns only mildly attenuated
+ * (~0.9 from a full-scale pulse on a typical interface), so we emit a quiet
+ * calibration tone rather than full scale to spare the user's monitors, and
+ * detect with a threshold comfortably below the echo yet above the noise floor.
+ * Shared by the audio thread (engine_process.c emits + correlates) and the
+ * control thread (engine.c's le_engine_configure sizes lat_buf from CAPTURE_DIV). */
+#define LE_LATENCY_PULSE_AMP 0.9f  /* calibration tone amplitude (0..1) */
+#define LE_LATENCY_TONE_HZ 1000.0f /* tone-burst freq (AC: survives AC-coupling) */
+#define LE_LATENCY_PEAK_RATIO 2.5f /* correlation peak must exceed this x baseline */
+#define LE_LATENCY_PULSE_DIV 100   /* pulse length = sample_rate / this (~10ms) */
+#define LE_LATENCY_CAPTURE_DIV 10  /* capture window = sample_rate / this (~100ms) */
+
+/* Input level (0..1) that triggers sound-activated recording (~-34 dBFS). */
+#define LE_AUTO_RECORD_THRESHOLD 0.02f
+
 /* Wraps `pos - offset` into [0, len). Used to write captured input at the
  * latency-compensated loop position so overdubs align with what was heard. */
 static inline int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
