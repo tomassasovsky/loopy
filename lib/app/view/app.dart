@@ -15,7 +15,7 @@ import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/window/window_chrome.dart';
-import 'package:midi_client/midi_client.dart';
+import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -34,11 +34,11 @@ class App extends StatelessWidget {
   const App({
     required this.repository,
     required this.controllerRepository,
+    required this.midiDeviceRepository,
     required this.settings,
     required this.waveformWindow,
     required this.sessionRepository,
     required this.sessionDirectory,
-    this.midiSource,
     this.pedalRepository,
     this.initialAsioDrivers = const [],
     super.key,
@@ -50,10 +50,10 @@ class App extends StatelessWidget {
   /// The shared controller repository (MIDI/GPIO → looper actions).
   final ControllerRepository controllerRepository;
 
-  /// The long-lived native MIDI source (owned by [controllerRepository]), or
-  /// `null` when no MIDI backend is available. The MIDI-setup cubit borrows it
-  /// for enumerate/open/close and activity; it never disposes it.
-  final MidiControllerSource? midiSource;
+  /// The MIDI input device repository (owns the foot-controller lifecycle). It
+  /// borrows the long-lived native MIDI source from [controllerRepository] and
+  /// never disposes it; the [MidiSetupCubit] projects its state.
+  final MidiDeviceRepository midiDeviceRepository;
 
   /// The bidirectional pedal repository (MIDI output + reused input capture),
   /// or `null` when none was built — a no-op transport is substituted so pedal
@@ -83,11 +83,23 @@ class App extends StatelessWidget {
       providers: [
         RepositoryProvider.value(value: repository),
         RepositoryProvider.value(value: controllerRepository),
+        RepositoryProvider.value(value: midiDeviceRepository),
         RepositoryProvider.value(value: settings),
         RepositoryProvider.value(value: sessionRepository),
       ],
       child: MultiBlocProvider(
         providers: [
+          // Provided app-wide (not just on the looper page) so the settings
+          // route — pushed on the root navigator, above the looper page — can
+          // drive routing edits through the bloc, mirroring the in-view routing
+          // controls. The BigPictureCubit below is hoisted for the same reason.
+          BlocProvider(
+            create: (context) => LooperBloc(
+              repository: context.read<LooperRepository>(),
+              controller: context.read<ControllerRepository>(),
+              settings: context.read<SettingsRepository>(),
+            ),
+          ),
           BlocProvider(
             create: (context) {
               final cubit = BigPictureCubit(
@@ -171,8 +183,7 @@ class App extends StatelessWidget {
           BlocProvider(
             lazy: false,
             create: (context) => MidiSetupCubit(
-              source: midiSource,
-              settings: context.read<SettingsRepository>(),
+              repository: context.read<MidiDeviceRepository>(),
             ),
           ),
           // Eager (not lazy): the pedal cubit auto-binds the saved output
@@ -337,10 +348,11 @@ class _AppViewState extends State<_AppView> {
     final messenger = _messengerKey.currentState;
     if (messenger == null) return;
     final l10n = _l10n;
-    final name = state.connectivityDeviceName.isEmpty
-        ? state.selectedName
-        : state.connectivityDeviceName;
-    switch (state.connectivity) {
+    final connection = state.connection;
+    final name = connection.connectivityDeviceName.isEmpty
+        ? connection.selectedName
+        : connection.connectivityDeviceName;
+    switch (connection.connectivity) {
       case MidiConnectivity.lost:
         messenger.showMaterialBanner(
           MaterialBanner(
@@ -399,7 +411,8 @@ class _AppViewState extends State<_AppView> {
         ),
         BlocListener<MidiSetupCubit, MidiSetupState>(
           listenWhen: (previous, current) =>
-              previous.connectivity != current.connectivity,
+              previous.connection.connectivity !=
+              current.connection.connectivity,
           listener: (_, state) => _showMidiConnectivityBanner(state),
         ),
       ],
