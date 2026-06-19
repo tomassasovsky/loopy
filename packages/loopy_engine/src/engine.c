@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
 #include "engine_internal.h"
 #include "engine_miniaudio.h"
@@ -84,66 +85,22 @@ static inline void le_flush_denormals(void) {
  * engine_private.h, shared with the per-OS translation units (engine_linux.c /
  * engine_apple.c / engine_windows.c). */
 
-/* ---- float/double <-> atomic-bits helpers ---- */
-
-static uint32_t f32_to_bits(float v) {
-  uint32_t b;
-  memcpy(&b, &v, sizeof(b));
-  return b;
-}
-static float bits_to_f32(uint32_t b) {
-  float v;
-  memcpy(&v, &b, sizeof(v));
-  return v;
-}
-static uint64_t f64_to_bits(double v) {
-  uint64_t b;
-  memcpy(&b, &v, sizeof(b));
-  return b;
-}
-static double bits_to_f64(uint64_t b) {
-  double v;
-  memcpy(&v, &b, sizeof(v));
-  return v;
-}
-static void store_f32(_Atomic uint32_t* slot, float v) {
-  atomic_store_explicit(slot, f32_to_bits(v), memory_order_relaxed);
-}
-static float load_f32(_Atomic uint32_t* slot) {
-  return bits_to_f32(atomic_load_explicit(slot, memory_order_relaxed));
-}
-/* load_i32 / store_i32 are static inline in engine_private.h (shared with the
- * per-OS TUs); load_f32 / store_f32 / bits_to_f32 have no cross-TU consumer and
- * stay file-local here. */
-
-/* Wraps `pos - offset` into [0, len). Used to write captured input at the
- * latency-compensated loop position so overdubs align with what was heard. */
-static int32_t comp_pos(int32_t pos, int32_t offset, int32_t len) {
-  if (len <= 0) return pos;
-  int32_t p = (pos - offset) % len;
-  if (p < 0) p += len;
-  return p;
-}
-
-/* A track's active lane count, clamped to a usable range (a track always has at
- * least one lane). */
-static int32_t le_lanes_active(const le_track* t) {
-  int32_t n = t->lane_count;
-  if (n < 1) n = 1;
-  if (n > LE_MAX_LANES) n = LE_MAX_LANES;
-  return n;
-}
+/* The float/double <-> atomic-bits helpers (f32_to_bits / load_f32 / …) and the
+ * int32 helpers (load_i32 / store_i32) are static inline in engine_private.h,
+ * shared by every engine TU. comp_pos and le_lanes_active are static inline in
+ * engine_core.h. */
 
 /* Publishes a recorded length onto every active lane of a track (all lanes of a
- * track share the one transport, so they share the length). */
-static void le_track_set_len(le_track* t, int32_t len) {
+ * track share the one transport, so they share the length). Declared in
+ * engine_core.h. */
+void le_track_set_len(le_track* t, int32_t len) {
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) store_i32(&t->lanes[l].a_len, len);
 }
 
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
  * collapse a legacy track input bitmask into lane 0's single input channel. */
-static int32_t le_mask_to_channel(uint32_t mask) {
+int32_t le_mask_to_channel(uint32_t mask) {
   if (mask == 0u) return -1;
   int32_t c = 0;
   while (!(mask & 1u)) {
@@ -226,7 +183,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
   t->record_pos = 0;
 }
 
-static int valid_channel(le_engine* e, int32_t ch) {
+int valid_channel(le_engine* e, int32_t ch) {
   return ch >= 0 && ch < e->track_count;
 }
 
@@ -2154,8 +2111,8 @@ int32_t le_engine_measure_latency(le_engine* engine) {
 
 /* ---- looper control (push gated on `configured`, so tests work device-free) */
 
-static int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i,
-                       float arg_f) {
+int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i,
+                float arg_f) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
@@ -2811,58 +2768,8 @@ int32_t le_engine_set_monitor_lane_fx_param(le_engine* engine, int32_t input,
   return LE_OK;
 }
 
-/* ---- session persistence ---- *
- * Lane buffers are mono (one sample per frame), so a stem is just the loop
- * samples; routing to channels is a playback concern, not stored. Export/import
- * operate on lane 0 — multi-lane stems are a later revision. */
-
-int32_t le_engine_export_track(le_engine* engine, int32_t channel, float* out,
-                               int32_t max_frames) {
-  if (engine == NULL || out == NULL) return 0;
-  if (channel < 0 || channel >= engine->track_count) return 0;
-  if (max_frames <= 0) return 0;
-  le_lane* ln = &engine->tracks[channel].lanes[0];
-  int32_t n = load_i32(&ln->a_len);
-  if (n > max_frames) n = max_frames;
-  if (n <= 0) return 0;
-  const int live = load_i32(&ln->a_live);
-  if (ln->pool[live] == NULL) return 0;
-  memcpy(out, ln->pool[live], (size_t)n * sizeof(float));
-  return n;
-}
-
-int32_t le_engine_import_track(le_engine* engine, int32_t channel,
-                               const float* pcm, int32_t frames) {
-  if (engine == NULL || pcm == NULL) return LE_ERR_INVALID;
-  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
-    return LE_ERR_NOT_RUNNING;
-  }
-  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
-  if (frames <= 0) return LE_ERR_INVALID;
-  le_track* t = &engine->tracks[channel];
-  /* Importing targets an empty track: its buffers are not read by the audio
-   * thread, so the control thread can fill lane 0 directly. */
-  if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
-  /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
-   * so a corrupted/foreign loop fails loudly instead of loading clipped. */
-  if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
-  le_lane* ln = &t->lanes[0];
-  const int live = load_i32(&ln->a_live);
-  if (ln->pool[live] == NULL) return LE_ERR_INVALID;
-  const size_t span = (size_t)frames;
-  const size_t cap = (size_t)engine->max_loop_frames;
-  memcpy(ln->pool[live], pcm, span * sizeof(float));
-  if (span < cap) {
-    memset(ln->pool[live] + span, 0, (cap - span) * sizeof(float));
-  }
-  store_i32(&ln->a_len, frames);
-  t->start_iter = 0;
-  return LE_OK;
-}
-
-int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {
-  return le_push(engine, LE_CMD_COMMIT_SESSION, base_frames, 0.0f);
-}
+/* Session persistence (le_engine_export_track / import_track / commit_session)
+ * moved to engine_session.c (S1). */
 
 /* ---- multi-lane control ---- */
 

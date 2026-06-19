@@ -13,6 +13,8 @@ add_library(loopy_engine SHARED
   # Per-lane / per-monitor effects DSP (S1 split from engine.c): effect kernels,
   # phase-vocoder / PSOLA octaver, Freeverb reverb, chain runner. Audio thread.
   engine_fx.c
+  # Session persistence: export / import / commit (S1 split). Control thread.
+  engine_session.c
   # The miniaudio device backend (le_device_backend.h). Compiled unconditionally
   # — it is the only device backend this build ships; the opt-in ASIO backend
   # slots in behind le_select_backend later.
