@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:midi_client/midi_client.dart' show MidiDevice;
+import 'package:pedal_repository/src/models/pedal_output.dart';
 import 'package:pedal_repository/src/pedal_codec.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
@@ -69,8 +69,12 @@ class PedalRepository {
   /// The id of the bound output destination, or `null` when not bound.
   String? get boundOutputId => _boundOutputId;
 
-  /// The host's available MIDI output destinations.
-  List<MidiDevice> availableOutputs() => _transport.enumerateOutputs();
+  /// The host's available MIDI output destinations, as domain models (mapped
+  /// from the transport's raw enumeration so callers never name the data type).
+  List<PedalOutput> availableOutputs() => [
+    for (final device in _transport.enumerateOutputs())
+      PedalOutput(id: device.id, name: device.name),
+  ];
 
   /// Binds the pedal's output to destination [outputDeviceId].
   ///

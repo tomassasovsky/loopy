@@ -164,9 +164,25 @@ void main() {
       });
     });
 
-    test('availableOutputs delegates to the transport', () {
-      expect(repo.availableOutputs(), transport.outputs);
+    test('availableOutputs maps the transport devices to domain outputs, '
+        'preserving order', () {
+      // The transport yields raw midi_client devices; the repository maps them
+      // to domain PedalOutputs (in order) so callers never name the data type.
+      transport.outputs = const [
+        MidiDevice(id: 'a', name: 'First'),
+        MidiDevice(id: 'b', name: 'Second'),
+      ];
+
+      expect(repo.availableOutputs(), const [
+        PedalOutput(id: 'a', name: 'First'),
+        PedalOutput(id: 'b', name: 'Second'),
+      ]);
       expect(transport.calls, contains('enumerate'));
+    });
+
+    test('availableOutputs is empty when the host exposes no outputs', () {
+      transport.outputs = const [];
+      expect(repo.availableOutputs(), isEmpty);
     });
 
     group('dispose', () {

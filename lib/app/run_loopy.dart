@@ -12,7 +12,10 @@ import 'package:loopy/session_directory.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/window/window_chrome.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+// AudioDevice + EngineConfig now come from the looper_repository domain barrel;
+// loopy_engine is still imported here (the composition root) to construct the
+// engine, and is dropped entirely in Part 4 (V2).
+import 'package:loopy_engine/loopy_engine.dart' hide AudioDevice, EngineConfig;
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -76,7 +79,19 @@ Future<void> runLoopy(
   // ASIO drivers enumerated at startup for the audio-setup picker cache.
   var asioDrivers = const <AudioDevice>[];
   if (engine is MockAudioEngine) {
-    repository.startEngine(engine.defaultConfig);
+    // Mirror the mock's deterministic defaults as a domain config (the engine's
+    // own EngineConfig is no longer named in shared app code).
+    final mock = engine.defaultConfig;
+    repository.startEngine(
+      EngineConfig(
+        sampleRate: mock.sampleRate,
+        bufferFrames: mock.bufferFrames,
+        inputChannels: mock.inputChannels,
+        outputChannels: mock.outputChannels,
+        playbackDeviceId: mock.playbackDeviceId,
+        captureDeviceId: mock.captureDeviceId,
+      ),
+    );
   } else {
     final result = await tryAutoStartEngine(
       repository: repository,

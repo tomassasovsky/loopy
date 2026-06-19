@@ -9,20 +9,24 @@ library;
 // cluster (AudioBackend/AudioDevice/EngineConfig/…) is wrapped in Part 2b.
 export 'package:loopy_engine/loopy_engine.dart'
     show
-        AudioBackend,
-        AudioDevice,
-        EngineConfig,
         EngineResult,
-        LatencyState,
-        LoopbackInfo,
-        LoopbackKind,
         TrackState,
         kMaxInputs,
         kMaxLanes,
         kTrackEffectMax,
         kTrackEffectParams;
 
+// Domain audio-config models replace the engine's raw config/device types in
+// the UI. The engine-typed boundary mappers stay package-internal (not shown).
 export 'src/looper_repository.dart';
+export 'src/models/audio_config.dart'
+    show
+        AudioBackend,
+        AudioDevice,
+        EngineConfig,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind;
 export 'src/models/engine_status.dart';
 export 'src/models/input_monitor.dart';
 export 'src/models/lane.dart';

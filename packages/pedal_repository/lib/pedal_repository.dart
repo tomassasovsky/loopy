@@ -2,6 +2,7 @@
 /// models and the SysEx codec shared with the pedal firmware as one contract.
 library;
 
+export 'src/models/pedal_output.dart';
 export 'src/native_pedal_transport.dart';
 export 'src/noop_pedal_transport.dart';
 export 'src/pedal_button.dart';

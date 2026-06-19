@@ -2,8 +2,23 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+// The audio-config + effect types are domain types here (from the barrel); the
+// engine-typed fixtures fed to the fake engine use the `le` prefix.
 import 'package:loopy_engine/loopy_engine.dart'
-    hide ParamReadout, TrackEffect, TrackEffectParam, TrackEffectType;
+    hide
+        AudioBackend,
+        AudioDevice,
+        EngineConfig,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind,
+        ParamReadout,
+        TrackEffect,
+        TrackEffectParam,
+        TrackEffectType;
+import 'package:loopy_engine/loopy_engine.dart'
+    as le
+    show AudioDevice, LatencyState, LoopbackInfo, LoopbackKind;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -18,7 +33,7 @@ const _playingSnapshot = EngineSnapshot(
   inputRms: 0,
   inputPeak: 0,
   outputRms: 0,
-  latencyState: LatencyState.idle,
+  latencyState: le.LatencyState.idle,
   measuredLatencyMs: -1,
   masterLengthFrames: 96000,
   masterPositionFrames: 24000,
@@ -123,7 +138,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         masterLengthFrames: 48000,
         tracks: [
@@ -167,7 +182,7 @@ void main() {
           inputRms: 0,
           inputPeak: 0,
           outputRms: 0,
-          latencyState: LatencyState.idle,
+          latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
           masterLengthFrames: 48000,
           tracks: [
@@ -233,7 +248,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         masterLengthFrames: 48000,
         tracks: [
@@ -277,7 +292,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
       );
       expect(buildRepo().state.status.excludedInputMask, 0x2);
@@ -295,7 +310,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         fxAddedLatencyFrames: 1024,
       );
@@ -806,9 +821,9 @@ void main() {
     });
 
     test('detectLoopback forwards the engine result', () {
-      engine.loopback = const LoopbackInfo(
+      engine.loopback = const le.LoopbackInfo(
         available: true,
-        kind: LoopbackKind.monitor,
+        kind: le.LoopbackKind.monitor,
         deviceName: 'Monitor of Built-in',
       );
       final repo = buildRepo();
@@ -842,23 +857,23 @@ void main() {
           inputRms: 0,
           inputPeak: 0,
           outputRms: 0,
-          latencyState: LatencyState.idle,
+          latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
         );
 
-    const pinned = AudioDevice(
+    const pinned = le.AudioDevice(
       id: 'out-1',
       name: 'Scarlett 2i2',
       isDefault: false,
       isInput: false,
     );
-    const captureDevice = AudioDevice(
+    const captureDevice = le.AudioDevice(
       id: 'in-1',
       name: 'Built-in Mic',
       isDefault: false,
       isInput: true,
     );
-    const otherDevice = AudioDevice(
+    const otherDevice = le.AudioDevice(
       id: 'out-2',
       name: 'Headphones',
       isDefault: false,
@@ -1016,10 +1031,18 @@ void main() {
       },
     );
 
-    test('devices() forwards to the engine enumeration', () {
+    test('devices() forwards to the engine enumeration, mapped to domain', () {
       engine.devices = const [pinned];
       final repo = buildSupervised();
-      expect(repo.devices(), const [pinned]);
+      // The repository maps engine AudioDevice -> domain AudioDevice.
+      expect(repo.devices(), const [
+        AudioDevice(
+          id: 'out-1',
+          name: 'Scarlett 2i2',
+          isDefault: false,
+          isInput: false,
+        ),
+      ]);
       expect(engine.calls, contains('enumerateDevices'));
     });
   });
