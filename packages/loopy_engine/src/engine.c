@@ -500,7 +500,7 @@ int32_t le_engine_post_command(le_engine* engine, int32_t code, int32_t arg_i,
   if (!atomic_load_explicit(&engine->a_running, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
-  const le_command cmd = {code, arg_i, arg_f};
+  const le_command cmd = {.code = code, .arg_i = arg_i, .arg_f = arg_f};
   return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
 }
 
@@ -510,14 +510,17 @@ int32_t le_engine_measure_latency(le_engine* engine) {
 
 /* ---- looper control (push gated on `configured`, so tests work device-free) */
 
-int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i,
-                float arg_f) {
+int32_t le_push_cmd(le_engine* engine, le_command cmd) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
-  const le_command cmd = {code, arg_i, arg_f};
   return le_ring_push(&engine->ring, cmd) ? LE_OK : LE_ERR_INVALID;
+}
+
+int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i, float arg_f) {
+  le_command cmd = {.code = code, .arg_i = arg_i, .arg_f = arg_f};
+  return le_push_cmd(engine, cmd);
 }
 
 int32_t le_engine_begin_latency_for_test(le_engine* engine) {

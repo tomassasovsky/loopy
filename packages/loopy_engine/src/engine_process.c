@@ -423,11 +423,9 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       }
       break;
     }
-    /* Unlike SET_VOLUME/SET_MUTE (track in arg_i), these two carry the track in
-     * arg_f and the mask in arg_i — so a 32-bit mask round-trips exactly (a
-     * float cannot). See le_engine_set_input_mask/set_output_mask. */
+    /* Track + 32-bit mask, carried in the typed `trackmask` union arm. */
     case LE_CMD_SET_INPUT_MASK: {
-      const int32_t ch = (int32_t)cmd->arg_f;
+      const int32_t ch = cmd->trackmask.channel;
       if (!valid_channel(e, ch)) break;
       const uint32_t valid = e->in_channels >= 32
                                  ? 0xFFFFFFFFu
@@ -437,44 +435,40 @@ static void apply_command(le_engine* e, const le_command* cmd) {
        * valid, non-excluded bit (or -1 when none remain). */
       const uint32_t excluded = atomic_load_explicit(
           &e->a_excluded_input_mask, memory_order_relaxed);
-      const uint32_t m = (uint32_t)cmd->arg_i & valid & ~excluded;
+      const uint32_t m = cmd->trackmask.mask & valid & ~excluded;
       store_i32(&e->tracks[ch].lanes[0].a_input_channel, le_mask_to_channel(m));
       break;
     }
     case LE_CMD_SET_OUTPUT_MASK: {
-      const int32_t ch = (int32_t)cmd->arg_f;
+      const int32_t ch = cmd->trackmask.channel;
       if (!valid_channel(e, ch)) break;
       const uint32_t valid = e->out_channels >= 32
                                  ? 0xFFFFFFFFu
                                  : ((1u << e->out_channels) - 1u);
       atomic_store_explicit(&e->tracks[ch].lanes[0].a_output_mask,
-                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+                            cmd->trackmask.mask & valid, memory_order_relaxed);
       break;
     }
-    /* The FX commands field-pack (channel<<16)|(lane<<8)|index in arg_i (each
-     * field < 256). This is a DIFFERENT packing from the lane routing commands
-     * below (SET_LANE_INPUT..MUTE), which use the flat channel*LE_MAX_LANES+lane
-     * index — the routing ones also carry a 32-bit mask in arg_i, so they cannot
-     * field-pack the address there. Keep the two producers (le_engine_set_lane_*)
-     * and these consumers in sync. */
+    /* FX type / count, addressed by (channel, lane) in the typed `fx` / `fxcount`
+     * union arms. */
     case LE_CMD_SET_LANE_FX: {
-      const int32_t ch = (cmd->arg_i >> 16) & 0xFF;
-      const int32_t lane = (cmd->arg_i >> 8) & 0xFF;
-      const int32_t index = cmd->arg_i & 0xFF;
+      const int32_t ch = cmd->fx.channel;
+      const int32_t lane = cmd->fx.lane;
+      const int32_t index = cmd->fx.index;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES ||
           index < 0 || index >= LE_FX_MAX) {
         break;
       }
       le_lane* ln = &e->tracks[ch].lanes[lane];
-      store_i32(&ln->a_fx_type[index], (int32_t)cmd->arg_f);
+      store_i32(&ln->a_fx_type[index], cmd->fx.type);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
       break;
     }
     case LE_CMD_SET_LANE_FX_COUNT: {
-      const int32_t ch = (cmd->arg_i >> 16) & 0xFF;
-      const int32_t lane = (cmd->arg_i >> 8) & 0xFF;
-      int32_t count = cmd->arg_i & 0xFF;
+      const int32_t ch = cmd->fxcount.channel;
+      const int32_t lane = cmd->fxcount.lane;
+      int32_t count = cmd->fxcount.count;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
       if (count < 0) count = 0;
       if (count > LE_FX_MAX) count = LE_FX_MAX;
@@ -482,17 +476,14 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     /* ---- multi-lane routing commands ----
-     * Every lane command addresses its lane by the same packed index
-     * `channel * LE_MAX_LANES + lane`. SET_LANE_INPUT/OUTPUT carry that index in
-     * arg_f and an int value (channel / 32-bit mask) in arg_i, so a 32-bit mask
-     * and a -1 channel round-trip exactly; SET_LANE_VOLUME/MUTE carry the index
-     * in arg_i and the float value in arg_f. */
+     * Each addresses its lane by (channel, lane): SET_LANE_INPUT/OUTPUT carry an
+     * int payload (input channel / 32-bit mask) in the `lanei` arm;
+     * SET_LANE_VOLUME/MUTE carry a float in the `lanef` arm. */
     case LE_CMD_SET_LANE_INPUT: {
-      const int32_t idx = (int32_t)cmd->arg_f;
-      const int32_t ch = idx / LE_MAX_LANES;
-      const int32_t lane = idx % LE_MAX_LANES;
+      const int32_t ch = cmd->lanei.channel;
+      const int32_t lane = cmd->lanei.lane;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
-      int32_t in_ch = cmd->arg_i;
+      int32_t in_ch = cmd->lanei.value;
       const uint32_t excluded = atomic_load_explicit(
           &e->a_excluded_input_mask, memory_order_relaxed);
       /* Reject an out-of-range or loopback-excluded channel by recording
@@ -505,41 +496,40 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     case LE_CMD_SET_LANE_OUTPUT: {
-      const int32_t idx = (int32_t)cmd->arg_f;
-      const int32_t ch = idx / LE_MAX_LANES;
-      const int32_t lane = idx % LE_MAX_LANES;
+      const int32_t ch = cmd->lanei.channel;
+      const int32_t lane = cmd->lanei.lane;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
       const uint32_t valid = e->out_channels >= 32
                                  ? 0xFFFFFFFFu
                                  : ((1u << e->out_channels) - 1u);
       atomic_store_explicit(&e->tracks[ch].lanes[lane].a_output_mask,
-                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+                            (uint32_t)cmd->lanei.value & valid,
+                            memory_order_relaxed);
       break;
     }
     case LE_CMD_SET_LANE_VOLUME: {
-      const int32_t ch = cmd->arg_i / LE_MAX_LANES;
-      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      const int32_t ch = cmd->lanef.channel;
+      const int32_t lane = cmd->lanef.lane;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
-      float v = cmd->arg_f;
+      float v = cmd->lanef.value;
       if (v < 0.0f) v = 0.0f;
       if (v > 1.0f) v = 1.0f;
       store_f32(&e->tracks[ch].lanes[lane].a_vol_bits, v);
       break;
     }
     case LE_CMD_SET_LANE_MUTE: {
-      const int32_t ch = cmd->arg_i / LE_MAX_LANES;
-      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      const int32_t ch = cmd->lanef.channel;
+      const int32_t lane = cmd->lanef.lane;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
-      store_i32(&e->tracks[ch].lanes[lane].a_muted, cmd->arg_f != 0.0f ? 1 : 0);
+      store_i32(&e->tracks[ch].lanes[lane].a_muted,
+                cmd->lanef.value != 0.0f ? 1 : 0);
       break;
     }
     /* ---- per-input live monitor ----
-     * SET_MONITOR_INPUT carries the input index in arg_i and the enabled bit in
-     * arg_f (input-level gate only — no mask now that routing is per-lane). The
-     * per-lane commands mirror the track lane commands: the FX commands field-
-     * pack (input<<16)|(lane<<8)|index in arg_i (type in arg_f); output/volume/
-     * mute use the flat index input*LE_MAX_LANES+lane, carrying the 32-bit mask /
-     * float value in the other arg so it round-trips exactly. */
+     * SET_MONITOR_INPUT carries the input index + enabled bit in the generic
+     * { arg_i, arg_f } arm (input-level gate only). The per-lane monitor commands
+     * mirror the track lane commands and reuse the same typed arms (fx / fxcount /
+     * lanei / lanef); their `channel` field holds the input index. */
     case LE_CMD_SET_MONITOR_INPUT: {
       const int32_t input = cmd->arg_i;
       if (input < 0 || input >= LE_MAX_INPUTS) break;
@@ -551,23 +541,23 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     case LE_CMD_SET_MONITOR_LANE_FX: {
-      const int32_t input = (cmd->arg_i >> 16) & 0xFF;
-      const int32_t lane = (cmd->arg_i >> 8) & 0xFF;
-      const int32_t index = cmd->arg_i & 0xFF;
+      const int32_t input = cmd->fx.channel; /* `channel` holds the input index */
+      const int32_t lane = cmd->fx.lane;
+      const int32_t index = cmd->fx.index;
       if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
           lane >= LE_MAX_LANES || index < 0 || index >= LE_FX_MAX) {
         break;
       }
       le_monitor_lane* ln = &e->monitors[input].lanes[lane];
-      store_i32(&ln->a_fx_type[index], (int32_t)cmd->arg_f);
+      store_i32(&ln->a_fx_type[index], cmd->fx.type);
       /* Reset the entry's DSP state so a freshly engaged effect starts clean. */
       le_fx_entry_reset(&ln->fx, index);
       break;
     }
     case LE_CMD_SET_MONITOR_LANE_FX_COUNT: {
-      const int32_t input = (cmd->arg_i >> 16) & 0xFF;
-      const int32_t lane = (cmd->arg_i >> 8) & 0xFF;
-      int32_t count = cmd->arg_i & 0xFF;
+      const int32_t input = cmd->fxcount.channel;
+      const int32_t lane = cmd->fxcount.lane;
+      int32_t count = cmd->fxcount.count;
       if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
           lane >= LE_MAX_LANES) {
         break;
@@ -578,9 +568,8 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       break;
     }
     case LE_CMD_SET_MONITOR_LANE_OUTPUT: {
-      const int32_t idx = (int32_t)cmd->arg_f;
-      const int32_t input = idx / LE_MAX_LANES;
-      const int32_t lane = idx % LE_MAX_LANES;
+      const int32_t input = cmd->lanei.channel;
+      const int32_t lane = cmd->lanei.lane;
       if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
           lane >= LE_MAX_LANES) {
         break;
@@ -589,31 +578,32 @@ static void apply_command(le_engine* e, const le_command* cmd) {
                                  ? 0xFFFFFFFFu
                                  : ((1u << e->out_channels) - 1u);
       atomic_store_explicit(&e->monitors[input].lanes[lane].a_output_mask,
-                            (uint32_t)cmd->arg_i & valid, memory_order_relaxed);
+                            (uint32_t)cmd->lanei.value & valid,
+                            memory_order_relaxed);
       break;
     }
     case LE_CMD_SET_MONITOR_LANE_VOLUME: {
-      const int32_t input = cmd->arg_i / LE_MAX_LANES;
-      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      const int32_t input = cmd->lanef.channel;
+      const int32_t lane = cmd->lanef.lane;
       if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
           lane >= LE_MAX_LANES) {
         break;
       }
-      float v = cmd->arg_f;
+      float v = cmd->lanef.value;
       if (v < 0.0f) v = 0.0f;
       if (v > 1.0f) v = 1.0f;
       store_f32(&e->monitors[input].lanes[lane].a_vol_bits, v);
       break;
     }
     case LE_CMD_SET_MONITOR_LANE_MUTE: {
-      const int32_t input = cmd->arg_i / LE_MAX_LANES;
-      const int32_t lane = cmd->arg_i % LE_MAX_LANES;
+      const int32_t input = cmd->lanef.channel;
+      const int32_t lane = cmd->lanef.lane;
       if (input < 0 || input >= LE_MAX_INPUTS || lane < 0 ||
           lane >= LE_MAX_LANES) {
         break;
       }
       store_i32(&e->monitors[input].lanes[lane].a_muted,
-                cmd->arg_f != 0.0f ? 1 : 0);
+                cmd->lanef.value != 0.0f ? 1 : 0);
       break;
     }
     case LE_CMD_COMMIT_SESSION: {

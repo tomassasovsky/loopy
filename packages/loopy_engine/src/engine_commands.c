@@ -279,15 +279,17 @@ int32_t le_engine_set_track_mute(le_engine* engine, int32_t channel,
   return le_push(engine, LE_CMD_SET_MUTE, channel, muted ? 1.0f : 0.0f);
 }
 
-/* Track index travels in arg_f (small, exact in float); the value/mask travels
- * in arg_i so a 32-bit mask round-trips exactly (a float cannot). */
 int32_t le_engine_set_input_mask(le_engine* engine, int32_t channel,
                                  int32_t mask) {
-  return le_push(engine, LE_CMD_SET_INPUT_MASK, mask, (float)channel);
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_INPUT_MASK,
+                                          .trackmask = {channel,
+                                                        (uint32_t)mask}});
 }
 int32_t le_engine_set_output_mask(le_engine* engine, int32_t channel,
                                   int32_t mask) {
-  return le_push(engine, LE_CMD_SET_OUTPUT_MASK, mask, (float)channel);
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_OUTPUT_MASK,
+                                          .trackmask = {channel,
+                                                        (uint32_t)mask}});
 }
 
 int32_t le_engine_set_record_offset(le_engine* engine, int32_t frames) {
@@ -532,8 +534,8 @@ int32_t le_engine_set_lane_fx(le_engine* engine, int32_t channel, int32_t lane,
   /* Publish the type via the ring so the audio thread resets the entry's DSP
    * state in lockstep. The delay pointer written above is made visible to the
    * audio thread by the ring's release/acquire pairing. */
-  return le_push(engine, LE_CMD_SET_LANE_FX,
-                 (channel << 16) | (lane << 8) | index, (float)type);
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_FX,
+                                          .fx = {channel, lane, index, type}});
 }
 
 int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
@@ -543,8 +545,9 @@ int32_t le_engine_set_lane_fx_count(le_engine* engine, int32_t channel,
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
-  return le_push(engine, LE_CMD_SET_LANE_FX_COUNT,
-                 (channel << 16) | (lane << 8) | count, 0.0f);
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
+                                  .fxcount = {channel, lane, count}});
 }
 
 int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
@@ -595,32 +598,33 @@ int32_t le_engine_set_monitor_lane_count(le_engine* engine, int32_t input,
   return LE_OK;
 }
 
-/* The monitor-lane setters address the lane by the same packed index
- * `input * LE_MAX_LANES + lane` the track lane setters use: output carries the
- * index in arg_f so the 32-bit mask rides in arg_i; volume/mute carry the index
- * in arg_i so the float value rides in arg_f. */
+/* The monitor-lane setters address the lane by (input, lane) — the typed union
+ * carries them as named fields (the `channel` slot holds the input index). */
 int32_t le_engine_set_monitor_lane_output(le_engine* engine, int32_t input,
                                           int32_t lane, int32_t mask) {
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_MONITOR_LANE_OUTPUT, mask,
-                 (float)(input * LE_MAX_LANES + lane));
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_MONITOR_LANE_OUTPUT,
+                                  .lanei = {input, lane, mask}});
 }
 
 int32_t le_engine_set_monitor_lane_volume(le_engine* engine, int32_t input,
                                           int32_t lane, float volume) {
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_MONITOR_LANE_VOLUME,
-                 input * LE_MAX_LANES + lane, volume);
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_MONITOR_LANE_VOLUME,
+                                  .lanef = {input, lane, volume}});
 }
 
 int32_t le_engine_set_monitor_lane_mute(le_engine* engine, int32_t input,
                                         int32_t lane, int32_t muted) {
   if (input < 0 || input >= LE_MAX_INPUTS) return LE_ERR_INVALID;
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_MONITOR_LANE_MUTE,
-                 input * LE_MAX_LANES + lane, muted ? 1.0f : 0.0f);
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_MONITOR_LANE_MUTE,
+                                  .lanef = {input, lane, muted ? 1.0f : 0.0f}});
 }
 
 int32_t le_engine_set_monitor_lane_fx(le_engine* engine, int32_t input,
@@ -635,8 +639,8 @@ int32_t le_engine_set_monitor_lane_fx(le_engine* engine, int32_t input,
                           engine->fx_delay_frames) != LE_OK) {
     return LE_ERR_INVALID;
   }
-  return le_push(engine, LE_CMD_SET_MONITOR_LANE_FX,
-                 (input << 16) | (lane << 8) | index, (float)type);
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_MONITOR_LANE_FX,
+                                          .fx = {input, lane, index, type}});
 }
 
 int32_t le_engine_set_monitor_lane_fx_count(le_engine* engine, int32_t input,
@@ -646,8 +650,9 @@ int32_t le_engine_set_monitor_lane_fx_count(le_engine* engine, int32_t input,
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (count < 0) count = 0;
   if (count > LE_FX_MAX) count = LE_FX_MAX;
-  return le_push(engine, LE_CMD_SET_MONITOR_LANE_FX_COUNT,
-                 (input << 16) | (lane << 8) | count, 0.0f);
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_MONITOR_LANE_FX_COUNT,
+                                  .fxcount = {input, lane, count}});
 }
 
 int32_t le_engine_set_monitor_lane_fx_param(le_engine* engine, int32_t input,
@@ -701,36 +706,36 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
   return LE_OK;
 }
 
-/* All four lane setters address the lane by the same packed index
- * `channel * LE_MAX_LANES + lane`. For input/output the index travels in arg_f
- * (small, exact in float) so the 32-bit input channel / output mask in arg_i
- * round-trips exactly; for volume/mute the index travels in arg_i so the float
- * value can ride in arg_f. The handlers validate channel/lane, so the setters
- * only range-check lane (to keep the packed index well-formed). */
+/* The four lane setters address the lane by (channel, lane), carried as named
+ * fields in the typed union. The handlers validate channel/lane, so the setters
+ * only range-check lane here. */
 int32_t le_engine_set_lane_input(le_engine* engine, int32_t channel,
                                  int32_t lane, int32_t input_channel) {
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_LANE_INPUT, input_channel,
-                 (float)(channel * LE_MAX_LANES + lane));
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_INPUT,
+                                          .lanei = {channel, lane,
+                                                    input_channel}});
 }
 
 int32_t le_engine_set_lane_output(le_engine* engine, int32_t channel,
                                   int32_t lane, int32_t mask) {
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_LANE_OUTPUT, mask,
-                 (float)(channel * LE_MAX_LANES + lane));
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_OUTPUT,
+                                          .lanei = {channel, lane, mask}});
 }
 
 int32_t le_engine_set_lane_volume(le_engine* engine, int32_t channel,
                                   int32_t lane, float volume) {
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_LANE_VOLUME, channel * LE_MAX_LANES + lane,
-                 volume);
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_VOLUME,
+                                          .lanef = {channel, lane, volume}});
 }
 
 int32_t le_engine_set_lane_mute(le_engine* engine, int32_t channel, int32_t lane,
                                 int32_t muted) {
   if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
-  return le_push(engine, LE_CMD_SET_LANE_MUTE, channel * LE_MAX_LANES + lane,
-                 muted ? 1.0f : 0.0f);
+  return le_push_cmd(engine,
+                     (le_command){.code = LE_CMD_SET_LANE_MUTE,
+                                  .lanef = {channel, lane,
+                                            muted ? 1.0f : 0.0f}});
 }

@@ -67,8 +67,11 @@ int32_t le_mask_to_channel(uint32_t mask);
 
 /* Posts a command into the engine's SPSC ring (control thread). Returns LE_OK,
  * LE_ERR_NOT_RUNNING (not configured), or LE_ERR_INVALID (null / ring full).
- * Defined in engine.c. */
+ * le_push builds a generic { arg_i, arg_f } command; le_push_cmd posts a
+ * prebuilt typed command (the addressed/packed families fill a named union arm).
+ * Both defined in engine.c. */
 int32_t le_push(le_engine* engine, int32_t code, int32_t arg_i, float arg_f);
+int32_t le_push_cmd(le_engine* engine, le_command cmd);
 
 /* Resets a lane / monitor-lane to defaults (routing / volume / mute / effects /
  * metering), clearing DSP state and freeing octaver buffers. Control-thread
