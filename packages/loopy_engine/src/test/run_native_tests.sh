@@ -20,7 +20,7 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm" ;;
   Darwin) ENGINE_LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lm"
           MIDI_LIBS="-framework CoreMIDI -framework CoreFoundation" ;;
-  *) ENGINE_LIBS="-lpthread -lm"; MIDI_LIBS="-lasound -lpthread" ;;
+  *) ENGINE_LIBS="-lpthread -lm -ldl"; MIDI_LIBS="-lasound -lpthread" ;;  # Linux: miniaudio dlopen()s its backends
 esac
 
 # Glob every engine TU (the core/ TUs incl. the miniaudio backend, the platform/
