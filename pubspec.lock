@@ -402,7 +402,7 @@ packages:
     source: path
     version: "0.1.0"
   loopy_engine:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       path: "packages/loopy_engine"
       relative: true
@@ -457,7 +457,7 @@ packages:
     source: hosted
     version: "1.18.0"
   midi_client:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       path: "packages/midi_client"
       relative: true

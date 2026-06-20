@@ -22,10 +22,6 @@ dependencies:
   intl: ^0.20.2
   looper_repository:
     path: packages/looper_repository
-  loopy_engine:
-    path: packages/loopy_engine
-  midi_client:
-    path: packages/midi_client
   midi_device_repository:
     path: packages/midi_device_repository
   path_provider: ^2.1.6
@@ -48,6 +44,13 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  # Data packages used directly by the test suite only (fakes + integration
+  # tests import them); production code reaches them transitively via the
+  # repositories, so they are dev-only here.
+  loopy_engine:
+    path: packages/loopy_engine
+  midi_client:
+    path: packages/midi_client
   mocktail: ^1.0.5
   very_good_analysis: ^10.2.0
 

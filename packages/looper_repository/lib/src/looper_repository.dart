@@ -21,6 +21,37 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffectParam,
         TrackEffectType;
 
+/// Builds the production [AudioEngine] backed by the native loopy engine.
+///
+/// Lets the composition root obtain an engine without naming or importing the
+/// engine package's concrete types: the returned value is held as the
+/// [AudioEngine] interface and handed straight to [LooperRepository] /
+/// `SessionRepository`.
+AudioEngine createNativeAudioEngine() => NativeAudioEngine();
+
+/// Builds a deterministic mock [AudioEngine] for the mock flavor, plus the
+/// domain [EngineConfig] mirroring the mock's defaults so the caller can
+/// auto-start straight into the looper.
+///
+/// The mock's own engine-typed default config is read field-by-field and mapped
+/// to the domain [EngineConfig] here, so neither the caller nor this signature
+/// ever names the engine's config type.
+({AudioEngine engine, EngineConfig startConfig}) createMockEngine() {
+  final engine = MockAudioEngine();
+  final defaults = engine.defaultConfig;
+  return (
+    engine: engine,
+    startConfig: EngineConfig(
+      sampleRate: defaults.sampleRate,
+      bufferFrames: defaults.bufferFrames,
+      inputChannels: defaults.inputChannels,
+      outputChannels: defaults.outputChannels,
+      playbackDeviceId: defaults.playbackDeviceId,
+      captureDeviceId: defaults.captureDeviceId,
+    ),
+  );
+}
+
 /// Owns the [AudioEngine] and is the single source of looper truth.
 ///
 /// Polls the engine snapshot on a ticker, projects it into a [LooperState], and
