@@ -243,7 +243,9 @@ typedef struct le_config {
   char playback_device_id[256];
   char capture_device_id[256];
   /* le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-   * miniaudio path. Accepted and ignored until the ASIO backend lands. */
+   * miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
+   * via le_select_backend (a LOOPY_ENABLE_ASIO Windows build); elsewhere every
+   * value resolves to miniaudio. */
   int32_t backend;
   /* Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
    * ignored on the default path. */

@@ -440,6 +440,49 @@ static void test_device_lost_keeps_running(void) {
   le_engine_destroy(e);
 }
 
+/* Exercises the master_bus_frame RT step in isolation (the limiter dynamics):
+ * below the ceiling it is bit-transparent; above it, instant attack pins the
+ * frame to the ceiling; master gain is applied before the limiter and metering. */
+static void test_master_bus_frame_limiter(void) {
+  printf("test_master_bus_frame_limiter\n");
+  le_engine* e = make_configured_engine(); /* configure seeds lim_gain = 1.0 */
+  float out[2];
+  float sumsq;
+  float peak;
+
+  /* Below the ceiling: unity gain, nothing to limit -> output unchanged. */
+  out[0] = 0.5f;
+  out[1] = -0.5f;
+  sumsq = 0.0f;
+  peak = 0.0f;
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
+                                      &sumsq, &peak);
+  CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(out[1] + 0.5f) < 1e-6f);
+  CHECK(fabsf(peak - 0.5f) < 1e-6f); /* metering reads the output */
+
+  /* Above the ceiling: instant attack clamps this very frame, no overshoot. */
+  out[0] = 2.0f;
+  out[1] = 0.0f;
+  sumsq = 0.0f;
+  peak = 0.0f;
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
+                                      &sumsq, &peak);
+  CHECK(out[0] <= 0.99f + 1e-4f);
+  CHECK(peak <= 0.99f + 1e-4f);
+
+  /* Master gain is applied before the limiter / metering (limiter off here). */
+  out[0] = 1.0f;
+  out[1] = 1.0f;
+  sumsq = 0.0f;
+  peak = 0.0f;
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, 0.001f,
+                                      &sumsq, &peak);
+  CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
 static void test_looper_clear(void) {
   printf("test_looper_clear\n");
   le_engine* e = make_configured_engine();
@@ -4646,6 +4689,7 @@ int main(void) {
   test_master_gain_resets_on_configure();
   test_xrun_count_tallies_and_resets();
   test_device_lost_keeps_running();
+  test_master_bus_frame_limiter();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();

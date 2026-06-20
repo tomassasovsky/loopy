@@ -1205,6 +1205,20 @@ static inline void mix_tracks_frame(
   }
 }
 
+/* Test seam: drive one output frame through master_bus_frame (master gain ->
+ * feed-forward limiter -> metering) with explicit params, so the limiter dynamics
+ * (transparent below the ceiling, instant-attack clamp above, smooth release) can
+ * be exercised in isolation. Mirrors what le_engine_process calls per frame. Not
+ * part of the FFI surface. */
+void le_engine_master_bus_frame_for_test(le_engine* e, float* out, uint32_t f,
+                                         int ch_out, float master_gain,
+                                         int limiter_on, float limiter_ceiling,
+                                         float lim_release, float* out_sumsq,
+                                         float* frame_out_peak) {
+  master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
+                   lim_release, out_sumsq, frame_out_peak);
+}
+
 /* ---- the real-time DSP core ---- */
 
 void le_engine_process(le_engine* e, float* output, const float* input,

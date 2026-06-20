@@ -58,6 +58,16 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
 void le_engine_process(le_engine* engine, float* output, const float* input,
                        uint32_t frames);
 
+/* Runs the master-bus per-frame step (master gain -> feed-forward limiter ->
+ * output metering) on out[f*ch_out .. +ch_out) in isolation, with explicit gain /
+ * limiter params, so the limiter dynamics can be unit-tested without a full block.
+ * Reads/updates engine->lim_gain. Not part of the FFI surface. */
+void le_engine_master_bus_frame_for_test(le_engine* engine, float* out,
+                                         uint32_t f, int ch_out,
+                                         float master_gain, int limiter_on,
+                                         float limiter_ceiling, float lim_release,
+                                         float* out_sumsq, float* frame_out_peak);
+
 /* Classifies a capture device by name into a loopback kind (name heuristic
  * only; backend built-in loopback detection is context-level). Pure and
  * unit-testable. */
