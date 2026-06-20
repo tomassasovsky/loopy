@@ -1,8 +1,12 @@
-/// Protocol layer for the Loopy bidirectional MIDI looper pedal: state-frame
-/// models and the SysEx codec shared with the pedal firmware as one contract.
+/// Repository + protocol layer for the Loopy bidirectional MIDI looper pedal:
+/// the state-frame models and SysEx codec shared with the firmware as one
+/// contract, the `PedalRepository` over a `PedalTransport`, and the native
+/// composition factory (`createNativePedalRepository`) that adapts a MIDI input
+/// source into the pedal's transport.
 library;
 
 export 'src/models/pedal_output.dart';
+export 'src/native_pedal_repository.dart';
 export 'src/native_pedal_transport.dart';
 export 'src/noop_pedal_transport.dart';
 export 'src/pedal_button.dart';
