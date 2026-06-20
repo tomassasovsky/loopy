@@ -79,14 +79,25 @@ jobs:
       - name: Build + run native engine/MIDI tests
         run: bash packages/loopy_engine/src/test/run_native_tests.sh
 
-  # NOTE: no macOS job. macOS/iOS build the engine through the CocoaPods podspec's
-  # per-file forwarders (macos/Classes/), NOT CMake, so a new native TU can break
-  # the macOS link unless a forwarder is added — a guard worth having. But the
-  # macOS *app* project (macos/Runner) is not currently CI-buildable (`flutter
-  # build macos` fails with "Unable to find expected configuration in Xcode
-  # project", independent of the engine), so a build-macos job cannot pass yet.
-  # Re-add one once the macOS Runner project is scaffolded for CI. Until then the
-  # forwarders are kept in sync by hand (see macos/Classes/ + the podspec).
+  # Compile-only macOS guard. macOS/iOS build the engine through the CocoaPods
+  # podspec's per-file forwarders (macos/Classes/), NOT CMake, so a new native TU
+  # can break the macOS link unless a forwarder is added — building here catches
+  # that. The app is flavored (development/staging/production) and the macOS Xcode
+  # project has only flavor-specific configurations (Debug-development, …), so the
+  # build MUST pass --flavor (the CMake desktop builds don't, which is why
+  # build-windows/linux omit it).
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.x"
+          channel: stable
+          cache: true
+      - run: flutter config --enable-macos-desktop
+      - run: flutter pub get
+      - run: flutter build macos --debug --flavor development --target lib/main_development.dart
 
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
