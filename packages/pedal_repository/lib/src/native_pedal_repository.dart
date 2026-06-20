@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:midi_client/midi_client.dart';
-import 'package:pedal_repository/pedal_repository.dart';
+import 'package:pedal_repository/src/native_pedal_transport.dart';
+import 'package:pedal_repository/src/pedal_repository.dart';
+import 'package:pedal_repository/src/pedal_transport.dart';
 
 /// Builds the [PedalRepository] for the bidirectional foot pedal, kept separate
-/// from `midi_bootstrap` / `audio_bootstrap` so the pedal's output lifecycle is
+/// from the MIDI / audio bootstrap so the pedal's output lifecycle is
 /// independent of both audio and MIDI input.
 ///
 /// The pedal's **input** reuses the single capture owned by [midiSource] (the
@@ -16,7 +20,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 /// Returns `null` when there is no MIDI input source, or when constructing the
 /// native output handle throws (a build/platform with no MIDI backend) — the
 /// looper stays fully usable and the picker shows its empty state.
-PedalRepository? createPedalRepository(
+PedalRepository? createNativePedalRepository(
   MidiControllerSource? midiSource, {
   PedalTransport Function(Stream<PedalRawMessage> input)? transportFactory,
 }) {
