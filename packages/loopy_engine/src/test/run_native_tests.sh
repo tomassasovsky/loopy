@@ -12,9 +12,12 @@ cd "$(dirname "$0")/../.."   # src/test -> packages/loopy_engine
 
 OUT="${TMPDIR:-/tmp}"
 CC="${CC:-gcc}"
-# Mirror src/CMakeLists.txt's include path: every src subdir holding headers, so
-# the sources' flat `#include "x.h"` resolves.
-STD="-std=c11 -I src/core -I src/midi -I src/asio -I src/miniaudio"
+# gnu11 (not strict c11) matches the shipped build (CMake C_STANDARD 11 with
+# extensions on) and exposes the POSIX symbols the Linux MIDI backend needs
+# (clock_gettime / CLOCK_MONOTONIC; strict c11 also triggers ALSA's struct
+# timespec redefinition). Include path mirrors src/CMakeLists.txt: every src
+# subdir holding headers, so the sources' flat `#include "x.h"` resolves.
+STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm" ;;
