@@ -4,8 +4,8 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
-import 'package:midi_client/midi_client.dart' show MidiDevice;
-import 'package:pedal_repository/pedal_repository.dart' show PedalBindStatus;
+import 'package:pedal_repository/pedal_repository.dart'
+    show PedalBindStatus, PedalOutput;
 
 /// The bidirectional-pedal block in the audio/I-O settings: a MIDI **output**
 /// device dropdown (with a "None" item) for the pedal's LED feedback link and a
@@ -23,8 +23,8 @@ class PedalSettingsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final cubit = context.watch<PedalCubit>();
-    final outputs = cubit.availableOutputs();
-    final boundId = cubit.boundOutputId;
+    final outputs = cubit.state.availableOutputs;
+    final boundId = cubit.state.boundOutputId;
 
     return Column(
       key: const Key('pedalSettings_section'),
@@ -52,7 +52,7 @@ class PedalSettingsSection extends StatelessWidget {
     );
   }
 
-  String _boundName(List<MidiDevice> outputs, String? boundId) {
+  String _boundName(List<PedalOutput> outputs, String? boundId) {
     if (boundId == null) return '';
     for (final device in outputs) {
       if (device.id == boundId) return device.name;
@@ -91,10 +91,10 @@ class _PedalDropdown extends StatelessWidget {
     required this.onSelected,
   });
 
-  final List<MidiDevice> outputs;
+  final List<PedalOutput> outputs;
   final String? boundId;
   final VoidCallback onSelectNone;
-  final ValueChanged<MidiDevice> onSelected;
+  final ValueChanged<PedalOutput> onSelected;
 
   @override
   Widget build(BuildContext context) {
