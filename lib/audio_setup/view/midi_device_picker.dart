@@ -8,6 +8,11 @@ import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 
+/// Dropdown value for the "None" item — not a real device id (hosts may expose
+/// ports whose id is empty, which would duplicate `''` and trip 
+/// DropdownButton).
+const _kMidiNoneValue = '__loopy_midi_none__';
+
 /// The MIDI foot-controller block in the audio/I-O settings: a device dropdown
 /// (with a "None" item and an absent-selection fallback), an empty state, a
 /// live connection status line, a raw-input [MidiActivityIndicator], and the
@@ -79,7 +84,10 @@ class _MidiDropdown extends StatelessWidget {
     final l10n = context.l10n;
     final showAbsentPinned =
         connection.hasSelection && !connection.isSelectedPresent;
-    final value = connection.hasSelection ? connection.selectedId : '';
+    final value = connection.hasSelection
+        ? connection.selectedId
+        : _kMidiNoneValue;
+    final seenIds = <String>{};
 
     return Semantics(
       label: l10n.midiInputGroup,
@@ -103,7 +111,7 @@ class _MidiDropdown extends StatelessWidget {
             style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
             items: [
               DropdownMenuItem(
-                value: '',
+                value: _kMidiNoneValue,
                 child: Text(
                   l10n.midiNone,
                   maxLines: 1,
@@ -111,14 +119,15 @@ class _MidiDropdown extends StatelessWidget {
                 ),
               ),
               for (final device in connection.devices)
-                DropdownMenuItem(
-                  value: device.id,
-                  child: Text(
-                    device.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                if (seenIds.add(device.id))
+                  DropdownMenuItem(
+                    value: device.id,
+                    child: Text(
+                      device.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
               if (showAbsentPinned)
                 DropdownMenuItem(
                   value: connection.selectedId,
@@ -134,7 +143,8 @@ class _MidiDropdown extends StatelessWidget {
                 ),
             ],
             onChanged: (id) {
-              if (id != null) onSelected(id);
+              if (id == null) return;
+              onSelected(id == _kMidiNoneValue ? '' : id);
             },
           ),
         ),

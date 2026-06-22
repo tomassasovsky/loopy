@@ -96,6 +96,31 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('empty output id does not collide with the None item', (
+      tester,
+    ) async {
+      final cubit = cubitWith(
+        FakePedalTransport(
+          outputs: const [MidiDevice(id: '', name: 'IAC Driver')],
+        ),
+      );
+      addTearDown(cubit.close);
+
+      await pumpSection(tester, cubit);
+
+      expect(
+        find.byKey(const Key('pedalSettings_device_picker')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const Key('pedalSettings_device_picker')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('IAC Driver'));
+      await tester.pumpAndSettle();
+
+      expect(cubit.state.boundOutputId, '');
+    });
+
     testWidgets('selecting a device binds it and shows the bound status', (
       tester,
     ) async {

@@ -7,6 +7,11 @@ import 'package:loopy/theme/surface_theme.dart';
 import 'package:pedal_repository/pedal_repository.dart'
     show PedalBindStatus, PedalOutput;
 
+/// Dropdown value for the "None" item — not a real device id (hosts may expose
+/// ports whose id is empty, which would duplicate `''` and trip 
+/// DropdownButton).
+const _kPedalNoneValue = '__loopy_pedal_none__';
+
 /// The bidirectional-pedal block in the audio/I-O settings: a MIDI **output**
 /// device dropdown (with a "None" item) for the pedal's LED feedback link and a
 /// live bind-status line. Driven by [PedalCubit]; independent of the audio
@@ -99,8 +104,9 @@ class _PedalDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final present = outputs.any((d) => d.id == boundId);
-    final value = (boundId != null && present) ? boundId : '';
+    final present = boundId != null && outputs.any((d) => d.id == boundId);
+    final value = present ? boundId! : _kPedalNoneValue;
+    final seenIds = <String>{};
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -121,7 +127,7 @@ class _PedalDropdown extends StatelessWidget {
           style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
           items: [
             DropdownMenuItem(
-              value: '',
+              value: _kPedalNoneValue,
               child: Text(
                 l10n.pedalNone,
                 maxLines: 1,
@@ -129,17 +135,18 @@ class _PedalDropdown extends StatelessWidget {
               ),
             ),
             for (final device in outputs)
-              DropdownMenuItem(
-                value: device.id,
-                child: Text(
-                  device.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              if (seenIds.add(device.id))
+                DropdownMenuItem(
+                  value: device.id,
+                  child: Text(
+                    device.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
           ],
           onChanged: (id) {
-            if (id == null || id.isEmpty) {
+            if (id == null || id == _kPedalNoneValue) {
               onSelectNone();
               return;
             }
