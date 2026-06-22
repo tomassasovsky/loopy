@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -13,6 +14,7 @@ import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/window/window_chrome.dart';
+import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
 /// of tall colored track columns, each a level meter with an editable name.
@@ -115,12 +117,30 @@ class _BigPictureViewState extends State<BigPictureView> {
   /// `Shift+Z`) redo.
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Play mode: `1`–`8` select + mute/unmute.
+  /// Announces a transient state change to assistive tech (WCAG 4.1.3). The
+  /// performance surface is otherwise silent — state lives in colour and meter
+  /// fills a screen-reader cannot perceive.
+  void _announce(String message) {
+    unawaited(
+      SemanticsService.sendAnnouncement(
+        View.of(context),
+        message,
+        Directionality.of(context),
+      ),
+    );
+  }
+
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
+    // Let Tab / Shift+Tab fall through so keyboard focus can traverse into the
+    // interactive track tiles, mode toggle, and bank switch (WCAG 2.1.2 / 2.4.3)
+    // — otherwise the catch-all "swallow plain keys" below would trap focus.
+    if (key == LogicalKeyboardKey.tab) return KeyEventResult.ignored;
     final keyboard = HardwareKeyboard.instance;
     final bloc = context.read<LooperBloc>();
     final big = context.read<BigPictureCubit>();
+    final l10n = context.l10n;
     final selected = big.state.selectedChannel;
     final playing = bloc.state.tracks
         .map((t) => t.state)
@@ -135,15 +155,18 @@ class _BigPictureViewState extends State<BigPictureView> {
 
     if (keyboard.isMetaPressed || keyboard.isControlPressed) {
       if (key == LogicalKeyboardKey.keyZ) {
-        bloc.add(
-          keyboard.isShiftPressed
-              ? LooperRedoPressed(selected)
-              : LooperUndoPressed(selected),
-        );
+        if (keyboard.isShiftPressed) {
+          bloc.add(LooperRedoPressed(selected));
+          _announce(l10n.a11yRedone);
+        } else {
+          bloc.add(LooperUndoPressed(selected));
+          _announce(l10n.a11yUndone);
+        }
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.keyY) {
         bloc.add(LooperRedoPressed(selected));
+        _announce(l10n.a11yRedone);
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored; // let OS / menu shortcuts through
@@ -152,6 +175,11 @@ class _BigPictureViewState extends State<BigPictureView> {
     // Common to both modes.
     if (key == LogicalKeyboardKey.keyM) {
       big.toggleMode();
+      _announce(
+        big.state.mode == PerformanceMode.record
+            ? l10n.a11yModeRecord
+            : l10n.a11yModePlay,
+      );
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyS) {
@@ -166,22 +194,27 @@ class _BigPictureViewState extends State<BigPictureView> {
       bloc.add(
         playing ? const LooperStopAllPressed() : const LooperPlayAllPressed(),
       );
+      _announce(playing ? l10n.a11yStoppedAll : l10n.a11yPlayingAll);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyC) {
       bloc.add(const LooperClearAllPressed());
+      _announce(l10n.a11yAllCleared);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyB) {
       final currentBank = context.read<BankCubit>().state.activeBank;
-      context.read<BankCubit>().selectBank(currentBank == 0 ? 1 : 0);
+      final nextBank = currentBank == 0 ? 1 : 0;
+      context.read<BankCubit>().selectBank(nextBank);
       context.read<BigPictureCubit>().select(currentBank == 0 ? 4 : 0);
+      _announce(l10n.a11yBankSelected(String.fromCharCode(0x41 + nextBank)));
       return KeyEventResult.handled;
     }
     // `U` undoes the latest overdub layer; on a track that holds only its base
     // loop (nothing to undo) it clears the track instead. The bloc decides.
     if (key == LogicalKeyboardKey.keyU) {
       context.read<LooperBloc>().add(LooperUndoPressed(selected));
+      _announce(l10n.a11yUndone);
       return KeyEventResult.handled;
     }
 
@@ -220,6 +253,7 @@ class _BigPictureViewState extends State<BigPictureView> {
         bloc.add(
           playing ? LooperStopPressed(selected) : LooperPlayPressed(selected),
         );
+        _announce(playing ? l10n.a11yStopped : l10n.a11yPlaying);
         return KeyEventResult.handled;
       }
     }
@@ -286,10 +320,26 @@ class _ModeIndicator extends StatelessWidget {
     final looper = theme.extension<LooperTheme>()!;
     final recording = mode == PerformanceMode.record;
     final color = recording ? looper.recordColor : theme.colorScheme.primary;
+    final modeName = recording
+        ? l10n.performanceModeRec
+        : l10n.performanceModePlay;
 
-    return GestureDetector(
+    return FocusableTapTarget(
       key: const Key('bigpicture_mode_indicator'),
-      onTap: context.read<BigPictureCubit>().toggleMode,
+      semanticLabel: l10n.a11yModeToggle(modeName),
+      borderRadius: 10,
+      onTap: () {
+        final cubit = context.read<BigPictureCubit>()..toggleMode();
+        unawaited(
+          SemanticsService.sendAnnouncement(
+            View.of(context),
+            cubit.state.mode == PerformanceMode.record
+                ? l10n.a11yModeRecord
+                : l10n.a11yModePlay,
+            Directionality.of(context),
+          ),
+        );
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
@@ -307,7 +357,7 @@ class _ModeIndicator extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              recording ? l10n.performanceModeRec : l10n.performanceModePlay,
+              modeName,
               style: theme.textTheme.labelLarge?.copyWith(
                 color: color,
                 fontWeight: FontWeight.w800,
@@ -345,11 +395,18 @@ class _BankSwitch extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < BankState.bankCountMax; i++)
-            GestureDetector(
+            FocusableTapTarget(
               key: Key('bigpicture_bank_$i'),
+              semanticLabel: context.l10n.a11yBankTab(
+                String.fromCharCode(0x41 + i),
+              ),
+              selected: i == active,
+              borderRadius: 8,
               onTap: () => cubit.selectBank(i),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 8,
@@ -396,10 +453,18 @@ class _TrackColumn extends StatelessWidget {
     // The border is always white; selection only changes its weight. The meter
     // bar color is one table lookup on the track's meter state (muted included;
     // see LooperTheme.meterColors).
-    final barColor = looper.meterColor(
-      LooperMeterState.of(track.state, muted: track.muted),
-      playMode: playMode,
-    );
+    final meterState = LooperMeterState.of(track.state, muted: track.muted);
+    final barColor = looper.meterColor(meterState, playMode: playMode);
+    // The meter conveys state through colour only (WCAG 1.4.1); name the state
+    // in words so it reaches the tile's accessible label.
+    final stateWord = switch (meterState) {
+      LooperMeterState.empty => l10n.trackStateEmpty,
+      LooperMeterState.recording => l10n.trackStateRecording,
+      LooperMeterState.overdubbing => l10n.trackStateOverdubbing,
+      LooperMeterState.playing => l10n.trackStatePlaying,
+      LooperMeterState.stopped => l10n.trackStateStopped,
+      LooperMeterState.muted => l10n.trackStateMuted,
+    };
 
     return Container(
       decoration: BoxDecoration(
@@ -435,7 +500,10 @@ class _TrackColumn extends StatelessWidget {
                 tooltip: l10n.ioRoutingTooltip,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                constraints: const BoxConstraints(
+                  minWidth: 24,
+                  minHeight: 24,
+                ),
                 iconSize: 18,
                 color: Colors.white70,
                 icon: const Icon(Icons.alt_route),
@@ -449,25 +517,31 @@ class _TrackColumn extends StatelessWidget {
             ],
           ),
           Expanded(
-            child: GestureDetector(
+            child: FocusableTapTarget(
               key: Key('bigpicture_tile_${track.channel}'),
-              behavior: HitTestBehavior.opaque,
+              semanticLabel: l10n.a11yTrackTile(name, stateWord),
+              selected: selected,
+              borderRadius: 8,
               onTap: () {
                 context.read<BigPictureCubit>().select(track.channel);
                 bloc.add(LooperRecordPressed(track.channel));
               },
-              onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
-              child: _PeakBar(
-                peak: track.peak,
-                color: barColor,
-                hasContent: track.hasContent,
+              child: GestureDetector(
+                key: Key('bigpicture_tileStop_${track.channel}'),
+                behavior: HitTestBehavior.opaque,
+                onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
+                child: _PeakBar(
+                  peak: track.peak,
+                  color: barColor,
+                  hasContent: track.hasContent,
+                ),
               ),
             ),
           ),
           const SizedBox(height: 10),
-          GestureDetector(
+          FocusableTapTarget(
             key: Key('bigpicture_name_${track.channel}'),
-            behavior: HitTestBehavior.opaque,
+            semanticLabel: l10n.a11yRenameTrack(name),
             onTap: () => showRenameTrackDialog(
               context: context,
               cubit: context.read<BigPictureCubit>(),
