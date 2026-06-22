@@ -60,6 +60,27 @@ void main() {
       );
     });
 
+    testWidgets('exposes a tap semantics action under its label', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpApp(
+        FocusableTapTarget(
+          onTap: () {},
+          semanticLabel: 'Port In 1',
+          child: const SizedBox(width: 40, height: 24),
+        ),
+      );
+      // The label override must NOT strip the tap action — VoiceOver/TalkBack
+      // activation depends on it (the regression a plain excludeSemantics on
+      // the whole subtree would reintroduce).
+      expect(
+        tester.getSemantics(find.byType(FocusableTapTarget)),
+        isSemantics(label: 'Port In 1', isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
     testWidgets('is inert and not focusable when onTap is null', (
       tester,
     ) async {

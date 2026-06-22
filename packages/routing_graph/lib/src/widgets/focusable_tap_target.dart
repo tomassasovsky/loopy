@@ -76,44 +76,52 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
     final ring = widget.focusColor ?? context.routingGraph.textPrimary;
-    return Semantics(
-      container: true,
-      button: widget.button ? true : null,
-      enabled: widget.button ? enabled : null,
-      selected: widget.selected,
-      label: widget.semanticLabel,
-      excludeSemantics: widget.semanticLabel != null,
-      child: FocusableActionDetector(
-        enabled: enabled,
-        focusNode: widget.focusNode,
-        autofocus: widget.autofocus,
-        mouseCursor: enabled
-            ? SystemMouseCursors.click
-            : MouseCursor.defer,
-        shortcuts: _activators,
-        actions: <Type, Action<Intent>>{
-          ActivateIntent: CallbackAction<ActivateIntent>(
-            onInvoke: (_) {
-              widget.onTap?.call();
-              return null;
-            },
-          ),
-        },
-        onShowFocusHighlight: (value) {
-          if (value != _focused) setState(() => _focused = value);
-        },
-        child: GestureDetector(
-          onTap: widget.onTap,
-          behavior: HitTestBehavior.opaque,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(widget.borderRadius + 2),
-              border: Border.all(
-                color: _focused ? ring : Colors.transparent,
-                width: 2,
-              ),
+    // The visual child's own text would otherwise duplicate (or replace) the
+    // supplied accessible name, so it is hidden from semantics — but ONLY the
+    // visual, never the GestureDetector's tap action, which the screen reader
+    // needs to activate the control. MergeSemantics folds the label node and
+    // the tap-action node into one button.
+    final visual = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(widget.borderRadius + 2),
+        border: Border.all(
+          color: _focused ? ring : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      child: widget.semanticLabel != null
+          ? ExcludeSemantics(child: widget.child)
+          : widget.child,
+    );
+    return MergeSemantics(
+      child: Semantics(
+        button: widget.button ? true : null,
+        enabled: widget.button ? enabled : null,
+        selected: widget.selected,
+        label: widget.semanticLabel,
+        child: FocusableActionDetector(
+          enabled: enabled,
+          focusNode: widget.focusNode,
+          autofocus: widget.autofocus,
+          mouseCursor: enabled
+              ? SystemMouseCursors.click
+              : MouseCursor.defer,
+          shortcuts: _activators,
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onTap?.call();
+                return null;
+              },
             ),
-            child: widget.child,
+          },
+          onShowFocusHighlight: (value) {
+            if (value != _focused) setState(() => _focused = value);
+          },
+          child: GestureDetector(
+            onTap: widget.onTap,
+            behavior: HitTestBehavior.opaque,
+            child: visual,
           ),
         ),
       ),
