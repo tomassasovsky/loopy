@@ -96,6 +96,26 @@ void main() {
     expect(find.text('SoftStep'), findsWidgets);
   });
 
+  testWidgets('empty device id does not collide with the None item', (
+    tester,
+  ) async {
+    const emptyId = MidiDevice(id: '', name: 'IAC Driver');
+    seed(const MidiSetupState(connection: MidiConnection(devices: [emptyId])));
+    await pumpPicker(tester);
+
+    expect(
+      find.byKey(const Key('midiSettings_device_picker')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const Key('midiSettings_device_picker')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IAC Driver'));
+    await tester.pumpAndSettle();
+
+    verify(() => cubit.select('')).called(1);
+  });
+
   testWidgets('duplicate names: selecting opens the correct id', (
     tester,
   ) async {
