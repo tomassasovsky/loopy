@@ -38,7 +38,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('tapping an input starts monitoring it and focuses lane 0', (
+    testWidgets('tapping an input starts monitoring it and focuses it', (
       tester,
     ) async {
       await pump(tester);
@@ -48,36 +48,30 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(cubit.state.forInput(0).enabled, isTrue);
-      // Its lane node and the focused-lane panel (add-lane) now show.
-      expect(
-        find.byKey(const Key('monitorGraph_laneNode_0_0')),
-        findsOneWidget,
-      );
-      expect(find.byKey(const Key('monitorGraph_addLane')), findsOneWidget);
+      // Its node and the focused-input panel (Stop) now show.
+      expect(find.byKey(const Key('monitorGraph_inputNode_0')), findsOneWidget);
+      expect(find.byKey(const Key('monitorGraph_stop')), findsOneWidget);
     });
 
-    testWidgets('renders one node per (input, lane)', (tester) async {
+    testWidgets('renders one node per monitored input', (tester) async {
       await cubit.setEnabled(0, enabled: true);
-      await cubit.addLane(0);
+      await cubit.setEnabled(2, enabled: true);
       await pump(tester);
 
-      expect(
-        find.byKey(const Key('monitorGraph_laneNode_0_0')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('monitorGraph_laneNode_0_1')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('monitorGraph_inputNode_0')), findsOneWidget);
+      expect(find.byKey(const Key('monitorGraph_inputNode_2')), findsOneWidget);
+      expect(find.byKey(const Key('monitorGraph_inputNode_1')), findsNothing);
     });
 
-    testWidgets('a lane node is a labelled, focusable button', (tester) async {
+    testWidgets('an input node is a labelled, focusable button', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
 
       final node = tester.getSemantics(
-        find.byKey(const Key('monitorGraph_laneNode_0_0')),
+        find.byKey(const Key('monitorGraph_inputNode_0')),
       );
       expect(node, isSemantics(isButton: true, hasTapAction: true));
       expect(node.label, isNotEmpty);
@@ -91,8 +85,6 @@ void main() {
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
 
-      // The colour-only sharing state (shared / dedicated / unused output) is
-      // spelled out in the accessible label for assistive tech.
       final node = tester.getSemantics(
         find.byKey(const Key('monitorGraph_out_1')),
       );
@@ -100,39 +92,19 @@ void main() {
       handle.dispose();
     });
 
-    testWidgets('tapping an output wires the focused lane', (tester) async {
+    testWidgets('tapping an output wires the focused input', (tester) async {
       await pump(tester);
       await tester.tap(find.byKey(const Key('monitorGraph_in_0')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).lane(0).outputMask, 0x3);
+      expect(cubit.state.forInput(0).outputMask, 0x3);
 
       // Toggling Out 2 (index 1) -> 0x3 ^ 0x2 = 0x1.
       await tester.tap(find.byKey(const Key('monitorGraph_out_1')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).lane(0).outputMask, 0x1);
+      expect(cubit.state.forInput(0).outputMask, 0x1);
     });
 
-    testWidgets('add-lane appends a lane; remove-lane drops it', (
-      tester,
-    ) async {
-      await cubit.setEnabled(0, enabled: true);
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(const Key('monitorGraph_addLane')));
-      await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).laneCount, 2);
-
-      // Focus the second lane and remove it.
-      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_1')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('monitorGraph_removeLane')));
-      await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).laneCount, 1);
-    });
-
-    testWidgets('the add button appends an effect to the focused lane', (
+    testWidgets('the add button appends an effect to the focused input', (
       tester,
     ) async {
       await pump(tester);
@@ -143,7 +115,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        cubit.state.forInput(0).lane(0).effects.single.type,
+        cubit.state.forInput(0).effects.single.type,
         TrackEffectType.drive,
       );
       expect(find.byKey(const Key('monitorGraph_fx_0_0')), findsOneWidget);
@@ -153,7 +125,7 @@ void main() {
       tester,
     ) async {
       await cubit.setEnabled(0, enabled: true);
-      cubit.addEffect(0, 0);
+      cubit.addEffect(0);
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('monitorGraph_fxLabel_0_0')));
@@ -165,38 +137,36 @@ void main() {
       await tester.tap(find.text('Delay').last);
       await tester.pumpAndSettle();
       expect(
-        cubit.state.forInput(0).lane(0).effects.single.type,
+        cubit.state.forInput(0).effects.single.type,
         TrackEffectType.delay,
       );
 
       await tester.tap(find.byKey(const Key('monitorGraph_fxRemove')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).lane(0).effects, isEmpty);
+      expect(cubit.state.forInput(0).effects, isEmpty);
     });
 
     testWidgets('the per-card delete removes that effect', (tester) async {
       await cubit.setEnabled(0, enabled: true);
       cubit
-        ..addEffect(0, 0)
-        ..addEffect(0, 0);
+        ..addEffect(0)
+        ..addEffect(0);
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('monitorGraph_fxDelete_0_1')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).lane(0).effects, hasLength(1));
+      expect(cubit.state.forInput(0).effects, hasLength(1));
     });
 
     testWidgets('dragging an effect handle reorders the chain', (tester) async {
       await cubit.setEnabled(0, enabled: true);
       cubit
-        ..addEffect(0, 0)
-        ..setEffectType(0, 0, 0, TrackEffectType.drive)
-        ..addEffect(0, 0)
-        ..setEffectType(0, 0, 1, TrackEffectType.delay);
+        ..addEffect(0)
+        ..setEffectType(0, 0, TrackEffectType.drive)
+        ..addEffect(0)
+        ..setEffectType(0, 1, TrackEffectType.delay);
       await pump(tester);
 
-      // Reordering uses the gap-index drop zones (the unified convention):
-      // drop the first card into the gap after the last one.
       final handle = find.byKey(const Key('monitorGraph_fxHandle_0_0'));
       final target = find.byKey(const Key('monitorGraph_drop_0_2'));
       final gesture = await tester.startGesture(tester.getCenter(handle));
@@ -207,7 +177,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        cubit.state.forInput(0).lane(0).effects.map((e) => e.type),
+        cubit.state.forInput(0).effects.map((e) => e.type),
         [TrackEffectType.delay, TrackEffectType.drive],
       );
     });
@@ -238,21 +208,21 @@ void main() {
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
 
-      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_inputNode_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('monitorGraph_addLane')), findsOneWidget);
+      expect(find.byKey(const Key('monitorGraph_stop')), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_inputNode_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('monitorGraph_addLane')), findsNothing);
+      expect(find.byKey(const Key('monitorGraph_stop')), findsNothing);
     });
 
-    testWidgets('tapping the background unfocuses the lane', (tester) async {
+    testWidgets('tapping the background unfocuses the input', (tester) async {
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
-      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_inputNode_0')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('monitorGraph_addLane')), findsOneWidget);
+      expect(find.byKey(const Key('monitorGraph_stop')), findsOneWidget);
 
       final canvas = tester.widget<GraphCanvas>(find.byType(GraphCanvas));
       expect(canvas.onTapBackground, isNotNull);
@@ -260,20 +230,19 @@ void main() {
       await tester.pumpAndSettle();
 
       // Focus cleared: the panel returns to the hint, monitoring stays enabled.
-      expect(find.byKey(const Key('monitorGraph_addLane')), findsNothing);
+      expect(find.byKey(const Key('monitorGraph_stop')), findsNothing);
       expect(cubit.state.forInput(0).enabled, isTrue);
     });
 
     testWidgets('tapping an output with nothing focused is a no-op', (
       tester,
     ) async {
-      // Enabling via the cubit does not focus a lane, so no output is wired.
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
 
       await tester.tap(find.byKey(const Key('monitorGraph_out_1')));
       await tester.pumpAndSettle();
-      expect(cubit.state.forInput(0).lane(0).outputMask, 0x3); // unchanged
+      expect(cubit.state.forInput(0).outputMask, 0x3); // unchanged
     });
 
     testWidgets('Stop disables monitoring of the focused input', (
@@ -281,7 +250,7 @@ void main() {
     ) async {
       await cubit.setEnabled(0, enabled: true);
       await pump(tester);
-      await tester.tap(find.byKey(const Key('monitorGraph_laneNode_0_0')));
+      await tester.tap(find.byKey(const Key('monitorGraph_inputNode_0')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('monitorGraph_stop')));
@@ -290,12 +259,9 @@ void main() {
       expect(cubit.state.forInput(0).enabled, isFalse);
     });
 
-    testWidgets('an output chip reached by a lane is wired', (tester) async {
-      // Input 0 monitored, lane 0 routed to Out 1 only (bit 0). Nothing is
-      // focused (focus is view-local and starts null), so the chips reflect the
-      // routed union.
+    testWidgets('an output chip reached by an input is wired', (tester) async {
       await cubit.setEnabled(0, enabled: true);
-      await cubit.setLaneOutputMask(0, 0, 0x1);
+      await cubit.setOutputMask(0, 0x1);
       await pump(tester);
 
       final routed = tester.widget<ChannelChip>(

@@ -251,6 +251,14 @@ abstract interface class MasterBusControl {
   /// exceeding the ceiling and hard-clipping in the driver; below the ceiling
   /// it is transparent. Off by default and after every fresh start.
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99});
+
+  /// Turns hardware output [output] on/off as a routing target (the structural
+  /// output gate). A disabled output is skipped in the mix fan-out regardless
+  /// of any lane/monitor mask pointing at it, while the stored masks are left
+  /// untouched — re-enabling restores the routing. Distinct from a level mute:
+  /// it changes the routing graph, not a gain. All outputs are enabled by
+  /// default; the current gate is in [EngineSnapshot.outputEnabledMask].
+  EngineResult setOutputEnabled({required int output, required bool enabled});
 }
 
 /// Per-lane (record-route) effect chains.
@@ -287,75 +295,53 @@ abstract interface class EffectsControl {
   });
 }
 
-/// Per-input live monitoring: enable plus per-lane routing/volume/mute/effects.
+/// Per-input live monitoring: a single chain per hardware input — enable plus
+/// the chain's routing/volume/mute/effects. The chain you monitor live is the
+/// chain snapshot-copied onto a track lane when you record into that input.
 abstract interface class MonitorControl {
   /// Enables or disables live monitoring of hardware input [input]. When
-  /// enabled, the input's active monitor lanes each route the live signal per
-  /// their own output mask, volume, mute, and effect chain. The monitored
-  /// signal is never recorded and is independent of any track's record/playback
-  /// state;
-  /// a loopback-excluded input is never monitored.
+  /// enabled, the input's single chain routes the live signal per its output
+  /// mask, volume, mute, and effects. The monitored signal is never recorded
+  /// and is independent of any track's record/playback state; a loopback-
+  /// excluded input is never monitored.
   EngineResult setMonitorInputEnabled({
     required int input,
     required bool enabled,
   });
 
-  /// Sets monitor input [input]'s active lane count to [count] (clamped
-  /// `1..kMaxLanes`). New lanes default to full stereo output, unity volume,
-  /// unmuted, and an empty (clean) effect chain — the clean (dry) path.
-  EngineResult setMonitorLaneCount({
-    required int input,
-    required int count,
-  });
+  /// Routes monitor input [input]'s chain to the output channels set in [mask]
+  /// (bit c => hardware output channel c).
+  EngineResult setMonitorInputOutput({required int input, required int mask});
 
-  /// Routes monitor input [input]'s lane [lane] to the output channels set in
-  /// [mask] (bit c => hardware output channel c).
-  EngineResult setMonitorLaneOutput({
+  /// Sets monitor input [input]'s output gain ([volume], clamped to `0..1`).
+  /// Defaults to `1.0` (unity).
+  EngineResult setMonitorInputVolume({
     required int input,
-    required int lane,
-    required int mask,
-  });
-
-  /// Sets monitor input [input]'s lane [lane] output gain ([volume], clamped to
-  /// `0..1`). Defaults to `1.0` (unity).
-  EngineResult setMonitorLaneVolume({
-    required int input,
-    required int lane,
     required double volume,
   });
 
-  /// Mutes or unmutes monitor input [input]'s lane [lane].
-  EngineResult setMonitorLaneMute({
-    required int input,
-    required int lane,
-    required bool muted,
-  });
+  /// Mutes or unmutes monitor input [input]'s chain.
+  EngineResult setMonitorInputMute({required int input, required bool muted});
 
   /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on monitor input
-  /// [input]'s lane [lane] to [type]. Changing the type resets that entry's DSP
-  /// state and seeds the type's default parameters; use [setMonitorLaneFxCount]
-  /// to control how many entries are active.
-  EngineResult setMonitorLaneFx({
+  /// [input]'s chain to [type]. Changing the type resets that entry's DSP state
+  /// and seeds the type's default parameters; use [setMonitorInputFxCount] to
+  /// control how many entries are active.
+  EngineResult setMonitorInputFx({
     required int input,
-    required int lane,
     required int index,
     required TrackEffectType type,
   });
 
-  /// Sets monitor input [input]'s lane [lane] active chain length to [count]
+  /// Sets monitor input [input]'s active chain length to [count]
   /// (`0..kTrackEffectMax`): only entries `[0, count)` are processed, in order.
-  EngineResult setMonitorLaneFxCount({
-    required int input,
-    required int lane,
-    required int count,
-  });
+  EngineResult setMonitorInputFxCount({required int input, required int count});
 
   /// Sets parameter [param] (`0..kTrackEffectParams-1`) of monitor input
-  /// [input]'s lane [lane] chain entry [index] to [value] (clamped to `0..1`).
-  /// Its meaning depends on the entry's effect type.
-  EngineResult setMonitorLaneFxParam({
+  /// [input]'s chain entry [index] to [value] (clamped to `0..1`). Its meaning
+  /// depends on the entry's effect type.
+  EngineResult setMonitorInputFxParam({
     required int input,
-    required int lane,
     required int index,
     required int param,
     required double value,

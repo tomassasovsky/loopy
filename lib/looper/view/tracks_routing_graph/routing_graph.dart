@@ -93,6 +93,7 @@ class RoutingGraph {
     required int inputChannels,
     required int outputChannels,
     int excludedInputMask = 0,
+    int outputEnabledMask = 0xFFFFFFFF,
     List<String>? trackLabels,
     AppLocalizations? l10n,
   }) {
@@ -118,6 +119,10 @@ class RoutingGraph {
           kind: RoutingNodeKind.output,
           index: c,
           label: l10n?.outputChannelLabel(c + 1) ?? 'Out ${c + 1}',
+          // A structurally-gated-off output reuses the `excluded` render
+          // (greyed, line-through, non-targetable). Its stored route edges are
+          // still drawn (below) so a lane routed only here stays discoverable.
+          excluded: outputEnabledMask & (1 << c) == 0,
         ),
     ];
     final trackNodes = [

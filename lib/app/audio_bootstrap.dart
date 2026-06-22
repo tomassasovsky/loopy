@@ -181,6 +181,15 @@ Future<AutoStartResult> tryAutoStartEngine({
     }
   }
 
+  // Restore the structural output gate. Only explicitly-disabled outputs were
+  // persisted (default-on), so a missing key means enabled and needs no call.
+  // Scans the engine-aligned ceiling [0, kMaxOutputs) — see [kMaxOutputs].
+  for (var output = 0; output < kMaxOutputs; output++) {
+    if (await settings.loadOutputEnabled(output) == false) {
+      repository.setOutputEnabled(output: output, enabled: false);
+    }
+  }
+
   // Per-input live monitors are restored by MonitorCubit.load() (the shell
   // creates and loads it on every launch), so they are not re-applied here.
   return (started: true, asioDrivers: asioDrivers);

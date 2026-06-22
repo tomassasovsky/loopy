@@ -1,4 +1,5 @@
-import 'package:looper_repository/looper_repository.dart' show kMaxInputs;
+import 'package:looper_repository/looper_repository.dart'
+    show decodeTrackEffects, kMaxInputs, kMaxLanes;
 import 'package:settings_repository/settings_repository.dart';
 
 /// One-time courtesy + structural migrations of the persisted monitor settings,
@@ -18,11 +19,19 @@ import 'package:settings_repository/settings_repository.dart';
 ///    send becomes lane 1 (a no-FX clean lane). The legacy keys are then
 ///    cleared.
 ///
-/// v1 runs first so a cold upgrade folds both in order: the global flag becomes
-/// a per-input route (v1), which v2 then converts to lanes.
+/// 3. **v3** — multi-lane monitor → single chain. Folds each input's lanes into
+///    one chain + one output mask + on/off (the "configure once" model): the
+///    **first non-empty FX chain** (lane 0 preferred, else the lowest lane that
+///    has FX — chains are NOT merged), the **OR-union of every lane's output
+///    mask**, and lane 0's volume/mute. The multi-lane keys are then cleared.
+///
+/// v1 runs first so a cold upgrade folds in order: the global flag becomes a
+/// per-input route (v1), which v2 converts to lanes, which v3 folds to a single
+/// chain.
 Future<void> runMonitorMigration(SettingsRepository settings) async {
   await _runMonitorMigrationV1(settings);
   await _runMonitorMigrationV2(settings);
+  await _runMonitorMigrationV3(settings);
 }
 
 /// v1: restores the removed global passthrough monitor as a per-input route.
@@ -111,4 +120,60 @@ Future<void> _migrateInputToLanes(
   await settings.saveMonitorLaneCount(input, laneCount);
 
   await settings.clearLegacyMonitorInput(input);
+}
+
+/// v3: folds each input's multi-lane monitor into a single chain, then clears
+/// the multi-lane keys. Deterministic and flag-guarded, so it runs exactly once
+/// after v2 (which produced the lane keys this reads).
+Future<void> _runMonitorMigrationV3(SettingsRepository settings) async {
+  if (await settings.loadMonitorMigratedV3()) return;
+
+  for (var input = 0; input < kMaxInputs; input++) {
+    await _foldInputToSingleChain(settings, input);
+  }
+
+  await settings.saveMonitorMigratedV3();
+}
+
+/// Folds hardware [input]'s multi-lane monitor into a single chain per D9:
+/// - **effects** = the first non-empty FX chain (lane 0 preferred, else the
+///   lowest lane that has FX). Chains are NOT merged — a deterministic,
+///   least-destructive choice that never silently drops FX on a non-lane-0
+///   lane.
+/// - **output mask** = the OR-union of every lane's output mask.
+/// - **volume / mute** = lane 0's.
+///
+/// The enable flag (a shared key) is left untouched. A no-op when the input has
+/// no multi-lane keys saved.
+Future<void> _foldInputToSingleChain(
+  SettingsRepository settings,
+  int input,
+) async {
+  final count = await settings.loadMonitorLaneCount(input);
+  if (count == null || count < 1) return; // no multi-lane state to fold
+  final laneCount = count > kMaxLanes ? kMaxLanes : count;
+
+  var unionMask = 0;
+  String? chosenFx;
+  for (var lane = 0; lane < laneCount; lane++) {
+    unionMask |= await settings.loadMonitorLaneOutput(input, lane) ?? 0x3;
+    if (chosenFx == null) {
+      final encoded = await settings.loadMonitorLaneEffects(input, lane);
+      if (encoded != null && decodeTrackEffects(encoded).isNotEmpty) {
+        chosenFx = encoded; // first non-empty chain wins (not merged)
+      }
+    }
+  }
+  final volume = await settings.loadMonitorLaneVolume(input, 0) ?? 1.0;
+  final muted = await settings.loadMonitorLaneMute(input, 0) ?? false;
+
+  await settings.saveMonitorOutput(input, unionMask == 0 ? 0x3 : unionMask);
+  await settings.saveMonitorVolume(input, volume);
+  await settings.saveMonitorMute(input, muted: muted);
+  if (chosenFx != null) {
+    await settings.saveMonitorEffects(input, chosenFx);
+  }
+
+  // Clear the multi-lane keys so a later restore cannot resurrect them (M5).
+  await settings.clearMonitorLaneKeys(input, laneCount);
 }

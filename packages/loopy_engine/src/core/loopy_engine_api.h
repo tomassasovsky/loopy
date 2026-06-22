@@ -125,37 +125,35 @@ typedef enum le_command_code {
                                 * arg_i = channel*LE_MAX_LANES + lane,
                                 * arg_f = 0/1. */
   /* ---- per-input live monitor (one slot per hardware input) ----
-   * Each hardware input is a multi-lane container: input-level enable gates the
-   * whole input, then lane_count independent monitor lanes each carry the live
-   * signal through their own effect chain / routing / volume / mute. A lane with
-   * no effects is the clean (dry) path. Never recorded, independent of all track
-   * state. The lane *count* is a control-thread plain int
-   * (le_engine_set_monitor_lane_count), not a ring command — exactly like
-   * le_track.lane_count. The per-lane edits below mirror the track lane commands,
-   * including the deliberate two encodings: the FX commands field-pack
-   * (input<<16)|(lane<<8)|index in arg_i (the type rides in arg_f), while
-   * output/volume/mute use the flat index input*LE_MAX_LANES+lane (so the mask /
-   * float value can ride in the *other* arg). This matches the track lane
-   * convention, not a bug. */
+   * Each hardware input has a SINGLE live-monitor chain: input-level enable gates
+   * the whole input, then the input's live signal runs through its own effect
+   * chain / routing / volume / mute. An empty chain is the clean (dry) path. Never
+   * recorded, independent of all track state. The chain you monitor live is the
+   * chain that is snapshot-copied onto a track lane when you record into it. The
+   * monitor commands are keyed by input only (no per-lane index): the FX commands
+   * carry (input, index, type) in the typed `fx` arm (lane unused), the count in
+   * `fxcount` (lane unused); output rides the `trackmask` arm (channel = input);
+   * volume/mute use the generic { arg_i = input, arg_f = value } arm. */
   LE_CMD_SET_MONITOR_INPUT = 30, /* enable/disable a hardware input's monitor.
                                   * arg_i = input, arg_f = enabled (0/1). */
-  LE_CMD_SET_MONITOR_LANE_FX = 31, /* set a monitor lane's chain entry type (and
-                                    * reset its DSP state). arg_i =
-                                    * (input<<16)|(lane<<8)|index,
-                                    * arg_f = le_fx_type. */
-  LE_CMD_SET_MONITOR_LANE_FX_COUNT = 32, /* set a monitor lane's active chain
-                                          * length. arg_i =
-                                          * (input<<16)|(lane<<8)|count. */
-  LE_CMD_SET_MONITOR_LANE_OUTPUT = 33, /* monitor lane playback destinations.
-                                        * arg_f = input*LE_MAX_LANES+lane,
-                                        * arg_i = output bitmask. */
-  LE_CMD_SET_MONITOR_LANE_VOLUME = 34, /* monitor lane gain.
-                                        * arg_i = input*LE_MAX_LANES+lane,
-                                        * arg_f = 0..1. */
-  LE_CMD_SET_MONITOR_LANE_MUTE = 35,   /* monitor lane mute.
-                                        * arg_i = input*LE_MAX_LANES+lane,
-                                        * arg_f = 0/1. */
+  LE_CMD_SET_MONITOR_INPUT_FX = 31, /* set the input's chain entry type (and reset
+                                     * its DSP state). fx arm: channel = input,
+                                     * index, type (lane unused). */
+  LE_CMD_SET_MONITOR_INPUT_FX_COUNT = 32, /* set the input's active chain length.
+                                           * fxcount arm: channel = input, count
+                                           * (lane unused). */
+  LE_CMD_SET_MONITOR_INPUT_OUTPUT = 33, /* input monitor playback destinations.
+                                         * trackmask arm: channel = input, mask. */
+  LE_CMD_SET_MONITOR_INPUT_VOLUME = 34, /* input monitor gain.
+                                         * arg_i = input, arg_f = 0..1. */
+  LE_CMD_SET_MONITOR_INPUT_MUTE = 35,   /* input monitor mute.
+                                         * arg_i = input, arg_f = 0/1. */
   LE_CMD_SET_MASTER_GAIN = 36, /* global post-mix output gain. arg_f = 0..1. */
+  LE_CMD_SET_OUTPUT_ENABLED = 37, /* structural output gate (preserves routes).
+                                   * arg_i = output index, arg_f = enabled (0/1).
+                                   * A disabled output is skipped in the mix
+                                   * fan-out regardless of any lane/monitor mask
+                                   * pointing at it; masks are untouched. */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -374,6 +372,16 @@ typedef struct le_snapshot {
   /* le_audio_backend actually running (negotiated). On Windows this is always
    * ASIO; on macOS/Linux it is the miniaudio backend. */
   int32_t active_backend;
+
+  /* Structural output gate, one bit per hardware output channel (bit c => output
+   * c is ENABLED). A disabled output is removed as a mix target — skipped in the
+   * fan-out regardless of any lane/monitor mask pointing at it — while its stored
+   * route masks are preserved (turning it back on restores them). Default: all
+   * enabled (every bit in [0, output_channels) set) on a fresh configure, so the
+   * absence of any gate is "all outputs on". Outputs beyond the device channel
+   * count are reported enabled but never sounded. Set via
+   * le_engine_set_output_enabled. */
+  uint32_t output_enabled_mask;
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -631,67 +639,69 @@ LE_EXPORT int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel
                                               int32_t param, float value);
 
 /* ---- per-input live monitor ---- *
- * Each hardware input is a multi-lane container: input-level enable gates the
- * whole input, then up to LE_MAX_LANES independent monitor lanes each carry the
- * live signal through their own effect chain / routing / volume / mute. A lane
- * with an empty effect chain is the clean (dry) path. The monitored signal is
+ * Each hardware input has a SINGLE live-monitor chain: input-level enable gates
+ * the whole input, then the live signal runs through one effect chain / routing /
+ * volume / mute. An empty chain is the clean (dry) path. The monitored signal is
  * NEVER recorded and is independent of all track state (record/play/overdub), so
- * an input can be monitored whether or not any track is using it. This mirrors
- * the multi-lane track model exactly, minus recording. */
+ * an input can be monitored whether or not any track is using it. The chain you
+ * monitor live is the chain that is snapshot-copied onto a track lane the moment
+ * you record into that input (le_engine_record), so a take sounds like what you
+ * heard; the copy is a deep copy taken on the control thread (never recorded into
+ * the buffer — playback re-applies it), so later input-chain edits do not alter
+ * earlier takes. */
 
 /* Enables or disables live monitoring of hardware input [input]. When enabled,
- * the input's active lanes each route per their own output mask; a loopback-
- * excluded input is never monitored regardless of [enabled]. */
+ * the input routes per its own output mask; a loopback-excluded input is never
+ * monitored regardless of [enabled]. */
 LE_EXPORT int32_t le_engine_set_monitor_input(le_engine* engine, int32_t input,
                                               int32_t enabled);
 
-/* Sets monitor input [input]'s active lane count to [count] (clamped
- * 1..LE_MAX_LANES) on the calling (control) thread, mirroring
- * le_engine_set_lane_count. New lanes default to full stereo output, unity
- * volume, unmuted, and an empty (clean) effect chain. Shrinking stops the
- * dropped lanes from sounding. */
-LE_EXPORT int32_t le_engine_set_monitor_lane_count(le_engine* engine,
-                                                   int32_t input, int32_t count);
-
-/* Routes monitor input [input]'s lane [lane] to the output channels set in
+/* Routes hardware input [input]'s monitor chain to the output channels set in
  * [mask] (bit c => output channel c). Bits beyond the output range are ignored. */
-LE_EXPORT int32_t le_engine_set_monitor_lane_output(le_engine* engine,
-                                                    int32_t input, int32_t lane,
-                                                    int32_t mask);
+LE_EXPORT int32_t le_engine_set_monitor_input_output(le_engine* engine,
+                                                     int32_t input, int32_t mask);
 
-/* Sets monitor input [input]'s lane [lane] output gain to [volume] (clamped to
+/* Sets hardware input [input]'s monitor output gain to [volume] (clamped to
  * 0..1). The default is 1.0 (unity). */
-LE_EXPORT int32_t le_engine_set_monitor_lane_volume(le_engine* engine,
-                                                    int32_t input, int32_t lane,
-                                                    float volume);
+LE_EXPORT int32_t le_engine_set_monitor_input_volume(le_engine* engine,
+                                                     int32_t input, float volume);
 
-/* Mutes or unmutes monitor input [input]'s lane [lane]. */
-LE_EXPORT int32_t le_engine_set_monitor_lane_mute(le_engine* engine,
-                                                  int32_t input, int32_t lane,
-                                                  int32_t muted);
+/* Mutes or unmutes hardware input [input]'s monitor. */
+LE_EXPORT int32_t le_engine_set_monitor_input_mute(le_engine* engine,
+                                                   int32_t input, int32_t muted);
 
-/* Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input]'s lane
- * [lane] to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
+/* Sets chain entry [index] (0..LE_FX_MAX-1) on hardware input [input]'s monitor
+ * chain to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
  * lazily allocates the entry's delay line (on this calling thread) and seeds the
- * type's default parameters. Use le_engine_set_monitor_lane_fx_count to make
+ * type's default parameters. Use le_engine_set_monitor_input_fx_count to make
  * entries active. */
-LE_EXPORT int32_t le_engine_set_monitor_lane_fx(le_engine* engine, int32_t input,
-                                                int32_t lane, int32_t index,
-                                                int32_t type);
+LE_EXPORT int32_t le_engine_set_monitor_input_fx(le_engine* engine, int32_t input,
+                                                 int32_t index, int32_t type);
 
-/* Sets monitor input [input]'s lane [lane] active chain length to [count]
+/* Sets hardware input [input]'s monitor active chain length to [count]
  * (0..LE_FX_MAX): only entries [0, count) are processed, in order. */
-LE_EXPORT int32_t le_engine_set_monitor_lane_fx_count(le_engine* engine,
-                                                      int32_t input, int32_t lane,
-                                                      int32_t count);
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_count(le_engine* engine,
+                                                       int32_t input,
+                                                       int32_t count);
 
-/* Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor input [input]'s lane
- * [lane] chain entry [index] to [value] (clamped to 0..1). Its meaning depends
- * on the entry's le_fx_type. */
-LE_EXPORT int32_t le_engine_set_monitor_lane_fx_param(le_engine* engine,
-                                                      int32_t input, int32_t lane,
-                                                      int32_t index, int32_t param,
-                                                      float value);
+/* Sets parameter [param] (0..LE_FX_PARAMS-1) of hardware input [input]'s monitor
+ * chain entry [index] to [value] (clamped to 0..1). Its meaning depends on the
+ * entry's le_fx_type. */
+LE_EXPORT int32_t le_engine_set_monitor_input_fx_param(le_engine* engine,
+                                                       int32_t input,
+                                                       int32_t index,
+                                                       int32_t param, float value);
+
+/* ---- structural output gate ---- *
+ * Turns hardware output [output] on/off as a routing target. A disabled output is
+ * skipped in the mix fan-out regardless of any lane/monitor mask pointing at it,
+ * while the stored masks are left untouched (re-enabling restores them). This is
+ * distinct from a level mute: it changes the routing graph, not a gain. RT-safe
+ * (applies mid-record without artifacts). A gate state for an output beyond the
+ * device's channel count is stored but never affects audio. All outputs are
+ * enabled by default and on every fresh configure. */
+LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output,
+                                               int32_t enabled);
 
 /* ---- session persistence ---- *
  * Save: read each track's loop PCM with le_engine_export_track. Load: clear the

@@ -1143,8 +1143,8 @@ class LoopyEngineBindings {
       >();
 
   /// Enables or disables live monitoring of hardware input [input]. When enabled,
-  /// the input's active lanes each route per their own output mask; a loopback-
-  /// excluded input is never monitored regardless of [enabled].
+  /// the input routes per its own output mask; a loopback-excluded input is never
+  /// monitored regardless of [enabled].
   int le_engine_set_monitor_input(
     ffi.Pointer<le_engine> engine,
     int input,
@@ -1166,147 +1166,97 @@ class LoopyEngineBindings {
   late final _le_engine_set_monitor_input = _le_engine_set_monitor_inputPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets monitor input [input]'s active lane count to [count] (clamped
-  /// 1..LE_MAX_LANES) on the calling (control) thread, mirroring
-  /// le_engine_set_lane_count. New lanes default to full stereo output, unity
-  /// volume, unmuted, and an empty (clean) effect chain. Shrinking stops the
-  /// dropped lanes from sounding.
-  int le_engine_set_monitor_lane_count(
-    ffi.Pointer<le_engine> engine,
-    int input,
-    int count,
-  ) {
-    return _le_engine_set_monitor_lane_count(
-      engine,
-      input,
-      count,
-    );
-  }
-
-  late final _le_engine_set_monitor_lane_countPtr =
-      _lookup<
-        ffi.NativeFunction<
-          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
-        >
-      >('le_engine_set_monitor_lane_count');
-  late final _le_engine_set_monitor_lane_count =
-      _le_engine_set_monitor_lane_countPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
-
-  /// Routes monitor input [input]'s lane [lane] to the output channels set in
+  /// Routes hardware input [input]'s monitor chain to the output channels set in
   /// [mask] (bit c => output channel c). Bits beyond the output range are ignored.
-  int le_engine_set_monitor_lane_output(
+  int le_engine_set_monitor_input_output(
     ffi.Pointer<le_engine> engine,
     int input,
-    int lane,
     int mask,
   ) {
-    return _le_engine_set_monitor_lane_output(
+    return _le_engine_set_monitor_input_output(
       engine,
       input,
-      lane,
       mask,
     );
   }
 
-  late final _le_engine_set_monitor_lane_outputPtr =
+  late final _le_engine_set_monitor_input_outputPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Int32,
-          )
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
         >
-      >('le_engine_set_monitor_lane_output');
-  late final _le_engine_set_monitor_lane_output =
-      _le_engine_set_monitor_lane_outputPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+      >('le_engine_set_monitor_input_output');
+  late final _le_engine_set_monitor_input_output =
+      _le_engine_set_monitor_input_outputPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets monitor input [input]'s lane [lane] output gain to [volume] (clamped to
+  /// Sets hardware input [input]'s monitor output gain to [volume] (clamped to
   /// 0..1). The default is 1.0 (unity).
-  int le_engine_set_monitor_lane_volume(
+  int le_engine_set_monitor_input_volume(
     ffi.Pointer<le_engine> engine,
     int input,
-    int lane,
     double volume,
   ) {
-    return _le_engine_set_monitor_lane_volume(
+    return _le_engine_set_monitor_input_volume(
       engine,
       input,
-      lane,
       volume,
     );
   }
 
-  late final _le_engine_set_monitor_lane_volumePtr =
+  late final _le_engine_set_monitor_input_volumePtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Float,
-          )
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Float)
         >
-      >('le_engine_set_monitor_lane_volume');
-  late final _le_engine_set_monitor_lane_volume =
-      _le_engine_set_monitor_lane_volumePtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, double)>();
+      >('le_engine_set_monitor_input_volume');
+  late final _le_engine_set_monitor_input_volume =
+      _le_engine_set_monitor_input_volumePtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, double)>();
 
-  /// Mutes or unmutes monitor input [input]'s lane [lane].
-  int le_engine_set_monitor_lane_mute(
+  /// Mutes or unmutes hardware input [input]'s monitor.
+  int le_engine_set_monitor_input_mute(
     ffi.Pointer<le_engine> engine,
     int input,
-    int lane,
     int muted,
   ) {
-    return _le_engine_set_monitor_lane_mute(
+    return _le_engine_set_monitor_input_mute(
       engine,
       input,
-      lane,
       muted,
     );
   }
 
-  late final _le_engine_set_monitor_lane_mutePtr =
+  late final _le_engine_set_monitor_input_mutePtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Int32,
-          )
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
         >
-      >('le_engine_set_monitor_lane_mute');
-  late final _le_engine_set_monitor_lane_mute =
-      _le_engine_set_monitor_lane_mutePtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+      >('le_engine_set_monitor_input_mute');
+  late final _le_engine_set_monitor_input_mute =
+      _le_engine_set_monitor_input_mutePtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets chain entry [index] (0..LE_FX_MAX-1) on monitor input [input]'s lane
-  /// [lane] to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
+  /// Sets chain entry [index] (0..LE_FX_MAX-1) on hardware input [input]'s monitor
+  /// chain to [type]. Changing the type resets that entry's DSP state; LE_FX_DELAY
   /// lazily allocates the entry's delay line (on this calling thread) and seeds the
-  /// type's default parameters. Use le_engine_set_monitor_lane_fx_count to make
+  /// type's default parameters. Use le_engine_set_monitor_input_fx_count to make
   /// entries active.
-  int le_engine_set_monitor_lane_fx(
+  int le_engine_set_monitor_input_fx(
     ffi.Pointer<le_engine> engine,
     int input,
-    int lane,
     int index,
     int type,
   ) {
-    return _le_engine_set_monitor_lane_fx(
+    return _le_engine_set_monitor_input_fx(
       engine,
       input,
-      lane,
       index,
       type,
     );
   }
 
-  late final _le_engine_set_monitor_lane_fxPtr =
+  late final _le_engine_set_monitor_input_fxPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(
@@ -1314,66 +1264,57 @@ class LoopyEngineBindings {
             ffi.Int32,
             ffi.Int32,
             ffi.Int32,
-            ffi.Int32,
           )
         >
-      >('le_engine_set_monitor_lane_fx');
-  late final _le_engine_set_monitor_lane_fx = _le_engine_set_monitor_lane_fxPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
+      >('le_engine_set_monitor_input_fx');
+  late final _le_engine_set_monitor_input_fx =
+      _le_engine_set_monitor_input_fxPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
-  /// Sets monitor input [input]'s lane [lane] active chain length to [count]
+  /// Sets hardware input [input]'s monitor active chain length to [count]
   /// (0..LE_FX_MAX): only entries [0, count) are processed, in order.
-  int le_engine_set_monitor_lane_fx_count(
+  int le_engine_set_monitor_input_fx_count(
     ffi.Pointer<le_engine> engine,
     int input,
-    int lane,
     int count,
   ) {
-    return _le_engine_set_monitor_lane_fx_count(
+    return _le_engine_set_monitor_input_fx_count(
       engine,
       input,
-      lane,
       count,
     );
   }
 
-  late final _le_engine_set_monitor_lane_fx_countPtr =
+  late final _le_engine_set_monitor_input_fx_countPtr =
       _lookup<
         ffi.NativeFunction<
-          ffi.Int32 Function(
-            ffi.Pointer<le_engine>,
-            ffi.Int32,
-            ffi.Int32,
-            ffi.Int32,
-          )
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
         >
-      >('le_engine_set_monitor_lane_fx_count');
-  late final _le_engine_set_monitor_lane_fx_count =
-      _le_engine_set_monitor_lane_fx_countPtr
-          .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+      >('le_engine_set_monitor_input_fx_count');
+  late final _le_engine_set_monitor_input_fx_count =
+      _le_engine_set_monitor_input_fx_countPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
-  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of monitor input [input]'s lane
-  /// [lane] chain entry [index] to [value] (clamped to 0..1). Its meaning depends
-  /// on the entry's le_fx_type.
-  int le_engine_set_monitor_lane_fx_param(
+  /// Sets parameter [param] (0..LE_FX_PARAMS-1) of hardware input [input]'s monitor
+  /// chain entry [index] to [value] (clamped to 0..1). Its meaning depends on the
+  /// entry's le_fx_type.
+  int le_engine_set_monitor_input_fx_param(
     ffi.Pointer<le_engine> engine,
     int input,
-    int lane,
     int index,
     int param,
     double value,
   ) {
-    return _le_engine_set_monitor_lane_fx_param(
+    return _le_engine_set_monitor_input_fx_param(
       engine,
       input,
-      lane,
       index,
       param,
       value,
     );
   }
 
-  late final _le_engine_set_monitor_lane_fx_paramPtr =
+  late final _le_engine_set_monitor_input_fx_paramPtr =
       _lookup<
         ffi.NativeFunction<
           ffi.Int32 Function(
@@ -1381,16 +1322,44 @@ class LoopyEngineBindings {
             ffi.Int32,
             ffi.Int32,
             ffi.Int32,
-            ffi.Int32,
             ffi.Float,
           )
         >
-      >('le_engine_set_monitor_lane_fx_param');
-  late final _le_engine_set_monitor_lane_fx_param =
-      _le_engine_set_monitor_lane_fx_paramPtr
+      >('le_engine_set_monitor_input_fx_param');
+  late final _le_engine_set_monitor_input_fx_param =
+      _le_engine_set_monitor_input_fx_paramPtr
           .asFunction<
-            int Function(ffi.Pointer<le_engine>, int, int, int, int, double)
+            int Function(ffi.Pointer<le_engine>, int, int, int, double)
           >();
+
+  /// ---- structural output gate ---- *
+  /// Turns hardware output [output] on/off as a routing target. A disabled output is
+  /// skipped in the mix fan-out regardless of any lane/monitor mask pointing at it,
+  /// while the stored masks are left untouched (re-enabling restores them). This is
+  /// distinct from a level mute: it changes the routing graph, not a gain. RT-safe
+  /// (applies mid-record without artifacts). A gate state for an output beyond the
+  /// device's channel count is stored but never affects audio. All outputs are
+  /// enabled by default and on every fresh configure.
+  int le_engine_set_output_enabled(
+    ffi.Pointer<le_engine> engine,
+    int output,
+    int enabled,
+  ) {
+    return _le_engine_set_output_enabled(
+      engine,
+      output,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_output_enabledPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_output_enabled');
+  late final _le_engine_set_output_enabled = _le_engine_set_output_enabledPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
   /// returns the number of frames written (the track length, clamped to
@@ -1940,34 +1909,37 @@ enum le_command_code {
   /// arg_i = input, arg_f = enabled (0/1).
   LE_CMD_SET_MONITOR_INPUT(30),
 
-  /// set a monitor lane's chain entry type (and
-  /// reset its DSP state). arg_i =
-  /// (input<<16)|(lane<<8)|index,
-  /// arg_f = le_fx_type.
-  LE_CMD_SET_MONITOR_LANE_FX(31),
+  /// set the input's chain entry type (and reset
+  /// its DSP state). fx arm: channel = input,
+  /// index, type (lane unused).
+  LE_CMD_SET_MONITOR_INPUT_FX(31),
 
-  /// set a monitor lane's active chain
-  /// length. arg_i =
-  /// (input<<16)|(lane<<8)|count.
-  LE_CMD_SET_MONITOR_LANE_FX_COUNT(32),
+  /// set the input's active chain length.
+  /// fxcount arm: channel = input, count
+  /// (lane unused).
+  LE_CMD_SET_MONITOR_INPUT_FX_COUNT(32),
 
-  /// monitor lane playback destinations.
-  /// arg_f = input*LE_MAX_LANES+lane,
-  /// arg_i = output bitmask.
-  LE_CMD_SET_MONITOR_LANE_OUTPUT(33),
+  /// input monitor playback destinations.
+  /// trackmask arm: channel = input, mask.
+  LE_CMD_SET_MONITOR_INPUT_OUTPUT(33),
 
-  /// monitor lane gain.
-  /// arg_i = input*LE_MAX_LANES+lane,
-  /// arg_f = 0..1.
-  LE_CMD_SET_MONITOR_LANE_VOLUME(34),
+  /// input monitor gain.
+  /// arg_i = input, arg_f = 0..1.
+  LE_CMD_SET_MONITOR_INPUT_VOLUME(34),
 
-  /// monitor lane mute.
-  /// arg_i = input*LE_MAX_LANES+lane,
-  /// arg_f = 0/1.
-  LE_CMD_SET_MONITOR_LANE_MUTE(35),
+  /// input monitor mute.
+  /// arg_i = input, arg_f = 0/1.
+  LE_CMD_SET_MONITOR_INPUT_MUTE(35),
 
   /// global post-mix output gain. arg_f = 0..1.
-  LE_CMD_SET_MASTER_GAIN(36);
+  LE_CMD_SET_MASTER_GAIN(36),
+
+  /// structural output gate (preserves routes).
+  /// arg_i = output index, arg_f = enabled (0/1).
+  /// A disabled output is skipped in the mix
+  /// fan-out regardless of any lane/monitor mask
+  /// pointing at it; masks are untouched.
+  LE_CMD_SET_OUTPUT_ENABLED(37);
 
   final int value;
   const le_command_code(this.value);
@@ -1995,12 +1967,13 @@ enum le_command_code {
     28 => LE_CMD_SET_LANE_VOLUME,
     29 => LE_CMD_SET_LANE_MUTE,
     30 => LE_CMD_SET_MONITOR_INPUT,
-    31 => LE_CMD_SET_MONITOR_LANE_FX,
-    32 => LE_CMD_SET_MONITOR_LANE_FX_COUNT,
-    33 => LE_CMD_SET_MONITOR_LANE_OUTPUT,
-    34 => LE_CMD_SET_MONITOR_LANE_VOLUME,
-    35 => LE_CMD_SET_MONITOR_LANE_MUTE,
+    31 => LE_CMD_SET_MONITOR_INPUT_FX,
+    32 => LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
+    33 => LE_CMD_SET_MONITOR_INPUT_OUTPUT,
+    34 => LE_CMD_SET_MONITOR_INPUT_VOLUME,
+    35 => LE_CMD_SET_MONITOR_INPUT_MUTE,
     36 => LE_CMD_SET_MASTER_GAIN,
+    37 => LE_CMD_SET_OUTPUT_ENABLED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -2084,7 +2057,9 @@ final class le_config extends ffi.Struct {
   external ffi.Array<ffi.Char> capture_device_id;
 
   /// le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-  /// miniaudio path. Accepted and ignored until the ASIO backend lands.
+  /// miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
+  /// via le_select_backend (a LOOPY_ENABLE_ASIO Windows build); elsewhere every
+  /// value resolves to miniaudio.
   @ffi.Int32()
   external int backend;
 
@@ -2228,7 +2203,10 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Uint64()
   external int frames_processed;
 
-  /// reserved; xrun detection lands later (0)
+  /// Device dropouts (xruns) since the device started, as reported by the backend.
+  /// The Windows ASIO backend tallies the driver's kAsioOverload notifications;
+  /// the miniaudio backends (macOS / Linux) expose no portable per-callback xrun
+  /// signal, so this stays 0 there. Monotonic; cleared on each fresh start.
   @ffi.Uint32()
   external int xrun_count;
 
@@ -2288,6 +2266,17 @@ final class le_snapshot extends ffi.Struct {
   /// ASIO; on macOS/Linux it is the miniaudio backend.
   @ffi.Int32()
   external int active_backend;
+
+  /// Structural output gate, one bit per hardware output channel (bit c => output
+  /// c is ENABLED). A disabled output is removed as a mix target — skipped in the
+  /// fan-out regardless of any lane/monitor mask pointing at it — while its stored
+  /// route masks are preserved (turning it back on restores them). Default: all
+  /// enabled (every bit in [0, output_channels) set) on a fresh configure, so the
+  /// absence of any gate is "all outputs on". Outputs beyond the device channel
+  /// count are reported enabled but never sounded. Set via
+  /// le_engine_set_output_enabled.
+  @ffi.Uint32()
+  external int output_enabled_mask;
 
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()

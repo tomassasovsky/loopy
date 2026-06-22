@@ -6,21 +6,17 @@ import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
 /// The docked controls below the canvas: a hint when nothing is focused, else
-/// the focused monitor lane's vol/mute/remove-lane, a Stop button to disable the
-/// whole input, the selected effect's editor, and the add-lane button. Mirrors
-/// the track lane panel.
-class MonitorLanePanel extends StatelessWidget {
-  /// Creates a [MonitorLanePanel].
-  const MonitorLanePanel({
+/// the focused input's vol/mute, a Stop button to disable the whole input, and
+/// the selected effect's editor. Renders the input's single live chain — the
+/// chain that is snapshot-copied onto a lane when you record this input.
+class MonitorInputPanel extends StatelessWidget {
+  /// Creates a [MonitorInputPanel].
+  const MonitorInputPanel({
     required this.input,
-    required this.lane,
-    required this.laneState,
-    required this.laneCount,
+    required this.monitor,
     required this.selectedFx,
     required this.onMuteToggled,
     required this.onVolumeChanged,
-    required this.onRemoveLane,
-    required this.onAddLane,
     required this.onStop,
     required this.onSetType,
     required this.onSetParam,
@@ -29,28 +25,18 @@ class MonitorLanePanel extends StatelessWidget {
     super.key,
   });
 
-  /// The focused row's hardware input, or null when nothing is focused.
+  /// The focused hardware input, or null when nothing is focused.
   final int? input;
 
-  /// The focused row's lane index (meaningful only when [input] is non-null).
-  final int lane;
-
-  /// The focused monitor lane's state, or null when nothing is focused.
-  final MonitorLane? laneState;
-
-  /// The focused input's active lane count.
-  final int laneCount;
+  /// The focused input's monitor state, or null when nothing is focused.
+  final InputMonitor? monitor;
 
   /// The selected (open-in-the-editor) effect, or null.
   final TrackEffect? selectedFx;
 
-  /// Per-lane mix.
+  /// Mix controls.
   final VoidCallback onMuteToggled;
   final ValueChanged<double> onVolumeChanged;
-
-  /// Lane-stack edits for the focused input.
-  final VoidCallback onRemoveLane;
-  final VoidCallback onAddLane;
 
   /// Disables monitoring of the focused input entirely.
   final VoidCallback onStop;
@@ -68,7 +54,7 @@ class MonitorLanePanel extends StatelessWidget {
     final l10n = context.l10n;
     final surface = context.surface;
     final i = input;
-    final l = laneState;
+    final m = monitor;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -80,7 +66,7 @@ class MonitorLanePanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (i == null || l == null)
+          if (i == null || m == null)
             Text(
               l10n.monitorGraphHint,
               style: TextStyle(color: surface.textSecondary, fontSize: 13),
@@ -96,11 +82,6 @@ class MonitorLanePanel extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  l10n.laneNumberLabel(lane + 1),
-                  style: TextStyle(color: surface.textSecondary, fontSize: 13),
-                ),
-                const SizedBox(width: 8),
                 IconButton(
                   key: const Key('monitorGraph_mute'),
                   padding: EdgeInsets.zero,
@@ -109,11 +90,11 @@ class MonitorLanePanel extends StatelessWidget {
                     minHeight: 32,
                   ),
                   iconSize: 18,
-                  color: l.muted ? surface.accent : surface.textSecondary,
-                  tooltip: l.muted
-                      ? l10n.unmuteLaneTooltip
-                      : l10n.muteLaneTooltip,
-                  icon: Icon(l.muted ? Icons.volume_off : Icons.volume_up),
+                  color: m.muted ? surface.accent : surface.textSecondary,
+                  tooltip: m.muted
+                      ? l10n.unmuteInputTooltip
+                      : l10n.muteInputTooltip,
+                  icon: Icon(m.muted ? Icons.volume_off : Icons.volume_up),
                   onPressed: onMuteToggled,
                 ),
                 Expanded(
@@ -132,20 +113,11 @@ class MonitorLanePanel extends StatelessWidget {
                     ),
                     child: Slider(
                       key: const Key('monitorGraph_volume'),
-                      value: l.volume.clamp(0.0, 1.0),
+                      value: m.volume.clamp(0.0, 1.0),
                       onChanged: onVolumeChanged,
                     ),
                   ),
                 ),
-                if (laneCount > 1)
-                  IconButton(
-                    key: const Key('monitorGraph_removeLane'),
-                    iconSize: 18,
-                    color: surface.textSecondary,
-                    tooltip: l10n.removeLaneTooltip,
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: onRemoveLane,
-                  ),
                 TextButton.icon(
                   key: const Key('monitorGraph_stop'),
                   onPressed: onStop,
@@ -169,16 +141,6 @@ class MonitorLanePanel extends StatelessWidget {
                 onRemove: onRemoveEffect,
               ),
             ],
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                key: const Key('monitorGraph_addLane'),
-                onPressed: laneCount >= kMaxLanes ? null : onAddLane,
-                icon: const Icon(Icons.add, size: 18),
-                label: Text(l10n.addLane),
-              ),
-            ),
           ],
         ],
       ),

@@ -337,103 +337,88 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
-  /// Per-input active monitor lane count passed to [setMonitorLaneCount].
-  final Map<int, int> monitorLaneCount = {};
+  /// Per-input monitor output mask passed to [setMonitorInputOutput].
+  final Map<int, int> monitorOutput = {};
 
   @override
-  EngineResult setMonitorLaneCount({
-    required int input,
-    required int count,
-  }) {
-    monitorLaneCount[input] = count;
-    calls.add('setMonitorLaneCount');
+  EngineResult setMonitorInputOutput({required int input, required int mask}) {
+    monitorOutput[input] = mask;
+    calls.add('setMonitorInputOutput');
     return EngineResult.ok;
   }
 
-  /// Per-(input, lane) output mask passed to [setMonitorLaneOutput].
-  final Map<(int, int), int> monitorLaneOutput = {};
+  /// Per-input monitor volume passed to [setMonitorInputVolume].
+  final Map<int, double> monitorVolume = {};
 
   @override
-  EngineResult setMonitorLaneOutput({
+  EngineResult setMonitorInputVolume({
     required int input,
-    required int lane,
-    required int mask,
-  }) {
-    monitorLaneOutput[(input, lane)] = mask;
-    calls.add('setMonitorLaneOutput');
-    return EngineResult.ok;
-  }
-
-  /// Per-(input, lane) volume passed to [setMonitorLaneVolume].
-  final Map<(int, int), double> monitorLaneVolume = {};
-
-  @override
-  EngineResult setMonitorLaneVolume({
-    required int input,
-    required int lane,
     required double volume,
   }) {
-    monitorLaneVolume[(input, lane)] = volume;
-    calls.add('setMonitorLaneVolume');
+    monitorVolume[input] = volume;
+    calls.add('setMonitorInputVolume');
     return EngineResult.ok;
   }
 
-  /// Per-(input, lane) mute passed to [setMonitorLaneMute].
-  final Map<(int, int), bool> monitorLaneMute = {};
+  /// Per-input monitor mute passed to [setMonitorInputMute].
+  final Map<int, bool> monitorMute = {};
 
   @override
-  EngineResult setMonitorLaneMute({
-    required int input,
-    required int lane,
-    required bool muted,
-  }) {
-    monitorLaneMute[(input, lane)] = muted;
-    calls.add('setMonitorLaneMute');
+  EngineResult setMonitorInputMute({required int input, required bool muted}) {
+    monitorMute[input] = muted;
+    calls.add('setMonitorInputMute');
     return EngineResult.ok;
   }
 
-  /// Per-(input, lane, index) effect type passed to [setMonitorLaneFx].
-  final Map<(int, int, int), TrackEffectType> monitorLaneFx = {};
+  /// Per-(input, index) effect type passed to [setMonitorInputFx].
+  final Map<(int, int), TrackEffectType> monitorFx = {};
 
-  /// Per-(input, lane) active chain length passed to [setMonitorLaneFxCount].
-  final Map<(int, int), int> monitorLaneFxCount = {};
+  /// Per-input active chain length passed to [setMonitorInputFxCount].
+  final Map<int, int> monitorFxCount = {};
 
-  /// Per-(input, lane, index, param) value passed to [setMonitorLaneFxParam].
-  final Map<(int, int, int, int), double> monitorLaneFxParam = {};
+  /// Per-(input, index, param) value passed to [setMonitorInputFxParam].
+  final Map<(int, int, int), double> monitorFxParam = {};
 
   @override
-  EngineResult setMonitorLaneFx({
+  EngineResult setMonitorInputFx({
     required int input,
-    required int lane,
     required int index,
     required TrackEffectType type,
   }) {
-    monitorLaneFx[(input, lane, index)] = type;
-    calls.add('setMonitorLaneFx');
+    monitorFx[(input, index)] = type;
+    calls.add('setMonitorInputFx');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMonitorLaneFxCount({
+  EngineResult setMonitorInputFxCount({
     required int input,
-    required int lane,
     required int count,
   }) {
-    monitorLaneFxCount[(input, lane)] = count;
-    calls.add('setMonitorLaneFxCount');
+    monitorFxCount[input] = count;
+    calls.add('setMonitorInputFxCount');
     return EngineResult.ok;
   }
 
   @override
-  EngineResult setMonitorLaneFxParam({
+  EngineResult setMonitorInputFxParam({
     required int input,
-    required int lane,
     required int index,
     required int param,
     required double value,
   }) {
-    monitorLaneFxParam[(input, lane, index, param)] = value;
-    calls.add('setMonitorLaneFxParam');
+    monitorFxParam[(input, index, param)] = value;
+    calls.add('setMonitorInputFxParam');
+    return EngineResult.ok;
+  }
+
+  /// Per-output structural gate passed to [setOutputEnabled].
+  final Map<int, bool> outputEnabled = {};
+
+  @override
+  EngineResult setOutputEnabled({required int output, required bool enabled}) {
+    outputEnabled[output] = enabled;
+    calls.add('setOutputEnabled');
     return EngineResult.ok;
   }
 

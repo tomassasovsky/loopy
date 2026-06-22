@@ -596,7 +596,7 @@ static void le_fx_clear_reverb(le_fx_state* fx, int s) {
  * lines) so a freshly engaged effect starts clean — no filter blow-up from stale
  * integrators, no delay-read of old content. Does NOT free or allocate the delay
  * ring or octaver buffers; the control thread owns their lifetime. Shared by
- * le_lane_reset, le_monitor_lane_reset, and the SET_*_FX ring handlers (which
+ * le_lane_reset, le_monitor_input_reset, and the SET_*_FX ring handlers (which
  * reset one slot when its type changes), removing what was a copy-pasted clear.
  *
  * RT note: this runs on the AUDIO THREAD (the SET_*_FX ring handlers). For an
