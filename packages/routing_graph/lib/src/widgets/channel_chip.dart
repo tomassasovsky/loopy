@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
+import 'package:routing_graph/src/widgets/focusable_tap_target.dart';
 
 /// One hardware input/output port chip in a routing graph.
 ///
@@ -7,6 +8,11 @@ import 'package:routing_graph/src/theme/routing_graph_theme.dart';
 /// caller (each graph colours its ports by its own rule), and the meaning of a
 /// tap is the caller's [onTap]. The chip sizes itself to its parent (callers
 /// wrap it in a [Positioned]).
+///
+/// It is keyboard-focusable and screen-reader-labelled (via
+/// [FocusableTapTarget]): callers may pass a localized [semanticLabel];
+/// otherwise the visible [label] plus the wired/excluded state form the
+/// accessible name.
 class ChannelChip extends StatelessWidget {
   /// Creates a port chip.
   const ChannelChip({
@@ -16,6 +22,7 @@ class ChannelChip extends StatelessWidget {
     required this.wired,
     required this.excluded,
     required this.onTap,
+    this.semanticLabel,
     super.key,
   });
 
@@ -37,6 +44,10 @@ class ChannelChip extends StatelessWidget {
   /// What a tap means, or null when the port is not tappable.
   final VoidCallback? onTap;
 
+  /// Optional localized accessible name. When null, a default is derived from
+  /// [label] and the wired/excluded state so the chip is never unlabelled.
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final theme = context.routingGraph;
@@ -47,31 +58,34 @@ class ChannelChip extends StatelessWidget {
         : wired
         ? color.withValues(alpha: 0.7)
         : theme.line.withValues(alpha: 0.6);
-    return MouseRegion(
-      cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: !excluded && strong
-                ? color.withValues(alpha: 0.28)
-                : theme.card,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: border, width: strong ? 1.6 : 1),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: excluded
-                  ? theme.textTertiary
-                  : wired
-                  ? theme.textPrimary
-                  : theme.textTertiary,
-              decoration: excluded ? TextDecoration.lineThrough : null,
-            ),
+    final state = excluded
+        ? 'loopback, unavailable'
+        : wired
+        ? 'routed'
+        : 'not routed';
+    return FocusableTapTarget(
+      onTap: onTap,
+      semanticLabel: semanticLabel ?? '$label, $state',
+      selected: !excluded && (wired || strong),
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: !excluded && strong
+              ? color.withValues(alpha: 0.28)
+              : theme.card,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: border, width: strong ? 1.6 : 1),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: excluded
+                ? theme.textTertiary
+                : wired
+                ? theme.textPrimary
+                : theme.textTertiary,
+            decoration: excluded ? TextDecoration.lineThrough : null,
           ),
         ),
       ),

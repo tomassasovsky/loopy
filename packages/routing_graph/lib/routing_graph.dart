@@ -16,6 +16,7 @@ export 'src/widgets/add_effect_button.dart';
 export 'src/widgets/channel_chip.dart';
 export 'src/widgets/effect_chain_card.dart';
 export 'src/widgets/effect_drop_zone.dart';
+export 'src/widgets/focusable_tap_target.dart';
 export 'src/widgets/graph_canvas.dart';
 export 'src/widgets/graph_card_ref.dart';
 export 'src/widgets/graph_edge.dart';

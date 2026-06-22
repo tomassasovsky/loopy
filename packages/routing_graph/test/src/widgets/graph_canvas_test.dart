@@ -78,6 +78,41 @@ void main() {
       expect(background, 0);
     });
 
+    testWidgets('exposes keyboard zoom/fit controls (WCAG 2.5.7)', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        const GraphCanvas(
+          width: 400,
+          height: 200,
+          fitIdentity: [1],
+          children: [Positioned(left: 10, top: 10, child: Text('node'))],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final key in const [
+        Key('graphCanvas_zoomIn'),
+        Key('graphCanvas_zoomOut'),
+        Key('graphCanvas_fit'),
+      ]) {
+        final control = find.byKey(key);
+        expect(control, findsOneWidget);
+        // The drag-free alternative must be a focusable, labelled target.
+        expect(
+          tester.widget(control),
+          isA<FocusableTapTarget>().having(
+            (t) => t.semanticLabel,
+            'semanticLabel',
+            isNotNull,
+          ),
+        );
+        // Each control is operable without throwing (changes the transform).
+        await tester.tap(control);
+        await tester.pumpAndSettle();
+      }
+    });
+
     testWidgets('re-fits when fitIdentity changes', (tester) async {
       Widget canvas(List<Object?> identity) => GraphCanvas(
         width: 400,
