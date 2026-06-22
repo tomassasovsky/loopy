@@ -1,9 +1,8 @@
 // Forwarder translation unit for the CocoaPods (macOS/iOS) build.
 //
-// CocoaPods does not support `source_files` paths outside the podspec
-// directory, so the shared C sources under ../../src cannot be referenced
-// directly. This file (inside the pod's Classes/ dir) relatively #includes the
-// real implementation so it is compiled into the plugin framework. Header
-// resolution for the included file falls back to HEADER_SEARCH_PATHS
-// (../src, ../src/miniaudio) declared in the podspec.
-#include "../../src/engine.c"
+// CocoaPods cannot reference source files outside the podspec directory, so the
+// shared C engine under ../../src is pulled in via these per-file forwarders
+// (one per native TU the macOS build needs). Headers referenced by the included
+// source resolve through HEADER_SEARCH_PATHS (../src/core, ../src/midi,
+// ../src/miniaudio) declared in the podspec.
+#include "../../src/core/engine.c"

@@ -2,33 +2,46 @@
 # Flutter FFI plugin bundles. Consumed by the linux/ and windows/ plugin
 # CMakeLists via add_subdirectory; macOS/iOS compile these same sources through
 # the CocoaPods podspec instead.
+#
+# Sources are grouped into subdirectories by concern: core/ (the portable engine
+# + primitives + the public ABI header), platform/ (the per-OS device seams),
+# midi/ (the MIDI input/output seam), asio/ (the Windows ASIO backend), and
+# miniaudio/ (the vendored backend). Every subdirectory with headers is on the
+# include path below, so sources keep using flat `#include "x.h"`.
 cmake_minimum_required(VERSION 3.15)
 project(loopy_engine_core VERSION 0.1.0 LANGUAGES C)
 
 add_library(loopy_engine SHARED
-  engine.c
-  # The miniaudio device backend (le_device_backend.h). Compiled unconditionally
-  # — it is the only device backend this build ships; the opt-in ASIO backend
-  # slots in behind le_select_backend later.
-  engine_miniaudio.c
-  # Per-OS platform-seam translation units (engine_platform.h). Each is wrapped
-  # whole in its OS guard, so the two that don't match the build target compile
-  # to near-empty objects — every build lists all three unconditionally.
-  engine_linux.c
-  engine_apple.c
-  engine_windows.c
-  # Native USB MIDI input seam (le_midi_backend.h). midi.c is the portable core
-  # (ring + parser + FFI surface, no OS MIDI headers); the three backend TUs are
-  # each wrapped whole in their OS guard, so the two that don't match the build
-  # target compile to near-empty objects — every build lists all three, exactly
-  # like the engine_*.c platform seam.
-  midi.c
-  midi_backend_linux.c
-  midi_backend_apple.c
-  midi_backend_windows.c
-  lockfree_ring.c
-  loop_clock.c
-  miniaudio_impl.c
+  # ---- core/: the portable engine (S1 split into per-concern TUs) ----
+  core/engine.c              # residual control-thread core + shared helpers
+  core/engine_convert.c      # pure sample-format conversion + ASIO buffer math
+  core/engine_fx.c           # effect kernels, octaver, reverb, chain runner
+  core/engine_session.c      # session export / import / commit
+  core/engine_devices.c      # device discovery, loopback, id resolution, backend
+  core/engine_snapshot.c     # published-state snapshots + visualization reads
+  core/engine_process.c      # THE audio-thread TU (le_engine_process + transport)
+  core/engine_commands.c     # control-thread command producers
+  # The miniaudio device backend (le_device_backend.h), compiled unconditionally
+  # — the only device backend this build ships; ASIO slots in behind
+  # le_select_backend.
+  core/engine_miniaudio.c
+  core/lockfree_ring.c
+  core/loop_clock.c
+  # ---- platform/: per-OS device seams (engine_platform.h) ----
+  # Each is wrapped whole in its OS guard, so the two that don't match the build
+  # target compile to near-empty objects — every build lists all three.
+  platform/engine_linux.c
+  platform/engine_apple.c
+  platform/engine_windows.c
+  # ---- midi/: native USB MIDI seam (le_midi_backend.h) ----
+  # midi.c is the portable core (ring + parser + FFI surface, no OS MIDI
+  # headers); the three backend TUs are each OS-guarded like the platform seam.
+  midi/midi.c
+  midi/midi_backend_linux.c
+  midi/midi_backend_apple.c
+  midi/midi_backend_windows.c
+  # ---- miniaudio/: the vendored backend ----
+  miniaudio/miniaudio_impl.c
 )
 
 # C11 gives us <stdatomic.h> for the lock-free ring and snapshot publication.
@@ -55,8 +68,14 @@ if(MSVC)
   target_compile_definitions(loopy_engine PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+# Every subdirectory holding headers is on the include path, so sources keep
+# their flat `#include "engine_private.h"` / "miniaudio.h" / "le_midi_backend.h"
+# form regardless of which folder they (or the includer) live in.
 target_include_directories(loopy_engine PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/core"
+  "${CMAKE_CURRENT_SOURCE_DIR}/midi"
+  "${CMAKE_CURRENT_SOURCE_DIR}/asio"
   "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio"
 )
 
@@ -132,8 +151,8 @@ if(LOOPY_ENABLE_ASIO)
   # real ASIO duplex backend selected by le_select_backend; it links the SAME SDK
   # host objects as the label probe — no new SDK sources are needed.
   target_sources(loopy_engine PRIVATE
-    win_asio_labels.cpp
-    win_asio_device.cpp
+    asio/win_asio_labels.cpp
+    asio/win_asio_device.cpp
     "${LOOPY_ASIO_SDK_DIR}/common/asio.cpp"
     "${LOOPY_ASIO_SDK_DIR}/host/asiodrivers.cpp"
     "${LOOPY_ASIO_SDK_DIR}/host/pc/asiolist.cpp"

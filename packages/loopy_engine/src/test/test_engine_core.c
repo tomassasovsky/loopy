@@ -5,37 +5,16 @@
  * and the engine lifecycle paths that do not require an audio device. These are
  * the pieces with the strictest correctness/real-time requirements.
  *
- * The engine sources now include the three per-OS platform-seam TUs
- * (engine_linux.c / engine_apple.c / engine_windows.c). All three are listed
- * unconditionally — the two that don't match the host compile to near-empty
- * objects — so the le_platform_* seam symbols resolve at link time.
+ * The engine sources span core/ (the portable engine + the miniaudio backend)
+ * and platform/ (the three per-OS seam TUs, all listed unconditionally — the two
+ * that don't match the host compile to near-empty objects — so the le_platform_*
+ * symbols resolve at link time).
  *
- * Build & run (Linux): no Core Audio frameworks; libc + pthreads only.
- *   clang -std=c11 -I src -I src/miniaudio \
- *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
- *     src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
- *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
- *     -lpthread -lm -o /tmp/loopy_core_tests
- *   /tmp/loopy_core_tests
- *
- * Build & run (macOS): add the Core Audio frameworks engine_apple.c needs.
- *   clang -std=c11 -I src -I src/miniaudio \
- *     src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
- *     src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
- *     src/engine_linux.c src/engine_apple.c src/engine_windows.c \
- *     -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
- *     -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
- *   /tmp/loopy_core_tests
- *
- * Build & run (Windows, from a VS x64 dev prompt): MSVC needs
- * /experimental:c11atomics for <stdatomic.h>; miniaudio links ole32 + winmm.
- *   cl /std:c11 /experimental:c11atomics /D_CRT_SECURE_NO_WARNINGS ^
- *     /I src /I src/miniaudio ^
- *     src\test\test_engine_core.c src\engine.c src\lockfree_ring.c ^
- *     src\loop_clock.c src\miniaudio_impl.c src\engine_miniaudio.c ^
- *     src\engine_linux.c src\engine_apple.c src\engine_windows.c ^
- *     ole32.lib winmm.lib /Fe:loopy_core_tests.exe
- *   loopy_core_tests.exe
+ * Build & run: use the helper, which picks the right per-OS toolchain flags and
+ * source/include paths and runs both native suites:
+ *   bash src/test/run_native_tests.sh
+ * It expects "ALL PASSED". The engine source set it compiles mirrors
+ * src/CMakeLists.txt (minus the MIDI TUs this suite does not link).
  */
 #include <math.h>
 #include <stdio.h>
@@ -83,7 +62,7 @@ static void test_ring_push_pop_fifo(void) {
   CHECK(le_ring_pop(&ring, &out) == 0); /* empty */
 
   for (int i = 0; i < 5; ++i) {
-    le_command cmd = {i, i * 10, (float)i};
+    le_command cmd = {.code = i, .arg_i = i * 10, .arg_f = (float)i};
     CHECK(le_ring_push(&ring, cmd) == 1);
   }
   for (int i = 0; i < 5; ++i) {
@@ -100,7 +79,7 @@ static void test_ring_reports_full(void) {
   le_ring ring;
   le_ring_init(&ring, storage, 4);
 
-  le_command cmd = {1, 0, 0.0f};
+  le_command cmd = {.code = 1};
   CHECK(le_ring_push(&ring, cmd) == 1);
   CHECK(le_ring_push(&ring, cmd) == 1);
   CHECK(le_ring_push(&ring, cmd) == 1);
@@ -120,7 +99,7 @@ static void test_ring_wraps_around(void) {
   /* Many push/pop cycles force head/tail to wrap past the buffer length. */
   le_command out;
   for (int i = 0; i < 100; ++i) {
-    le_command cmd = {i, 0, 0.0f};
+    le_command cmd = {.code = i};
     CHECK(le_ring_push(&ring, cmd) == 1);
     CHECK(le_ring_pop(&ring, &out) == 1);
     CHECK(out.code == i);
@@ -406,6 +385,100 @@ static void test_master_gain_resets_on_configure(void) {
   le_engine_configure(e, 48000, 1, 1, 1000);
   le_engine_get_snapshot(e, &s);
   CHECK(fabsf(s.master_gain - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* le_engine_note_xrun (the device backend's overload hook) tallies into the
+ * published snapshot, and a fresh configure resets the per-session count. */
+static void test_xrun_count_tallies_and_resets(void) {
+  printf("test_xrun_count_tallies_and_resets\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.xrun_count == 0); /* none yet */
+
+  le_engine_note_xrun(e);
+  le_engine_note_xrun(e);
+  le_engine_note_xrun(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.xrun_count == 3);
+
+  le_engine_note_xrun(NULL); /* must not crash */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.xrun_count == 3);
+
+  /* A fresh configure (a new device session) clears the tally. */
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.xrun_count == 0);
+
+  le_engine_destroy(e);
+}
+
+/* le_engine_mark_device_lost (the ASIO reset / sample-rate-change hook) flips
+ * device_present to 0 while leaving running set — the "running-but-disconnected"
+ * state the control layer reads to drive reconnection. */
+static void test_device_lost_keeps_running(void) {
+  printf("test_device_lost_keeps_running\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  le_engine_mark_started(e); /* device present + running */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.device_present == 1);
+  CHECK(s.running == 1);
+
+  le_engine_mark_device_lost(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.device_present == 0); /* lost ... */
+  CHECK(s.running == 1);        /* ... but still running, awaiting reconnect */
+
+  le_engine_mark_device_lost(NULL); /* must not crash */
+
+  le_engine_destroy(e);
+}
+
+/* Exercises the master_bus_frame RT step in isolation (the limiter dynamics):
+ * below the ceiling it is bit-transparent; above it, instant attack pins the
+ * frame to the ceiling; master gain is applied before the limiter and metering. */
+static void test_master_bus_frame_limiter(void) {
+  printf("test_master_bus_frame_limiter\n");
+  le_engine* e = make_configured_engine(); /* configure seeds lim_gain = 1.0 */
+  float out[2];
+  float sumsq;
+  float peak;
+
+  /* Below the ceiling: unity gain, nothing to limit -> output unchanged. */
+  out[0] = 0.5f;
+  out[1] = -0.5f;
+  sumsq = 0.0f;
+  peak = 0.0f;
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
+                                      &sumsq, &peak);
+  CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(out[1] + 0.5f) < 1e-6f);
+  CHECK(fabsf(peak - 0.5f) < 1e-6f); /* metering reads the output */
+
+  /* Above the ceiling: instant attack clamps this very frame, no overshoot. */
+  out[0] = 2.0f;
+  out[1] = 0.0f;
+  sumsq = 0.0f;
+  peak = 0.0f;
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 1.0f, 1, 0.99f, 0.001f,
+                                      &sumsq, &peak);
+  CHECK(out[0] <= 0.99f + 1e-4f);
+  CHECK(peak <= 0.99f + 1e-4f);
+
+  /* Master gain is applied before the limiter / metering (limiter off here). */
+  out[0] = 1.0f;
+  out[1] = 1.0f;
+  sumsq = 0.0f;
+  peak = 0.0f;
+  le_engine_master_bus_frame_for_test(e, out, 0, 2, 0.5f, 0, 0.99f, 0.001f,
+                                      &sumsq, &peak);
+  CHECK(fabsf(out[0] - 0.5f) < 1e-6f);
 
   le_engine_destroy(e);
 }
@@ -4614,6 +4687,9 @@ int main(void) {
   test_master_gain_scales_output();
   test_master_gain_rejects_null();
   test_master_gain_resets_on_configure();
+  test_xrun_count_tallies_and_resets();
+  test_device_lost_keeps_running();
+  test_master_bus_frame_limiter();
   test_looper_clear();
   test_looper_requires_configure();
   test_looper_multitrack();

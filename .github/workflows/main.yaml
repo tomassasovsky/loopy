@@ -63,6 +63,42 @@ jobs:
       - run: flutter pub get
       - run: flutter build linux --debug --target lib/main_development.dart
 
+  # The native C engine + MIDI unit tests (the deterministic golden gate). They
+  # need no audio device, so they run on Linux with just a C toolchain + ALSA
+  # headers (the MIDI test links libasound). run_native_tests.sh builds and runs
+  # both suites; a failed CHECK returns non-zero and fails the job. This is the
+  # strongest correctness gate in the repo — keep it on every PR.
+  native-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libasound2-dev
+      - name: Build + run native engine/MIDI tests
+        run: bash packages/loopy_engine/src/test/run_native_tests.sh
+
+  # Compile-only macOS guard. macOS/iOS build the engine through the CocoaPods
+  # podspec's per-file forwarders (macos/Classes/), NOT CMake, so a new native TU
+  # can break the macOS link unless a forwarder is added — building here catches
+  # that. The app is flavored (development/staging/production) and the macOS Xcode
+  # project has only flavor-specific configurations (Debug-development, …), so the
+  # build MUST pass --flavor (the CMake desktop builds don't, which is why
+  # build-windows/linux omit it).
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.x"
+          channel: stable
+          cache: true
+      - run: flutter config --enable-macos-desktop
+      - run: flutter pub get
+      - run: flutter build macos --debug --flavor development --target lib/main_development.dart
+
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
     with:

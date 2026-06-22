@@ -203,16 +203,20 @@ ASIOTime* asio_buffer_switch_time_info(ASIOTime* params, long index,
 }
 
 void asio_sample_rate_did_change(ASIOSampleRate /*rate*/) {
-  // v1: sample-rate / reset / hot-swap handling is deferred (Out of Scope). The
-  // seam keeps this callback so it can be wired later; for now it is a no-op.
+  // A sample-rate change invalidates the open stream; we cannot re-open from this
+  // (driver) thread. Signal device-lost so the control layer re-opens at the new
+  // rate via stop -> start (the same path device removal uses). Null-safe.
+  le_engine_mark_device_lost(g_asio.engine);
 }
 
 long asio_messages(long selector, long value, void* /*message*/,
                    double* /*opt*/) {
   switch (selector) {
     case kAsioSelectorSupported:
-      // Acknowledge the queries we answer below; decline everything else.
-      if (value == kAsioEngineVersion || value == kAsioSupportsTimeInfo) {
+      // Acknowledge the selectors we handle below; decline everything else.
+      if (value == kAsioEngineVersion || value == kAsioSupportsTimeInfo ||
+          value == kAsioOverload || value == kAsioResetRequest ||
+          value == kAsioResyncRequest) {
         return 1L;
       }
       return 0L;
@@ -220,10 +224,25 @@ long asio_messages(long selector, long value, void* /*message*/,
       return 2L;  // ASIO 2.
     case kAsioSupportsTimeInfo:
       return 1L;  // use bufferSwitchTimeInfo (delegates to bufferSwitch).
+    case kAsioOverload:
+      // The driver detected a dropout (we missed a buffer deadline). Tally it
+      // into the published snapshot so the UI can flag glitches; the audio path
+      // itself keeps running. g_asio.engine may be null mid-teardown.
+      le_engine_note_xrun(g_asio.engine);
+      return 1L;
     case kAsioResetRequest:
-      // Hot reset / device re-open is deferred (Out of Scope). Decline so the
-      // driver does not expect us to re-create buffers mid-stream.
-      return 0L;
+      // The driver needs a reset (e.g. its control panel changed buffer size /
+      // sample rate, or it was reconfigured by another host). The ASIO spec
+      // requires the reset to happen OFF this thread, asynchronously. Signal
+      // device-lost; the control layer then re-opens via stop -> start (the same
+      // tested path device removal uses). Accept (1) — we are handling it.
+      le_engine_mark_device_lost(g_asio.engine);
+      return 1L;
+    case kAsioResyncRequest:
+      // The driver lost sync (a glitch/underrun it recovered from) — not a full
+      // reset. Tally it as a dropout; keep running.
+      le_engine_note_xrun(g_asio.engine);
+      return 1L;
     default:
       return 0L;
   }

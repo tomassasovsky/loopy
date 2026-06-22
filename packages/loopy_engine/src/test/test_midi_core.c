@@ -7,32 +7,15 @@
  * path, and the close-nulls-the-callback dispose ordering that guards against a
  * use-after-free into freed Dart state.
  *
- * The three per-OS backend TUs are listed in the build below; the two that don't
- * match the host compile to near-empty objects, so le_midi_select_backend
- * resolves at link time exactly as in the shipped library.
+ * The MIDI sources live under src/midi/ (midi.c plus the three per-OS backend
+ * TUs, all compiled — the two that don't match the host compile to near-empty
+ * objects, so le_midi_select_backend resolves at link time as in the shipped
+ * library).
  *
- * Build & run (Windows, MinGW gcc — the WinMM backend links winmm):
- *   gcc -std=c11 -I src -I src/miniaudio \
- *     src/test/test_midi_core.c src/midi.c \
- *     src/midi_backend_linux.c src/midi_backend_apple.c \
- *     src/midi_backend_windows.c \
- *     -lwinmm -o loopy_midi_tests.exe
- *   ./loopy_midi_tests.exe
- *
- * Build & run (Linux — the ALSA backend links asound):
- *   clang -std=c11 -I src -I src/miniaudio \
- *     src/test/test_midi_core.c src/midi.c \
- *     src/midi_backend_linux.c src/midi_backend_apple.c \
- *     src/midi_backend_windows.c \
- *     -lasound -lpthread -o /tmp/loopy_midi_tests && /tmp/loopy_midi_tests
- *
- * Build & run (macOS — links CoreMIDI):
- *   clang -std=c11 -I src -I src/miniaudio \
- *     src/test/test_midi_core.c src/midi.c \
- *     src/midi_backend_linux.c src/midi_backend_apple.c \
- *     src/midi_backend_windows.c \
- *     -framework CoreMIDI -framework CoreFoundation \
- *     -o /tmp/loopy_midi_tests && /tmp/loopy_midi_tests
+ * Build & run: use the helper, which picks the right per-OS toolchain flags and
+ * source/include paths and runs both native suites:
+ *   bash src/test/run_native_tests.sh
+ * It expects "ALL PASSED".
  */
 #include <stdint.h>
 #include <stdio.h>
