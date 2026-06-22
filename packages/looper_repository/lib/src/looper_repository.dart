@@ -5,8 +5,10 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/track.dart';
+import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:loopy_engine/loopy_engine.dart'
+    hide ParamReadout, TrackEffect, TrackEffectParam, TrackEffectType;
 
 /// Owns the [AudioEngine] and is the single source of looper truth.
 ///
@@ -721,7 +723,12 @@ class LooperRepository {
     final effects = _laneEffects[(channel, lane)] ?? const <TrackEffect>[];
     for (var i = 0; i < effects.length; i++) {
       final fx = effects[i];
-      _engine.setLaneFx(channel: channel, lane: lane, index: i, type: fx.type);
+      _engine.setLaneFx(
+        channel: channel,
+        lane: lane,
+        index: i,
+        type: trackEffectTypeToEngine(fx.type),
+      );
       for (var p = 0; p < fx.params.length; p++) {
         _engine.setLaneFxParam(
           channel: channel,
@@ -831,7 +838,7 @@ class LooperRepository {
         input: input,
         lane: lane,
         index: i,
-        type: fx.type,
+        type: trackEffectTypeToEngine(fx.type),
       );
       for (var p = 0; p < fx.params.length; p++) {
         _engine.setMonitorLaneFxParam(
