@@ -136,7 +136,7 @@ void main() {
     final target = FakeSessionEngine(); // 48000 Hz
     await expectLater(
       repoFor(target).load(dir),
-      throwsA(isA<StateError>()),
+      throwsA(isA<SessionSampleRateMismatch>()),
     );
   });
 

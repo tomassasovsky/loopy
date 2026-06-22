@@ -12,6 +12,7 @@ import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
+import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/window/window_chrome.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -42,70 +43,114 @@ class _BigPictureViewState extends State<BigPictureView> {
     // Settings are reachable from the performance view by right-clicking
     // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
     // and minimal otherwise.
-    return Focus(
-      autofocus: true,
-      onKeyEvent: _onKey,
-      child: GestureDetector(
-        key: const Key('bigpicture_settings_secondaryTap'),
-        behavior: HitTestBehavior.translucent,
-        onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
-        child: Scaffold(
-          body: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      _ModeIndicator(mode: big.mode),
-                      const SizedBox(width: 12),
-                      _BankSwitch(active: bank.activeBank),
-                      const Spacer(),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  // With no first-run gate, a stopped engine lands here; a
-                  // full-width affordance opens settings to (re)start it.
-                  if (!state.status.isConnected) ...[
-                    const _AudioNotRunningBanner(),
-                    const SizedBox(height: 14),
-                  ],
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return BlocListener<SessionCubit, SessionState>(
+      // Only react to a settled action — a save/load/export that finished or
+      // failed — never the transient `working` tick.
+      listenWhen: (previous, current) =>
+          current.status != previous.status &&
+          (current.status == SessionStatus.success ||
+              current.status == SessionStatus.failure),
+      listener: _showSessionOutcome,
+      child: Focus(
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: GestureDetector(
+          key: const Key('bigpicture_settings_secondaryTap'),
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
+          child: Scaffold(
+            body: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
                       children: [
-                        for (final track in tracks)
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              child: Align(
-                                alignment: Alignment.bottomCenter,
-                                child: _TrackColumn(
-                                  track: track,
-                                  name: context.l10n.displayTrackName(
-                                    big.nameOf(track.channel),
-                                    track.channel,
+                        _ModeIndicator(mode: big.mode),
+                        const SizedBox(width: 12),
+                        _BankSwitch(active: bank.activeBank),
+                        const Spacer(),
+                        const _SessionMenu(),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    // With no first-run gate, a stopped engine lands here; a
+                    // full-width affordance opens settings to (re)start it.
+                    if (!state.status.isConnected) ...[
+                      const _AudioNotRunningBanner(),
+                      const SizedBox(height: 14),
+                    ],
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final track in tracks)
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: _TrackColumn(
+                                    track: track,
+                                    name: context.l10n.displayTrackName(
+                                      big.nameOf(track.channel),
+                                      track.channel,
+                                    ),
+                                    selected:
+                                        track.channel == big.selectedChannel,
+                                    playMode: big.mode == PerformanceMode.play,
                                   ),
-                                  selected:
-                                      track.channel == big.selectedChannel,
-                                  playMode: big.mode == PerformanceMode.play,
                                 ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Shows a transient SnackBar surfacing the last session action's outcome —
+  /// a localized success line, or a localized, human-readable error for the
+  /// known refusals (sample-rate mismatch, newer manifest version), falling
+  /// back to the raw message otherwise. The content is a live region so it is
+  /// announced to assistive tech as it appears (WCAG 4.1.3).
+  void _showSessionOutcome(BuildContext context, SessionState state) {
+    final l10n = context.l10n;
+    final message = switch (state.status) {
+      SessionStatus.success => switch (state.outcome) {
+        SessionOutcome.saved => l10n.sessionSaved,
+        SessionOutcome.loaded => l10n.sessionLoaded,
+        SessionOutcome.mixdownExported => l10n.mixdownExported,
+        SessionOutcome.stemsExported => l10n.stemsExported,
+        null => null,
+      },
+      SessionStatus.failure => switch (state.error) {
+        SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
+        SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
+        SessionError.unknown ||
+        null => l10n.sessionErrorGeneric(state.errorMessage ?? ''),
+      },
+      SessionStatus.idle || SessionStatus.working => null,
+    };
+    if (message == null) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('bigpicture_session_snackbar'),
+          content: Semantics(liveRegion: true, child: Text(message)),
+        ),
+      );
   }
 
   /// The performance keyboard map. Plain keys are consumed (so macOS does not
@@ -303,6 +348,66 @@ class _AudioNotRunningBanner extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A session action chosen from the [_SessionMenu].
+enum _SessionAction { save, load, exportMixdown, exportStems }
+
+/// The session menu in the top bar: save / load the `.loopy` bundle and export
+/// a mixdown or per-track stems. Drives the [SessionCubit]; outcomes are
+/// surfaced by the view's [BlocListener] (a live-region SnackBar).
+///
+/// A [PopupMenuButton] is keyboard-operable and screen-reader labelled (via
+/// its tooltip) out of the box, so it satisfies WCAG 2.1.1 / 4.1.2 without
+/// extra wiring.
+class _SessionMenu extends StatelessWidget {
+  const _SessionMenu();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return PopupMenuButton<_SessionAction>(
+      key: const Key('bigpicture_session_menu'),
+      tooltip: l10n.a11ySessionMenu,
+      icon: const Icon(Icons.folder_outlined, color: Colors.white70),
+      onSelected: (action) {
+        final cubit = context.read<SessionCubit>();
+        switch (action) {
+          case _SessionAction.save:
+            unawaited(cubit.saveSession());
+          case _SessionAction.load:
+            unawaited(cubit.loadSession());
+          case _SessionAction.exportMixdown:
+            unawaited(cubit.exportMixdown());
+          case _SessionAction.exportStems:
+            unawaited(cubit.exportStems());
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          key: const Key('bigpicture_session_save'),
+          value: _SessionAction.save,
+          child: Text(l10n.saveSession),
+        ),
+        PopupMenuItem(
+          key: const Key('bigpicture_session_load'),
+          value: _SessionAction.load,
+          child: Text(l10n.loadSession),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          key: const Key('bigpicture_session_exportMixdown'),
+          value: _SessionAction.exportMixdown,
+          child: Text(l10n.exportMixdown),
+        ),
+        PopupMenuItem(
+          key: const Key('bigpicture_session_exportStems'),
+          value: _SessionAction.exportStems,
+          child: Text(l10n.exportStems),
+        ),
+      ],
     );
   }
 }

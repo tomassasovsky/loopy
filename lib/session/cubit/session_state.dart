@@ -30,13 +30,28 @@ enum SessionOutcome {
   stemsExported,
 }
 
-/// State of the [SessionCubit]: the current action [status] and a
-/// [outcome] for the most recent action, or a [errorMessage] if it failed.
+/// A classified failure kind, so the UI can show a localized, human-readable
+/// message instead of a raw `toString()`.
+enum SessionError {
+  /// The session's sample rate differs from the running device's.
+  sampleRateMismatch,
+
+  /// The session was written by a newer, incompatible version of the app.
+  unsupportedVersion,
+
+  /// Any other failure (I/O, engine, etc.); see [SessionState.errorMessage].
+  unknown,
+}
+
+/// State of the [SessionCubit]: the current action [status] and a [outcome]
+/// for the most recent successful action, or a classified [error] (with a raw
+/// [errorMessage] for diagnostics) if it failed.
 class SessionState extends Equatable {
   /// Creates a [SessionState].
   const SessionState({
     this.status = SessionStatus.idle,
     this.outcome,
+    this.error,
     this.errorMessage,
   });
 
@@ -46,9 +61,12 @@ class SessionState extends Equatable {
   /// Which action succeeded, for localized success messaging.
   final SessionOutcome? outcome;
 
-  /// A failure message for the most recent action, if any.
+  /// The classified failure kind, for localized error messaging.
+  final SessionError? error;
+
+  /// The raw failure message, for diagnostics / the unknown-error fallback.
   final String? errorMessage;
 
   @override
-  List<Object?> get props => [status, outcome, errorMessage];
+  List<Object?> get props => [status, outcome, error, errorMessage];
 }

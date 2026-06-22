@@ -47,7 +47,10 @@ void main() {
 
     test('rejects a newer, incompatible manifest version', () {
       final json = session.toJson()..['version'] = Session.formatVersion + 1;
-      expect(() => Session.fromJson(json), throwsFormatException);
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionUnsupportedVersion>()),
+      );
     });
   });
 }
