@@ -425,26 +425,36 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
 
 ## Roadmap (path forward)
 
-**Next: full multichannel per-track I/O routing** — the last big feature. Plan
-written and ready to `/build`:
-`docs/plan/2026-06-09-feat-multichannel-routing-plan.md`. Five phases (native
-I/O channel counts → mono track buffers + routing → Dart data/repo → routing UI
-→ on-hardware validation). Needs the user's audio interface plugged in to verify
-end-to-end. User decisions: **full device channels** and **two banks of four**
-(already shipped).
+**Full multichannel per-track I/O routing — SHIPPED.** The "last big feature" is
+done in code: it landed as the multi-lane / dual-route rework (per-lane
+input/output masks through the native engine `LE_CMD_SET_LANE_INPUT/OUTPUT` +
+`le_lane_snapshot`, the `Lane` domain model + `setLaneInput/Output` repo methods,
+`LooperLaneInput/OutputChanged` bloc events, and the `lane_graph_view.dart`
+wiring UI). Plan: `docs/plan/2026-06-09-feat-multichannel-routing-plan.md`. Only
+the **on-hardware end-to-end validation** (full-count interface plugged in)
+remains open — see "On-hardware validations" below.
 
 ### Possible next steps (no hard dependency)
 - **Per-track multi-loop phase alignment** — multi-loop tracks currently phase
   relative to their own start iteration; an absolute-parity option would align
-  all k-loop tracks to the same base-loop downbeat.
+  all k-loop tracks to the same base-loop downbeat. _(Not started.)_
+- **Accessibility pass** — no `Semantics` coverage yet (theming + golden tests
+  are done). Screen-reader labels, focus order, keyboard-nav a11y tests.
+- **Raspberry Pi GPIO backend** — the `ControllerSourceKind.gpio` seam exists but
+  there's no `gpio_client` package / libgpiod binding yet. _(Not started.)_
 
 ### Deferred (need hardware / 2nd display)
-- `midi_client` — real USB-MIDI binding (abstraction + wiring ready; needs a
-  pedal). Plug a `ControllerSource` into the already-wired `ControllerRepository`.
-- Secondary-window **visualizer** (`desktop_multi_window`) — needs a 2nd display.
-- **Phase 4:** sessions save/load + WAV export ✅ (done — see Done); remaining:
-  Raspberry Pi GPIO backend, device hot-plug handling, theming/accessibility/
-  golden tests.
+- `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
+  `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
+  with a device-selection UI. Hardware-gated only for a live-pedal smoke test.
+- Secondary-window **visualizer** (`desktop_multi_window`) — wired end-to-end in
+  code (`runWaveformWindow`, `WaveformWindowService`, frame IPC); needs a 2nd
+  display for a live visual confirmation.
+- **Device hot-plug / reconnect — SHIPPED** (PR #41-era `feat/audio-device-a2`):
+  `LooperRepository` reconnect supervisor (`_intendRunning` guard,
+  `_attemptReconnect`, `_pinnedDevicesPresent`) + `devicePresent` UI banner.
+- **Phase 4:** sessions save/load + WAV export ✅, theming ✅, golden tests ✅.
+  Remaining: Raspberry Pi GPIO backend, accessibility (see above).
 
 ### On-hardware validations still open
 - Phase-1 **latency gate** (≤10 ms round-trip) — needs a class-compliant
