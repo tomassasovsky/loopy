@@ -384,6 +384,7 @@ void main() {
       AudioBackend activeBackend = AudioBackend.miniaudio,
       double masterGain = 1,
       int fxAddedLatencyFrames = 0,
+      int outputEnabledMask = 0xFFFFFFFF,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -399,6 +400,7 @@ void main() {
       masterGain: masterGain,
       fxAddedLatencyFrames: fxAddedLatencyFrames,
       activeBackend: activeBackend,
+      outputEnabledMask: outputEnabledMask,
     );
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
@@ -423,6 +425,10 @@ void main() {
 
     test('fxAddedLatencyFrames participates in equality', () {
       expect(build(), isNot(equals(build(fxAddedLatencyFrames: 1024))));
+    });
+
+    test('outputEnabledMask participates in equality', () {
+      expect(build(), isNot(equals(build(outputEnabledMask: 0x1))));
     });
 
     test('fxAddedLatencyMs is 0 when the sample rate is unknown', () {

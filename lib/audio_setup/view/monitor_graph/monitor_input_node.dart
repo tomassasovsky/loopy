@@ -3,15 +3,14 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
-/// One monitor lane's node: the input it monitors, its lane number, a mute
-/// icon, and a read-only volume level. Tapping it focuses the lane (so its
-/// outputs become wirable). Mirrors the track lane node, minus recording.
-class MonitorLaneNode extends StatelessWidget {
-  /// Creates a [MonitorLaneNode].
-  const MonitorLaneNode({
+/// One monitored input's node: the input it monitors, a mute icon, and a
+/// read-only volume level. Tapping it focuses the input (so its outputs become
+/// wirable). Renders the input's single live chain — there is no lane stack.
+class MonitorInputNode extends StatelessWidget {
+  /// Creates a [MonitorInputNode].
+  const MonitorInputNode({
     required this.input,
-    required this.lane,
-    required this.laneState,
+    required this.monitor,
     required this.color,
     required this.focused,
     required this.dim,
@@ -19,42 +18,37 @@ class MonitorLaneNode extends StatelessWidget {
     super.key,
   });
 
-  /// The hardware input this lane monitors.
+  /// The hardware input this node monitors.
   final int input;
 
-  /// The lane's position within the input.
-  final int lane;
+  /// The monitor this node renders.
+  final InputMonitor monitor;
 
-  /// The monitor lane this node renders.
-  final MonitorLane laneState;
-
-  /// The lane's accent colour.
+  /// The input's accent colour.
   final Color color;
 
-  /// Whether this lane is currently focused.
+  /// Whether this input is currently focused.
   final bool focused;
 
-  /// Whether another lane is focused (so this one is dimmed).
+  /// Whether another input is focused (so this one is dimmed).
   final bool dim;
 
-  /// Focuses (or unfocuses) the lane.
+  /// Focuses (or unfocuses) the input.
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final volumeWord = laneState.muted
+    final volumeWord = monitor.muted
         ? l10n.trackStateMuted
-        : '${(laneState.volume.clamp(0.0, 1.0) * 100).round()}%';
+        : '${(monitor.volume.clamp(0.0, 1.0) * 100).round()}%';
     return FocusableTapTarget(
-      key: Key('monitorGraph_laneNode_${input}_$lane'),
+      key: Key('monitorGraph_inputNode_$input'),
       onTap: onTap,
       selected: focused,
       borderRadius: 8,
-      semanticLabel:
-          '${l10n.inputMonitorLabel(input + 1)}, '
-          '${l10n.laneNumberLabel(lane + 1)}, $volumeWord',
+      semanticLabel: '${l10n.inputMonitorLabel(input + 1)}, $volumeWord',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
@@ -72,9 +66,9 @@ class MonitorLaneNode extends StatelessWidget {
             Row(
               children: [
                 Icon(
-                  laneState.muted ? Icons.volume_off : Icons.volume_up,
+                  monitor.muted ? Icons.volume_off : Icons.volume_up,
                   size: 13,
-                  color: laneState.muted
+                  color: monitor.muted
                       ? surface.textTertiary
                       : surface.textSecondary,
                 ),
@@ -92,21 +86,13 @@ class MonitorLaneNode extends StatelessWidget {
                 ),
               ],
             ),
-            Text(
-              l10n.laneNumberLabel(lane + 1),
-              style: TextStyle(
-                color: surface.textSecondary,
-                fontSize: 10,
-                height: 1.2,
-              ),
-            ),
             const SizedBox(height: 4),
             ClipRRect(
               borderRadius: BorderRadius.circular(2),
               child: SizedBox(
                 height: 4,
                 child: LinearProgressIndicator(
-                  value: laneState.muted ? 0 : laneState.volume.clamp(0.0, 1.0),
+                  value: monitor.muted ? 0 : monitor.volume.clamp(0.0, 1.0),
                   backgroundColor: surface.line,
                   valueColor: AlwaysStoppedAnimation(color),
                 ),

@@ -394,6 +394,34 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `SessionUnsupportedVersion`), classified by the cubit into `SessionError`, and
   rendered as localized human-readable text. Outcomes (success + error) surface
   in a `Semantics(liveRegion: true)` SnackBar (WCAG 4.1.3).
+- **Unified input FX & routing** (plan
+  `docs/plan/2026-06-22-feat-unified-input-fx-routing-plan.md`). Collapses the
+  two FX surfaces into one: each hardware input now has a **single** live-monitor
+  chain (output mask + volume + mute + effects), and that chain is **snapshot-
+  copied onto a track lane at record** — the take plays back through the chain
+  you monitored, while the recorded buffer stays clean (non-destructive; playback
+  re-applies the snapshot). The copy is by value on the **control thread** (in
+  `le_engine_record`, asserted RT-safe by a control-thread copy counter), so
+  editing the input chain afterwards never alters an earlier take (D3). Native:
+  `le_monitor_input` folded from N lanes to one chain;
+  `LE_CMD_SET_MONITOR_LANE_*` retired for single-chain
+  `LE_CMD_SET_MONITOR_INPUT_FX`/`…_FX_COUNT`/`…_OUTPUT`/`…_VOLUME`/`…_MUTE`. New
+  **structural output gate** (`LE_CMD_SET_OUTPUT_ENABLED` + snapshot
+  `output_enabled_mask`): a disabled output is skipped in the mix fan-out while
+  its lane/monitor masks are preserved (re-enabling restores them) — distinct
+  from a level mute, RT-safe mid-record, default-on, beyond-channel-count gates
+  ignored. Dart: `InputMonitor` reshaped to a single chain (`MonitorLane`
+  dropped), `MonitorCubit` single-chain API, `LooperRepository` single-chain
+  monitor setters + `setOutputEnabled` + record-time lane-FX mirroring,
+  `LooperState.outputEnabledMask`, `LooperOutputEnabledToggled` bloc event, and a
+  **v2→v3 migration** (`monitor.migrated_v3`, after v2) that folds multi-lane
+  monitor keys per **D9** (first non-empty chain — lane 0 preferred, NOT merged —
+  OR-union of output masks, lane 0 vol/mute) and clears the dead keys. UI: the
+  monitor graph folds to one node per input (no lane stack), recorded lanes show
+  an FX-snapshot badge, and the routing graph renders gated-off outputs greyed +
+  non-targetable (reusing `RoutingNode.excluded`) with a tap-to-toggle and a
+  non-blocking "no active outputs" notice; accessibility labels on the gate
+  toggle and disabled outputs. FFI regenerated (`dart format`, no churn).
 
 ---
 
@@ -469,11 +497,14 @@ remains open — see "On-hardware validations" below.
 ---
 
 ## Test counts (last green)
-native (all C tests, 63 fns: incl. mid-loop record, transport reset single- &
-multi-track, loop multiples, loop-viz, per-track effects DSP incl. pre/post
-stage, session export/import roundtrip) · plugin 38 · controller 14 ·
-looper_repository 38 · settings 38 · session_repository 17 · local_storage 1 ·
-app 207 (auto-start/first-run, big-picture settings + access, banks + A/B,
-performance keyboard, functional-settings + per-track effects card strip,
-session menu, goldens). `flutter analyze` clean; macOS app builds end-to-end.
-`LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`, `LE_FX_MAX = 8`.
+native (all C tests: incl. mid-loop record, transport reset single- &
+multi-track, loop multiples, loop-viz, per-track effects DSP, session
+export/import roundtrip, **single-chain monitor + record-FX snapshot +
+RT-safety + structural output gate**) · plugin 38 · controller 14 ·
+looper_repository 83 · settings 63 · session_repository 17 · local_storage 1 ·
+app 399 excl. author-only `screenshots`-tagged goldens (auto-start/first-run,
+big-picture settings + access, banks + A/B, performance keyboard,
+functional-settings, **single-chain monitor graph, output-gate routing + a11y,
+lane FX-snapshot badge, v3 migration**, session menu). `flutter analyze` clean;
+macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
+`LE_FX_MAX = 8`, `kMaxOutputs = 8`.

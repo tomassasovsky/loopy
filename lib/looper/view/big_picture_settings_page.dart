@@ -218,22 +218,42 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
         initialData: repository.state,
         builder: (context, snapshot) {
           final state = snapshot.data ?? const LooperState();
-          return TracksRoutingGraphView(
-            tracks: state.tracks,
-            inputChannels: state.status.inputChannels,
-            outputChannels: state.status.outputChannels,
-            excludedInputMask: state.status.excludedInputMask,
-            trackLabels: trackLabels,
-            onInputMaskChanged: (channel, mask) {
-              repository.setInputMask(channel: channel, mask: mask);
-              unawaited(
-                settings.saveLaneInput(channel, 0, maskToInputChannel(mask)),
-              );
-            },
-            onOutputMaskChanged: (channel, mask) {
-              repository.setOutputMask(channel: channel, mask: mask);
-              unawaited(settings.saveLaneOutput(channel, 0, mask));
-            },
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_noActiveOutputs(state)) ...[
+                _NoActiveOutputsNotice(message: l10n.noActiveOutputsNotice),
+                const SizedBox(height: 12),
+              ],
+              TracksRoutingGraphView(
+                tracks: state.tracks,
+                inputChannels: state.status.inputChannels,
+                outputChannels: state.status.outputChannels,
+                excludedInputMask: state.status.excludedInputMask,
+                outputEnabledMask: state.outputEnabledMask,
+                trackLabels: trackLabels,
+                onInputMaskChanged: (channel, mask) {
+                  repository.setInputMask(channel: channel, mask: mask);
+                  unawaited(
+                    settings.saveLaneInput(
+                      channel,
+                      0,
+                      maskToInputChannel(mask),
+                    ),
+                  );
+                },
+                onOutputMaskChanged: (channel, mask) {
+                  repository.setOutputMask(channel: channel, mask: mask);
+                  unawaited(settings.saveLaneOutput(channel, 0, mask));
+                },
+                onOutputEnabledToggled: (output, {required enabled}) {
+                  repository.setOutputEnabled(output: output, enabled: enabled);
+                  unawaited(
+                    settings.saveOutputEnabled(output, enabled: enabled),
+                  );
+                },
+              ),
+            ],
           );
         },
       ),
@@ -359,6 +379,54 @@ class _SectionTab extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Whether every available output channel is structurally gated off (so nothing
+/// can be heard). False when the engine is stopped (`outputChannels == 0`).
+bool _noActiveOutputs(LooperState state) {
+  final n = state.status.outputChannels;
+  if (n <= 0) return false;
+  for (var c = 0; c < n; c++) {
+    if (state.isOutputEnabled(c)) return false;
+  }
+  return true;
+}
+
+/// A non-blocking notice surfaced when the last output is gated off (E1/F-12).
+/// A `liveRegion` so a screen reader announces it the moment it appears.
+class _NoActiveOutputsNotice extends StatelessWidget {
+  const _NoActiveOutputsNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        key: const Key('routing_noActiveOutputs'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: surface.cardHigh,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: surface.line),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 18, color: surface.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: surface.textSecondary, fontSize: 13),
+              ),
+            ),
+          ],
         ),
       ),
     );

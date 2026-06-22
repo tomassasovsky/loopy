@@ -292,6 +292,12 @@ class MockAudioEngine implements AudioEngine {
       _requireRunning();
 
   @override
+  EngineResult setOutputEnabled({
+    required int output,
+    required bool enabled,
+  }) => _requireRunning();
+
+  @override
   EngineResult setOverdubFeedback(double feedback) => _requireRunning();
 
   @override
@@ -328,51 +334,39 @@ class MockAudioEngine implements AudioEngine {
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorLaneCount({
+  EngineResult setMonitorInputOutput({
     required int input,
-    required int count,
-  }) => _requireRunning();
-
-  @override
-  EngineResult setMonitorLaneOutput({
-    required int input,
-    required int lane,
     required int mask,
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorLaneVolume({
+  EngineResult setMonitorInputVolume({
     required int input,
-    required int lane,
     required double volume,
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorLaneMute({
+  EngineResult setMonitorInputMute({
     required int input,
-    required int lane,
     required bool muted,
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorLaneFx({
+  EngineResult setMonitorInputFx({
     required int input,
-    required int lane,
     required int index,
     required TrackEffectType type,
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorLaneFxCount({
+  EngineResult setMonitorInputFxCount({
     required int input,
-    required int lane,
     required int count,
   }) => _requireRunning();
 
   @override
-  EngineResult setMonitorLaneFxParam({
+  EngineResult setMonitorInputFxParam({
     required int input,
-    required int lane,
     required int index,
     required int param,
     required double value,

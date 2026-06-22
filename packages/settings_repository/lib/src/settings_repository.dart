@@ -189,6 +189,18 @@ class SettingsRepository {
   Future<void> saveMonitorMigratedV2() =>
       _store.setBool(_monitorMigratedV2Key, value: true);
 
+  static const String _monitorMigratedV3Key = 'monitor.migrated_v3';
+
+  /// Whether the one-time multi-lane → single-chain monitor fold (v3) has
+  /// already run. Defaults to `false` so a fresh install runs (and no-ops) it
+  /// once. Runs after v2 so a cold v1→v2→v3 upgrade folds in order.
+  Future<bool> loadMonitorMigratedV3() async =>
+      await _store.getBool(_monitorMigratedV3Key) ?? false;
+
+  /// Marks the v3 single-chain monitor fold done so it never re-runs.
+  Future<void> saveMonitorMigratedV3() =>
+      _store.setBool(_monitorMigratedV3Key, value: true);
+
   /// Saves the audio [config] so the engine can auto-start with it next launch.
   Future<void> saveAudioConfig(StoredAudioConfig config) async {
     await _store.setInt(_audioSampleRateKey, config.sampleRate);
@@ -392,8 +404,17 @@ class SettingsRepository {
   String _monitorInputVolKey(int input) => 'monitor_input_vol.$input';
   String _monitorInputFxKey(int input) => 'monitor_input_fx.$input';
 
-  // Per-(input, lane) monitor keys (the multi-lane model the live app uses).
+  // Per-input single-chain monitor keys (the model the live app uses after the
+  // v3 fold). The enable flag is shared with the prior model.
   String _monitorInputEnabledKey(int input) => 'monitor_input_enabled.$input';
+  String _monitorOutKey(int input) => 'monitor_out.$input';
+  String _monitorVolKey(int input) => 'monitor_vol.$input';
+  String _monitorMuteKey(int input) => 'monitor_mute.$input';
+  String _monitorFxKey(int input) => 'monitor_fx.$input';
+
+  // Per-(input, lane) monitor keys — the prior multi-lane model. No longer
+  // written by the live app; read once by the v3 single-chain fold and then
+  // cleared.
   String _monitorLaneCountKey(int input) => 'monitor_lane_count.$input';
   String _monitorLaneOutKey(int input, int lane) =>
       'monitor_lane_out.$input.$lane';
@@ -403,6 +424,11 @@ class SettingsRepository {
       'monitor_lane_mute.$input.$lane';
   String _monitorLaneFxKey(int input, int lane) =>
       'monitor_lane_fx.$input.$lane';
+
+  // Structural output gate. Absence of a key means ENABLED (default-on); only
+  // explicitly-disabled outputs are written, so no fixed bound is needed and
+  // the set is self-cleaning when devices change.
+  String _outputEnabledKey(int output) => 'output_enabled.$output';
 
   /// Loads hardware [input]'s LEGACY single-route monitor routing as
   /// `(enabled, outputMask)`, or `null` if it was never saved. Read only by the
@@ -459,52 +485,117 @@ class SettingsRepository {
   Future<void> saveMonitorInputEnabled(int input, {required bool enabled}) =>
       _store.setBool(_monitorInputEnabledKey(input), value: enabled);
 
-  /// Loads hardware [input]'s active monitor lane count, or `null` if never
-  /// saved (the caller defaults to `1`).
+  // ---- single-chain monitor (the live model after the v3 fold) ----
+
+  /// Loads hardware [input]'s monitor output bitmask, or `null` if never saved
+  /// (the caller defaults to full stereo `0x3`).
+  Future<int?> loadMonitorOutput(int input) =>
+      _store.getInt(_monitorOutKey(input));
+
+  /// Saves hardware [input]'s monitor output bitmask.
+  Future<void> saveMonitorOutput(int input, int mask) =>
+      _store.setInt(_monitorOutKey(input), mask);
+
+  /// Loads hardware [input]'s monitor output gain (`0..1`), or `null` if never
+  /// saved (the caller defaults to unity `1.0`).
+  Future<double?> loadMonitorVolume(int input) =>
+      _store.getDouble(_monitorVolKey(input));
+
+  /// Saves hardware [input]'s monitor output gain (`0..1`).
+  Future<void> saveMonitorVolume(int input, double volume) =>
+      _store.setDouble(_monitorVolKey(input), volume);
+
+  /// Loads hardware [input]'s monitor mute flag, or `null` if never saved.
+  Future<bool?> loadMonitorMute(int input) =>
+      _store.getBool(_monitorMuteKey(input));
+
+  /// Saves hardware [input]'s monitor mute flag.
+  Future<void> saveMonitorMute(int input, {required bool muted}) =>
+      _store.setBool(_monitorMuteKey(input), value: muted);
+
+  /// Loads hardware [input]'s monitor effect chain as an opaque encoded string
+  /// (see `encodeTrackEffects`), or `null` if none is saved.
+  Future<String?> loadMonitorEffects(int input) =>
+      _store.getString(_monitorFxKey(input));
+
+  /// Saves hardware [input]'s [encoded] monitor effect chain.
+  Future<void> saveMonitorEffects(int input, String encoded) =>
+      _store.setString(_monitorFxKey(input), encoded);
+
+  // ---- structural output gate ----
+
+  /// Loads hardware [output]'s gate flag. `null` means the key was never
+  /// written, which (default-on) the caller reads as ENABLED; `false` is the
+  /// only value ever stored (an explicitly-disabled output).
+  Future<bool?> loadOutputEnabled(int output) =>
+      _store.getBool(_outputEnabledKey(output));
+
+  /// Persists hardware [output]'s gate. Default-on: an enabled output REMOVES
+  /// the key (so absence == enabled and the set self-cleans); a disabled output
+  /// writes `false`.
+  Future<void> saveOutputEnabled(int output, {required bool enabled}) async {
+    if (enabled) {
+      await _store.remove(_outputEnabledKey(output));
+    } else {
+      await _store.setBool(_outputEnabledKey(output), value: false);
+    }
+  }
+
+  // ---- prior multi-lane monitor keys ----
+  //
+  // Written only by the v2 single-route → lanes migration (a cold-upgrade
+  // stepping stone) and read once by the v3 single-chain fold, which then
+  // clears them. The live app never touches these.
+
+  /// Loads hardware [input]'s prior active monitor lane count, or `null`.
   Future<int?> loadMonitorLaneCount(int input) =>
       _store.getInt(_monitorLaneCountKey(input));
 
-  /// Saves hardware [input]'s active monitor lane count.
+  /// Saves hardware [input]'s prior active monitor lane count (v2 migration).
   Future<void> saveMonitorLaneCount(int input, int count) =>
       _store.setInt(_monitorLaneCountKey(input), count);
 
-  /// Loads monitor [input]'s lane [lane] output bitmask, or `null` if never
-  /// saved (the caller defaults to full stereo `0x3`).
+  /// Loads monitor [input]'s prior lane [lane] output bitmask, or `null`.
   Future<int?> loadMonitorLaneOutput(int input, int lane) =>
       _store.getInt(_monitorLaneOutKey(input, lane));
 
-  /// Saves monitor [input]'s lane [lane] output bitmask.
+  /// Saves monitor [input]'s prior lane [lane] output bitmask (v2 migration).
   Future<void> saveMonitorLaneOutput(int input, int lane, int mask) =>
       _store.setInt(_monitorLaneOutKey(input, lane), mask);
 
-  /// Loads monitor [input]'s lane [lane] output gain (`0..1`), or `null` if
-  /// never saved (the caller defaults to unity `1.0`).
+  /// Loads monitor [input]'s prior lane [lane] output gain, or `null`.
   Future<double?> loadMonitorLaneVolume(int input, int lane) =>
       _store.getDouble(_monitorLaneVolKey(input, lane));
 
-  /// Saves monitor [input]'s lane [lane] output gain (`0..1`).
+  /// Saves monitor [input]'s prior lane [lane] output gain (v2 migration).
   Future<void> saveMonitorLaneVolume(int input, int lane, double volume) =>
       _store.setDouble(_monitorLaneVolKey(input, lane), volume);
 
-  /// Loads monitor [input]'s lane [lane] mute flag, or `null` if never saved.
+  /// Loads monitor [input]'s prior lane [lane] mute flag, or `null`.
   Future<bool?> loadMonitorLaneMute(int input, int lane) =>
       _store.getBool(_monitorLaneMuteKey(input, lane));
 
-  /// Saves monitor [input]'s lane [lane] mute flag.
-  Future<void> saveMonitorLaneMute(
-    int input,
-    int lane, {
-    required bool muted,
-  }) => _store.setBool(_monitorLaneMuteKey(input, lane), value: muted);
-
-  /// Loads monitor [input]'s lane [lane] effect chain as an opaque encoded
-  /// string (see `encodeTrackEffects`), or `null` if none is saved.
+  /// Loads monitor [input]'s prior lane [lane] effect chain (encoded), or
+  /// `null`.
   Future<String?> loadMonitorLaneEffects(int input, int lane) =>
       _store.getString(_monitorLaneFxKey(input, lane));
 
-  /// Saves monitor [input]'s lane [lane] [encoded] effect chain.
+  /// Saves monitor [input]'s lane [lane] [encoded] effect chain (v2 migration).
   Future<void> saveMonitorLaneEffects(int input, int lane, String encoded) =>
       _store.setString(_monitorLaneFxKey(input, lane), encoded);
+
+  /// Clears hardware [input]'s prior multi-lane monitor keys for lanes
+  /// `[0, laneCount)` (count + per-lane out/vol/mute/fx) once the v3 fold has
+  /// converted them, so a later restore cannot resurrect multi-lane state.
+  Future<void> clearMonitorLaneKeys(int input, int laneCount) async {
+    await _store.remove(_monitorLaneCountKey(input));
+    for (var lane = 0; lane < laneCount; lane++) {
+      await _store.remove(_monitorLaneOutKey(input, lane));
+      await _store.remove(_monitorLaneVolKey(input, lane));
+      await _store.remove(_monitorLaneMuteKey(input, lane));
+      await _store.remove(_monitorLaneFxKey(input, lane));
+    }
+  }
 
   String _trackNameKey(int channel) => 'track_name.$channel';
 

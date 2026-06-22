@@ -7,8 +7,8 @@ import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_channel_chip.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_layout.dart';
-import 'package:loopy/audio_setup/view/monitor_graph/monitor_lane_node.dart';
-import 'package:loopy/audio_setup/view/monitor_graph/monitor_lane_panel.dart';
+import 'package:loopy/audio_setup/view/monitor_graph/monitor_input_node.dart';
+import 'package:loopy/audio_setup/view/monitor_graph/monitor_input_panel.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
@@ -53,23 +53,23 @@ Future<void> showMonitorRoutingPage({
   );
 }
 
-/// The live input-monitoring configuration as one wired graph, structurally
-/// identical to the track lane graph: hardware inputs on the left, each
-/// monitored input's **lanes** stacked in the middle (each a node + its own
-/// effect chain), and hardware outputs on the right. Bezier edges show how
-/// every lane is wired.
+/// The live input-monitoring configuration as one wired graph: hardware inputs
+/// on the left, each monitored input as a node + its single effect chain in the
+/// middle, and hardware outputs on the right. Bezier edges show how every input
+/// is wired.
 ///
-/// Each hardware input is a multi-lane container: tapping an input chip enables
-/// monitoring (gating the whole input); each lane is an independent parallel
-/// path with its own routing, volume, mute, and effect chain. A lane with no
-/// effects is the clean (dry) path — there is no separate wet/dry concept. With
-/// a lane focused, an output tap wires that lane.
+/// Each hardware input has one live chain: tapping an input chip enables
+/// monitoring (gating the input); the chain has its own routing, volume, mute,
+/// and effects. An empty chain is the clean (dry) path — there is no separate
+/// wet/dry concept and no lane stack. With an input focused, an output tap wires
+/// that input. This single chain is what is snapshot-copied onto a track lane
+/// when you record the input, so what you monitor is what the take stores.
 ///
 /// Drawing, cards, chips, and the zoom/pan canvas come from the shared routing
 /// graph package (`package:routing_graph`); this view owns only the
-/// monitor-specific assembly: the geometry ([MonitorGraphLayout]), the lane
-/// node body ([MonitorLaneNode]), the output ports ([MonitorOutputChip]), and
-/// the bottom panel ([MonitorLanePanel]). Every edit drives the [MonitorCubit].
+/// monitor-specific assembly: the geometry ([MonitorGraphLayout]), the input
+/// node body ([MonitorInputNode]), the output ports ([MonitorOutputChip]), and
+/// the bottom panel ([MonitorInputPanel]). Every edit drives [MonitorCubit].
 class MonitorGraphView extends StatefulWidget {
   /// Creates a [MonitorGraphView].
   const MonitorGraphView({
@@ -98,11 +98,11 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
   /// The effect currently being dragged to reorder, or null.
   GraphCardRef? _dragging;
 
-  /// The focused row (whose outputs are being wired), or null.
+  /// The focused input (whose outputs are being wired), or null.
   MonitorRow? _focused;
 
-  /// The selected (open-in-the-editor) effect, as `(row, index)`, or null.
-  ({MonitorRow row, int index})? _selected;
+  /// The selected (open-in-the-editor) effect, as `(input, index)`, or null.
+  ({MonitorRow input, int index})? _selected;
 
   MonitorCubit get _cubit => context.read<MonitorCubit>();
 
@@ -124,12 +124,13 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     );
 
     // Drop a focus/selection that no longer maps to a live row (e.g. its input
-    // was disabled or a lane removed). View-local only, so render it as cleared
-    // this frame without mutating state during build.
+    // was disabled). View-local only, so render it cleared this frame without
+    // mutating state during build.
     final focus = (_focused != null && layout.rows.contains(_focused))
         ? _focused
         : null;
-    final selected = (_selected != null && layout.rows.contains(_selected!.row))
+    final selected =
+        (_selected != null && layout.rows.contains(_selected!.input))
         ? _selected
         : null;
 
@@ -167,7 +168,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                         key: Key('monitorGraph_in_$c'),
                         label: l10n.inputChannelLabel(c + 1),
                         color: surface.accent,
-                        strong: focus?.input == c,
+                        strong: focus == c,
                         wired: state.forInput(c).enabled && !layout.excluded(c),
                         excluded: layout.excluded(c),
                         onTap: layout.excluded(c)
@@ -179,7 +180,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                                   );
                                 }
                                 setState(() {
-                                  _focused = (input: c, lane: 0);
+                                  _focused = c;
                                   _selected = null;
                                 });
                               },
@@ -200,22 +201,15 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
                         onWire: focus == null
                             ? null
                             : () {
-                                final mask = state
-                                    .forInput(focus.input)
-                                    .lane(focus.lane)
-                                    .outputMask;
+                                final mask = state.forInput(focus).outputMask;
                                 unawaited(
-                                  _cubit.setLaneOutputMask(
-                                    focus.input,
-                                    focus.lane,
-                                    mask ^ (1 << c),
-                                  ),
+                                  _cubit.setOutputMask(focus, mask ^ (1 << c)),
                                 );
                               },
                       ),
                     ),
                   for (var r = 0; r < layout.rows.length; r++) ...[
-                    _laneRow(context, layout, state, r, focus, selected),
+                    _inputRow(context, layout, state, r, focus, selected),
                   ],
                 ],
               ),
@@ -227,21 +221,21 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
     );
   }
 
-  /// All positioned widgets for row [r]: the lane node, its effect cards, the
+  /// All positioned widgets for row [r]: the input node, its effect cards, the
   /// drop zones, and the add-effect button.
-  Widget _laneRow(
+  Widget _inputRow(
     BuildContext context,
     MonitorGraphLayout layout,
     MonitorState state,
     int r,
     MonitorRow? focus,
-    ({MonitorRow row, int index})? selected,
+    ({MonitorRow input, int index})? selected,
   ) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final row = layout.rows[r];
-    final laneState = state.forInput(row.input).lane(row.lane);
-    final color = surface.laneColor(row.lane);
+    final input = layout.rows[r];
+    final monitor = state.forInput(input);
+    final color = surface.laneColor(input);
     return Stack(
       children: [
         positionedNode(
@@ -249,15 +243,14 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
           centerY: layout.rowY(r),
           width: MonitorGraphLayout.nodeWidth,
           height: MonitorGraphLayout.nodeHeight,
-          child: MonitorLaneNode(
-            input: row.input,
-            lane: row.lane,
-            laneState: laneState,
+          child: MonitorInputNode(
+            input: input,
+            monitor: monitor,
             color: color,
-            focused: focus == row,
-            dim: focus != null && focus != row,
+            focused: focus == input,
+            dim: focus != null && focus != input,
             onTap: () => setState(() {
-              _focused = focus == row ? null : row;
+              _focused = focus == input ? null : input;
               _selected = null;
             }),
           ),
@@ -270,7 +263,7 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
           rowCenterY: layout.rowY(r),
           accentColor: surface.accent,
           onMove: (from, gap) {
-            _cubit.moveEffect(row.input, row.lane, from, gap);
+            _cubit.moveEffect(input, from, gap);
             setState(() => _selected = null);
           },
         ),
@@ -282,20 +275,20 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
             height: kRoutingCardHeight,
             child: EffectChainCard(
               keyPrefix: 'monitorGraph',
-              label: l10n.effectTypeLabel(laneState.effects[k].type),
+              label: l10n.effectTypeLabel(monitor.effects[k].type),
               accentColor: color,
-              selected: selected?.row == row && selected?.index == k,
+              selected: selected?.input == input && selected?.index == k,
               dragging: _dragging?.rowId == r && _dragging?.index == k,
               rowId: r,
               index: k,
               onTap: () => setState(() {
-                _focused = row;
-                _selected = (selected?.row == row && selected?.index == k)
+                _focused = input;
+                _selected = (selected?.input == input && selected?.index == k)
                     ? null
-                    : (row: row, index: k);
+                    : (input: input, index: k);
               }),
               onDelete: () {
-                _cubit.removeEffect(row.input, row.lane, k);
+                _cubit.removeEffect(input, k);
                 setState(() => _selected = null);
               },
               onDragStart: () => setState(() => _dragging = GraphCardRef(r, k)),
@@ -310,11 +303,11 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
           child: AddEffectButton(
             buttonKey: Key('monitorGraph_addFx_$r'),
             accentColor: surface.accent,
-            full: laneState.effects.length >= kTrackEffectMax,
-            tooltip: l10n.addEffectToInputTooltip(row.input + 1),
+            full: monitor.effects.length >= kTrackEffectMax,
+            tooltip: l10n.addEffectToInputTooltip(input + 1),
             onAdd: () {
-              setState(() => _focused = row);
-              _cubit.addEffect(row.input, row.lane);
+              setState(() => _focused = input);
+              _cubit.addEffect(input);
             },
           ),
         ),
@@ -325,46 +318,29 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
   Widget _panel(
     MonitorState state,
     MonitorRow? focus,
-    ({MonitorRow row, int index})? selected,
+    ({MonitorRow input, int index})? selected,
   ) {
-    final monitor = focus == null ? null : state.forInput(focus.input);
-    final laneState = focus == null ? null : monitor!.lane(focus.lane);
+    final monitor = focus == null ? null : state.forInput(focus);
     TrackEffect? selectedFx;
-    if (focus != null && selected != null && selected.row == focus) {
-      final effects = laneState!.effects;
+    if (focus != null && selected != null && selected.input == focus) {
+      final effects = monitor!.effects;
       if (selected.index < effects.length) selectedFx = effects[selected.index];
     }
-    return MonitorLanePanel(
-      input: focus?.input,
-      lane: focus?.lane ?? 0,
-      laneState: laneState,
-      laneCount: monitor?.laneCount ?? 1,
+    return MonitorInputPanel(
+      input: focus,
+      monitor: monitor,
       selectedFx: selectedFx,
       onMuteToggled: () {
-        if (focus == null || laneState == null) return;
-        unawaited(
-          _cubit.setLaneMute(focus.input, focus.lane, muted: !laneState.muted),
-        );
+        if (focus == null || monitor == null) return;
+        unawaited(_cubit.setMute(focus, muted: !monitor.muted));
       },
       onVolumeChanged: (v) {
         if (focus == null) return;
-        unawaited(_cubit.setLaneVolume(focus.input, focus.lane, v));
-      },
-      onRemoveLane: () {
-        if (focus == null) return;
-        unawaited(_cubit.removeLane(focus.input, focus.lane));
-        setState(() {
-          _focused = null;
-          _selected = null;
-        });
-      },
-      onAddLane: () {
-        if (focus == null) return;
-        unawaited(_cubit.addLane(focus.input));
+        unawaited(_cubit.setVolume(focus, v));
       },
       onStop: () {
         if (focus == null) return;
-        unawaited(_cubit.setEnabled(focus.input, enabled: false));
+        unawaited(_cubit.setEnabled(focus, enabled: false));
         setState(() {
           _focused = null;
           _selected = null;
@@ -372,15 +348,15 @@ class _MonitorGraphViewState extends State<MonitorGraphView> {
       },
       onSetType: (t) {
         if (focus == null || selected == null) return;
-        _cubit.setEffectType(focus.input, focus.lane, selected.index, t);
+        _cubit.setEffectType(focus, selected.index, t);
       },
       onSetParam: (p, v) {
         if (focus == null || selected == null) return;
-        _cubit.setEffectParam(focus.input, focus.lane, selected.index, p, v);
+        _cubit.setEffectParam(focus, selected.index, p, v);
       },
       onRemoveEffect: () {
         if (focus == null || selected == null) return;
-        _cubit.removeEffect(focus.input, focus.lane, selected.index);
+        _cubit.removeEffect(focus, selected.index);
         setState(() => _selected = null);
       },
       addedLatencyMs: widget.addedLatencyMs,

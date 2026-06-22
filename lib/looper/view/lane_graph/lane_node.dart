@@ -42,12 +42,20 @@ class LaneNode extends StatelessWidget {
     final volumeWord = lane.muted
         ? l10n.trackStateMuted
         : '${(lane.volume.clamp(0.0, 1.0) * 100).round()}%';
+    // A recorded lane carries a snapshot of the input's FX chain taken at the
+    // record moment (distinct from the live input chip). Surface it when the
+    // lane has an effect chain and a known recorded input (D10/F-4).
+    final snapshotLabel = lane.effects.isNotEmpty && lane.inputChannel >= 0
+        ? l10n.laneSnapshotLabel(lane.inputChannel + 1)
+        : null;
     return FocusableTapTarget(
       key: Key('laneGraph_laneNode_$index'),
       onTap: onTap,
       selected: focused,
       borderRadius: 8,
-      semanticLabel: '${l10n.laneNumberLabel(index + 1)}, $volumeWord',
+      semanticLabel: snapshotLabel == null
+          ? '${l10n.laneNumberLabel(index + 1)}, $volumeWord'
+          : '${l10n.laneNumberLabel(index + 1)}, $volumeWord, $snapshotLabel',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
@@ -72,14 +80,29 @@ class LaneNode extends StatelessWidget {
                       : surface.textSecondary,
                 ),
                 const SizedBox(width: 4),
-                Text(
-                  l10n.laneNumberLabel(index + 1),
-                  style: TextStyle(
-                    color: surface.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    l10n.laneNumberLabel(index + 1),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: surface.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
+                if (snapshotLabel != null) ...[
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: snapshotLabel,
+                    child: Icon(
+                      key: const Key('laneGraph_snapshotBadge'),
+                      Icons.auto_awesome,
+                      size: 11,
+                      color: surface.accent,
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 5),

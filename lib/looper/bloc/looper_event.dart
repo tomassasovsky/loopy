@@ -232,3 +232,20 @@ final class LooperClearAllPressed extends LooperEvent {
   /// Creates a [LooperClearAllPressed].
   const LooperClearAllPressed();
 }
+
+/// Toggles the structural output gate for hardware [output] to [enabled]: a
+/// disabled output is removed as a routing target (its lane/monitor masks are
+/// preserved) and re-enabling restores them.
+final class LooperOutputEnabledToggled extends LooperEvent {
+  /// Creates a [LooperOutputEnabledToggled].
+  const LooperOutputEnabledToggled(this.output, {required this.enabled});
+
+  /// The hardware output channel index.
+  final int output;
+
+  /// Whether the output is a routing target.
+  final bool enabled;
+
+  @override
+  List<Object?> get props => [output, enabled];
+}

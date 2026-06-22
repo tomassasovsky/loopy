@@ -15,6 +15,7 @@ class RoutingGraphNode extends StatelessWidget {
     required this.hovered,
     required this.onTap,
     required this.onHover,
+    this.gateLabel,
     super.key,
   });
 
@@ -42,6 +43,11 @@ class RoutingGraphNode extends StatelessWidget {
 
   /// Pointer enter/exit (passes this node, or null on exit).
   final ValueChanged<RoutingNode?>? onHover;
+
+  /// For a structurally-gateable output, the screen-reader label naming its
+  /// enabled/disabled state and the toggle action (NF-5). Null for other nodes,
+  /// which fall back to [RoutingNode.label] as their accessible name.
+  final String? gateLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -130,6 +136,7 @@ class RoutingGraphNode extends StatelessWidget {
         key: Key('routingNode_${node.kind.name}_${node.index}'),
         onTap: onTap,
         selected: armed || (connected ?? false),
+        semanticLabel: gateLabel,
         borderRadius: 8,
         child: content,
       ),

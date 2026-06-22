@@ -5,11 +5,11 @@ import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
 /// An output port on the monitor graph whose colour and emphasis reflect which
-/// monitor lanes route to it and whether the focused lane is wired to it.
+/// monitored inputs route to it and whether the focused input is wired to it.
 ///
-/// Strong (and lane-coloured) when the focused lane plays here; coloured by its
-/// single user when reached by exactly one lane; neutral accent when shared;
-/// dim when unused. Mirrors the track lane graph's channel chip.
+/// Strong (and input-coloured) when the focused input plays here; coloured by
+/// its single user when reached by exactly one input; neutral accent when
+/// shared; dim when unused. Mirrors the track lane graph's channel chip.
 class MonitorOutputChip extends StatelessWidget {
   /// Creates a [MonitorOutputChip].
   const MonitorOutputChip({
@@ -28,16 +28,16 @@ class MonitorOutputChip extends StatelessWidget {
   /// The hardware output channel index this port represents.
   final int channel;
 
-  /// The graph's `(input, lane)` rows, in row order.
+  /// The graph's monitored-input rows, in row order.
   final List<MonitorRow> rows;
 
-  /// The current monitor state (read for each row's output mask).
+  /// The current monitor state (read for each input's output mask).
   final MonitorState state;
 
-  /// The focused row, or null.
+  /// The focused input, or null.
   final MonitorRow? focused;
 
-  /// Wires/unwires the focused lane to this port; null when not interactive.
+  /// Wires/unwires the focused input to this port; null when not interactive.
   final VoidCallback? onWire;
 
   @override
@@ -45,14 +45,14 @@ class MonitorOutputChip extends StatelessWidget {
     final surface = context.surface;
     final bit = 1 << channel;
     final users = [
-      for (final row in rows)
-        if (state.forInput(row.input).lane(row.lane).outputMask & bit != 0) row,
+      for (final input in rows)
+        if (state.forInput(input).outputMask & bit != 0) input,
     ];
     final strong = focused != null && users.contains(focused);
     final color = strong
-        ? surface.laneColor(focused!.lane)
+        ? surface.laneColor(focused!)
         : users.length == 1
-        ? surface.laneColor(users.first.lane)
+        ? surface.laneColor(users.first)
         : surface.accent;
     // Output sharing is otherwise colour-only (WCAG 1.4.1); name it.
     final l10n = context.l10n;

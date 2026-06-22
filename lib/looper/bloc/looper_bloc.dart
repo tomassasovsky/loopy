@@ -172,6 +172,15 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         if (track.hasContent) _repository.clear(channel: track.channel);
       }
     });
+    on<LooperOutputEnabledToggled>((event, _) {
+      _repository.setOutputEnabled(
+        output: event.output,
+        enabled: event.enabled,
+      );
+      unawaited(
+        _settings?.saveOutputEnabled(event.output, enabled: event.enabled),
+      );
+    });
 
     _subscription = _repository.looperState.listen(
       (s) => add(LooperStateUpdated(s)),

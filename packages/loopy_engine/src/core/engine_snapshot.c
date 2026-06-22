@@ -70,15 +70,12 @@ static int32_t le_max_fx_latency(le_engine* engine) {
   }
   for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
     le_monitor_input* m = &engine->monitors[c];
-    for (int32_t l = 0; l < m->lane_count; ++l) {
-      le_monitor_lane* ln = &m->lanes[l];
-      int32_t n = load_i32(&ln->a_fx_count);
-      if (n > LE_FX_MAX) n = LE_FX_MAX;
-      for (int32_t s = 0; s < n; ++s) {
-        const int32_t lat =
-            le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
-        if (lat > max_lat) max_lat = lat;
-      }
+    int32_t n = load_i32(&m->a_fx_count);
+    if (n > LE_FX_MAX) n = LE_FX_MAX;
+    for (int32_t s = 0; s < n; ++s) {
+      const int32_t lat =
+          le_fx_added_latency(&m->fx, s, load_i32(&m->a_fx_type[s]));
+      if (lat > max_lat) max_lat = lat;
     }
   }
   return max_lat;
@@ -110,6 +107,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->fx_added_latency_frames = le_max_fx_latency(engine);
   out->master_gain = load_f32(&engine->a_master_gain_bits);
   out->active_backend = load_i32(&engine->a_active_backend);
+  out->output_enabled_mask =
+      atomic_load_explicit(&engine->a_output_enabled_mask, memory_order_relaxed);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,

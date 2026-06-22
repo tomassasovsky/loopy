@@ -157,7 +157,7 @@ void main() {
     });
   });
 
-  group('monitor lanes', () {
+  group('monitor (single chain)', () {
     test('per-input enable flag defaults to null and round-trips', () async {
       expect(await repository.loadMonitorInputEnabled(0), isNull);
       await repository.saveMonitorInputEnabled(0, enabled: true);
@@ -165,47 +165,69 @@ void main() {
       expect(await repository.loadMonitorInputEnabled(1), isNull);
     });
 
-    test('lane count defaults to null and round-trips per input', () async {
-      expect(await repository.loadMonitorLaneCount(0), isNull);
-      await repository.saveMonitorLaneCount(0, 2);
-      expect(await repository.loadMonitorLaneCount(0), 2);
-      expect(await repository.loadMonitorLaneCount(1), isNull);
+    test('output mask defaults to null and round-trips per input', () async {
+      expect(await repository.loadMonitorOutput(0), isNull);
+      await repository.saveMonitorOutput(0, 0x2);
+      expect(await repository.loadMonitorOutput(0), 0x2);
+      expect(await repository.loadMonitorOutput(1), isNull);
     });
 
-    test('lane output mask round-trips per (input, lane)', () async {
-      expect(await repository.loadMonitorLaneOutput(0, 1), isNull);
-      await repository.saveMonitorLaneOutput(0, 1, 0x2);
-      expect(await repository.loadMonitorLaneOutput(0, 1), 0x2);
-      // A different lane of the same input is independent.
-      expect(await repository.loadMonitorLaneOutput(0, 0), isNull);
+    test('volume round-trips per input', () async {
+      expect(await repository.loadMonitorVolume(0), isNull);
+      await repository.saveMonitorVolume(0, 0.5);
+      expect(await repository.loadMonitorVolume(0), 0.5);
     });
 
-    test('lane volume round-trips per (input, lane)', () async {
-      expect(await repository.loadMonitorLaneVolume(0, 0), isNull);
-      await repository.saveMonitorLaneVolume(0, 0, 0.5);
-      expect(await repository.loadMonitorLaneVolume(0, 0), 0.5);
+    test('mute round-trips per input', () async {
+      expect(await repository.loadMonitorMute(0), isNull);
+      await repository.saveMonitorMute(0, muted: true);
+      expect(await repository.loadMonitorMute(0), isTrue);
     });
 
-    test('lane mute round-trips per (input, lane)', () async {
-      expect(await repository.loadMonitorLaneMute(0, 0), isNull);
-      await repository.saveMonitorLaneMute(0, 0, muted: true);
-      expect(await repository.loadMonitorLaneMute(0, 0), isTrue);
+    test('effects round-trip the encoded chain per input', () async {
+      expect(await repository.loadMonitorEffects(0), isNull);
+      await repository.saveMonitorEffects(0, '[{"type":1}]');
+      expect(await repository.loadMonitorEffects(0), '[{"type":1}]');
+      expect(await repository.loadMonitorEffects(1), isNull);
     });
-
-    test(
-      'lane effects round-trip the encoded chain per (input, lane)',
-      () async {
-        expect(await repository.loadMonitorLaneEffects(0, 0), isNull);
-        await repository.saveMonitorLaneEffects(0, 0, '[{"type":1}]');
-        expect(await repository.loadMonitorLaneEffects(0, 0), '[{"type":1}]');
-        expect(await repository.loadMonitorLaneEffects(0, 1), isNull);
-      },
-    );
 
     test('the v2 migration flag defaults to false and round-trips', () async {
       expect(await repository.loadMonitorMigratedV2(), isFalse);
       await repository.saveMonitorMigratedV2();
       expect(await repository.loadMonitorMigratedV2(), isTrue);
+    });
+
+    test('the v3 migration flag defaults to false and round-trips', () async {
+      expect(await repository.loadMonitorMigratedV3(), isFalse);
+      await repository.saveMonitorMigratedV3();
+      expect(await repository.loadMonitorMigratedV3(), isTrue);
+    });
+  });
+
+  group('output gate', () {
+    test('absence means enabled; only off entries are written', () async {
+      // Default-on: no key => null (the caller reads as enabled).
+      expect(await repository.loadOutputEnabled(0), isNull);
+
+      // Disabling writes false.
+      await repository.saveOutputEnabled(0, enabled: false);
+      expect(await repository.loadOutputEnabled(0), isFalse);
+
+      // Re-enabling REMOVES the key (self-cleaning, absence == enabled).
+      await repository.saveOutputEnabled(0, enabled: true);
+      expect(await repository.loadOutputEnabled(0), isNull);
+    });
+
+    test('clearMonitorLaneKeys removes the prior multi-lane keys', () async {
+      await repository.saveMonitorLaneCount(0, 2);
+      await repository.saveMonitorLaneOutput(0, 0, 0x1);
+      await repository.saveMonitorLaneOutput(0, 1, 0x2);
+
+      await repository.clearMonitorLaneKeys(0, 2);
+
+      expect(await repository.loadMonitorLaneCount(0), isNull);
+      expect(await repository.loadMonitorLaneOutput(0, 0), isNull);
+      expect(await repository.loadMonitorLaneOutput(0, 1), isNull);
     });
   });
 

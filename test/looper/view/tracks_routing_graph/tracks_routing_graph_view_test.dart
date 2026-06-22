@@ -195,5 +195,102 @@ void main() {
 
       expect(find.byKey(const Key('routingNode_track_0')), findsNothing);
     });
+
+    group('structural output gate', () {
+      testWidgets('tapping a live output with nothing armed disables it', (
+        tester,
+      ) async {
+        int? toggledOutput;
+        bool? toggledEnabled;
+        await pump(
+          tester,
+          TracksRoutingGraphView(
+            tracks: const [Track()],
+            inputChannels: 2,
+            outputChannels: 2,
+            onOutputEnabledToggled: (output, {required enabled}) {
+              toggledOutput = output;
+              toggledEnabled = enabled;
+            },
+          ),
+        );
+
+        await tester.tap(find.byKey(const Key('routingNode_output_1')));
+        await tester.pumpAndSettle();
+        expect(toggledOutput, 1);
+        expect(toggledEnabled, isFalse); // a live output toggles OFF
+      });
+
+      testWidgets('tapping a gated-off (greyed) output re-enables it', (
+        tester,
+      ) async {
+        int? toggledOutput;
+        bool? toggledEnabled;
+        await pump(
+          tester,
+          TracksRoutingGraphView(
+            tracks: const [Track()],
+            inputChannels: 2,
+            outputChannels: 2,
+            outputEnabledMask: 0x1, // output 1 is gated off
+            onOutputEnabledToggled: (output, {required enabled}) {
+              toggledOutput = output;
+              toggledEnabled = enabled;
+            },
+          ),
+        );
+
+        await tester.tap(find.byKey(const Key('routingNode_output_1')));
+        await tester.pumpAndSettle();
+        expect(toggledOutput, 1);
+        expect(toggledEnabled, isTrue); // a disabled output toggles back ON
+      });
+
+      testWidgets('a gated output is announced as disabled (NF-5 a11y)', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        await pump(
+          tester,
+          TracksRoutingGraphView(
+            tracks: const [Track()],
+            inputChannels: 2,
+            outputChannels: 2,
+            outputEnabledMask: 0x1, // output 1 disabled
+            onOutputEnabledToggled: (_, {required enabled}) {},
+          ),
+        );
+
+        final node = tester.getSemantics(
+          find.byKey(const Key('routingNode_output_1')),
+        );
+        // The disabled state + the toggle action are named for assistive tech,
+        // not conveyed by colour alone (WCAG 1.4.1 / 4.1.2).
+        expect(node.label.toLowerCase(), contains('disabled'));
+        expect(node, isSemantics(isButton: true, hasTapAction: true));
+        handle.dispose();
+      });
+
+      testWidgets('an enabled output toggle has a semantic label', (
+        tester,
+      ) async {
+        final handle = tester.ensureSemantics();
+        await pump(
+          tester,
+          TracksRoutingGraphView(
+            tracks: const [Track()],
+            inputChannels: 2,
+            outputChannels: 2,
+            onOutputEnabledToggled: (_, {required enabled}) {},
+          ),
+        );
+
+        final node = tester.getSemantics(
+          find.byKey(const Key('routingNode_output_0')),
+        );
+        expect(node.label.toLowerCase(), contains('enabled'));
+        handle.dispose();
+      });
+    });
   });
 }

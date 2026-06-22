@@ -141,6 +141,38 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('a recorded lane shows a snapshot badge (F-4/D10)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      // A lane recording input 2 with an FX chain holds an FX snapshot.
+      await pump(
+        tester,
+        lanes: [
+          Lane(
+            inputChannel: 1,
+            effects: [TrackEffect(type: TrackEffectType.delay)],
+          ),
+        ],
+      );
+
+      expect(
+        find.byKey(const Key('laneGraph_snapshotBadge')),
+        findsOneWidget,
+      );
+      // The snapshot scope (which input, at record time) is named for a11y.
+      final node = tester.getSemantics(
+        find.byKey(const Key('laneGraph_laneNode_0')),
+      );
+      expect(node.label.toLowerCase(), contains('snapshot'));
+      handle.dispose();
+    });
+
+    testWidgets('a clean lane shows no snapshot badge', (tester) async {
+      await pump(tester, lanes: const [Lane(inputChannel: 1)]);
+      expect(find.byKey(const Key('laneGraph_snapshotBadge')), findsNothing);
+    });
+
     testWidgets('effect move buttons reorder without dragging (WCAG 2.5.7)', (
       tester,
     ) async {
