@@ -9,6 +9,8 @@ void main() {
       VoidCallback? onTap,
       VoidCallback? onDelete,
       bool selected = false,
+      VoidCallback? onMoveLeft,
+      VoidCallback? onMoveRight,
     }) {
       return EffectChainCard(
         keyPrefix: 'laneGraph',
@@ -22,6 +24,8 @@ void main() {
         onDelete: onDelete ?? () {},
         onDragStart: () {},
         onDragEnd: () {},
+        onMoveLeft: onMoveLeft,
+        onMoveRight: onMoveRight,
       );
     }
 
@@ -50,6 +54,47 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('laneGraph_fxDelete_0_1')));
       expect(deletes, 1);
+    });
+
+    testWidgets('hides move buttons when no reorder callbacks are given', (
+      tester,
+    ) async {
+      await tester.pumpApp(SizedBox(width: 200, child: card()));
+      expect(find.byKey(const Key('laneGraph_fxMoveLeft_0_1')), findsNothing);
+      expect(find.byKey(const Key('laneGraph_fxMoveRight_0_1')), findsNothing);
+    });
+
+    testWidgets('move buttons provide a non-drag reorder (WCAG 2.5.7)', (
+      tester,
+    ) async {
+      var left = 0;
+      var right = 0;
+      await tester.pumpApp(
+        SizedBox(
+          width: 220,
+          child: card(onMoveLeft: () => left++, onMoveRight: () => right++),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('laneGraph_fxMoveLeft_0_1')));
+      await tester.tap(find.byKey(const Key('laneGraph_fxMoveRight_0_1')));
+      expect(left, 1);
+      expect(right, 1);
+    });
+
+    testWidgets('delete target meets the 24dp minimum (WCAG 2.5.8)', (
+      tester,
+    ) async {
+      await tester.pumpApp(SizedBox(width: 200, child: card()));
+      final size = tester.getSize(
+        find
+            .descendant(
+              of: find.byKey(const Key('laneGraph_fxDelete_0_1')),
+              matching: find.byType(SizedBox),
+            )
+            .first,
+      );
+      expect(size.width, greaterThanOrEqualTo(24));
+      expect(size.height, greaterThanOrEqualTo(24));
     });
   });
 }

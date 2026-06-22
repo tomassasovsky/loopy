@@ -61,5 +61,52 @@ void main() {
       final text = tester.widget<Text>(find.text('In 3'));
       expect(text.style?.decoration, TextDecoration.lineThrough);
     });
+
+    testWidgets('derives a screen-reader label with routing state', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        SizedBox(
+          width: 80,
+          height: 32,
+          child: ChannelChip(
+            label: 'In 1',
+            color: const Color(0xFF3B82F6),
+            strong: false,
+            wired: true,
+            excluded: false,
+            onTap: () {},
+          ),
+        ),
+      );
+      expect(
+        tester.getSemantics(find.byType(ChannelChip)),
+        isSemantics(
+          label: 'In 1, routed',
+          isButton: true,
+          isSelected: true,
+        ),
+      );
+    });
+
+    testWidgets('prefers a caller-supplied semanticLabel', (tester) async {
+      await tester.pumpApp(
+        SizedBox(
+          width: 80,
+          height: 32,
+          child: ChannelChip(
+            label: 'In 1',
+            semanticLabel: 'Input one, microphone',
+            color: const Color(0xFF3B82F6),
+            strong: false,
+            wired: false,
+            excluded: false,
+            onTap: () {},
+          ),
+        ),
+      );
+      final node = tester.getSemantics(find.byType(ChannelChip));
+      expect(node.label, 'Input one, microphone');
+    });
   });
 }

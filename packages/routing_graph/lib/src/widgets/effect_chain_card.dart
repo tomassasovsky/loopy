@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:routing_graph/src/theme/routing_graph_theme.dart';
+import 'package:routing_graph/src/widgets/focusable_tap_target.dart';
 import 'package:routing_graph/src/widgets/graph_card_ref.dart';
 import 'package:routing_graph/src/widgets/graph_geometry.dart';
 
@@ -7,6 +8,11 @@ import 'package:routing_graph/src/widgets/graph_geometry.dart';
 /// (edit), and a delete button. The card is the drag *source*; the gaps between
 /// cards (an `EffectDropZone`) are the drop targets, so reordering uses one
 /// insertion-index convention across every graph.
+///
+/// Reordering by drag has a keyboard/single-pointer alternative (WCAG 2.5.7):
+/// when [onMoveLeft]/[onMoveRight] are provided, focusable move buttons appear
+/// on the card. The label and delete affordances are keyboard-operable and
+/// screen-reader-labelled via [FocusableTapTarget].
 ///
 /// Keys are derived from a single [keyPrefix] (e.g. `laneGraph` / `monitorGraph`)
 /// so each graph keeps its own selector namespace without threading four keys.
@@ -24,6 +30,8 @@ class EffectChainCard extends StatelessWidget {
     required this.onDelete,
     required this.onDragStart,
     required this.onDragEnd,
+    this.onMoveLeft,
+    this.onMoveRight,
     super.key,
   });
 
@@ -59,6 +67,14 @@ class EffectChainCard extends StatelessWidget {
 
   /// Called when a drag of this card ends.
   final VoidCallback onDragEnd;
+
+  /// Non-drag reorder: move this card one slot earlier. Null hides the button
+  /// (e.g. the first card cannot move left).
+  final VoidCallback? onMoveLeft;
+
+  /// Non-drag reorder: move this card one slot later. Null hides the button
+  /// (e.g. the last card cannot move right).
+  final VoidCallback? onMoveRight;
 
   @override
   Widget build(BuildContext context) {
@@ -114,39 +130,85 @@ class EffectChainCard extends StatelessWidget {
           handle,
           const SizedBox(width: 4),
           Expanded(
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                key: Key('${keyPrefix}_fxLabel_${rowId}_$index'),
-                onTap: onTap,
-                behavior: HitTestBehavior.opaque,
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: theme.textPrimary),
-                ),
+            child: FocusableTapTarget(
+              key: Key('${keyPrefix}_fxLabel_${rowId}_$index'),
+              onTap: onTap,
+              selected: selected,
+              semanticLabel: 'Effect $label, position ${index + 1}, edit',
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: theme.textPrimary),
               ),
             ),
           ),
-          const SizedBox(width: 2),
-          Tooltip(
-            message: 'Remove effect',
-            child: InkResponse(
-              key: Key('${keyPrefix}_fxDelete_${rowId}_$index'),
-              onTap: onDelete,
-              radius: 16,
-              child: SizedBox(
-                width: 20,
-                height: 24,
-                child: Icon(
-                  Icons.close,
-                  size: 15,
-                  color: theme.textSecondary,
-                ),
-              ),
+          if (onMoveLeft != null || onMoveRight != null) ...[
+            const SizedBox(width: 2),
+            _CardIconButton(
+              buttonKey: Key('${keyPrefix}_fxMoveLeft_${rowId}_$index'),
+              icon: Icons.chevron_left,
+              tooltip: 'Move effect left',
+              color: theme.textSecondary,
+              onTap: onMoveLeft,
             ),
+            _CardIconButton(
+              buttonKey: Key('${keyPrefix}_fxMoveRight_${rowId}_$index'),
+              icon: Icons.chevron_right,
+              tooltip: 'Move effect right',
+              color: theme.textSecondary,
+              onTap: onMoveRight,
+            ),
+          ],
+          const SizedBox(width: 2),
+          _CardIconButton(
+            buttonKey: Key('${keyPrefix}_fxDelete_${rowId}_$index'),
+            icon: Icons.close,
+            tooltip: 'Remove effect',
+            color: theme.textSecondary,
+            onTap: onDelete,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A compact, keyboard-accessible icon button for an effect card's controls
+/// (move / delete). Meets the 24x24 dp minimum target size (WCAG 2.5.8) and is
+/// focusable + labelled without needing a Material ancestor on the canvas.
+class _CardIconButton extends StatelessWidget {
+  const _CardIconButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+  });
+
+  final Key buttonKey;
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    return Tooltip(
+      message: tooltip,
+      child: FocusableTapTarget(
+        key: buttonKey,
+        onTap: onTap,
+        semanticLabel: tooltip,
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: Icon(
+            icon,
+            size: 16,
+            color: disabled ? color.withValues(alpha: 0.4) : color,
+          ),
+        ),
       ),
     );
   }
