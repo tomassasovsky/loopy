@@ -53,6 +53,7 @@ class AudioSettingsSection extends StatelessWidget {
             const SizedBox(height: 12),
             AudioDevicePicker(
               pickerKey: 'audioSettings_asioDriver_picker',
+              semanticLabel: l10n.asioDriverGroup,
               // The cached enumeration stays populated even while ASIO holds
               // the device (re-probing live would tear the stream down — R1).
               devices: _asioDriverDevices(l10n, state.cachedAsioDrivers),
@@ -65,6 +66,7 @@ class AudioSettingsSection extends StatelessWidget {
           const SizedBox(height: 12),
           AudioDevicePicker(
             pickerKey: 'audioSettings_playbackDevice_picker',
+            semanticLabel: l10n.outputDeviceGroupUpper,
             devices: state.playbackDevices,
             selectedId: state.playbackDeviceId,
             onSelected: cubit.setPlaybackDevice,
@@ -74,6 +76,7 @@ class AudioSettingsSection extends StatelessWidget {
           const SizedBox(height: 12),
           AudioDevicePicker(
             pickerKey: 'audioSettings_captureDevice_picker',
+            semanticLabel: l10n.inputDeviceGroupUpper,
             devices: state.captureDevices,
             selectedId: state.captureDeviceId,
             onSelected: cubit.setCaptureDevice,
@@ -348,25 +351,31 @@ class _ErrorBanner extends StatelessWidget {
     final message = switch (error) {
       AudioSetupError.openDeviceFailed => l10n.failedToOpenDevice(detail),
     };
-    return Container(
-      key: const Key('audioSettings_error_banner'),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: scheme.errorContainer,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+    // A live region so the error is announced when it appears (WCAG 4.1.3),
+    // not only when a screen-reader user happens to navigate onto it.
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        key: const Key('audioSettings_error_banner'),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error_outline, size: 18, color: scheme.onErrorContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: scheme.onErrorContainer, fontSize: 13),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

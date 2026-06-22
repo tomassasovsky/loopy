@@ -1,5 +1,6 @@
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_layout.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart';
 
@@ -53,9 +54,17 @@ class MonitorOutputChip extends StatelessWidget {
         : users.length == 1
         ? surface.laneColor(users.first.lane)
         : surface.accent;
+    // Output sharing is otherwise colour-only (WCAG 1.4.1); name it.
+    final l10n = context.l10n;
+    final sharingWord = users.isEmpty
+        ? l10n.a11yPortUnused
+        : users.length == 1
+        ? l10n.a11yPortDedicated
+        : l10n.a11yPortShared;
     return ChannelChip(
       key: Key('monitorGraph_out_$channel'),
       label: label,
+      semanticLabel: '$label, $sharingWord',
       color: color,
       strong: strong,
       wired: users.isNotEmpty,
