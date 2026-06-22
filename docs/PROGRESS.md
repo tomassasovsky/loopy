@@ -386,9 +386,14 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `import_track` / `commit_session` move loop PCM in and out (control-thread copy
   into EMPTY tracks; a ring command flips them to PLAYING at their multiple, so
   the audio thread's RT contract is preserved). `SessionCubit` + a session menu
-  in the looper app bar drive it; the engine is shared (looper owns dispose).
-  Load refuses a sample-rate mismatch (no resampling) or a newer manifest
-  version.
+  (the `folder` `PopupMenuButton` in the Big Picture top bar — kept there, not in
+  the settings route, because settings is pushed *above* the `LooperPage`
+  providers so the cubit isn't reachable from it) drive it; the engine is shared
+  (looper owns dispose). Load refuses a sample-rate mismatch (no resampling) or a
+  newer manifest version — both are typed (`SessionSampleRateMismatch` /
+  `SessionUnsupportedVersion`), classified by the cubit into `SessionError`, and
+  rendered as localized human-readable text. Outcomes (success + error) surface
+  in a `Semantics(liveRegion: true)` SnackBar (WCAG 4.1.3).
 
 ---
 

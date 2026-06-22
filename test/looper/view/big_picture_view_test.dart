@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
@@ -20,12 +21,16 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
+class _MockSessionCubit extends MockCubit<SessionState>
+    implements SessionCubit {}
+
 void main() {
   late LooperBloc bloc;
   late BigPictureCubit bigPicture;
   late BankCubit bank;
   late LooperRepository repository;
   late SettingsRepository settings;
+  late SessionCubit session;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -34,6 +39,12 @@ void main() {
     bank = BankCubit();
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
+    session = _MockSessionCubit();
+    when(() => session.state).thenReturn(const SessionState());
+    when(() => session.saveSession()).thenAnswer((_) async {});
+    when(() => session.loadSession()).thenAnswer((_) async {});
+    when(() => session.exportMixdown()).thenAnswer((_) async {});
+    when(() => session.exportStems()).thenAnswer((_) async {});
   });
 
   void seed(LooperState state) {
@@ -53,6 +64,7 @@ void main() {
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<BankCubit>.value(value: bank),
+            BlocProvider<SessionCubit>.value(value: session),
           ],
           child: const BigPictureView(),
         ),
@@ -428,6 +440,114 @@ void main() {
       expect(FocusManager.instance.primaryFocus, isNotNull);
       // No exception; the tile targets are focusable.
       expect(find.byType(FocusableTapTarget), findsWidgets);
+    });
+  });
+
+  group('session menu', () {
+    Future<void> openMenu(WidgetTester tester) async {
+      await tester.tap(find.byKey(const Key('bigpicture_session_menu')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the menu button is present and carries an accessible name', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      // The PopupMenuButton's tooltip is its accessible name (and is itself
+      // keyboard-operable + screen-reader announced); operability is covered by
+      // the activation tests below.
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.byKey(const Key('bigpicture_session_menu')), findsOneWidget);
+      expect(find.byTooltip(l10n.a11ySessionMenu), findsOneWidget);
+    });
+
+    testWidgets('save invokes the cubit', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await openMenu(tester);
+      await tester.tap(find.byKey(const Key('bigpicture_session_save')));
+      await tester.pumpAndSettle();
+      verify(() => session.saveSession()).called(1);
+    });
+
+    testWidgets('load invokes the cubit', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await openMenu(tester);
+      await tester.tap(find.byKey(const Key('bigpicture_session_load')));
+      await tester.pumpAndSettle();
+      verify(() => session.loadSession()).called(1);
+    });
+
+    testWidgets('export mixdown / stems invoke the cubit', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await openMenu(tester);
+      await tester.tap(
+        find.byKey(const Key('bigpicture_session_exportMixdown')),
+      );
+      await tester.pumpAndSettle();
+      verify(() => session.exportMixdown()).called(1);
+
+      await openMenu(tester);
+      await tester.tap(find.byKey(const Key('bigpicture_session_exportStems')));
+      await tester.pumpAndSettle();
+      verify(() => session.exportStems()).called(1);
+    });
+
+    testWidgets('a success outcome surfaces a live-region SnackBar', (
+      tester,
+    ) async {
+      whenListen(
+        session,
+        Stream.fromIterable(const [
+          SessionState(status: SessionStatus.working),
+          SessionState(
+            status: SessionStatus.success,
+            outcome: SessionOutcome.saved,
+          ),
+        ]),
+        initialState: const SessionState(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump(); // deliver the emitted states
+
+      final handle = tester.ensureSemantics();
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.sessionSaved), findsOneWidget);
+      // The SnackBar content is wrapped in a live region (WCAG 4.1.3).
+      expect(
+        tester.getSemantics(find.text(l10n.sessionSaved)),
+        isSemantics(isLiveRegion: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('a sample-rate mismatch surfaces the localized error', (
+      tester,
+    ) async {
+      whenListen(
+        session,
+        Stream.fromIterable(const [
+          SessionState(status: SessionStatus.working),
+          SessionState(
+            status: SessionStatus.failure,
+            error: SessionError.sampleRateMismatch,
+            errorMessage: 'session sample rate 44100 Hz does not match …',
+          ),
+        ]),
+        initialState: const SessionState(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.text(l10n.sessionErrorSampleRate), findsOneWidget);
     });
   });
 }

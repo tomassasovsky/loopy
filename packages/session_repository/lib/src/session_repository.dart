@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:loopy_engine/loopy_engine.dart';
 import 'package:session_repository/src/models/session.dart';
+import 'package:session_repository/src/session_exception.dart';
 import 'package:session_repository/src/wav.dart';
 
 /// Saves and restores Loopy sessions and exports audio.
@@ -85,9 +86,9 @@ class SessionRepository {
     if (current.sampleRate > 0 &&
         session.sampleRate > 0 &&
         current.sampleRate != session.sampleRate) {
-      throw StateError(
-        'session sample rate ${session.sampleRate} Hz does not match the '
-        'device rate ${current.sampleRate} Hz',
+      throw SessionSampleRateMismatch(
+        sessionRate: session.sampleRate,
+        deviceRate: current.sampleRate,
       );
     }
 

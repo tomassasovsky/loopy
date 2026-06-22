@@ -47,8 +47,26 @@ class SessionCubit extends Cubit<SessionState> {
     try {
       await action(await _directory());
       emit(SessionState(status: SessionStatus.success, outcome: outcome));
+    } on SessionException catch (error) {
+      // Recoverable, user-facing refusals: classify so the UI can localize.
+      emit(
+        SessionState(
+          status: SessionStatus.failure,
+          error: switch (error) {
+            SessionSampleRateMismatch() => SessionError.sampleRateMismatch,
+            SessionUnsupportedVersion() => SessionError.unsupportedVersion,
+          },
+          errorMessage: '$error',
+        ),
+      );
     } on Object catch (error) {
-      emit(SessionState(status: SessionStatus.failure, errorMessage: '$error'));
+      emit(
+        SessionState(
+          status: SessionStatus.failure,
+          error: SessionError.unknown,
+          errorMessage: '$error',
+        ),
+      );
     }
   }
 }

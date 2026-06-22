@@ -27,6 +27,20 @@
     "loadSession": "Load session",
     "exportMixdown": "Export mixdown",
     "exportStems": "Export stems",
+    "sessionMenuTooltip": "Session",
+    "a11ySessionMenu": "Session menu",
+    "sessionSaved": "Session saved",
+    "sessionLoaded": "Session loaded",
+    "sessionErrorSampleRate": "Couldn't load the session — it was recorded at a different sample rate than the current device. Reopen the device at the session's sample rate, then try again.",
+    "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Loopy. Update the app, then try again.",
+    "sessionErrorGeneric": "Session action failed: {details}",
+    "@sessionErrorGeneric": {
+        "placeholders": {
+            "details": {
+                "type": "String"
+            }
+        }
+    },
     "engineStoppedBanner": "Audio engine stopped — open setup to start.",
     "trackNumberLabel": "Track {trackNumber}",
     "@trackNumberLabel": {
