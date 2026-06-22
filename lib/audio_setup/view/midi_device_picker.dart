@@ -9,7 +9,7 @@ import 'package:loopy/theme/surface_theme.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
-/// ports whose id is empty, which would duplicate `''` and trip 
+/// ports whose id is empty, which would duplicate `''` and trip
 /// DropdownButton).
 const _kMidiNoneValue = '__loopy_midi_none__';
 

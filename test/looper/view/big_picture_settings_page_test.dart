@@ -295,25 +295,27 @@ void main() {
     expect(find.byKey(const Key('routing_noActiveOutputs')), findsNothing);
   });
 
-  testWidgets('Routing tab surfaces the notice when every output is off (F-12)',
-      (tester) async {
-    // Every output gated off: the non-blocking notice must appear.
-    const allOff = LooperState(
-      tracks: [Track()],
-      status: EngineStatus(inputChannels: 2, outputChannels: 2),
-      outputEnabledMask: 0x0,
-    );
-    when(() => repository.state).thenReturn(allOff);
-    when(
-      () => repository.looperState,
-    ).thenAnswer((_) => Stream.value(allOff));
+  testWidgets(
+    'Routing tab surfaces the notice when every output is off (F-12)',
+    (tester) async {
+      // Every output gated off: the non-blocking notice must appear.
+      const allOff = LooperState(
+        tracks: [Track()],
+        status: EngineStatus(inputChannels: 2, outputChannels: 2),
+        outputEnabledMask: 0x0,
+      );
+      when(() => repository.state).thenReturn(allOff);
+      when(
+        () => repository.looperState,
+      ).thenAnswer((_) => Stream.value(allOff));
 
-    await pump(tester);
-    await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
-    await tester.pumpAndSettle();
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('routing_noActiveOutputs')), findsOneWidget);
-  });
+      expect(find.byKey(const Key('routing_noActiveOutputs')), findsOneWidget);
+    },
+  );
 
   testWidgets('Escape pops the settings page', (tester) async {
     // Providers above MaterialApp so the pushed settings route can read them.

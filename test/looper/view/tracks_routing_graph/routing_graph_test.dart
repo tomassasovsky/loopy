@@ -51,27 +51,29 @@ void main() {
       expect(inputEdges.single.from.index, 0);
     });
 
-    test('a gated-off output renders excluded but keeps its route edge (F-11)',
-        () {
-      // Track plays ONLY to output 1 (bit 1), which is structurally gated off.
-      final graph = RoutingGraph.fromTracks(
-        tracks: const [Track(outputMask: 0x2)],
-        inputChannels: 2,
-        outputChannels: 2,
-        outputEnabledMask: 0x1, // output 1 disabled
-      );
+    test(
+      'a gated-off output renders excluded but keeps its route edge (F-11)',
+      () {
+        // Track plays ONLY to output 1 (bit 1), which is structurally gated off.
+        final graph = RoutingGraph.fromTracks(
+          tracks: const [Track(outputMask: 0x2)],
+          inputChannels: 2,
+          outputChannels: 2,
+          outputEnabledMask: 0x1, // output 1 disabled
+        );
 
-      // The disabled output reuses the excluded (greyed) render.
-      expect(graph.outputs[1].excluded, isTrue);
-      expect(graph.outputs[0].excluded, isFalse);
-      // …yet the track→output edge is STILL drawn, so a lane routed only to a
-      // gated output is discoverable rather than silently dropped (F-11).
-      final outputEdges = graph.edges
-          .where((e) => e.to.kind == RoutingNodeKind.output)
-          .toList();
-      expect(outputEdges, hasLength(1));
-      expect(outputEdges.single.to.index, 1);
-    });
+        // The disabled output reuses the excluded (greyed) render.
+        expect(graph.outputs[1].excluded, isTrue);
+        expect(graph.outputs[0].excluded, isFalse);
+        // …yet the track→output edge is STILL drawn, so a lane routed only to a
+        // gated output is discoverable rather than silently dropped (F-11).
+        final outputEdges = graph.edges
+            .where((e) => e.to.kind == RoutingNodeKind.output)
+            .toList();
+        expect(outputEdges, hasLength(1));
+        expect(outputEdges.single.to.index, 1);
+      },
+    );
 
     test('derives channel counts from masks when the engine is stopped', () {
       final graph = RoutingGraph.fromTracks(
