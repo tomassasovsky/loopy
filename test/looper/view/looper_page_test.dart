@@ -38,6 +38,15 @@ void main() {
               BlocProvider<BigPictureCubit>(
                 create: (_) => BigPictureCubit(settings: settings),
               ),
+              // LooperBloc is now provided app-wide (above the looper page) so
+              // the settings route can reach it; mirror that here.
+              BlocProvider<LooperBloc>(
+                create: (_) => LooperBloc(
+                  repository: repository,
+                  controller: controllerRepository,
+                  settings: settings,
+                ),
+              ),
             ],
             child: LooperPage(sessionDirectory: () async => '.'),
           ),

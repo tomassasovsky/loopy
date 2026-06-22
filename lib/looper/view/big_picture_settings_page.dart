@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
+import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
@@ -13,7 +14,6 @@ import 'package:loopy/looper/view/tracks_routing_graph/tracks_routing_graph_view
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
 enum _Section { view, audio, routing, tracks }
@@ -186,12 +186,10 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
 
   List<Widget> _routingSection(BuildContext context) {
     final l10n = context.l10n;
-    // The settings page is pushed above the LooperBloc provider, so the graph
-    // is sourced from — and edits are applied through — the repository (and
-    // persisted via settings, mirroring what the bloc does for the in-view
-    // routing controls).
-    final repository = context.read<LooperRepository>();
-    final settings = context.read<SettingsRepository>();
+    // The LooperBloc is provided app-wide, so the settings page (pushed above
+    // the looper page) drives routing edits through the same events as the
+    // in-view controls — no duplicated forward-then-persist logic.
+    final state = context.watch<LooperBloc>().state;
     final names = context.watch<BigPictureCubit>().state.names;
     final trackLabels = [
       for (var i = 0; i < names.length; i++) l10n.displayTrackName(names[i], i),
@@ -201,29 +199,18 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.signalFlowGroupLabel),
       const SizedBox(height: 16),
-      StreamBuilder<LooperState>(
-        stream: repository.looperState,
-        initialData: repository.state,
-        builder: (context, snapshot) {
-          final state = snapshot.data ?? const LooperState();
-          return TracksRoutingGraphView(
-            tracks: state.tracks,
-            inputChannels: state.status.inputChannels,
-            outputChannels: state.status.outputChannels,
-            excludedInputMask: state.status.excludedInputMask,
-            trackLabels: trackLabels,
-            onInputMaskChanged: (channel, mask) {
-              repository.setInputMask(channel: channel, mask: mask);
-              unawaited(
-                settings.saveLaneInput(channel, 0, maskToInputChannel(mask)),
-              );
-            },
-            onOutputMaskChanged: (channel, mask) {
-              repository.setOutputMask(channel: channel, mask: mask);
-              unawaited(settings.saveLaneOutput(channel, 0, mask));
-            },
-          );
-        },
+      TracksRoutingGraphView(
+        tracks: state.tracks,
+        inputChannels: state.status.inputChannels,
+        outputChannels: state.status.outputChannels,
+        excludedInputMask: state.status.excludedInputMask,
+        trackLabels: trackLabels,
+        onInputMaskChanged: (channel, mask) => context.read<LooperBloc>().add(
+          LooperLaneInputChanged(channel, 0, maskToInputChannel(mask)),
+        ),
+        onOutputMaskChanged: (channel, mask) => context.read<LooperBloc>().add(
+          LooperLaneOutputChanged(channel, 0, mask),
+        ),
       ),
     ];
   }

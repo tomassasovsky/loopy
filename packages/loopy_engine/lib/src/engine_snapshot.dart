@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:meta/meta.dart';
@@ -274,7 +275,7 @@ class TrackSnapshot {
           peak == other.peak &&
           inputMask == other.inputMask &&
           outputMask == other.outputMask &&
-          _listEquals(lanes, other.lanes);
+          const ListEquality<LaneSnapshot>().equals(lanes, other.lanes);
 
   @override
   int get hashCode => Object.hash(
@@ -464,30 +465,6 @@ class EngineSnapshot {
   /// The number of tracks.
   int get trackCount => tracks.length;
 
-  TrackSnapshot get _track0 =>
-      tracks.isNotEmpty ? tracks.first : const TrackSnapshot.empty();
-
-  /// Track 0 state (back-compat single-track accessor).
-  TrackState get trackState => _track0.state;
-
-  /// Track 0 volume (back-compat single-track accessor).
-  double get trackVolume => _track0.volume;
-
-  /// Track 0 mute (back-compat single-track accessor).
-  bool get trackMuted => _track0.muted;
-
-  /// Track 0 length (back-compat single-track accessor).
-  int get trackLengthFrames => _track0.lengthFrames;
-
-  /// Track 0 undo depth (back-compat single-track accessor).
-  int get trackUndoDepth => _track0.undoDepth;
-
-  /// Track 0 RMS (back-compat single-track accessor).
-  double get trackRms => _track0.rms;
-
-  /// Track 0 peak (back-compat single-track accessor).
-  double get trackPeak => _track0.peak;
-
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -513,7 +490,7 @@ class EngineSnapshot {
           fxAddedLatencyFrames == other.fxAddedLatencyFrames &&
           masterGain == other.masterGain &&
           activeBackend == other.activeBackend &&
-          _listEquals(tracks, other.tracks);
+          const ListEquality<TrackSnapshot>().equals(tracks, other.tracks);
 
   @override
   int get hashCode => Object.hashAll([
@@ -548,12 +525,4 @@ class EngineSnapshot {
       'backend: ${activeBackend.name}, '
       'master: $masterPositionFrames/$masterLengthFrames, '
       'latency: ${latencyState.name}/$measuredLatencyMs ms)';
-}
-
-bool _listEquals<T>(List<T> a, List<T> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
 }

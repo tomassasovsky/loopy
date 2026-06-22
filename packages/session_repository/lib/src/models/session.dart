@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
 /// One track's persisted settings within a [Session]. The audio itself lives in
@@ -136,7 +137,7 @@ class Session {
           sampleRate == other.sampleRate &&
           channels == other.channels &&
           baseLengthFrames == other.baseLengthFrames &&
-          _listEquals(tracks, other.tracks);
+          const ListEquality<SessionTrack>().equals(tracks, other.tracks);
 
   @override
   int get hashCode => Object.hash(
@@ -145,12 +146,4 @@ class Session {
     baseLengthFrames,
     Object.hashAll(tracks),
   );
-}
-
-bool _listEquals(List<SessionTrack> a, List<SessionTrack> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
 }

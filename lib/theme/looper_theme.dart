@@ -2,6 +2,7 @@ import 'dart:math' show sqrt;
 
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
+import 'package:pedal_repository/pedal_repository.dart' show PedalTrackLed;
 
 /// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`).
 ///
@@ -91,6 +92,14 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   Color meterColor(LooperMeterState state, {required bool playMode}) =>
       (playMode ? playMeterColors : recordMeterColors)[state] ??
       Colors.transparent;
+
+  /// On-screen pedal LED emulation (mirrors firmware track LED colors).
+  Color pedalLedColor(PedalTrackLed led) => switch (led) {
+    PedalTrackLed.off => const Color(0xFF2C313A),
+    PedalTrackLed.green =>
+      playMeterColors[LooperMeterState.playing] ?? const Color(0xFF4CDA4A),
+    PedalTrackLed.red => recordColor,
+  };
 
   @override
   LooperTheme copyWith({

@@ -11,8 +11,11 @@ import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/track_routing_dialog.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/window/window_chrome.dart';
+import 'package:pedal_repository/pedal_repository.dart'
+    show PedalBindStatus, PedalTrackLed;
 
 /// The full-screen "Big Picture" performance view (Chewie-Monsta style): a row
 /// of tall colored track columns, each a level meter with an editable name.
@@ -60,6 +63,9 @@ class _BigPictureViewState extends State<BigPictureView> {
                       const SizedBox(width: 12),
                       _BankSwitch(active: bank.activeBank),
                       const Spacer(),
+                      const _StopPlayButton(),
+                      const SizedBox(width: 12),
+                      const _ClearAllButton(),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -152,6 +158,7 @@ class _BigPictureViewState extends State<BigPictureView> {
     // Common to both modes.
     if (key == LogicalKeyboardKey.keyM) {
       big.toggleMode();
+      context.read<PedalCubit>().toggleMode();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyS) {
@@ -174,8 +181,10 @@ class _BigPictureViewState extends State<BigPictureView> {
     }
     if (key == LogicalKeyboardKey.keyB) {
       final currentBank = context.read<BankCubit>().state.activeBank;
-      context.read<BankCubit>().selectBank(currentBank == 0 ? 1 : 0);
-      context.read<BigPictureCubit>().select(currentBank == 0 ? 4 : 0);
+      final nextBank = currentBank == 0 ? 1 : 0;
+      context.read<BankCubit>().selectBank(nextBank);
+      context.read<PedalCubit>().selectBank(nextBank);
+      context.read<BigPictureCubit>().select(nextBank == 0 ? 0 : 4);
       return KeyEventResult.handled;
     }
     // `U` undoes the latest overdub layer; on a track that holds only its base
@@ -191,12 +200,16 @@ class _BigPictureViewState extends State<BigPictureView> {
     if (digit != null) {
       final channel = digit - 1;
       if (channel <= 7) {
+        final pedal = context.read<PedalCubit>();
         context.read<BankCubit>().selectBank(
           channel ~/ BankState.tracksPerBank,
         );
         big.select(channel);
         if (big.state.mode == PerformanceMode.play) {
+          pedal.togglePlayArm(channel);
           bloc.add(LooperMuteToggled(channel));
+        } else {
+          pedal.armTrack(channel);
         }
       }
       return KeyEventResult.handled;
@@ -289,7 +302,10 @@ class _ModeIndicator extends StatelessWidget {
 
     return GestureDetector(
       key: const Key('bigpicture_mode_indicator'),
-      onTap: context.read<BigPictureCubit>().toggleMode,
+      onTap: () {
+        context.read<BigPictureCubit>().toggleMode();
+        context.read<PedalCubit>().toggleMode();
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
@@ -347,7 +363,10 @@ class _BankSwitch extends StatelessWidget {
           for (var i = 0; i < BankState.bankCountMax; i++)
             GestureDetector(
               key: Key('bigpicture_bank_$i'),
-              onTap: () => cubit.selectBank(i),
+              onTap: () {
+                cubit.selectBank(i);
+                context.read<PedalCubit>().selectBank(i);
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(
@@ -392,6 +411,9 @@ class _TrackColumn extends StatelessWidget {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final bloc = context.read<LooperBloc>();
+    final pedal = context.watch<PedalCubit>();
+    final showLedBar = pedal.state.bindStatus != PedalBindStatus.bound;
+    final trackLed = pedal.trackLedFor(track.channel);
 
     // The border is always white; selection only changes its weight. The meter
     // bar color is one table lookup on the track's meter state (muted included;
@@ -430,6 +452,37 @@ class _TrackColumn extends StatelessWidget {
                     color: theme.colorScheme.primary,
                   ),
                 ),
+              const SizedBox(width: 10),
+              IconButton(
+                key: Key('bigpicture_undo_${track.channel}'),
+                tooltip: 'Undo',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                iconSize: 18,
+                color: Colors.white70,
+                icon: const Icon(Icons.replay),
+                onPressed: track.canUndo
+                    ? () => bloc.add(LooperUndoPressed(track.channel))
+                    : null,
+              ),
+              IconButton(
+                key: Key('bigpicture_redo_${track.channel}'),
+                tooltip: 'Redo',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                iconSize: 18,
+                color: Colors.white70,
+                icon: Transform.scale(
+                  scaleX: -1,
+                  child: const Icon(Icons.replay),
+                ),
+                onPressed: track.canRedo
+                    ? () => bloc.add(LooperRedoPressed(track.channel))
+                    : null,
+              ),
+              const SizedBox(width: 10),
               IconButton(
                 key: Key('bigpicture_routing_${track.channel}'),
                 tooltip: l10n.ioRoutingTooltip,
@@ -454,7 +507,14 @@ class _TrackColumn extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: () {
                 context.read<BigPictureCubit>().select(track.channel);
-                bloc.add(LooperRecordPressed(track.channel));
+                context.read<PedalCubit>().armTrack(track.channel);
+                if (context.read<BigPictureCubit>().state.mode ==
+                    PerformanceMode.record) {
+                  bloc.add(LooperRecordPressed(track.channel));
+                } else {
+                  bloc.add(LooperMuteToggled(track.channel));
+                  pedal.togglePlayArm(track.channel);
+                }
               },
               onLongPress: () => bloc.add(LooperStopPressed(track.channel)),
               child: _PeakBar(
@@ -484,8 +544,38 @@ class _TrackColumn extends StatelessWidget {
               ),
             ),
           ),
+          if (showLedBar) ...[
+            const SizedBox(height: 6),
+            _TrackLedBar(
+              key: Key('bigpicture_led_bar_${track.channel}'),
+              led: trackLed,
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// A thin horizontal strip emulating a pedal track LED when MIDI feedback is
+/// off.
+class _TrackLedBar extends StatelessWidget {
+  const _TrackLedBar({
+    required this.led,
+    super.key,
+  });
+
+  final PedalTrackLed led;
+
+  @override
+  Widget build(BuildContext context) {
+    final looper = Theme.of(context).extension<LooperTheme>()!;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: looper.pedalLedColor(led),
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: const SizedBox(height: 4, width: double.infinity),
     );
   }
 }
@@ -512,6 +602,69 @@ class _PeakBar extends StatelessWidget {
         // bar tracks the live peak.
         heightFactor: hasContent ? peakMeterFill(peak) : 0.0,
         child: Container(color: color),
+      ),
+    );
+  }
+}
+
+class _ClearAllButton extends StatelessWidget {
+  const _ClearAllButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const Key('bigpicture_clear_all_button'),
+      onTap: () =>
+          context.read<LooperBloc>().add(const LooperClearAllPressed()),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.red.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.red),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.clear_all, size: 16, color: Colors.red),
+            SizedBox(width: 6),
+            Text('Clear All', style: TextStyle(color: Colors.red)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StopPlayButton extends StatelessWidget {
+  const _StopPlayButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final isStopped = context.watch<LooperBloc>().state.tracks.every(
+      (t) => t.state == TrackState.stopped || t.state == TrackState.empty,
+    );
+
+    return GestureDetector(
+      key: const Key('bigpicture_stop_play_button'),
+      onTap: () {
+        if (isStopped) {
+          context.read<LooperBloc>().add(const LooperPlayAllPressed());
+        } else {
+          context.read<LooperBloc>().add(const LooperStopAllPressed());
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.blue),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          isStopped ? Icons.play_arrow_rounded : Icons.stop_rounded,
+          size: 16,
+          color: Colors.blue,
+        ),
       ),
     );
   }
