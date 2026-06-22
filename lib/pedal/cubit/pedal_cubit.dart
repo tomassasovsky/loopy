@@ -162,12 +162,11 @@ class PedalCubit extends Cubit<PedalState> {
   }
 
   /// The pedal-track LED color for [channel], using the same rules as outbound
-  /// projection ([_ledFor]).
+  /// projection ([_ledFor]). A read-only projection (used by tests and the
+  /// hardware LED feedback), not a state mutation, so the non-void return is
+  /// intentional.
+  // ignore: prefer_void_public_cubit_methods
   PedalTrackLed trackLedFor(int channel) {
-    // A read-only projection of the pedal LED color (used by tests and the
-    // hardware LED feedback), not a state mutation, so the non-void return is
-    // intentional here.
-    // ignore: prefer_void_public_cubit_methods
     final looperState = _looperState;
     if (looperState == null) return PedalTrackLed.off;
     return _ledFor(
