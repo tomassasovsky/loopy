@@ -112,6 +112,10 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// The shared dark "setup surface" tokens used by onboarding, settings, and
   /// the routing graphs. The same values in every [ThemeData] variant — these
   /// surfaces read identically regardless of the active app theme.
+  ///
+  /// Text tokens meet WCAG 2.2 AA contrast (1.4.3) against [card]: `textTertiary`
+  /// was lifted from `0xFF5B5D67` (~2.6:1) to `0xFF82848E` (~4.6:1) so dimmed
+  /// labels stay legible.
   static const SurfaceTheme dark = SurfaceTheme(
     background: Color(0xFF08080A),
     surface: Color(0xFF0D0D11),
@@ -122,7 +126,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     onAccent: Color(0xFFFFFFFF),
     textPrimary: Color(0xFFF3F4F7),
     textSecondary: Color(0xFF989AA4),
-    textTertiary: Color(0xFF5B5D67),
+    textTertiary: Color(0xFF82848E),
     wetRoute: Color(0xFF3B82F6),
     dryRoute: Color(0xFFF59E0B),
     lanePalette: [
@@ -134,6 +138,36 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       Color(0xFF34D399), // green
       Color(0xFFFB923C), // orange
       Color(0xFF38BDF8), // sky
+    ],
+  );
+
+  /// High-contrast variant of [dark], selected automatically when the OS
+  /// reports a high-contrast preference (macOS "Increase Contrast" / Windows
+  /// High Contrast, surfaced via `MediaQuery.highContrast`). Text rises toward
+  /// pure white, lines clear the 3:1 non-text threshold (1.4.11), and the
+  /// route/lane hues brighten so wiring stays distinguishable.
+  static const SurfaceTheme highContrast = SurfaceTheme(
+    background: Color(0xFF000000),
+    surface: Color(0xFF000000),
+    card: Color(0xFF0A0A0D),
+    cardHigh: Color(0xFF17171D),
+    line: Color(0xFF6B6D78),
+    accent: Color(0xFF6BA8FF),
+    onAccent: Color(0xFF000000),
+    textPrimary: Color(0xFFFFFFFF),
+    textSecondary: Color(0xFFD6D8E0),
+    textTertiary: Color(0xFFB2B4BE),
+    wetRoute: Color(0xFF6BA8FF),
+    dryRoute: Color(0xFFFFC04D),
+    lanePalette: [
+      Color(0xFF6BA8FF), // blue
+      Color(0xFFFFC04D), // amber
+      Color(0xFF5EEAD4), // teal
+      Color(0xFFC4B5FD), // violet
+      Color(0xFFF9A8D4), // pink
+      Color(0xFF6EE7B7), // green
+      Color(0xFFFDBA74), // orange
+      Color(0xFF7DD3FC), // sky
     ],
   );
 }

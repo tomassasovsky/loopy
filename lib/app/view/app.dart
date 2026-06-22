@@ -407,6 +407,7 @@ class _AppViewState extends State<_AppView> {
         scaffoldMessengerKey: _messengerKey,
         navigatorKey: loopyNavigatorKey,
         theme: AppTheme.bigPicture,
+        highContrastTheme: AppTheme.bigPictureHighContrast,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Builder(
