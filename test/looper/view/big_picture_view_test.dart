@@ -10,6 +10,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -343,6 +344,90 @@ void main() {
         find.byKey(const Key('bigpicture_audioNotRunning')),
         findsNothing,
       );
+    });
+  });
+
+  group('accessibility', () {
+    testWidgets('track tile is a labelled button naming its state', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      final node = tester.getSemantics(
+        find.byKey(const Key('bigpicture_tile_0')),
+      );
+      // Colour-only meter state (1.4.1) is named in the accessible label, and
+      // the tile carries a button role (4.1.2).
+      expect(node.label, contains('empty'));
+      expect(node, isSemantics(isButton: true));
+      handle.dispose();
+    });
+
+    testWidgets('a tile exposes a tap action for screen readers (4.1.2)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      // The labelled tile must keep a tap semantics action so VoiceOver/
+      // TalkBack can activate it (the actual record path is covered by the
+      // pointer-tap test above).
+      expect(
+        tester.getSemantics(find.byKey(const Key('bigpicture_tile_0'))),
+        isSemantics(isButton: true, hasTapAction: true),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('the bank tab exposes its selected state', (tester) async {
+      final handle = tester.ensureSemantics();
+      seed(
+        LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
+      );
+      await pump(tester);
+
+      expect(
+        tester.getSemantics(find.byKey(const Key('bigpicture_bank_0'))),
+        isSemantics(isButton: true, isSelected: true),
+      );
+      expect(
+        tester.getSemantics(find.byKey(const Key('bigpicture_bank_1'))),
+        isSemantics(isButton: true, isSelected: false),
+      );
+      handle.dispose();
+    });
+
+    testWidgets('the mode indicator is a labelled toggle button', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      final node = tester.getSemantics(
+        find.byKey(const Key('bigpicture_mode_indicator')),
+      );
+      expect(node, isSemantics(isButton: true));
+      expect(node.label, isNotEmpty);
+      handle.dispose();
+    });
+
+    testWidgets('Tab is not swallowed by the performance key handler', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      // The root Focus consumes plain keys (so macOS does not beep) but must
+      // let Tab through, or keyboard focus can never reach the tiles (2.1.2).
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(FocusManager.instance.primaryFocus, isNotNull);
+      // No exception; the tile targets are focusable.
+      expect(find.byType(FocusableTapTarget), findsWidgets);
     });
   });
 }

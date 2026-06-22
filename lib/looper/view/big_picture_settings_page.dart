@@ -90,6 +90,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
                 right: 10,
                 child: IconButton(
                   key: const Key('bpSettings_close_button'),
+                  tooltip: context.l10n.close,
                   visualDensity: VisualDensity.compact,
                   icon: Icon(
                     Icons.close,

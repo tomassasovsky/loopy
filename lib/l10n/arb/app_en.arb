@@ -20,6 +20,7 @@
         }
     },
     "dismiss": "Dismiss",
+    "close": "Close",
     "mixdownExported": "Mixdown exported",
     "stemsExported": "Stems exported",
     "saveSession": "Save session",
@@ -50,11 +51,64 @@
     "trackStateOverdubbing": "overdubbing",
     "trackStatePlaying": "playing",
     "trackStateStopped": "stopped",
+    "trackStateMuted": "muted",
     "measuringLowercase": "measuring…",
     "noLoopback": "no loopback",
     "emDash": "—",
     "performanceModeRec": "REC",
     "performanceModePlay": "PLAY",
+    "a11yUndone": "Undone",
+    "a11yRedone": "Redone",
+    "a11yModeRecord": "Record mode",
+    "a11yModePlay": "Play mode",
+    "a11yPlayingAll": "Playing all tracks",
+    "a11yStoppedAll": "Stopped all tracks",
+    "a11yAllCleared": "All tracks cleared",
+    "a11yPlaying": "Playing",
+    "a11yStopped": "Stopped",
+    "a11yBankSelected": "Bank {bank}",
+    "@a11yBankSelected": {
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yBankTab": "Show bank {bank}",
+    "@a11yBankTab": {
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yModeToggle": "Performance mode {mode}, activate to switch",
+    "@a11yModeToggle": {
+        "placeholders": {
+            "mode": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yTrackTile": "{name}, {state}, activate to record",
+    "@a11yTrackTile": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "a11yRenameTrack": "Rename {name}",
+    "@a11yRenameTrack": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
     "renameTrackTitle": "Rename track {trackNumber}",
     "@renameTrackTitle": {
         "placeholders": {
