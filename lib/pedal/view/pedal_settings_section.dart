@@ -173,11 +173,16 @@ class _PedalStatusLine extends StatelessWidget {
       PedalBindStatus.bound => (l10n.pedalStatusBound(deviceName), false),
       PedalBindStatus.error => (l10n.pedalStatusError(deviceName), true),
     };
-    return Text(
-      message,
-      key: const Key('pedalSettings_status'),
-      style: setupBody.copyWith(
-        color: isError ? Theme.of(context).colorScheme.error : null,
+    // A live region so bind / connecting / error transitions are announced as
+    // they happen, not only on navigation (WCAG 4.1.3).
+    return Semantics(
+      liveRegion: true,
+      child: Text(
+        message,
+        key: const Key('pedalSettings_status'),
+        style: setupBody.copyWith(
+          color: isError ? Theme.of(context).colorScheme.error : null,
+        ),
       ),
     );
   }

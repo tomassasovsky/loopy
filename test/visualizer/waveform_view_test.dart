@@ -20,6 +20,29 @@ void main() {
     expect(find.byKey(const Key('waveform_view_paint')), findsOneWidget);
   });
 
+  testWidgets('exposes a semantic label + playhead value when named (1.1.1)', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.bigPicture,
+        home: Scaffold(
+          body: WaveformView(
+            samples: Float32List.fromList([0, 0.5, 1]),
+            progress: 0.42,
+            semanticLabel: 'Output loop waveform',
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.getSemantics(find.byType(WaveformView)),
+      isSemantics(label: 'Output loop waveform', value: '42%'),
+    );
+    handle.dispose();
+  });
+
   testWidgets('WaveformWindowApp renders the pushed frame', (tester) async {
     final frame = ValueNotifier<WaveformFrame>(
       (samples: Float32List.fromList([0, 1, 0]), progress: 0.2),

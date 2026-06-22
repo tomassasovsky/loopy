@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
 /// Tabular figures keep numeric values vertically aligned in status tables.
 const _setupNumerals = [FontFeature.tabularFigures()];
@@ -206,11 +207,15 @@ class _OptionCard<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return GestureDetector(
+    return FocusableTapTarget(
       key: option.optionKey,
       onTap: onTap,
+      selected: selected,
+      borderRadius: 12,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
         decoration: BoxDecoration(
           color: selected ? surface.cardHigh : surface.card,
@@ -313,8 +318,10 @@ class _ChannelChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    return GestureDetector(
+    return FocusableTapTarget(
       onTap: onTap,
+      selected: selected,
+      borderRadius: 10,
       child: Container(
         width: 42,
         height: 38,

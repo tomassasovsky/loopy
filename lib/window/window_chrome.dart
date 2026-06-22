@@ -2,7 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:window_manager/window_manager.dart';
+
+/// The chrome renders in both the main window and the secondary waveform window
+/// (which has no Localizations ancestor), so labels resolve from the platform
+/// locale rather than a [BuildContext].
+AppLocalizations get _chromeL10n =>
+    lookupAppLocalizations(PlatformDispatcher.instance.locale);
 
 /// Whether Loopy uses a Flutter-drawn title bar instead of the native one.
 ///
@@ -257,6 +264,7 @@ class _LoopyWindowTitleBarState extends State<LoopyWindowTitleBar>
             if (widget.onHide != null)
               _LoopyChromeIconButton(
                 icon: Icons.expand_less,
+                tooltip: _chromeL10n.a11yHideTitleBar,
                 onPressed: widget.onHide!,
               ),
             WindowCaptionButton.minimize(
@@ -317,8 +325,13 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
 
   @override
   Widget build(BuildContext context) {
+    // Honor the OS "reduce motion" preference (WCAG 2.3.3): collapse the
+    // reveal transitions to an instant state change.
+    final motion = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 200);
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: motion,
       color: revealed
           ? LoopyWindowTitleBar.barColor.withValues(alpha: 0.85)
           : Colors.transparent,
@@ -331,11 +344,12 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
           ),
           AnimatedOpacity(
             opacity: revealed ? 1 : 0,
-            duration: const Duration(milliseconds: 200),
+            duration: motion,
             child: IgnorePointer(
               ignoring: !revealed,
               child: _LoopyChromeIconButton(
                 icon: Icons.expand_more,
+                tooltip: _chromeL10n.a11yShowTitleBar,
                 onPressed: onShow,
                 compact: true,
               ),
@@ -351,25 +365,37 @@ class _LoopyChromeIconButton extends StatelessWidget {
   const _LoopyChromeIconButton({
     required this.icon,
     required this.onPressed,
+    required this.tooltip,
     this.compact = false,
   });
 
   final IconData icon;
   final VoidCallback onPressed;
+
+  /// Accessible name + hover tooltip for this icon-only control (WCAG 4.1.2).
+  final String tooltip;
+
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final height = compact ? loopyHiddenTitleStripHeight : kWindowCaptionHeight;
     final width = compact ? 28.0 : 46.0;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        child: SizedBox(
-          width: width,
-          height: height,
-          child: Icon(icon, size: compact ? 14 : 16, color: Colors.white),
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          child: Semantics(
+            button: true,
+            label: tooltip,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Icon(icon, size: compact ? 14 : 16, color: Colors.white),
+            ),
+          ),
         ),
       ),
     );

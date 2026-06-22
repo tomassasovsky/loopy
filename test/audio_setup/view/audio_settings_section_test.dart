@@ -156,6 +156,24 @@ void main() {
     expect(find.text('456 frames'), findsOneWidget);
   });
 
+  testWidgets('a setup option card is a focusable, selectable button (a11y)', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    seed(runningState);
+    await pumpSection(tester);
+
+    // The stepped option cards (sample rate, buffer, …) must be keyboard-
+    // operable and expose their selected state, not bare GestureDetectors.
+    expect(
+      tester.getSemantics(
+        find.byKey(const Key('audioSettings_sampleRate_48000')),
+      ),
+      isSemantics(isButton: true, hasTapAction: true, isSelected: true),
+    );
+    handle.dispose();
+  });
+
   testWidgets('selecting a playback device forwards to the cubit', (
     tester,
   ) async {
