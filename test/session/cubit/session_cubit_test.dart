@@ -94,7 +94,7 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
-      'saveSession emits failure when the repository throws',
+      'saveSession emits an unknown-classified failure when the repo throws',
       setUp: () =>
           when(() => repository.save(any())).thenThrow(Exception('disk full')),
       build: build,
@@ -103,13 +103,14 @@ void main() {
         SessionState(status: SessionStatus.working),
         SessionState(
           status: SessionStatus.failure,
+          error: SessionError.unknown,
           errorMessage: 'Exception: disk full',
         ),
       ],
     );
 
     blocTest<SessionCubit, SessionState>(
-      'loadSession emits failure when the repository throws',
+      'loadSession emits an unknown-classified failure when the repo throws',
       setUp: () =>
           when(() => repository.load(any())).thenThrow(Exception('no bundle')),
       build: build,
@@ -118,8 +119,39 @@ void main() {
         SessionState(status: SessionStatus.working),
         SessionState(
           status: SessionStatus.failure,
+          error: SessionError.unknown,
           errorMessage: 'Exception: no bundle',
         ),
+      ],
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'loadSession classifies a sample-rate mismatch',
+      setUp: () => when(() => repository.load(any())).thenThrow(
+        const SessionSampleRateMismatch(sessionRate: 44100, deviceRate: 48000),
+      ),
+      build: build,
+      act: (cubit) => cubit.loadSession(),
+      expect: () => [
+        const SessionState(status: SessionStatus.working),
+        isA<SessionState>()
+            .having((s) => s.status, 'status', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.sampleRateMismatch),
+      ],
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'loadSession classifies an unsupported (newer) version',
+      setUp: () => when(() => repository.load(any())).thenThrow(
+        const SessionUnsupportedVersion(version: 2, supported: 1),
+      ),
+      build: build,
+      act: (cubit) => cubit.loadSession(),
+      expect: () => [
+        const SessionState(status: SessionStatus.working),
+        isA<SessionState>()
+            .having((s) => s.status, 'status', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.unsupportedVersion),
       ],
     );
   });
