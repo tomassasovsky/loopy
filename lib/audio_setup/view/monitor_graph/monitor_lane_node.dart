@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/surface_theme.dart';
@@ -45,73 +44,75 @@ class MonitorLaneNode extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        key: Key('monitorGraph_laneNode_${input}_$lane'),
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: focused ? 0.30 : 0.16),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: dim ? color.withValues(alpha: 0.5) : color,
-              width: focused ? 2.5 : 1.5,
-            ),
+    final volumeWord = laneState.muted
+        ? l10n.trackStateMuted
+        : '${(laneState.volume.clamp(0.0, 1.0) * 100).round()}%';
+    return FocusableTapTarget(
+      key: Key('monitorGraph_laneNode_${input}_$lane'),
+      onTap: onTap,
+      selected: focused,
+      borderRadius: 8,
+      semanticLabel:
+          '${l10n.inputMonitorLabel(input + 1)}, '
+          '${l10n.laneNumberLabel(lane + 1)}, $volumeWord',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: focused ? 0.30 : 0.16),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: dim ? color.withValues(alpha: 0.5) : color,
+            width: focused ? 2.5 : 1.5,
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    laneState.muted ? Icons.volume_off : Icons.volume_up,
-                    size: 13,
-                    color: laneState.muted
-                        ? surface.textTertiary
-                        : surface.textSecondary,
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      l10n.inputMonitorLabel(input + 1),
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: surface.textPrimary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  laneState.muted ? Icons.volume_off : Icons.volume_up,
+                  size: 13,
+                  color: laneState.muted
+                      ? surface.textTertiary
+                      : surface.textSecondary,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    l10n.inputMonitorLabel(input + 1),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: surface.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+            Text(
+              l10n.laneNumberLabel(lane + 1),
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 10,
+                height: 1.2,
               ),
-              Text(
-                l10n.laneNumberLabel(lane + 1),
-                style: TextStyle(
-                  color: surface.textSecondary,
-                  fontSize: 10,
-                  height: 1.2,
+            ),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: SizedBox(
+                height: 4,
+                child: LinearProgressIndicator(
+                  value: laneState.muted ? 0 : laneState.volume.clamp(0.0, 1.0),
+                  backgroundColor: surface.line,
+                  valueColor: AlwaysStoppedAnimation(color),
                 ),
               ),
-              const SizedBox(height: 4),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: SizedBox(
-                  height: 4,
-                  child: LinearProgressIndicator(
-                    value: laneState.muted
-                        ? 0
-                        : laneState.volume.clamp(0.0, 1.0),
-                    backgroundColor: surface.line,
-                    valueColor: AlwaysStoppedAnimation(color),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

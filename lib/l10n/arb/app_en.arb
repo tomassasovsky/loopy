@@ -66,6 +66,10 @@
     "a11yAllCleared": "All tracks cleared",
     "a11yPlaying": "Playing",
     "a11yStopped": "Stopped",
+    "a11yPortShared": "shared output",
+    "a11yPortDedicated": "dedicated output",
+    "a11yPortUnused": "unused output",
+    "a11yEffectType": "Effect type",
     "a11yBankSelected": "Bank {bank}",
     "@a11yBankSelected": {
         "placeholders": {

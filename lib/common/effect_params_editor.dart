@@ -85,26 +85,30 @@ class EffectParamsEditor extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: DropdownButton<TrackEffectType>(
-                  key: Key('${keyPrefix}_fxType'),
-                  isExpanded: true,
-                  isDense: true,
-                  value: fx.type,
-                  dropdownColor: surface.cardHigh,
-                  style: TextStyle(color: surface.textPrimary, fontSize: 14),
-                  onChanged: (type) {
-                    if (type != null && type != TrackEffectType.none) {
-                      onSetType(type);
-                    }
-                  },
-                  items: [
-                    for (final type in TrackEffectType.values)
-                      if (type != TrackEffectType.none)
-                        DropdownMenuItem(
-                          value: type,
-                          child: Text(l10n.effectTypeLabel(type)),
-                        ),
-                  ],
+                child: Semantics(
+                  label: l10n.a11yEffectType,
+                  container: true,
+                  child: DropdownButton<TrackEffectType>(
+                    key: Key('${keyPrefix}_fxType'),
+                    isExpanded: true,
+                    isDense: true,
+                    value: fx.type,
+                    dropdownColor: surface.cardHigh,
+                    style: TextStyle(color: surface.textPrimary, fontSize: 14),
+                    onChanged: (type) {
+                      if (type != null && type != TrackEffectType.none) {
+                        onSetType(type);
+                      }
+                    },
+                    items: [
+                      for (final type in TrackEffectType.values)
+                        if (type != TrackEffectType.none)
+                          DropdownMenuItem(
+                            value: type,
+                            child: Text(l10n.effectTypeLabel(type)),
+                          ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -215,12 +219,15 @@ class _ParamRow extends StatelessWidget {
           Expanded(
             child: SliderTheme(
               data: sliderTheme,
-              child: Slider(
-                key: Key('${keyPrefix}_fxParam$index'),
-                value: clamped,
-                divisions: spec.divisions,
-                label: readout,
-                onChanged: onChanged,
+              child: Semantics(
+                label: l10n.effectParamLabel(spec.label),
+                child: Slider(
+                  key: Key('${keyPrefix}_fxParam$index'),
+                  value: clamped,
+                  divisions: spec.divisions,
+                  label: readout,
+                  onChanged: onChanged,
+                ),
               ),
             ),
           ),

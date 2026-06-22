@@ -14,11 +14,17 @@ class AudioDevicePicker extends StatelessWidget {
     required this.devices,
     required this.selectedId,
     required this.onSelected,
+    this.semanticLabel,
     super.key,
   });
 
   /// Key for the underlying dropdown (so tests can target it).
   final String pickerKey;
+
+  /// The accessible name for the dropdown (e.g. "Output device"). The visible
+  /// group label is a detached sibling, so without this the control announces
+  /// only its current value with no role context (WCAG 3.3.2).
+  final String? semanticLabel;
 
   /// The selectable devices (one direction).
   final List<AudioDevice> devices;
@@ -35,50 +41,54 @@ class AudioDevicePicker extends StatelessWidget {
     final value = devices.any((d) => d.id == selectedId) ? selectedId : '';
     final defaults = devices.where((d) => d.isDefault);
     final defaultName = defaults.isEmpty ? null : defaults.first.name;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.surface.line),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          focusColor: Colors.transparent,
-          key: Key(pickerKey),
-          value: value,
-          isExpanded: true,
-          dropdownColor: context.surface.cardHigh,
+    return Semantics(
+      label: semanticLabel,
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: context.surface.card,
           borderRadius: BorderRadius.circular(12),
-          icon: Icon(
-            Icons.expand_more,
-            color: context.surface.textSecondary,
-          ),
-          style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
-          items: [
-            DropdownMenuItem(
-              value: '',
-              child: Text(
-                defaultName == null
-                    ? l10n.systemDefault
-                    : l10n.systemDefaultNamed(defaultName),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+          border: Border.all(color: context.surface.line),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            focusColor: Colors.transparent,
+            key: Key(pickerKey),
+            value: value,
+            isExpanded: true,
+            dropdownColor: context.surface.cardHigh,
+            borderRadius: BorderRadius.circular(12),
+            icon: Icon(
+              Icons.expand_more,
+              color: context.surface.textSecondary,
             ),
-            for (final device in devices)
+            style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
+            items: [
               DropdownMenuItem(
-                value: device.id,
+                value: '',
                 child: Text(
-                  device.name,
+                  defaultName == null
+                      ? l10n.systemDefault
+                      : l10n.systemDefaultNamed(defaultName),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-          ],
-          onChanged: (id) {
-            if (id != null) onSelected(id);
-          },
+              for (final device in devices)
+                DropdownMenuItem(
+                  value: device.id,
+                  child: Text(
+                    device.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (id) {
+              if (id != null) onSelected(id);
+            },
+          ),
         ),
       ),
     );
