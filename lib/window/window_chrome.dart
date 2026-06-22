@@ -325,8 +325,13 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
 
   @override
   Widget build(BuildContext context) {
+    // Honor the OS "reduce motion" preference (WCAG 2.3.3): collapse the
+    // reveal transitions to an instant state change.
+    final motion = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 200);
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
+      duration: motion,
       color: revealed
           ? LoopyWindowTitleBar.barColor.withValues(alpha: 0.85)
           : Colors.transparent,
@@ -339,7 +344,7 @@ class LoopyWindowHiddenTitleStrip extends StatelessWidget
           ),
           AnimatedOpacity(
             opacity: revealed ? 1 : 0,
-            duration: const Duration(milliseconds: 200),
+            duration: motion,
             child: IgnorePointer(
               ignoring: !revealed,
               child: _LoopyChromeIconButton(
