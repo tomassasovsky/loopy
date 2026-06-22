@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:loopy_engine/loopy_engine.dart';
+import 'package:looper_repository/src/models/track_effect.dart';
 
 /// A single recordable lane within a `Track`.
 ///
