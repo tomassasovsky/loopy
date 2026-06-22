@@ -409,7 +409,10 @@ class EngineSnapshot {
   /// Total frames processed by the audio callback since the device started.
   final int framesProcessed;
 
-  /// Device xruns since the device started (reserved; currently `0`).
+  /// Device dropouts (xruns) since the device started, as reported by the
+  /// backend. The Windows ASIO backend tallies the driver's overload
+  /// notifications; the miniaudio backends (macOS / Linux) expose no portable
+  /// xrun signal, so this stays `0` there. Monotonic; resets on each start.
   final int xrunCount;
 
   /// Input RMS level for the most recent block, in `0..1`.

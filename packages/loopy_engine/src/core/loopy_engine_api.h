@@ -243,7 +243,9 @@ typedef struct le_config {
   char playback_device_id[256];
   char capture_device_id[256];
   /* le_audio_backend to open; 0 (LE_BACKEND_MINIAUDIO) selects the default
-   * miniaudio path. Accepted and ignored until the ASIO backend lands. */
+   * miniaudio path, LE_BACKEND_ASIO the Windows ASIO backend. Honored at start
+   * via le_select_backend (a LOOPY_ENABLE_ASIO Windows build); elsewhere every
+   * value resolves to miniaudio. */
   int32_t backend;
   /* Selected ASIO driver name (used by the ASIO backend in Part 2). Empty and
    * ignored on the default path. */
@@ -332,7 +334,11 @@ typedef struct le_snapshot {
    * any track input mask. Always 0 off macOS / when no label matches. */
   uint32_t excluded_input_mask;
   uint64_t frames_processed;  /* total frames seen by the callback */
-  uint32_t xrun_count;        /* reserved; xrun detection lands later (0) */
+  /* Device dropouts (xruns) since the device started, as reported by the backend.
+   * The Windows ASIO backend tallies the driver's kAsioOverload notifications;
+   * the miniaudio backends (macOS / Linux) expose no portable per-callback xrun
+   * signal, so this stays 0 there. Monotonic; cleared on each fresh start. */
+  uint32_t xrun_count;
   float input_rms;            /* 0..1 */
   float input_peak;           /* 0..1 */
   float output_rms;           /* 0..1 */

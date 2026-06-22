@@ -19,12 +19,39 @@
 extern "C" {
 #endif
 
-/* A single engine command. `code` is an le_command_code; the two argument
- * slots carry an integer (e.g. track channel) and a float (e.g. volume). */
+/* A single engine command. `code` is an le_command_code; the payload is a tagged
+ * union keyed on `code` so each producer fills, and the audio thread reads, NAMED
+ * fields — no bit-packing. The generic { arg_i, arg_f } arm (a C11 anonymous
+ * struct, so simple commands keep using cmd.arg_i / cmd.arg_f directly) carries
+ * the single-int / single-float commands (record, volume, mute, gain, …); the
+ * named arms carry the addressed commands that previously field-packed their
+ * arguments. For the monitor-lane commands, the `channel` field holds the input
+ * index. Exactly one arm is valid per `code`; see apply_command. */
 typedef struct le_command {
   int32_t code;
-  int32_t arg_i;
-  float arg_f;
+  union {
+    struct { /* generic single int + single float */
+      int32_t arg_i;
+      float arg_f;
+    };
+    struct { /* SET_INPUT_MASK / SET_OUTPUT_MASK */
+      int32_t channel;
+      uint32_t mask;
+    } trackmask;
+    struct { /* SET_LANE_FX / SET_MONITOR_LANE_FX */
+      int32_t channel, lane, index, type;
+    } fx;
+    struct { /* SET_LANE_FX_COUNT / SET_MONITOR_LANE_FX_COUNT */
+      int32_t channel, lane, count;
+    } fxcount;
+    struct { /* lane int payload: SET_LANE_INPUT (input ch) / *_OUTPUT (mask) */
+      int32_t channel, lane, value;
+    } lanei;
+    struct { /* lane float payload: SET_LANE_VOLUME / MUTE (+ monitor) */
+      int32_t channel, lane;
+      float value;
+    } lanef;
+  };
 } le_command;
 
 /* Fixed-capacity SPSC ring. `capacity` is a power of two; one slot is kept

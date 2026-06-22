@@ -6,7 +6,19 @@
 library;
 
 export 'src/audio_device.dart' show AudioDevice;
-export 'src/audio_engine.dart' show AudioEngine, EngineException, EngineResult;
+export 'src/audio_engine.dart'
+    show
+        AudioEngine,
+        EffectsControl,
+        EngineException,
+        EngineLifecycle,
+        EngineMetering,
+        EngineResult,
+        EngineRouting,
+        LooperTransport,
+        MasterBusControl,
+        MonitorControl,
+        SessionIo;
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;
 export 'src/engine_snapshot.dart'
     show

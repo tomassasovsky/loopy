@@ -1,5 +1,8 @@
-// Forwarder translation unit — see engine.c for why this indirection exists.
-// Compiles the CoreMIDI capture backend into the plugin framework. The Linux
-// (ALSA) and Windows (WinMM) backends are not forwarded: le_midi_select_backend
-// references only le_midi_apple_backend on Apple, so they are never linked here.
-#include "../../src/midi_backend_apple.c"
+// Forwarder translation unit for the CocoaPods (macOS/iOS) build.
+//
+// CocoaPods cannot reference source files outside the podspec directory, so the
+// shared C engine under ../../src is pulled in via these per-file forwarders
+// (one per native TU the macOS build needs). Headers referenced by the included
+// source resolve through HEADER_SEARCH_PATHS (../src/core, ../src/midi,
+// ../src/miniaudio) declared in the podspec.
+#include "../../src/midi/midi_backend_apple.c"

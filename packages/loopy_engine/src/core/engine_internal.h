@@ -29,6 +29,21 @@ const le_device_backend* le_select_backend(int32_t backend);
  * engine_private.h, keeping all atomic access in C. Not part of the FFI surface. */
 void le_engine_mark_started(le_engine* engine);
 
+/* Increments the published xrun (dropout) tally by one. Called from a device
+ * backend's overload notification — e.g. the ASIO driver's kAsioOverload message
+ * — so the snapshot's xrun_count reflects real device starvation. A C helper for
+ * the same reason as le_engine_mark_started (C++ backend TUs avoid the _Atomic
+ * field). Relaxed atomic; safe off any thread. Not part of the FFI surface. */
+void le_engine_note_xrun(le_engine* engine);
+
+/* Publishes "device lost" (a_device_present = 0, a_running untouched) so the
+ * control layer drives reconnection. Mirrors the miniaudio device-notification
+ * callback; called by the ASIO reset-request / sample-rate-change handlers so a
+ * driver reconfigured out from under us recovers via stop -> start rather than
+ * going silent. Relaxed atomic; safe off the driver's message thread. Not part
+ * of the FFI surface. */
+void le_engine_mark_device_lost(le_engine* engine);
+
 /* Allocates the track buffers and sets engine parameters WITHOUT opening a
  * device. Used by le_engine_start and by tests. `input_channels` /
  * `output_channels` are each clamped to LE_MAX_CHANNELS and `max_loop_frames` to
@@ -42,6 +57,16 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
  * data callback invokes, exposed so tests can call it directly. */
 void le_engine_process(le_engine* engine, float* output, const float* input,
                        uint32_t frames);
+
+/* Runs the master-bus per-frame step (master gain -> feed-forward limiter ->
+ * output metering) on out[f*ch_out .. +ch_out) in isolation, with explicit gain /
+ * limiter params, so the limiter dynamics can be unit-tested without a full block.
+ * Reads/updates engine->lim_gain. Not part of the FFI surface. */
+void le_engine_master_bus_frame_for_test(le_engine* engine, float* out,
+                                         uint32_t f, int ch_out,
+                                         float master_gain, int limiter_on,
+                                         float limiter_ceiling, float lim_release,
+                                         float* out_sumsq, float* frame_out_peak);
 
 /* Classifies a capture device by name into a loopback kind (name heuristic
  * only; backend built-in loopback detection is context-level). Pure and

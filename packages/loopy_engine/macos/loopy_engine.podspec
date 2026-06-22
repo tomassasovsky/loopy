@@ -37,6 +37,6 @@ A hand-written miniaudio-based looping engine exposed to Dart over FFI.
     # its symbols get dead-stripped since nothing references them at link time.
     'MACH_O_TYPE' => 'mh_dylib',
     'GCC_C_LANGUAGE_STANDARD' => 'gnu11',
-    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../src" "$(PODS_TARGET_SRCROOT)/../src/miniaudio"',
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../src/core" "$(PODS_TARGET_SRCROOT)/../src/midi" "$(PODS_TARGET_SRCROOT)/../src/miniaudio"',
   }
 end

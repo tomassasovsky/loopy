@@ -1,2 +1,2 @@
 // Forwarder translation unit — see engine.c for why this indirection exists.
-#include "../../../../src/lockfree_ring.c"
+#include "../../../../src/core/lockfree_ring.c"

@@ -248,6 +248,12 @@
     "workstreams",
     "xfade",
     "xrun",
-    "xruns"
+    "xruns",
+    "decorrelation",
+    "desyncs",
+    "footgun",
+    "ints",
+    "pessimized",
+    "unported"
   ]
 }

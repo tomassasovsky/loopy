@@ -17,9 +17,11 @@
 #define LOOPY_ENGINE_PRIVATE_H
 
 /* The struct holds atomic_* fields; pull in <stdatomic.h> explicitly rather than
- * relying on it arriving transitively via lockfree_ring.h. */
+ * relying on it arriving transitively via lockfree_ring.h. <string.h> backs the
+ * memcpy-based float<->bits helpers below. */
 #include <stdatomic.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
@@ -442,6 +444,37 @@ static inline int32_t load_i32(_Atomic int32_t* slot) {
 }
 static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
   atomic_store_explicit(slot, v, memory_order_relaxed);
+}
+
+/* float/double <-> atomic-bits helpers. The published metering/gain fields are
+ * stored as _Atomic uint32_t/uint64_t bit patterns; these reinterpret without a
+ * strict-aliasing violation. `static inline` here (like load_i32/store_i32) so
+ * every engine TU shares one copy with no external symbol. */
+static inline uint32_t f32_to_bits(float v) {
+  uint32_t b;
+  memcpy(&b, &v, sizeof(b));
+  return b;
+}
+static inline float bits_to_f32(uint32_t b) {
+  float v;
+  memcpy(&v, &b, sizeof(v));
+  return v;
+}
+static inline uint64_t f64_to_bits(double v) {
+  uint64_t b;
+  memcpy(&b, &v, sizeof(b));
+  return b;
+}
+static inline double bits_to_f64(uint64_t b) {
+  double v;
+  memcpy(&v, &b, sizeof(v));
+  return v;
+}
+static inline void store_f32(_Atomic uint32_t* slot, float v) {
+  atomic_store_explicit(slot, f32_to_bits(v), memory_order_relaxed);
+}
+static inline float load_f32(_Atomic uint32_t* slot) {
+  return bits_to_f32(atomic_load_explicit(slot, memory_order_relaxed));
 }
 
 #ifdef __cplusplus

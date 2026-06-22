@@ -38,6 +38,9 @@ let package = Package(
         .linkedFramework("AudioToolbox"),
         .linkedFramework("AudioUnit"),
         .linkedFramework("CoreFoundation"),
+        // CoreMIDI backs the native MIDI input seam (midi_backend_apple.c),
+        // forwarded into this target alongside the engine.
+        .linkedFramework("CoreMIDI"),
       ]
     ),
   ]

@@ -121,3 +121,5 @@ test/**/failures/
 # SKiDL transient reports written to the repo root
 /skidl*.erc
 /skidl*.log
+packages/loopy_engine/*.exe
+*.exe

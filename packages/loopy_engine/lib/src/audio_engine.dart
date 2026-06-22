@@ -57,12 +57,12 @@ class EngineException implements Exception {
       'EngineException(${result.name}${message != null ? ': $message' : ''})';
 }
 
-/// The data-layer boundary over the native audio engine.
+/// Device lifecycle + identity.
 ///
-/// Repositories depend on this interface and inject a fake in tests; the
-/// production implementation is `NativeAudioEngine`, which drives the native
-/// engine over FFI.
-abstract interface class AudioEngine {
+/// One role of the [AudioEngine] data-layer boundary. Consumers that only need
+/// to open/close the device (or read its name/version) can depend on this slice
+/// rather than the whole engine.
+abstract interface class EngineLifecycle {
   /// A human-readable engine + miniaudio version string.
   String get version;
 
@@ -76,6 +76,14 @@ abstract interface class AudioEngine {
   /// Stops and closes the audio device.
   EngineResult stop();
 
+  /// Releases the native engine. The instance must not be used afterwards.
+  void dispose();
+}
+
+/// Read-only state: snapshots, metering, visualization, and device/latency
+/// discovery. Everything here only reads engine state (the latency measurement
+/// is triggered here but its result surfaces via [snapshot]).
+abstract interface class EngineMetering {
   /// Reads the current lock-free [EngineSnapshot] published by the engine.
   EngineSnapshot snapshot();
 
@@ -111,6 +119,20 @@ abstract interface class AudioEngine {
   /// when the engine was started with [EngineConfig.useLoopbackCapture].
   EngineResult measureLatency();
 
+  /// Reads the loop waveform: peaks of the mixed output indexed by position
+  /// across one master loop (index 0 = loop start), each in `0..1`. Pair with
+  /// [EngineSnapshot.masterPositionFrames]/[EngineSnapshot.masterLengthFrames]
+  /// for the playhead. Empty until a loop exists.
+  Float32List readVisual();
+
+  /// Like [readVisual] but for a single track's own contribution (its active
+  /// lanes summed), for per-track waveform thumbnails. Per-lane waveforms are
+  /// not exposed yet.
+  Float32List readTrackVisual(int channel);
+}
+
+/// Per-track looper transport + recording-behaviour settings.
+abstract interface class LooperTransport {
   /// Advances track [channel]: start recording, finalize the master loop, or
   /// toggle overdub depending on the current track state. When it begins an
   /// overdub it also captures the one-level undo snapshot.
@@ -131,6 +153,49 @@ abstract interface class AudioEngine {
   /// Re-applies the most recently undone overdub layer on track [channel].
   EngineResult redo({int channel = 0});
 
+  /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
+  EngineResult setRecordOffset(int frames);
+
+  /// Enables or disables quantized recording. When enabled, a record/overdub
+  /// press over an existing master loop is deferred to the next loop top so
+  /// captures align to the grid; a second press before the boundary cancels the
+  /// pending action. The defining recording (no master yet) always acts
+  /// immediately.
+  EngineResult setQuantize({required bool enabled});
+
+  /// Sets track [channel]'s quantize override: `null` inherits the global
+  /// [setQuantize] default, `false` forces quantize off for the track, and
+  /// `true` forces it on.
+  EngineResult setTrackQuantize({required int channel, required bool? enabled});
+
+  /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`
+  /// to inherit the global default ([setDefaultMultiple]). Applies to the next
+  /// recording.
+  EngineResult setTrackMultiple({required int channel, required int multiple});
+
+  /// Sets the global default loop length (used by tracks that inherit):
+  /// [multiple] whole base loops, or `0` to auto-round-up on stop.
+  EngineResult setDefaultMultiple({required int multiple});
+
+  /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
+  /// with a record press continues into overdub instead of playback.
+  EngineResult setRecDub({required bool enabled});
+
+  /// Sets the overdub [feedback] coefficient (clamped by the engine to `0..1`,
+  /// default `1.0`). While a track is overdubbing, its existing content is
+  /// scaled by this before the new layer is summed in: `1.0` is the classic
+  /// additive overdub (layers persist and can build toward clipping); below
+  /// `1.0` decays older layers each pass so the loop self-limits. Plain
+  /// playback is untouched.
+  EngineResult setOverdubFeedback(double feedback);
+
+  /// Enables sound-activated recording: a record press on an empty track waits
+  /// and begins capturing once the input level crosses the threshold.
+  EngineResult setAutoRecord({required bool enabled});
+}
+
+/// Per-lane channel routing, volume, and mute (a track's recordable lanes).
+abstract interface class EngineRouting {
   /// Sets track [channel]'s active lane count to [count] (clamped by the engine
   /// to `1..` the native lane ceiling) on the control thread, lazily allocating
   /// the loop buffers for any newly added lanes before the audio thread reads
@@ -170,35 +235,10 @@ abstract interface class AudioEngine {
     required int lane,
     required int mask,
   });
+}
 
-  /// Sets the record-offset latency compensation in frames (clamped `>= 0`).
-  EngineResult setRecordOffset(int frames);
-
-  /// Enables or disables quantized recording. When enabled, a record/overdub
-  /// press over an existing master loop is deferred to the next loop top so
-  /// captures align to the grid; a second press before the boundary cancels the
-  /// pending action. The defining recording (no master yet) always acts
-  /// immediately.
-  EngineResult setQuantize({required bool enabled});
-
-  /// Sets track [channel]'s quantize override: `null` inherits the global
-  /// [setQuantize] default, `false` forces quantize off for the track, and
-  /// `true` forces it on.
-  EngineResult setTrackQuantize({required int channel, required bool? enabled});
-
-  /// Fixes track [channel]'s loop length to [multiple] whole base loops, or `0`
-  /// to inherit the global default ([setDefaultMultiple]). Applies to the next
-  /// recording.
-  EngineResult setTrackMultiple({required int channel, required int multiple});
-
-  /// Sets the global default loop length (used by tracks that inherit):
-  /// [multiple] whole base loops, or `0` to auto-round-up on stop.
-  EngineResult setDefaultMultiple({required int multiple});
-
-  /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
-  /// with a record press continues into overdub instead of playback.
-  EngineResult setRecDub({required bool enabled});
-
+/// Global master-output bus: post-mix gain and the peak limiter.
+abstract interface class MasterBusControl {
   /// Sets the global master output [gain] (clamped by the engine to `0..1`),
   /// applied post-mix to the final output after all tracks, lanes, and monitor
   /// lanes have summed in. Unity (`1.0`) by default and after every fresh
@@ -211,19 +251,10 @@ abstract interface class AudioEngine {
   /// exceeding the ceiling and hard-clipping in the driver; below the ceiling
   /// it is transparent. Off by default and after every fresh start.
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99});
+}
 
-  /// Sets the overdub [feedback] coefficient (clamped by the engine to `0..1`,
-  /// default `1.0`). While a track is overdubbing, its existing content is
-  /// scaled by this before the new layer is summed in: `1.0` is the classic
-  /// additive overdub (layers persist and can build toward clipping); below
-  /// `1.0` decays older layers each pass so the loop self-limits. Plain
-  /// playback is untouched.
-  EngineResult setOverdubFeedback(double feedback);
-
-  /// Enables sound-activated recording: a record press on an empty track waits
-  /// and begins capturing once the input level crosses the threshold.
-  EngineResult setAutoRecord({required bool enabled});
-
+/// Per-lane (record-route) effect chains.
+abstract interface class EffectsControl {
   /// Sets chain entry [index] (`0..kTrackEffectMax-1`) on lane [lane] of track
   /// [channel] to [type]. Changing the type resets that entry's DSP state and
   /// seeds the type's default parameters. The chain is non-destructive and
@@ -254,7 +285,10 @@ abstract interface class AudioEngine {
     required int param,
     required double value,
   });
+}
 
+/// Per-input live monitoring: enable plus per-lane routing/volume/mute/effects.
+abstract interface class MonitorControl {
   /// Enables or disables live monitoring of hardware input [input]. When
   /// enabled, the input's active monitor lanes each route the live signal per
   /// their own output mask, volume, mute, and effect chain. The monitored
@@ -326,18 +360,10 @@ abstract interface class AudioEngine {
     required int param,
     required double value,
   });
+}
 
-  /// Reads the loop waveform: peaks of the mixed output indexed by position
-  /// across one master loop (index 0 = loop start), each in `0..1`. Pair with
-  /// [EngineSnapshot.masterPositionFrames]/[EngineSnapshot.masterLengthFrames]
-  /// for the playhead. Empty until a loop exists.
-  Float32List readVisual();
-
-  /// Like [readVisual] but for a single track's own contribution (its active
-  /// lanes summed), for per-track waveform thumbnails. Per-lane waveforms are
-  /// not exposed yet.
-  Float32List readTrackVisual(int channel);
-
+/// Session persistence: stem export/import and committing a restored session.
+abstract interface class SessionIo {
   /// Copies track [channel]'s recorded mono loop PCM out for session export, or
   /// an empty list when the track is empty. Read-only — call when not
   /// capturing.
@@ -351,7 +377,23 @@ abstract interface class AudioEngine {
   /// Establishes the master loop at [baseFrames] and starts every imported
   /// track playing at its whole-loop multiple.
   EngineResult commitSession(int baseFrames);
-
-  /// Releases the native engine. The instance must not be used afterwards.
-  void dispose();
 }
+
+/// The data-layer boundary over the native audio engine, composed from the
+/// role interfaces above (interface-segregation: a consumer can depend on the
+/// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
+/// surface).
+///
+/// Repositories depend on this interface (or a role slice) and inject a fake in
+/// tests; the production implementation is `NativeAudioEngine`, which drives
+/// the native engine over FFI.
+abstract interface class AudioEngine
+    implements
+        EngineLifecycle,
+        EngineMetering,
+        LooperTransport,
+        EngineRouting,
+        MasterBusControl,
+        EffectsControl,
+        MonitorControl,
+        SessionIo {}

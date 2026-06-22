@@ -1,0 +1,187 @@
+/*
+ * engine_snapshot.c — the read side: published-state snapshots + visualization
+ * reads (S1 split from engine.c).
+ *
+ * THREAD OWNERSHIP: control thread (a render-rate poll from Dart). Every function
+ * here only LOADS the per-field atomics the audio thread publishes — it never
+ * mutates engine state — so a reader may see a one-frame-stale mix across fields,
+ * which is fine for metering / UI. le_max_fx_latency scans the published fx
+ * type/count atomics (the only race-free seam; see its comment). Behaviour
+ * unchanged.
+ */
+#include <stdint.h>
+
+#include "engine_core.h"    /* le_lanes_active */
+#include "engine_fx.h"      /* le_octaver_latency */
+#include "engine_private.h" /* le_engine, le_track, le_lane, load/store helpers */
+#include "loopy_engine_api.h"
+
+/* Lane 0's input channel as a legacy track input bitmask (1 << channel, or 0
+ * when lane 0 records no input). */
+static uint32_t le_lane_input_bits(le_lane* ln) {
+  const int32_t ic = load_i32(&ln->a_input_channel);
+  return ic >= 0 ? (1u << ic) : 0u;
+}
+
+/* Fills a track snapshot from the track's transport plus lane 0's content (the
+ * backward-compatible per-track view). When [active] is false the track index
+ * is past track_count; report an empty track. */
+static void le_fill_track_snapshot(le_track* tr, int active,
+                                   le_track_snapshot* out) {
+  le_lane* l0 = &tr->lanes[0];
+  out->state = active ? load_i32(&tr->a_state) : LE_TRACK_EMPTY;
+  out->volume = load_f32(&l0->a_vol_bits);
+  out->muted = load_i32(&l0->a_muted);
+  out->length_frames = load_i32(&l0->a_len);
+  out->multiple = load_i32(&tr->a_multiple);
+  out->undo_depth = load_i32(&tr->a_undo_depth);
+  out->redo_depth = load_i32(&tr->a_redo_depth);
+  out->rms = load_f32(&l0->a_rms_bits);
+  out->peak = load_f32(&l0->a_peak_bits);
+  out->input_mask = le_lane_input_bits(l0);
+  out->output_mask =
+      atomic_load_explicit(&l0->a_output_mask, memory_order_relaxed);
+  out->lane_count = le_lanes_active(tr);
+}
+
+/* Max added latency (frames) across every active octaver in any record-route or
+ * monitor lane chain — the value the snapshot surfaces so the UI can warn about
+ * monitoring lag (part 5). Scanned here on the control thread (a render-rate
+ * poll) rather than cached on an fx-change atomic: an fx's type and count are
+ * committed by the audio thread's ring handler, so a control-thread setter can't
+ * see the post-commit chain — a pull-time scan of the published a_fx_type /
+ * a_fx_count atomics is the only race-free seam. The audio thread never reads
+ * this. Today only the octaver contributes (le_octaver_latency); the max keeps
+ * it forward-compatible, and a chain with no octaver yields 0. */
+static int32_t le_max_fx_latency(le_engine* engine) {
+  int32_t max_lat = 0;
+  for (int32_t t = 0; t < engine->track_count; ++t) {
+    le_track* tr = &engine->tracks[t];
+    for (int32_t l = 0; l < tr->lane_count; ++l) {
+      le_lane* ln = &tr->lanes[l];
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      for (int32_t s = 0; s < n; ++s) {
+        const int32_t lat =
+            le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
+        if (lat > max_lat) max_lat = lat;
+      }
+    }
+  }
+  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+    le_monitor_input* m = &engine->monitors[c];
+    for (int32_t l = 0; l < m->lane_count; ++l) {
+      le_monitor_lane* ln = &m->lanes[l];
+      int32_t n = load_i32(&ln->a_fx_count);
+      if (n > LE_FX_MAX) n = LE_FX_MAX;
+      for (int32_t s = 0; s < n; ++s) {
+        const int32_t lat =
+            le_fx_added_latency(&ln->fx, s, load_i32(&ln->a_fx_type[s]));
+        if (lat > max_lat) max_lat = lat;
+      }
+    }
+  }
+  return max_lat;
+}
+
+void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
+  if (engine == NULL || out == NULL) return;
+  out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
+  out->device_present =
+      atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
+  out->sample_rate = load_i32(&engine->a_sample_rate);
+  out->buffer_frames = load_i32(&engine->a_buffer_frames);
+  out->input_channels = load_i32(&engine->a_in_channels);
+  out->output_channels = load_i32(&engine->a_out_channels);
+  out->excluded_input_mask =
+      atomic_load_explicit(&engine->a_excluded_input_mask, memory_order_relaxed);
+  out->frames_processed =
+      atomic_load_explicit(&engine->a_frames, memory_order_relaxed);
+  out->xrun_count = atomic_load_explicit(&engine->a_xruns, memory_order_relaxed);
+  out->input_rms = load_f32(&engine->a_in_rms_bits);
+  out->input_peak = load_f32(&engine->a_in_peak_bits);
+  out->output_rms = load_f32(&engine->a_out_rms_bits);
+  out->latency_state = load_i32(&engine->a_latency_state);
+  out->measured_latency_ms = bits_to_f64(
+      atomic_load_explicit(&engine->a_latency_ms_bits, memory_order_relaxed));
+  out->master_length_frames = load_i32(&engine->a_master_len);
+  out->master_position_frames = load_i32(&engine->a_master_pos);
+  out->record_offset_frames = load_i32(&engine->a_record_offset);
+  out->fx_added_latency_frames = le_max_fx_latency(engine);
+  out->master_gain = load_f32(&engine->a_master_gain_bits);
+  out->active_backend = load_i32(&engine->a_active_backend);
+  out->track_count = engine->track_count;
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,
+                           &out->tracks[t]);
+  }
+}
+
+void le_engine_get_track(le_engine* engine, int32_t channel,
+                         le_track_snapshot* out) {
+  if (engine == NULL || out == NULL) return;
+  if (channel < 0 || channel >= engine->track_count) {
+    out->state = LE_TRACK_EMPTY;
+    out->volume = 1.0f;
+    out->muted = 0;
+    out->length_frames = 0;
+    out->multiple = 1;
+    out->undo_depth = 0;
+    out->redo_depth = 0;
+    out->rms = 0.0f;
+    out->peak = 0.0f;
+    out->input_mask = 0x1u;
+    out->output_mask = 0x3u;
+    out->lane_count = 1;
+    return;
+  }
+  le_fill_track_snapshot(&engine->tracks[channel], 1, out);
+}
+
+void le_engine_get_lane(le_engine* engine, int32_t channel, int32_t lane,
+                        le_lane_snapshot* out) {
+  if (engine == NULL || out == NULL) return;
+  if (channel < 0 || channel >= engine->track_count || lane < 0 ||
+      lane >= LE_MAX_LANES) {
+    out->input_channel = -1;
+    out->output_mask = 0x3u;
+    out->volume = 1.0f;
+    out->muted = 0;
+    out->length_frames = 0;
+    out->rms = 0.0f;
+    out->peak = 0.0f;
+    return;
+  }
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  out->input_channel = load_i32(&ln->a_input_channel);
+  out->output_mask =
+      atomic_load_explicit(&ln->a_output_mask, memory_order_relaxed);
+  out->volume = load_f32(&ln->a_vol_bits);
+  out->muted = load_i32(&ln->a_muted);
+  out->length_frames = load_i32(&ln->a_len);
+  out->rms = load_f32(&ln->a_rms_bits);
+  out->peak = load_f32(&ln->a_peak_bits);
+}
+
+int32_t le_engine_read_visual(le_engine* engine, float* out,
+                              int32_t max_points) {
+  if (engine == NULL || out == NULL || max_points <= 0) return 0;
+  const int32_t n = max_points < LE_VIZ_POINTS ? max_points : LE_VIZ_POINTS;
+  /* Loop-indexed, bucket 0 = loop start. A bucket updated concurrently is
+   * benign for a waveform. */
+  for (int32_t i = 0; i < n; ++i) {
+    out[i] = load_f32(&engine->a_loop_viz[i]);
+  }
+  return n;
+}
+
+int32_t le_engine_read_track_visual(le_engine* engine, int32_t channel,
+                                    float* out, int32_t max_points) {
+  if (engine == NULL || out == NULL || max_points <= 0) return 0;
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  const int32_t n = max_points < LE_VIZ_POINTS ? max_points : LE_VIZ_POINTS;
+  for (int32_t i = 0; i < n; ++i) {
+    out[i] = load_f32(&engine->a_track_viz[channel][i]);
+  }
+  return n;
+}

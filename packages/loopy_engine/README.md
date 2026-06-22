@@ -30,7 +30,8 @@ snapshot() ◄── le_engine_get_snapshot ◄── atomics ◄── AUDIO CA
 
 ### Real-time safety rules (audio callback)
 
-The `data_callback` in `src/engine.c` must never:
+The audio callback (`le_engine_process` in `src/core/engine_process.c`) must
+never:
 
 - `malloc`/`free`, take a lock/mutex, or perform file/socket I/O;
 - run an unbounded loop or call back into Dart.
@@ -40,17 +41,24 @@ relaxed atomic stores; control commands arrive only through the SPSC ring.
 
 ## Layout
 
+The native sources under `src/` are grouped by concern:
+
 | Path | Role |
 | --- | --- |
-| `src/loopy_engine_api.h` | The C ABI consumed by ffigen (POD + opaque handle). |
-| `src/engine.c` | Device lifecycle + the real-time audio callback. |
-| `src/lockfree_ring.[ch]` | SPSC command ring (wait-free push/pop). |
-| `src/miniaudio_impl.c` | The single miniaudio implementation translation unit. |
-| `src/miniaudio/miniaudio.h` | Vendored miniaudio (MIT-0 / public domain). |
-| `src/test/test_engine_core.c` | Native unit tests (ring + lifecycle). |
+| `src/core/loopy_engine_api.h` | The C ABI consumed by ffigen (POD + opaque handle). |
+| `src/core/` | The portable engine, split into per-concern TUs: `engine.c` (control-thread core + shared helpers), `engine_process.c` (the audio-thread TU — `le_engine_process`, transport, `apply_command`), `engine_fx.c` (effects DSP), `engine_commands.c` (control-thread setters), `engine_devices.c`, `engine_snapshot.c`, `engine_session.c`, `engine_convert.c`, `engine_miniaudio.c` (the miniaudio backend), plus the `lockfree_ring` / `loop_clock` primitives and the private/internal headers. |
+| `src/platform/` | Per-OS device seams (`engine_apple.c` / `engine_linux.c` / `engine_windows.c`). |
+| `src/midi/` | Native MIDI seam: `midi.c` (portable core) + per-OS backends. |
+| `src/asio/` | Windows ASIO backend (`win_asio_device` / `win_asio_labels`). |
+| `src/miniaudio/` | Vendored miniaudio (MIT-0 / public domain) + `miniaudio_impl.c`. |
+| `src/test/` | Native unit tests + `run_native_tests.sh`. |
 | `lib/src/audio_engine.dart` | `AudioEngine` interface (the test seam). |
 | `lib/src/native_audio_engine.dart` | FFI-backed implementation. |
 | `lib/src/generated/` | ffigen output — do not edit by hand. |
+
+Every `src/` subdirectory holding headers is on the compiler include path
+(`src/CMakeLists.txt`), so the sources use flat `#include "engine_private.h"`
+regardless of which folder they live in.
 
 ## Building
 
@@ -75,13 +83,15 @@ Requires `libclang` (ships with Xcode / LLVM).
 
 ### Run the native core tests
 
+`src/test/run_native_tests.sh` builds and runs both native suites (engine + MIDI)
+with the right per-OS toolchain flags and source/include paths:
+
 ```sh
-clang -std=c11 -Wall -Wextra -I src -I src/miniaudio \
-  src/test/test_engine_core.c src/engine.c src/lockfree_ring.c src/miniaudio_impl.c \
-  -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
-  -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
-/tmp/loopy_core_tests
+bash src/test/run_native_tests.sh
 ```
+
+It expects "ALL PASSED" from each suite. The engine source list it compiles
+mirrors `src/CMakeLists.txt`; keep the two in sync when adding a TU.
 
 ## Usage
 
