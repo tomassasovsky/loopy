@@ -3,30 +3,37 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
-import 'package:loopy/app/midi_bootstrap.dart';
 import 'package:loopy/app/monitor_migration.dart';
-import 'package:loopy/app/pedal_bootstrap.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
 import 'package:loopy/session_directory.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/window/window_chrome.dart';
-// AudioDevice + EngineConfig now come from the looper_repository domain barrel;
-// loopy_engine is still imported here (the composition root) to construct the
-// engine, and is dropped entirely in Part 4 (V2).
-import 'package:loopy_engine/loopy_engine.dart' hide AudioDevice, EngineConfig;
 import 'package:midi_device_repository/midi_device_repository.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
 /// otherwise wires the repositories, auto-starts the engine (from the saved
 /// config or a first-run default), and runs the [App] straight on the looper.
+///
+/// Native flavors call this with no overrides and get the native audio engine
+/// (constructed behind [createNativeAudioEngine], so this file never names or
+/// imports the engine package). The mock flavor injects both repositories
+/// (sharing one mock engine) plus the [startConfig] to open straight into the
+/// looper; injecting one repository requires the other.
 Future<void> runLoopy(
   List<String> args, {
-  AudioEngine Function()? createEngine,
+  LooperRepository? repository,
+  SessionRepository? sessionRepository,
+  EngineConfig? startConfig,
 }) async {
+  assert(
+    (repository == null) == (sessionRepository == null),
+    'inject both repositories together or neither',
+  );
   WidgetsFlutterBinding.ensureInitialized();
 
   final windowController = await WindowController.fromCurrentEngine();
@@ -41,23 +48,33 @@ Future<void> runLoopy(
   await configureLoopyDesktopWindow();
 
   // One engine instance, shared by the looper (which owns its lifecycle) and
-  // the session repository (which only reads/writes its loop PCM).
-  final engine = createEngine?.call() ?? NativeAudioEngine();
-  final repository = LooperRepository(engine: engine);
+  // the session repository (which only reads/writes its loop PCM). On the
+  // native path the engine is held by its [AudioEngine] interface — its
+  // concrete type is never named here, keeping loopy_engine transitive.
+  final LooperRepository looper;
+  final SessionRepository session;
+  if (repository == null || sessionRepository == null) {
+    final engine = createNativeAudioEngine();
+    looper = LooperRepository(engine: engine);
+    session = SessionRepository(engine: engine);
+  } else {
+    looper = repository;
+    session = sessionRepository;
+  }
+
   // The native MIDI source feeds the controller pipeline; it is null when no
   // MIDI backend is available (e.g. the mock flavor), in which case the looper
   // runs with no controller source. The waveform sub-window already returned
   // above, so it never opens MIDI.
-  final midiSource = createMidiSource();
+  final midiSource = createNativeMidiSource();
   final controllerRepository = ControllerRepository(
     sources: [?midiSource],
   );
   // The bidirectional pedal reuses the MIDI source's single input capture and
   // opens its own MIDI output for LED feedback; null when no MIDI backend, in
   // which case the pedal cubit falls back to a no-op transport.
-  final pedalRepository = createPedalRepository(midiSource);
+  final pedalRepository = createNativePedalRepository(midiSource);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
-  final sessionRepository = SessionRepository(engine: engine);
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
   // pipeline) and never disposes it. Held independent of the engine so MIDI
@@ -78,23 +95,11 @@ Future<void> runLoopy(
   // auto-starts from the saved config or a first-run default and returns the
   // ASIO drivers enumerated at startup for the audio-setup picker cache.
   var asioDrivers = const <AudioDevice>[];
-  if (engine is MockAudioEngine) {
-    // Mirror the mock's deterministic defaults as a domain config (the engine's
-    // own EngineConfig is no longer named in shared app code).
-    final mock = engine.defaultConfig;
-    repository.startEngine(
-      EngineConfig(
-        sampleRate: mock.sampleRate,
-        bufferFrames: mock.bufferFrames,
-        inputChannels: mock.inputChannels,
-        outputChannels: mock.outputChannels,
-        playbackDeviceId: mock.playbackDeviceId,
-        captureDeviceId: mock.captureDeviceId,
-      ),
-    );
+  if (startConfig != null) {
+    looper.startEngine(startConfig);
   } else {
     final result = await tryAutoStartEngine(
-      repository: repository,
+      repository: looper,
       settings: settings,
     );
     asioDrivers = result.asioDrivers;
@@ -102,13 +107,13 @@ Future<void> runLoopy(
 
   await bootstrap(
     () => App(
-      repository: repository,
+      repository: looper,
       controllerRepository: controllerRepository,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
-      sessionRepository: sessionRepository,
+      sessionRepository: session,
       sessionDirectory: defaultSessionDirectory,
       initialAsioDrivers: asioDrivers,
     ),

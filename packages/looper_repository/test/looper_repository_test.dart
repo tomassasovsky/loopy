@@ -1054,4 +1054,31 @@ void main() {
       expect(engine.calls, contains('dispose'));
     });
   });
+
+  group('engine factories', () {
+    test('createMockEngine builds a mock + its deterministic start config', () {
+      final mock = createMockEngine();
+
+      // The start config mirrors the mock's defaults (and value-equality
+      // exercises the domain EngineConfig props).
+      expect(
+        mock.startConfig,
+        const EngineConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          inputChannels: 18,
+          outputChannels: 20,
+          playbackDeviceId: 'mock-interface',
+          captureDeviceId: 'mock-interface',
+        ),
+      );
+      // The engine drives a repository that comes up on the mock config.
+      final repo = LooperRepository(
+        engine: mock.engine,
+        ticker: const Stream<void>.empty(),
+      );
+      addTearDown(repo.dispose);
+      expect(repo.startEngine(mock.startConfig).isOk, isTrue);
+    });
+  });
 }
