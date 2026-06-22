@@ -74,6 +74,8 @@
     "viewGroupLabel": "VISTA",
     "waveformWindowTitle": "Ventana de forma de onda de salida",
     "waveformWindowSubtitle": "Abre una segunda ventana con la forma de onda de salida del bucle completo",
+    "highContrastTitle": "Alto contraste",
+    "highContrastSubtitle": "Fuerza una paleta más brillante y de mayor contraste. En escritorio, el ajuste de contraste del sistema no se aplica automáticamente.",
     "performanceGroupLabel": "RENDIMIENTO",
     "bpDefaultModeIntro": "Modo en el que inicia la Vista general. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Reproducir silencian / activan sonido.",
     "recordModeLabel": "Grabar",

@@ -100,6 +100,15 @@ class App extends StatelessWidget {
           BlocProvider(create: (context) => BankCubit()),
           BlocProvider(
             create: (context) {
+              final cubit = HighContrastCubit(
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          BlocProvider(
+            create: (context) {
               final cubit = WaveformWindowCubit(
                 settings: context.read<SettingsRepository>(),
               );
@@ -406,7 +415,12 @@ class _AppViewState extends State<_AppView> {
       child: MaterialApp(
         scaffoldMessengerKey: _messengerKey,
         navigatorKey: loopyNavigatorKey,
-        theme: AppTheme.bigPicture,
+        // The manual toggle forces the high-contrast palette on every platform;
+        // highContrastTheme additionally honors the OS flag where Flutter
+        // delivers it (iOS only).
+        theme: context.watch<HighContrastCubit>().state
+            ? AppTheme.bigPictureHighContrast
+            : AppTheme.bigPicture,
         highContrastTheme: AppTheme.bigPictureHighContrast,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
@@ -416,7 +430,7 @@ class _AppViewState extends State<_AppView> {
             if (!loopyUsesFlutterTitleBar) return page;
             return LoopyWindowChromeShell(
               title: context.l10n.appMenuLabel,
-              backgroundColor: AppTheme.bigPicture.scaffoldBackgroundColor,
+              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
               body: page,
             );
           },
