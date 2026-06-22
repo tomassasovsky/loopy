@@ -228,6 +228,14 @@ class _LaneGraphViewState extends State<LaneGraphView> {
                         widget.onSelectEffect(l, selected ? null : k);
                       },
                       onDelete: () => widget.onRemoveEffect(l, k),
+                      // Keyboard/single-pointer reorder alternative to dragging
+                      // (WCAG 2.5.7); hidden at the ends.
+                      onMoveLeft: k > 0
+                          ? () => widget.onMoveEffect(l, k, k - 1)
+                          : null,
+                      onMoveRight: k < widget.lanes[l].effects.length - 1
+                          ? () => widget.onMoveEffect(l, k, k + 1)
+                          : null,
                       onDragStart: () =>
                           setState(() => _dragging = GraphCardRef(l, k)),
                       onDragEnd: () => setState(() => _dragging = null),

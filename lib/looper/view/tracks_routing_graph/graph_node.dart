@@ -119,13 +119,18 @@ class RoutingGraphNode extends StatelessWidget {
     );
 
     if (!interactive || onTap == null) return content;
+    // Keyboard-focusable + screen-reader-actionable (the node's label text is
+    // the accessible name; `selected` carries the armed/connected state that is
+    // otherwise colour-only — WCAG 2.1.1 / 1.4.1 / 4.1.2). The MouseRegion stays
+    // for the pointer-only hover hint.
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
       onEnter: (_) => onHover?.call(node),
       onExit: (_) => onHover?.call(null),
-      child: GestureDetector(
+      child: FocusableTapTarget(
         key: Key('routingNode_${node.kind.name}_${node.index}'),
         onTap: onTap,
+        selected: armed || (connected ?? false),
+        borderRadius: 8,
         child: content,
       ),
     );

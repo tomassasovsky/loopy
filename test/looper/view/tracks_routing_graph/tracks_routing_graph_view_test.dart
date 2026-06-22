@@ -54,6 +54,28 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('a routing node is a labelled, focusable button (a11y)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pump(
+        tester,
+        TracksRoutingGraphView(
+          tracks: const [Track()],
+          inputChannels: 2,
+          outputChannels: 2,
+          onInputMaskChanged: (_, _) {},
+        ),
+      );
+
+      final node = tester.getSemantics(
+        find.byKey(const Key('routingNode_track_0')),
+      );
+      expect(node, isSemantics(isButton: true, hasTapAction: true));
+      expect(node.label, isNotEmpty);
+      handle.dispose();
+    });
+
     testWidgets('arm a track then click an input to connect it', (
       tester,
     ) async {
