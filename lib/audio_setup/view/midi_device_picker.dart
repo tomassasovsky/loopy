@@ -79,58 +79,62 @@ class _MidiDropdown extends StatelessWidget {
     final showAbsentPinned = state.hasSelection && !state.isSelectedPresent;
     final value = state.hasSelection ? state.selectedId : '';
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: context.surface.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.surface.line),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          focusColor: Colors.transparent,
-          key: const Key('midiSettings_device_picker'),
-          value: value,
-          isExpanded: true,
-          dropdownColor: context.surface.cardHigh,
+    return Semantics(
+      label: l10n.midiInputGroup,
+      container: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: context.surface.card,
           borderRadius: BorderRadius.circular(12),
-          icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
-          style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
-          items: [
-            DropdownMenuItem(
-              value: '',
-              child: Text(
-                l10n.midiNone,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            for (final device in state.devices)
+          border: Border.all(color: context.surface.line),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            focusColor: Colors.transparent,
+            key: const Key('midiSettings_device_picker'),
+            value: value,
+            isExpanded: true,
+            dropdownColor: context.surface.cardHigh,
+            borderRadius: BorderRadius.circular(12),
+            icon: Icon(Icons.expand_more, color: context.surface.textSecondary),
+            style: TextStyle(color: context.surface.textPrimary, fontSize: 14),
+            items: [
               DropdownMenuItem(
-                value: device.id,
+                value: '',
                 child: Text(
-                  device.name,
+                  l10n.midiNone,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-            if (showAbsentPinned)
-              DropdownMenuItem(
-                value: state.selectedId,
-                child: Text(
-                  l10n.midiDeviceNotFound(
-                    state.selectedName.isEmpty
-                        ? state.selectedId
-                        : state.selectedName,
+              for (final device in state.devices)
+                DropdownMenuItem(
+                  value: device.id,
+                  child: Text(
+                    device.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-          ],
-          onChanged: (id) {
-            if (id != null) onSelected(id);
-          },
+              if (showAbsentPinned)
+                DropdownMenuItem(
+                  value: state.selectedId,
+                  child: Text(
+                    l10n.midiDeviceNotFound(
+                      state.selectedName.isEmpty
+                          ? state.selectedId
+                          : state.selectedName,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (id) {
+              if (id != null) onSelected(id);
+            },
+          ),
         ),
       ),
     );
@@ -157,11 +161,17 @@ class _MidiStatusLine extends StatelessWidget {
       MidiSetupStatus.deviceGone => (l10n.midiStatusDeviceGone(name), false),
       MidiSetupStatus.error => (l10n.midiStatusOpenFailed(name), true),
     };
-    return Text(
-      message,
-      key: const Key('midiSettings_status'),
-      style: setupBody.copyWith(
-        color: isError ? Theme.of(context).colorScheme.error : null,
+    // A live region so connect / disconnect / open-failed transitions are
+    // announced as they happen, not only on navigation (WCAG 4.1.3). A plain
+    // changing Text is not announced on its own.
+    return Semantics(
+      liveRegion: true,
+      child: Text(
+        message,
+        key: const Key('midiSettings_status'),
+        style: setupBody.copyWith(
+          color: isError ? Theme.of(context).colorScheme.error : null,
+        ),
       ),
     );
   }

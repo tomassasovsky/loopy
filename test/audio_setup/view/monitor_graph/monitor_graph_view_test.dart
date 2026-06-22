@@ -71,6 +71,35 @@ void main() {
       );
     });
 
+    testWidgets('a lane node is a labelled, focusable button', (tester) async {
+      final handle = tester.ensureSemantics();
+      await cubit.setEnabled(0, enabled: true);
+      await pump(tester);
+
+      final node = tester.getSemantics(
+        find.byKey(const Key('monitorGraph_laneNode_0_0')),
+      );
+      expect(node, isSemantics(isButton: true, hasTapAction: true));
+      expect(node.label, isNotEmpty);
+      handle.dispose();
+    });
+
+    testWidgets('an output chip names its sharing state (1.4.1)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await cubit.setEnabled(0, enabled: true);
+      await pump(tester);
+
+      // The colour-only sharing state (shared / dedicated / unused output) is
+      // spelled out in the accessible label for assistive tech.
+      final node = tester.getSemantics(
+        find.byKey(const Key('monitorGraph_out_1')),
+      );
+      expect(node.label, contains('output'));
+      handle.dispose();
+    });
+
     testWidgets('tapping an output wires the focused lane', (tester) async {
       await pump(tester);
       await tester.tap(find.byKey(const Key('monitorGraph_in_0')));
