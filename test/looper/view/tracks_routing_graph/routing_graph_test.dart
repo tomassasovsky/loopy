@@ -54,7 +54,7 @@ void main() {
     test(
       'a gated-off output renders excluded but keeps its route edge (F-11)',
       () {
-        // Track plays ONLY to output 1 (bit 1), which is structurally gated 
+        // Track plays ONLY to output 1 (bit 1), which is structurally gated
         // off.
         final graph = RoutingGraph.fromTracks(
           tracks: const [Track(outputMask: 0x2)],
