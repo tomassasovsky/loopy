@@ -70,6 +70,9 @@
     "a11yPortDedicated": "dedicated output",
     "a11yPortUnused": "unused output",
     "a11yEffectType": "Effect type",
+    "a11yWaveform": "Output loop waveform",
+    "a11yHideTitleBar": "Hide title bar",
+    "a11yShowTitleBar": "Show title bar",
     "a11yBankSelected": "Bank {bank}",
     "@a11yBankSelected": {
         "placeholders": {

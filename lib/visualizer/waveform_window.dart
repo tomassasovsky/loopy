@@ -1,6 +1,7 @@
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/visualizer/waveform_window_channel.dart';
@@ -114,6 +115,11 @@ class WaveformWindowApp extends StatelessWidget {
             builder: (context, data, _) => WaveformView(
               samples: data.samples,
               progress: data.progress,
+              // This window has no Localizations ancestor, so resolve the label
+              // from the platform locale directly.
+              semanticLabel: lookupAppLocalizations(
+                PlatformDispatcher.instance.locale,
+              ).a11yWaveform,
             ),
           ),
         ),

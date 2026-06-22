@@ -13,6 +13,7 @@ class WaveformView extends StatelessWidget {
     required this.samples,
     this.progress = 0,
     this.color,
+    this.semanticLabel,
     super.key,
   });
 
@@ -25,10 +26,16 @@ class WaveformView extends StatelessWidget {
   /// Stroke color; defaults to [LooperTheme.waveformColor].
   final Color? color;
 
+  /// Accessible name for the otherwise-opaque waveform (WCAG 1.1.1). When set,
+  /// the view is exposed to screen readers with this label and a playhead-
+  /// position value; null leaves it decorative (the caller supplies the locale-
+  /// resolved string, since this widget can run in a window without l10n).
+  final String? semanticLabel;
+
   @override
   Widget build(BuildContext context) {
     final looper = Theme.of(context).extension<LooperTheme>();
-    return CustomPaint(
+    final paint = CustomPaint(
       key: const Key('waveform_view_paint'),
       painter: WaveformPainter(
         samples: samples,
@@ -36,6 +43,12 @@ class WaveformView extends StatelessWidget {
         color: color ?? looper?.waveformColor ?? Colors.tealAccent,
       ),
       size: Size.infinite,
+    );
+    if (semanticLabel == null) return paint;
+    return Semantics(
+      label: semanticLabel,
+      value: '${(progress.clamp(0.0, 1.0) * 100).round()}%',
+      child: paint,
     );
   }
 }

@@ -76,6 +76,26 @@ void main() {
       expect(find.byKey(const Key('pedalSettings_status')), findsOneWidget);
     });
 
+    testWidgets('the bind status is a live region (WCAG 4.1.3)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final cubit = cubitWith(
+        FakePedalTransport(
+          outputs: const [MidiDevice(id: 'out', name: 'Loopy Pedal')],
+        ),
+      );
+      addTearDown(cubit.close);
+
+      await pumpSection(tester, cubit);
+
+      expect(
+        tester.getSemantics(find.byKey(const Key('pedalSettings_status'))),
+        isSemantics(isLiveRegion: true),
+      );
+      handle.dispose();
+    });
+
     testWidgets('selecting a device binds it and shows the bound status', (
       tester,
     ) async {
