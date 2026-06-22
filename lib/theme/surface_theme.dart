@@ -113,9 +113,9 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// the routing graphs. The same values in every [ThemeData] variant — these
   /// surfaces read identically regardless of the active app theme.
   ///
-  /// Text tokens meet WCAG 2.2 AA contrast (1.4.3) against [card]: `textTertiary`
-  /// was lifted from `0xFF5B5D67` (~2.6:1) to `0xFF82848E` (~4.6:1) so dimmed
-  /// labels stay legible.
+  /// Text tokens meet WCAG 2.2 AA contrast (1.4.3) against [card]:
+  /// `textTertiary` was lifted from `0xFF5B5D67` (~2.6:1) to `0xFF82848E`
+  /// (~4.6:1) so dimmed labels stay legible.
   static const SurfaceTheme dark = SurfaceTheme(
     background: Color(0xFF08080A),
     surface: Color(0xFF0D0D11),
