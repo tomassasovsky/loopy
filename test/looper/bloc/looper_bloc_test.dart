@@ -518,8 +518,7 @@ void main() {
 
       // Default mapping: CC 80 -> recordOverdub on channel 0.
       source.press(ControllerSourceKind.midiCc, 80);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      await pumpEventQueue();
 
       verify(() => repository.record()).called(1);
     });

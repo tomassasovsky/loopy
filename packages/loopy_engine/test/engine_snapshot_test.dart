@@ -293,10 +293,9 @@ void main() {
         expect(snapshot.masterGain, closeTo(0.5, 1e-6));
         expect(snapshot.activeBackend, AudioBackend.asio);
         expect(snapshot.trackCount, 2);
-        // Back-compat single-track accessors read track 0.
-        expect(snapshot.trackState, TrackState.playing);
-        expect(snapshot.trackVolume, closeTo(0.75, 1e-6));
-        expect(snapshot.trackMuted, isTrue);
+        expect(snapshot.tracks.first.state, TrackState.playing);
+        expect(snapshot.tracks.first.volume, closeTo(0.75, 1e-6));
+        expect(snapshot.tracks.first.muted, isTrue);
         expect(snapshot.tracks, tracks);
       } finally {
         calloc.free(ptr);

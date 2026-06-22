@@ -55,10 +55,22 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (event, _) => _repository.setVolume(event.volume, channel: event.channel),
     );
     on<LooperMuteToggled>(
-      (event, _) => _repository.setMute(
-        muted: !_isMuted(event.channel),
-        channel: event.channel,
-      ),
+      (event, _) {
+        _repository.setMute(
+          muted: !_isMuted(event.channel),
+          channel: event.channel,
+        );
+
+        final otherTracks = state.tracks.where(
+          (track) => track.channel != event.channel && track.hasContent,
+        );
+
+        if (otherTracks.every((track) => track.muted)) {
+          for (final track in state.tracks) {
+            _repository.stopTrack(channel: track.channel);
+          }
+        }
+      },
     );
     on<LooperLaneCountChanged>((event, _) {
       _repository.setLaneCount(channel: event.channel, count: event.count);

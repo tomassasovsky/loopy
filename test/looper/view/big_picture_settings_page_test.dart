@@ -25,6 +25,9 @@ class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
 
 class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
+
 void main() {
   late SettingsRepository settings;
   late BigPictureCubit bigPicture;
@@ -38,6 +41,7 @@ void main() {
   late MonitorCubit monitor;
   late RecordOptionsCubit recordOptions;
   late LooperRepository repository;
+  late LooperBloc looperBloc;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -55,8 +59,6 @@ void main() {
     );
     pedal = _MockPedalCubit();
     when(() => pedal.state).thenReturn(const PedalState());
-    when(pedal.availableOutputs).thenReturn(const []);
-    when(() => pedal.boundOutputId).thenReturn(null);
     whenListen(
       pedal,
       const Stream<PedalState>.empty(),
@@ -72,6 +74,15 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    looperBloc = _MockLooperBloc();
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: const LooperState(
+        tracks: [Track()],
+        status: EngineStatus(inputChannels: 2, outputChannels: 2),
+      ),
+    );
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(repository: repository, settings: settings);
@@ -108,6 +119,7 @@ void main() {
         ],
         child: MultiBlocProvider(
           providers: [
+            BlocProvider<LooperBloc>.value(value: looperBloc),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),
@@ -280,6 +292,7 @@ void main() {
         ],
         child: MultiBlocProvider(
           providers: [
+            BlocProvider<LooperBloc>.value(value: looperBloc),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<BankCubit>.value(value: bank),

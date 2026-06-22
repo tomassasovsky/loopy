@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -8,16 +9,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
+import '../../pedal/helpers/fake_pedal_transport.dart';
 
 class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
 void main() {
   late LooperBloc bloc;
@@ -25,6 +31,8 @@ void main() {
   late BankCubit bank;
   late LooperRepository repository;
   late SettingsRepository settings;
+  late PedalCubit pedal;
+  late StreamController<LooperState> looperStates;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -32,32 +40,52 @@ void main() {
     bigPicture = BigPictureCubit(settings: settings);
     bank = BankCubit();
     repository = _MockLooperRepository();
+    looperStates = StreamController<LooperState>.broadcast();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
+    when(() => repository.looperState).thenAnswer((_) => looperStates.stream);
+    pedal = PedalCubit(
+      pedal: PedalRepository(FakePedalTransport()),
+      looper: repository,
+      settings: settings,
+      pollInterval: Duration.zero,
+    );
+  });
+
+  tearDown(() async {
+    await looperStates.close();
+    await pedal.close();
   });
 
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
+    looperStates.add(state);
   }
 
-  Future<void> pump(WidgetTester tester) => tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.bigPicture,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: RepositoryProvider<LooperRepository>.value(
-        value: repository,
-        child: MultiBlocProvider(
-          providers: [
-            BlocProvider<LooperBloc>.value(value: bloc),
-            BlocProvider<BigPictureCubit>.value(value: bigPicture),
-            BlocProvider<BankCubit>.value(value: bank),
-          ],
-          child: const BigPictureView(),
+  Future<void> pump(WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.bigPicture,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: RepositoryProvider<LooperRepository>.value(
+          value: repository,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<BigPictureCubit>.value(value: bigPicture),
+              BlocProvider<BankCubit>.value(value: bank),
+              BlocProvider<PedalCubit>.value(value: pedal),
+            ],
+            child: const BigPictureView(),
+          ),
         ),
       ),
-    ),
-  );
+    );
+    await tester.pump();
+  }
 
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
@@ -343,6 +371,90 @@ void main() {
         find.byKey(const Key('bigpicture_audioNotRunning')),
         findsNothing,
       );
+    });
+  });
+
+  group('pedal LED bar emulation', () {
+    final looper = AppTheme.bigPicture.extension<LooperTheme>()!;
+
+    DecoratedBox ledBarOf(WidgetTester tester, int channel) =>
+        tester.widget<DecoratedBox>(
+          find.descendant(
+            of: find.byKey(Key('bigpicture_led_bar_$channel')),
+            matching: find.byType(DecoratedBox),
+          ),
+        );
+
+    testWidgets('shows below the name when pedal output is not bound', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      expect(find.byKey(const Key('bigpicture_led_bar_0')), findsOneWidget);
+    });
+
+    testWidgets('is hidden when pedal LED feedback is bound', (tester) async {
+      final mockPedal = _MockPedalCubit();
+      when(() => mockPedal.state).thenReturn(
+        const PedalState(bindStatus: PedalBindStatus.bound),
+      );
+      when(() => mockPedal.trackLedFor(any())).thenReturn(PedalTrackLed.off);
+      whenListen(
+        mockPedal,
+        const Stream<PedalState>.empty(),
+        initialState: const PedalState(bindStatus: PedalBindStatus.bound),
+      );
+
+      seed(const LooperState(tracks: [Track()]));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.bigPicture,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: RepositoryProvider<LooperRepository>.value(
+            value: repository,
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<LooperBloc>.value(value: bloc),
+                BlocProvider<BigPictureCubit>.value(value: bigPicture),
+                BlocProvider<BankCubit>.value(value: bank),
+                BlocProvider<PedalCubit>.value(value: mockPedal),
+              ],
+              child: const BigPictureView(),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('bigpicture_led_bar_0')), findsNothing);
+    });
+
+    testWidgets('armed track shows red in record mode', (tester) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      pedal.armTrack(1);
+      await pump(tester);
+
+      final decoration = ledBarOf(tester, 1).decoration as BoxDecoration;
+      expect(decoration.color, looper.pedalLedColor(PedalTrackLed.red));
+    });
+
+    testWidgets('capturing track shows red even when not armed', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(),
+            Track(channel: 1, state: TrackState.recording),
+          ],
+        ),
+      );
+      await pump(tester);
+      await tester.pump();
+
+      final decoration = ledBarOf(tester, 1).decoration as BoxDecoration;
+      expect(decoration.color, looper.pedalLedColor(PedalTrackLed.red));
     });
   });
 }

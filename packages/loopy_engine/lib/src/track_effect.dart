@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 
 /// The maximum number of effects a single track's chain can hold. The cap
@@ -219,18 +220,10 @@ class TrackEffect {
   bool operator ==(Object other) =>
       other is TrackEffect &&
       other.type == type &&
-      _listEquals(other.params, params);
+      const ListEquality<double>().equals(other.params, params);
 
   @override
   int get hashCode => Object.hash(type, Object.hashAll(params));
-
-  static bool _listEquals(List<double> a, List<double> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
 }
 
 /// Encodes an ordered effects chain to a JSON string for persistence.
