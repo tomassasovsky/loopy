@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy/theme/app_theme.dart';
 import 'package:loopy/theme/looper_theme.dart';
@@ -52,7 +51,7 @@ void main() {
     );
 
     // WCAG 1.4.3 / 1.4.11: the high-contrast palette must be strictly brighter
-    // than the default so the OS "increase contrast" preference helps, not hurts.
+    // than the default so the OS "increase contrast" preference helps.
     test('high-contrast text/line tokens out-contrast the default theme', () {
       double luminance(Color c) => c.computeLuminance();
       // Relative contrast of text/line against the card it sits on.
