@@ -463,6 +463,13 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  midi_device_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/midi_device_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
   mime:
     dependency: transitive
     description:
