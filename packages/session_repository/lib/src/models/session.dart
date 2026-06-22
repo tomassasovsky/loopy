@@ -1,4 +1,5 @@
 import 'package:meta/meta.dart';
+import 'package:session_repository/src/session_exception.dart';
 
 /// One track's persisted settings within a [Session]. The audio itself lives in
 /// the referenced [stem] WAV file, not in this manifest.
@@ -83,12 +84,15 @@ class Session {
 
   /// Projects a [Session] from a decoded JSON map.
   ///
-  /// Throws [FormatException] for a manifest written by a newer, incompatible
-  /// schema version than this code understands.
+  /// Throws [SessionUnsupportedVersion] for a manifest written by a newer,
+  /// incompatible schema version than this code understands.
   factory Session.fromJson(Map<String, dynamic> json) {
     final version = (json['version'] as num?)?.toInt() ?? formatVersion;
     if (version > formatVersion) {
-      throw FormatException('unsupported session version $version');
+      throw SessionUnsupportedVersion(
+        version: version,
+        supported: formatVersion,
+      );
     }
     return Session(
       sampleRate: (json['sampleRate'] as num).toInt(),
