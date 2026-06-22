@@ -8,7 +8,7 @@ import 'package:pedal_repository/pedal_repository.dart'
     show PedalBindStatus, PedalOutput;
 
 /// Dropdown value for the "None" item — not a real device id (hosts may expose
-/// ports whose id is empty, which would duplicate `''` and trip 
+/// ports whose id is empty, which would duplicate `''` and trip
 /// DropdownButton).
 const _kPedalNoneValue = '__loopy_pedal_none__';
 
