@@ -5,7 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:settings_repository/settings_repository.dart';
+import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
+import 'package:settings_repository/settings_repository.dart'
+    as persisted
+    show AudioBackend;
 
 import '../../helpers/helpers.dart';
 
@@ -238,7 +241,10 @@ void main() {
     act: (cubit) => cubit.setBufferFrames(64),
     verify: (_) async {
       verifyNever(() => repository.startEngine(any()));
-      expect((await settings.loadAudioConfig())?.backend, AudioBackend.asio);
+      expect(
+        (await settings.loadAudioConfig())?.backend,
+        persisted.AudioBackend.asio,
+      );
     },
   );
 
@@ -456,8 +462,7 @@ void main() {
       addTearDown(cubit.close);
 
       stateController.add(connected);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      await pumpEventQueue();
 
       verify(() => repository.setRecordOffset(512)).called(1);
     });
@@ -477,9 +482,7 @@ void main() {
           ),
         ),
       );
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      await pumpEventQueue();
 
       expect(
         await settings.loadLatencyOffsetFrames(
@@ -817,6 +820,17 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
       expect(cubit.state.deviceConnectivity, DeviceConnectivity.lost);
+    });
+  });
+
+  group('AudioBackend bridge (domain <-> settings)', () {
+    test('round-trips every value in both directions', () {
+      for (final backend in AudioBackend.values) {
+        expect(engineBackendOf(settingsBackendOf(backend)), backend);
+      }
+      for (final backend in persisted.AudioBackend.values) {
+        expect(settingsBackendOf(engineBackendOf(backend)), backend);
+      }
     });
   });
 }

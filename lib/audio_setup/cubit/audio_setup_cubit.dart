@@ -3,9 +3,31 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:settings_repository/settings_repository.dart';
+// Settings owns its own AudioBackend, mapped to/from the looper domain backend
+// at the persistence boundary; prefixed only for that enum so the unprefixed
+// AudioBackend stays the domain one.
+import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
+import 'package:settings_repository/settings_repository.dart'
+    as persisted
+    show AudioBackend;
 
 part 'audio_setup_state.dart';
+
+/// Maps the looper domain backend to the settings layer's own backend enum.
+/// An exhaustive switch so adding a backend is a compile error here rather than
+/// a runtime failure from a name lookup.
+persisted.AudioBackend settingsBackendOf(AudioBackend backend) =>
+    switch (backend) {
+      AudioBackend.miniaudio => persisted.AudioBackend.miniaudio,
+      AudioBackend.asio => persisted.AudioBackend.asio,
+    };
+
+/// Maps the settings layer's persisted backend to the looper domain backend.
+AudioBackend engineBackendOf(persisted.AudioBackend backend) =>
+    switch (backend) {
+      persisted.AudioBackend.miniaudio => AudioBackend.miniaudio,
+      persisted.AudioBackend.asio => AudioBackend.asio,
+    };
 
 /// Manages audio device options (backend, device, sample rate, buffer size).
 /// Persisting a change reopens the device (or starts a stopped/failed engine
@@ -286,7 +308,8 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     maxLoopMinutes: state.maxLoopMinutes,
     playbackDeviceId: state.playbackDeviceId,
     captureDeviceId: state.captureDeviceId,
-    backend: state.backend,
+    // Map the domain backend to the settings layer's own enum for persistence.
+    backend: settingsBackendOf(state.backend),
     asioDriver: state.asioDriver,
   );
 
@@ -433,7 +456,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
           : current.backend,
       asioDriver: hydrateConfig
           ? (current.asioOnly
-                ? _resolveAsioDriver(
+                ? resolveAsioDriver(
                     lastConfig?.asioDriver ?? '',
                     current.cachedAsioDrivers,
                   )
@@ -450,8 +473,10 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   /// Resolves the ASIO driver to open on Windows: keeps [saved] when it is
   /// still enumerated, otherwise falls back to the first enumerated driver, or
-  /// empty when none are installed (the no-driver case).
-  String _resolveAsioDriver(String saved, List<AudioDevice> drivers) {
+  /// empty when none are installed (the no-driver case). Static so the
+  /// auto-start path (`tryAutoStartEngine`) and the interactive UI share one
+  /// rule and cannot drift.
+  static String resolveAsioDriver(String saved, List<AudioDevice> drivers) {
     if (drivers.any((d) => d.id == saved)) return saved;
     return drivers.isEmpty ? '' : drivers.first.id;
   }

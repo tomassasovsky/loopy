@@ -2,15 +2,30 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
+// Domain audio-config + effect types come from the looper_repository barrel
+// above; the engine-typed fixtures fed to the fake engine use the `le` prefix,
+// and settings owns its own AudioBackend via the `persisted` prefix.
 import 'package:loopy_engine/loopy_engine.dart'
     hide
+        AudioBackend,
+        AudioDevice,
+        EngineConfig,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind,
         ParamReadout,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects;
-import 'package:settings_repository/settings_repository.dart';
+import 'package:loopy_engine/loopy_engine.dart'
+    as le
+    show AudioDevice, EngineConfig, LatencyState, LoopbackInfo, LoopbackKind;
+import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
+import 'package:settings_repository/settings_repository.dart'
+    as persisted
+    show AudioBackend;
 
 import '../helpers/helpers.dart';
 
@@ -35,7 +50,19 @@ void main() {
     group('first run (no saved config)', () {
       tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-      const asioDriver = AudioDevice(
+      // Fed to the fake engine (engine-typed) ...
+      const asioDriver = le.AudioDevice(
+        id: 'Focusrite USB ASIO',
+        name: 'Focusrite USB ASIO',
+        isDefault: false,
+        isInput: false,
+        inputChannels: 18,
+        outputChannels: 20,
+        sampleRates: [48000, 96000],
+        bufferSizes: [128, 256],
+      );
+      // ... and the domain twin the repository maps it to for the picker cache.
+      const domainAsioDriver = AudioDevice(
         id: 'Focusrite USB ASIO',
         name: 'Focusrite USB ASIO',
         isDefault: false,
@@ -57,7 +84,7 @@ void main() {
         expect(result.started, isTrue);
         expect(engine.startCalls, 1);
         // A zero-config open (sample rate / buffer left at the device default).
-        expect(engine.lastConfig, const EngineConfig());
+        expect(engine.lastConfig, const le.EngineConfig());
         // Persisted so the next launch takes the saved-config path.
         expect(await settings.loadAudioConfig(), isNotNull);
       });
@@ -85,13 +112,13 @@ void main() {
 
         expect(result.started, isTrue);
         // The enumerated list is returned for the cubit's picker cache.
-        expect(result.asioDrivers, const [asioDriver]);
-        expect(engine.lastConfig?.backend, AudioBackend.asio);
+        expect(result.asioDrivers, const [domainAsioDriver]);
+        expect(engine.lastConfig?.backend.name, AudioBackend.asio.name);
         expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
         expect(engine.lastConfig?.sampleRate, 48000);
         expect(engine.lastConfig?.bufferFrames, 128);
         final saved = await settings.loadAudioConfig();
-        expect(saved?.backend, AudioBackend.asio);
+        expect(saved?.backend, persisted.AudioBackend.asio);
         expect(saved?.asioDriver, 'Focusrite USB ASIO');
       });
 
@@ -121,14 +148,14 @@ void main() {
 
         expect(result.started, isFalse);
         // The drivers are still enumerated and returned for the picker cache.
-        expect(result.asioDrivers, const [asioDriver]);
+        expect(result.asioDrivers, const [domainAsioDriver]);
       });
     });
 
     group('saved config on Windows (auto-finds ASIO)', () {
       tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-      const focusrite = AudioDevice(
+      const focusrite = le.AudioDevice(
         id: 'Focusrite USB ASIO',
         name: 'Focusrite USB ASIO',
         isDefault: false,
@@ -153,7 +180,7 @@ void main() {
           );
 
           expect(result.started, isTrue);
-          expect(engine.lastConfig?.backend, AudioBackend.asio);
+          expect(engine.lastConfig?.backend.name, AudioBackend.asio.name);
           expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
         },
       );
@@ -165,7 +192,7 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            backend: AudioBackend.asio,
+            backend: persisted.AudioBackend.asio,
             asioDriver: 'Focusrite USB ASIO',
           ),
         );
@@ -184,7 +211,7 @@ void main() {
             const StoredAudioConfig(
               sampleRate: 48000,
               bufferFrames: 128,
-              backend: AudioBackend.asio,
+              backend: persisted.AudioBackend.asio,
               asioDriver: 'Some Removed Interface',
             ),
           );
@@ -202,7 +229,7 @@ void main() {
           const StoredAudioConfig(
             sampleRate: 48000,
             bufferFrames: 128,
-            backend: AudioBackend.asio,
+            backend: persisted.AudioBackend.asio,
             asioDriver: 'Focusrite USB ASIO',
           ),
         );
@@ -238,7 +265,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
       );
@@ -269,7 +296,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
       );
@@ -312,7 +339,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         tracks: [TrackSnapshot.empty()],
       );
@@ -359,7 +386,7 @@ void main() {
         inputRms: 0,
         inputPeak: 0,
         outputRms: 0,
-        latencyState: LatencyState.idle,
+        latencyState: le.LatencyState.idle,
         measuredLatencyMs: -1,
         tracks: [TrackSnapshot.empty()],
       );
@@ -408,7 +435,7 @@ void main() {
         const StoredAudioConfig(
           sampleRate: 48000,
           bufferFrames: 128,
-          backend: AudioBackend.asio,
+          backend: persisted.AudioBackend.asio,
           asioDriver: 'Focusrite USB ASIO',
         ),
       );
@@ -419,7 +446,7 @@ void main() {
       );
 
       expect(started.started, isTrue);
-      expect(engine.lastConfig?.backend, AudioBackend.asio);
+      expect(engine.lastConfig?.backend.name, AudioBackend.asio.name);
       expect(engine.lastConfig?.asioDriver, 'Focusrite USB ASIO');
     });
 
@@ -447,9 +474,9 @@ void main() {
     test(
       'auto-measures when no saved offset and loopback is routable',
       () async {
-        engine.loopback = const LoopbackInfo(
+        engine.loopback = const le.LoopbackInfo(
           available: true,
-          kind: LoopbackKind.virtualDevice,
+          kind: le.LoopbackKind.virtualDevice,
           deviceName: 'BlackHole',
         );
         await settings.saveAudioConfig(
@@ -473,9 +500,9 @@ void main() {
         // A routable loopback exists (as on any PipeWire host), but the saved
         // config pins a real input device: capture must not be auto-routed to
         // the loopback, and the loopback-driven auto-measure must be skipped.
-        engine.loopback = const LoopbackInfo(
+        engine.loopback = const le.LoopbackInfo(
           available: true,
-          kind: LoopbackKind.virtualDevice,
+          kind: le.LoopbackKind.virtualDevice,
           deviceName: 'BlackHole',
         );
         await settings.saveAudioConfig(
@@ -509,7 +536,7 @@ void main() {
           inputRms: 0,
           inputPeak: 0,
           outputRms: 0,
-          latencyState: LatencyState.idle,
+          latencyState: le.LatencyState.idle,
           measuredLatencyMs: -1,
         );
         await settings.saveAudioConfig(
