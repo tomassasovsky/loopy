@@ -288,6 +288,19 @@ class SettingsRepository {
   Future<void> saveShowWaveformWindow({required bool value}) =>
       _store.setBool(_showWaveformWindowKey, value: value);
 
+  static const String _highContrastKey = 'big_picture.high_contrast';
+
+  /// Whether the manual high-contrast theme override is on. Defaults to
+  /// `false`. Desktop platforms (macOS / Windows / Linux) do not deliver the OS
+  /// high-contrast flag to Flutter, so this toggle is the only way to enable
+  /// the high-contrast palette there.
+  Future<bool> loadHighContrast() async =>
+      await _store.getBool(_highContrastKey) ?? false;
+
+  /// Saves the high-contrast override.
+  Future<void> saveHighContrast({required bool value}) =>
+      _store.setBool(_highContrastKey, value: value);
+
   static const String _defaultPerformanceModeKey = 'big_picture.default_mode';
 
   /// Loads the persisted default Big Picture performance mode (an opaque token,

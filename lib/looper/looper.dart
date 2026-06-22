@@ -5,6 +5,7 @@ library;
 export 'bloc/looper_bloc.dart';
 export 'cubit/bank_cubit.dart';
 export 'cubit/big_picture_cubit.dart';
+export 'cubit/high_contrast_cubit.dart';
 export 'cubit/quantize_cubit.dart';
 export 'cubit/record_options_cubit.dart';
 export 'cubit/refresh_rate_cubit.dart';

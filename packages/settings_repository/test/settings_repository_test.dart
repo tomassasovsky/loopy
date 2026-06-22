@@ -467,6 +467,17 @@ void main() {
     });
   });
 
+  group('high contrast', () {
+    test('defaults to off when unset', () async {
+      expect(await repository.loadHighContrast(), isFalse);
+    });
+
+    test('round-trips a saved preference', () async {
+      await repository.saveHighContrast(value: true);
+      expect(await repository.loadHighContrast(), isTrue);
+    });
+  });
+
   group('default performance mode', () {
     test('returns null when unset', () async {
       expect(await repository.loadDefaultPerformanceMode(), isNull);

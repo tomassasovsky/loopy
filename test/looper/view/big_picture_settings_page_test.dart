@@ -29,6 +29,7 @@ void main() {
   late SettingsRepository settings;
   late BigPictureCubit bigPicture;
   late WaveformWindowCubit waveformWindow;
+  late HighContrastCubit highContrast;
   late BankCubit bank;
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
@@ -43,6 +44,7 @@ void main() {
     settings = SettingsRepository(store: FakeKeyValueStore());
     bigPicture = BigPictureCubit(settings: settings);
     waveformWindow = WaveformWindowCubit(settings: settings);
+    highContrast = HighContrastCubit(settings: settings);
     bank = BankCubit();
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(const AudioSetupState());
@@ -110,6 +112,7 @@ void main() {
           providers: [
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
+            BlocProvider<HighContrastCubit>.value(value: highContrast),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
@@ -137,6 +140,21 @@ void main() {
 
     expect(waveformWindow.state, isFalse);
     expect(await settings.loadShowWaveformWindow(), isFalse);
+  });
+
+  testWidgets('toggling high contrast persists the preference', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    expect(highContrast.state, isFalse);
+    await tester.tap(
+      find.byKey(const Key('bpSettings_highContrast_switch')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(highContrast.state, isTrue);
+    expect(await settings.loadHighContrast(), isTrue);
   });
 
   testWidgets('renaming a track updates the list and persists it', (
@@ -282,6 +300,7 @@ void main() {
           providers: [
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
+            BlocProvider<HighContrastCubit>.value(value: highContrast),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
