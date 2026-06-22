@@ -254,6 +254,12 @@
     "footgun",
     "ints",
     "pessimized",
-    "unported"
+    "unported",
+    "dedup",
+    "microtask",
+    "microtasks",
+    "pubspecs",
+    "unmuted",
+    "unreviewable"
   ]
 }
