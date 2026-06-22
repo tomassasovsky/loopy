@@ -127,6 +127,47 @@ void main() {
       expect(rec.selected, (0, 0));
     });
 
+    testWidgets('a lane node is a labelled, focusable button (a11y)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pump(tester, lanes: const [Lane()]);
+
+      final node = tester.getSemantics(
+        find.byKey(const Key('laneGraph_laneNode_0')),
+      );
+      expect(node, isSemantics(isButton: true, hasTapAction: true));
+      expect(node.label, isNotEmpty);
+      handle.dispose();
+    });
+
+    testWidgets('effect move buttons reorder without dragging (WCAG 2.5.7)', (
+      tester,
+    ) async {
+      final rec = await pump(
+        tester,
+        lanes: [
+          Lane(
+            effects: [
+              TrackEffect(type: TrackEffectType.drive),
+              TrackEffect(type: TrackEffectType.delay),
+            ],
+          ),
+        ],
+      );
+      // The first card's move-left is present but disabled (nothing to its
+      // left); move-right reorders it to index 1 without any drag.
+      final handle = tester.ensureSemantics();
+      expect(
+        tester.getSemantics(find.byKey(const Key('laneGraph_fxMoveLeft_0_0'))),
+        isSemantics(isEnabled: false),
+      );
+      handle.dispose();
+      await tester.tap(find.byKey(const Key('laneGraph_fxMoveRight_0_0')));
+      await tester.pump();
+      expect(rec.moved, (0, 0, 1));
+    });
+
     testWidgets('the selected effect opens an editor in the panel', (
       tester,
     ) async {
