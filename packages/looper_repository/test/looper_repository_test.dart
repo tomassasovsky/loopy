@@ -363,6 +363,88 @@ void main() {
       expect(lateState!.track.state, TrackState.playing);
     });
 
+    test('a lane fx param change re-emits the projected state', () async {
+      // Regression: setLaneEffectParam mutated the stored chain list in place,
+      // but _project hands that same list to the emitted state by reference —
+      // so the last-emitted state was retroactively mutated and the poll's
+      // next == _last diff suppressed the update (UI never refreshed).
+      const snapshot = EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        masterLengthFrames: 48000,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 48000,
+            undoDepth: 0,
+            rms: 0,
+            peak: 0,
+            lanes: [
+              LaneSnapshot(
+                inputChannel: 0,
+                outputMask: 0x1,
+                volume: 1,
+                muted: false,
+                lengthFrames: 48000,
+                rms: 0,
+                peak: 0,
+              ),
+            ],
+          ),
+        ],
+      );
+      // Explicit params (length >= 3) so the index-2 tweak below is valid
+      // regardless of any effect's default-param count.
+      final repo = buildRepo()
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [
+            TrackEffect(
+              type: TrackEffectType.delay,
+              params: const [0.3, 0.4, 0.5, 0],
+            ),
+          ],
+        );
+      engine.nextSnapshot = snapshot;
+
+      final emitted = <LooperState>[];
+      final sub = repo.looperState.listen(emitted.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero); // initial poll
+      ticker.add(null); // steady — must not re-emit
+      await Future<void>.delayed(Duration.zero);
+      final settled = emitted.length;
+
+      // A live param tweak (index 2): no structural edit. It must re-emit
+      // immediately — without waiting for the next poll tick — so a dragged
+      // knob doesn't lag a frame behind the gesture.
+      repo.setLaneEffectParam(
+        channel: 0,
+        lane: 0,
+        index: 0,
+        param: 2,
+        value: 0.9,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(emitted.length, settled + 1, reason: 'param change must re-emit');
+      expect(
+        emitted.last.tracks[0].lanes[0].effects.single.params[2],
+        closeTo(0.9, 1e-9),
+      );
+    });
+
     test('polling restarts cleanly across subscribe/cancel cycles', () async {
       // The default ticker is single-subscription; a subscribe → cancel →
       // subscribe cycle (hot restart, a bloc rebuild) must not throw

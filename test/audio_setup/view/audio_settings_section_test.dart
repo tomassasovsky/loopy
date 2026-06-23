@@ -227,40 +227,7 @@ void main() {
     verify(() => cubit.setRecordOffset(257)).called(1);
   });
 
-  testWidgets(
-    'per-input monitor routing is shown with no master toggle gating it',
-    (tester) async {
-      seed(
-        const AudioSetupState(
-          status: AudioSetupStatus.running,
-          engineStatus: EngineStatus(
-            deviceName: 'Scarlett 4i4',
-            sampleRate: 48000,
-            bufferFrames: 128,
-            isConnected: true,
-            inputChannels: 2,
-            outputChannels: 2,
-          ),
-        ),
-      );
-      await pumpSection(tester);
-
-      // The redundant master "Monitor input" toggle is gone; the per-input
-      // routing entry (with its own per-input enable) is always available.
-      expect(
-        find.byKey(const Key('audioSettings_monitor_switch')),
-        findsNothing,
-      );
-      expect(
-        find.byKey(const Key('audioSettings_openMonitorGraph')),
-        findsOneWidget,
-      );
-    },
-  );
-
-  testWidgets('opens the input-monitoring graph as a full page', (
-    tester,
-  ) async {
+  testWidgets('no monitoring controls remain in Audio Setup', (tester) async {
     seed(
       const AudioSetupState(
         status: AudioSetupStatus.running,
@@ -276,15 +243,16 @@ void main() {
     );
     await pumpSection(tester);
 
-    final open = find.byKey(const Key('audioSettings_openMonitorGraph'));
-    await tester.ensureVisible(open);
-    await tester.tap(open);
-    await tester.pumpAndSettle();
-
-    // The full-page routing graph opens (replacing the old chip tiles).
-    expect(find.byKey(const Key('monitorRouting_page')), findsOneWidget);
-    expect(find.byKey(const Key('monitorGraph_in_0')), findsOneWidget);
-    expect(find.byKey(const Key('monitorGraph_out_0')), findsOneWidget);
+    // Monitoring is now live performance on the Signal surface, so Audio Setup
+    // keeps only device/SR/buffer/latency — no monitor toggle or graph entry.
+    expect(
+      find.byKey(const Key('audioSettings_monitor_switch')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const Key('audioSettings_openMonitorGraph')),
+      findsNothing,
+    );
   });
 
   testWidgets('toggling quantize recording forwards to the quantize cubit', (

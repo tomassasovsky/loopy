@@ -389,7 +389,7 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       if (!valid_channel(e, cmd->arg_i)) break;
       float v = cmd->arg_f;
       if (v < 0.0f) v = 0.0f;
-      if (v > 1.0f) v = 1.0f;
+      if (v > LE_MAX_GAIN) v = LE_MAX_GAIN;
       /* Track-addressed volume maps to lane 0 (backward compatibility). */
       store_f32(&e->tracks[cmd->arg_i].lanes[0].a_vol_bits, v);
       break;
@@ -513,7 +513,7 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
       float v = cmd->lanef.value;
       if (v < 0.0f) v = 0.0f;
-      if (v > 1.0f) v = 1.0f;
+      if (v > LE_MAX_GAIN) v = LE_MAX_GAIN;
       store_f32(&e->tracks[ch].lanes[lane].a_vol_bits, v);
       break;
     }
@@ -577,7 +577,7 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       if (input < 0 || input >= LE_MAX_INPUTS) break;
       float v = cmd->arg_f;
       if (v < 0.0f) v = 0.0f;
-      if (v > 1.0f) v = 1.0f;
+      if (v > LE_MAX_GAIN) v = LE_MAX_GAIN;
       store_f32(&e->monitors[input].a_vol_bits, v);
       break;
     }

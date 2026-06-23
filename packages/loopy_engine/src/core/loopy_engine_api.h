@@ -269,6 +269,11 @@ typedef struct le_config {
 #define LE_MAX_INPUTS 8
 #define LE_MAX_LANES LE_MAX_INPUTS
 
+/* Ceiling for a per-lane / per-monitor channel volume. 2.0 is +6.02 dB, so the
+ * UI can boost a quiet take/input up to +6 dB rather than only attenuate from
+ * unity (1.0 = 0 dB). The output limiter downstream still guards the bus. */
+#define LE_MAX_GAIN 2.0f
+
 /* Number of points in the loop visualization buffer (le_engine_read_visual):
  * one peak per loop position, spanning exactly one master loop. */
 #define LE_VIZ_POINTS 512

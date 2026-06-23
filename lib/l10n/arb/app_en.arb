@@ -58,7 +58,6 @@
             }
         }
     },
-    "ioRoutingTooltip": "I/O routing",
     "stopButton": "Stop",
     "trackStateEmpty": "empty",
     "trackStateRecording": "recording",
@@ -159,7 +158,6 @@
     },
     "quantizeRecording": "Quantize recording",
     "loopLength": "Loop length",
-    "trackEffectsPlaybackOnlyHint": "Track effects color playback only. To hear effects live on an input, enable its monitor in audio settings.",
     "done": "Done",
     "defaultWithState": "Default ({state})",
     "@defaultWithState": {
@@ -174,7 +172,6 @@
     "auto": "Auto",
     "settingsSectionView": "View",
     "settingsSectionAudio": "Audio",
-    "settingsSectionRouting": "Routing",
     "settingsSectionTracks": "Tracks",
     "settingsKicker": "SETTINGS",
     "bigPictureTitle": "Big Picture",
@@ -202,8 +199,6 @@
     "refreshRateLowCpu": "Low CPU",
     "refreshRateSmoothest": "Smoothest",
     "defaultLabel": "Default",
-    "routingIntro": "How audio is wired: hardware inputs flow into tracks, and tracks play out to hardware outputs. Loopback inputs are struck through — they are never recorded. Click a track to select it, then click an input or output to connect or disconnect it.",
-    "signalFlowGroupLabel": "SIGNAL FLOW",
     "tracksIntro": "Rename tracks.",
     "tracksGroupLabel": "TRACKS",
     "inputChannelLabel": "In {channelNumber}",
@@ -247,14 +242,66 @@
         }
     },
     "noActiveOutputsNotice": "No outputs are enabled — nothing will be heard. Tap a greyed output to turn it back on.",
-    "laneSnapshotLabel": "FX snapshot of In {inputNumber} at record",
-    "@laneSnapshotLabel": {
+    "signalTitle": "Signal",
+    "signalFlowSubtitle": "Inputs · Tracks · Outputs",
+    "signalSectionInputs": "Inputs",
+    "signalSectionTracks": "Tracks",
+    "signalSectionOutputs": "Outputs",
+    "signalVolumeLabel": "Vol",
+    "signalContextInput": "Input",
+    "signalContextTake": "Take",
+    "signalNothingRouted": "nothing routed here",
+    "signalNotRouted": "not routed",
+    "signalFieldFx": "FX",
+    "signalFieldOut": "OUT",
+    "signalFieldInputs": "IN",
+    "signalFieldTracks": "TRK",
+    "signalTakesCount": "{count} takes",
+    "@signalTakesCount": {
+      "description": "Badge on a multi-lane track header counting its takes.",
+      "placeholders": { "count": { "type": "int" } }
+    },
+    "signalTraceHint": "Tap any row to trace its signal — connected rows light up, the rest fade. Tap a chip to route.",
+    "signalLegendLive": "LIVE input is monitored",
+    "signalLegendSnapshot": "FX snapshot taken at record",
+    "signalLegendChip": "chip = routed to that output",
+    "signalCleanTake": "clean take",
+    "signalRecInput": "rec In {inputNumber}",
+    "@signalRecInput": {
+      "description": "Badge on a take naming the hardware input it recorded.",
+      "placeholders": { "inputNumber": { "type": "int" } }
+    },
+    "signalRouteTooltip": "Route to an output",
+    "signalRouteToOutput": "Send to Out {outputNumber}",
+    "@signalRouteToOutput": {
+      "description": "Menu item / a11y label to add a route to an output.",
+      "placeholders": { "outputNumber": { "type": "int" } }
+    },
+    "signalUnrouteOutput": "Stop sending to Out {outputNumber}",
+    "@signalUnrouteOutput": {
+      "description": "a11y label on a lit routing chip (tap removes the route).",
+      "placeholders": { "outputNumber": { "type": "int" } }
+    },
+    "signalInputNone": "None (clean)",
+    "signalReassignInput": "Change recorded input",
+    "signalTooltip": "Signal flow (G)",
+    "@signalTooltip": {
+      "description": "Tooltip for the performance-view button that opens the full-screen Signal surface."
+    },
+    "signalInputLive": "live",
+    "signalInputOff": "off",
+    "signalThisTakeLabel": "This take · snapshot of In {inputNumber}",
+    "@signalThisTakeLabel": {
         "placeholders": {
             "inputNumber": {
                 "type": "int"
             }
         }
     },
+    "signalThisTakeHint": "A copy taken at record. Editing it changes only this lane — the live input tone and your other takes stay untouched.",
+    "signalLaneCleanHint": "This lane records its input clean. Add effects to colour just this take.",
+    "signalAddEffectTooltip": "Add effect to this take",
+    "signalHint": "Tap an input to dial its tone (it's what records). Tap a lane to route it. Tap an output to gate it on or off.",
     "inputMonitorLabel": "In {inputNumber} monitor",
     "@inputMonitorLabel": {
         "placeholders": {
@@ -263,35 +310,11 @@
             }
         }
     },
-    "unmuteLaneTooltip": "Unmute lane",
-    "muteLaneTooltip": "Mute lane",
     "unmuteInputTooltip": "Unmute input",
     "muteInputTooltip": "Mute input",
     "removeLaneTooltip": "Remove lane",
-    "laneGraphHint": "Tap a lane to focus it, then tap inputs/outputs to wire it.",
     "addLane": "Add lane",
-    "addEffectToLaneTooltip": "Add effect to lane {laneNumber}",
-    "@addEffectToLaneTooltip": {
-        "placeholders": {
-            "laneNumber": {
-                "type": "int"
-            }
-        }
-    },
-    "addEffectToInputTooltip": "Add effect to input {inputNumber}",
-    "@addEffectToInputTooltip": {
-        "placeholders": {
-            "inputNumber": {
-                "type": "int"
-            }
-        }
-    },
     "removeEffectTooltip": "Remove effect",
-    "inputMonitoringTitle": "Input monitoring",
-    "monitorGraphHint": "Tap an input to monitor it, then tap outputs to send it there.",
-    "configureInputMonitoring": "Configure input monitoring",
-    "monitorRoutingIntro": "Monitor inputs live through their own effects (wet) and/or as a clean dry send — routed to the outputs you pick. Never recorded.",
-    "startEngineForMonitorChannels": "Start the engine to choose monitor channels.",
     "startEngine": "Start engine",
     "sampleRateGroup": "Sample rate",
     "bufferSizeGroup": "Buffer size",
@@ -395,7 +418,6 @@
     "audioSettingsIntro": "Choose the audio device and check the measured round-trip latency.",
     "outputDeviceGroupUpper": "OUTPUT DEVICE",
     "inputDeviceGroupUpper": "INPUT DEVICE",
-    "monitoringGroupLabel": "MONITORING",
     "recordingGroupLabel": "RECORDING",
     "maxLoopLengthIntro": "Maximum loop length per track. A higher cap reserves more memory per track. Changing it reopens the device.",
     "maxLoopDefault30s": "Default (30 s)",

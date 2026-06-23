@@ -231,6 +231,17 @@ class LooperRepository {
     _controller.add(next);
   }
 
+  /// Re-projects and emits immediately (deduped), skipping the device
+  /// supervision the periodic poll does. Used so a local edit — e.g. a lane FX
+  /// param the UI drives — reflects on the next frame rather than waiting for
+  /// the next poll tick (which would make a dragged knob feel a tick behind).
+  void _reproject() {
+    final next = _project(_engine.snapshot());
+    if (next == _last) return;
+    _last = next;
+    _controller.add(next);
+  }
+
   /// Watches the pinned device's presence each poll. When a pinned device goes
   /// absent (and the user did not stop the engine), it begins polling
   /// enumeration on the reconnect ticker/timer; when it reappears it stops and
@@ -736,6 +747,7 @@ class LooperRepository {
     } else {
       _laneEffects[(channel, lane)] = clamped;
     }
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _applyLaneEffects(channel, lane);
   }
@@ -758,7 +770,13 @@ class LooperRepository {
     final fx = effects[index];
     if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
     final params = List<double>.of(fx.params)..[param] = value;
-    effects[index] = fx.copyWith(params: params);
+    // Replace the stored list with a fresh instance rather than mutating it in
+    // place: `_project` puts this list into the emitted `LooperState` by
+    // reference, so an in-place edit would also mutate the last-emitted state,
+    // and the poll's `next == _last` check would then suppress the update.
+    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(params: params);
+    _reproject();
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setLaneFxParam(
       channel: channel,
@@ -864,7 +882,12 @@ class LooperRepository {
     final fx = effects[index];
     if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
     final params = List<double>.of(fx.params)..[param] = value;
-    effects[index] = fx.copyWith(params: params);
+    // Replace with a fresh list rather than mutating in place — the same
+    // invariant as `setLaneEffectParam`. No `_reproject()` here: monitor
+    // chains are not part of the projected `LooperState` (the MonitorCubit
+    // owns them and emits optimistically), so there is nothing to re-emit.
+    _monitorEffects[input] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(params: params);
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setMonitorInputFxParam(
       input: input,

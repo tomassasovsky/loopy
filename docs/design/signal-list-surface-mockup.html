@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Signal — three-list surface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#08080A; --surface:#0D0D11; --card:#16161B; --cardHigh:#1C1C22;
+    --line:#272730; --line2:#34343f; --t1:#F3F4F7; --t2:#989AA4; --t3:#82848E;
+    --accent:#3B82F6;
+    /* one stable hue per output, reused across panes */
+    --o1:#3B82F6; --o2:#F59E0B; --o3:#2DD4BF; --o4:#A78BFA;
+    --o5:#F472B6; --o6:#34D399; --o7:#FB923C; --o8:#38BDF8;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    --sans:'Space Grotesk',-apple-system,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1100px 560px at 26% -14%,#11111B 0%,transparent 60%),var(--bg);
+    color:var(--t1);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:26px}
+  .win{max-width:1320px;margin:0 auto;background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;box-shadow:0 40px 100px -38px rgba(0,0,0,.85)}
+
+  /* chrome */
+  .chrome{display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#101016,#0c0c10)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .title{font-family:var(--mono);letter-spacing:.34em;font-size:12px;color:var(--t2)}
+  .title b{color:var(--t1);font-weight:600}
+  .flow{font-family:var(--mono);font-size:11px;color:var(--t3)}
+  .spacer{flex:1}
+  .scale-toggle{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden;font-family:var(--mono);font-size:10.5px}
+  .scale-toggle button{background:transparent;border:0;color:var(--t3);padding:6px 11px;cursor:pointer;font-family:var(--mono)}
+  .scale-toggle button.on{background:#11233b;color:#bfe0ff}
+  .kbd{font-family:var(--mono);font-size:10px;color:var(--t3);border:1px solid var(--line2);border-radius:5px;padding:2px 6px}
+
+  /* hint strip */
+  .hint{display:flex;align-items:center;gap:10px;padding:9px 18px;border-bottom:1px solid var(--line);
+    background:#0b0b0f;font-family:var(--mono);font-size:11.5px;color:var(--t2)}
+  .hint b{color:var(--t1);font-weight:500}
+
+  /* three panes */
+  .panes{display:grid;grid-template-columns:1fr 1fr .82fr;gap:0}
+  .pane{border-right:1px solid var(--line);min-width:0}
+  .pane:last-child{border-right:0}
+  .pane-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.28em;color:var(--t3);
+    padding:13px 18px 9px;display:flex;align-items:center;gap:8px}
+  .pane-h .count{color:var(--t2);background:var(--cardHigh);border:1px solid var(--line);
+    border-radius:10px;padding:1px 7px;font-size:9.5px;letter-spacing:.04em}
+  .list{max-height:560px;overflow:auto;padding:4px 14px 16px}
+  .list::-webkit-scrollbar{width:9px}
+  .list::-webkit-scrollbar-thumb{background:#1d1d24;border-radius:6px;border:2px solid var(--surface)}
+
+  /* rows */
+  .row{position:relative;background:var(--card);border:1px solid var(--line);border-radius:11px;
+    padding:11px 12px 11px 14px;margin-bottom:9px;cursor:pointer;transition:.16s;overflow:hidden}
+  .row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--rc,transparent);opacity:.85}
+  .row:hover{border-color:var(--line2)}
+  .row .top{display:flex;align-items:center;gap:9px}
+  .id{font-family:var(--mono);font-weight:600;font-size:12.5px;letter-spacing:.5px}
+  .sub{font-family:var(--mono);font-size:10px;color:var(--t3);letter-spacing:.04em}
+  .grow{flex:1}
+
+  /* gate pill */
+  .gate{font-family:var(--mono);font-size:9px;letter-spacing:.12em;border-radius:20px;padding:3px 9px 3px 6px;
+    display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);color:var(--t3);background:#14141a}
+  .gate i{width:7px;height:7px;border-radius:50%;background:var(--t3)}
+  .gate.on{border-color:color-mix(in srgb,var(--rc) 55%,transparent);color:var(--t1);background:color-mix(in srgb,var(--rc) 14%,#14141a)}
+  .gate.on i{background:var(--rc);box-shadow:0 0 8px var(--rc)}
+
+  /* level */
+  .lvl{height:5px;border-radius:3px;background:#0e0e12;position:relative;margin-top:9px;overflow:hidden}
+  .lvl i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--rc,var(--accent));opacity:.9}
+
+  /* meta line: fx + routes */
+  .meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px}
+  .lbl{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--t3);margin-right:1px}
+  .fx{font-family:var(--mono);font-size:10px;padding:4px 8px;border-radius:7px;border:1px solid var(--line2);
+    background:var(--cardHigh);color:var(--t2)}
+  .fx.add{border-style:dashed;color:var(--t3)}
+  .snap{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;
+    color:#bfe0ff;background:#11233b;border:1px solid #2a5d9e;border-radius:7px;padding:3px 8px}
+
+  /* routing chips — wear the destination output's hue */
+  .routes{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .chip{font-family:var(--mono);font-size:10px;border-radius:7px;padding:3px 8px;cursor:pointer;
+    border:1px solid color-mix(in srgb,var(--ch) 55%,transparent);
+    color:color-mix(in srgb,var(--ch) 88%,white);
+    background:color-mix(in srgb,var(--ch) 14%,transparent)}
+  .chip.off{border-color:var(--line);color:var(--t3);background:transparent}
+  .chip:hover{filter:brightness(1.25)}
+
+  /* track group */
+  .trk{margin-bottom:11px}
+  .trk-h{display:flex;align-items:center;gap:8px;padding:2px 4px 7px;font-weight:600;font-size:13px}
+  .trk-h .tcount{font-family:var(--mono);font-size:9px;color:var(--t3);border:1px solid var(--line);border-radius:9px;padding:1px 7px}
+  .take{margin-left:10px;border-left:1px solid var(--line);padding-left:10px}
+  .take .row{margin-bottom:7px}
+
+  /* outputs */
+  .out .top{gap:10px}
+  .swatch{width:9px;height:9px;border-radius:50%;background:var(--rc);box-shadow:0 0 8px var(--rc)}
+  .fed{font-family:var(--mono);font-size:9.5px;color:var(--t3);margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+  .row.disabled{opacity:.55}
+  .row.disabled .id{text-decoration:line-through;color:var(--t3)}
+  .row.disabled .swatch{background:var(--t3);box-shadow:none}
+  .toggle{font-family:var(--mono);font-size:9px;letter-spacing:.1em;border:1px solid var(--line2);border-radius:6px;
+    padding:3px 8px;color:var(--t2);background:#14141a}
+  .toggle.on{color:#bfe0ff;border-color:#2a5d9e;background:#11233b}
+
+  /* loopback */
+  .row.loopback{opacity:.5}
+  .row.loopback .id{text-decoration:line-through;color:var(--t3)}
+
+  /* tap-to-trace */
+  .tracing .row{opacity:.28;filter:saturate(.5)}
+  .tracing .row.trace{opacity:1;filter:none}
+  .tracing .row.trace-self{opacity:1;filter:none;border-color:var(--accent);
+    box-shadow:0 0 0 1px var(--accent),0 0 26px -8px var(--accent)}
+  .tracing .trk{opacity:.32}
+  .tracing .trk.trace{opacity:1}
+
+  /* notice */
+  .notice{display:none;align-items:center;gap:9px;margin:0 14px 10px;padding:9px 12px;border-radius:9px;
+    background:#17120a;border:1px solid #3a2d12;color:#f0c97a;font-family:var(--mono);font-size:11px}
+
+  /* dock */
+  .dock{display:flex;align-items:flex-start;gap:18px;padding:15px 20px 17px;border-top:1px solid var(--line);
+    background:linear-gradient(180deg,#0f0f15,#0c0c10)}
+  .ctx{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:#bfe0ff;background:#11233b;border:1px solid #2a5d9e;border-radius:7px;padding:5px 9px}
+  .dock .knob{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .klabel{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--t3)}
+  .kval{font-family:var(--mono);font-size:10.5px;color:var(--t2)}
+  .dock .ed{flex:1}
+  .dock .ed .row-mini{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .dhint{font-family:var(--mono);font-size:11px;color:var(--t2);line-height:1.5}
+  .stop{font-family:var(--mono);font-size:10.5px;color:var(--t2);border:1px solid var(--line2);border-radius:7px;padding:6px 11px;display:inline-flex;gap:6px;align-items:center}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:10.5px;color:var(--t3);background:#0b0b0f}
+  .legend b{color:var(--t2);font-weight:500}
+</style>
+</head>
+<body>
+<div class="win">
+
+  <!-- chrome -->
+  <div class="chrome">
+    <span class="dot" style="background:#ff5f57"></span>
+    <span class="dot" style="background:#febc2e"></span>
+    <span class="dot" style="background:#28c840"></span>
+    <span class="title">&nbsp;&nbsp;<b>SIGNAL</b></span>
+    <span class="flow">Inputs · Tracks · Outputs</span>
+    <span class="spacer"></span>
+    <span class="scale-toggle" id="scaleToggle">
+      <button class="on" data-scale="small">6 × 4</button>
+      <button data-scale="large">16 × 16</button>
+    </span>
+    <span class="kbd">Esc</span>
+  </div>
+
+  <!-- hint -->
+  <div class="hint">
+    <span>👆</span>
+    <span><b>Tap any row to trace its signal</b> — connected rows light up, the rest fade.
+      Tap a routing <b>chip</b> to send / unsend. Routing wears each output's colour.</span>
+  </div>
+
+  <!-- three panes -->
+  <div class="panes" id="panes">
+    <div class="pane">
+      <div class="pane-h">INPUTS <span class="count" id="cIn">6</span></div>
+      <div class="list" id="inputs"></div>
+    </div>
+    <div class="pane">
+      <div class="pane-h">TRACKS <span class="count" id="cTrk">3</span></div>
+      <div class="list" id="tracks"></div>
+    </div>
+    <div class="pane">
+      <div class="pane-h">OUTPUTS <span class="count" id="cOut">4</span></div>
+      <div class="notice" id="notice">⚠ No active outputs — nothing will be heard.</div>
+      <div class="list" id="outputs"></div>
+    </div>
+  </div>
+
+  <!-- contextual dock (focused input example) -->
+  <div class="dock">
+    <span class="ctx">INPUT · IN 1</span>
+    <div class="knob">
+      <svg width="54" height="54" viewBox="0 0 54 54">
+        <circle cx="27" cy="27" r="23" fill="none" stroke="#272730" stroke-width="3"/>
+        <path d="M 10 40 A 23 23 0 1 1 44 40" fill="none" stroke="#3B82F6" stroke-width="3"
+              stroke-linecap="round" stroke-dasharray="95" stroke-dashoffset="20" opacity=".95"/>
+        <circle cx="27" cy="27" r="15" fill="#191920" stroke="#34343f"/>
+        <line x1="27" y1="27" x2="27" y2="14" stroke="#3B82F6" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+      <span class="klabel">VOL</span><span class="kval">0 dB</span>
+    </div>
+    <div class="ed">
+      <div class="row-mini">
+        <span class="lbl">FX CHAIN</span>
+        <span class="fx" style="border-color:var(--accent);color:#fff;box-shadow:inset 0 0 0 1px var(--accent)">Drive</span>
+        <span class="fx">Delay</span>
+        <span class="fx add">+ add</span>
+      </div>
+      <div class="dhint">This is the tone you monitor live — and it's snapshot-copied onto the take when you record.</div>
+    </div>
+    <span class="stop">⏹ Stop</span>
+  </div>
+
+  <!-- legend -->
+  <div class="legend">
+    <span><b>● LIVE</b> input is monitored</span>
+    <span><b>✦</b> FX snapshot taken at record</span>
+    <span><b>→ chip</b> routed to that output (its colour)</span>
+    <span><b>tap row</b> trace · <b>tap chip</b> send/unsend</span>
+  </div>
+</div>
+
+<script>
+const HUE = id => `var(--o${((id-1)%8)+1})`;
+
+const SMALL = {
+  inputs:[
+    {id:1,gate:'live',fx:['Drive','Delay'],routes:[1,2]},
+    {id:2,gate:'live',fx:['Comp'],routes:[1]},
+    {id:3,gate:'off',fx:[],routes:[3]},
+    {id:4,gate:'off',loopback:true,fx:[],routes:[]},
+    {id:5,gate:'off',fx:[],routes:[2]},
+    {id:6,gate:'off',fx:[],routes:[]},
+  ],
+  tracks:[
+    {name:'Drums',takes:[{input:1,fx:['Drive','Delay'],routes:[1,2]}]},
+    {name:'Bass',takes:[{input:2,fx:[],routes:[1]}]},
+    {name:'Gtr',takes:[{input:3,fx:['Fuzz'],routes:[3]},{input:5,fx:[],routes:[2]}]},
+  ],
+  outputs:[{id:1,on:true},{id:2,on:true},{id:3,on:true},{id:4,on:false}],
+};
+
+// A busy 16×16 set, generated, to prove it just scrolls.
+function makeLarge(){
+  const names=['Kick','Snare','Hat','Bass','Gtr L','Gtr R','Keys','Pad','Lead','Vox','FX Bus','Perc'];
+  const inputs=[], tracks=[], outputs=[];
+  for(let i=1;i<=16;i++){
+    const live=i<=3;
+    inputs.push({id:i,gate:live?'live':'off',loopback:i===16,
+      fx:i%4===1?['Drive']:(i%4===2?['Comp','EQ']:[]),
+      routes:i%16===0?[]:[((i-1)%8)+1]});
+  }
+  for(let t=0;t<10;t++){
+    const takes=[{input:t+1,fx:t%3===0?['Reverb']:[],routes:[((t)%8)+1]}];
+    if(t===4) takes.push({input:6,fx:['Delay'],routes:[2]}); // one multi-take track
+    tracks.push({name:names[t],takes});
+  }
+  for(let o=1;o<=16;o++) outputs.push({id:o,on:o<=12});
+  return {inputs,tracks,outputs};
+}
+const LARGE = makeLarge();
+
+let DATA = SMALL;
+
+function chip(out, on){
+  return `<span class="chip ${on?'':'off'}" style="--ch:${HUE(out)}" data-tag="o${out}">→ ${out}</span>`;
+}
+function gate(on, hue){
+  return `<span class="gate ${on?'on':''}" style="--rc:${hue}"><i></i>${on?'LIVE':'OFF'}</span>`;
+}
+
+function render(){
+  const inEl=document.getElementById('inputs');
+  const trEl=document.getElementById('tracks');
+  const outEl=document.getElementById('outputs');
+
+  // INPUTS
+  inEl.innerHTML = DATA.inputs.map(p=>{
+    if(p.loopback) return `<div class="row loopback" data-tags="in${p.id}">
+        <div class="top"><span class="id">IN ${p.id}</span><span class="sub">loopback · never recorded</span></div></div>`;
+    const live=p.gate==='live';
+    const hue=live?'var(--accent)':'var(--t3)';
+    const tags=['in'+p.id, ...p.routes.map(o=>'o'+o)].join(' ');
+    const fx=p.fx.length? p.fx.map(f=>`<span class="fx">${f}</span>`).join('')
+                        : `<span class="fx add">clean</span>`;
+    return `<div class="row" data-tags="${tags}">
+      <div class="top">
+        <span class="id">IN ${p.id}</span>
+        ${gate(live,hue)}
+        <span class="grow"></span>
+        <span class="sub">100%</span>
+      </div>
+      <div class="lvl" style="--rc:${live?'var(--accent)':'#2a2a32'}"><i style="width:${live?66:0}%"></i></div>
+      <div class="meta"><span class="lbl">FX</span>${fx}</div>
+      <div class="meta"><span class="lbl">OUT</span><span class="routes">${
+        p.routes.length? p.routes.map(o=>chip(o,true)).join('') : '<span class="sub">— not routed</span>'
+      }</span></div>
+    </div>`;
+  }).join('');
+
+  // TRACKS (grouped; single-lane collapses to the track)
+  trEl.innerHTML = DATA.tracks.map((t,ti)=>{
+    const single=t.takes.length===1;
+    const takeRow=(tk,idx)=>{
+      const tags=['trk'+ti, 'in'+tk.input, ...tk.routes.map(o=>'o'+o)].join(' ');
+      const fx=tk.fx.length? `<span class="snap">✦ ${tk.fx.join(' · ')}</span>`
+                           : `<span class="fx add">clean take</span>`;
+      const head = single
+        ? `<span class="id">${t.name}</span>`
+        : `<span class="id" style="font-size:11.5px">Take ${idx+1}</span>`;
+      return `<div class="row" data-tags="${tags}" data-trk="${ti}">
+        <div class="top">${head}
+          <span class="snap" style="background:#14141a;border-color:var(--line2);color:var(--t2)">rec In ${tk.input}</span>
+          <span class="grow"></span><span class="sub">100%</span></div>
+        <div class="meta">${fx}</div>
+        <div class="meta"><span class="lbl">OUT</span><span class="routes">${
+          tk.routes.length? tk.routes.map(o=>chip(o,true)).join('') : '<span class="sub">— not routed</span>'
+        }</span></div>
+      </div>`;
+    };
+    if(single){
+      return `<div class="trk" data-trkgroup="${ti}">${takeRow(t.takes[0],0)}</div>`;
+    }
+    return `<div class="trk" data-trkgroup="${ti}">
+      <div class="trk-h">${t.name}<span class="tcount">${t.takes.length} takes</span></div>
+      <div class="take">${t.takes.map(takeRow).join('')}</div></div>`;
+  }).join('');
+
+  // OUTPUTS
+  const anyOn = DATA.outputs.some(o=>o.on);
+  document.getElementById('notice').style.display = anyOn?'none':'flex';
+  outEl.innerHTML = DATA.outputs.map(o=>{
+    const feeders=[
+      ...DATA.inputs.filter(p=>!p.loopback&&p.routes.includes(o.id)).map(p=>'In '+p.id),
+      ...DATA.tracks.flatMap((t,ti)=>t.takes.some(k=>k.routes.includes(o.id))?[t.name]:[]),
+    ];
+    return `<div class="row out ${o.on?'':'disabled'}" data-tags="o${o.id}" style="--rc:${HUE(o.id)}">
+      <div class="top"><span class="swatch"></span><span class="id">Out ${o.id}</span>
+        <span class="grow"></span>
+        <span class="toggle ${o.on?'on':''}">${o.on?'ON':'OFF'}</span></div>
+      <div class="fed">${feeders.length? '← '+feeders.map(f=>`<span>${f}</span>`).join(' · ') : '<span class="sub">nothing routed here</span>'}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('cIn').textContent=DATA.inputs.length;
+  document.getElementById('cTrk').textContent=DATA.tracks.length;
+  document.getElementById('cOut').textContent=DATA.outputs.length;
+}
+
+// tap-to-trace: highlight rows that share a tag with the tapped row
+let tracing=false;
+function clearTrace(){
+  tracing=false;
+  document.body.classList.remove('tracing');
+  document.querySelectorAll('.trace,.trace-self').forEach(e=>e.classList.remove('trace','trace-self'));
+  document.querySelectorAll('.trk.trace').forEach(e=>e.classList.remove('trace'));
+}
+function trace(row){
+  const tags=(row.dataset.tags||'').split(' ').filter(Boolean);
+  if(!tags.length) return;
+  document.body.classList.add('tracing'); tracing=true;
+  document.querySelectorAll('.row').forEach(r=>{
+    const rt=(r.dataset.tags||'').split(' ').filter(Boolean);
+    const hit=rt.some(x=>tags.includes(x));
+    r.classList.toggle('trace',hit);
+  });
+  row.classList.add('trace-self');
+  // keep a multi-take track group visible if any of its takes is lit
+  document.querySelectorAll('.trk').forEach(g=>{
+    g.classList.toggle('trace', !!g.querySelector('.row.trace'));
+  });
+}
+
+document.getElementById('panes').addEventListener('click',e=>{
+  const chipEl=e.target.closest('.chip');
+  if(chipEl){ chipEl.classList.toggle('off'); e.stopPropagation();
+    // re-render outputs' "fed by" would happen in the real app; keep mock simple
+    return; }
+  const row=e.target.closest('.row');
+  if(!row){ clearTrace(); return; }
+  if(row.classList.contains('trace-self')){ clearTrace(); return; }
+  clearTrace(); trace(row);
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') clearTrace(); });
+
+document.getElementById('scaleToggle').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('.scale-toggle button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  DATA = b.dataset.scale==='large'?LARGE:SMALL;
+  clearTrace(); render();
+});
+
+render();
+</script>
+</body>
+</html>

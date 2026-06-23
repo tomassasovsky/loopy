@@ -327,21 +327,75 @@ void main() {
     ).called(1),
   );
 
+  // The chain surgery lives in the bloc: each intent event reads the current
+  // chain from the repository, computes the next one, and pushes it back — the
+  // view never builds the list. We capture the pushed chain to assert it.
+  List<TrackEffect> capturePushedChain() =>
+      verify(
+            () => repository.setLaneEffects(
+              channel: 1,
+              lane: 2,
+              effects: captureAny(named: 'effects'),
+            ),
+          ).captured.single
+          as List<TrackEffect>;
+
   blocTest<LooperBloc, LooperState>(
-    'LooperLaneEffectsChanged forwards the chain to the repository',
+    'LooperLaneEffectAdded appends a default drive to the chain',
     build: buildBloc,
-    act: (bloc) => bloc.add(
-      LooperLaneEffectsChanged(1, 2, [
+    act: (bloc) => bloc.add(const LooperLaneEffectAdded(1, 2)),
+    verify: (_) {
+      final pushed = capturePushedChain();
+      expect(pushed, hasLength(1));
+      expect(pushed.single.type, TrackEffectType.drive);
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneEffectRemoved drops the entry at the given index',
+    build: () {
+      when(() => repository.laneEffects(1, 2)).thenReturn([
         TrackEffect(type: TrackEffectType.delay),
-      ]),
+        TrackEffect(type: TrackEffectType.reverb),
+      ]);
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(const LooperLaneEffectRemoved(1, 2, 0)),
+    verify: (_) => expect(
+      capturePushedChain().map((e) => e.type),
+      [TrackEffectType.reverb],
     ),
-    verify: (_) => verify(
-      () => repository.setLaneEffects(
-        channel: 1,
-        lane: 2,
-        effects: any(named: 'effects'),
-      ),
-    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneEffectTypeChanged retypes the entry at the given index',
+    build: () {
+      when(() => repository.laneEffects(1, 2)).thenReturn([
+        TrackEffect(type: TrackEffectType.delay),
+      ]);
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(
+      const LooperLaneEffectTypeChanged(1, 2, 0, TrackEffectType.reverb),
+    ),
+    verify: (_) =>
+        expect(capturePushedChain().single.type, TrackEffectType.reverb),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLaneEffectMoved reorders the chain',
+    build: () {
+      when(() => repository.laneEffects(1, 2)).thenReturn([
+        TrackEffect(type: TrackEffectType.delay),
+        TrackEffect(type: TrackEffectType.reverb),
+      ]);
+      return buildBloc();
+    },
+    act: (bloc) => bloc.add(const LooperLaneEffectMoved(1, 2, 0, 1)),
+    verify: (_) => expect(capturePushedChain().map((e) => e.type), [
+      TrackEffectType.reverb,
+      TrackEffectType.delay,
+    ]),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -460,13 +514,9 @@ void main() {
     );
 
     blocTest<LooperBloc, LooperState>(
-      'LooperLaneEffectsChanged persists the encoded chain onto the lane',
+      'a lane effect structural edit persists the encoded chain onto the lane',
       build: () => LooperBloc(repository: repository, settings: settings),
-      act: (bloc) => bloc.add(
-        LooperLaneEffectsChanged(1, 2, [
-          TrackEffect(type: TrackEffectType.filter),
-        ]),
-      ),
+      act: (bloc) => bloc.add(const LooperLaneEffectAdded(1, 2)),
       verify: (_) {
         verify(
           () => repository.setLaneEffects(
