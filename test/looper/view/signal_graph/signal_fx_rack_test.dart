@@ -408,15 +408,23 @@ void main() {
       expect(find.byType(SignalKnob), findsNWidgets(3));
     });
 
-    testWidgets('caps the in-app knobs at kPluginKnobs', (tester) async {
+    testWidgets('renders a knob for every user-visible param, uncapped', (
+      tester,
+    ) async {
       await tester.pumpApp(
         build(
           fx: plugin(
-            params: [for (var i = 0; i < 8; i++) param(i, 'P$i')],
+            params: [for (var i = 0; i < 12; i++) param(i, 'P$i')],
           ),
         ),
       );
-      expect(find.byType(SignalKnob), findsNWidgets(kPluginKnobs));
+      // Every automatable param gets a knob — the strip scrolls rather than
+      // truncating (the native editor stays the full surface).
+      expect(find.byType(SignalKnob), findsNWidgets(12));
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_params')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('hidden and read-only params get no knob', (tester) async {
