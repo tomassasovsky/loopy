@@ -105,19 +105,40 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveLaneMute(event.channel, event.lane, muted: muted),
       );
     });
-    on<LooperLaneEffectsChanged>((event, _) {
-      _repository.setLaneEffects(
-        channel: event.channel,
-        lane: event.lane,
-        effects: event.effects,
+    on<LooperLaneEffectAdded>((event, _) {
+      _pushLaneEffects(event.channel, event.lane, [
+        ..._repository.laneEffects(event.channel, event.lane),
+        TrackEffect(type: TrackEffectType.drive),
+      ]);
+    });
+    on<LooperLaneEffectRemoved>((event, _) {
+      final effects = _repository.laneEffects(event.channel, event.lane);
+      if (event.index < 0 || event.index >= effects.length) return;
+      _pushLaneEffects(
+        event.channel,
+        event.lane,
+        [...effects]..removeAt(event.index),
       );
-      unawaited(
-        _settings?.saveLaneEffects(
-          event.channel,
-          event.lane,
-          encodeTrackEffects(event.effects),
-        ),
+    });
+    on<LooperLaneEffectTypeChanged>((event, _) {
+      final effects = _repository.laneEffects(event.channel, event.lane);
+      if (event.index < 0 || event.index >= effects.length) return;
+      _pushLaneEffects(
+        event.channel,
+        event.lane,
+        [...effects]..[event.index] = TrackEffect(type: event.type),
       );
+    });
+    on<LooperLaneEffectMoved>((event, _) {
+      final effects = _repository.laneEffects(event.channel, event.lane);
+      if (event.from < 0 || event.from >= effects.length) return;
+      var target = event.to;
+      if (target < 0) target = 0;
+      if (target > effects.length - 1) target = effects.length - 1;
+      if (event.from == target) return;
+      final next = [...effects];
+      next.insert(target, next.removeAt(event.from));
+      _pushLaneEffects(event.channel, event.lane, next);
     });
     on<LooperLaneEffectParamChanged>((event, _) {
       _repository.setLaneEffectParam(
@@ -210,6 +231,16 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     if (channel < 0 || channel >= state.tracks.length) return false;
     final lanes = state.tracks[channel].lanes;
     return lane >= 0 && lane < lanes.length && lanes[lane].muted;
+  }
+
+  /// Pushes a freshly-computed lane chain to the engine and persists it. The
+  /// single home for lane FX structural edits — every add/remove/retype/move
+  /// handler routes here so the chain surgery lives in one place, never the UI.
+  void _pushLaneEffects(int channel, int lane, List<TrackEffect> effects) {
+    _repository.setLaneEffects(channel: channel, lane: lane, effects: effects);
+    unawaited(
+      _settings?.saveLaneEffects(channel, lane, encodeTrackEffects(effects)),
+    );
   }
 
   void _onControllerEvent(ControllerEvent event) {

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Loopy — Signal surface (mockup v2)</title>
+<style>
+  :root{
+    --bg:#08080A;--surface:#0D0D11;--card:#16161B;--cardHigh:#1C1C22;
+    --line:#272730;--line2:#34343f;--accent:#3B82F6;--amber:#F59E0B;
+    --teal:#2DD4BF;--red:#EF4444;--t1:#F3F4F7;--t2:#989AA4;--t3:#82848E;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+    --sans:'Space Grotesk',-apple-system,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 28% -12%,#0f0f18 0%,transparent 58%),var(--bg);
+    color:var(--t1);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px}
+  .win{max-width:1260px;margin:0 auto;background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;box-shadow:0 36px 90px -34px rgba(0,0,0,.85)}
+  .chrome{display:flex;align-items:center;gap:13px;padding:12px 18px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#101016,#0c0c10)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .back{font-family:var(--mono);font-size:11px;color:var(--t3);border:1px solid var(--line);
+    border-radius:7px;padding:5px 10px;display:inline-flex;gap:6px;align-items:center}
+  .title{font-family:var(--mono);letter-spacing:.32em;font-size:12px;color:var(--t2)}
+  .title b{color:var(--t1);font-weight:600}
+  .pill{font-family:var(--mono);font-size:11px;color:var(--t2);border:1px solid var(--line);
+    border-radius:7px;padding:5px 10px}
+  .rec{color:var(--red);border-color:#5a2020}
+  .hint{display:flex;align-items:center;gap:10px;padding:9px 18px;border-bottom:1px solid var(--line);
+    background:#0b0b0f;font-size:12.5px;color:var(--t2)}
+  .hint b{color:var(--t1);font-weight:500}
+  .hint .kbd{font-family:var(--mono);font-size:10px;color:var(--t3);border:1px solid var(--line2);
+    border-radius:5px;padding:2px 6px;margin:0 2px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;padding:11px 20px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:11px;color:var(--t3);background:#0b0b0f}
+  .lg{display:inline-flex;align-items:center;gap:7px}
+  .ln{width:18px;height:0;border-top:2px solid;border-radius:2px}
+  .dock{padding:16px 20px;border-top:1px solid var(--line);background:linear-gradient(180deg,#0f0f15,#0c0c10)}
+  .ctx{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;font-family:var(--mono);font-size:10px}
+  .ctx span{padding:6px 11px;color:var(--t3);display:flex;align-items:center;gap:6px}
+  .ctx .act{background:#11233b;color:#bfe0ff}
+  .ctx .act i{color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+  .gate{font-family:var(--mono);font-size:10px;letter-spacing:.1em;border-radius:20px;padding:4px 11px 4px 8px;
+    display:inline-flex;gap:7px;align-items:center;border:1px solid #2a5d9e;color:#bfe0ff;background:#11233b}
+  .gate i{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 9px var(--accent)}
+  .sub{font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--t3);text-transform:uppercase}
+  .fxchip{font-family:var(--mono);font-size:11px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);
+    background:var(--cardHigh);color:var(--t2);display:inline-flex;align-items:center;gap:8px}
+  .fxchip.sel{border-color:var(--accent);color:var(--t1);box-shadow:inset 0 0 0 1px var(--accent),0 0 20px -7px var(--accent)}
+  .knob{width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 50% 36%,#23232b,#121217);
+    border:1px solid var(--line2);position:relative;margin:0 auto}
+  .knob::after{content:"";position:absolute;left:50%;top:8px;width:2px;height:17px;background:var(--accent);
+    border-radius:2px;transform-origin:50% 21px;box-shadow:0 0 8px var(--accent)}
+  .k1::after{transform:translateX(-50%) rotate(-44deg)}
+  .k2::after{transform:translateX(-50%) rotate(36deg)}
+  .k3::after{transform:translateX(-50%) rotate(120deg)}
+  .klabel{font-family:var(--mono);font-size:9.5px;color:var(--t2);margin-top:8px;text-align:center;letter-spacing:.5px}
+  .seg{display:flex;gap:5px}
+  .seg b{font-family:var(--mono);font-weight:400;font-size:10px;color:#bfe0ff;background:#11233b;border:1px solid #2a5d9e;
+    border-radius:6px;padding:5px 9px}
+  .seg s{font-family:var(--mono);text-decoration:none;font-size:10px;color:#5f5f6b;border:1px solid var(--line2);
+    border-radius:6px;padding:5px 9px}
+  .notice{display:flex;align-items:center;gap:11px;margin:0;padding:9px 20px;border-top:1px solid #4a380e;
+    background:#17120a;color:#f0c97a;font-size:12.5px}
+  .notice b{color:#ffd98a;font-weight:500}
+  small{color:var(--t2);font-size:12px;line-height:1.55}
+</style>
+</head>
+<body>
+<main class="win" role="img" aria-label="Refined mockup of Loopy's Signal surface: a full-screen signal-flow canvas. The focused input shows its gate, FX chain, level meter, output and revealed live-monitor edges; tracks carry per-lane FX-snapshot badges; outputs have a structural on/off gate with one greyed off. A single contextual dock swaps between the focused input's controls and a lane's snapshot editor.">
+
+  <div class="chrome">
+    <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+    <span class="back" style="margin-left:8px"><i class="ti ti-chevron-left"></i>Performance</span>
+    <span class="title">· <b>SIGNAL</b></span>
+    <span style="flex:1"></span>
+    <span class="pill rec">● REC · TRACK 1</span>
+    <span class="pill">2 in · 4 out</span>
+    <span class="pill">— 100% +</span>
+  </div>
+
+  <div class="hint">
+    <i class="ti ti-pointer" style="font-size:16px;color:var(--accent)"></i>
+    <span><b>Tap a track</b>, then tap inputs to capture them. <b>Tap an output</b> to gate it. Focus an input to dial its tone — that's what records. <span style="color:var(--t3)">Pan <span class="kbd">space</span>·drag · zoom <span class="kbd">⌘</span><span class="kbd">scroll</span></span></span>
+  </div>
+
+  <svg viewBox="0 0 1260 588" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="'IBM Plex Mono',monospace">
+    <defs>
+      <linearGradient id="gb" x1="0" x2="1"><stop offset="0" stop-color="#3B82F6" stop-opacity=".22"/><stop offset="1" stop-color="#3B82F6" stop-opacity=".95"/></linearGradient>
+      <linearGradient id="ga" x1="0" x2="1"><stop offset="0" stop-color="#F59E0B" stop-opacity=".22"/><stop offset="1" stop-color="#F59E0B" stop-opacity=".9"/></linearGradient>
+    </defs>
+
+    <text x="160" y="30" fill="#82848E" font-size="11" letter-spacing="3" text-anchor="middle">INPUTS</text>
+    <text x="630" y="30" fill="#82848E" font-size="11" letter-spacing="3" text-anchor="middle">TRACKS</text>
+    <text x="1120" y="30" fill="#82848E" font-size="11" letter-spacing="3" text-anchor="middle">OUTPUTS</text>
+
+    <path d="M300 170 C 410 170 370 152 480 152" fill="none" stroke="url(#gb)" stroke-width="3.5"/>
+    <path d="M300 398 C 410 398 370 398 480 398" fill="none" stroke="url(#ga)" stroke-width="3.5"/>
+    <path d="M780 152 C 900 152 960 110 1045 110" fill="none" stroke="#3B82F6" stroke-width="2.5" stroke-opacity=".85"/>
+    <path d="M780 170 C 900 170 960 202 1045 202" fill="none" stroke="#3B82F6" stroke-width="2.5" stroke-opacity=".85"/>
+    <path d="M780 398 C 900 398 960 294 1045 294" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-opacity=".85"/>
+    <path d="M780 416 C 900 416 960 384 1045 384" fill="none" stroke="#5a5a66" stroke-width="2" stroke-opacity=".7" stroke-dasharray="3 5"/>
+
+    <path d="M300 150 C 560 150 820 110 1045 110" fill="none" stroke="#3B82F6" stroke-width="1.4" stroke-opacity=".5" stroke-dasharray="2 5"/>
+    <path d="M300 188 C 560 188 820 202 1045 202" fill="none" stroke="#3B82F6" stroke-width="1.4" stroke-opacity=".5" stroke-dasharray="2 5"/>
+
+    <rect x="34" y="78" width="266" height="192" rx="15" fill="none" stroke="#3B82F6" stroke-opacity=".22" stroke-width="6"/>
+    <rect x="40" y="82" width="254" height="184" rx="12" fill="#16161B" stroke="#3B82F6"/>
+    <circle cx="62" cy="108" r="5" fill="#3B82F6"/>
+    <text x="76" y="113" fill="#F3F4F7" font-size="14" font-weight="600">IN 1</text>
+    <rect x="202" y="97" width="78" height="22" rx="11" fill="#11233b" stroke="#2a5d9e"/>
+    <circle cx="216" cy="108" r="4.5" fill="#3B82F6"/><text x="226" y="112" fill="#bfe0ff" font-size="10" letter-spacing="1">LIVE ⏻</text>
+    <rect x="58" y="130" width="60" height="30" rx="8" fill="#1C1C22" stroke="#34343f"/><text x="88" y="149" fill="#989AA4" font-size="11" text-anchor="middle">DRIVE</text>
+    <rect x="122" y="130" width="60" height="30" rx="8" fill="#1C1C22" stroke="#34343f"/><text x="152" y="149" fill="#989AA4" font-size="11" text-anchor="middle">FILTER</text>
+    <rect x="186" y="130" width="60" height="30" rx="8" fill="#1C1C22" stroke="#3B82F6"/><text x="216" y="149" fill="#F3F4F7" font-size="11" text-anchor="middle">DELAY</text>
+    <text x="256" y="150" fill="#3a3a44" font-size="16">+</text>
+    <text x="58" y="186" fill="#82848E" font-size="10" letter-spacing=".5">TONE · records onto the take</text>
+    <rect x="58" y="196" width="140" height="8" rx="4" fill="#0e0e12"/><rect x="58" y="196" width="98" height="8" rx="4" fill="#3B82F6"/>
+    <circle cx="156" cy="200" r="7" fill="#cfe2ff" stroke="#3B82F6" stroke-width="2"/>
+    <rect x="208" y="194" width="4" height="12" rx="1" fill="#2DD4BF"/><rect x="214" y="190" width="4" height="16" rx="1" fill="#2DD4BF"/><rect x="220" y="186" width="4" height="20" rx="1" fill="#3B82F6"/><rect x="226" y="192" width="4" height="14" rx="1" fill="#2DD4BF"/><rect x="232" y="198" width="4" height="8" rx="1" fill="#27504a"/>
+    <text x="58" y="238" fill="#82848E" font-size="10" letter-spacing=".5">OUT</text>
+    <rect x="84" y="228" width="28" height="20" rx="6" fill="#11233b" stroke="#2a5d9e"/><text x="98" y="242" fill="#bfe0ff" font-size="10" text-anchor="middle">1</text>
+    <rect x="118" y="228" width="28" height="20" rx="6" fill="#11233b" stroke="#2a5d9e"/><text x="132" y="242" fill="#bfe0ff" font-size="10" text-anchor="middle">2</text>
+    <rect x="152" y="228" width="28" height="20" rx="6" fill="#141319" stroke="#34343f"/><text x="166" y="242" fill="#5f5f6b" font-size="10" text-anchor="middle">3</text>
+    <rect x="186" y="228" width="28" height="20" rx="6" fill="#141319" stroke="#34343f"/><text x="200" y="242" fill="#5f5f6b" font-size="10" text-anchor="middle">4</text>
+    <text x="226" y="243" fill="#5f6470" font-size="9" text-anchor="start">focused</text>
+
+    <rect x="40" y="356" width="254" height="84" rx="12" fill="#16161B" stroke="#272730"/>
+    <circle cx="62" cy="384" r="5" fill="#F59E0B"/><text x="76" y="389" fill="#F3F4F7" font-size="14" font-weight="600">IN 2</text>
+    <rect x="202" y="373" width="78" height="22" rx="11" fill="#11233b" stroke="#2a5d9e"/><circle cx="216" cy="384" r="4.5" fill="#3B82F6"/><text x="226" y="388" fill="#bfe0ff" font-size="10" letter-spacing="1">LIVE ⏻</text>
+    <rect x="58" y="406" width="60" height="24" rx="7" fill="#1C1C22" stroke="#34343f"/><text x="88" y="422" fill="#989AA4" font-size="11" text-anchor="middle">REVERB</text>
+    <text x="130" y="422" fill="#82848E" font-size="11">→ Out 2</text>
+
+    <rect x="40" y="474" width="254" height="60" rx="12" fill="#121217" stroke="#272730"/>
+    <circle cx="62" cy="504" r="5" fill="#3a3a44"/><text x="76" y="509" fill="#5f5f6b" font-size="14" font-weight="600">IN 3</text>
+    <rect x="222" y="495" width="58" height="22" rx="11" fill="#121217" stroke="#34343f"/><text x="251" y="509" fill="#5f5f6b" font-size="10" letter-spacing="1" text-anchor="middle">OFF ⏻</text>
+
+    <rect x="480" y="98" width="300" height="116" rx="13" fill="#15161c" stroke="#272730"/>
+    <text x="500" y="126" fill="#F3F4F7" font-size="13" font-weight="600">TRACK 1</text>
+    <rect x="596" y="110" width="166" height="22" rx="11" fill="#2a0d0d" stroke="#7a2020"/><circle cx="611" cy="121" r="4.5" fill="#EF4444"/><text x="622" y="125" fill="#f3a6a6" font-size="10" letter-spacing="1">RECORDING…</text>
+    <rect x="500" y="144" width="265" height="54" rx="10" fill="#0f1722" stroke="#3B82F6" stroke-opacity=".55"/>
+    <circle cx="520" cy="171" r="4" fill="#3B82F6"/><text x="532" y="167" fill="#dbe7f7" font-size="12" font-weight="500">Lane · captures IN 1</text>
+    <rect x="532" y="177" width="172" height="16" rx="8" fill="#11233b" stroke="#2a5d9e"/><text x="541" y="189" fill="#9fc3f0" font-size="9.5">✦ FX snapshot of IN 1 @ record</text>
+
+    <rect x="480" y="344" width="300" height="116" rx="13" fill="#15161c" stroke="#272730"/>
+    <text x="500" y="372" fill="#F3F4F7" font-size="13" font-weight="600">TRACK 2</text><text x="596" y="372" fill="#82848E" font-size="11">playing · ×2</text>
+    <rect x="500" y="390" width="265" height="54" rx="10" fill="#1d1605" stroke="#F59E0B" stroke-opacity=".5"/>
+    <circle cx="520" cy="417" r="4" fill="#F59E0B"/><text x="532" y="413" fill="#f7dca6" font-size="12" font-weight="500">Lane · captures IN 2</text>
+    <rect x="532" y="423" width="172" height="16" rx="8" fill="#2a2008" stroke="#6b520f"/><text x="541" y="435" fill="#e8c878" font-size="9.5">✦ FX snapshot of IN 2 @ record</text>
+
+    <rect x="1045" y="84" width="170" height="52" rx="12" fill="#16161B" stroke="#3B82F6" stroke-opacity=".7"/><circle cx="1068" cy="110" r="5" fill="#3B82F6"/><text x="1082" y="115" fill="#F3F4F7" font-size="13" font-weight="600">OUT 1</text>
+    <rect x="1158" y="104" width="3" height="12" rx="1" fill="#2DD4BF"/><rect x="1163" y="100" width="3" height="16" rx="1" fill="#3B82F6"/><rect x="1168" y="106" width="3" height="10" rx="1" fill="#2DD4BF"/><text x="1205" y="115" fill="#7fa8e0" font-size="10" text-anchor="end">ON</text>
+    <rect x="1045" y="176" width="170" height="52" rx="12" fill="#16161B" stroke="#3B82F6" stroke-opacity=".7"/><circle cx="1068" cy="202" r="5" fill="#3B82F6"/><text x="1082" y="207" fill="#F3F4F7" font-size="13" font-weight="600">OUT 2</text>
+    <rect x="1158" y="196" width="3" height="14" rx="1" fill="#3B82F6"/><rect x="1163" y="192" width="3" height="18" rx="1" fill="#3B82F6"/><rect x="1168" y="200" width="3" height="10" rx="1" fill="#2DD4BF"/><text x="1205" y="207" fill="#7fa8e0" font-size="10" text-anchor="end">ON</text>
+    <rect x="1045" y="268" width="170" height="52" rx="12" fill="#16161B" stroke="#272730"/><circle cx="1068" cy="294" r="5" fill="#3a3a44"/><text x="1082" y="299" fill="#cfd0d6" font-size="13" font-weight="600">OUT 3</text><text x="1205" y="299" fill="#6f7079" font-size="10" text-anchor="end">ON</text>
+    <rect x="1045" y="360" width="170" height="52" rx="12" fill="#101015" stroke="#272730" stroke-dasharray="4 4"/><circle cx="1068" cy="386" r="5" fill="#2c2c34"/><text x="1082" y="391" fill="#5f5f6b" font-size="13" font-weight="600" text-decoration="line-through">OUT 4</text><text x="1205" y="391" fill="#5f5f6b" font-size="10" text-anchor="end">OFF</text>
+    <text x="995" y="438" fill="#6f7079" font-size="10" text-anchor="end">tap a greyed output to re-enable · routes kept</text>
+  </svg>
+
+  <div class="legend">
+    <span class="lg"><span class="ln" style="color:#3B82F6"></span>capture → lane (FX snapshot)</span>
+    <span class="lg"><span class="ln" style="color:#3B82F6;opacity:.5;border-top-style:dashed"></span>live monitor · shown for the focused input</span>
+    <span class="lg"><span class="ln" style="color:#F59E0B"></span>playback → output</span>
+    <span class="lg"><span class="ln" style="color:#5a5a66;border-top-style:dashed"></span>routed to a gated-off output</span>
+  </div>
+
+  <div class="notice">
+    <i class="ti ti-alert-triangle" style="font-size:17px"></i>
+    <span><b>No outputs are enabled</b> — nothing will be heard. Tap a greyed output to turn it back on. <span style="color:#b89244">· appears only when the last output is gated off</span></span>
+  </div>
+
+  <div class="dock">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+      <div class="ctx"><span class="act"><i class="ti ti-adjustments-horizontal"></i>Input</span><span><i class="ti ti-stack-2"></i>Lane</span></div>
+      <span class="gate"><i></i>IN 1 · LIVE</span>
+      <span class="sub">one dock · follows what you focus · this tone records onto the take</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:16px">
+      <div>
+        <div style="display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap">
+          <span class="fxchip"><i class="ti ti-grip-vertical" style="color:#4a4a55"></i>Drive</span>
+          <span class="fxchip"><i class="ti ti-grip-vertical" style="color:#4a4a55"></i>Filter</span>
+          <span class="fxchip sel"><i class="ti ti-grip-vertical" style="color:#3B82F6"></i>Delay</span>
+          <span class="fxchip" style="border-style:dashed;color:var(--t3)"><i class="ti ti-plus"></i>add</span>
+        </div>
+        <div class="card" style="padding:14px 16px;display:flex;gap:20px;align-items:center">
+          <div><div class="knob k1"></div><div class="klabel">TIME</div></div>
+          <div><div class="knob k2"></div><div class="klabel">FEEDBACK</div></div>
+          <div><div class="knob k3"></div><div class="klabel">WET MIX</div></div>
+          <div style="flex:1;text-align:right"><div style="font-family:var(--mono);font-size:11px;color:var(--t3);letter-spacing:.12em">DELAY</div><div style="font-size:13px;color:var(--t2);margin-top:6px;line-height:1.5">Live edits.<br/>They record into the take.</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="card" style="padding:13px 15px;margin-bottom:12px">
+          <div class="sub" style="margin-bottom:9px">Mix &amp; route</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">
+            <i class="ti ti-volume" style="color:var(--t2);font-size:17px"></i>
+            <div style="flex:1;height:6px;border-radius:3px;background:#0e0e12;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:66%;background:var(--accent);border-radius:3px"></div></div>
+            <span style="font-family:var(--mono);font-size:11px;color:var(--t2)">−6 dB</span>
+          </div>
+          <div class="seg"><span style="font-family:var(--mono);font-size:10px;color:var(--t3);align-self:center;margin-right:4px">OUT</span><b>1</b><b>2</b><s>3</s><s>4</s></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:1px dashed var(--line2)">
+      <div class="ctx"><span><i class="ti ti-adjustments-horizontal"></i>Input</span><span class="act"><i class="ti ti-stack-2"></i>Lane</span></div>
+      <span class="sub">focus a track lane → the same dock becomes "this take"</span>
+    </div>
+    <div class="card" style="padding:13px 15px;margin-top:10px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+      <span style="font-family:var(--mono);font-size:9.5px;color:#9fc3f0;background:#11233b;border:1px solid #2a5d9e;border-radius:8px;padding:5px 10px">✦ THIS TAKE · IN 1 snapshot</span>
+      <small style="flex:1;min-width:240px">A copy taken at record. Editing it changes <b style="color:var(--t1);font-weight:500">only this lane</b> — the live IN 1 tone and your other takes stay untouched.</small>
+      <div style="display:flex;gap:8px"><span class="fxchip" style="font-size:10.5px">Drive</span><span class="fxchip sel" style="font-size:10.5px">Filter</span><span class="fxchip" style="font-size:10.5px">Delay</span></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:14px;border-top:1px dashed var(--line2)">
+      <span class="sub">Compact · 1-input rig auto-fit</span>
+      <div class="card" style="flex:1;max-width:520px;padding:12px;display:flex;align-items:center;gap:12px;justify-content:space-between">
+        <span class="gate" style="font-size:9px"><i></i>IN 1</span>
+        <svg width="60" height="18"><path d="M2 9 C 26 9 34 9 58 9" stroke="#3B82F6" stroke-width="2.5" fill="none"/></svg>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--t2);border:1px solid var(--line2);border-radius:7px;padding:7px 11px">TRACK 1</span>
+        <svg width="60" height="18"><path d="M2 9 C 26 9 34 9 58 9" stroke="#3B82F6" stroke-width="2.5" fill="none"/></svg>
+        <span class="gate" style="font-size:9px"><i></i>L · R</span>
+      </div>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>

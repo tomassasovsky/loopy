@@ -80,6 +80,15 @@ void main() {
     expect(find.byKey(const Key('bigpicture_tile_1')), findsOneWidget);
   });
 
+  testWidgets('exposes a visible entry to the Signal surface', (tester) async {
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+
+    // The chrome carries one global affordance opening the Signal surface
+    // (the per-track routing dialog is gone — wiring lives on Signal now).
+    expect(find.byKey(const Key('bigpicture_openSignal')), findsOneWidget);
+  });
+
   testWidgets('tapping a tile records that channel', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
