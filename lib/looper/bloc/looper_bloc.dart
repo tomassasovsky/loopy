@@ -334,8 +334,15 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // different plugin and close the wrong window.
     _cancelLaneEditorTimers(channel, lane);
     _repository.setLaneEffects(channel: channel, lane: lane, effects: effects);
+    // Persist the repository's chain, not the input: applying it enriches each
+    // plugin entry with its resolved display name (so the name survives a
+    // restart), which the pre-apply `effects` list does not yet carry.
     unawaited(
-      _settings?.saveLaneEffects(channel, lane, encodeTrackEffects(effects)),
+      _settings?.saveLaneEffects(
+        channel,
+        lane,
+        encodeTrackEffects(_repository.laneEffects(channel, lane)),
+      ),
     );
   }
 

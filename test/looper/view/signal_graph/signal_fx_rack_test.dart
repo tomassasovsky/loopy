@@ -180,7 +180,7 @@ void main() {
       expect(reorders, [(2, 0)]);
     });
 
-    testWidgets('the add-device menu "Add effect" fires onAddEffect', (
+    testWidgets('the add-device "Add effect" button fires onAddEffect', (
       tester,
     ) async {
       var added = 0;
@@ -190,14 +190,13 @@ void main() {
           onAddEffect: () => added++,
         ),
       );
-      await tester.tap(find.byKey(const Key('signalGraph_lane_addDevice')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Add effect'));
+      // The two add buttons show directly — no menu to open.
+      await tester.tap(find.byKey(const Key('signalGraph_addEffect')));
       await tester.pumpAndSettle();
       expect(added, 1);
     });
 
-    testWidgets('the add-device menu "Add plugin…" fires onAddPlugin', (
+    testWidgets('the add-device "Add plugin…" button fires onAddPlugin', (
       tester,
     ) async {
       var addedPlugin = 0;
@@ -218,9 +217,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byKey(const Key('signalGraph_lane_addDevice')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Add plugin…'));
+      await tester.tap(find.byKey(const Key('signalGraph_addPlugin')));
       await tester.pumpAndSettle();
       expect(addedPlugin, 1);
     });
