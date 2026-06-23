@@ -29,10 +29,15 @@
 #include "native_window_controller.h"
 #include "plugin_host.h"
 
-// Opt-in stderr tracing for diagnosing real-plugin load/editor failures.
-// Define LOOPY_VST3_TRACE=1 at compile time to enable.
+// stderr tracing for diagnosing real-plugin load/editor failures. On in debug
+// builds (where the manual plugin testing happens), silent in release. Force
+// either way with -DLOOPY_VST3_TRACE=0/1.
 #ifndef LOOPY_VST3_TRACE
+#ifdef NDEBUG
+#define LOOPY_VST3_TRACE 0
+#else
 #define LOOPY_VST3_TRACE 1
+#endif
 #endif
 #if LOOPY_VST3_TRACE
 #define LPV_LOG(...) std::fprintf(stderr, "[loopy vst3] " __VA_ARGS__)
