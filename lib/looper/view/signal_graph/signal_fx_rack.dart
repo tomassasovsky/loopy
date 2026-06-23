@@ -25,6 +25,7 @@ class SignalFxRack extends StatefulWidget {
     required this.keyPrefix,
     required this.effects,
     required this.onAddEffect,
+    required this.onAddPlugin,
     required this.onRemoveEffect,
     required this.onSetType,
     required this.onSetParam,
@@ -42,6 +43,10 @@ class SignalFxRack extends StatefulWidget {
   final List<TrackEffect> effects;
 
   final VoidCallback onAddEffect;
+
+  /// Opens the plugin browser to add a hosted plugin to the chain.
+  final VoidCallback onAddPlugin;
+
   final ValueChanged<int> onRemoveEffect;
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
@@ -142,7 +147,8 @@ class _SignalFxRackState extends State<SignalFxRack> {
             ),
             _AddDeviceCard(
               cardKey: Key('${keyPrefix}_addDevice'),
-              onAdd: full ? null : widget.onAddEffect,
+              onAddEffect: full ? null : widget.onAddEffect,
+              onAddPlugin: full ? null : widget.onAddPlugin,
             ),
           ],
         ),
@@ -1028,42 +1034,69 @@ class _ModeSegment extends StatelessWidget {
   }
 }
 
+/// The trailing "+" card: opens a menu to add a built-in effect or browse for a
+/// hosted plugin. Disabled (both null) when the chain is at [kTrackEffectMax].
 class _AddDeviceCard extends StatelessWidget {
-  const _AddDeviceCard({required this.cardKey, required this.onAdd});
+  const _AddDeviceCard({
+    required this.cardKey,
+    required this.onAddEffect,
+    required this.onAddPlugin,
+  });
 
   final Key cardKey;
-  final VoidCallback? onAdd;
+  final VoidCallback? onAddEffect;
+  final VoidCallback? onAddPlugin;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final disabled = onAdd == null;
+    final disabled = onAddEffect == null;
     final tint = disabled ? surface.textTertiary : surface.textSecondary;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: cardKey,
-        onTap: onAdd,
-        borderRadius: BorderRadius.circular(9),
-        child: Container(
-          width: 92,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: kSignalLine2),
+    return PopupMenuButton<bool>(
+      key: cardKey,
+      enabled: !disabled,
+      tooltip: l10n.signalAddEffectTooltip,
+      color: kSignalMenu,
+      shape: signalMenuShape(),
+      position: PopupMenuPosition.under,
+      onSelected: (plugin) =>
+          plugin ? onAddPlugin?.call() : onAddEffect?.call(),
+      itemBuilder: (context) => [
+        PopupMenuItem<bool>(
+          value: false,
+          height: 38,
+          child: Text(
+            l10n.signalAddEffect,
+            style: signalMono(color: surface.textPrimary, size: 12),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.add, size: 18, color: tint),
-              const SizedBox(height: 6),
-              Text(
-                l10n.signalAddEffectTooltip,
-                textAlign: TextAlign.center,
-                style: signalMono(color: tint, size: 9, tracking: 0.5),
-              ),
-            ],
+        ),
+        PopupMenuItem<bool>(
+          value: true,
+          height: 38,
+          child: Text(
+            l10n.signalAddPlugin,
+            style: signalMono(color: surface.textPrimary, size: 12),
           ),
+        ),
+      ],
+      child: Container(
+        width: 92,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: kSignalLine2),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add, size: 18, color: tint),
+            const SizedBox(height: 6),
+            Text(
+              l10n.signalAddEffectTooltip,
+              textAlign: TextAlign.center,
+              style: signalMono(color: tint, size: 9, tracking: 0.5),
+            ),
+          ],
         ),
       ),
     );

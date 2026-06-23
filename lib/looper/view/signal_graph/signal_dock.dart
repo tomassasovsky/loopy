@@ -94,6 +94,7 @@ class SignalInputDock extends StatelessWidget {
     required this.onVolumeChanged,
     required this.onStop,
     required this.onAddEffect,
+    required this.onAddPlugin,
     required this.onSetType,
     required this.onSetParam,
     required this.onSetPluginParam,
@@ -114,6 +115,9 @@ class SignalInputDock extends StatelessWidget {
   final ValueChanged<double> onVolumeChanged;
   final VoidCallback onStop;
   final VoidCallback onAddEffect;
+
+  /// Opens the plugin browser to add a hosted plugin to this chain.
+  final VoidCallback onAddPlugin;
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
   final void Function(int index, int paramId, double value) onSetPluginParam;
@@ -179,6 +183,7 @@ class SignalInputDock extends StatelessWidget {
                   keyPrefix: 'signalGraph_input',
                   effects: monitor.effects,
                   onAddEffect: onAddEffect,
+                  onAddPlugin: onAddPlugin,
                   onRemoveEffect: onRemoveEffect,
                   onSetType: onSetType,
                   onSetParam: onSetParam,
@@ -207,6 +212,7 @@ class SignalLaneDock extends StatelessWidget {
     required this.muted,
     required this.volume,
     required this.onAddEffect,
+    required this.onAddPlugin,
     required this.onRemoveEffect,
     required this.onSetType,
     required this.onSetParam,
@@ -242,6 +248,9 @@ class SignalLaneDock extends StatelessWidget {
   final bool muted;
   final double volume;
   final VoidCallback onAddEffect;
+
+  /// Opens the plugin browser to add a hosted plugin to this chain.
+  final VoidCallback onAddPlugin;
   final ValueChanged<int> onRemoveEffect;
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
@@ -338,6 +347,7 @@ class SignalLaneDock extends StatelessWidget {
                   keyPrefix: 'signalGraph_lane',
                   effects: effects,
                   onAddEffect: onAddEffect,
+                  onAddPlugin: onAddPlugin,
                   onRemoveEffect: onRemoveEffect,
                   onSetType: onSetType,
                   onSetParam: onSetParam,

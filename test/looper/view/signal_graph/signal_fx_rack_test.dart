@@ -22,6 +22,7 @@ void main() {
         keyPrefix: 'signalGraph_lane',
         effects: effects,
         onAddEffect: onAddEffect ?? () {},
+        onAddPlugin: () {},
         onRemoveEffect: onRemoveEffect ?? (_) {},
         onSetType: onSetType ?? (_, _) {},
         onSetParam: onSetParam ?? (_, _, _) {},
@@ -179,7 +180,9 @@ void main() {
       expect(reorders, [(2, 0)]);
     });
 
-    testWidgets('the add-device card fires onAddEffect', (tester) async {
+    testWidgets('the add-device menu "Add effect" fires onAddEffect', (
+      tester,
+    ) async {
       var added = 0;
       await tester.pumpApp(
         build(
@@ -189,7 +192,37 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('signalGraph_lane_addDevice')));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Add effect'));
+      await tester.pumpAndSettle();
       expect(added, 1);
+    });
+
+    testWidgets('the add-device menu "Add plugin…" fires onAddPlugin', (
+      tester,
+    ) async {
+      var addedPlugin = 0;
+      await tester.pumpApp(
+        Scaffold(
+          body: SignalFxRack(
+            keyPrefix: 'signalGraph_lane',
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+            onAddEffect: () {},
+            onAddPlugin: () => addedPlugin++,
+            onRemoveEffect: (_) {},
+            onSetType: (_, _) {},
+            onSetParam: (_, _, _) {},
+            onSetPluginParam: (_, _, _) {},
+            onOpenPluginEditor: (_) {},
+            onRelinkPlugin: (_) {},
+            onReorder: (_, _) {},
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('signalGraph_lane_addDevice')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add plugin…'));
+      await tester.pumpAndSettle();
+      expect(addedPlugin, 1);
     });
 
     testWidgets('picking a type from the header dispatches onSetType', (
@@ -301,6 +334,7 @@ void main() {
         keyPrefix: 'signalGraph_lane',
         effects: [fx],
         onAddEffect: () {},
+        onAddPlugin: () {},
         onRemoveEffect: onRemoveEffect ?? (_) {},
         onSetType: (_, _) {},
         onSetParam: (_, _, _) {},
