@@ -10,6 +10,7 @@ import 'package:looper_repository/src/models/plugin_descriptor.dart'
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
+import 'package:looper_repository/src/plugin_catalog.dart';
 import 'package:loopy_engine/loopy_engine.dart'
     hide
         AudioBackend,
@@ -89,6 +90,14 @@ class LooperRepository {
   final AudioEngine _engine;
   final Stream<void>? _ticker;
   Duration _pollInterval;
+
+  /// The plugin scan catalog over this repository's engine (lazily created so
+  /// the scan thread only spins up when something asks for plugins). The
+  /// `appVersion` cache key is a placeholder until part 7 persists the cache.
+  late final PluginCatalog pluginCatalog = PluginCatalog(
+    engine: _engine,
+    appVersion: '0.0.0',
+  );
   final Stream<void>? _reconnectTicker;
   final Duration _reconnectInterval;
   late final StreamController<LooperState> _controller;

@@ -311,6 +311,31 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
+        'insertPlugin appends a PluginEffect, applies, and persists',
+        build: build,
+        act: (cubit) => cubit.insertPlugin(
+          0,
+          const PluginRef(format: PluginFormat.vst3, id: 'TUID-HEX'),
+        ),
+        expect: () => [
+          isA<MonitorState>().having(
+            (s) => s.forInput(0).effects.single,
+            'inserted effect',
+            isA<PluginEffect>().having((e) => e.ref.id, 'ref.id', 'TUID-HEX'),
+          ),
+        ],
+        verify: (_) async {
+          verify(
+            () => repository.setMonitorEffects(
+              input: 0,
+              effects: any(named: 'effects'),
+            ),
+          ).called(1);
+          expect(await settings.loadMonitorEffects(0), isNotNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
         'openPluginEditor opens the editor and starts the sync poll',
         build: build,
         act: (cubit) => cubit.openPluginEditor(0, 0),

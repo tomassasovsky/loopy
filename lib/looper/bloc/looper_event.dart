@@ -286,6 +286,19 @@ final class LooperLanePluginParamChanged extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, index, paramId, value];
 }
 
+/// Appends a hosted plugin (identified by [ref]) to lane [lane]'s FX chain.
+/// The repository loads it through the slot ABI on the next chain apply.
+final class LooperLanePluginInserted extends LooperLaneEvent {
+  /// Creates a [LooperLanePluginInserted].
+  const LooperLanePluginInserted(super.channel, super.lane, this.ref);
+
+  /// The identity of the plugin to insert (format + stable id + version).
+  final PluginRef ref;
+
+  @override
+  List<Object?> get props => [channel, lane, ref];
+}
+
 /// Opens the native editor window for lane [lane]'s plugin chain entry [index]
 /// (umbrella D-WIN). While open, the bloc polls the plugin (≤10 Hz) to mirror
 /// editor-driven param moves onto the in-app knobs (D-SYNC).

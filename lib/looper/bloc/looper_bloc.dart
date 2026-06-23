@@ -180,6 +180,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ),
       );
     });
+    on<LooperLanePluginInserted>((event, _) {
+      _pushLaneEffects(event.channel, event.lane, [
+        ..._repository.laneEffects(event.channel, event.lane),
+        PluginEffect(ref: event.ref),
+      ]);
+    });
     on<LooperLanePluginEditorOpened>((event, _) {
       final key = (event.channel, event.lane, event.index);
       _repository.openLanePluginEditor(
