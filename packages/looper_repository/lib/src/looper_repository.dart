@@ -497,8 +497,41 @@ class LooperRepository {
         (output, enabled) =>
             _engine.setOutputEnabled(output: output, enabled: enabled),
       );
+      // Restored plugins load by id through the native scan cache, which is
+      // empty on a cold start — so the apply above leaves them unavailable.
+      // Kick a scan and rebind them once it lands (resolving names too).
+      unawaited(_ensureRestoredPluginsLoaded());
     }
     return result;
+  }
+
+  /// Whether [effects] holds at least one hosted-plugin entry.
+  static bool _hasPlugin(Iterable<TrackEffect> effects) =>
+      effects.any((e) => e is PluginEffect);
+
+  /// A restored chain loads its plugins by id through the engine's in-process
+  /// scan cache. On a cold start nothing has scanned yet, so those loads fail
+  /// and the entries render as unavailable placeholders. If any restored chain
+  /// has a plugin and the catalog hasn't been populated, run a scan and
+  /// re-apply the plugin chains so they load (and resolve their display names)
+  /// without the user relinking by hand. A no-op once the catalog is populated.
+  Future<void> _ensureRestoredPluginsLoaded() async {
+    final laneKeys = [
+      for (final e in _laneEffects.entries)
+        if (_hasPlugin(e.value)) e.key,
+    ];
+    final monitorKeys = [
+      for (final e in _monitorEffects.entries)
+        if (_hasPlugin(e.value)) e.key,
+    ];
+    if (laneKeys.isEmpty && monitorKeys.isEmpty) return;
+    if (pluginCatalog.descriptors.isNotEmpty) return; // already scanned
+    await pluginCatalog.scan();
+    if (!_intendRunning) return; // stopped while scanning
+    for (final key in laneKeys) {
+      _applyLaneEffects(key.$1, key.$2);
+    }
+    monitorKeys.forEach(_applyMonitorEffects);
   }
 
   /// Closes the audio device. A deliberate stop also cancels any in-flight

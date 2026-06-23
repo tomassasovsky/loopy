@@ -424,13 +424,14 @@ void main() {
           ),
         ),
       );
-      // Every automatable param gets a knob — the strip scrolls rather than
-      // truncating (the native editor stays the full surface).
+      // Every automatable param gets a knob — they wrap into rows and the card
+      // grows taller rather than truncating (no cap, no horizontal scroll).
       expect(find.byType(SignalKnob), findsNWidgets(12));
-      expect(
-        find.byKey(const Key('signalGraph_lane_device_0_params')),
-        findsOneWidget,
-      );
+      final params = find.byKey(const Key('signalGraph_lane_device_0_params'));
+      expect(params, findsOneWidget);
+      // 12 knobs at 60px in a 360px body = 6 per row -> a second row, so the
+      // control area is taller than a single row.
+      expect(tester.getSize(params).height, greaterThan(100));
     });
 
     testWidgets('a boolean param renders a switch, not a knob', (tester) async {
