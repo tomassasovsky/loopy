@@ -106,6 +106,15 @@ int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id, double value) {
   return LE_ERR_INVALID;
 }
 
+int32_t le_plugin_param_value_text(le_plugin_slot* slot, uint32_t id,
+                                   double value, char* out, int32_t out_size) {
+  (void)slot;
+  (void)id;
+  (void)value;
+  if (out && out_size > 0) out[0] = '\0';
+  return LE_ERR_INVALID;
+}
+
 /* ---- Native editor window ---- */
 
 int32_t le_plugin_editor_open(le_plugin_slot* slot) {

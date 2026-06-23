@@ -133,6 +133,17 @@ class IPluginHost {
   virtual bool paramInfoAt(int index, PluginParamInfo& out) = 0;
   virtual double paramGet(uint32_t id) = 0;
 
+  // CONTROL THREAD: formats parameter `id`'s plain `value` to the plugin's own
+  // display string (e.g. "-6.0 dB", "Lowpass") into `out`. Returns false when
+  // the plugin offers no text mapping for it. Default: none. Used to label
+  // discrete params and to read out continuous ones in their real units.
+  virtual bool paramValueText(uint32_t id, double value, std::string& out) {
+    (void)id;
+    (void)value;
+    (void)out;
+    return false;
+  }
+
   // AUDIO THREAD: stage a queued param change (drained from the slot's lock-free
   // ring) to apply on the next process(). Stores into an audio-thread-owned
   // pending buffer only — no SDK call here, no allocation.

@@ -283,26 +283,31 @@ void main() {
       ..addEffect(0);
 
     await tester.pumpWidget(
-      MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: _goldenTheme(),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: MultiBlocProvider(
-          providers: [
-            BlocProvider<LooperBloc>.value(value: bloc),
-            BlocProvider<MonitorCubit>.value(value: monitor),
-            BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-            BlocProvider<BigPictureCubit>(
-              create: (_) => BigPictureCubit(settings: settings),
-            ),
-          ],
-          child: Builder(
-            builder: (context) => Scaffold(
-              body: Center(
-                child: ElevatedButton(
-                  onPressed: () => showSignalPage(context),
-                  child: const Text('open'),
+      // Above the MaterialApp's Navigator so the pushed signal page (and its
+      // plugin browser / live param readouts) can read the repository.
+      RepositoryProvider<LooperRepository>.value(
+        value: monitorRepo,
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: _goldenTheme(),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<MonitorCubit>.value(value: monitor),
+              BlocProvider<AudioSetupCubit>.value(value: audioSetup),
+              BlocProvider<BigPictureCubit>(
+                create: (_) => BigPictureCubit(settings: settings),
+              ),
+            ],
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () => showSignalPage(context),
+                    child: const Text('open'),
+                  ),
                 ),
               ),
             ),

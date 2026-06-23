@@ -102,6 +102,7 @@ class SignalInputDock extends StatelessWidget {
     required this.onRelinkPlugin,
     required this.onRemoveEffect,
     required this.onReorderEffect,
+    this.onFormatPluginValue,
     super.key,
   });
 
@@ -125,6 +126,11 @@ class SignalInputDock extends StatelessWidget {
   final ValueChanged<int> onRelinkPlugin;
   final ValueChanged<int> onRemoveEffect;
   final void Function(int oldIndex, int newIndex) onReorderEffect;
+
+  /// Formats a plugin chain entry's parameter to the plugin's own display
+  /// string for the in-app knob readout (see [SignalFxRack]). Optional.
+  final String? Function(int index, int paramId, double value)?
+  onFormatPluginValue;
 
   @override
   Widget build(BuildContext context) {
@@ -191,6 +197,7 @@ class SignalInputDock extends StatelessWidget {
                   onOpenPluginEditor: onOpenPluginEditor,
                   onRelinkPlugin: onRelinkPlugin,
                   onReorder: onReorderEffect,
+                  onFormatPluginValue: onFormatPluginValue,
                 ),
               ),
             ],
@@ -226,6 +233,7 @@ class SignalLaneDock extends StatelessWidget {
     required this.canRemoveLane,
     required this.onAddLane,
     required this.onRemoveLane,
+    this.onFormatPluginValue,
     super.key,
   });
 
@@ -260,6 +268,11 @@ class SignalLaneDock extends StatelessWidget {
   final void Function(int oldIndex, int newIndex) onReorderEffect;
   final VoidCallback onMuteToggled;
   final ValueChanged<double> onVolumeChanged;
+
+  /// Formats a plugin chain entry's parameter to the plugin's own display
+  /// string for the in-app knob readout (see [SignalFxRack]). Optional.
+  final String? Function(int index, int paramId, double value)?
+  onFormatPluginValue;
 
   @override
   Widget build(BuildContext context) {
@@ -355,6 +368,7 @@ class SignalLaneDock extends StatelessWidget {
                   onOpenPluginEditor: onOpenPluginEditor,
                   onRelinkPlugin: onRelinkPlugin,
                   onReorder: onReorderEffect,
+                  onFormatPluginValue: onFormatPluginValue,
                 ),
               ),
             ],

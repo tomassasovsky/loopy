@@ -747,6 +747,162 @@ void main() {
       expect(fx.params.single.name, 'Mix');
     });
 
+    test('a discrete param is enriched with its per-step labels', () {
+      // A 3-state enum (stepCount 2 over [0, 2]) -> step values 0/1/2.
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Filter Type',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          flags: 0x01 | 0x10, // automatable + stepped
+        ),
+      ];
+      engine.paramValueTexts.addAll({
+        (100, 0.0): 'Lowpass',
+        (100, 1.0): 'Highpass',
+        (100, 2.0): 'Bandpass',
+      });
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+          ],
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      final param = fx.params.single;
+      expect(param.valueTexts, ['Lowpass', 'Highpass', 'Bandpass']);
+      expect(param.isEnum, isTrue);
+    });
+
+    test('a discrete param with incomplete labels stays a bare knob', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Filter Type',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          flags: 0x01 | 0x10,
+        ),
+      ];
+      // Only two of the three steps resolve to text -> no dropdown.
+      engine.paramValueTexts.addAll({
+        (100, 0.0): 'Lowpass',
+        (100, 2.0): 'Bandpass',
+      });
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+          ],
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      final param = fx.params.single;
+      expect(param.valueTexts, isEmpty);
+      expect(param.isEnum, isFalse);
+    });
+
+    test('lanePluginParamText forwards to the loaded slot', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      engine.paramValueTexts[(100, 0.5)] = '-6.0 dB';
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+          ],
+        );
+
+      expect(
+        repo.lanePluginParamText(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        '-6.0 dB',
+      );
+      // No plugin at that index -> null, not a throw.
+      expect(
+        repo.lanePluginParamText(
+          channel: 0,
+          lane: 0,
+          index: 5,
+          paramId: 100,
+          value: 0.5,
+        ),
+        isNull,
+      );
+    });
+
+    test('monitorPluginParamText forwards to the loaded monitor slot', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      engine.paramValueTexts[(100, 0.5)] = '-6.0 dB';
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+          ],
+        );
+
+      expect(
+        repo.monitorPluginParamText(
+          input: 0,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        '-6.0 dB',
+      );
+      expect(
+        repo.monitorPluginParamText(
+          input: 9,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        isNull,
+      );
+    });
+
     test('persisted plugin paramValues replay through the RT queue', () {
       buildRepo()
         ..startEngine(const EngineConfig())

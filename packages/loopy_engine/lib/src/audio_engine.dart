@@ -439,6 +439,16 @@ abstract interface class EnginePluginHosting {
   /// The current plain value of parameter [paramId] of the plugin in [slot].
   double pluginParamGet(PluginSlotHandle slot, int paramId);
 
+  /// The plugin's own display string for parameter [paramId] at the plain
+  /// [value] (e.g. `-6.0 dB`, `Lowpass`), or null when the plugin offers no
+  /// text for it. Lets the UI label discrete params and read out continuous
+  /// ones in their real units.
+  String? pluginParamValueText(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  );
+
   /// Queues parameter [paramId] of the plugin in [slot] to the plain [value].
   /// Thread-safe: enqueued and applied via the SDK's event mechanism on the
   /// next process block — never a direct audio-thread store. Returns

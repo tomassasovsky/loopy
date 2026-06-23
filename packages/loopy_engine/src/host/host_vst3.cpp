@@ -546,6 +546,18 @@ class Vst3Host final : public loopy::IPluginHost {
                                                controller_->getParamNormalized(id));
   }
 
+  bool paramValueText(uint32_t id, double value, std::string& out) override {
+    if (!controller_) return false;
+    // VST3 strings work in NORMALIZED units — convert the plain value back.
+    const Vst::ParamValue norm = controller_->plainParamToNormalized(id, value);
+    Vst::String128 str;
+    if (controller_->getParamStringByValue(id, norm, str) != kResultOk) {
+      return false;
+    }
+    out = u16ToUtf8(str);
+    return true;
+  }
+
   void queueParam(uint32_t id, double plain) override {
     if (pending_ < kMaxPending) {
       pendingId_[pending_] = id;
