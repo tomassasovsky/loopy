@@ -3,21 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/tracks_routing_graph/tracks_routing_graph_view.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
-import 'package:settings_repository/settings_repository.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
-enum _Section { view, audio, routing, tracks }
+enum _Section { view, audio, tracks }
 
 /// Settings for the Big Picture performance view, reachable from the view via
 /// right-click or the `S` key, and from the system menu bar on macOS.
@@ -111,7 +108,6 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   List<Widget> _sectionChildren(BuildContext context) => switch (_section) {
     _Section.view => _viewSection(context),
     _Section.audio => _audioSection(context),
-    _Section.routing => _routingSection(context),
     _Section.tracks => _tracksSection(context),
   };
 
@@ -195,70 +191,6 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
   List<Widget> _audioSection(BuildContext context) => const [
     AudioSettingsSection(),
   ];
-
-  List<Widget> _routingSection(BuildContext context) {
-    final l10n = context.l10n;
-    // The settings page is pushed above the LooperBloc provider, so the graph
-    // is sourced from — and edits are applied through — the repository (and
-    // persisted via settings, mirroring what the bloc does for the in-view
-    // routing controls).
-    final repository = context.read<LooperRepository>();
-    final settings = context.read<SettingsRepository>();
-    final names = context.watch<BigPictureCubit>().state.names;
-    final trackLabels = [
-      for (var i = 0; i < names.length; i++) l10n.displayTrackName(names[i], i),
-    ];
-    return [
-      Text(l10n.routingIntro, style: setupBody),
-      const SizedBox(height: 28),
-      SetupGroupLabel(l10n.signalFlowGroupLabel),
-      const SizedBox(height: 16),
-      StreamBuilder<LooperState>(
-        stream: repository.looperState,
-        initialData: repository.state,
-        builder: (context, snapshot) {
-          final state = snapshot.data ?? const LooperState();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_noActiveOutputs(state)) ...[
-                _NoActiveOutputsNotice(message: l10n.noActiveOutputsNotice),
-                const SizedBox(height: 12),
-              ],
-              TracksRoutingGraphView(
-                tracks: state.tracks,
-                inputChannels: state.status.inputChannels,
-                outputChannels: state.status.outputChannels,
-                excludedInputMask: state.status.excludedInputMask,
-                outputEnabledMask: state.outputEnabledMask,
-                trackLabels: trackLabels,
-                onInputMaskChanged: (channel, mask) {
-                  repository.setInputMask(channel: channel, mask: mask);
-                  unawaited(
-                    settings.saveLaneInput(
-                      channel,
-                      0,
-                      maskToInputChannel(mask),
-                    ),
-                  );
-                },
-                onOutputMaskChanged: (channel, mask) {
-                  repository.setOutputMask(channel: channel, mask: mask);
-                  unawaited(settings.saveLaneOutput(channel, 0, mask));
-                },
-                onOutputEnabledToggled: (output, {required enabled}) {
-                  repository.setOutputEnabled(output: output, enabled: enabled);
-                  unawaited(
-                    settings.saveOutputEnabled(output, enabled: enabled),
-                  );
-                },
-              ),
-            ],
-          );
-        },
-      ),
-    ];
-  }
 
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
@@ -351,7 +283,6 @@ class _SectionTab extends StatelessWidget {
     final label = switch (section) {
       _Section.view => l10n.settingsSectionView,
       _Section.audio => l10n.settingsSectionAudio,
-      _Section.routing => l10n.settingsSectionRouting,
       _Section.tracks => l10n.settingsSectionTracks,
     };
     return SizedBox(
@@ -379,54 +310,6 @@ class _SectionTab extends StatelessWidget {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Whether every available output channel is structurally gated off (so nothing
-/// can be heard). False when the engine is stopped (`outputChannels == 0`).
-bool _noActiveOutputs(LooperState state) {
-  final n = state.status.outputChannels;
-  if (n <= 0) return false;
-  for (var c = 0; c < n; c++) {
-    if (state.isOutputEnabled(c)) return false;
-  }
-  return true;
-}
-
-/// A non-blocking notice surfaced when the last output is gated off (E1/F-12).
-/// A `liveRegion` so a screen reader announces it the moment it appears.
-class _NoActiveOutputsNotice extends StatelessWidget {
-  const _NoActiveOutputsNotice({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return Semantics(
-      liveRegion: true,
-      child: Container(
-        key: const Key('routing_noActiveOutputs'),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: surface.cardHigh,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: surface.line),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, size: 18, color: surface.accent),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(color: surface.textSecondary, fontSize: 13),
-              ),
-            ),
-          ],
         ),
       ),
     );

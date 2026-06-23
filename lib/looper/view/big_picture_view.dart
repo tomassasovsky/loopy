@@ -11,7 +11,7 @@ import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/looper/view/track_routing_dialog.dart';
+import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/window/window_chrome.dart';
@@ -71,6 +71,16 @@ class _BigPictureViewState extends State<BigPictureView> {
                         const SizedBox(width: 12),
                         _BankSwitch(active: bank.activeBank),
                         const Spacer(),
+                        IconButton(
+                          key: const Key('bigpicture_openSignal'),
+                          tooltip: context.l10n.signalTooltip,
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          color: Colors.white70,
+                          icon: const Icon(Icons.account_tree_outlined),
+                          onPressed: () => unawaited(showSignalPage(context)),
+                        ),
+                        const SizedBox(width: 4),
                         const _SessionMenu(),
                       ],
                     ),
@@ -157,9 +167,9 @@ class _BigPictureViewState extends State<BigPictureView> {
   /// beep) and dispatched to the looper; modifier combos other than undo/redo
   /// pass through to OS / menu shortcuts.
   ///
-  /// Both modes: `M` switch mode · `S` settings · `F` fullscreen · `Space`
-  /// play/pause all · `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or
-  /// `Shift+Z`) redo.
+  /// Both modes: `M` switch mode · `S` settings · `G` signal · `F` fullscreen ·
+  /// `Space` play/pause all · `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y`
+  /// (or `Shift+Z`) redo.
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Play mode: `1`–`8` select + mute/unmute.
   /// Announces a transient state change to assistive tech (WCAG 4.1.3). The
@@ -229,6 +239,10 @@ class _BigPictureViewState extends State<BigPictureView> {
     }
     if (key == LogicalKeyboardKey.keyS) {
       unawaited(openLoopySettings());
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.keyG) {
+      unawaited(showSignalPage(context));
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyF) {
@@ -600,25 +614,6 @@ class _TrackColumn extends StatelessWidget {
                     color: theme.colorScheme.primary,
                   ),
                 ),
-              IconButton(
-                key: Key('bigpicture_routing_${track.channel}'),
-                tooltip: l10n.ioRoutingTooltip,
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 24,
-                  minHeight: 24,
-                ),
-                iconSize: 18,
-                color: Colors.white70,
-                icon: const Icon(Icons.alt_route),
-                onPressed: () => unawaited(
-                  showTrackRoutingDialog(
-                    context: context,
-                    channel: track.channel,
-                  ),
-                ),
-              ),
             ],
           ),
           Expanded(

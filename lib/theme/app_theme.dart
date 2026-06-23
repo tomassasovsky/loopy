@@ -140,6 +140,7 @@ abstract final class AppTheme {
   static ThemeData _base(ColorScheme scheme) => ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
+    fontFamily: SurfaceTheme.displayFont,
     appBarTheme: AppBarTheme(backgroundColor: scheme.surfaceContainerHighest),
   );
 }
