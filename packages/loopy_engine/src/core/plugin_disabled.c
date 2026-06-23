@@ -53,15 +53,19 @@ void le_plugin_slot_process(le_plugin_slot* slot, float* l, float* r) {
   (void)r; /* dry passthrough — leaves the sample untouched */
 }
 
-le_plugin_slot* le_plugin_slot_create(const char* plugin_id, double sample_rate) {
+le_plugin_slot* le_plugin_slot_create(const char* plugin_id, double sample_rate,
+                                      int32_t* out_reason) {
   (void)plugin_id;
   (void)sample_rate;
+  if (out_reason) *out_reason = LE_ERR_INVALID;
   return NULL; /* no host can be created on a disabled build */
 }
 
-le_plugin_slot* le_plugin_slot_create_stub(int32_t mode, double sample_rate) {
+le_plugin_slot* le_plugin_slot_create_stub(int32_t mode, double sample_rate,
+                                           int32_t* out_reason) {
   (void)mode;
   (void)sample_rate;
+  if (out_reason) *out_reason = LE_ERR_INVALID;
   return NULL;
 }
 

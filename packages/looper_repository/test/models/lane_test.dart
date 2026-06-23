@@ -28,11 +28,11 @@ void main() {
     test('equality is value-based over all fields', () {
       final a = Lane(
         inputChannel: 1,
-        effects: [TrackEffect(type: TrackEffectType.drive)],
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
       );
       final b = Lane(
         inputChannel: 1,
-        effects: [TrackEffect(type: TrackEffectType.drive)],
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
       );
       const c = Lane(inputChannel: 2);
       expect(a, b);

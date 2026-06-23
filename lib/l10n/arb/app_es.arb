@@ -513,5 +513,23 @@
             }
         }
     },
-    "pedalOutputHint": "Elige la salida MIDI del pedal para que loopy controle sus LED. Sus interruptores usan la entrada MIDI de arriba."
+    "pedalOutputHint": "Elige la salida MIDI del pedal para que loopy controle sus LED. Sus interruptores usan la entrada MIDI de arriba.",
+    "pluginUnsupportedTopology": "{name} no se puede usar aquí: no es un efecto estéreo (puede ser un instrumento o usar varios buses).",
+    "@pluginUnsupportedTopology": {
+        "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "pluginLoadFailed": "No se pudo cargar {name}.",
+    "@pluginLoadFailed": {
+        "description": "Shown when a plugin fails to load for a reason other than an unsupported topology.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    }
 }

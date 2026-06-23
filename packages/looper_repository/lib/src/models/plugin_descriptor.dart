@@ -69,6 +69,13 @@ PluginFormat pluginFormatFromEngine(engine.PluginFormat format) =>
       engine.PluginFormat.clap => PluginFormat.clap,
     };
 
+/// Maps a domain [PluginFormat] to the engine enum at the boundary.
+engine.PluginFormat pluginFormatToEngine(PluginFormat format) =>
+    switch (format) {
+      PluginFormat.vst3 => engine.PluginFormat.vst3,
+      PluginFormat.clap => engine.PluginFormat.clap,
+    };
+
 /// Maps an engine `PluginDescriptor` to its domain mirror.
 PluginDescriptor pluginDescriptorFromEngine(engine.PluginDescriptor d) =>
     PluginDescriptor(

@@ -70,6 +70,15 @@ uint32_t parseVersion(const std::string& version);
 // plugin_scan.cpp, which owns the scan results.
 bool findScannedPlugin(const std::string& id, PluginDescriptor& out);
 
+// The outcome of IPluginHost::load — distinguishes a topology rejection (D-BUS)
+// from a generic failure so the ABI can return a distinct code the UI localizes.
+enum class LoadStatus {
+  ok,                  // loaded + activated, ready to process
+  failed,              // generic load/activate failure
+  unsupportedTopology, // not a stereo (or mono-adaptable) effect: instrument /
+                       // multi-bus / sidechain / wrong channel count
+};
+
 // One live plugin loaded into a single FX chain slot. The VST3 and CLAP backends
 // (host_vst3.cpp / host_clap.cpp) and the test stub (slot.cpp) implement this.
 // Every method runs on the CONTROL thread EXCEPT process(), which the slot's
@@ -79,10 +88,10 @@ class IPluginHost {
   virtual ~IPluginHost() = default;
 
   // Instantiate + activate the plugin, ready-but-bypassed, at `sampleRate` with
-  // a fixed `maxBlock` processing block. Returns false on any failure (the host
-  // is then discarded without process() ever being called).
-  virtual bool load(const PluginDescriptor& descriptor, double sampleRate,
-                    int maxBlock) = 0;
+  // a fixed `maxBlock` processing block. On a non-ok status the host is
+  // discarded without process() ever being called.
+  virtual LoadStatus load(const PluginDescriptor& descriptor, double sampleRate,
+                          int maxBlock) = 0;
 
   // AUDIO THREAD ONLY: process exactly `frames` samples of stereo audio in
   // place (left[frames], right[frames]). Must not allocate, lock, or block.

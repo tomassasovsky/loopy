@@ -8,11 +8,15 @@ import 'package:loopy_engine/loopy_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
+        BuiltInEffect,
         EngineConfig,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
         ParamReadout,
+        PluginEffect,
+        PluginFormat,
+        PluginRef,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType;
@@ -224,7 +228,7 @@ void main() {
         ..setLaneEffects(
           channel: 0,
           lane: 1,
-          effects: [TrackEffect(type: TrackEffectType.drive)],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
 
       final track = repo.state.tracks[0];
@@ -235,7 +239,10 @@ void main() {
       expect(track.lanes[0].effects, isEmpty);
       expect(track.lanes[1].inputChannel, 1);
       expect(track.lanes[1].muted, isTrue);
-      expect(track.lanes[1].effects.single.type, TrackEffectType.drive);
+      expect(
+        (track.lanes[1].effects.single as BuiltInEffect).type,
+        TrackEffectType.drive,
+      );
     });
 
     test('projects a track loop multiple', () {
@@ -410,7 +417,7 @@ void main() {
           channel: 0,
           lane: 0,
           effects: [
-            TrackEffect(
+            BuiltInEffect(
               type: TrackEffectType.delay,
               params: const [0.3, 0.4, 0.5, 0],
             ),
@@ -440,7 +447,8 @@ void main() {
 
       expect(emitted.length, settled + 1, reason: 'param change must re-emit');
       expect(
-        emitted.last.tracks[0].lanes[0].effects.single.params[2],
+        (emitted.last.tracks[0].lanes[0].effects.single as BuiltInEffect)
+            .params[2],
         closeTo(0.9, 1e-9),
       );
     });
@@ -631,7 +639,7 @@ void main() {
         ..setTrackEffects(
           channel: 1,
           effects: [
-            TrackEffect(
+            BuiltInEffect(
               type: TrackEffectType.delay,
               params: const [0.3, 0.4, 0.5],
             ),
@@ -651,7 +659,7 @@ void main() {
         ..startEngine(const EngineConfig())
         ..setTrackEffects(
           channel: 0,
-          effects: [TrackEffect(type: TrackEffectType.drive)],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       engine.calls.clear();
 
@@ -667,12 +675,42 @@ void main() {
       expect(engine.laneFxParam[(0, 0, 0, 0)], 0.9);
     });
 
+    test(
+      'a plugin entry is skipped by the built-in FX push (loaded in part 5)',
+      () {
+        // A plugin slot is loaded through the dedicated slot ABI, not the
+        // built-in setLaneFx push. Until that wiring lands (part 5), a plugin
+        // entry in a chain must be skipped here without disturbing the built-in
+        // entries around it; the active count still spans the whole chain.
+        buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setTrackEffects(
+            channel: 0,
+            effects: [
+              BuiltInEffect(type: TrackEffectType.drive),
+              // index 1 is a plugin between two built-ins.
+              const PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              ),
+              BuiltInEffect(type: TrackEffectType.reverb),
+            ],
+          );
+
+        // Built-in entries pushed at their own indices; plugin index skipped.
+        expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
+        expect(engine.laneFx.containsKey((0, 0, 1)), isFalse);
+        expect(engine.laneFx[(0, 0, 2)]?.code, TrackEffectType.reverb.code);
+        // The active count still spans all three entries.
+        expect(engine.laneFxCount[(0, 0)], 3);
+      },
+    );
+
     test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setTrackEffects(
           channel: 0,
-          effects: [TrackEffect(type: TrackEffectType.drive)],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
 
@@ -689,7 +727,7 @@ void main() {
         ..setMonitorEffects(
           input: 0,
           effects: [
-            TrackEffect(
+            BuiltInEffect(
               type: TrackEffectType.delay,
               params: const [0.3, 0.4, 0.5],
             ),
@@ -708,7 +746,7 @@ void main() {
         ..startEngine(const EngineConfig())
         ..setMonitorEffects(
           input: 0,
-          effects: [TrackEffect(type: TrackEffectType.drive)],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       engine.calls.clear();
 
@@ -769,7 +807,7 @@ void main() {
         ..startEngine(const EngineConfig())
         ..setMonitorEffects(
           input: 0,
-          effects: [TrackEffect(type: TrackEffectType.drive)],
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
         );
       expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.drive.code);
 
@@ -837,20 +875,26 @@ void main() {
         ..startEngine(const EngineConfig())
         ..setMonitorEffects(
           input: 0,
-          effects: [TrackEffect(type: TrackEffectType.delay)],
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
         )
         ..record(); // track 0 EMPTY -> snapshot copies the input chain
 
       // The lane now holds a copy of the input chain.
-      expect(repo.laneEffects(0, 0).single.type, TrackEffectType.delay);
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
 
       // Editing the input chain afterwards does NOT alter the recorded lane
       // (copy-on-record, not a live reference — D3).
       repo.setMonitorEffects(
         input: 0,
-        effects: [TrackEffect(type: TrackEffectType.drive)],
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
       );
-      expect(repo.laneEffects(0, 0).single.type, TrackEffectType.delay);
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
     });
 
     test('clearing a track multiple (0) drops the override', () {

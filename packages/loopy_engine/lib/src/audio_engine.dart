@@ -24,7 +24,12 @@ enum EngineResult {
   notRunning,
 
   /// The audio device failed to initialise or start.
-  device;
+  device,
+
+  /// A plugin's bus topology is not a stereo (or mono-adaptable) effect —
+  /// instrument / multi-bus / sidechain / wrong channel count (D-BUS). The
+  /// insert is rejected with no partial slot created.
+  unsupported;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -35,6 +40,7 @@ enum EngineResult {
     -2 => EngineResult.alreadyRunning,
     -3 => EngineResult.notRunning,
     -4 => EngineResult.device,
+    -5 => EngineResult.unsupported,
     _ => EngineResult.invalid,
   };
 

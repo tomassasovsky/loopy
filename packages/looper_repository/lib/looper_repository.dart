@@ -38,7 +38,10 @@ export 'src/models/track.dart';
 // engine-typed boundary mappers stay package-internal (not shown here).
 export 'src/models/track_effect.dart'
     show
+        BuiltInEffect,
         ParamReadout,
+        PluginEffect,
+        PluginRef,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,

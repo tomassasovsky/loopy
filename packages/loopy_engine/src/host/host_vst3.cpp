@@ -66,16 +66,17 @@ class Vst3Host final : public loopy::IPluginHost {
  public:
   ~Vst3Host() override { unload(); }
 
-  bool load(const loopy::PluginDescriptor& desc, double sampleRate,
-            int maxBlock) override {
-    if (!openBundle(desc.path)) return false;
+  loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
+                         int maxBlock) override {
+    using loopy::LoadStatus;
+    if (!openBundle(desc.path)) return LoadStatus::failed;
 
     IPluginFactory* factory = getFactory_();
-    if (!factory) return false;
+    if (!factory) return LoadStatus::failed;
     factory_ = factory;
 
     TUID cid;
-    if (!parseTuid(desc.id, cid)) return false;
+    if (!parseTuid(desc.id, cid)) return LoadStatus::failed;
 
     void* obj = nullptr;
     // createInstance takes FIDString (const char*); a TUID is signed char[16],
@@ -86,52 +87,76 @@ class Vst3Host final : public loopy::IPluginHost {
                 static_cast<const TUID&>(IComponent::iid)),
             &obj) != kResultOk ||
         !obj) {
-      return false;
+      return LoadStatus::failed;
     }
     component_ = static_cast<IComponent*>(obj);
 
-    if (component_->initialize(nullptr) != kResultOk) return false;
+    if (component_->initialize(nullptr) != kResultOk) return LoadStatus::failed;
     if (component_->queryInterface(IAudioProcessor::iid,
                                    reinterpret_cast<void**>(&processor_)) !=
             kResultOk ||
         !processor_) {
-      return false;
+      return LoadStatus::failed;
     }
-    if (processor_->canProcessSampleSize(kSample32) != kResultOk) return false;
+    if (processor_->canProcessSampleSize(kSample32) != kResultOk) {
+      return LoadStatus::failed;
+    }
 
-    // Request stereo-in/stereo-out (best effort: some effects are fixed and
-    // report failure but still process stereo).
+    // Topology guard (D-BUS): accept only a single main audio-in + audio-out
+    // bus. Zero audio inputs is an instrument; more than one audio bus is a
+    // multi-bus / sidechain plugin — both rejected so no partial slot exists.
+    const int32_t numIn = component_->getBusCount(kAudio, kInput);
+    const int32_t numOut = component_->getBusCount(kAudio, kOutput);
+    if (numIn < 1 || numOut < 1) return LoadStatus::unsupportedTopology;
+    if (numIn > 1 || numOut > 1) return LoadStatus::unsupportedTopology;
+
+    // Request stereo-in/stereo-out; a mono-only effect is adapted (L duplicated
+    // to R) in process(). The negotiated arrangement decides the channel count.
     SpeakerArrangement stereo = SpeakerArr::kStereo;
     processor_->setBusArrangements(&stereo, 1, &stereo, 1);
+    SpeakerArrangement inArr = SpeakerArr::kStereo;
+    SpeakerArrangement outArr = SpeakerArr::kStereo;
+    processor_->getBusArrangement(kInput, 0, inArr);
+    processor_->getBusArrangement(kOutput, 0, outArr);
+    const int32 chIn = SpeakerArr::getChannelCount(inArr);
+    const int32 chOut = SpeakerArr::getChannelCount(outArr);
+    if (chIn < 1 || chOut < 1 || chIn > 2 || chOut > 2) {
+      return LoadStatus::unsupportedTopology;  // not a mono/stereo effect
+    }
+    channels_ = (chIn >= 2 && chOut >= 2) ? 2 : 1;
 
     ProcessSetup setup;
     setup.processMode = kRealtime;
     setup.symbolicSampleSize = kSample32;
     setup.maxSamplesPerBlock = maxBlock;
     setup.sampleRate = sampleRate;
-    if (processor_->setupProcessing(setup) != kResultOk) return false;
+    if (processor_->setupProcessing(setup) != kResultOk) {
+      return LoadStatus::failed;
+    }
 
     component_->activateBus(kAudio, kInput, 0, true);
     component_->activateBus(kAudio, kOutput, 0, true);
-    if (component_->setActive(true) != kResultOk) return false;
+    if (component_->setActive(true) != kResultOk) return LoadStatus::failed;
     processor_->setProcessing(true);  // some plugins return notImplemented
 
     outL_.assign(maxBlock, 0.0f);
     outR_.assign(maxBlock, 0.0f);
-    return true;
+    return LoadStatus::ok;
   }
 
   void process(float* l, float* r, int n) override {
     if (!processor_) return;
+    // For a mono effect only channel 0 is fed; the output is duplicated L->R
+    // below. For stereo both channels are live.
     Sample32* inCh[2] = {l, r};
     Sample32* outCh[2] = {outL_.data(), outR_.data()};
 
     AudioBusBuffers in;
-    in.numChannels = 2;
+    in.numChannels = channels_;
     in.silenceFlags = 0;
     in.channelBuffers32 = inCh;
     AudioBusBuffers out;
-    out.numChannels = 2;
+    out.numChannels = channels_;
     out.silenceFlags = 0;
     out.channelBuffers32 = outCh;
 
@@ -145,8 +170,10 @@ class Vst3Host final : public loopy::IPluginHost {
     data.outputs = &out;
     processor_->process(data);
 
-    std::memcpy(l, outL_.data(), sizeof(float) * static_cast<size_t>(n));
-    std::memcpy(r, outR_.data(), sizeof(float) * static_cast<size_t>(n));
+    const size_t bytes = sizeof(float) * static_cast<size_t>(n);
+    std::memcpy(l, outL_.data(), bytes);
+    // Mono -> stereo: duplicate the single processed channel to the right.
+    std::memcpy(r, channels_ == 1 ? outL_.data() : outR_.data(), bytes);
   }
 
  private:
@@ -201,6 +228,7 @@ class Vst3Host final : public loopy::IPluginHost {
   IPluginFactory* factory_ = nullptr;
   IComponent* component_ = nullptr;
   IAudioProcessor* processor_ = nullptr;
+  int32 channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
   std::vector<float> outL_, outR_;
 };
 

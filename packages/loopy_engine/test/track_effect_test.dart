@@ -4,20 +4,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy_engine/loopy_engine.dart';
 
 void main() {
-  group('TrackEffect', () {
+  group('BuiltInEffect', () {
     test('defaults params to the type musical defaults', () {
-      final fx = TrackEffect(type: TrackEffectType.delay);
+      final fx = BuiltInEffect(type: TrackEffectType.delay);
       expect(fx.params, TrackEffectType.delay.defaultParams);
       expect(fx.params.length, greaterThan(0));
     });
 
     test('params is unmodifiable', () {
-      final fx = TrackEffect(type: TrackEffectType.drive);
+      final fx = BuiltInEffect(type: TrackEffectType.drive);
       expect(() => fx.params[0] = 1, throwsUnsupportedError);
     });
 
     test('toJson carries only type and params (no stage)', () {
-      final json = TrackEffect(
+      final json = BuiltInEffect(
         type: TrackEffectType.filter,
         params: const [0.1, 0.2, 0.3],
       ).toJson();
@@ -27,11 +27,15 @@ void main() {
       expect(json['params'], [0.1, 0.2, 0.3]);
     });
 
+    test('typeCode is the native fx code', () {
+      expect(BuiltInEffect(type: TrackEffectType.reverb).typeCode, 7);
+    });
+
     test('fromJson ignores a legacy stage key', () {
       // Older persisted chains stored a `stage` integer; it must decode
       // cleanly now that the pre/post model is gone. The length-3 params from
       // that era are padded to the current width with the type's default.
-      final fx = TrackEffect.fromJson(const {
+      final fx = BuiltInEffect.fromJson(const {
         'type': 4,
         'stage': 1,
         'params': [0.4, 0.5, 0.6],
@@ -43,14 +47,14 @@ void main() {
     test(
       'fromJson falls back to none + defaults for unknown/missing fields',
       () {
-        final fx = TrackEffect.fromJson(const {});
+        final fx = BuiltInEffect.fromJson(const {});
         expect(fx.type, TrackEffectType.none);
         expect(fx.params, TrackEffectType.none.defaultParams);
       },
     );
 
     test('copyWith replaces type and params independently', () {
-      final base = TrackEffect(
+      final base = BuiltInEffect(
         type: TrackEffectType.drive,
         params: const [0.1, 0.2, 0.3],
       );
@@ -63,7 +67,7 @@ void main() {
     });
 
     test('copyWith preserves the unmodifiable params contract', () {
-      final copy = TrackEffect(type: TrackEffectType.drive).copyWith(
+      final copy = BuiltInEffect(type: TrackEffectType.drive).copyWith(
         params: [0.9, 0, 0],
       );
       expect(() => copy.params[0] = 0, throwsUnsupportedError);
@@ -73,7 +77,7 @@ void main() {
       // A chain saved by the 3-param build: the octaver gains its new `mode`
       // slot, which must default to 0.0 (phase vocoder), not leave the list
       // short or read garbage.
-      final fx = TrackEffect.fromJson({
+      final fx = BuiltInEffect.fromJson({
         'type': TrackEffectType.octaver.code,
         'params': const [0.25, 0.5, 0.5],
       });
@@ -86,7 +90,7 @@ void main() {
     test('fromJson pads with the type default, not a blanket zero', () {
       // delay's p2 default is 0.35; a 2-param save pads p2 from the default and
       // p3 from the (zero) default, proving the per-type pad (not a blanket 0).
-      final fx = TrackEffect.fromJson({
+      final fx = BuiltInEffect.fromJson({
         'type': TrackEffectType.delay.code,
         'params': const [0.1, 0.2],
       });
@@ -94,7 +98,7 @@ void main() {
     });
 
     test('fromJson truncates an over-long params list', () {
-      final fx = TrackEffect.fromJson({
+      final fx = BuiltInEffect.fromJson({
         'type': TrackEffectType.drive.code,
         'params': const [0.1, 0.2, 0.3, 0.4, 0.5],
       });
@@ -103,7 +107,7 @@ void main() {
     });
 
     test('fromJson falls back to defaults when params is not a list', () {
-      final fx = TrackEffect.fromJson(const {
+      final fx = BuiltInEffect.fromJson(const {
         'type': 1,
         'params': 'nonsense',
       });
@@ -112,11 +116,11 @@ void main() {
     });
 
     test('value equality ignores instance identity', () {
-      final a = TrackEffect(
+      final a = BuiltInEffect(
         type: TrackEffectType.delay,
         params: const [0.1, 0.2, 0.3],
       );
-      final b = TrackEffect(
+      final b = BuiltInEffect(
         type: TrackEffectType.delay,
         params: const [0.1, 0.2, 0.3],
       );
@@ -125,12 +129,63 @@ void main() {
     });
 
     test('a differing type or param breaks equality', () {
-      final a = TrackEffect(
+      final a = BuiltInEffect(
         type: TrackEffectType.delay,
         params: const [0.1, 0.2, 0.3],
       );
       expect(a, isNot(equals(a.copyWith(type: TrackEffectType.drive))));
       expect(a, isNot(equals(a.copyWith(params: const [0.9, 0.2, 0.3]))));
+    });
+  });
+
+  group('PluginEffect', () {
+    const ref = PluginRef(
+      format: PluginFormat.vst3,
+      id: 'ABCDEF0123456789',
+      version: 0x00010200,
+    );
+
+    test('typeCode is the plugin fx code', () {
+      expect(const PluginEffect(ref: ref).typeCode, kPluginFxCode);
+      expect(kPluginFxCode, 8);
+    });
+
+    test('toJson carries the plugin ref under a plugin key', () {
+      final json = const PluginEffect(ref: ref).toJson();
+      expect(json['type'], kPluginFxCode);
+      expect(json['plugin'], {
+        'format': PluginFormat.vst3.code,
+        'id': 'ABCDEF0123456789',
+        'version': 0x00010200,
+      });
+    });
+
+    test('round-trips through fromJson', () {
+      final decoded = TrackEffect.fromJson(
+        const PluginEffect(ref: ref).toJson(),
+      );
+      expect(decoded, isA<PluginEffect>());
+      expect((decoded as PluginEffect).ref, ref);
+    });
+
+    test('copyWith and value equality', () {
+      const a = PluginEffect(ref: ref);
+      expect(a, const PluginEffect(ref: ref));
+      const other = PluginRef(format: PluginFormat.clap, id: 'x');
+      expect(a.copyWith(ref: other).ref, other);
+      expect(a, isNot(const PluginEffect(ref: other)));
+    });
+
+    test('PluginRef round-trips and defaults version to 0', () {
+      final json = const PluginRef(
+        format: PluginFormat.clap,
+        id: 'com.x',
+      ).toJson();
+      expect(json['version'], 0);
+      expect(
+        PluginRef.fromJson(json),
+        const PluginRef(format: PluginFormat.clap, id: 'com.x'),
+      );
     });
   });
 
@@ -205,12 +260,12 @@ void main() {
   });
 
   group('encode/decode chain', () {
-    test('round-trips an ordered chain', () {
+    test('round-trips a built-in chain', () {
       // Params are at the current width, so decode (which normalizes) round-
       // trips them exactly.
       final chain = [
-        TrackEffect(type: TrackEffectType.drive),
-        TrackEffect(
+        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(
           type: TrackEffectType.delay,
           params: const [0.5, 0.4, 0.3, 0],
         ),
@@ -218,6 +273,60 @@ void main() {
       final decoded = decodeTrackEffects(encodeTrackEffects(chain));
       expect(decoded, chain);
     });
+
+    test('round-trips a mixed built-in + plugin chain (dual-decode)', () {
+      final chain = <TrackEffect>[
+        BuiltInEffect(type: TrackEffectType.drive),
+        const PluginEffect(
+          ref: PluginRef(
+            format: PluginFormat.clap,
+            id: 'com.acme.reverb',
+            version: 0x00000300,
+          ),
+        ),
+        BuiltInEffect(type: TrackEffectType.reverb),
+      ];
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+      expect(decoded, chain);
+      expect(decoded[1], isA<PluginEffect>());
+    });
+
+    test('a plugin entry is never silently dropped to none', () {
+      // The exact bug the fromCode fix guards: code 8 + a plugin key must
+      // decode to a PluginEffect, not fall through to a built-in `none`.
+      final encoded = jsonEncode([
+        {
+          'type': kPluginFxCode,
+          'plugin': {'format': 1, 'id': 'keep.me', 'version': 0},
+        },
+      ]);
+      final decoded = decodeTrackEffects(encoded);
+      expect(decoded, hasLength(1));
+      expect(decoded.first, isA<PluginEffect>());
+      expect((decoded.first as PluginEffect).ref.id, 'keep.me');
+    });
+
+    test(
+      'the exact pre-plugin bare-array string still decodes byte-for-byte',
+      () {
+        // Back-compat: a v1 chain is a bare array of {type, params} with no
+        // envelope and no plugin entries; it must decode unchanged.
+        const v1 =
+            '[{"type":1,"params":[0.5,0.8,0.0,0.0]},'
+            '{"type":3,"params":[0.35,0.35,0.35,0.0]}]';
+        final decoded = decodeTrackEffects(v1);
+        expect(decoded, [
+          BuiltInEffect(type: TrackEffectType.drive),
+          BuiltInEffect(type: TrackEffectType.delay),
+        ]);
+        for (final e in decoded) {
+          expect(e, isA<BuiltInEffect>());
+        }
+        // Re-encoding yields the identical bare array — no envelope, no plugin
+        // keys — so the built-in wire format is byte-for-byte unchanged.
+        expect(encodeTrackEffects(decoded), v1);
+      },
+    );
 
     test('decodes a legacy chain that still carries stage keys', () {
       final legacy = jsonEncode([
@@ -229,9 +338,10 @@ void main() {
       ]);
       final decoded = decodeTrackEffects(legacy);
       expect(decoded, hasLength(1));
-      expect(decoded.first.type, TrackEffectType.filter);
+      final first = decoded.first as BuiltInEffect;
+      expect(first.type, TrackEffectType.filter);
       // The length-3 legacy params are padded to the current width.
-      expect(decoded.first.params, [0.2, 0.3, 0, 0]);
+      expect(first.params, [0.2, 0.3, 0, 0]);
     });
 
     test('empty or malformed input yields an empty chain', () {
