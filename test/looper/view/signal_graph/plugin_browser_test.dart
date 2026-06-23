@@ -64,6 +64,24 @@ void main() {
       expect(picked?.format, PluginFormat.clap);
     });
 
+    testWidgets('Cancel stops an in-progress scan', (tester) async {
+      final repo = buildRepo();
+      addTearDown(repo.dispose);
+      // Don't pre-scan: the dialog kicks off its own scan on open and shows a
+      // Cancel control until the poll completes.
+      await tester.pumpApp(host(repo, (_) {}));
+      await tester.tap(find.text('open'));
+      // Advance the dialog transition but stay under the catalog's 100ms poll,
+      // so the scan is still in flight and the Cancel control is shown.
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(find.byKey(const Key('pluginBrowser_cancel')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('pluginBrowser_cancel')));
+      await tester.pumpAndSettle();
+      // The scan stopped: the Cancel control is gone (back to a settled state).
+      expect(find.byKey(const Key('pluginBrowser_cancel')), findsNothing);
+    });
+
     testWidgets('closing the browser resolves to null', (tester) async {
       final repo = buildRepo();
       addTearDown(repo.dispose);

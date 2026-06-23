@@ -319,11 +319,21 @@
     "signalPluginBypassTooltip": "Bypass plugin",
     "signalPluginUnknownName": "Plugin",
     "signalPluginUnavailable": "Plugin unavailable",
+    "signalPluginUnsupported": "Plugin unsupported",
+    "signalPluginVersionChanged": "Version changed since saved",
     "signalPluginRelinkTooltip": "Relink to an installed plugin",
     "signalPluginBrowserTitle": "Plugins",
     "signalPluginBrowserSearchHint": "Search plugins",
     "signalPluginBrowserEmpty": "No plugins found",
     "signalPluginRescan": "Rescan",
+    "signalPluginScanProgress": "Scanning… {scanned}/{total}",
+    "@signalPluginScanProgress": {
+        "placeholders": {
+            "scanned": { "type": "int" },
+            "total": { "type": "int" }
+        }
+    },
+    "signalPluginCancelScan": "Cancel",
     "signalAddEffect": "Add effect",
     "signalAddPlugin": "Add plugin…",
     "startEngine": "Start engine",

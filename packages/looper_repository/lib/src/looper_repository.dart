@@ -7,7 +7,7 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
-    show pluginParamInfoFromEngine;
+    show PluginDescriptor, pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
@@ -22,6 +22,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         LoopbackInfo,
         LoopbackKind,
         ParamReadout,
+        PluginDescriptor,
         PluginEffect,
         PluginParamInfo,
         PluginRef,
@@ -1078,10 +1079,17 @@ class LooperRepository {
   /// stale metadata so the card renders the unresolved state.
   PluginEffect _bindPluginSlot(PluginSlotHandle? handle, PluginEffect fx) {
     if (handle == null) {
-      // The plugin failed to load on the running engine (uninstalled / moved /
-      // incompatible) — flag the D-MISS placeholder, preserving ref + state for
-      // relink; the entry is never dropped to a silent `none`.
-      return fx.copyWith(params: const [], unavailable: true);
+      // The plugin failed to load on the running engine — flag the D-MISS
+      // placeholder, preserving ref + state for relink (never a silent `none`).
+      // A failed load whose id IS in the scan catalog means the plugin is
+      // installed but rejected (instrument / multi-bus — D-BUS), as opposed to
+      // simply missing; the card shows the right message.
+      final installed = _descriptorFor(fx.ref.id) != null;
+      return fx.copyWith(
+        params: const [],
+        unavailable: true,
+        unsupported: installed,
+      );
     }
     // Restore the captured opaque state first (D-P1 frozen instance) — a
     // corrupt blob is ignored, never fatal (D-MISS) — then replay the user's
@@ -1100,21 +1108,32 @@ class LooperRepository {
     for (final entry in fx.paramValues.entries) {
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
+    final descriptor = _descriptorFor(fx.ref.id);
+    // The installed version differs from what the take saved (same id, new
+    // version) — the plugin still loaded, but note the drift (D-MISS). Drift is
+    // only detectable once the catalog has the descriptor, so a false flag here
+    // means "no drift OR not yet scanned", never a hard "versions match".
+    final versionDrift =
+        descriptor != null &&
+        fx.ref.version != 0 &&
+        descriptor.version != 0 &&
+        descriptor.version != fx.ref.version;
     return fx.copyWith(
       params: infos,
-      name: _resolvePluginName(fx),
+      name: descriptor?.name ?? fx.name,
       unavailable: false,
+      unsupported: false,
+      versionChanged: versionDrift,
     );
   }
 
-  /// The plugin's display name from the most recent scan, or its existing name
-  /// (then the empty string) when the catalog hasn't seen it — so a name never
-  /// regresses to blank once resolved.
-  String _resolvePluginName(PluginEffect fx) {
+  /// The scanned descriptor for plugin [id], or null when the catalog hasn't
+  /// seen it (not yet scanned, or uninstalled).
+  PluginDescriptor? _descriptorFor(String id) {
     for (final d in pluginCatalog.descriptors) {
-      if (d.id == fx.ref.id) return d.name;
+      if (d.id == id) return d;
     }
-    return fx.name;
+    return null;
   }
 
   /// Replaces track [channel]'s lane 0 effect chain. Convenience for lane 0.

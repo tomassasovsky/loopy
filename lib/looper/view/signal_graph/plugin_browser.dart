@@ -31,17 +31,36 @@ class _PluginBrowserDialogState extends State<_PluginBrowserDialog> {
   bool _scanning = false;
   String _query = '';
   List<PluginDescriptor> _plugins = const [];
+  PluginScanProgress _progress = PluginScanProgress.empty;
+  StreamSubscription<PluginScanProgress>? _progressSub;
 
   @override
   void initState() {
     super.initState();
+    // Mirror live scan progress (candidate files scanned / total) so the
+    // browser can show a determinate count and a Cancel control.
+    _progressSub = widget.catalog.progressStream.listen((p) {
+      if (mounted) setState(() => _progress = p);
+    });
     // Show any cached results immediately; scan on the first open.
     _plugins = widget.catalog.availablePlugins;
     if (_plugins.isEmpty) unawaited(_scan());
   }
 
+  @override
+  void dispose() {
+    unawaited(_progressSub?.cancel());
+    super.dispose();
+  }
+
   Future<void> _scan({bool rescan = false}) async {
-    setState(() => _scanning = true);
+    setState(() {
+      _scanning = true;
+      // Reset to "no data yet": total == 0 drives the indeterminate spinner
+      // until the scan thread reports a candidate count (the `done` flag of
+      // `empty` is unused — the dialog keys off `_scanning`, not `progress`).
+      _progress = PluginScanProgress.empty;
+    });
     final found = await widget.catalog.scan(rescan: rescan);
     if (!mounted) return;
     setState(() {
@@ -151,11 +170,39 @@ class _PluginBrowserDialogState extends State<_PluginBrowserDialog> {
     final surface = context.surface;
     final filtered = _filtered;
     if (_scanning && _plugins.isEmpty) {
-      return const Center(
-        child: SizedBox(
-          width: 22,
-          height: 22,
-          child: CircularProgressIndicator(strokeWidth: 2),
+      // A determinate count once the scan thread reports a candidate total,
+      // an indeterminate spinner until then. Cancel keeps whatever was found.
+      final total = _progress.total;
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                value: total > 0 ? _progress.scanned / total : null,
+              ),
+            ),
+            if (total > 0) ...[
+              const SizedBox(height: 12),
+              Text(
+                key: const Key('pluginBrowser_progress'),
+                l10n.signalPluginScanProgress(_progress.scanned, total),
+                style: signalMono(color: surface.textTertiary),
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextButton(
+              key: const Key('pluginBrowser_cancel'),
+              onPressed: () => widget.catalog.cancel(),
+              child: Text(
+                l10n.signalPluginCancelScan,
+                style: signalMono(color: surface.textSecondary),
+              ),
+            ),
+          ],
         ),
       );
     }

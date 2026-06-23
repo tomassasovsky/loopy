@@ -181,6 +181,8 @@ class PluginEffect extends TrackEffect {
     this.name = '',
     this.state = '',
     this.unavailable = false,
+    this.unsupported = false,
+    this.versionChanged = false,
   });
 
   /// The hosted plugin's identity.
@@ -210,6 +212,17 @@ class PluginEffect extends TrackEffect {
   /// entry is never silently dropped.
   final bool unavailable;
 
+  /// Whether the failure is because the plugin is installed but **rejected** —
+  /// an instrument / multi-bus / wrong-channel plugin that isn't a supported
+  /// stereo effect (D-BUS), as opposed to simply missing. Transient; only
+  /// meaningful when [unavailable]. Distinguishes the placeholder's message.
+  final bool unsupported;
+
+  /// Whether the installed plugin's version differs from the saved [ref]'s
+  /// (same id, different version — D-MISS). Transient; the plugin still loaded,
+  /// but the card notes the drift.
+  final bool versionChanged;
+
   @override
   int get typeCode => engine.kPluginFxCode;
 
@@ -221,6 +234,8 @@ class PluginEffect extends TrackEffect {
     String? name,
     String? state,
     bool? unavailable,
+    bool? unsupported,
+    bool? versionChanged,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -228,6 +243,8 @@ class PluginEffect extends TrackEffect {
     name: name ?? this.name,
     state: state ?? this.state,
     unavailable: unavailable ?? this.unavailable,
+    unsupported: unsupported ?? this.unsupported,
+    versionChanged: versionChanged ?? this.versionChanged,
   );
 
   @override
@@ -238,6 +255,8 @@ class PluginEffect extends TrackEffect {
     name,
     state,
     unavailable,
+    unsupported,
+    versionChanged,
   ];
 }
 
