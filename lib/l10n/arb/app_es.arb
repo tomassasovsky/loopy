@@ -23,7 +23,6 @@
     "engineStoppedBanner": "Motor de audio detenido — abre la configuración para iniciar.",
     "trackNumberLabel": "Pista {trackNumber}",
     "loopMultipleLabel": "×{multiple}",
-    "ioRoutingTooltip": "Enrutamiento E/S",
     "stopButton": "Detener",
     "trackStateEmpty": "vacío",
     "trackStateRecording": "grabando",
@@ -65,7 +64,6 @@
     "trackSettingsDialogTitle": "Ajustes de pista {trackNumber}",
     "quantizeRecording": "Cuantizar grabación",
     "loopLength": "Duración del bucle",
-    "trackEffectsPlaybackOnlyHint": "Los efectos de pista colorean solo la reproducción. Para oír efectos en vivo en una entrada, activa su monitor en ajustes de audio.",
     "done": "Listo",
     "defaultWithState": "Predeterminado ({state})",
     "toggleOn": "Sí",
@@ -73,7 +71,6 @@
     "auto": "Auto",
     "settingsSectionView": "Vista",
     "settingsSectionAudio": "Audio",
-    "settingsSectionRouting": "Enrutamiento",
     "settingsSectionTracks": "Pistas",
     "settingsKicker": "AJUSTES",
     "bigPictureTitle": "Vista general",
@@ -94,8 +91,6 @@
     "refreshRateLowCpu": "Bajo CPU",
     "refreshRateSmoothest": "Más fluido",
     "defaultLabel": "Predeterminado",
-    "routingIntro": "Cómo se conecta el audio: las entradas de hardware fluyen a las pistas, y las pistas salen a las salidas de hardware. Las entradas loopback están tachadas — nunca se graban. Haz clic en una pista para seleccionarla, luego en una entrada o salida para conectar o desconectar.",
-    "signalFlowGroupLabel": "FLUJO DE SEÑAL",
     "tracksIntro": "Renombra las pistas.",
     "tracksGroupLabel": "PISTAS",
     "inputChannelLabel": "Ent {channelNumber}",
@@ -104,23 +99,62 @@
     "a11yOutputEnabledDisable": "Salida {outputNumber}, activada. Toca para desactivar.",
     "a11yOutputDisabledEnable": "Salida {outputNumber}, desactivada. Toca para activar.",
     "noActiveOutputsNotice": "No hay salidas activas — no se oirá nada. Toca una salida atenuada para reactivarla.",
-    "laneSnapshotLabel": "Instantánea de FX de Ent {inputNumber} al grabar",
+    "signalTitle": "Señal",
+    "signalFlowSubtitle": "Entradas · Pistas · Salidas",
+    "signalSectionInputs": "Entradas",
+    "signalSectionTracks": "Pistas",
+    "signalSectionOutputs": "Salidas",
+    "signalVolumeLabel": "Vol",
+    "signalContextInput": "Entrada",
+    "signalContextTake": "Toma",
+    "signalNothingRouted": "nada enrutado aquí",
+    "signalNotRouted": "sin enrutar",
+    "signalFieldFx": "FX",
+    "signalFieldOut": "SAL",
+    "signalFieldInputs": "ENT",
+    "signalFieldTracks": "PIS",
+    "signalTakesCount": "{count} tomas",
+    "@signalTakesCount": {
+      "description": "Badge on a multi-lane track header counting its takes.",
+      "placeholders": { "count": { "type": "int" } }
+    },
+    "signalTraceHint": "Toca cualquier fila para trazar su señal — las filas conectadas se iluminan, el resto se atenúa. Toca un chip para enrutar.",
+    "signalLegendLive": "entrada LIVE monitorizada",
+    "signalLegendSnapshot": "instantánea de FX al grabar",
+    "signalLegendChip": "chip = enrutado a esa salida",
+    "signalCleanTake": "toma limpia",
+    "signalRecInput": "grab Ent {inputNumber}",
+    "@signalRecInput": {
+      "description": "Badge on a take naming the hardware input it recorded.",
+      "placeholders": { "inputNumber": { "type": "int" } }
+    },
+    "signalRouteTooltip": "Enrutar a una salida",
+    "signalRouteToOutput": "Enviar a Sal {outputNumber}",
+    "@signalRouteToOutput": {
+      "description": "Menu item / a11y label to add a route to an output.",
+      "placeholders": { "outputNumber": { "type": "int" } }
+    },
+    "signalUnrouteOutput": "Dejar de enviar a Sal {outputNumber}",
+    "@signalUnrouteOutput": {
+      "description": "a11y label on a lit routing chip (tap removes the route).",
+      "placeholders": { "outputNumber": { "type": "int" } }
+    },
+    "signalInputNone": "Ninguna (limpia)",
+    "signalReassignInput": "Cambiar entrada grabada",
+    "signalTooltip": "Flujo de señal (G)",
+    "signalInputLive": "en vivo",
+    "signalInputOff": "apagado",
+    "signalThisTakeLabel": "Esta toma · instantánea de Ent {inputNumber}",
+    "signalThisTakeHint": "Una copia tomada al grabar. Editarla solo cambia este carril — el tono en vivo de la entrada y tus otras tomas no se tocan.",
+    "signalLaneCleanHint": "Este carril graba su entrada limpia. Añade efectos para colorear solo esta toma.",
+    "signalAddEffectTooltip": "Añadir efecto a esta toma",
+    "signalHint": "Toca una entrada para ajustar su tono (es lo que se graba). Toca un carril para enrutarlo. Toca una salida para activarla o desactivarla.",
     "inputMonitorLabel": "Monitor Ent {inputNumber}",
-    "unmuteLaneTooltip": "Activar sonido del carril",
-    "muteLaneTooltip": "Silenciar carril",
     "unmuteInputTooltip": "Activar sonido de la entrada",
     "muteInputTooltip": "Silenciar entrada",
     "removeLaneTooltip": "Eliminar carril",
-    "laneGraphHint": "Toca un carril para enfocarlo, luego toca entradas/salidas para conectarlo.",
     "addLane": "Añadir carril",
-    "addEffectToLaneTooltip": "Añadir efecto al carril {laneNumber}",
-    "addEffectToInputTooltip": "Añadir efecto a la entrada {inputNumber}",
     "removeEffectTooltip": "Eliminar efecto",
-    "inputMonitoringTitle": "Monitorización de entrada",
-    "monitorGraphHint": "Toca una entrada para monitorizarla, luego toca salidas para enviarla allí.",
-    "configureInputMonitoring": "Configurar monitorización de entrada",
-    "monitorRoutingIntro": "Monitoriza entradas en vivo a través de sus propios efectos (wet) y/o como envío seco limpio — enrutado a las salidas que elijas. Nunca se graba.",
-    "startEngineForMonitorChannels": "Inicia el motor para elegir canales de monitor.",
     "startEngine": "Iniciar motor",
     "sampleRateGroup": "Frecuencia de muestreo",
     "bufferSizeGroup": "Tamaño del búfer",
@@ -172,7 +206,6 @@
     "audioSettingsIntro": "Elige el dispositivo de audio y comprueba la latencia de ida y vuelta medida.",
     "outputDeviceGroupUpper": "DISPOSITIVO DE SALIDA",
     "inputDeviceGroupUpper": "DISPOSITIVO DE ENTRADA",
-    "monitoringGroupLabel": "MONITORIZACIÓN",
     "recordingGroupLabel": "GRABACIÓN",
     "maxLoopLengthIntro": "Duración máxima del bucle por pista. Un límite mayor reserva más memoria por pista. Cambiarlo reabre el dispositivo.",
     "maxLoopDefault30s": "Predeterminado (30 s)",
@@ -304,20 +337,6 @@
         }
     },
     "@inputMonitorLabel": {
-        "placeholders": {
-            "inputNumber": {
-                "type": "int"
-            }
-        }
-    },
-    "@addEffectToLaneTooltip": {
-        "placeholders": {
-            "laneNumber": {
-                "type": "int"
-            }
-        }
-    },
-    "@addEffectToInputTooltip": {
         "placeholders": {
             "inputNumber": {
                 "type": "int"

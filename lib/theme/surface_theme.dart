@@ -18,6 +18,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.line,
     required this.accent,
     required this.onAccent,
+    required this.warning,
     required this.textPrimary,
     required this.textSecondary,
     required this.textTertiary,
@@ -34,6 +35,11 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   final Color line;
   final Color accent;
   final Color onAccent;
+
+  /// The caution colour for non-blocking notices (e.g. "no active outputs"),
+  /// brightened in the high-contrast variant so it stays legible (WCAG 1.4.3).
+  final Color warning;
+
   final Color textPrimary;
   final Color textSecondary;
   final Color textTertiary;
@@ -49,6 +55,14 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// The palette hue for [lane] (cycled past the palette length).
   Color laneColor(int lane) => lanePalette[lane % lanePalette.length];
 
+  /// The display/body typeface — a geometric grotesque that gives the surfaces
+  /// their instrument-panel character (bundled under `assets/fonts/`).
+  static const String displayFont = 'Space Grotesk';
+
+  /// The monospace typeface used for numerics, gate/section labels, and any
+  /// "machine" readout (channel ids, dB values, FX names).
+  static const String monoFont = 'IBM Plex Mono';
+
   @override
   SurfaceTheme copyWith({
     Color? background,
@@ -58,6 +72,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? line,
     Color? accent,
     Color? onAccent,
+    Color? warning,
     Color? textPrimary,
     Color? textSecondary,
     Color? textTertiary,
@@ -72,6 +87,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     line: line ?? this.line,
     accent: accent ?? this.accent,
     onAccent: onAccent ?? this.onAccent,
+    warning: warning ?? this.warning,
     textPrimary: textPrimary ?? this.textPrimary,
     textSecondary: textSecondary ?? this.textSecondary,
     textTertiary: textTertiary ?? this.textTertiary,
@@ -92,6 +108,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       line: c(line, other.line),
       accent: c(accent, other.accent),
       onAccent: c(onAccent, other.onAccent),
+      warning: c(warning, other.warning),
       textPrimary: c(textPrimary, other.textPrimary),
       textSecondary: c(textSecondary, other.textSecondary),
       textTertiary: c(textTertiary, other.textTertiary),
@@ -124,6 +141,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     line: Color(0xFF272730),
     accent: Color(0xFF3B82F6),
     onAccent: Color(0xFFFFFFFF),
+    warning: Color(0xFFF0C97A),
     textPrimary: Color(0xFFF3F4F7),
     textSecondary: Color(0xFF989AA4),
     textTertiary: Color(0xFF82848E),
@@ -154,6 +172,7 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     line: Color(0xFF6B6D78),
     accent: Color(0xFF6BA8FF),
     onAccent: Color(0xFF000000),
+    warning: Color(0xFFFFD27A),
     textPrimary: Color(0xFFFFFFFF),
     textSecondary: Color(0xFFD6D8E0),
     textTertiary: Color(0xFFB2B4BE),

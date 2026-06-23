@@ -129,7 +129,10 @@ Strict layering: presentation → bloc → repository → data. The engine's typ
   moved to `lane_*` / `monitor_input*` keys (old `track_*mask`/`track_effects`/
   `monitor.*` keys dropped, drop-and-default — no migration). Session export
   stays **lane-0 only** (documented follow-up).
-- **Multi-lane routing UI (PR 5) is landed.** The per-track routing page is one
+- **Multi-lane routing UI (PR 5) is landed.** *(Superseded by the unified Signal
+  surface below — `lane_graph_view.dart` and the per-track routing page were
+  removed; the lane-addressed `LooperBloc` events described here remain in use.)*
+  The per-track routing page is one
   **unified wiring graph** (`lane_graph_view.dart`): hardware inputs on the left,
   the track's lanes stacked in the middle (each a node + its own effect chain),
   hardware outputs on the right, with bezier edges showing every lane's wiring on
@@ -422,6 +425,58 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   non-targetable (reusing `RoutingNode.excluded`) with a tap-to-toggle and a
   non-blocking "no active outputs" notice; accessibility labels on the gate
   toggle and disabled outputs. FFI regenerated (`dart format`, no churn).
+- **Signal surface → three routing lists** (plan
+  `docs/plan/2026-06-22-refactor-signal-three-list-surface-plan.md`, brainstorm
+  `docs/brainstorm/2026-06-22-signal-list-surface-brainstorm-doc.md`, mockup
+  `docs/design/signal-list-surface-mockup.html`). The node-and-wire Signal graph
+  (below) tangled into unreadable spaghetti at ~16×16 and rendered per-track
+  lanes as ambiguous duplicate "Lane 1"s, so its **presentation** was replaced
+  by **three side-by-side scrolling lists** — Inputs | Tracks | Outputs — with
+  **no wires**. `SignalRows` (pure, unit-tested) flattens `MonitorState` +
+  `LooperState` into rows, **collapsing single-lane tracks to the track itself**
+  (kills "Lane 1 ×8") and nesting multi-lane takes, tagging each row for trace.
+  Routing is **output-hued chips** (`SignalRoutingChips`: lit = routed, "+"
+  opens an output picker) → `setOutputMask` / `LooperLaneOutputChanged`.
+  "What connects to what" comes from per-output colour + **tap-to-trace** (tap a
+  row → its connections light across all panes, the rest dim; view-local
+  `TraceState` recomputed from current rows each build, **no new cubit**). A
+  take's `rec In N` badge re-assigns its captured input (`LooperLaneInputChanged`).
+  Outputs show the structural gate + a derived "fed by" summary + the
+  `liveRegion` no-active-outputs notice (now a `SurfaceTheme.warning` token for
+  high-contrast a11y). Responsive: stacks to one column below
+  `kSignalStackBreakpoint` (960px). **Keeps** the engine state + the
+  instrument-panel dock/knob/style layer (`SignalInputDock` gained an additive
+  FX-chip row to match `SignalLaneDock`, via a shared `_FxChipRow`); **retires**
+  `SignalGraphLayout`, the node widgets, `SignalView`, and all canvas/wire usage.
+  Old graph/layout/node tests removed; coverage migrated onto `signal_rows` /
+  `signal_list_view` / `signal_routing_chips` tests. The bundled fonts + tokens
+  from the prior pass carry over. `package:routing_graph` stays (still used by
+  other surfaces; the Signal surface now uses only `FocusableTapTarget`).
+- **Unified Signal surface — node graph** *(superseded by the three-list surface
+  above; the engine wiring + dock/knob/style layer remain in use, the
+  canvas/wires were removed)* (plan
+  `docs/plan/2026-06-22-feat-unified-signal-surface-plan.md`, brainstorm +
+  mockup in `docs/{brainstorm,design}/`). Replaced the three old node-and-wire
+  surfaces (Audio Setup monitor graph, Big Picture settings Routing tab,
+  per-track lane dialog) with ONE full-screen **Signal** canvas
+  (`lib/looper/view/signal_graph/`): hardware **inputs** on the left (rich node =
+  on/off gate + the single live FX chain that records + level, reusing the kit's
+  `EffectChainCard`s), every track's **lanes** in the middle (FX-snapshot badge
+  per recorded lane), hardware **outputs** on the right (structural on/off gate,
+  greyed when off, edges still drawn). One contextual bottom **dock** swaps by
+  focus — the input's tone editor (`SignalInputDock`) or a lane's "this take"
+  snapshot editor (`SignalLaneDock`). Bezier edges: capture (input→lane),
+  playback (lane→output, fanned at a rail), and the focused input's live-monitor
+  send (dashed + faded, focused-only for a calm canvas). Geometry is a pure,
+  tested `SignalGraphLayout` composing `package:routing_graph` helpers; focus +
+  selection are view-local. Capture-on-tap (D2b): focus a lane, tap an input to
+  record it (`LooperLaneInputChanged`; re-tap un-captures). Reached from the
+  performance view by a visible chrome button **and** the `G` shortcut;
+  `showSignalPage` re-provides `LooperBloc` + `MonitorCubit` + `AudioSetupCubit`
+  into the pushed route. Audio Setup keeps only device/SR/buffer/latency; the
+  `LaneNode` moved into `signal_graph/`. Built in 3 stacked phases (scaffold →
+  rich node + dock → deletions); ~1.3k lines of old-surface tests removed with
+  their load-bearing coverage migrated onto the `signal_*` tests.
 
 ---
 
@@ -502,9 +557,11 @@ multi-track, loop multiples, loop-viz, per-track effects DSP, session
 export/import roundtrip, **single-chain monitor + record-FX snapshot +
 RT-safety + structural output gate**) · plugin 38 · controller 14 ·
 looper_repository 83 · settings 63 · session_repository 17 · local_storage 1 ·
-app 399 excl. author-only `screenshots`-tagged goldens (auto-start/first-run,
+app 358 excl. author-only `screenshots`-tagged goldens (auto-start/first-run,
 big-picture settings + access, banks + A/B, performance keyboard,
-functional-settings, **single-chain monitor graph, output-gate routing + a11y,
-lane FX-snapshot badge, v3 migration**, session menu). `flutter analyze` clean;
+functional-settings, **Signal three-list surface: SignalRows flatten +
+single-lane collapse + tags, routing-chip toggle + picker, capture re-assign,
+tap-to-trace dim/clear, output gate + a11y, no-active-outputs notice,
+responsive stacking, contextual dock**, session menu). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.

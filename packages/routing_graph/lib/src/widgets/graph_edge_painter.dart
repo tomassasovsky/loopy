@@ -126,11 +126,25 @@ class GraphEdgePainter extends CustomPainter {
   }
 
   void _draw(Canvas canvas, GraphEdge e) {
+    final (path, solidFrom) = _path(e);
+    // A soft neon underglow beneath each solid wire, so the routing reads as
+    // lit signal rather than hairlines. Skipped for faded/dashed wires (the
+    // focused-only monitor send) to keep the canvas calm.
+    if (!e.faded && !e.dashed) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 7
+          ..color = e.color.withValues(alpha: 0.22)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+    }
     final paint = Paint()
       ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
       ..strokeWidth = e.faded ? 1.4 : 2.4
       ..color = e.color.withValues(alpha: e.faded ? 0.22 : 0.95);
-    final (path, solidFrom) = _path(e);
     if (!e.dashed) {
       canvas.drawPath(path, paint);
       return;

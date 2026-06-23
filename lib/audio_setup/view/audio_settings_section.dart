@@ -6,7 +6,6 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
 import 'package:loopy/audio_setup/view/midi_device_picker.dart';
-import 'package:loopy/audio_setup/view/monitor_graph/monitor_graph_view.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
@@ -125,11 +124,6 @@ class AudioSettingsSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 28),
-        SetupGroupLabel(l10n.monitoringGroupLabel),
-        // The per-input routing graph is the single monitor surface (each input
-        // carries its own enable), so there is no master toggle to gate it.
-        ..._monitorRouting(context, status),
-        const SizedBox(height: 28),
         SetupGroupLabel(l10n.recordingGroupLabel),
         const SizedBox(height: 12),
         Text(l10n.maxLoopLengthIntro, style: setupBody),
@@ -246,40 +240,6 @@ class AudioSettingsSection extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  /// The per-input live-monitor controls shown under the monitor toggle: one
-  /// tile per hardware input (enable, output routing, and its own effects).
-  /// Each monitored input is heard live through its chain and never recorded.
-  List<Widget> _monitorRouting(BuildContext context, EngineStatus status) {
-    final l10n = context.l10n;
-    if (status.inputChannels <= 0) {
-      return [
-        const SizedBox(height: 8),
-        Text(l10n.startEngineForMonitorChannels, style: setupBody),
-      ];
-    }
-    return [
-      const SizedBox(height: 12),
-      Text(l10n.monitorRoutingIntro, style: setupBody),
-      const SizedBox(height: 12),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: FilledButton.tonalIcon(
-          key: const Key('audioSettings_openMonitorGraph'),
-          onPressed: () => unawaited(
-            showMonitorRoutingPage(
-              context: context,
-              inputChannels: status.inputChannels,
-              outputChannels: status.outputChannels,
-              excludedInputMask: status.excludedInputMask,
-            ),
-          ),
-          icon: const Icon(Icons.account_tree_outlined, size: 18),
-          label: Text(l10n.configureInputMonitoring),
-        ),
-      ),
-    ];
   }
 
   /// The enumerated ASIO [drivers] as duplex devices labelled with their probed

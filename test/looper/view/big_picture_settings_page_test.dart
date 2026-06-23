@@ -268,54 +268,10 @@ void main() {
     );
     expect(find.byKey(const Key('bpSettings_trackName_0')), findsNothing);
 
-    await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('routingGraph_view')), findsOneWidget);
-    expect(
-      find.byKey(const Key('audioSettings_playbackDevice_picker')),
-      findsNothing,
-    );
+    // There is no longer a Routing tab — the whole-system signal flow moved to
+    // the Signal surface.
+    expect(find.byKey(const Key('bpSettings_tab_routing')), findsNothing);
   });
-
-  testWidgets('the Routing tab shows the signal-flow graph', (tester) async {
-    await pump(tester);
-
-    await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('routingGraph_view')), findsOneWidget);
-  });
-
-  testWidgets('Routing tab shows no "no active outputs" notice by default', (
-    tester,
-  ) async {
-    await pump(tester);
-    await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('routing_noActiveOutputs')), findsNothing);
-  });
-
-  testWidgets(
-    'Routing tab surfaces the notice when every output is off (F-12)',
-    (tester) async {
-      // Every output gated off: the non-blocking notice must appear.
-      const allOff = LooperState(
-        tracks: [Track()],
-        status: EngineStatus(inputChannels: 2, outputChannels: 2),
-        outputEnabledMask: 0x0,
-      );
-      when(() => repository.state).thenReturn(allOff);
-      when(
-        () => repository.looperState,
-      ).thenAnswer((_) => Stream.value(allOff));
-
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('bpSettings_tab_routing')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('routing_noActiveOutputs')), findsOneWidget);
-    },
-  );
 
   testWidgets('Escape pops the settings page', (tester) async {
     // Providers above MaterialApp so the pushed settings route can read them.

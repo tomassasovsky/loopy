@@ -76,16 +76,41 @@ class EffectChainCard extends StatelessWidget {
   /// (e.g. the last card cannot move right).
   final VoidCallback? onMoveRight;
 
+  /// The machine-readout typeface for effect names (IBM Plex Mono). A bare
+  /// family string keeps the kit free of an app dependency; it falls back to
+  /// the ambient font wherever the asset is not bundled.
+  static const String _monoFont = 'IBM Plex Mono';
+
   @override
   Widget build(BuildContext context) {
     final theme = context.routingGraph;
     final decoration = BoxDecoration(
-      color: theme.cardHigh.withValues(alpha: dragging ? 0.4 : 1),
+      color: selected
+          ? Color.alphaBlend(
+              accentColor.withValues(alpha: 0.16),
+              theme.cardHigh,
+            )
+          : theme.cardHigh.withValues(alpha: dragging ? 0.4 : 1),
       borderRadius: BorderRadius.circular(8),
       border: Border.all(
         color: selected ? accentColor : accentColor.withValues(alpha: 0.45),
         width: selected ? 2 : 1,
       ),
+      boxShadow: selected
+          ? [
+              BoxShadow(
+                color: accentColor.withValues(alpha: 0.45),
+                blurRadius: 18,
+                spreadRadius: -6,
+              ),
+            ]
+          : null,
+    );
+    final labelStyle = TextStyle(
+      fontFamily: _monoFont,
+      color: theme.textPrimary,
+      fontSize: 12,
+      letterSpacing: 0.4,
     );
     final handle = Draggable<GraphCardRef>(
       key: Key('${keyPrefix}_fxHandle_${rowId}_$index'),
@@ -103,12 +128,7 @@ class EffectChainCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: accentColor),
             ),
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(color: theme.textPrimary),
-              ),
-            ),
+            child: Center(child: Text(label, style: labelStyle)),
           ),
         ),
       ),
@@ -138,7 +158,7 @@ class EffectChainCard extends StatelessWidget {
               child: Text(
                 label,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: theme.textPrimary),
+                style: labelStyle,
               ),
             ),
           ),

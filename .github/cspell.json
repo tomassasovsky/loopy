@@ -263,6 +263,11 @@
     "unreviewable",
     "stackable",
     "undoable",
-    "editability"
+    "editability",
+    "Grotesk",
+    "patchbay",
+    "capturable",
+    "centralising",
+    "bigpicture"
   ]
 }

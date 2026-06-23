@@ -177,17 +177,61 @@ final class LooperLaneMuteToggled extends LooperLaneEvent {
   const LooperLaneMuteToggled(super.channel, super.lane);
 }
 
-/// Lane [lane] of track [channel]'s entire effect chain changed (a structural
-/// edit: add, remove, reorder, or type). Resets the affected entries' DSP.
-final class LooperLaneEffectsChanged extends LooperLaneEvent {
-  /// Creates a [LooperLaneEffectsChanged].
-  const LooperLaneEffectsChanged(super.channel, super.lane, this.effects);
+/// A default effect (drive) was appended to lane [lane] of track [channel]'s
+/// chain. A structural edit — the bloc reads the current chain and pushes the
+/// grown one, so the view never computes the new list itself.
+final class LooperLaneEffectAdded extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectAdded].
+  const LooperLaneEffectAdded(super.channel, super.lane);
+}
 
-  /// The new ordered chain (clamped to [kTrackEffectMax] downstream).
-  final List<TrackEffect> effects;
+/// Chain entry [index] was removed from lane [lane] of track [channel].
+final class LooperLaneEffectRemoved extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectRemoved].
+  const LooperLaneEffectRemoved(super.channel, super.lane, this.index);
+
+  /// The chain entry index to drop (`0..length-1`).
+  final int index;
 
   @override
-  List<Object?> get props => [channel, lane, effects];
+  List<Object?> get props => [channel, lane, index];
+}
+
+/// Chain entry [index] on lane [lane] of track [channel] became [type] (resets
+/// that entry's DSP and seeds its default params).
+final class LooperLaneEffectTypeChanged extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectTypeChanged].
+  const LooperLaneEffectTypeChanged(
+    super.channel,
+    super.lane,
+    this.index,
+    this.type,
+  );
+
+  /// The chain entry index to retype (`0..length-1`).
+  final int index;
+
+  /// The new effect type.
+  final TrackEffectType type;
+
+  @override
+  List<Object?> get props => [channel, lane, index, type];
+}
+
+/// Chain entry [from] on lane [lane] of track [channel] was reordered to slot
+/// [to].
+final class LooperLaneEffectMoved extends LooperLaneEvent {
+  /// Creates a [LooperLaneEffectMoved].
+  const LooperLaneEffectMoved(super.channel, super.lane, this.from, this.to);
+
+  /// The entry's current index.
+  final int from;
+
+  /// The entry's target index.
+  final int to;
+
+  @override
+  List<Object?> get props => [channel, lane, from, to];
 }
 
 /// Parameter [param] of chain entry [index] on lane [lane] of track [channel]

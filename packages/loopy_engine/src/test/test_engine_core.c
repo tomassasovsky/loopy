@@ -2042,11 +2042,19 @@ static void test_monitor_volume(void) {
     CHECK(fabsf(out[i * 2 + 0]) < 1e-6f);
   }
 
-  /* Out-of-range volume clamps to 1; invalid args rejected. */
-  CHECK(le_engine_set_monitor_input_volume(e, 0, 2.0f) == LE_OK); /* -> 1 */
+  /* Volume can boost to the +6 dB ceiling (LE_MAX_GAIN = 2.0): a const 1.0
+   * input scales to 2.0. */
+  CHECK(le_engine_set_monitor_input_volume(e, 0, 2.0f) == LE_OK);
   le_engine_process(e, out, in, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
+  }
+
+  /* Beyond the ceiling clamps to +6 dB (2.0); invalid args rejected. */
+  CHECK(le_engine_set_monitor_input_volume(e, 0, 3.0f) == LE_OK); /* -> 2.0 */
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 2.0f) < 1e-6f);
   }
   CHECK(le_engine_set_monitor_input_volume(NULL, 0, 0.5f) == LE_ERR_INVALID);
   CHECK(le_engine_set_monitor_input_volume(e, -1, 0.5f) == LE_ERR_INVALID);
