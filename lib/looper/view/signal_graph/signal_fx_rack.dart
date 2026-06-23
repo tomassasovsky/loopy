@@ -11,10 +11,12 @@ import 'package:loopy/theme/surface_theme.dart';
 /// rather than an M3 motion token.
 const Curve _dropSettleCurve = Curves.easeOutBack;
 
-/// How many of a hosted plugin's parameters get an in-app knob on its device
-/// card (D-UI). The rest live in the plugin's own editor window (part 6); this
-/// is a UI affordance cap, not an engine limit.
-const int kPluginKnobs = 4;
+/// The widest a hosted-plugin device card grows in-rack before its knob row
+/// scrolls internally rather than pushing the rack wider. Every user-visible
+/// parameter still gets a knob; this only bounds the card's footprint so a
+/// many-param plugin doesn't run off the rack (the native editor, part 6, is
+/// still the full surface).
+const double kPluginCardMaxBodyWidth = 360;
 
 /// An **Ableton-style FX rack**: the chain laid out as horizontal **device
 /// cards**, each showing its type and its parameters as live knobs — rather
@@ -474,8 +476,11 @@ class _DeviceCard extends StatelessWidget {
 
 /// A hosted-plugin device card (sibling to [_DeviceCard]): the plugin's name +
 /// bypass + an **Open Editor** button (opens the plugin's native window), with
-/// the first [kPluginKnobs] automatable, non-hidden params as in-app knobs. A
-/// plugin that exposes no such params shows just the chrome.
+/// every automatable, non-hidden param as an in-app knob. The knob strip
+/// scrolls horizontally once it would push the card past
+/// [kPluginCardMaxBodyWidth], so a many-param plugin shows all its controls
+/// without running off the rack. A plugin that exposes no such params shows
+/// just the chrome.
 class _PluginDeviceCard extends StatelessWidget {
   const _PluginDeviceCard({
     required this.cardKey,
@@ -501,13 +506,11 @@ class _PluginDeviceCard extends StatelessWidget {
   PluginParamInfo? get _bypassParam =>
       fx.params.where((p) => p.isBypass).firstOrNull;
 
-  /// The params that earn an in-app knob: user-visible (automatable + not
-  /// hidden), excluding the bypass control (it has its own header toggle),
-  /// capped at [kPluginKnobs].
-  List<PluginParamInfo> get _knobParams => fx.params
-      .where((p) => p.isUserVisible && !p.isBypass)
-      .take(kPluginKnobs)
-      .toList();
+  /// The params that earn an in-app knob: every user-visible (automatable and
+  /// not hidden) param, except the bypass control (it has its own header
+  /// toggle).
+  List<PluginParamInfo> get _knobParams =>
+      fx.params.where((p) => p.isUserVisible && !p.isBypass).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -527,7 +530,13 @@ class _PluginDeviceCard extends StatelessWidget {
     }
     final knobs = _knobParams;
     final bypass = _bypassParam;
-    final bodyWidth = knobs.length * _knobSlot;
+    // The full knob strip, clamped so a many-param plugin scrolls inside the
+    // card instead of stretching the rack. Knobs turn on a vertical drag, so a
+    // horizontal scroll of the strip never fights the knob gesture.
+    final fullStripWidth = knobs.length * _knobSlot;
+    final bodyWidth = fullStripWidth > kPluginCardMaxBodyWidth
+        ? kPluginCardMaxBodyWidth
+        : fullStripWidth;
     final cardWidth = bodyWidth + 20 < 150 ? 150.0 : bodyWidth + 20;
     // Prefer the catalog-resolved display name; fall back to the stable id
     // (then a generic label) when it hasn't resolved.
@@ -634,21 +643,39 @@ class _PluginDeviceCard extends StatelessWidget {
                         style: signalMono(color: surface.textTertiary),
                       ),
                     )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var k = 0; k < knobs.length; k++)
-                          SizedBox(
-                            width: _knobSlot,
-                            child: _PluginParamKnob(
-                              knobKey: Key('${keyPrefix}_param_$k'),
-                              spec: knobs[k],
-                              value:
-                                  fx.paramValues[knobs[k].id] ?? knobs[k].def,
-                              onChanged: (v) => onSetParam(knobs[k].id, v),
-                            ),
+                  : LayoutBuilder(
+                      builder: (context, constraints) => SingleChildScrollView(
+                        key: Key('${keyPrefix}_params'),
+                        scrollDirection: Axis.horizontal,
+                        // Centers a short strip; scrolls a long one. The native
+                        // editor (Open Editor) stays the full-control surface.
+                        physics: fullStripWidth > bodyWidth
+                            ? const ClampingScrollPhysics()
+                            : const NeverScrollableScrollPhysics(),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minWidth: constraints.maxWidth,
                           ),
-                      ],
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              for (var k = 0; k < knobs.length; k++)
+                                SizedBox(
+                                  width: _knobSlot,
+                                  child: _PluginParamKnob(
+                                    knobKey: Key('${keyPrefix}_param_$k'),
+                                    spec: knobs[k],
+                                    value:
+                                        fx.paramValues[knobs[k].id] ??
+                                        knobs[k].def,
+                                    onChanged: (v) =>
+                                        onSetParam(knobs[k].id, v),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
             ),
           ),
