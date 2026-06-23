@@ -267,6 +267,7 @@ class Vst3Host final : public loopy::IPluginHost {
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
     using loopy::LoadStatus;
+    name_ = desc.name;  // for the editor window title
     LPV_LOG("load '%s' (id %s)\n", desc.path.c_str(), desc.id.c_str());
     if (!openBundle(desc.path)) {
       LPV_LOG("  openBundle failed\n");
@@ -508,7 +509,8 @@ class Vst3Host final : public loopy::IPluginHost {
     view->getSize(&rect);
     const int w = rect.getWidth() > 0 ? rect.getWidth() : 400;
     const int h = rect.getHeight() > 0 ? rect.getHeight() : 300;
-    window_ = lpw_window_open(w, h, "Plugin Editor",
+    window_ = lpw_window_open(w, h,
+                              name_.empty() ? "Plugin Editor" : name_.c_str(),
                               &Vst3Host::onWindowClosedThunk, this);
     if (!window_) {
       view->release();
@@ -676,6 +678,7 @@ class Vst3Host final : public loopy::IPluginHost {
   ComponentHandler componentHandler_;
   IConnectionPoint* compCP_ = nullptr;
   IConnectionPoint* ctrlCP_ = nullptr;
+  std::string name_;  // plugin display name, for the editor window title
 };
 
 }  // namespace
