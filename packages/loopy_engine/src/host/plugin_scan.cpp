@@ -82,6 +82,25 @@ class ScanSession final : public loopy::ScanSink {
     join();
   }
 
+  // Looks up a discovered descriptor by its (non-empty) id. Returns false if no
+  // match — including failed entries, whose id is empty.
+  bool find(const std::string& id, loopy::PluginDescriptor& out) {
+    if (id.empty()) return false;
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const le_plugin_desc& d : results_) {
+      if (id == d.id) {
+        out.id = d.id;
+        out.name = d.name;
+        out.vendor = d.vendor;
+        out.path = d.path;
+        out.format = static_cast<loopy::PluginFormat>(d.format);
+        out.version = d.version;
+        return true;
+      }
+    }
+    return false;
+  }
+
   // --- loopy::ScanSink ---
   void add(const loopy::PluginDescriptor& d) override {
     le_plugin_desc desc;
@@ -147,6 +166,10 @@ uint32_t parseVersion(const std::string& version) {
   if (field < 3) parts[field] = cur > 255 ? 255 : cur;
   if (!any) return 0;
   return (parts[0] << 16) | (parts[1] << 8) | parts[2];
+}
+
+bool findScannedPlugin(const std::string& id, PluginDescriptor& out) {
+  return ScanSession::instance().find(id, out);
 }
 
 }  // namespace loopy

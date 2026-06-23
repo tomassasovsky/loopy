@@ -20,6 +20,7 @@
 #include "engine_fx.h"
 #include "engine_internal.h" /* le_psola_detect prototype (defined below) */
 #include "fft.h" /* le_rfft_fwd / le_rfft_inv / le_fft / le_hann_init */
+#include "../host/plugin_slot.h" /* le_plugin_slot_process (LE_FX_PLUGIN row) */
 
 #ifndef LE_PI
 #define LE_PI 3.14159265358979323846f
@@ -901,6 +902,28 @@ static void fx_reverb_defaults(float out[LE_FX_PARAMS]) {
   out[3] = 0.0f;
 }
 
+/* LE_FX_PLUGIN process: forward one stereo sample to the hosted plugin slot
+ * published for this chain entry (NULL / not-ready => dry passthrough; the slot
+ * adapter handles the per-sample/block bridging). No DSP state lives in
+ * le_fx_state for a plugin — the host owns it. */
+static void fx_plugin_process(le_fx_state* fx, int slot, int sr, int cap,
+                              float* l, float* r, const float* p) {
+  (void)sr;
+  (void)cap;
+  (void)p;
+  le_plugin_slot* s =
+      atomic_load_explicit(&fx->plugin[slot], memory_order_acquire);
+  le_plugin_slot_process(s, l, r);
+}
+
+/* D-RT: bound a misbehaving plugin's output so it cannot poison downstream
+ * lanes or the master sum — NaN/Inf map to 0 and denormals flush to 0. */
+static inline float fx_sanitize(float x) {
+  if (!isfinite(x)) return 0.0f;
+  if (x < 1e-30f && x > -1e-30f) return 0.0f;
+  return x;
+}
+
 typedef struct le_fx_vtable {
   /* Processes one stereo sample through chain slot [slot] in place, advancing
    * that slot's per-channel DSP state. NULL == a no-op slot (LE_FX_NONE). */
@@ -933,6 +956,10 @@ static const le_fx_vtable LE_FX[] = {
         {fx_echo_process, NULL, fx_stereo_ring_prepare, fx_echo_defaults},
     [LE_FX_REVERB] =
         {fx_reverb_process, NULL, fx_reverb_prepare, fx_reverb_defaults},
+    /* A hosted plugin: process forwards to its slot; no params, no prepare, no
+     * defaults (the host owns all state). Output is sanitized at the chain
+     * boundary in fx_apply_chain. */
+    [LE_FX_PLUGIN] = {fx_plugin_process, NULL, NULL, NULL},
 };
 #define LE_FX_TYPE_COUNT ((int32_t)(sizeof(LE_FX) / sizeof(LE_FX[0])))
 
@@ -957,6 +984,12 @@ void fx_apply_chain(le_fx_state* fx, int sr, int cap, float* l, float* r,
     const int32_t ty = types[s];
     if (ty > LE_FX_NONE && ty < LE_FX_TYPE_COUNT && LE_FX[ty].process) {
       LE_FX[ty].process(fx, s, sr, cap, &xl, &xr, params[s]);
+      /* Sanitize a plugin slot's output before it re-enters the chain (D-RT).
+       * Built-ins are already bounded, so only the plugin row pays this. */
+      if (ty == LE_FX_PLUGIN) {
+        xl = fx_sanitize(xl);
+        xr = fx_sanitize(xr);
+      }
     }
   }
   *l = xl;

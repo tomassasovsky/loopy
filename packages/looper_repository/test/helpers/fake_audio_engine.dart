@@ -499,4 +499,45 @@ class FakeAudioEngine implements AudioEngine {
     calls.add('scanCancel');
     return EngineResult.ok;
   }
+
+  /// Handle returned by [setLanePlugin] / [setMonitorPlugin]; set to `null` to
+  /// simulate a load failure.
+  PluginSlotHandle? nextSlotHandle = const MockPluginSlotHandle('fake-plugin');
+
+  @override
+  PluginSlotHandle? setLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+    required String pluginId,
+  }) {
+    calls.add('setLanePlugin');
+    return nextSlotHandle;
+  }
+
+  @override
+  PluginSlotHandle? setMonitorPlugin({
+    required int input,
+    required int index,
+    required String pluginId,
+  }) {
+    calls.add('setMonitorPlugin');
+    return nextSlotHandle;
+  }
+
+  @override
+  EngineResult clearLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+  }) {
+    calls.add('clearLanePlugin');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult clearMonitorPlugin({required int input, required int index}) {
+    calls.add('clearMonitorPlugin');
+    return EngineResult.ok;
+  }
 }

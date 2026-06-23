@@ -65,6 +65,35 @@ void scanClap(ScanSink& sink);
 // patch, clamping each field to a byte. Returns 0 for an unparseable string.
 uint32_t parseVersion(const std::string& version);
 
+// Resolves a scanned descriptor by its stable id (from the most recent scan).
+// Returns false if no scan has run or the id is unknown. Defined in
+// plugin_scan.cpp, which owns the scan results.
+bool findScannedPlugin(const std::string& id, PluginDescriptor& out);
+
+// One live plugin loaded into a single FX chain slot. The VST3 and CLAP backends
+// (host_vst3.cpp / host_clap.cpp) and the test stub (slot.cpp) implement this.
+// Every method runs on the CONTROL thread EXCEPT process(), which the slot's
+// sample-to-block adapter calls on the AUDIO THREAD.
+class IPluginHost {
+ public:
+  virtual ~IPluginHost() = default;
+
+  // Instantiate + activate the plugin, ready-but-bypassed, at `sampleRate` with
+  // a fixed `maxBlock` processing block. Returns false on any failure (the host
+  // is then discarded without process() ever being called).
+  virtual bool load(const PluginDescriptor& descriptor, double sampleRate,
+                    int maxBlock) = 0;
+
+  // AUDIO THREAD ONLY: process exactly `frames` samples of stereo audio in
+  // place (left[frames], right[frames]). Must not allocate, lock, or block.
+  virtual void process(float* left, float* right, int frames) = 0;
+};
+
+// Backend factories. Each returns a not-yet-loaded host (the caller calls
+// load()); never null. Implemented in host_vst3.cpp / host_clap.cpp.
+IPluginHost* createVst3Host();
+IPluginHost* createClapHost();
+
 }  // namespace loopy
 
 #endif  // LOOPY_HOST_PLUGIN_HOST_H
