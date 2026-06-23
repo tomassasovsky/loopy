@@ -321,6 +321,7 @@ class EngineSnapshot {
     this.fxAddedLatencyFrames = 0,
     this.masterGain = 1,
     this.activeBackend = AudioBackend.miniaudio,
+    this.outputEnabledMask = 0xFFFFFFFF,
     this.tracks = const [],
   });
 
@@ -346,6 +347,7 @@ class EngineSnapshot {
       fxAddedLatencyFrames = 0,
       masterGain = 1,
       activeBackend = AudioBackend.miniaudio,
+      outputEnabledMask = 0xFFFFFFFF,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -377,6 +379,7 @@ class EngineSnapshot {
     fxAddedLatencyFrames: native.fx_added_latency_frames,
     masterGain: native.master_gain,
     activeBackend: AudioBackend.fromNative(native.active_backend),
+    outputEnabledMask: native.output_enabled_mask,
     tracks: tracks,
   );
 
@@ -461,6 +464,13 @@ class EngineSnapshot {
   /// back reports [AudioBackend.miniaudio] here.
   final AudioBackend activeBackend;
 
+  /// Structural output gate: bit c set => hardware output c is enabled (a
+  /// routing target). A cleared bit removes it from the mix while its stored
+  /// route masks are preserved (re-enabling restores them). All outputs are
+  /// enabled by default; only bits in `[0, outputChannels)` are meaningful.
+  /// (The domain-level `LooperState.isOutputEnabled` interprets this bit.)
+  final int outputEnabledMask;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -516,6 +526,7 @@ class EngineSnapshot {
           fxAddedLatencyFrames == other.fxAddedLatencyFrames &&
           masterGain == other.masterGain &&
           activeBackend == other.activeBackend &&
+          outputEnabledMask == other.outputEnabledMask &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -540,6 +551,7 @@ class EngineSnapshot {
     fxAddedLatencyFrames,
     masterGain,
     activeBackend,
+    outputEnabledMask,
     ...tracks,
   ]);
 

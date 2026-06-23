@@ -38,10 +38,10 @@ typedef struct le_command {
       int32_t channel;
       uint32_t mask;
     } trackmask;
-    struct { /* SET_LANE_FX / SET_MONITOR_LANE_FX */
+    struct { /* SET_LANE_FX / SET_MONITOR_INPUT_FX (channel = input, lane unused) */
       int32_t channel, lane, index, type;
     } fx;
-    struct { /* SET_LANE_FX_COUNT / SET_MONITOR_LANE_FX_COUNT */
+    struct { /* SET_LANE_FX_COUNT / SET_MONITOR_INPUT_FX_COUNT (channel = input) */
       int32_t channel, lane, count;
     } fxcount;
     struct { /* lane int payload: SET_LANE_INPUT (input ch) / *_OUTPUT (mask) */

@@ -126,36 +126,26 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   }
 }
 
-/* Resets a live monitor lane to defaults (full stereo output, unity volume,
- * unmuted, empty/clean chain), clearing its effect DSP state and releasing its
- * delay lines. Used at configure and when a monitor's lane count grows. */
-void le_monitor_lane_reset(le_monitor_lane* ln) {
-  atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
-  store_f32(&ln->a_vol_bits, 1.0f);
-  store_i32(&ln->a_muted, 0);
-  store_i32(&ln->a_fx_count, 0);
-  for (int s = 0; s < LE_FX_MAX; ++s) {
-    store_i32(&ln->a_fx_type[s], LE_FX_NONE);
-    for (int p = 0; p < LE_FX_PARAMS; ++p) {
-      store_f32(&ln->a_fx_param[s][p], 0.0f);
-    }
-    free(ln->fx.delay[s][0]);
-    ln->fx.delay[s][0] = NULL;
-    free(ln->fx.delay[s][1]);
-    ln->fx.delay[s][1] = NULL;
-    le_fx_free_octaver(&ln->fx, s);
-    le_fx_entry_reset(&ln->fx, s);
-  }
-}
-
-/* Resets a live monitor input to defaults: disabled, a single default (clean)
- * lane. Resets every lane slot (not just the active one) so a later grow starts
- * from a clean lane. */
+/* Resets a live monitor input to defaults: disabled, full stereo output, unity
+ * volume, unmuted, and an empty (clean) single chain — clearing its effect DSP
+ * state and releasing its delay lines. Used at configure. */
 static void le_monitor_input_reset(le_monitor_input* m) {
   store_i32(&m->a_enabled, 0);
-  m->lane_count = 1;
-  for (int l = 0; l < LE_MAX_LANES; ++l) {
-    le_monitor_lane_reset(&m->lanes[l]);
+  atomic_store_explicit(&m->a_output_mask, 0x3u, memory_order_relaxed);
+  store_f32(&m->a_vol_bits, 1.0f);
+  store_i32(&m->a_muted, 0);
+  store_i32(&m->a_fx_count, 0);
+  for (int s = 0; s < LE_FX_MAX; ++s) {
+    store_i32(&m->a_fx_type[s], LE_FX_NONE);
+    for (int p = 0; p < LE_FX_PARAMS; ++p) {
+      store_f32(&m->a_fx_param[s][p], 0.0f);
+    }
+    free(m->fx.delay[s][0]);
+    m->fx.delay[s][0] = NULL;
+    free(m->fx.delay[s][1]);
+    m->fx.delay[s][1] = NULL;
+    le_fx_free_octaver(&m->fx, s);
+    le_fx_entry_reset(&m->fx, s);
   }
 }
 
@@ -262,6 +252,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   /* Re-derived per device open in le_engine_start; default to none excluded. */
   atomic_store_explicit(&engine->a_excluded_input_mask, 0u,
                         memory_order_relaxed);
+  /* Structural output gate: every output enabled by default (absence of any gate
+   * == all outputs on). The control thread clears bits via LE_CMD_SET_OUTPUT_
+   * ENABLED; the audio thread skips a cleared output in the mix fan-out. */
+  atomic_store_explicit(&engine->a_output_enabled_mask, 0xFFFFFFFFu,
+                        memory_order_relaxed);
+  engine->snapshot_copy_count = 0;
 
   /* Per-input live monitors: all disabled by default (each defaults to full
    * stereo output, empty chain). Inputs are monitored only when explicitly
@@ -291,6 +287,10 @@ void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
   if (engine == NULL) return;
   atomic_store_explicit(&engine->a_excluded_input_mask, mask,
                         memory_order_relaxed);
+}
+
+int32_t le_engine_snapshot_copy_count_for_test(le_engine* engine) {
+  return engine == NULL ? 0 : engine->snapshot_copy_count;
 }
 
 int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
@@ -376,6 +376,8 @@ le_engine* le_engine_create(void) {
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
   engine->lim_gain = 1.0f;
   store_f32(&engine->a_overdub_fb_bits, 1.0f); /* classic additive overdub */
+  atomic_store_explicit(&engine->a_output_enabled_mask, 0xFFFFFFFFu,
+                        memory_order_relaxed); /* all outputs on until set */
   return engine;
 }
 
@@ -401,12 +403,10 @@ void le_engine_destroy(le_engine* engine) {
     }
   }
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
-    for (int l = 0; l < LE_MAX_LANES; ++l) {
-      for (int s = 0; s < LE_FX_MAX; ++s) {
-        free(engine->monitors[c].lanes[l].fx.delay[s][0]);
-        free(engine->monitors[c].lanes[l].fx.delay[s][1]);
-        le_fx_free_octaver(&engine->monitors[c].lanes[l].fx, s);
-      }
+    for (int s = 0; s < LE_FX_MAX; ++s) {
+      free(engine->monitors[c].fx.delay[s][0]);
+      free(engine->monitors[c].fx.delay[s][1]);
+      le_fx_free_octaver(&engine->monitors[c].fx, s);
     }
   }
   free(engine->lat_buf);

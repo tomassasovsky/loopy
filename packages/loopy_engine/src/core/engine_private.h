@@ -153,40 +153,26 @@ typedef struct le_lane {
   le_fx_state fx;
 } le_lane;
 
-/* One live monitor lane — an independent parallel monitoring path for one input.
+/* One hardware input's live monitor (engine-level, one slot per input).
  *
- * Mirrors le_lane exactly, minus the recording buffers: monitoring is live-only
- * and never recorded, so a lane carries no pool/undo/length state. Each lane
- * runs the input's live sample through its own non-destructive effect chain
- * (stageless, on its own `fx` state) at its own volume and routes the result to
- * the output channels a_output_mask selects, unless a_muted. A lane with an
- * empty effect chain is the clean (dry) path — there is no special-case dry
- * concept; "wet + dry" is simply an FX lane plus a no-FX lane. */
-typedef struct le_monitor_lane {
-  _Atomic uint32_t a_output_mask; /* output channels this lane plays to */
-  _Atomic uint32_t a_vol_bits;    /* lane gain (float bits, 0..1) */
-  _Atomic int32_t a_muted;        /* 0/1 per-lane mute */
+ * When a_enabled, the input's live sample runs through ONE non-destructive effect
+ * chain (stageless, on its own `fx` state) at a_vol_bits, routed to the output
+ * channels a_output_mask selects unless a_muted. An empty chain (a_fx_count == 0)
+ * is the clean (dry) path — there is no special-case dry concept. The monitored
+ * signal is NEVER recorded and is independent of all track state, so an input can
+ * be monitored whether or not any track records or plays it. Input-level enable
+ * gates the whole input (and honours loopback exclusion + the latency-measurement
+ * suppress/restore). This single chain is what le_engine_record deep-copies onto a
+ * recording lane (snapshot-on-record). */
+typedef struct le_monitor_input {
+  _Atomic int32_t a_enabled;      /* 0/1 live monitoring on for this input */
+  _Atomic uint32_t a_output_mask; /* output channels the monitor plays to */
+  _Atomic uint32_t a_vol_bits;    /* monitor gain (float bits, 0..1) */
+  _Atomic int32_t a_muted;        /* 0/1 monitor mute */
   _Atomic int32_t a_fx_count;
   _Atomic int32_t a_fx_type[LE_FX_MAX];
   _Atomic uint32_t a_fx_param[LE_FX_MAX][LE_FX_PARAMS]; /* float bits, 0..1 */
   le_fx_state fx;
-} le_monitor_lane;
-
-/* One hardware input's live monitor (engine-level, one slot per input).
- *
- * When a_enabled, the input's live sample is fanned out across lane_count
- * independent monitor lanes, each with its own effect chain, routing, volume,
- * and mute. The monitored signal is NEVER recorded and is independent of all
- * track state, so an input can be monitored whether or not any track records or
- * plays it. Input-level enable gates the whole input (and honours loopback
- * exclusion + the latency-measurement suppress/restore); per-lane mute gates
- * each lane — exactly the le_track / le_lane model. */
-typedef struct le_monitor_input {
-  _Atomic int32_t a_enabled; /* 0/1 live monitoring on for this input */
-  int32_t lane_count; /* active lanes (1..LE_MAX_LANES); control-thread plain
-                       * int, like le_track.lane_count — not an atomic, not a
-                       * ring command. */
-  le_monitor_lane lanes[LE_MAX_LANES];
 } le_monitor_input;
 
 /* One looper track: a multi-lane container that owns the transport, the shared
@@ -281,6 +267,12 @@ struct le_engine {
   /* Input channels whose Core Audio label marks them as loopback; never
    * recorded, monitored, or routable. Computed once at device open. */
   _Atomic uint32_t a_excluded_input_mask;
+  /* Structural output gate: bit c set => output channel c is ENABLED (a routing
+   * target). A cleared bit removes the output from the mix fan-out while leaving
+   * every lane/monitor mask untouched. Written by the control thread
+   * (LE_CMD_SET_OUTPUT_ENABLED), read once per process() on the audio thread and
+   * published in the snapshot. All bits set on a fresh configure (default-on). */
+  _Atomic uint32_t a_output_enabled_mask;
   _Atomic uint64_t a_frames;
   _Atomic uint32_t a_xruns;
   _Atomic uint32_t a_in_rms_bits;
@@ -402,6 +394,13 @@ struct le_engine {
    * feedback during the pulse) is restored when the measurement finishes.
    * Audio-thread-local: written/read only on the device callback. */
   int32_t lat_saved_monitor_enabled[LE_MAX_INPUTS];
+
+  /* Test instrumentation (control-thread-only, never touched by the audio
+   * thread): counts how many times the record-FX snapshot deep-copy ran. The
+   * RT-safety test asserts this advances on le_engine_record (control thread) and
+   * never on le_engine_process, proving the copy never happens on the audio
+   * thread (NF-1). A plain int — single writer, the control thread. */
+  int32_t snapshot_copy_count;
 
   char device_name[256];
 

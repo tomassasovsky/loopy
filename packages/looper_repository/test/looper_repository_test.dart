@@ -602,11 +602,10 @@ void main() {
       expect(engine.laneFx.containsKey((0, 0, 0)), isFalse);
     });
 
-    test('a monitor lane chain is deferred then re-applied on start', () {
+    test('a monitor chain is deferred then re-applied on start', () {
       final repo = buildRepo()
-        ..setMonitorLaneEffects(
+        ..setMonitorEffects(
           input: 0,
-          lane: 0,
           effects: [
             TrackEffect(
               type: TrackEffectType.delay,
@@ -614,101 +613,162 @@ void main() {
             ),
           ],
         );
-      expect(engine.monitorLaneFx, isEmpty); // not running yet
+      expect(engine.monitorFx, isEmpty); // not running yet
 
       repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneFx[(0, 0, 0)]?.code, TrackEffectType.delay.code);
-      expect(engine.monitorLaneFxParam[(0, 0, 0, 1)], 0.4);
-      expect(engine.monitorLaneFxCount[(0, 0)], 1);
+      expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.delay.code);
+      expect(engine.monitorFxParam[(0, 0, 1)], 0.4);
+      expect(engine.monitorFxCount[0], 1);
     });
 
-    test(
-      'a monitor lane param tweak updates the entry without resetting it',
-      () {
-        final repo = buildRepo()
-          ..startEngine(const EngineConfig())
-          ..setMonitorLaneEffects(
-            input: 0,
-            lane: 0,
-            effects: [TrackEffect(type: TrackEffectType.drive)],
-          );
-        engine.calls.clear();
-
-        repo.setMonitorLaneEffectParam(
+    test('a monitor param tweak updates the entry without resetting it', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
           input: 0,
-          lane: 0,
-          index: 0,
-          param: 0,
-          value: 0.9,
-        );
-        expect(engine.monitorLaneFxParam[(0, 0, 0, 0)], 0.9);
-        // No setMonitorLaneFx (which would reset DSP) — only the granular call.
-        expect(engine.calls, isNot(contains('setMonitorLaneFx')));
-        expect(engine.calls, contains('setMonitorLaneFxParam'));
-
-        // The tweak is remembered and re-applied on restart.
-        engine.monitorLaneFxParam.clear();
-        repo.startEngine(const EngineConfig());
-        expect(engine.monitorLaneFxParam[(0, 0, 0, 0)], 0.9);
-      },
-    );
-
-    test('setMonitorLaneOutput routes a lane and reapplies on restart', () {
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setMonitorLaneOutput(input: 0, lane: 1, mask: 0x2);
-      expect(engine.monitorLaneOutput[(0, 1)], 0x2);
-
-      // Remembered and re-applied on the next start.
-      engine.monitorLaneOutput.clear();
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneOutput[(0, 1)], 0x2);
-    });
-
-    test('setMonitorLaneOutput is remembered before the engine starts', () {
-      final repo = buildRepo()
-        ..setMonitorLaneOutput(input: 1, lane: 0, mask: 0x1);
-      expect(engine.monitorLaneOutput, isEmpty); // not running yet
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneOutput[(1, 0)], 0x1);
-    });
-
-    test('setMonitorLaneVolume applies the gain and reapplies on restart', () {
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setMonitorLaneVolume(input: 0, lane: 0, volume: 0.5);
-      expect(engine.monitorLaneVolume[(0, 0)], 0.5);
-
-      // Remembered and re-applied on the next start.
-      engine.monitorLaneVolume.clear();
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneVolume[(0, 0)], 0.5);
-    });
-
-    test('setMonitorLaneMute mutes a lane and reapplies on restart', () {
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setMonitorLaneMute(input: 0, lane: 1, muted: true);
-      expect(engine.monitorLaneMute[(0, 1)], isTrue);
-
-      engine.monitorLaneMute.clear();
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneMute[(0, 1)], isTrue);
-    });
-
-    test('an empty monitor lane chain (clean path) zeroes the count', () {
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setMonitorLaneEffects(
-          input: 0,
-          lane: 0,
           effects: [TrackEffect(type: TrackEffectType.drive)],
         );
-      expect(engine.monitorLaneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
+      engine.calls.clear();
 
-      // A no-FX lane is the clean (dry) path: the chain length drops to 0.
-      repo.setMonitorLaneEffects(input: 0, lane: 0, effects: const []);
-      expect(engine.monitorLaneFxCount[(0, 0)], 0);
+      repo.setMonitorEffectParam(input: 0, index: 0, param: 0, value: 0.9);
+      expect(engine.monitorFxParam[(0, 0, 0)], 0.9);
+      // No setMonitorInputFx (which would reset DSP) — only the granular call.
+      expect(engine.calls, isNot(contains('setMonitorInputFx')));
+      expect(engine.calls, contains('setMonitorInputFxParam'));
+
+      // The tweak is remembered and re-applied on restart.
+      engine.monitorFxParam.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorFxParam[(0, 0, 0)], 0.9);
+    });
+
+    test('setMonitorOutput routes the chain and reapplies on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorOutput(input: 0, mask: 0x2);
+      expect(engine.monitorOutput[0], 0x2);
+
+      engine.monitorOutput.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorOutput[0], 0x2);
+    });
+
+    test('setMonitorOutput is remembered before the engine starts', () {
+      final repo = buildRepo()..setMonitorOutput(input: 1, mask: 0x1);
+      expect(engine.monitorOutput, isEmpty); // not running yet
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorOutput[1], 0x1);
+    });
+
+    test('setMonitorVolume applies the gain and reapplies on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorVolume(input: 0, volume: 0.5);
+      expect(engine.monitorVolume[0], 0.5);
+
+      engine.monitorVolume.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorVolume[0], 0.5);
+    });
+
+    test('setMonitorMute mutes the chain and reapplies on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorMute(input: 0, muted: true);
+      expect(engine.monitorMute[0], isTrue);
+
+      engine.monitorMute.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.monitorMute[0], isTrue);
+    });
+
+    test('an empty monitor chain (clean path) zeroes the count', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [TrackEffect(type: TrackEffectType.drive)],
+        );
+      expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.drive.code);
+
+      repo.setMonitorEffects(input: 0, effects: const []);
+      expect(engine.monitorFxCount[0], 0);
+    });
+
+    test('setOutputEnabled applies the gate and reapplies on restart', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setOutputEnabled(output: 1, enabled: false);
+      expect(engine.outputEnabled[1], isFalse);
+      expect(repo.outputEnabled(1), isFalse);
+      expect(repo.outputEnabled(0), isTrue); // default-on
+
+      // Only the off entry is remembered and re-asserted on restart.
+      engine.outputEnabled.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.outputEnabled[1], isFalse);
+
+      // Re-enabling drops the stored off entry (default-on); not re-pushed.
+      repo.setOutputEnabled(output: 1, enabled: true);
+      engine.outputEnabled.clear();
+      repo.startEngine(const EngineConfig());
+      expect(engine.outputEnabled.containsKey(1), isFalse);
+    });
+
+    test('_project surfaces the engine output-gate mask', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        outputEnabledMask: 0x1, // only output 0 enabled
+      );
+      final state = buildRepo().state;
+      expect(state.outputEnabledMask, 0x1);
+      expect(state.isOutputEnabled(0), isTrue);
+      expect(state.isOutputEnabled(1), isFalse);
+    });
+
+    test('record snapshots the input monitor chain onto the lane (G3/AC3)', () {
+      // Track 0 is EMPTY (so a record is a fresh capture). Lane 0 records input
+      // 0 by default.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [TrackEffect(type: TrackEffectType.delay)],
+        )
+        ..record(); // track 0 EMPTY -> snapshot copies the input chain
+
+      // The lane now holds a copy of the input chain.
+      expect(repo.laneEffects(0, 0).single.type, TrackEffectType.delay);
+
+      // Editing the input chain afterwards does NOT alter the recorded lane
+      // (copy-on-record, not a live reference — D3).
+      repo.setMonitorEffects(
+        input: 0,
+        effects: [TrackEffect(type: TrackEffectType.drive)],
+      );
+      expect(repo.laneEffects(0, 0).single.type, TrackEffectType.delay);
     });
 
     test('clearing a track multiple (0) drops the override', () {
@@ -737,32 +797,16 @@ void main() {
       },
     );
 
-    test('setMonitorLaneCount remembers, defers, and re-applies on start', () {
-      final repo = buildRepo()..setMonitorLaneCount(input: 2, count: 3);
-      // Not running yet: remembered but not pushed to the engine.
-      expect(engine.monitorLaneCount, isEmpty);
-
-      // Remembering is proven by re-applying the count on the next start.
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneCount[2], 3);
-
-      // Count 1 (the default) drops the override and does not re-apply.
-      repo.setMonitorLaneCount(input: 2, count: 1);
-      engine.monitorLaneCount.clear();
-      repo.startEngine(const EngineConfig());
-      expect(engine.monitorLaneCount.containsKey(2), isFalse);
-    });
-
     test('per-input monitors are independent and survive a restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
         ..setMonitorInputEnabled(input: 0, enabled: true)
-        ..setMonitorLaneOutput(input: 0, lane: 0, mask: 0x1)
+        ..setMonitorOutput(input: 0, mask: 0x1)
         ..setMonitorInputEnabled(input: 1, enabled: true)
-        ..setMonitorLaneOutput(input: 1, lane: 0, mask: 0x2);
+        ..setMonitorOutput(input: 1, mask: 0x2);
       expect(engine.monitorInputEnabled[0], isTrue);
-      expect(engine.monitorLaneOutput[(0, 0)], 0x1);
-      expect(engine.monitorLaneOutput[(1, 0)], 0x2);
+      expect(engine.monitorOutput[0], 0x1);
+      expect(engine.monitorOutput[1], 0x2);
 
       // Disabling one input leaves the other untouched.
       repo.setMonitorInputEnabled(input: 0, enabled: false);
@@ -771,12 +815,12 @@ void main() {
 
       // Both are re-applied on restart.
       engine.monitorInputEnabled.clear();
-      engine.monitorLaneOutput.clear();
+      engine.monitorOutput.clear();
       repo.startEngine(const EngineConfig());
       expect(engine.monitorInputEnabled[0], isFalse);
       expect(engine.monitorInputEnabled[1], isTrue);
-      expect(engine.monitorLaneOutput[(0, 0)], 0x1);
-      expect(engine.monitorLaneOutput[(1, 0)], 0x2);
+      expect(engine.monitorOutput[0], 0x1);
+      expect(engine.monitorOutput[1], 0x2);
     });
 
     test('engineVersion is forwarded', () {
