@@ -457,4 +457,46 @@ class FakeAudioEngine implements AudioEngine {
     calls.add('readTrackVisual');
     return visual;
   }
+
+  /// Descriptors returned by [scanResults] once a scan has begun.
+  List<PluginDescriptor> pluginScanResults = const [];
+
+  /// Optional override for [scanPoll]; defaults to a finished scan that found
+  /// every entry in [pluginScanResults].
+  PluginScanProgress? scanProgressOverride;
+
+  /// Result returned by [scanBegin] (set to a non-ok value to exercise the
+  /// catalog's begin-failure path).
+  EngineResult scanBeginResult = EngineResult.ok;
+
+  bool _scanning = false;
+
+  @override
+  EngineResult scanBegin({bool rescan = false}) {
+    calls.add('scanBegin');
+    if (!scanBeginResult.isOk) return scanBeginResult;
+    _scanning = true;
+    return scanBeginResult;
+  }
+
+  @override
+  PluginScanProgress scanPoll() =>
+      scanProgressOverride ??
+      PluginScanProgress(
+        done: true,
+        found: pluginScanResults.length,
+        scanned: pluginScanResults.length,
+        total: pluginScanResults.length,
+      );
+
+  @override
+  List<PluginDescriptor> scanResults() =>
+      _scanning ? pluginScanResults : const [];
+
+  @override
+  EngineResult scanCancel() {
+    _scanning = false;
+    calls.add('scanCancel');
+    return EngineResult.ok;
+  }
 }

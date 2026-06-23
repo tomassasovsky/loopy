@@ -45,3 +45,22 @@ $CC $STD src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c
   src/midi/midi_backend_apple.c src/midi/midi_backend_windows.c $MIDI_LIBS \
   -o "$OUT/loopy_midi_tests.exe"
 "$OUT/loopy_midi_tests.exe"
+
+# --- Plugin scan tests (macOS only) ----------------------------------------
+# Plugin hosting is macOS-first (LOOPY_ENABLE_PLUGINS). This compiles the scan
+# ABI + backends against the vendored VST3/CLAP SDKs and exercises the
+# per-candidate failed-entry guard with a controlled fixture (no real plugin
+# install needed). Skipped on Windows/Linux until the ports (parts 8–9).
+if [ "$(uname -s)" = "Darwin" ]; then
+  echo "== building plugin scan tests =="
+  CXX="${CXX:-clang++}"
+  PLUGIN_INC="-Ithird_party/vst3sdk -Ithird_party/clap/include -Isrc/core -Isrc/host"
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS $PLUGIN_INC \
+    src/test/test_plugin_scan.cpp \
+    src/host/plugin_scan.cpp src/host/scan_vst3.cpp src/host/scan_clap.cpp \
+    third_party/vst3sdk/pluginterfaces/base/coreiids.cpp \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_plugin_scan_tests.exe"
+  "$OUT/loopy_plugin_scan_tests.exe"
+fi

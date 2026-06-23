@@ -13,6 +13,7 @@ export 'src/audio_engine.dart'
         EngineException,
         EngineLifecycle,
         EngineMetering,
+        EnginePluginHosting,
         EngineResult,
         EngineRouting,
         LooperTransport,
@@ -32,6 +33,8 @@ export 'src/engine_snapshot.dart'
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mock_audio_engine.dart' show MockAudioEngine;
 export 'src/native_audio_engine.dart' show NativeAudioEngine;
+export 'src/plugin_descriptor.dart'
+    show PluginDescriptor, PluginFormat, PluginScanProgress;
 export 'src/track_effect.dart'
     show
         ParamReadout,
