@@ -106,4 +106,22 @@ int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id, double value) {
   return LE_ERR_INVALID;
 }
 
+/* ---- Native editor window ---- */
+
+int32_t le_plugin_editor_open(le_plugin_slot* slot) {
+  (void)slot;
+  return LE_ERR_UNSUPPORTED; /* no editor on a disabled build */
+}
+
+int32_t le_plugin_editor_close(le_plugin_slot* slot) {
+  (void)slot;
+  return LE_OK; /* nothing open to close */
+}
+
+int32_t le_plugin_editor_is_open(le_plugin_slot* slot, int32_t* open) {
+  (void)slot;
+  if (open) *open = 0;
+  return LE_ERR_INVALID;
+}
+
 #endif /* !LOOPY_ENABLE_PLUGINS */

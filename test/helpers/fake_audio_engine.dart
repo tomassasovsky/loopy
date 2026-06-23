@@ -461,5 +461,14 @@ class FakeAudioEngine implements AudioEngine {
   ) => EngineResult.ok;
 
   @override
+  EngineResult pluginEditorOpen(PluginSlotHandle slot) => EngineResult.ok;
+
+  @override
+  EngineResult pluginEditorClose(PluginSlotHandle slot) => EngineResult.ok;
+
+  @override
+  bool pluginEditorIsOpen(PluginSlotHandle slot) => false;
+
+  @override
   void dispose() => disposeCalls++;
 }

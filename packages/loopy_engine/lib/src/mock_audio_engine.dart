@@ -276,6 +276,24 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult pluginEditorOpen(PluginSlotHandle slot) {
+    if (slot is! MockPluginSlotHandle) return EngineResult.invalid;
+    slot.editorOpen = true;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult pluginEditorClose(PluginSlotHandle slot) {
+    if (slot is! MockPluginSlotHandle) return EngineResult.invalid;
+    slot.editorOpen = false;
+    return EngineResult.ok;
+  }
+
+  @override
+  bool pluginEditorIsOpen(PluginSlotHandle slot) =>
+      slot is MockPluginSlotHandle && slot.editorOpen;
+
+  @override
   EngineResult measureLatency() {
     if (!_running) return EngineResult.notRunning;
     _latencyState = LatencyState.done;
@@ -515,6 +533,10 @@ class MockPluginSlotHandle implements PluginSlotHandle {
   final String pluginId;
 
   final Map<int, double> _values;
+
+  /// Whether this slot's (fake) native editor window is open. Toggled by
+  /// [MockAudioEngine.pluginEditorOpen] / `pluginEditorClose`.
+  bool editorOpen = false;
 
   /// The deterministic fake parameter set every mock plugin exposes: three
   /// automatable knobs ranged 0..1, mirroring the native StubHost.

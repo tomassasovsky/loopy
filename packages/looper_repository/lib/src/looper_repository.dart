@@ -837,6 +837,92 @@ class LooperRepository {
     return _engine.pluginParamSet(handle, paramId, value);
   }
 
+  /// Opens the native editor window for lane [lane]'s plugin chain entry
+  /// [index] (umbrella D-WIN). Returns [EngineResult.invalid] when no plugin is
+  /// loaded there.
+  EngineResult openLanePluginEditor({
+    required int channel,
+    required int lane,
+    required int index,
+  }) {
+    final handle = _laneSlots[(channel, lane, index)];
+    if (handle == null) return EngineResult.invalid;
+    return _engine.pluginEditorOpen(handle);
+  }
+
+  /// Force-closes lane [lane] chain entry [index]'s editor window, then does a
+  /// final read-back of its parameters so the editor's last state lands in the
+  /// model (D-SYNC; the plugin is the source of truth on conflict).
+  EngineResult closeLanePluginEditor({
+    required int channel,
+    required int lane,
+    required int index,
+  }) {
+    final handle = _laneSlots[(channel, lane, index)];
+    if (handle == null) return EngineResult.invalid;
+    final result = _engine.pluginEditorClose(handle);
+    refreshLanePluginParams(channel: channel, lane: lane, index: index);
+    return result;
+  }
+
+  /// Whether lane [lane] chain entry [index]'s plugin editor window is still
+  /// open natively — false once the user closes the OS window, so the bloc's
+  /// sync poll can self-terminate.
+  bool isLanePluginEditorOpen({
+    required int channel,
+    required int lane,
+    required int index,
+  }) {
+    final handle = _laneSlots[(channel, lane, index)];
+    return handle != null && _engine.pluginEditorIsOpen(handle);
+  }
+
+  /// Reads the live values of lane [lane] chain entry [index]'s user-visible
+  /// plugin params back into the model (D-SYNC inbound mirror). Returns whether
+  /// anything changed — the bloc's ≤10 Hz editor poll calls this and re-emits
+  /// only on a change. A no-op when the entry is not a loaded plugin.
+  bool refreshLanePluginParams({
+    required int channel,
+    required int lane,
+    required int index,
+  }) {
+    final effects = _laneEffects[(channel, lane)];
+    if (effects == null || index < 0 || index >= effects.length) return false;
+    final fx = effects[index];
+    if (fx is! PluginEffect) return false;
+    final handle = _laneSlots[(channel, lane, index)];
+    if (handle == null) return false;
+    final updated = _readBackParams(fx, handle);
+    if (updated == null) return false;
+    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
+      ..[index] = updated;
+    _reproject();
+    return true;
+  }
+
+  /// Reads every user-visible param of [fx] from its loaded [handle]; returns a
+  /// copy with the changed values, or null if nothing moved. Shared by the lane
+  /// and monitor read-back paths.
+  ///
+  /// The plugin is the source of truth (D-SYNC), so a value the plugin reports
+  /// overwrites the model. One known transient: an in-app knob set is RT-queued
+  /// and applies on the next process block, so a poll that ticks in that window
+  /// reads the pre-change value and briefly snaps the knob back. Editor and
+  /// in-app knobs are rarely driven at once, so this is accepted for now.
+  PluginEffect? _readBackParams(PluginEffect fx, PluginSlotHandle handle) {
+    final values = Map<int, double>.of(fx.paramValues);
+    var changed = false;
+    for (final p in fx.params) {
+      if (!p.isUserVisible) continue;
+      final live = _engine.pluginParamGet(handle, p.id);
+      if (values[p.id] != live) {
+        values[p.id] = live;
+        changed = true;
+      }
+    }
+    return changed ? fx.copyWith(paramValues: values) : null;
+  }
+
   /// Lane [lane] of track [channel]'s remembered effect chain (empty if none),
   /// in processing order.
   List<TrackEffect> laneEffects(int channel, int lane) =>
@@ -1020,6 +1106,54 @@ class LooperRepository {
     final handle = _monitorSlots[(input, index)];
     if (handle == null) return EngineResult.invalid;
     return _engine.pluginParamSet(handle, paramId, value);
+  }
+
+  /// Opens the native editor window for monitor [input]'s plugin chain entry
+  /// [index] (D-WIN). Returns [EngineResult.invalid] when no plugin is loaded.
+  EngineResult openMonitorPluginEditor({
+    required int input,
+    required int index,
+  }) {
+    final handle = _monitorSlots[(input, index)];
+    if (handle == null) return EngineResult.invalid;
+    return _engine.pluginEditorOpen(handle);
+  }
+
+  /// Force-closes monitor [input] chain entry [index]'s editor, then reads back
+  /// its params so the editor's final state lands in the model (D-SYNC).
+  EngineResult closeMonitorPluginEditor({
+    required int input,
+    required int index,
+  }) {
+    final handle = _monitorSlots[(input, index)];
+    if (handle == null) return EngineResult.invalid;
+    final result = _engine.pluginEditorClose(handle);
+    refreshMonitorPluginParams(input: input, index: index);
+    return result;
+  }
+
+  /// Whether monitor [input] chain entry [index]'s plugin editor window is
+  /// still open natively (false once the user closes the OS window).
+  bool isMonitorPluginEditorOpen({required int input, required int index}) {
+    final handle = _monitorSlots[(input, index)];
+    return handle != null && _engine.pluginEditorIsOpen(handle);
+  }
+
+  /// Reads monitor [input] chain entry [index]'s live plugin param values back
+  /// into the model (D-SYNC). Returns whether anything changed. Monitor chains
+  /// are not projected, so no `_reproject()` — the MonitorCubit re-reads
+  /// [monitorEffects] to emit.
+  bool refreshMonitorPluginParams({required int input, required int index}) {
+    final effects = _monitorEffects[input];
+    if (effects == null || index < 0 || index >= effects.length) return false;
+    final fx = effects[index];
+    if (fx is! PluginEffect) return false;
+    final handle = _monitorSlots[(input, index)];
+    if (handle == null) return false;
+    final updated = _readBackParams(fx, handle);
+    if (updated == null) return false;
+    _monitorEffects[input] = List<TrackEffect>.of(effects)..[index] = updated;
+    return true;
   }
 
   /// Monitor [input]'s remembered effect chain (empty if none), in processing

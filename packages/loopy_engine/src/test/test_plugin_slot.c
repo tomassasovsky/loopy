@@ -274,6 +274,37 @@ static void test_param_queue(void) {
   le_plugin_slot_destroy(slot);
 }
 
+/* The editor ABI on a host with no editor (the stub): open reports
+ * unsupported, is_open stays 0, close is a no-op success, and null args are
+ * rejected. The real NSWindow path (host_vst3 / host_clap) needs a GUI session
+ * + a real plugin, so it is exercised manually, not in this harness. */
+static void test_editor_abi_no_editor(void) {
+  printf("test_editor_abi_no_editor\n");
+  le_plugin_slot* slot =
+      le_plugin_slot_create_stub(LE_PLUGIN_STUB_IDENTITY, 48000, NULL);
+  CHECK(slot != NULL);
+
+  int32_t open = -1;
+  CHECK(le_plugin_editor_is_open(slot, &open) == LE_OK);
+  CHECK(open == 0);
+
+  /* The stub host exposes no editor → unsupported, and stays closed. */
+  CHECK(le_plugin_editor_open(slot) == LE_ERR_UNSUPPORTED);
+  CHECK(le_plugin_editor_is_open(slot, &open) == LE_OK);
+  CHECK(open == 0);
+
+  /* Closing an unopened editor is a no-op success (idempotent teardown). */
+  CHECK(le_plugin_editor_close(slot) == LE_OK);
+
+  /* Null-argument guards. */
+  CHECK(le_plugin_editor_open(NULL) == LE_ERR_INVALID);
+  CHECK(le_plugin_editor_close(NULL) == LE_ERR_INVALID);
+  CHECK(le_plugin_editor_is_open(NULL, &open) == LE_ERR_INVALID);
+  CHECK(le_plugin_editor_is_open(slot, NULL) == LE_ERR_INVALID);
+
+  le_plugin_slot_destroy(slot);
+}
+
 int main(void) {
   test_adapter_latency();
   test_dry_when_not_ready();
@@ -283,6 +314,7 @@ int main(void) {
   test_engine_abi_errors();
   test_unsupported_topology();
   test_param_queue();
+  test_editor_abi_no_editor();
   if (g_failures == 0) {
     printf("ALL PASSED\n");
     return 0;

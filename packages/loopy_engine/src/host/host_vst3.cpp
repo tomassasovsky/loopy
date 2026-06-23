@@ -17,11 +17,13 @@
 #include <vector>
 
 #include "pluginterfaces/base/ipluginbase.h"
+#include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/vst/vstspeaker.h"
+#include "native_window_controller.h"
 #include "plugin_host.h"
 
 using namespace Steinberg;
@@ -134,6 +136,32 @@ class HostParamChanges : public IParameterChanges {
   static constexpr int32 kMax = 64;
   HostParamQueue queues_[kMax];
   int32 count_ = 0;
+};
+
+// Host-side IPlugFrame: the plugin calls resizeView when it wants its editor a
+// different size (e.g. a "show advanced" toggle). We resize the host NSWindow to
+// the requested content size, then ack via onSize so the plugin lays out. Stack-
+// owned (addRef/release == 1), like the param-queue helpers above.
+class HostPlugFrame : public IPlugFrame {
+ public:
+  lpw_window* window = nullptr;
+  tresult PLUGIN_API resizeView(IPlugView* view, ViewRect* newSize) override {
+    if (window && newSize) {
+      lpw_window_resize(window, newSize->getWidth(), newSize->getHeight());
+      if (view) view->onSize(newSize);
+    }
+    return kResultOk;
+  }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IPlugFrame::iid) || iidEq(iid, FUnknown::iid)) {
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return 1; }
+  uint32 PLUGIN_API release() override { return 1; }
 };
 
 bool hexNibble(char c, int& v) {
@@ -365,7 +393,74 @@ class Vst3Host final : public loopy::IPluginHost {
     }
   }
 
+  // --- Native editor (main thread; D-WIN) ---
+
+  bool editorOpen() override {
+    if (view_) return true;        // idempotent
+    if (!controller_) return false;  // no controller => no editor
+    IPlugView* view = controller_->createView(Vst::ViewType::kEditor);
+    if (!view) return false;
+    if (view->isPlatformTypeSupported(kPlatformTypeNSView) != kResultTrue) {
+      view->release();
+      return false;
+    }
+    ViewRect rect{};
+    view->getSize(&rect);
+    const int w = rect.getWidth() > 0 ? rect.getWidth() : 400;
+    const int h = rect.getHeight() > 0 ? rect.getHeight() : 300;
+    window_ = lpw_window_open(w, h, "Plugin Editor",
+                              &Vst3Host::onWindowClosedThunk, this);
+    if (!window_) {
+      view->release();
+      return false;
+    }
+    frame_.window = window_;
+    view->setFrame(&frame_);
+    void* nsView = lpw_window_content_view(window_);
+    if (view->attached(nsView, kPlatformTypeNSView) != kResultOk) {
+      view->setFrame(nullptr);
+      view->release();
+      lpw_window_close(window_);
+      window_ = nullptr;
+      return false;
+    }
+    view_ = view;
+    lpw_window_show(window_);
+    return true;
+  }
+
+  void editorClose() override {
+    detachView();
+    if (window_) {
+      lpw_window_close(window_);  // host-driven; the delegate callback is
+      window_ = nullptr;          // suppressed, so onWindowClosed won't re-run
+    }
+  }
+
+  bool editorIsOpen() const override { return view_ != nullptr; }
+
  private:
+  // Detaches + releases the plugin view (no window teardown). Shared by the
+  // host-driven close and the user-close callback.
+  void detachView() {
+    if (view_) {
+      view_->setFrame(nullptr);
+      view_->removed();
+      view_->release();
+      view_ = nullptr;
+    }
+  }
+
+  // Fired from windowWillClose when the USER closes the editor window: detach the
+  // plugin view here; the window handle frees itself (deferred) in the shim.
+  static void onWindowClosedThunk(void* ctx) {
+    static_cast<Vst3Host*>(ctx)->onWindowClosed();
+  }
+  void onWindowClosed() {
+    detachView();
+    window_ = nullptr;  // the shim owns the deferred free; just forget it
+  }
+
   bool openBundle(const std::string& path) {
     CFStringRef cfPath = CFStringCreateWithCString(
         kCFAllocatorDefault, path.c_str(), kCFStringEncodingUTF8);
@@ -389,6 +484,7 @@ class Vst3Host final : public loopy::IPluginHost {
   }
 
   void unload() {
+    editorClose();  // D-WIN: never leak the editor window past the plugin
     if (processor_) processor_->setProcessing(false);
     if (component_) component_->setActive(false);
     if (controller_) {
@@ -433,6 +529,11 @@ class Vst3Host final : public loopy::IPluginHost {
   double pendingVal_[kMaxPending] = {};
   int pending_ = 0;
   HostParamChanges paramChanges_;
+
+  // Native editor window (main thread). view_ non-null == editor open.
+  IPlugView* view_ = nullptr;
+  lpw_window* window_ = nullptr;
+  HostPlugFrame frame_;
 };
 
 }  // namespace
