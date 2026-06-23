@@ -260,6 +260,9 @@
     "microtasks",
     "pubspecs",
     "unmuted",
-    "unreviewable"
+    "unreviewable",
+    "stackable",
+    "undoable",
+    "editability"
   ]
 }

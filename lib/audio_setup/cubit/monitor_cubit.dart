@@ -7,10 +7,10 @@ import 'package:settings_repository/settings_repository.dart';
 
 /// Per-hardware-input live-monitor configuration.
 ///
-/// Each monitored input fans its live signal out across independent monitor
-/// lanes — each with its own effect chain, output routing, volume, and mute,
-/// mirroring the multi-lane track model (minus recording). A lane with an empty
-/// effect chain is the clean (dry) path.
+/// Each monitored input carries its live signal through a single effect chain
+/// with its own output routing, volume, and mute. An empty effect chain is the
+/// clean (dry) path. This is the chain snapshot-copied onto a track lane
+/// when you record into the input, so what you monitor is what the take stores.
 class MonitorState extends Equatable {
   /// Creates a [MonitorState] from a map of input index to its [InputMonitor].
   const MonitorState({this.inputs = const {}});
@@ -48,8 +48,8 @@ class MonitorCubit extends Cubit<MonitorState> {
   Future<void>? _loadFuture;
 
   /// Restores the persisted per-input monitors and applies them to the
-  /// repository. Reads only the per-(input, lane) keys; the one-time
-  /// single-route → lanes migration runs at bootstrap, before this.
+  /// repository. Reads the single-chain keys; the multi-lane → single-chain
+  /// fold (v3) runs at bootstrap, before this.
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
@@ -67,37 +67,31 @@ class MonitorCubit extends Cubit<MonitorState> {
     restored.values.forEach(_applyMonitor);
   }
 
-  /// Reads hardware [input]'s persisted monitor, or null if none was saved.
+  /// Reads hardware [input]'s persisted single-chain monitor, or null if none
+  /// was saved.
   Future<InputMonitor?> _restoreInput(int input) async {
     final enabled = await _settings.loadMonitorInputEnabled(input);
-    final count = await _settings.loadMonitorLaneCount(input);
-    final laneCount = (count == null || count < 1) ? 1 : count;
-    var anySaved = enabled != null || count != null;
-    final lanes = <MonitorLane>[];
-    for (var lane = 0; lane < laneCount; lane++) {
-      final outputMask = await _settings.loadMonitorLaneOutput(input, lane);
-      final volume = await _settings.loadMonitorLaneVolume(input, lane);
-      final muted = await _settings.loadMonitorLaneMute(input, lane);
-      final effects = decodeTrackEffects(
-        await _settings.loadMonitorLaneEffects(input, lane),
-      );
-      if (outputMask != null ||
-          volume != null ||
-          muted != null ||
-          effects.isNotEmpty) {
-        anySaved = true;
-      }
-      lanes.add(
-        MonitorLane(
-          outputMask: outputMask ?? 0x3,
-          volume: volume ?? 1.0,
-          muted: muted ?? false,
-          effects: effects,
-        ),
-      );
-    }
+    final outputMask = await _settings.loadMonitorOutput(input);
+    final volume = await _settings.loadMonitorVolume(input);
+    final muted = await _settings.loadMonitorMute(input);
+    final effects = decodeTrackEffects(
+      await _settings.loadMonitorEffects(input),
+    );
+    final anySaved =
+        enabled != null ||
+        outputMask != null ||
+        volume != null ||
+        muted != null ||
+        effects.isNotEmpty;
     if (!anySaved) return null;
-    return InputMonitor(input: input, enabled: enabled ?? false, lanes: lanes);
+    return InputMonitor(
+      input: input,
+      enabled: enabled ?? false,
+      outputMask: outputMask ?? 0x3,
+      volume: volume ?? 1.0,
+      muted: muted ?? false,
+      effects: effects,
+    );
   }
 
   /// Enables or disables monitoring of hardware [input], applying and
@@ -109,91 +103,49 @@ class MonitorCubit extends Cubit<MonitorState> {
     await _settings.saveMonitorInputEnabled(input, enabled: enabled);
   }
 
-  /// Appends a default (clean) lane to hardware [input]'s monitor, up to
-  /// [kMaxLanes]. No-op once the cap is reached.
-  Future<void> addLane(int input) async {
-    final monitor = state.forInput(input);
-    if (monitor.laneCount >= kMaxLanes) return;
-    final lane = monitor.laneCount;
-    final next = monitor.copyWith(
-      lanes: [...monitor.lanes, const MonitorLane()],
-    );
+  /// Sets and persists monitor [input]'s output bitmask.
+  Future<void> setOutputMask(int input, int mask) async {
+    final next = state.forInput(input).copyWith(outputMask: mask);
     emit(state.withInput(next));
-    _repository.setMonitorLaneCount(input: input, count: next.laneCount);
-    await _settings.saveMonitorLaneCount(input, next.laneCount);
-    // Persist the appended lane's defaults so a later restore (or a stale key
-    // from a prior larger count) never resurfaces wrong values.
-    await _persistLane(input, lane, next.lanes[lane]);
+    _repository.setMonitorOutput(input: input, mask: mask);
+    await _settings.saveMonitorOutput(input, mask);
   }
 
-  /// Removes hardware [input]'s monitor [lane], collapsing the remaining lanes.
-  /// No-op for the last lane or an out-of-range index.
-  Future<void> removeLane(int input, int lane) async {
-    final monitor = state.forInput(input);
-    if (monitor.laneCount <= 1 || lane < 0 || lane >= monitor.laneCount) return;
-    final lanes = [...monitor.lanes]..removeAt(lane);
-    final next = monitor.copyWith(lanes: lanes);
+  /// Sets and persists monitor [input]'s output gain (`0..1`).
+  Future<void> setVolume(int input, double volume) async {
+    final next = state.forInput(input).copyWith(volume: volume);
     emit(state.withInput(next));
-    // Lane indices shift, so re-apply and re-persist the whole monitor.
-    _applyMonitor(next);
-    await _persistMonitor(next);
+    _repository.setMonitorVolume(input: input, volume: volume);
+    await _settings.saveMonitorVolume(input, volume);
   }
 
-  /// Sets and persists monitor [input]'s lane [lane] output bitmask.
-  Future<void> setLaneOutputMask(int input, int lane, int mask) async {
-    final monitor = state.forInput(input);
-    final next = monitor.withLane(
-      lane,
-      monitor.lane(lane).copyWith(outputMask: mask),
-    );
+  /// Mutes or unmutes monitor [input].
+  Future<void> setMute(int input, {required bool muted}) async {
+    final next = state.forInput(input).copyWith(muted: muted);
     emit(state.withInput(next));
-    _repository.setMonitorLaneOutput(input: input, lane: lane, mask: mask);
-    await _settings.saveMonitorLaneOutput(input, lane, mask);
+    _repository.setMonitorMute(input: input, muted: muted);
+    await _settings.saveMonitorMute(input, muted: muted);
   }
 
-  /// Sets and persists monitor [input]'s lane [lane] output gain (`0..1`).
-  Future<void> setLaneVolume(int input, int lane, double volume) async {
-    final monitor = state.forInput(input);
-    final next = monitor.withLane(
-      lane,
-      monitor.lane(lane).copyWith(volume: volume),
-    );
-    emit(state.withInput(next));
-    _repository.setMonitorLaneVolume(input: input, lane: lane, volume: volume);
-    await _settings.saveMonitorLaneVolume(input, lane, volume);
-  }
-
-  /// Mutes or unmutes monitor [input]'s lane [lane].
-  Future<void> setLaneMute(int input, int lane, {required bool muted}) async {
-    final monitor = state.forInput(input);
-    final next = monitor.withLane(
-      lane,
-      monitor.lane(lane).copyWith(muted: muted),
-    );
-    emit(state.withInput(next));
-    _repository.setMonitorLaneMute(input: input, lane: lane, muted: muted);
-    await _settings.saveMonitorLaneMute(input, lane, muted: muted);
-  }
-
-  /// Appends a default effect (drive) to monitor [input]'s lane [lane] chain.
-  void addEffect(int input, int lane) {
-    final effects = state.forInput(input).lane(lane).effects;
-    _pushLaneEffects(input, lane, [
+  /// Appends a default effect (drive) to monitor [input]'s chain.
+  void addEffect(int input) {
+    final effects = state.forInput(input).effects;
+    _pushEffects(input, [
       ...effects,
       TrackEffect(type: TrackEffectType.drive),
     ]);
   }
 
-  /// Removes monitor [input]'s lane [lane] chain entry at [index].
-  void removeEffect(int input, int lane, int index) {
-    final effects = state.forInput(input).lane(lane).effects;
+  /// Removes monitor [input]'s chain entry at [index].
+  void removeEffect(int input, int index) {
+    final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
-    _pushLaneEffects(input, lane, [...effects]..removeAt(index));
+    _pushEffects(input, [...effects]..removeAt(index));
   }
 
-  /// Reorders monitor [input]'s lane [lane] chain, moving entry [from] to [to].
-  void moveEffect(int input, int lane, int from, int to) {
-    final effects = state.forInput(input).lane(lane).effects;
+  /// Reorders monitor [input]'s chain, moving entry [from] to [to].
+  void moveEffect(int input, int from, int to) {
+    final effects = state.forInput(input).effects;
     if (from < 0 || from >= effects.length) return;
     var target = to;
     if (target < 0) target = 0;
@@ -201,102 +153,55 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (from == target) return;
     final next = [...effects];
     next.insert(target, next.removeAt(from));
-    _pushLaneEffects(input, lane, next);
+    _pushEffects(input, next);
   }
 
-  /// Sets the type of monitor [input]'s lane [lane] chain entry [index] (resets
-  /// its DSP state and seeds default params).
-  void setEffectType(int input, int lane, int index, TrackEffectType type) {
-    final effects = state.forInput(input).lane(lane).effects;
+  /// Sets the type of monitor [input]'s chain entry [index] (resets its DSP
+  /// state and seeds default params).
+  void setEffectType(int input, int index, TrackEffectType type) {
+    final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
     final next = [...effects]..[index] = TrackEffect(type: type);
-    _pushLaneEffects(input, lane, next);
+    _pushEffects(input, next);
   }
 
-  /// Sets parameter [param] of monitor [input]'s lane [lane] chain entry
-  /// [index] to [value] without resetting DSP state.
-  void setEffectParam(int input, int lane, int index, int param, double value) {
+  /// Sets parameter [param] of monitor [input]'s chain entry [index] to [value]
+  /// without resetting DSP state.
+  void setEffectParam(int input, int index, int param, double value) {
     final monitor = state.forInput(input);
-    final laneState = monitor.lane(lane);
-    if (index < 0 || index >= laneState.effects.length) return;
-    final fx = laneState.effects[index];
+    if (index < 0 || index >= monitor.effects.length) return;
+    final fx = monitor.effects[index];
     if (param < 0 || param >= fx.params.length) return;
     final params = List<double>.of(fx.params)..[param] = value;
-    final next = [...laneState.effects]..[index] = fx.copyWith(params: params);
-    emit(
-      state.withInput(
-        monitor.withLane(lane, laneState.copyWith(effects: next)),
-      ),
-    );
-    _repository.setMonitorLaneEffectParam(
+    final next = [...monitor.effects]..[index] = fx.copyWith(params: params);
+    emit(state.withInput(monitor.copyWith(effects: next)));
+    _repository.setMonitorEffectParam(
       input: input,
-      lane: lane,
       index: index,
       param: param,
       value: value,
     );
-    unawaited(
-      _settings.saveMonitorLaneEffects(input, lane, encodeTrackEffects(next)),
-    );
+    unawaited(_settings.saveMonitorEffects(input, encodeTrackEffects(next)));
   }
 
-  void _pushLaneEffects(int input, int lane, List<TrackEffect> effects) {
-    final monitor = state.forInput(input);
-    final next = monitor.withLane(
-      lane,
-      monitor.lane(lane).copyWith(effects: effects),
-    );
+  void _pushEffects(int input, List<TrackEffect> effects) {
+    final next = state.forInput(input).copyWith(effects: effects);
     emit(state.withInput(next));
-    _repository.setMonitorLaneEffects(
-      input: input,
-      lane: lane,
-      effects: effects,
-    );
+    _repository.setMonitorEffects(input: input, effects: effects);
     unawaited(
-      _settings.saveMonitorLaneEffects(
-        input,
-        lane,
-        encodeTrackEffects(effects),
-      ),
+      _settings.saveMonitorEffects(input, encodeTrackEffects(effects)),
     );
   }
 
-  /// Pushes the whole [monitor] to the repository: enable + lane count, then
-  /// each lane's routing / mix / effects.
+  /// Pushes the whole [monitor] to the repository: enable, then the chain's
+  /// routing / mix / effects.
   void _applyMonitor(InputMonitor monitor) {
     final input = monitor.input;
     _repository
       ..setMonitorInputEnabled(input: input, enabled: monitor.enabled)
-      ..setMonitorLaneCount(input: input, count: monitor.laneCount);
-    for (var lane = 0; lane < monitor.laneCount; lane++) {
-      final l = monitor.lanes[lane];
-      _repository
-        ..setMonitorLaneOutput(input: input, lane: lane, mask: l.outputMask)
-        ..setMonitorLaneVolume(input: input, lane: lane, volume: l.volume)
-        ..setMonitorLaneMute(input: input, lane: lane, muted: l.muted)
-        ..setMonitorLaneEffects(input: input, lane: lane, effects: l.effects);
-    }
+      ..setMonitorOutput(input: input, mask: monitor.outputMask)
+      ..setMonitorVolume(input: input, volume: monitor.volume)
+      ..setMonitorMute(input: input, muted: monitor.muted)
+      ..setMonitorEffects(input: input, effects: monitor.effects);
   }
-
-  Future<void> _persistMonitor(InputMonitor monitor) async {
-    await _settings.saveMonitorInputEnabled(
-      monitor.input,
-      enabled: monitor.enabled,
-    );
-    await _settings.saveMonitorLaneCount(monitor.input, monitor.laneCount);
-    for (var lane = 0; lane < monitor.laneCount; lane++) {
-      await _persistLane(monitor.input, lane, monitor.lanes[lane]);
-    }
-  }
-
-  Future<void> _persistLane(int input, int lane, MonitorLane l) => Future.wait([
-    _settings.saveMonitorLaneOutput(input, lane, l.outputMask),
-    _settings.saveMonitorLaneVolume(input, lane, l.volume),
-    _settings.saveMonitorLaneMute(input, lane, muted: l.muted),
-    _settings.saveMonitorLaneEffects(
-      input,
-      lane,
-      encodeTrackEffects(l.effects),
-    ),
-  ]);
 }

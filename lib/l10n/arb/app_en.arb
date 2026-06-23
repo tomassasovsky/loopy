@@ -230,6 +230,31 @@
             }
         }
     },
+    "a11yOutputEnabledDisable": "Output {outputNumber}, enabled. Tap to disable.",
+    "@a11yOutputEnabledDisable": {
+        "placeholders": {
+            "outputNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "a11yOutputDisabledEnable": "Output {outputNumber}, disabled. Tap to enable.",
+    "@a11yOutputDisabledEnable": {
+        "placeholders": {
+            "outputNumber": {
+                "type": "int"
+            }
+        }
+    },
+    "noActiveOutputsNotice": "No outputs are enabled — nothing will be heard. Tap a greyed output to turn it back on.",
+    "laneSnapshotLabel": "FX snapshot of In {inputNumber} at record",
+    "@laneSnapshotLabel": {
+        "placeholders": {
+            "inputNumber": {
+                "type": "int"
+            }
+        }
+    },
     "inputMonitorLabel": "In {inputNumber} monitor",
     "@inputMonitorLabel": {
         "placeholders": {
@@ -240,6 +265,8 @@
     },
     "unmuteLaneTooltip": "Unmute lane",
     "muteLaneTooltip": "Mute lane",
+    "unmuteInputTooltip": "Unmute input",
+    "muteInputTooltip": "Mute input",
     "removeLaneTooltip": "Remove lane",
     "laneGraphHint": "Tap a lane to focus it, then tap inputs/outputs to wire it.",
     "addLane": "Add lane",

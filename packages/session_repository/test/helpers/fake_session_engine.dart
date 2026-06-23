@@ -225,48 +225,42 @@ class FakeSessionEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorLaneCount({
+  EngineResult setMonitorInputOutput({
     required int input,
-    required int count,
-  }) => EngineResult.ok;
-  @override
-  EngineResult setMonitorLaneOutput({
-    required int input,
-    required int lane,
     required int mask,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorLaneVolume({
+  EngineResult setMonitorInputVolume({
     required int input,
-    required int lane,
     required double volume,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorLaneMute({
+  EngineResult setMonitorInputMute({
     required int input,
-    required int lane,
     required bool muted,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorLaneFx({
+  EngineResult setMonitorInputFx({
     required int input,
-    required int lane,
     required int index,
     required TrackEffectType type,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorLaneFxCount({
+  EngineResult setMonitorInputFxCount({
     required int input,
-    required int lane,
     required int count,
   }) => EngineResult.ok;
   @override
-  EngineResult setMonitorLaneFxParam({
+  EngineResult setMonitorInputFxParam({
     required int input,
-    required int lane,
     required int index,
     required int param,
     required double value,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setOutputEnabled({
+    required int output,
+    required bool enabled,
   }) => EngineResult.ok;
   @override
   Float32List readVisual() => Float32List(0);

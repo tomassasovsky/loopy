@@ -3,19 +3,18 @@ import 'dart:math' as math;
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:routing_graph/routing_graph.dart';
 
-/// One row of the monitor graph: a hardware input and one of its lane indices.
-/// Records have value equality, so two rows are equal iff both fields match.
-typedef MonitorRow = ({int input, int lane});
+/// One row of the monitor graph: a monitored hardware input. Each input has a
+/// single live chain (no lanes), so a row is just the input channel index.
+typedef MonitorRow = int;
 
 /// Pure geometry for one frame of the monitor graph: node positions, card
 /// positions, and the wires. Computed once per build from the monitor state, so
 /// the build method composes widgets instead of threading a dozen coordinates
 /// around.
 ///
-/// Structurally identical to the track lane graph: one row per `(input, lane)`,
-/// each a node + its own effect chain, single per-lane-coloured edges over a
-/// multi-row layout. There is no wet/dry duality — a lane with no effects is
-/// simply the clean (dry) path.
+/// One row per monitored input — each a node + its single effect chain, with a
+/// per-input-coloured edge over a multi-row layout. There is no wet/dry duality
+/// and no lane stack: an input with no effects is simply the clean (dry) path.
 @immutable
 class MonitorGraphLayout {
   const MonitorGraphLayout._({
@@ -46,19 +45,17 @@ class MonitorGraphLayout {
     bool isExcluded(int c) => excludedMask & (1 << c) != 0;
     final rows = <MonitorRow>[
       for (var c = 0; c < inCount; c++)
-        if (state.forInput(c).enabled && !isExcluded(c))
-          for (var l = 0; l < state.forInput(c).laneCount; l++)
-            (input: c, lane: l),
+        if (state.forInput(c).enabled && !isExcluded(c)) c,
     ];
 
     const inX = padding;
     const nodeX = inX + channelChipWidth + fanGutter;
 
     final cardXs = [
-      for (final row in rows)
+      for (final input in rows)
         cardColumnXs(
           startX: cardStartX,
-          count: state.forInput(row.input).lane(row.lane).effects.length,
+          count: state.forInput(input).effects.length,
           cardW: cardWidth,
           gap: cardGap,
         ),
@@ -81,20 +78,20 @@ class MonitorGraphLayout {
 
     double chYAt(int i, int count) => canvasHeight / count * (i + 0.5);
     double rowYAt(int r) => rowsTop + r * rowHeight + rowHeight / 2;
-    Color laneColorAt(int lane) => palette[lane % palette.length];
+    Color inputColorAt(int input) => palette[input % palette.length];
 
     final edges = <GraphEdge>[];
     for (var r = 0; r < rows.length; r++) {
-      final row = rows[r];
-      final laneState = state.forInput(row.input).lane(row.lane);
+      final input = rows[r];
+      final monitor = state.forInput(input);
       final y = rowYAt(r);
-      final color = laneColorAt(row.lane);
-      final faded = focused != null && focused != row;
-      // input feed → lane node
-      if (!isExcluded(row.input)) {
+      final color = inputColorAt(input);
+      final faded = focused != null && focused != input;
+      // input feed → monitor node
+      if (!isExcluded(input)) {
         edges.add(
           GraphEdge(
-            Offset(inX + channelChipWidth, chYAt(row.input, inCount)),
+            Offset(inX + channelChipWidth, chYAt(input, inCount)),
             Offset(nodeX, y),
             color: color,
             faded: faded,
@@ -120,7 +117,7 @@ class MonitorGraphLayout {
             GraphSend(
               originX: rightX,
               originY: y,
-              mask: laneState.outputMask,
+              mask: monitor.outputMask,
               color: color,
             ),
           ],
@@ -149,15 +146,15 @@ class MonitorGraphLayout {
     );
   }
 
-  // Geometry constants. Inputs/outputs are small "channel" chips; each monitor
-  // lane is a wider node feeding a horizontal chain of effect cards. The card
+  // Geometry constants. Inputs/outputs are small "channel" chips; each monitored
+  // input is a wider node feeding a horizontal chain of effect cards. The card
   // footprint comes from the shared kit metrics (kRoutingCard*).
   static const double channelChipWidth = 54;
   static const double channelChipHeight = 24;
   static const double channelRowHeight = 32; // vertical pitch between chips
   static const double nodeWidth = 128;
   static const double nodeHeight = 50;
-  static const double rowHeight = 84; // vertical pitch between lane rows
+  static const double rowHeight = 84; // vertical pitch between input rows
   static const double cardWidth = kRoutingCardWidth;
   static const double cardGap = kRoutingCardGap;
   static const double fanGutter = 120; // input→node / rail→output gutter
@@ -168,7 +165,7 @@ class MonitorGraphLayout {
   static const double cardStartX =
       padding + channelChipWidth + fanGutter + nodeWidth + cardGap;
 
-  /// The graph's rows, in `(input, lane)` order.
+  /// The graph's rows, in monitored-input order.
   final List<MonitorRow> rows;
 
   /// Per row: the x of each effect card.

@@ -103,9 +103,7 @@ class _FocusableTapTargetState extends State<FocusableTapTarget> {
           enabled: enabled,
           focusNode: widget.focusNode,
           autofocus: widget.autofocus,
-          mouseCursor: enabled
-              ? SystemMouseCursors.click
-              : MouseCursor.defer,
+          mouseCursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
           shortcuts: _activators,
           actions: <Type, Action<Intent>>{
             ActivateIntent: CallbackAction<ActivateIntent>(

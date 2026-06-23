@@ -135,16 +135,20 @@ class LooperRepository {
   /// changes / reconnects.
   final Map<int, bool> _monitorInputEnabled = {};
 
-  /// Per-input active monitor lane count (absent => 1).
-  final Map<int, int> _monitorLaneCount = {};
+  /// Per-input monitor output mask, volume, mute, and a single effect chain —
+  /// each remembered and re-applied on every successful (re)start. An empty
+  /// chain is the clean (dry) path; this chain is what gets snapshot-copied
+  /// onto a track lane when recording into the input.
+  final Map<int, int> _monitorOutput = {};
+  final Map<int, double> _monitorVolume = {};
+  final Map<int, bool> _monitorMute = {};
+  final Map<int, List<TrackEffect>> _monitorEffects = {};
 
-  /// Per-(input, lane) output mask, volume, mute, and effect chain — each
-  /// remembered and re-applied on every successful (re)start. A lane with an
-  /// empty chain is the clean (dry) path.
-  final Map<(int, int), int> _monitorLaneRouting = {};
-  final Map<(int, int), double> _monitorLaneVolume = {};
-  final Map<(int, int), bool> _monitorLaneMute = {};
-  final Map<(int, int), List<TrackEffect>> _monitorLaneEffects = {};
+  /// Structural output gate: outputs the user explicitly turned OFF (absent =>
+  /// enabled). Only off entries are stored (default-on, self-cleaning), and
+  /// they are re-applied on every successful (re)start so a gated output
+  /// survives device changes / reconnects.
+  final Map<int, bool> _outputEnabled = {};
 
   /// Reconnect supervision: while these are non-null a pinned device is absent
   /// and we are polling enumeration to reopen it. Their presence *is* the
@@ -362,6 +366,7 @@ class LooperRepository {
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       activeBackend: audioBackendFromEngine(s.activeBackend),
     ),
+    outputEnabledMask: s.outputEnabledMask,
   );
 
   /// Enumerates the host's audio devices (playback + capture) for the picker.
@@ -430,40 +435,31 @@ class LooperRepository {
       for (final key in _laneEffects.keys) {
         _applyLaneEffects(key.$1, key.$2);
       }
-      // Re-apply per-input live monitors: enable + lane counts first (so added
-      // lanes exist), then per-lane routing / mix / effects.
+      // Re-apply per-input live monitors: enable first, then the single chain's
+      // routing / mix / effects.
       _monitorInputEnabled.forEach(
         (input, enabled) =>
             _engine.setMonitorInputEnabled(input: input, enabled: enabled),
       );
-      _monitorLaneCount.forEach(
-        (input, count) =>
-            _engine.setMonitorLaneCount(input: input, count: count),
+      _monitorOutput.forEach(
+        (input, mask) =>
+            _engine.setMonitorInputOutput(input: input, mask: mask),
       );
-      _monitorLaneRouting.forEach(
-        (key, mask) => _engine.setMonitorLaneOutput(
-          input: key.$1,
-          lane: key.$2,
-          mask: mask,
-        ),
+      _monitorVolume.forEach(
+        (input, volume) =>
+            _engine.setMonitorInputVolume(input: input, volume: volume),
       );
-      _monitorLaneVolume.forEach(
-        (key, volume) => _engine.setMonitorLaneVolume(
-          input: key.$1,
-          lane: key.$2,
-          volume: volume,
-        ),
+      _monitorMute.forEach(
+        (input, muted) =>
+            _engine.setMonitorInputMute(input: input, muted: muted),
       );
-      _monitorLaneMute.forEach(
-        (key, muted) => _engine.setMonitorLaneMute(
-          input: key.$1,
-          lane: key.$2,
-          muted: muted,
-        ),
+      _monitorEffects.keys.toList().forEach(_applyMonitorEffects);
+      // Re-apply the structural output gate. A fresh start enables every
+      // output, so only the stored OFF entries need re-asserting (default-on).
+      _outputEnabled.forEach(
+        (output, enabled) =>
+            _engine.setOutputEnabled(output: output, enabled: enabled),
       );
-      for (final key in _monitorLaneEffects.keys) {
-        _applyMonitorLaneEffects(key.$1, key.$2);
-      }
     }
     return result;
   }
@@ -484,7 +480,40 @@ class LooperRepository {
   EngineResult measureLatency() => _engine.measureLatency();
 
   /// Advances track [channel]: record / finalize loop / toggle overdub.
-  EngineResult record({int channel = 0}) => _engine.record(channel: channel);
+  ///
+  /// When the track is leaving EMPTY (a fresh capture), the input's live
+  /// monitor chain is snapshot-copied onto each recording lane (mirroring the
+  /// engine's own copy-on-record) so the take's remembered FX matches what was
+  /// monitored. The copy is by value, so editing the input chain afterwards
+  /// never alters the take (D3).
+  EngineResult record({int channel = 0}) {
+    final snapshot = _engine.snapshot();
+    if (channel >= 0 &&
+        channel < snapshot.tracks.length &&
+        snapshot.tracks[channel].state == TrackState.empty) {
+      _snapshotMonitorChainsOntoLanes(channel);
+    }
+    return _engine.record(channel: channel);
+  }
+
+  /// Copies each active lane's recorded-input monitor chain onto the lane's own
+  /// remembered effect chain (by value). Mirrors the engine snapshot-on-
+  /// record so [LooperState] / persistence reflect the take's FX. A lane with no
+  /// monitorable input gets a cleared chain.
+  void _snapshotMonitorChainsOntoLanes(int channel) {
+    final count = _laneCount[channel] ?? 1;
+    for (var lane = 0; lane < count; lane++) {
+      final input = _laneInput[(channel, lane)] ?? lane;
+      final chain = (input >= 0 && input < kMaxInputs)
+          ? _monitorEffects[input]
+          : null;
+      if (chain == null || chain.isEmpty) {
+        _laneEffects.remove((channel, lane));
+      } else {
+        _laneEffects[(channel, lane)] = List<TrackEffect>.of(chain);
+      }
+    }
+  }
 
   /// Halts track [channel]'s playback (retaining the buffer).
   EngineResult stopTrack({int channel = 0}) =>
@@ -604,63 +633,48 @@ class LooperRepository {
     return _engine.setMonitorInputEnabled(input: input, enabled: enabled);
   }
 
-  /// Sets hardware [input]'s active monitor lane count (`>= 1`). Remembered and
-  /// re-applied on every (re)start; takes effect immediately only while
-  /// running.
-  EngineResult setMonitorLaneCount({
-    required int input,
-    required int count,
-  }) {
-    if (count <= 1) {
-      _monitorLaneCount.remove(input);
+  /// Routes monitor [input]'s chain to the output channels in [mask].
+  /// Remembered and re-applied on every (re)start; takes effect immediately
+  /// only while running.
+  EngineResult setMonitorOutput({required int input, required int mask}) {
+    _monitorOutput[input] = mask;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMonitorInputOutput(input: input, mask: mask);
+  }
+
+  /// Sets monitor [input]'s output gain ([volume], `0..1`). Remembered and
+  /// re-applied on every (re)start; takes effect immediately while running.
+  EngineResult setMonitorVolume({required int input, required double volume}) {
+    _monitorVolume[input] = volume;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMonitorInputVolume(input: input, volume: volume);
+  }
+
+  /// Mutes or unmutes monitor [input]. Remembered and re-applied on every
+  /// (re)start; takes effect immediately only while running.
+  EngineResult setMonitorMute({required int input, required bool muted}) {
+    _monitorMute[input] = muted;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setMonitorInputMute(input: input, muted: muted);
+  }
+
+  /// Turns hardware [output] on/off as a routing target (the structural output
+  /// gate). A disabled output is removed from the mix while its lane/monitor
+  /// route masks are preserved — re-enabling restores them. Default-on: only
+  /// off entries are remembered, and they are re-applied on every (re)start.
+  EngineResult setOutputEnabled({required int output, required bool enabled}) {
+    if (enabled) {
+      _outputEnabled.remove(output); // absence == enabled (default-on)
     } else {
-      _monitorLaneCount[input] = count;
+      _outputEnabled[output] = false;
     }
     if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorLaneCount(input: input, count: count);
+    return _engine.setOutputEnabled(output: output, enabled: enabled);
   }
 
-  /// Routes monitor [input]'s lane [lane] to the output channels in [mask].
-  /// Remembered and re-applied on every (re)start; takes effect immediately
-  /// only while running.
-  EngineResult setMonitorLaneOutput({
-    required int input,
-    required int lane,
-    required int mask,
-  }) {
-    _monitorLaneRouting[(input, lane)] = mask;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorLaneOutput(input: input, lane: lane, mask: mask);
-  }
-
-  /// Sets monitor [input]'s lane [lane] output gain ([volume], `0..1`).
-  /// Remembered and re-applied on every (re)start; takes effect immediately
-  /// only while running.
-  EngineResult setMonitorLaneVolume({
-    required int input,
-    required int lane,
-    required double volume,
-  }) {
-    _monitorLaneVolume[(input, lane)] = volume;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorLaneVolume(
-      input: input,
-      lane: lane,
-      volume: volume,
-    );
-  }
-
-  /// Mutes or unmutes monitor [input]'s lane [lane]. Remembered and re-applied
-  /// on every (re)start; takes effect immediately only while running.
-  EngineResult setMonitorLaneMute({
-    required int input,
-    required int lane,
-    required bool muted,
-  }) {
-    _monitorLaneMute[(input, lane)] = muted;
-    if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorLaneMute(input: input, lane: lane, muted: muted);
-  }
+  /// Whether hardware [output] is currently enabled (a routing target). Reads
+  /// the remembered gate (absence == enabled).
+  bool outputEnabled(int output) => _outputEnabled[output] ?? true;
 
   /// Reads the loop waveform (peaks indexed by loop position, `0..1`) of the
   /// mixed output for the visualizer.
@@ -813,40 +827,37 @@ class LooperRepository {
   /// Track [channel]'s lane 0 remembered effect chain. Convenience for lane 0.
   List<TrackEffect> trackEffects(int channel) => laneEffects(channel, 0);
 
-  /// Replaces monitor [input]'s lane [lane] effect chain with [effects]
-  /// (clamped to [kTrackEffectMax]). An empty chain makes the lane the clean
-  /// (dry) path. Remembered and re-applied on every (re)start. A structural
-  /// edit resets the affected entries' DSP state. For a live parameter tweak
-  /// use [setMonitorLaneEffectParam].
-  EngineResult setMonitorLaneEffects({
+  /// Replaces monitor [input]'s effect chain with [effects] (clamped to
+  /// [kTrackEffectMax]). An empty chain is the clean (dry) path. Remembered and
+  /// re-applied on every (re)start; this is the chain snapshot-copied onto a
+  /// lane on record. A structural edit resets the affected entries' DSP state.
+  /// For a live parameter tweak use [setMonitorEffectParam].
+  EngineResult setMonitorEffects({
     required int input,
-    required int lane,
     required List<TrackEffect> effects,
   }) {
     final clamped = effects.length > kTrackEffectMax
         ? effects.sublist(0, kTrackEffectMax)
         : List<TrackEffect>.of(effects);
     if (clamped.isEmpty) {
-      _monitorLaneEffects.remove((input, lane));
+      _monitorEffects.remove(input);
     } else {
-      _monitorLaneEffects[(input, lane)] = clamped;
+      _monitorEffects[input] = clamped;
     }
     if (!_intendRunning) return EngineResult.ok;
-    return _applyMonitorLaneEffects(input, lane);
+    return _applyMonitorEffects(input);
   }
 
-  /// Sets parameter [param] of monitor [input]'s lane [lane] chain entry
-  /// [index] to [value] (`0..1`) without resetting DSP state. Remembered and
-  /// re-applied on (re)start. No-op if [index] is out of range for the
-  /// remembered chain.
-  EngineResult setMonitorLaneEffectParam({
+  /// Sets parameter [param] of monitor [input]'s chain entry [index] to [value]
+  /// (`0..1`) without resetting DSP state. Remembered and re-applied on
+  /// (re)start. No-op if [index] is out of range for the remembered chain.
+  EngineResult setMonitorEffectParam({
     required int input,
-    required int lane,
     required int index,
     required int param,
     required double value,
   }) {
-    final effects = _monitorLaneEffects[(input, lane)];
+    final effects = _monitorEffects[input];
     if (effects == null || index < 0 || index >= effects.length) {
       return EngineResult.invalid;
     }
@@ -855,50 +866,41 @@ class LooperRepository {
     final params = List<double>.of(fx.params)..[param] = value;
     effects[index] = fx.copyWith(params: params);
     if (!_intendRunning) return EngineResult.ok;
-    return _engine.setMonitorLaneFxParam(
+    return _engine.setMonitorInputFxParam(
       input: input,
-      lane: lane,
       index: index,
       param: param,
       value: value,
     );
   }
 
-  /// Monitor [input]'s lane [lane] remembered effect chain (empty if none), in
-  /// processing order.
-  List<TrackEffect> monitorLaneEffects(int input, int lane) =>
-      List<TrackEffect>.unmodifiable(
-        _monitorLaneEffects[(input, lane)] ?? const [],
-      );
+  /// Monitor [input]'s remembered effect chain (empty if none), in processing
+  /// order.
+  List<TrackEffect> monitorEffects(int input) =>
+      List<TrackEffect>.unmodifiable(_monitorEffects[input] ?? const []);
 
-  /// Pushes monitor [input]'s lane [lane] remembered chain to the engine: each
-  /// entry's type (which seeds default params), then its parameter values, then
-  /// the active count. Called on (re)start and after a structural edit.
-  EngineResult _applyMonitorLaneEffects(int input, int lane) {
-    final effects = _monitorLaneEffects[(input, lane)] ?? const <TrackEffect>[];
+  /// Pushes monitor [input]'s remembered chain to the engine: each entry's type
+  /// (which seeds default params), then its parameter values, then the active
+  /// count. Called on (re)start and after a structural edit.
+  EngineResult _applyMonitorEffects(int input) {
+    final effects = _monitorEffects[input] ?? const <TrackEffect>[];
     for (var i = 0; i < effects.length; i++) {
       final fx = effects[i];
-      _engine.setMonitorLaneFx(
+      _engine.setMonitorInputFx(
         input: input,
-        lane: lane,
         index: i,
         type: trackEffectTypeToEngine(fx.type),
       );
       for (var p = 0; p < fx.params.length; p++) {
-        _engine.setMonitorLaneFxParam(
+        _engine.setMonitorInputFxParam(
           input: input,
-          lane: lane,
           index: i,
           param: p,
           value: fx.params[p],
         );
       }
     }
-    return _engine.setMonitorLaneFxCount(
-      input: input,
-      lane: lane,
-      count: effects.length,
-    );
+    return _engine.setMonitorInputFxCount(input: input, count: effects.length);
   }
 
   /// Sets the global default loop length for inheriting tracks (`0` = auto).

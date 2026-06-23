@@ -27,9 +27,11 @@ class TracksRoutingGraphView extends StatefulWidget {
     required this.inputChannels,
     required this.outputChannels,
     this.excludedInputMask = 0,
+    this.outputEnabledMask = 0xFFFFFFFF,
     this.trackLabels,
     this.onInputMaskChanged,
     this.onOutputMaskChanged,
+    this.onOutputEnabledToggled,
     this.initialArmed,
     super.key,
   });
@@ -46,6 +48,11 @@ class TracksRoutingGraphView extends StatefulWidget {
   /// Bitmask of loopback input channels, drawn dimmed and never wired.
   final int excludedInputMask;
 
+  /// Structural output gate: bit c set => output c is enabled. A gated-off
+  /// output is drawn greyed (line-through) and is not a wiring target, but its
+  /// stored route edges still draw so a lane routed only there is discoverable.
+  final int outputEnabledMask;
+
   /// Optional per-track labels (e.g. user track names); defaults to `Track N`.
   final List<String>? trackLabels;
 
@@ -57,6 +64,13 @@ class TracksRoutingGraphView extends StatefulWidget {
   /// Called with `(channel, newMask)` when a click toggles a track's output
   /// routing.
   final void Function(int channel, int mask)? onOutputMaskChanged;
+
+  /// Called with `(output, enabled)` when a tap toggles an output's structural
+  /// gate. With no track armed, tapping a live output disables it; tapping a
+  /// gated-off (greyed) output always re-enables it. Null leaves the gate
+  /// read-only.
+  final void Function(int output, {required bool enabled})?
+  onOutputEnabledToggled;
 
   /// Index in [tracks] to arm initially (e.g. the only track in a single-track
   /// view), so its channels are immediately clickable. `null` starts unarmed.
@@ -105,7 +119,35 @@ class _TracksRoutingGraphViewState extends State<TracksRoutingGraphView> {
   RoutingNode? _hovered;
 
   bool get _editable =>
-      widget.onInputMaskChanged != null || widget.onOutputMaskChanged != null;
+      widget.onInputMaskChanged != null ||
+      widget.onOutputMaskChanged != null ||
+      widget.onOutputEnabledToggled != null;
+
+  /// Whether [node] is a structurally-gateable output (the toggle is wired).
+  bool _gateable(RoutingNode node) =>
+      node.kind == RoutingNodeKind.output &&
+      widget.onOutputEnabledToggled != null;
+
+  /// The tap handler for [node] given the current [armed] track, or null when
+  /// the node is inert. Output gating takes precedence over wiring: a gated-off
+  /// output re-enables on tap; a live output with no armed track toggles off;
+  /// otherwise an armed track wires it.
+  VoidCallback? _tapHandler(RoutingNode node, int? armed) {
+    if (!_editable) return null;
+    if (_gateable(node)) {
+      if (node.excluded) {
+        return () => widget.onOutputEnabledToggled!(node.index, enabled: true);
+      }
+      if (armed == null || armed >= widget.tracks.length) {
+        return () => widget.onOutputEnabledToggled!(node.index, enabled: false);
+      }
+      return () => _onChannelTap(node);
+    }
+    if (node.excluded) return null; // loopback input: inert
+    return () => node.kind == RoutingNodeKind.track
+        ? _onTrackTap(node)
+        : _onChannelTap(node);
+  }
 
   void _onTrackTap(RoutingNode node) {
     setState(() => _armed = _armed == node.index ? null : node.index);
@@ -162,6 +204,7 @@ class _TracksRoutingGraphViewState extends State<TracksRoutingGraphView> {
       inputChannels: widget.inputChannels,
       outputChannels: widget.outputChannels,
       excludedInputMask: widget.excludedInputMask,
+      outputEnabledMask: widget.outputEnabledMask,
       trackLabels: widget.trackLabels,
       l10n: context.l10n,
     );
@@ -218,12 +261,19 @@ class _TracksRoutingGraphViewState extends State<TracksRoutingGraphView> {
                     isTarget: states[node]!.isTarget,
                     connected: states[node]!.connected,
                     hovered: _hovered == node,
-                    onTap: !_editable || node.excluded
-                        ? null
-                        : () => node.kind == RoutingNodeKind.track
-                              ? _onTrackTap(node)
-                              : _onChannelTap(node),
-                    onHover: _editable && !node.excluded ? _setHovered : null,
+                    gateLabel: _gateable(node)
+                        ? (node.excluded
+                              ? context.l10n.a11yOutputDisabledEnable(
+                                  node.index + 1,
+                                )
+                              : context.l10n.a11yOutputEnabledDisable(
+                                  node.index + 1,
+                                ))
+                        : null,
+                    onTap: _tapHandler(node, armed),
+                    onHover: _editable && (!node.excluded || _gateable(node))
+                        ? _setHovered
+                        : null,
                   ),
                 ),
             ],

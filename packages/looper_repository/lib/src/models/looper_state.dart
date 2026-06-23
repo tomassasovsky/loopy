@@ -11,6 +11,7 @@ class LooperState extends Equatable {
     this.transport = const TransportState(),
     this.tracks = const [],
     this.status = const EngineStatus(),
+    this.outputEnabledMask = 0xFFFFFFFF,
   });
 
   /// Master loop transport.
@@ -22,6 +23,16 @@ class LooperState extends Equatable {
   /// Device + engine health.
   final EngineStatus status;
 
+  /// Structural output gate: bit c set => hardware output c is enabled (a
+  /// routing target). A cleared bit removes that output from the mix while its
+  /// stored route masks are preserved (re-enabling restores them). All outputs
+  /// are enabled by default; only bits in `[0, status.outputChannels)` matter.
+  final int outputEnabledMask;
+
+  /// Whether hardware output [output] is currently enabled (a routing target).
+  bool isOutputEnabled(int output) =>
+      output < 0 || (outputEnabledMask & (1 << output)) != 0;
+
   /// The first track (back-compat convenience for single-track callers).
   Track get track => tracks.isNotEmpty ? tracks.first : const Track();
 
@@ -29,5 +40,5 @@ class LooperState extends Equatable {
   bool get hasContent => tracks.any((t) => t.hasContent);
 
   @override
-  List<Object?> get props => [transport, tracks, status];
+  List<Object?> get props => [transport, tracks, status, outputEnabledMask];
 }

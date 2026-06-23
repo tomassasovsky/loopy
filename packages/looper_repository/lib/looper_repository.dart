@@ -43,3 +43,14 @@ export 'src/models/track_effect.dart'
         decodeTrackEffects,
         encodeTrackEffects;
 export 'src/models/transport_state.dart';
+
+/// The iteration ceiling for the structural output gate's bootstrap reapply
+/// scan, engine-aligned with `kMaxInputs` (`LE_MAX_INPUTS == 8`).
+///
+/// The output count is device-dependent and unknown at bootstrap, and the gate
+/// is default-on (only explicitly-disabled outputs are persisted), so no exact
+/// bound is needed for correctness. This is only how far the bootstrap reapply
+/// scans the `output_enabled.$out` keys — matching how the monitor reapply
+/// scans `[0, kMaxInputs)`. A stored off-state for an output beyond the current
+/// device's channel count is ignored by the engine and never corrupts routing.
+const int kMaxOutputs = 8;

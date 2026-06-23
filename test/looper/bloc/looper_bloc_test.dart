@@ -130,6 +130,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
+    when(
+      () => repository.setOutputEnabled(
+        output: any(named: 'output'),
+        enabled: any(named: 'enabled'),
+      ),
+    ).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => stateController.close());
@@ -289,6 +295,16 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperOutputEnabledToggled forwards the output gate to the repository',
+    build: buildBloc,
+    act: (bloc) =>
+        bloc.add(const LooperOutputEnabledToggled(2, enabled: false)),
+    verify: (_) => verify(
+      () => repository.setOutputEnabled(output: 2, enabled: false),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperLaneMuteToggled mutes from the current (unmuted) state',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperLaneMuteToggled(0, 0)),
@@ -367,7 +383,23 @@ void main() {
       when(
         () => settings.saveLaneEffects(any(), any(), any()),
       ).thenAnswer((_) async {});
+      when(
+        () => settings.saveOutputEnabled(any(), enabled: any(named: 'enabled')),
+      ).thenAnswer((_) async {});
     });
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperOutputEnabledToggled forwards to the repo and persists the gate',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) =>
+          bloc.add(const LooperOutputEnabledToggled(1, enabled: false)),
+      verify: (_) {
+        verify(
+          () => repository.setOutputEnabled(output: 1, enabled: false),
+        ).called(1);
+        verify(() => settings.saveOutputEnabled(1, enabled: false)).called(1);
+      },
+    );
 
     blocTest<LooperBloc, LooperState>(
       'LooperLaneCountChanged persists the lane count',
