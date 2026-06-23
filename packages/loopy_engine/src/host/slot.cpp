@@ -108,6 +108,20 @@ class StubHost final : public loopy::IPluginHost {
     }
   }
 
+  // Opaque state = the raw param values, so the native test can round-trip it
+  // (get -> mutate -> set -> get) without a real plugin.
+  bool stateGet(std::vector<uint8_t>& out) override {
+    const auto* bytes = reinterpret_cast<const uint8_t*>(values_);
+    out.insert(out.end(), bytes, bytes + sizeof(values_));
+    return true;
+  }
+
+  bool stateSet(const uint8_t* data, int size) override {
+    if (!data || size != static_cast<int>(sizeof(values_))) return false;
+    std::memcpy(values_, data, sizeof(values_));
+    return true;
+  }
+
  private:
   static constexpr int kParams = 3;
   static constexpr int kMaxPending = 64;
@@ -340,6 +354,40 @@ int32_t le_plugin_editor_is_open(le_plugin_slot* slot, int32_t* open) {
   if (!slot || !open) return LE_ERR_INVALID;
   *open = slot->host->editorIsOpen() ? 1 : 0;
   return LE_OK;
+}
+
+int32_t le_plugin_state_size(le_plugin_slot* slot, int32_t* bytes) {
+  if (!slot || !bytes) return LE_ERR_INVALID;
+  std::vector<uint8_t> blob;
+  if (!slot->host->stateGet(blob)) {
+    *bytes = 0;
+    return LE_ERR_UNSUPPORTED;
+  }
+  *bytes = static_cast<int32_t>(blob.size());
+  return LE_OK;
+}
+
+int32_t le_plugin_state_get(le_plugin_slot* slot, uint8_t* buf, int32_t cap,
+                            int32_t* written) {
+  if (!slot || !written) return LE_ERR_INVALID;
+  std::vector<uint8_t> blob;
+  if (!slot->host->stateGet(blob)) {
+    *written = 0;
+    return LE_ERR_UNSUPPORTED;
+  }
+  *written = static_cast<int32_t>(blob.size());
+  // Copy only when the caller's buffer is big enough; otherwise *written tells
+  // them the size to retry with (a too-small buffer is not an error).
+  if (buf && !blob.empty() && cap >= static_cast<int32_t>(blob.size())) {
+    std::memcpy(buf, blob.data(), blob.size());
+  }
+  return LE_OK;
+}
+
+int32_t le_plugin_state_set(le_plugin_slot* slot, const uint8_t* buf,
+                            int32_t bytes) {
+  if (!slot || bytes < 0 || (!buf && bytes > 0)) return LE_ERR_INVALID;
+  return slot->host->stateSet(buf, bytes) ? LE_OK : LE_ERR_UNSUPPORTED;
 }
 
 }  // extern "C"

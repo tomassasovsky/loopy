@@ -299,6 +299,28 @@ final class LooperLanePluginInserted extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, ref];
 }
 
+/// Relinks lane [lane]'s plugin chain entry [index] to [ref] (umbrella D-MISS):
+/// resolves an unavailable placeholder (or accepts a version change), keeping
+/// the captured state + tweaks.
+final class LooperLanePluginRelinked extends LooperLaneEvent {
+  /// Creates a [LooperLanePluginRelinked].
+  const LooperLanePluginRelinked(
+    super.channel,
+    super.lane,
+    this.index,
+    this.ref,
+  );
+
+  /// The chain entry index.
+  final int index;
+
+  /// The replacement plugin's identity.
+  final PluginRef ref;
+
+  @override
+  List<Object?> get props => [channel, lane, index, ref];
+}
+
 /// Opens the native editor window for lane [lane]'s plugin chain entry [index]
 /// (umbrella D-WIN). While open, the bloc polls the plugin (≤10 Hz) to mirror
 /// editor-driven param moves onto the in-app knobs (D-SYNC).

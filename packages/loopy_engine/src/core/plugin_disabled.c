@@ -124,4 +124,29 @@ int32_t le_plugin_editor_is_open(le_plugin_slot* slot, int32_t* open) {
   return LE_ERR_INVALID;
 }
 
+/* ---- Opaque plugin state ---- */
+
+int32_t le_plugin_state_size(le_plugin_slot* slot, int32_t* bytes) {
+  (void)slot;
+  if (bytes) *bytes = 0;
+  return LE_ERR_INVALID;
+}
+
+int32_t le_plugin_state_get(le_plugin_slot* slot, uint8_t* buf, int32_t cap,
+                            int32_t* written) {
+  (void)slot;
+  (void)buf;
+  (void)cap;
+  if (written) *written = 0;
+  return LE_ERR_INVALID;
+}
+
+int32_t le_plugin_state_set(le_plugin_slot* slot, const uint8_t* buf,
+                            int32_t bytes) {
+  (void)slot;
+  (void)buf;
+  (void)bytes;
+  return LE_ERR_INVALID;
+}
+
 #endif /* !LOOPY_ENABLE_PLUGINS */

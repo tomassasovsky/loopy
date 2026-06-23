@@ -318,6 +318,8 @@
     "signalPluginOpenEditorTooltip": "Open the plugin's editor window",
     "signalPluginBypassTooltip": "Bypass plugin",
     "signalPluginUnknownName": "Plugin",
+    "signalPluginUnavailable": "Plugin unavailable",
+    "signalPluginRelinkTooltip": "Relink to an installed plugin",
     "startEngine": "Start engine",
     "sampleRateGroup": "Sample rate",
     "bufferSizeGroup": "Buffer size",

@@ -206,6 +206,46 @@ static void test_looper_record_then_play(void) {
   le_engine_destroy(e);
 }
 
+/* THE DRY-RECORDING INVARIANT (umbrella D-P1, part 7 headline): an FX in a
+ * lane chain colours playback only — the captured loop buffer is byte-identical
+ * to the same take with no FX. The record route is FX-agnostic, so this holds
+ * for a hosted plugin exactly as for the built-in drive used here (a plugin
+ * slot can't be wired without a scan in this harness). */
+static void test_dry_recording_invariant(void) {
+  printf("test_dry_recording_invariant\n");
+  const float kIn = 0.8f;
+
+  /* Take 1: record with a drive FX (which audibly alters 0.8) in the chain. */
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, 1 /* drive */) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  float out[64];
+  le_engine_record(e, 0);
+  process_const(e, kIn, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+  float withFx[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, withFx, LOOP_N) == LOOP_N);
+  le_engine_destroy(e);
+
+  /* Take 2: identical input, no FX. */
+  e = make_configured_engine();
+  le_engine_record(e, 0);
+  process_const(e, kIn, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  float noFx[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, noFx, LOOP_N) == LOOP_N);
+  le_engine_destroy(e);
+
+  /* Byte-identical to each other AND to the dry input — the FX never touched
+   * the recorded buffer. */
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(memcmp(&withFx[i], &noFx[i], sizeof(float)) == 0);
+    CHECK(withFx[i] == kIn);
+  }
+}
+
 static void test_looper_overdub_and_undo(void) {
   printf("test_looper_overdub_and_undo\n");
   le_engine* e = make_configured_engine();
@@ -4820,6 +4860,7 @@ int main(void) {
   test_null_safety();
   test_loop_clock();
   test_looper_record_then_play();
+  test_dry_recording_invariant();
   test_looper_overdub_and_undo();
   test_looper_multilevel_undo();
   test_looper_volume_and_mute();

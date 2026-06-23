@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -1037,6 +1039,61 @@ void main() {
       expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isFalse);
     });
 
+    test('a plugin that fails to load is flagged unavailable (D-MISS)', () {
+      engine.nextSlotHandle = null; // load fails (uninstalled / moved)
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
+            ),
+          ],
+        );
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      // Preserved as a placeholder, never dropped to `none`.
+      expect(fx.unavailable, isTrue);
+      expect(fx.ref.id, 'gone');
+    });
+
+    test('relinkLanePlugin swaps the ref, keeps state, and reloads', () {
+      engine.nextSlotHandle = null; // initial load fails -> unavailable
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            PluginEffect(
+              ref: const PluginRef(format: PluginFormat.clap, id: 'gone'),
+              state: base64Encode([1, 2, 3]),
+            ),
+          ],
+        );
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
+        isTrue,
+      );
+
+      // A working plugin is now available; relink to it.
+      engine.nextSlotHandle = MockPluginSlotHandle('new');
+      expect(
+        repo.relinkLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          ref: const PluginRef(format: PluginFormat.vst3, id: 'new'),
+        ),
+        EngineResult.ok,
+      );
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.ref.id, 'new');
+      expect(fx.unavailable, isFalse);
+      expect(fx.state, base64Encode([1, 2, 3])); // preserved
+      // The reloaded (frozen) instance received the preserved state blob.
+      expect(engine.stateSets.last, [1, 2, 3]);
+    });
+
     test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1227,6 +1284,158 @@ void main() {
         (repo.laneEffects(0, 0).single as BuiltInEffect).type,
         TrackEffectType.delay,
       );
+    });
+
+    test('record captures the monitor plugin state onto the lane (D-P1)', () {
+      engine
+        ..nextState = Uint8List.fromList([1, 2, 3, 4])
+        ..nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty()],
+        );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..record();
+
+      // The lane's frozen copy carries the captured opaque state blob.
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.state, base64Encode([1, 2, 3, 4]));
+    });
+
+    test('a monitor plugin whose capture fails is dropped (bypassed) on the '
+        'lane (D-P1)', () {
+      engine
+        ..nextState =
+            Uint8List(0) // capture failure -> bypass
+        ..nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty()],
+        );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..record();
+
+      expect(repo.laneEffects(0, 0), isEmpty);
+    });
+
+    test('a mid-chain capture failure drops only that entry, keeping order '
+        '(D-P1)', () {
+      engine
+        ..nextState =
+            Uint8List(0) // every plugin capture fails -> bypass
+        ..nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty()],
+        );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.drive),
+            const PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+
+      // The plugin (index 1) is dropped; the surrounding built-ins keep order.
+      final lane = repo.laneEffects(0, 0);
+      expect(lane, hasLength(2));
+      expect((lane[0] as BuiltInEffect).type, TrackEffectType.drive);
+      expect((lane[1] as BuiltInEffect).type, TrackEffectType.reverb);
+    });
+
+    test('a corrupt state blob is ignored; the plugin still loads', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      // A garbage (non-base64) blob must not crash the restore.
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              state: 'not-valid-base64!!!',
+            ),
+          ],
+        );
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.unavailable, isFalse); // loaded fine, just at default state
+      expect(fx.params, hasLength(1));
+    });
+
+    test('restoring a lane plugin replays its state blob (D-P1 frozen)', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [
+            PluginEffect(
+              ref: const PluginRef(format: PluginFormat.clap, id: 'p'),
+              state: base64Encode([9, 8, 7]),
+            ),
+          ],
+        );
+      // The lane loaded its own instance and pushed the saved blob to it.
+      expect(engine.stateSets, isNotEmpty);
+      expect(engine.stateSets.last, [9, 8, 7]);
     });
 
     test('clearing a track multiple (0) drops the override', () {

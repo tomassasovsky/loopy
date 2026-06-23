@@ -209,6 +209,15 @@ void main() {
       expect((decoded[2] as PluginEffect).ref.format, PluginFormat.vst3);
     });
 
+    test('opaque state survives the engine-serializer round-trip', () {
+      final chain = <TrackEffect>[
+        const PluginEffect(ref: ref, state: 'YmxvYg=='),
+      ];
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+      expect(decoded, chain);
+      expect((decoded.single as PluginEffect).state, 'YmxvYg==');
+    });
+
     test('paramValues survive the engine-serializer round-trip', () {
       final chain = <TrackEffect>[
         const PluginEffect(ref: ref, paramValues: {100: 0.25, 300: 0.9}),

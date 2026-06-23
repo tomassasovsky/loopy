@@ -317,25 +317,25 @@ final class BuiltInEffect extends TrackEffect {
 
 /// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref].
 ///
-/// Carries the plugin identity, the user-tweaked [paramValues] (persisted), and
-/// the live [params] metadata enumerated from the loaded plugin (transient).
-/// The opaque state blob lands in a later part. An unresolved plugin (its `ref`
-/// no longer matches an installed plugin) is still a [PluginEffect] — never
-/// silently dropped — so its identity survives a reload.
+/// Carries the plugin identity, the user-tweaked [paramValues] (persisted), the
+/// opaque [state] blob (persisted, base64), and the live [params] metadata
+/// enumerated from the loaded plugin (transient). An unresolved plugin (its
+/// `ref` no longer matches an installed plugin) is still a [PluginEffect] —
+/// never silently dropped — so its identity + state survive a reload (D-MISS).
 @immutable
 final class PluginEffect extends TrackEffect {
   /// Creates a [PluginEffect] for [ref], optionally seeded with persisted
-  /// [paramValues] and live [params] metadata.
+  /// [paramValues] / [state] and live [params] metadata.
   const PluginEffect({
     required this.ref,
     this.paramValues = const {},
     this.params = const [],
+    this.state = '',
   });
 
-  /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues}`
-  /// entry. Absent / malformed `paramValues` decodes to an empty map (every
-  /// param falls back to its default), keeping a part-4 `{type, plugin}` entry
-  /// readable.
+  /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues,
+  /// state}` entry. Absent / malformed fields decode to empty (a part-4
+  /// `{type, plugin}` entry stays readable).
   factory PluginEffect.fromJson(Map<String, dynamic> json) {
     final raw = json['paramValues'];
     final values = <int, double>{};
@@ -348,6 +348,7 @@ final class PluginEffect extends TrackEffect {
     return PluginEffect(
       ref: PluginRef.fromJson(json['plugin'] as Map<String, dynamic>),
       paramValues: values,
+      state: (json['state'] as String?) ?? '',
     );
   }
 
@@ -358,6 +359,11 @@ final class PluginEffect extends TrackEffect {
   /// user has changed are stored; an absent id falls back to the plugin's
   /// default. Empty when no param has been tweaked.
   final Map<int, double> paramValues;
+
+  /// The plugin's opaque state, base64-encoded (umbrella D-P1). Persisted as-is
+  /// (it is the wire form); the repository base64-decodes it to bytes only when
+  /// restoring the plugin. Empty when the plugin has no state.
+  final String state;
 
   /// Live parameter metadata enumerated from the loaded plugin, in plugin
   /// order. Transient — populated at load time, never persisted (a reload
@@ -372,10 +378,12 @@ final class PluginEffect extends TrackEffect {
     PluginRef? ref,
     Map<int, double>? paramValues,
     List<PluginParamInfo>? params,
+    String? state,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
     params: params ?? this.params,
+    state: state ?? this.state,
   );
 
   @override
@@ -386,17 +394,20 @@ final class PluginEffect extends TrackEffect {
       'paramValues': {
         for (final e in paramValues.entries) '${e.key}': e.value,
       },
+    if (state.isNotEmpty) 'state': state,
   };
 
   @override
   bool operator ==(Object other) =>
       other is PluginEffect &&
       other.ref == ref &&
+      other.state == state &&
       _mapEquals(other.paramValues, paramValues);
 
   @override
   int get hashCode => Object.hash(
     ref,
+    state,
     Object.hashAllUnordered([
       for (final e in paramValues.entries) Object.hash(e.key, e.value),
     ]),

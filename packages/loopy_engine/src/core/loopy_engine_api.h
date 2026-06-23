@@ -619,6 +619,27 @@ LE_EXPORT int32_t le_plugin_editor_close(le_plugin_slot* slot);
  * LE_OK, or LE_ERR_INVALID for a null argument. */
 LE_EXPORT int32_t le_plugin_editor_is_open(le_plugin_slot* slot, int32_t* open);
 
+/* ---- Opaque plugin state, for session persistence (MAIN THREAD; D-P1) ---- */
+
+/* Writes the byte size of the plugin's current opaque state into *bytes.
+ * Returns LE_OK, LE_ERR_INVALID for a null argument, or LE_ERR_UNSUPPORTED when
+ * the plugin exposes no state (then *bytes is 0). */
+LE_EXPORT int32_t le_plugin_state_size(le_plugin_slot* slot, int32_t* bytes);
+
+/* Captures the plugin's opaque state into `buf` (capacity `cap`), writing the
+ * full byte size into *written. If `cap` is smaller than *written (or `buf` is
+ * NULL), nothing is copied — the caller should retry with a buffer of at least
+ * *written bytes. Returns LE_OK, LE_ERR_INVALID for a null slot/`written`, or
+ * LE_ERR_UNSUPPORTED when the plugin has no state. */
+LE_EXPORT int32_t le_plugin_state_get(le_plugin_slot* slot, uint8_t* buf,
+                                      int32_t cap, int32_t* written);
+
+/* Restores the plugin from an opaque state blob previously captured with
+ * le_plugin_state_get. Returns LE_OK, LE_ERR_INVALID for a null slot (or null
+ * `buf` with `bytes` > 0), or LE_ERR_UNSUPPORTED when the plugin rejects it. */
+LE_EXPORT int32_t le_plugin_state_set(le_plugin_slot* slot, const uint8_t* buf,
+                                      int32_t bytes);
+
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
 
