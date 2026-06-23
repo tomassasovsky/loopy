@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
+#include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
 #include "engine_internal.h"
 #include "engine_miniaudio.h"
@@ -399,6 +400,11 @@ void le_engine_destroy(le_engine* engine) {
         free(ln->fx.delay[s][0]);
         free(ln->fx.delay[s][1]);
         le_fx_free_octaver(&ln->fx, s);
+        /* The device is already closed (no audio thread), so any hosted plugin
+         * slot — including one left behind by a stalled-callback clear — can be
+         * destroyed directly without the quiescent handshake. */
+        le_plugin_slot_destroy(
+            atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
       }
     }
   }
@@ -407,6 +413,8 @@ void le_engine_destroy(le_engine* engine) {
       free(engine->monitors[c].fx.delay[s][0]);
       free(engine->monitors[c].fx.delay[s][1]);
       le_fx_free_octaver(&engine->monitors[c].fx, s);
+      le_plugin_slot_destroy(atomic_load_explicit(
+          &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
   }
   free(engine->lat_buf);

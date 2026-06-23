@@ -27,10 +27,15 @@ add_library(loopy_engine SHARED
   core/engine_miniaudio.c
   core/lockfree_ring.c
   core/loop_clock.c
-  # le_plugin_scan_* stub for non-LOOPY_ENABLE_PLUGINS builds (Windows/Linux
-  # today). Internally #ifndef-guarded, so it compiles to an empty object when
-  # plugins are enabled and host/plugin_scan.cpp provides the real symbols.
-  core/plugin_scan_disabled.c
+  # Control-thread plugin-slot lifecycle (load/clear + quiescent handshake).
+  # Always compiled; calls le_plugin_slot_create which is the real host on a
+  # plugin build and a NULL-returning stub otherwise.
+  core/engine_plugin.c
+  # le_plugin_* stubs for non-LOOPY_ENABLE_PLUGINS builds (Windows/Linux today).
+  # Internally #ifndef-guarded, so it compiles to an empty object when plugins
+  # are enabled and host/plugin_scan.cpp + host/slot.cpp provide the real
+  # symbols.
+  core/plugin_disabled.c
   # ---- platform/: per-OS device seams (engine_platform.h) ----
   # Each is wrapped whole in its OS guard, so the two that don't match the build
   # target compile to near-empty objects — every build lists all three.
@@ -230,7 +235,14 @@ if(LOOPY_ENABLE_PLUGINS)
     host/plugin_scan.cpp
     host/scan_vst3.cpp
     host/scan_clap.cpp
+    host/slot.cpp
+    host/host_vst3.cpp
+    host/host_clap.cpp
     "${LOOPY_VST3_SDK_DIR}/pluginterfaces/base/coreiids.cpp"
+    # The VST-domain class IIDs (IComponent / IAudioProcessor / …) the host
+    # queryInterface()s — self-contained, header-only deps. Needed for hosting
+    # (part 3), not scanning.
+    "${LOOPY_VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp"
   )
   set_target_properties(loopy_engine PROPERTIES CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON)

@@ -267,6 +267,153 @@ class LoopyEngineBindings {
   late final _le_plugin_scan_cancel = _le_plugin_scan_cancelPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
+  /// Loads the plugin identified by `plugin_id` (a scanned le_plugin_desc.id) into
+  /// FX chain slot `index` of a lane (channel, lane) or a monitor input. The load
+  /// + activate happen here on the control thread, BYPASSED, then the slot is
+  /// atomically published so the audio thread begins forwarding to it; until ready
+  /// the slot renders dry passthrough (no click). On success the chain entry's type
+  /// becomes LE_FX_PLUGIN and *out_slot receives the handle. The entry is activated
+  /// in the chain the same way as a built-in, via le_engine_set_lane_fx_count /
+  /// le_engine_set_monitor_input_fx_count. Returns LE_OK, LE_ERR_INVALID for a bad
+  /// argument / unknown plugin_id, or LE_ERR_DEVICE on a plugin load/activate
+  /// failure. (out_slot may be NULL if the caller does not need the handle.)
+  int le_engine_set_lane_plugin(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int index,
+    ffi.Pointer<ffi.Char> plugin_id,
+    ffi.Pointer<ffi.Pointer<le_plugin_slot>> out_slot,
+  ) {
+    return _le_engine_set_lane_plugin(
+      engine,
+      channel,
+      lane,
+      index,
+      plugin_id,
+      out_slot,
+    );
+  }
+
+  late final _le_engine_set_lane_pluginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Pointer<le_plugin_slot>>,
+          )
+        >
+      >('le_engine_set_lane_plugin');
+  late final _le_engine_set_lane_plugin = _le_engine_set_lane_pluginPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Pointer<le_plugin_slot>>,
+        )
+      >();
+
+  int le_engine_set_monitor_plugin(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int index,
+    ffi.Pointer<ffi.Char> plugin_id,
+    ffi.Pointer<ffi.Pointer<le_plugin_slot>> out_slot,
+  ) {
+    return _le_engine_set_monitor_plugin(
+      engine,
+      input,
+      index,
+      plugin_id,
+      out_slot,
+    );
+  }
+
+  late final _le_engine_set_monitor_pluginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Pointer<le_plugin_slot>>,
+          )
+        >
+      >('le_engine_set_monitor_plugin');
+  late final _le_engine_set_monitor_plugin = _le_engine_set_monitor_pluginPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Pointer<le_plugin_slot>>,
+        )
+      >();
+
+  /// Clears a plugin slot: the audio thread is signalled to stop forwarding to it,
+  /// and the host is destroyed on the control thread only AFTER a published-
+  /// quiescent handshake (so there is never a use-after-free or an audio-thread
+  /// free). The chain entry returns to LE_FX_NONE. Idempotent on an empty slot.
+  /// Returns LE_OK or LE_ERR_INVALID.
+  int le_engine_clear_lane_plugin(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int index,
+  ) {
+    return _le_engine_clear_lane_plugin(
+      engine,
+      channel,
+      lane,
+      index,
+    );
+  }
+
+  late final _le_engine_clear_lane_pluginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_clear_lane_plugin');
+  late final _le_engine_clear_lane_plugin = _le_engine_clear_lane_pluginPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
+  int le_engine_clear_monitor_plugin(
+    ffi.Pointer<le_engine> engine,
+    int input,
+    int index,
+  ) {
+    return _le_engine_clear_monitor_plugin(
+      engine,
+      input,
+      index,
+    );
+  }
+
+  late final _le_engine_clear_monitor_pluginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_clear_monitor_plugin');
+  late final _le_engine_clear_monitor_plugin =
+      _le_engine_clear_monitor_pluginPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Allocates an engine. Returns NULL on allocation failure.
   ffi.Pointer<le_engine> le_engine_create() {
     return _le_engine_create();
@@ -2448,6 +2595,8 @@ final class le_plugin_desc extends ffi.Struct {
 }
 
 final class le_engine extends ffi.Opaque {}
+
+final class le_plugin_slot extends ffi.Opaque {}
 
 /// A MIDI input port discovered by le_midi_enumerate.
 ///

@@ -8,6 +8,7 @@ import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
+import 'package:meta/meta.dart';
 
 /// In-memory [AudioEngine] that simulates a multichannel interface for UI
 /// development and manual testing without real hardware.
@@ -228,6 +229,32 @@ class MockAudioEngine implements AudioEngine {
     _scanStarted = false;
     return EngineResult.ok;
   }
+
+  @override
+  PluginSlotHandle? setLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+    required String pluginId,
+  }) => MockPluginSlotHandle(pluginId);
+
+  @override
+  PluginSlotHandle? setMonitorPlugin({
+    required int input,
+    required int index,
+    required String pluginId,
+  }) => MockPluginSlotHandle(pluginId);
+
+  @override
+  EngineResult clearLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult clearMonitorPlugin({required int input, required int index}) =>
+      EngineResult.ok;
 
   @override
   EngineResult measureLatency() {
@@ -454,6 +481,24 @@ class MockAudioEngine implements AudioEngine {
 
   EngineResult _requireRunning() =>
       _running ? EngineResult.ok : EngineResult.notRunning;
+}
+
+/// A deterministic [PluginSlotHandle] returned by [MockAudioEngine], carrying
+/// the loaded plugin id so tests and UI development can assert on it.
+@immutable
+class MockPluginSlotHandle implements PluginSlotHandle {
+  /// Creates a [MockPluginSlotHandle] for [pluginId].
+  const MockPluginSlotHandle(this.pluginId);
+
+  /// The id of the plugin this handle was loaded from.
+  final String pluginId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MockPluginSlotHandle && other.pluginId == pluginId;
+
+  @override
+  int get hashCode => pluginId.hashCode;
 }
 
 class _MockLane {
