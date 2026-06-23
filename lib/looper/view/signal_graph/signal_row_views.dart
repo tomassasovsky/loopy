@@ -527,7 +527,8 @@ class _RowFxChips extends StatelessWidget {
       spacing: 6,
       runSpacing: 6,
       children: [
-        for (final e in effects)
+        // Built-in chips only — plugin entries get their own chip in part 5.
+        for (final e in effects.whereType<BuiltInEffect>())
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -569,7 +570,10 @@ class _TakeFxLine extends StatelessWidget {
         ),
       );
     }
-    final names = effects.map((e) => l10n.effectTypeLabel(e.type)).join(' · ');
+    final names = effects
+        .whereType<BuiltInEffect>()
+        .map((e) => l10n.effectTypeLabel(e.type))
+        .join(' · ');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(

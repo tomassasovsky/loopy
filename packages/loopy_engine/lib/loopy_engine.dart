@@ -37,11 +37,15 @@ export 'src/plugin_descriptor.dart'
     show PluginDescriptor, PluginFormat, PluginScanProgress, PluginSlotHandle;
 export 'src/track_effect.dart'
     show
+        BuiltInEffect,
         ParamReadout,
+        PluginEffect,
+        PluginRef,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,
         decodeTrackEffects,
         encodeTrackEffects,
+        kPluginFxCode,
         kTrackEffectMax,
         kTrackEffectParams;

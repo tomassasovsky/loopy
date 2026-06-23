@@ -12,11 +12,14 @@ import 'package:loopy_engine/loopy_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
+        BuiltInEffect,
         EngineConfig,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
         ParamReadout,
+        PluginEffect,
+        PluginRef,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType;
@@ -768,6 +771,8 @@ class LooperRepository {
       return EngineResult.invalid;
     }
     final fx = effects[index];
+    // Built-in params only — a plugin's parameter surface arrives in part 5.
+    if (fx is! BuiltInEffect) return EngineResult.invalid;
     if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
     final params = List<double>.of(fx.params)..[param] = value;
     // Replace the stored list with a fresh instance rather than mutating it in
@@ -798,7 +803,10 @@ class LooperRepository {
   EngineResult _applyLaneEffects(int channel, int lane) {
     final effects = _laneEffects[(channel, lane)] ?? const <TrackEffect>[];
     for (var i = 0; i < effects.length; i++) {
+      // Plugin entries are loaded through the slot ABI, not this built-in FX
+      // push — that wiring lands in part 5; here a plugin entry is skipped.
       final fx = effects[i];
+      if (fx is! BuiltInEffect) continue;
       _engine.setLaneFx(
         channel: channel,
         lane: lane,
@@ -880,6 +888,8 @@ class LooperRepository {
       return EngineResult.invalid;
     }
     final fx = effects[index];
+    // Built-in params only — a plugin's parameter surface arrives in part 5.
+    if (fx is! BuiltInEffect) return EngineResult.invalid;
     if (param < 0 || param >= fx.params.length) return EngineResult.invalid;
     final params = List<double>.of(fx.params)..[param] = value;
     // Replace with a fresh list rather than mutating in place — the same
@@ -908,7 +918,9 @@ class LooperRepository {
   EngineResult _applyMonitorEffects(int input) {
     final effects = _monitorEffects[input] ?? const <TrackEffect>[];
     for (var i = 0; i < effects.length; i++) {
+      // Plugin entries load through the slot ABI (part 5); skip here.
       final fx = effects[i];
+      if (fx is! BuiltInEffect) continue;
       _engine.setMonitorInputFx(
         input: input,
         index: i,

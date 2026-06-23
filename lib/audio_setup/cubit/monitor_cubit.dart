@@ -132,7 +132,7 @@ class MonitorCubit extends Cubit<MonitorState> {
     final effects = state.forInput(input).effects;
     _pushEffects(input, [
       ...effects,
-      TrackEffect(type: TrackEffectType.drive),
+      BuiltInEffect(type: TrackEffectType.drive),
     ]);
   }
 
@@ -161,7 +161,7 @@ class MonitorCubit extends Cubit<MonitorState> {
   void setEffectType(int input, int index, TrackEffectType type) {
     final effects = state.forInput(input).effects;
     if (index < 0 || index >= effects.length) return;
-    final next = [...effects]..[index] = TrackEffect(type: type);
+    final next = [...effects]..[index] = BuiltInEffect(type: type);
     _pushEffects(input, next);
   }
 
@@ -171,6 +171,8 @@ class MonitorCubit extends Cubit<MonitorState> {
     final monitor = state.forInput(input);
     if (index < 0 || index >= monitor.effects.length) return;
     final fx = monitor.effects[index];
+    // Built-in params only — a plugin's parameter surface arrives in part 5.
+    if (fx is! BuiltInEffect) return;
     if (param < 0 || param >= fx.params.length) return;
     final params = List<double>.of(fx.params)..[param] = value;
     final next = [...monitor.effects]..[index] = fx.copyWith(params: params);

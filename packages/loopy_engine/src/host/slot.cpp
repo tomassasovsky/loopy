@@ -34,7 +34,11 @@ class StubHost final : public loopy::IPluginHost {
  public:
   explicit StubHost(int mode) : mode_(mode) {}
 
-  bool load(const loopy::PluginDescriptor&, double, int) override { return true; }
+  loopy::LoadStatus load(const loopy::PluginDescriptor&, double, int) override {
+    return mode_ == LE_PLUGIN_STUB_UNSUPPORTED
+               ? loopy::LoadStatus::unsupportedTopology
+               : loopy::LoadStatus::ok;
+  }
 
   void process(float* l, float* r, int n) override {
     switch (mode_) {
@@ -85,15 +89,26 @@ struct le_plugin_slot {
 namespace {
 
 // Finalizes a slot around an already-constructed host: load+activate it bypassed
-// and size the adapter buffers. Returns NULL (and deletes the host) on failure.
+// and size the adapter buffers. Returns NULL (and deletes the host) on failure,
+// writing the LE_ERR_* reason into *reason.
 le_plugin_slot* finishSlot(loopy::IPluginHost* host,
                            const loopy::PluginDescriptor& desc,
-                           double sampleRate) {
-  if (!host) return nullptr;
-  if (!host->load(desc, sampleRate, kBlock)) {
+                           double sampleRate, int32_t* reason) {
+  if (!host) {
+    if (reason) *reason = LE_ERR_INVALID;
+    return nullptr;
+  }
+  const loopy::LoadStatus status = host->load(desc, sampleRate, kBlock);
+  if (status != loopy::LoadStatus::ok) {
+    if (reason) {
+      *reason = status == loopy::LoadStatus::unsupportedTopology
+                    ? LE_ERR_UNSUPPORTED
+                    : LE_ERR_DEVICE;
+    }
     delete host;
     return nullptr;
   }
+  if (reason) *reason = LE_OK;
   auto* slot = new le_plugin_slot();
   slot->host = host;
   slot->inL.assign(kBlock, 0.0f);
@@ -133,18 +148,27 @@ void le_plugin_slot_process(le_plugin_slot* slot, float* l, float* r) {
   }
 }
 
-le_plugin_slot* le_plugin_slot_create(const char* plugin_id, double sample_rate) {
-  if (!plugin_id) return nullptr;
+le_plugin_slot* le_plugin_slot_create(const char* plugin_id, double sample_rate,
+                                      int32_t* out_reason) {
+  if (!plugin_id) {
+    if (out_reason) *out_reason = LE_ERR_INVALID;
+    return nullptr;
+  }
   loopy::PluginDescriptor desc;
-  if (!loopy::findScannedPlugin(plugin_id, desc)) return nullptr;
+  if (!loopy::findScannedPlugin(plugin_id, desc)) {
+    if (out_reason) *out_reason = LE_ERR_INVALID;  // unknown id
+    return nullptr;
+  }
   loopy::IPluginHost* host = desc.format == loopy::PluginFormat::vst3
                                  ? loopy::createVst3Host()
                                  : loopy::createClapHost();
-  return finishSlot(host, desc, sample_rate);
+  return finishSlot(host, desc, sample_rate, out_reason);
 }
 
-le_plugin_slot* le_plugin_slot_create_stub(int32_t mode, double sample_rate) {
-  return finishSlot(new StubHost(mode), loopy::PluginDescriptor{}, sample_rate);
+le_plugin_slot* le_plugin_slot_create_stub(int32_t mode, double sample_rate,
+                                           int32_t* out_reason) {
+  return finishSlot(new StubHost(mode), loopy::PluginDescriptor{}, sample_rate,
+                    out_reason);
 }
 
 void le_plugin_slot_set_ready(le_plugin_slot* slot, int32_t ready) {

@@ -9,6 +9,7 @@ void main() {
       expect(EngineResult.fromCode(-2), EngineResult.alreadyRunning);
       expect(EngineResult.fromCode(-3), EngineResult.notRunning);
       expect(EngineResult.fromCode(-4), EngineResult.device);
+      expect(EngineResult.fromCode(-5), EngineResult.unsupported);
     });
 
     test('maps unknown codes to invalid', () {

@@ -252,8 +252,8 @@ void main() {
               Lane(
                 inputChannel: 0,
                 effects: [
-                  TrackEffect(type: TrackEffectType.filter),
-                  TrackEffect(type: TrackEffectType.delay),
+                  BuiltInEffect(type: TrackEffectType.filter),
+                  BuiltInEffect(type: TrackEffectType.delay),
                 ],
               ),
               const Lane(inputChannel: 1),

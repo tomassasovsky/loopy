@@ -26,8 +26,9 @@ class EffectParamsEditor extends StatelessWidget {
   /// The graph's selector namespace, e.g. `laneGraph` or `monitorGraph`.
   final String keyPrefix;
 
-  /// The effect being edited.
-  final TrackEffect fx;
+  /// The built-in effect being edited. Plugin entries are rendered by their own
+  /// card (later parts), not this editor.
+  final BuiltInEffect fx;
 
   /// The engine's reported added latency in milliseconds (from the snapshot).
   /// Used only to display the phase-vocoder monitoring-lag hint; `0` suppresses

@@ -61,7 +61,7 @@ void main() {
         await store.setDouble('monitor_input_vol.1', 0.4);
         await store.setString(
           'monitor_input_fx.1',
-          encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
+          encodeTrackEffects([BuiltInEffect(type: TrackEffectType.delay)]),
         );
 
         await runMonitorMigration(settings);
@@ -71,7 +71,7 @@ void main() {
         expect(await settings.loadMonitorVolume(1), 0.4);
         expect(
           await settings.loadMonitorEffects(1),
-          encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
+          encodeTrackEffects([BuiltInEffect(type: TrackEffectType.delay)]),
         );
         expect(await settings.loadMonitorInput(1), isNull); // legacy cleared
         expect(await settings.loadMonitorLaneCount(1), isNull); // lanes cleared
@@ -108,7 +108,7 @@ void main() {
           await store.setDouble('monitor_input_vol.0', 0.6);
           await store.setString(
             'monitor_input_fx.0',
-            encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
+            encodeTrackEffects([BuiltInEffect(type: TrackEffectType.delay)]),
           );
 
           await runMonitorMigration(settings);
@@ -118,7 +118,7 @@ void main() {
           expect(await settings.loadMonitorVolume(0), 0.6);
           expect(
             await settings.loadMonitorEffects(0),
-            encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
+            encodeTrackEffects([BuiltInEffect(type: TrackEffectType.delay)]),
           );
           // Every intermediate key is gone.
           expect(await settings.loadMonitorInput(0), isNull);
@@ -195,7 +195,7 @@ void main() {
           count: 2,
           out: {0: 0x1, 1: 0x2},
           fx: {
-            1: [TrackEffect(type: TrackEffectType.delay)],
+            1: [BuiltInEffect(type: TrackEffectType.delay)],
           },
         );
 
@@ -204,7 +204,7 @@ void main() {
         // Lane 1's chain is the first (only) non-empty one — it survives.
         expect(
           await settings.loadMonitorEffects(0),
-          encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
+          encodeTrackEffects([BuiltInEffect(type: TrackEffectType.delay)]),
         );
         expect(await settings.loadMonitorOutput(0), 0x3);
       });
@@ -214,8 +214,8 @@ void main() {
           0,
           count: 2,
           fx: {
-            0: [TrackEffect(type: TrackEffectType.drive)],
-            1: [TrackEffect(type: TrackEffectType.delay)],
+            0: [BuiltInEffect(type: TrackEffectType.drive)],
+            1: [BuiltInEffect(type: TrackEffectType.delay)],
           },
         );
 
@@ -223,7 +223,7 @@ void main() {
 
         expect(
           await settings.loadMonitorEffects(0),
-          encodeTrackEffects([TrackEffect(type: TrackEffectType.drive)]),
+          encodeTrackEffects([BuiltInEffect(type: TrackEffectType.drive)]),
         );
       });
 
