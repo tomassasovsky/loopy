@@ -295,6 +295,9 @@ class _SignalDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final monitorCubit = context.read<MonitorCubit>();
     final bloc = context.read<LooperBloc>();
+    // Read-only query for the live plugin knob readouts (the plugin's own
+    // value-to-text). A pure lookup, so the dock reads the repository directly.
+    final repo = context.read<LooperRepository>();
 
     final fi = focusedInput;
     if (fi != null && fi < looper.status.inputChannels) {
@@ -319,6 +322,12 @@ class _SignalDock extends StatelessWidget {
         onRelinkPlugin: (i) => unawaited(_relinkMonitorPlugin(context, fi, i)),
         onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
         onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
+        onFormatPluginValue: (i, id, v) => repo.monitorPluginParamText(
+          input: fi,
+          index: i,
+          paramId: id,
+          value: v,
+        ),
       );
     }
     final ft = focusedTake;
@@ -362,6 +371,13 @@ class _SignalDock extends StatelessWidget {
         onMuteToggled: () => bloc.add(LooperLaneMuteToggled(ft.track, ft.lane)),
         onVolumeChanged: (v) =>
             bloc.add(LooperLaneVolumeChanged(ft.track, ft.lane, v)),
+        onFormatPluginValue: (i, id, v) => repo.lanePluginParamText(
+          channel: ft.track,
+          lane: ft.lane,
+          index: i,
+          paramId: id,
+          value: v,
+        ),
       );
     }
     return SignalHintDock(message: context.l10n.signalHint);

@@ -300,6 +300,8 @@ void main() {
       double min = 0,
       double max = 1,
       double def = 0.5,
+      int stepCount = 0,
+      List<String> valueTexts = const [],
     }) => PluginParamInfo(
       id: id,
       name: name,
@@ -307,8 +309,9 @@ void main() {
       min: min,
       max: max,
       def: def,
-      stepCount: 0,
+      stepCount: stepCount,
       flags: flags,
+      valueTexts: valueTexts,
     );
 
     PluginEffect plugin({
@@ -329,6 +332,8 @@ void main() {
       void Function(int index)? onOpenPluginEditor,
       void Function(int index)? onRelinkPlugin,
       void Function(int index)? onRemoveEffect,
+      String? Function(int index, int paramId, double value)?
+      onFormatPluginValue,
     }) => Scaffold(
       body: SignalFxRack(
         keyPrefix: 'signalGraph_lane',
@@ -342,6 +347,7 @@ void main() {
         onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
         onRelinkPlugin: onRelinkPlugin ?? (_) {},
         onReorder: (_, _) {},
+        onFormatPluginValue: onFormatPluginValue,
       ),
     );
 
@@ -425,6 +431,76 @@ void main() {
         find.byKey(const Key('signalGraph_lane_device_0_params')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('a boolean param renders a switch, not a knob', (tester) async {
+      var lastSet = -1.0;
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            // stepCount 1 = on/off; seeded off (def 0).
+            params: [param(10, 'Sync', stepCount: 1, def: 0)],
+          ),
+          onSetPluginParam: (_, _, v) => lastSet = v,
+        ),
+      );
+      expect(find.byType(Switch), findsOneWidget);
+      expect(find.byType(SignalKnob), findsNothing);
+
+      // Flipping the switch drives the param to its max (on).
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_param_0')),
+      );
+      expect(lastSet, 1.0);
+    });
+
+    testWidgets('a discrete enum param renders a dropdown of its labels', (
+      tester,
+    ) async {
+      var lastSet = -1.0;
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            params: [
+              param(
+                10,
+                'Filter',
+                flags: 0x01 | 0x10, // automatable + stepped
+                max: 2,
+                def: 0,
+                stepCount: 2,
+                valueTexts: const ['Lowpass', 'Highpass', 'Bandpass'],
+              ),
+            ],
+          ),
+          onSetPluginParam: (_, _, v) => lastSet = v,
+        ),
+      );
+      expect(find.byType(SignalKnob), findsNothing);
+      // The current step label shows; the others appear on open.
+      expect(find.text('Lowpass'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_param_0')),
+      );
+      await tester.pumpAndSettle();
+      // Picking 'Bandpass' (step 2 over [0, 2]) sets the plain value to 2.0.
+      await tester.tap(find.text('Bandpass').last);
+      await tester.pumpAndSettle();
+      expect(lastSet, 2.0);
+    });
+
+    testWidgets('the knob readout uses the plugin format when provided', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(params: [param(10, 'Gain')]),
+          onFormatPluginValue: (_, _, _) => '-6.0 dB',
+        ),
+      );
+      // The live plugin-formatted readout wins over the bare number.
+      expect(find.text('-6.0 dB'), findsOneWidget);
     });
 
     testWidgets('hidden and read-only params get no knob', (tester) async {

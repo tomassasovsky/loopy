@@ -7,7 +7,7 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
-    show PluginDescriptor, pluginParamInfoFromEngine;
+    show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
@@ -1101,10 +1101,10 @@ class LooperRepository {
         // Corrupt blob: leave the plugin at its default state.
       }
     }
-    final infos = _engine
-        .pluginParamInfos(handle)
-        .map(pluginParamInfoFromEngine)
-        .toList();
+    final infos = _enrichParamLabels(
+      handle,
+      _engine.pluginParamInfos(handle).map(pluginParamInfoFromEngine).toList(),
+    );
     for (final entry in fx.paramValues.entries) {
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
@@ -1134,6 +1134,64 @@ class LooperRepository {
       if (d.id == id) return d;
     }
     return null;
+  }
+
+  /// A discrete param with more steps than this stays a knob rather than
+  /// becoming a dropdown — enumerating every step of, say, a 128-value param
+  /// would be a wall of menu items, not a usable control.
+  static const int _maxEnumSteps = 24;
+
+  /// Enriches each small discrete param in [infos] with its per-step display
+  /// labels (so the UI can render a switch / dropdown), by asking the plugin to
+  /// format every step value. A param whose steps don't all resolve to text is
+  /// left bare (it falls back to a knob). Continuous params are untouched.
+  List<PluginParamInfo> _enrichParamLabels(
+    PluginSlotHandle handle,
+    List<PluginParamInfo> infos,
+  ) => [
+    for (final p in infos)
+      if (p.stepCount >= 1 && p.stepCount <= _maxEnumSteps)
+        _withStepLabels(handle, p)
+      else
+        p,
+  ];
+
+  PluginParamInfo _withStepLabels(PluginSlotHandle handle, PluginParamInfo p) {
+    final labels = <String>[];
+    for (var k = 0; k <= p.stepCount; k++) {
+      final value = p.min + (p.max - p.min) * k / p.stepCount;
+      final text = _engine.pluginParamValueText(handle, p.id, value);
+      if (text == null || text.isEmpty) return p; // incomplete -> keep the knob
+      labels.add(text);
+    }
+    return p.withValueTexts(labels);
+  }
+
+  /// The plugin's own display string for lane [lane] chain entry [index]'s
+  /// parameter [paramId] at the plain [value] (e.g. `-6.0 dB`), or null when no
+  /// plugin is loaded there or it offers no text. Drives live knob readouts.
+  String? lanePluginParamText({
+    required int channel,
+    required int lane,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final handle = _laneSlots[(channel, lane, index)];
+    if (handle == null) return null;
+    return _engine.pluginParamValueText(handle, paramId, value);
+  }
+
+  /// Like [lanePluginParamText] for monitor [input]'s chain entry [index].
+  String? monitorPluginParamText({
+    required int input,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final handle = _monitorSlots[(input, index)];
+    if (handle == null) return null;
+    return _engine.pluginParamValueText(handle, paramId, value);
   }
 
   /// Replaces track [channel]'s lane 0 effect chain. Convenience for lane 0.

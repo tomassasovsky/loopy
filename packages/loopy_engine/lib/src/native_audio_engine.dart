@@ -431,6 +431,31 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  String? pluginParamValueText(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return null;
+    const capacity = 128;
+    final out = calloc<Char>(capacity);
+    try {
+      final code = _bindings.le_plugin_param_value_text(
+        slot.pointer,
+        paramId,
+        value,
+        out,
+        capacity,
+      );
+      if (code != 0) return null; // unsupported / invalid -> no text
+      return out.cast<Utf8>().toDartString();
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  @override
   EngineResult pluginParamSet(
     PluginSlotHandle slot,
     int paramId,

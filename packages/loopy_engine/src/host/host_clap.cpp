@@ -235,6 +235,17 @@ class ClapHost final : public loopy::IPluginHost {
     return value;
   }
 
+  bool paramValueText(uint32_t id, double value, std::string& out) override {
+    if (!params_ || !params_->value_to_text) return false;
+    char buf[128] = {};
+    // CLAP values are already plain — pass through directly.
+    if (!params_->value_to_text(plugin_, id, value, buf, sizeof(buf))) {
+      return false;
+    }
+    out = buf;
+    return true;
+  }
+
   // --- Native editor (main thread; D-WIN) ---
 
   bool editorOpen() override {

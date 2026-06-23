@@ -73,6 +73,7 @@ class PluginParamInfo extends Equatable {
     required this.def,
     required this.stepCount,
     required this.flags,
+    this.valueTexts = const [],
   });
 
   /// The stable parameter id (VST3 ParamID / CLAP clap_id).
@@ -118,6 +119,40 @@ class PluginParamInfo extends Equatable {
   /// not hidden.
   bool get isUserVisible => isAutomatable && !isHidden;
 
+  /// Whether this is an on/off (two-state) parameter — rendered as a switch.
+  bool get isToggle => stepCount == 1;
+
+  /// Whether this is a small discrete enumeration the UI can present as a
+  /// dropdown of named steps (rather than a knob), i.e. it has more than two
+  /// steps and the plugin gave us a label for each. A toggle ([isToggle]) is
+  /// handled separately as a switch.
+  bool get isEnum => stepCount >= 2 && valueTexts.length == stepCount + 1;
+
+  /// The plugin's own display label for each discrete step, in step order
+  /// (`stepCount + 1` entries) — e.g. `['Lowpass', 'Highpass', 'Bandpass']`.
+  /// Empty for a continuous param or when the plugin offers no text. The
+  /// repository enriches this at load time (the native `get_info` doesn't carry
+  /// it), so the UI can render a switch / dropdown instead of a bare knob.
+  final List<String> valueTexts;
+
+  /// Returns a copy with [valueTexts] replaced — the repository's enrichment
+  /// seam over the otherwise native-sourced fields.
+  PluginParamInfo withValueTexts(List<String> valueTexts) => PluginParamInfo(
+    id: id,
+    name: name,
+    unit: unit,
+    min: min,
+    max: max,
+    def: def,
+    stepCount: stepCount,
+    flags: flags,
+    valueTexts: valueTexts,
+  );
+
+  // [valueTexts] is in props so a param whose labels enumerate after load
+  // compares unequal and the card re-renders into a dropdown/switch. Labels are
+  // deterministic per plugin+step, so this never fires spuriously across
+  // rebuilds.
   @override
   List<Object?> get props => [
     id,
@@ -128,6 +163,7 @@ class PluginParamInfo extends Equatable {
     def,
     stepCount,
     flags,
+    valueTexts,
   ];
 }
 

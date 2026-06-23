@@ -297,6 +297,12 @@ class FakeSessionEngine implements AudioEngine {
   @override
   double pluginParamGet(PluginSlotHandle slot, int paramId) => 0;
   @override
+  String? pluginParamValueText(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) => null;
+  @override
   EngineResult pluginParamSet(
     PluginSlotHandle slot,
     int paramId,

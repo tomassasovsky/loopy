@@ -35,6 +35,7 @@ class SignalFxRack extends StatefulWidget {
     required this.onOpenPluginEditor,
     required this.onRelinkPlugin,
     required this.onReorder,
+    this.onFormatPluginValue,
     super.key,
   });
 
@@ -67,6 +68,12 @@ class SignalFxRack extends StatefulWidget {
   /// The processing order is the signal order, so a drag re-sequences the FX.
   final void Function(int oldIndex, int newIndex) onReorder;
 
+  /// Formats plugin chain entry `index`'s parameter `paramId` at the plain
+  /// `value` to the plugin's own display string, or null when unavailable —
+  /// drives the in-app knob readout in the plugin's real units. Optional.
+  final String? Function(int index, int paramId, double value)?
+  onFormatPluginValue;
+
   @override
   State<SignalFxRack> createState() => _SignalFxRackState();
 }
@@ -87,6 +94,8 @@ class _SignalFxRackState extends State<SignalFxRack> {
         keyPrefix: '${widget.keyPrefix}_device_$i',
         fx: fx,
         onSetParam: (id, v) => widget.onSetPluginParam(i, id, v),
+        onFormatValue: (paramId, value) =>
+            widget.onFormatPluginValue?.call(i, paramId, value),
         onOpenEditor: () => widget.onOpenPluginEditor(i),
         onRelink: () => widget.onRelinkPlugin(i),
         onRemove: () => widget.onRemoveEffect(i),
@@ -490,27 +499,40 @@ class _PluginDeviceCard extends StatelessWidget {
     required this.onOpenEditor,
     required this.onRelink,
     required this.onRemove,
+    this.onFormatValue,
   });
 
   final Key cardKey;
   final String keyPrefix;
   final PluginEffect fx;
   final void Function(int paramId, double value) onSetParam;
+
+  /// Formats a parameter's plain value to the plugin's own display string (e.g.
+  /// `-6.0 dB`), or null when no live readout is available — drives the knob
+  /// readout in the plugin's real units. Null disables the live readout.
+  final String? Function(int paramId, double value)? onFormatValue;
+
   final VoidCallback onOpenEditor;
   final VoidCallback onRelink;
   final VoidCallback onRemove;
 
   static const double _knobSlot = 60;
+  static const double _enumSlot = 108;
 
   /// The plugin's bypass control, if it exposes one — drives the header toggle.
   PluginParamInfo? get _bypassParam =>
       fx.params.where((p) => p.isBypass).firstOrNull;
 
-  /// The params that earn an in-app knob: every user-visible (automatable and
-  /// not hidden) param, except the bypass control (it has its own header
-  /// toggle).
-  List<PluginParamInfo> get _knobParams =>
+  /// The params that earn an in-app control: every user-visible (automatable
+  /// and not hidden) param, except the bypass control (it has its own header
+  /// toggle). Each renders as a switch / dropdown / knob per its kind.
+  List<PluginParamInfo> get _controlParams =>
       fx.params.where((p) => p.isUserVisible && !p.isBypass).toList();
+
+  /// The in-strip width a [param]'s control occupies — an enum dropdown needs
+  /// room for a worded value; a switch or knob fits the standard slot.
+  static double _slotWidth(PluginParamInfo param) =>
+      param.isEnum ? _enumSlot : _knobSlot;
 
   @override
   Widget build(BuildContext context) {
@@ -528,12 +550,15 @@ class _PluginDeviceCard extends StatelessWidget {
         onRemove: onRemove,
       );
     }
-    final knobs = _knobParams;
+    final controls = _controlParams;
     final bypass = _bypassParam;
-    // The full knob strip, clamped so a many-param plugin scrolls inside the
+    // The full control strip, clamped so a many-param plugin scrolls inside the
     // card instead of stretching the rack. Knobs turn on a vertical drag, so a
     // horizontal scroll of the strip never fights the knob gesture.
-    final fullStripWidth = knobs.length * _knobSlot;
+    final fullStripWidth = controls.fold<double>(
+      0,
+      (w, p) => w + _slotWidth(p),
+    );
     final bodyWidth = fullStripWidth > kPluginCardMaxBodyWidth
         ? kPluginCardMaxBodyWidth
         : fullStripWidth;
@@ -636,7 +661,7 @@ class _PluginDeviceCard extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              child: knobs.isEmpty
+              child: controls.isEmpty
                   ? Center(
                       child: Text(
                         l10n.emDash,
@@ -659,17 +684,18 @@ class _PluginDeviceCard extends StatelessWidget {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              for (var k = 0; k < knobs.length; k++)
+                              for (var k = 0; k < controls.length; k++)
                                 SizedBox(
-                                  width: _knobSlot,
-                                  child: _PluginParamKnob(
-                                    knobKey: Key('${keyPrefix}_param_$k'),
-                                    spec: knobs[k],
+                                  width: _slotWidth(controls[k]),
+                                  child: _PluginParamControl(
+                                    controlKey: Key('${keyPrefix}_param_$k'),
+                                    spec: controls[k],
                                     value:
-                                        fx.paramValues[knobs[k].id] ??
-                                        knobs[k].def,
+                                        fx.paramValues[controls[k].id] ??
+                                        controls[k].def,
                                     onChanged: (v) =>
-                                        onSetParam(knobs[k].id, v),
+                                        onSetParam(controls[k].id, v),
+                                    onFormatValue: onFormatValue,
                                   ),
                                 ),
                             ],
@@ -849,15 +875,68 @@ class _BypassToggle extends StatelessWidget {
   }
 }
 
+/// One hosted-plugin parameter, rendered as the control its kind calls for: a
+/// two-state [_PluginParamSwitch], a named-step [_PluginParamDropdown], or a
+/// continuous rotary [_PluginParamKnob]. Plugins are not all knobs.
+class _PluginParamControl extends StatelessWidget {
+  const _PluginParamControl({
+    required this.controlKey,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+    this.onFormatValue,
+  });
+
+  final Key controlKey;
+  final PluginParamInfo spec;
+
+  /// The current plain value (in `[spec.min, spec.max]`).
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  /// Only the continuous knob path uses this (switch / dropdown read their
+  /// labels from [PluginParamInfo.valueTexts] baked in at load time).
+  final String? Function(int paramId, double value)? onFormatValue;
+
+  @override
+  Widget build(BuildContext context) {
+    if (spec.isToggle) {
+      return _PluginParamSwitch(
+        switchKey: controlKey,
+        spec: spec,
+        value: value,
+        onChanged: onChanged,
+      );
+    }
+    if (spec.isEnum) {
+      return _PluginParamDropdown(
+        dropdownKey: controlKey,
+        spec: spec,
+        value: value,
+        onChanged: onChanged,
+      );
+    }
+    return _PluginParamKnob(
+      knobKey: controlKey,
+      spec: spec,
+      value: value,
+      onChanged: onChanged,
+      onFormatValue: onFormatValue,
+    );
+  }
+}
+
 /// One hosted-plugin parameter as a rotary [SignalKnob]. The plugin reports the
 /// value in its own plain `[min, max]` range; the knob works in `0..1`, so we
-/// normalize in and de-normalize out, and read out the live plain value.
+/// normalize in and de-normalize out, and read out the live plain value — in
+/// the plugin's own words ([onFormatValue]) when available, else a number.
 class _PluginParamKnob extends StatelessWidget {
   const _PluginParamKnob({
     required this.knobKey,
     required this.spec,
     required this.value,
     required this.onChanged,
+    required this.onFormatValue,
   });
 
   final Key knobKey;
@@ -868,6 +947,9 @@ class _PluginParamKnob extends StatelessWidget {
 
   /// Called with the new plain value as the knob turns.
   final ValueChanged<double> onChanged;
+
+  /// The plugin's own readout for a plain value, or null for a numeric one.
+  final String? Function(int paramId, double value)? onFormatValue;
 
   double get _span => spec.max - spec.min;
 
@@ -889,11 +971,149 @@ class _PluginParamKnob extends StatelessWidget {
       size: 36,
       readoutBuilder: (norm) {
         final plain = _denormalize(norm);
+        // Prefer the plugin's own formatting ("-6.0 dB"); fall back to the bare
+        // number + unit when the plugin offers no text for this value.
+        final fromPlugin = onFormatValue?.call(spec.id, plain);
+        if (fromPlugin != null && fromPlugin.isNotEmpty) return fromPlugin;
         final text = spec.stepCount > 0
             ? plain.round().toString()
             : plain.toStringAsFixed(2);
         return spec.unit.isEmpty ? text : '$text ${spec.unit}';
       },
+    );
+  }
+}
+
+/// A two-state (on/off) plugin parameter as a labeled switch — a knob reads
+/// poorly for a boolean. The plain value is `>= midpoint` when on; toggling
+/// drives it to [PluginParamInfo.max] / `min`. The on/off captions come from
+/// the plugin's own step text when present, else a generic On/Off.
+class _PluginParamSwitch extends StatelessWidget {
+  const _PluginParamSwitch({
+    required this.switchKey,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Key switchKey;
+  final PluginParamInfo spec;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final mid = (spec.min + spec.max) / 2;
+    final on = value >= mid;
+    final labels = spec.valueTexts.length == 2
+        ? spec.valueTexts
+        : const <String>[];
+    final caption = labels.isEmpty
+        ? (on ? l10n.signalPluginToggleOn : l10n.signalPluginToggleOff)
+        : (on ? labels[1] : labels[0]);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          spec.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: signalMono(color: surface.textSecondary, size: 9),
+        ),
+        const SizedBox(height: 4),
+        Transform.scale(
+          scale: 0.7,
+          child: Switch(
+            key: switchKey,
+            value: on,
+            activeThumbColor: surface.accent,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            onChanged: (next) => onChanged(next ? spec.max : spec.min),
+          ),
+        ),
+        Text(
+          caption,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: signalMono(color: surface.textTertiary, size: 9),
+        ),
+      ],
+    );
+  }
+}
+
+/// A discrete enumeration plugin parameter as a dropdown of its named steps —
+/// e.g. a filter type. Selecting step `k` drives the plain value to the `k`-th
+/// step across `[min, max]`. Labels come from [PluginParamInfo.valueTexts].
+class _PluginParamDropdown extends StatelessWidget {
+  const _PluginParamDropdown({
+    required this.dropdownKey,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Key dropdownKey;
+  final PluginParamInfo spec;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  /// The step index nearest the current plain value (in `0..stepCount`).
+  int get _selectedStep {
+    final span = spec.max - spec.min;
+    if (span == 0) return 0;
+    final norm = ((value - spec.min) / span).clamp(0.0, 1.0);
+    return (norm * spec.stepCount).round();
+  }
+
+  double _valueForStep(int step) =>
+      spec.min + (spec.max - spec.min) * step / spec.stepCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          spec.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: signalMono(color: surface.textSecondary, size: 9),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            key: dropdownKey,
+            value: _selectedStep,
+            isDense: true,
+            isExpanded: true,
+            iconSize: 16,
+            dropdownColor: surface.cardHigh,
+            style: signalMono(color: surface.textPrimary, size: 10),
+            onChanged: (step) {
+              if (step != null) onChanged(_valueForStep(step));
+            },
+            items: [
+              for (var i = 0; i < spec.valueTexts.length; i++)
+                DropdownMenuItem<int>(
+                  value: i,
+                  child: Text(
+                    spec.valueTexts[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: signalMono(color: surface.textPrimary, size: 10),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

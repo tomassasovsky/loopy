@@ -318,6 +318,8 @@
     "signalPluginOpenEditorTooltip": "Open the plugin's editor window",
     "signalPluginBypassTooltip": "Bypass plugin",
     "signalPluginUnknownName": "Plugin",
+    "signalPluginToggleOn": "On",
+    "signalPluginToggleOff": "Off",
     "signalPluginUnavailable": "Plugin unavailable",
     "signalPluginUnsupported": "Plugin unsupported",
     "signalPluginVersionChanged": "Version changed since saved",

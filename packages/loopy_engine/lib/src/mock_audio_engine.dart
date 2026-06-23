@@ -266,6 +266,16 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  String? pluginParamValueText(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    if (slot is! MockPluginSlotHandle) return null;
+    return slot.paramValueText(paramId, value);
+  }
+
+  @override
   EngineResult pluginParamSet(
     PluginSlotHandle slot,
     int paramId,
@@ -591,6 +601,18 @@ class MockPluginSlotHandle implements PluginSlotHandle {
 
   /// The current value of parameter [paramId], or `0` if unknown.
   double paramValue(int paramId) => _values[paramId] ?? 0;
+
+  /// A deterministic display string for [paramId] at [value] (the value in the
+  /// param's own unit), or null for an unknown id — the mock stand-in for the
+  /// plugin's own value-to-text formatting.
+  String? paramValueText(int paramId, double value) {
+    for (final param in mockParams) {
+      if (param.id != paramId) continue;
+      final text = value.toStringAsFixed(2);
+      return param.unit.isEmpty ? text : '$text ${param.unit}';
+    }
+    return null;
+  }
 
   /// Sets parameter [paramId] to [value]; unknown ids report invalid.
   EngineResult setParamValue(int paramId, double value) {
