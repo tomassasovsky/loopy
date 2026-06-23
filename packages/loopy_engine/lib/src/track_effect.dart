@@ -331,6 +331,7 @@ final class PluginEffect extends TrackEffect {
     this.paramValues = const {},
     this.params = const [],
     this.state = '',
+    this.name = '',
   });
 
   /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues,
@@ -349,6 +350,7 @@ final class PluginEffect extends TrackEffect {
       ref: PluginRef.fromJson(json['plugin'] as Map<String, dynamic>),
       paramValues: values,
       state: (json['state'] as String?) ?? '',
+      name: (json['name'] as String?) ?? '',
     );
   }
 
@@ -370,6 +372,12 @@ final class PluginEffect extends TrackEffect {
   /// re-enumerates it), so it is excluded from equality and [toJson].
   final List<PluginParamInfo> params;
 
+  /// The plugin's user-visible display name, persisted so it survives a restart
+  /// even before the catalog rescans — and so a missing plugin's placeholder
+  /// reads as its name rather than a cryptic id. Re-resolved from the catalog
+  /// (which wins) once a scan completes. Empty when never resolved.
+  final String name;
+
   @override
   int get typeCode => kPluginFxCode;
 
@@ -379,11 +387,13 @@ final class PluginEffect extends TrackEffect {
     Map<int, double>? paramValues,
     List<PluginParamInfo>? params,
     String? state,
+    String? name,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
     params: params ?? this.params,
     state: state ?? this.state,
+    name: name ?? this.name,
   );
 
   @override
@@ -395,6 +405,7 @@ final class PluginEffect extends TrackEffect {
         for (final e in paramValues.entries) '${e.key}': e.value,
       },
     if (state.isNotEmpty) 'state': state,
+    if (name.isNotEmpty) 'name': name,
   };
 
   @override
@@ -402,12 +413,14 @@ final class PluginEffect extends TrackEffect {
       other is PluginEffect &&
       other.ref == ref &&
       other.state == state &&
+      other.name == name &&
       _mapEquals(other.paramValues, paramValues);
 
   @override
   int get hashCode => Object.hash(
     ref,
     state,
+    name,
     Object.hashAllUnordered([
       for (final e in paramValues.entries) Object.hash(e.key, e.value),
     ]),

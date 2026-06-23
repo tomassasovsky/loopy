@@ -278,7 +278,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     type: trackEffectTypeToEngine(type),
     params: params,
   ),
-  PluginEffect(:final ref, :final paramValues, :final state) =>
+  PluginEffect(:final ref, :final paramValues, :final state, :final name) =>
     engine.PluginEffect(
       ref: engine.PluginRef(
         format: pluginFormatToEngine(ref.format),
@@ -287,6 +287,7 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
       ),
       paramValues: paramValues,
       state: state,
+      name: name,
     ),
 };
 
@@ -297,7 +298,12 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         type: TrackEffectType.fromCode(type.code),
         params: params,
       ),
-      engine.PluginEffect(:final ref, :final paramValues, :final state) =>
+      engine.PluginEffect(
+        :final ref,
+        :final paramValues,
+        :final state,
+        :final name,
+      ) =>
         PluginEffect(
           ref: PluginRef(
             format: pluginFormatFromEngine(ref.format),
@@ -306,6 +312,7 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
           ),
           paramValues: paramValues,
           state: state,
+          name: name,
         ),
     };
 

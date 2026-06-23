@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
@@ -17,6 +19,15 @@ const Curve _dropSettleCurve = Curves.easeOutBack;
 /// many-param plugin doesn't run off the rack (the native editor, part 6, is
 /// still the full surface).
 const double kPluginCardMaxBodyWidth = 360;
+
+/// The standard device-card height (one control row) — the rack's floor. A
+/// plugin with more controls than fit one row grows the whole strip taller
+/// (uniform, so drag-drop stays simple) up to [kSignalRackMaxHeight].
+const double kSignalRackMinHeight = 150;
+
+/// The tallest the rack grows for a many-control plugin before that plugin's
+/// control grid scrolls vertically inside its card instead.
+const double kSignalRackMaxHeight = 348;
 
 /// An **Ableton-style FX rack**: the chain laid out as horizontal **device
 /// cards**, each showing its type and its parameters as live knobs — rather
@@ -130,8 +141,16 @@ class _SignalFxRackState extends State<SignalFxRack> {
     final keyPrefix = widget.keyPrefix;
     final effects = widget.effects;
     final full = effects.length >= kTrackEffectMax;
+    // All devices in a chain share one height (so the strip + drag-drop stay
+    // uniform), grown to fit the tallest plugin's multi-row control grid.
+    var rackHeight = kSignalRackMinHeight;
+    for (final fx in effects) {
+      if (fx is PluginEffect) {
+        rackHeight = math.max(rackHeight, _PluginDeviceCard.heightFor(fx));
+      }
+    }
     return SizedBox(
-      height: 150,
+      height: rackHeight,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -143,10 +162,12 @@ class _SignalFxRackState extends State<SignalFxRack> {
               _DropSlot(
                 slotKey: Key('${keyPrefix}_drop_$i'),
                 insertAt: i,
+                height: rackHeight - 32,
                 onDrop: _reorderTo,
               ),
               _DraggableDevice(
                 index: i,
+                height: rackHeight,
                 card: _card(i),
                 landingKey: i == _landedAt ? ValueKey(_dropGen) : null,
               ),
@@ -154,6 +175,7 @@ class _SignalFxRackState extends State<SignalFxRack> {
             _DropSlot(
               slotKey: Key('${keyPrefix}_drop_${effects.length}'),
               insertAt: effects.length,
+              height: rackHeight - 32,
               onDrop: _reorderTo,
             ),
             _AddDeviceCard(
@@ -174,11 +196,15 @@ class _SignalFxRackState extends State<SignalFxRack> {
 class _DraggableDevice extends StatelessWidget {
   const _DraggableDevice({
     required this.index,
+    required this.height,
     required this.card,
     this.landingKey,
   });
 
   final int index;
+
+  /// The shared device-card height for this chain (the rack's resolved height).
+  final double height;
   final Widget card;
 
   /// When set, the in-place card just landed here — wrap it in a settle pop.
@@ -191,7 +217,7 @@ class _DraggableDevice extends StatelessWidget {
     return Draggable<int>(
       data: index,
       affinity: Axis.horizontal,
-      feedback: _LiftedCard(child: card),
+      feedback: _LiftedCard(height: height, child: card),
       childWhenDragging: Opacity(opacity: 0.3, child: card),
       child: inPlace,
     );
@@ -201,8 +227,9 @@ class _DraggableDevice extends StatelessWidget {
 /// The lifted card shown under the pointer while dragging — scaled up a touch
 /// and dropped on a soft shadow so it reads as picked up off the rack.
 class _LiftedCard extends StatelessWidget {
-  const _LiftedCard({required this.child});
+  const _LiftedCard({required this.height, required this.child});
 
+  final double height;
   final Widget child;
 
   @override
@@ -211,7 +238,7 @@ class _LiftedCard extends StatelessWidget {
       color: Colors.transparent,
       // The overlay is unbounded vertically, so pin the lifted card's height.
       child: SizedBox(
-        height: 150,
+        height: height,
         child: Transform.scale(
           scale: 1.04,
           child: DecoratedBox(
@@ -259,6 +286,7 @@ class _DropSlot extends StatelessWidget {
   const _DropSlot({
     required this.slotKey,
     required this.insertAt,
+    required this.height,
     required this.onDrop,
   });
 
@@ -266,6 +294,9 @@ class _DropSlot extends StatelessWidget {
 
   /// The index this gap would insert a dropped card at, in the current list.
   final int insertAt;
+
+  /// The height of the insertion bar — matches the chain's card height.
+  final double height;
   final void Function(int from, int insertAt) onDrop;
 
   @override
@@ -286,7 +317,7 @@ class _DropSlot extends StatelessWidget {
           child: active
               ? Container(
                   width: 3,
-                  height: 118,
+                  height: height,
                   decoration: BoxDecoration(
                     color: surface.accent,
                     borderRadius: BorderRadius.circular(2),
@@ -518,6 +549,9 @@ class _PluginDeviceCard extends StatelessWidget {
 
   static const double _knobSlot = 60;
   static const double _enumSlot = 108;
+  static const double _cellHeight = 92; // one control + its label/readout
+  static const double _headerHeight = 33;
+  static const double _bodyVPad = 16; // 8 top + 8 bottom
 
   /// The plugin's bypass control, if it exposes one — drives the header toggle.
   PluginParamInfo? get _bypassParam =>
@@ -526,13 +560,45 @@ class _PluginDeviceCard extends StatelessWidget {
   /// The params that earn an in-app control: every user-visible (automatable
   /// and not hidden) param, except the bypass control (it has its own header
   /// toggle). Each renders as a switch / dropdown / knob per its kind.
-  List<PluginParamInfo> get _controlParams =>
+  static List<PluginParamInfo> _visibleControls(PluginEffect fx) =>
       fx.params.where((p) => p.isUserVisible && !p.isBypass).toList();
+
+  List<PluginParamInfo> get _controlParams => _visibleControls(fx);
 
   /// The in-strip width a [param]'s control occupies — an enum dropdown needs
   /// room for a worded value; a switch or knob fits the standard slot.
   static double _slotWidth(PluginParamInfo param) =>
       param.isEnum ? _enumSlot : _knobSlot;
+
+  /// How many rows [widths] wrap into within a [maxWidth] body (greedy, the way
+  /// [Wrap] packs them) — drives the card's height so every control is visible.
+  static int _rowsFor(List<double> widths, double maxWidth) {
+    var rows = 1;
+    var x = 0.0;
+    for (final w in widths) {
+      if (x > 0 && x + w > maxWidth + 0.5) {
+        rows++;
+        x = 0;
+      }
+      x += w;
+    }
+    return rows;
+  }
+
+  /// The shared device-card height this plugin needs to lay its controls out in
+  /// a multi-row grid — the rack grows every card to the tallest of these. An
+  /// unavailable / control-less plugin keeps the standard one-row height; a very
+  /// dense plugin is clamped to [kSignalRackMaxHeight] (its grid then scrolls).
+  static double heightFor(PluginEffect fx) {
+    final controls = _visibleControls(fx);
+    if (fx.unavailable || controls.isEmpty) return kSignalRackMinHeight;
+    final rows = _rowsFor(
+      [for (final p in controls) _slotWidth(p)],
+      kPluginCardMaxBodyWidth,
+    );
+    final needed = _headerHeight + _bodyVPad + rows * _cellHeight;
+    return needed.clamp(kSignalRackMinHeight, kSignalRackMaxHeight);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -544,7 +610,11 @@ class _PluginDeviceCard extends StatelessWidget {
       return _PluginPlaceholderCard(
         cardKey: cardKey,
         keyPrefix: keyPrefix,
-        title: fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id,
+        // Prefer the persisted display name so a missing plugin reads as its
+        // name, not a cryptic id; fall back to the id, then a generic label.
+        title: fx.name.isNotEmpty
+            ? fx.name
+            : (fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id),
         unsupported: fx.unsupported,
         onRelink: onRelink,
         onRemove: onRemove,
@@ -660,7 +730,7 @@ class _PluginDeviceCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               child: controls.isEmpty
                   ? Center(
                       child: Text(
@@ -668,39 +738,30 @@ class _PluginDeviceCard extends StatelessWidget {
                         style: signalMono(color: surface.textTertiary),
                       ),
                     )
-                  : LayoutBuilder(
-                      builder: (context, constraints) => SingleChildScrollView(
-                        key: Key('${keyPrefix}_params'),
-                        scrollDirection: Axis.horizontal,
-                        // Centers a short strip; scrolls a long one. The native
-                        // editor (Open Editor) stays the full-control surface.
-                        physics: fullStripWidth > bodyWidth
-                            ? const ClampingScrollPhysics()
-                            : const NeverScrollableScrollPhysics(),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            minWidth: constraints.maxWidth,
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              for (var k = 0; k < controls.length; k++)
-                                SizedBox(
-                                  width: _slotWidth(controls[k]),
-                                  child: _PluginParamControl(
-                                    controlKey: Key('${keyPrefix}_param_$k'),
-                                    spec: controls[k],
-                                    value:
-                                        fx.paramValues[controls[k].id] ??
-                                        controls[k].def,
-                                    onChanged: (v) =>
-                                        onSetParam(controls[k].id, v),
-                                    onFormatValue: onFormatValue,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
+                  // Every control is shown: they wrap into rows and the rack
+                  // grew to fit. A very dense plugin scrolls vertically here
+                  // (the native editor stays the full-control surface).
+                  : SingleChildScrollView(
+                      key: Key('${keyPrefix}_params'),
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        runAlignment: WrapAlignment.center,
+                        children: [
+                          for (var k = 0; k < controls.length; k++)
+                            SizedBox(
+                              width: _slotWidth(controls[k]),
+                              height: _cellHeight,
+                              child: _PluginParamControl(
+                                controlKey: Key('${keyPrefix}_param_$k'),
+                                spec: controls[k],
+                                value:
+                                    fx.paramValues[controls[k].id] ??
+                                    controls[k].def,
+                                onChanged: (v) => onSetParam(controls[k].id, v),
+                                onFormatValue: onFormatValue,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
             ),
