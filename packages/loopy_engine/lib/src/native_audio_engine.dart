@@ -444,6 +444,37 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult pluginEditorOpen(PluginSlotHandle slot) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
+    return EngineResult.fromCode(_bindings.le_plugin_editor_open(slot.pointer));
+  }
+
+  @override
+  EngineResult pluginEditorClose(PluginSlotHandle slot) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
+    return EngineResult.fromCode(
+      _bindings.le_plugin_editor_close(slot.pointer),
+    );
+  }
+
+  @override
+  bool pluginEditorIsOpen(PluginSlotHandle slot) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return false;
+    final out = calloc<Int32>();
+    try {
+      if (_bindings.le_plugin_editor_is_open(slot.pointer, out) != 0) {
+        return false;
+      }
+      return out.value != 0;
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  @override
   EngineResult measureLatency() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_measure_latency(_engine));

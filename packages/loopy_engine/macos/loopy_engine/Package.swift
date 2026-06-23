@@ -81,6 +81,10 @@ let package = Package(
         // CoreMIDI backs the native MIDI input seam (midi_backend_apple.c),
         // forwarded into this target alongside the engine.
         .linkedFramework("CoreMIDI"),
+        // AppKit (NSWindow) + Foundation (NSString) back the host-owned plugin
+        // editor window (native_window_controller.mm, part 6).
+        .linkedFramework("AppKit"),
+        .linkedFramework("Foundation"),
       ]
     ),
   ],

@@ -286,6 +286,33 @@ final class LooperLanePluginParamChanged extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, index, paramId, value];
 }
 
+/// Opens the native editor window for lane [lane]'s plugin chain entry [index]
+/// (umbrella D-WIN). While open, the bloc polls the plugin (≤10 Hz) to mirror
+/// editor-driven param moves onto the in-app knobs (D-SYNC).
+final class LooperLanePluginEditorOpened extends LooperLaneEvent {
+  /// Creates a [LooperLanePluginEditorOpened].
+  const LooperLanePluginEditorOpened(super.channel, super.lane, this.index);
+
+  /// The chain entry index.
+  final int index;
+
+  @override
+  List<Object?> get props => [channel, lane, index];
+}
+
+/// Closes lane [lane]'s plugin chain entry [index] editor window and stops the
+/// sync poll, with a final read-back of the plugin's params (D-SYNC).
+final class LooperLanePluginEditorClosed extends LooperLaneEvent {
+  /// Creates a [LooperLanePluginEditorClosed].
+  const LooperLanePluginEditorClosed(super.channel, super.lane, this.index);
+
+  /// The chain entry index.
+  final int index;
+
+  @override
+  List<Object?> get props => [channel, lane, index];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].

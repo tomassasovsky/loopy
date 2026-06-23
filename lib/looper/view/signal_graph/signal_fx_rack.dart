@@ -29,6 +29,7 @@ class SignalFxRack extends StatefulWidget {
     required this.onSetType,
     required this.onSetParam,
     required this.onSetPluginParam,
+    required this.onOpenPluginEditor,
     required this.onReorder,
     super.key,
   });
@@ -47,6 +48,9 @@ class SignalFxRack extends StatefulWidget {
   /// Sets a hosted-plugin parameter (by stable id, plain value) on the chain
   /// entry at `index`. Distinct from [onSetParam] (built-in, positional).
   final void Function(int index, int paramId, double value) onSetPluginParam;
+
+  /// Opens the native editor window for the plugin chain entry at `index`.
+  final ValueChanged<int> onOpenPluginEditor;
 
   /// Moves the chain entry at `oldIndex` to `newIndex` (a post-removal target).
   /// The processing order is the signal order, so a drag re-sequences the FX.
@@ -72,6 +76,7 @@ class _SignalFxRackState extends State<SignalFxRack> {
         keyPrefix: '${widget.keyPrefix}_device_$i',
         fx: fx,
         onSetParam: (id, v) => widget.onSetPluginParam(i, id, v),
+        onOpenEditor: () => widget.onOpenPluginEditor(i),
         onRemove: () => widget.onRemoveEffect(i),
       );
     }
@@ -466,6 +471,7 @@ class _PluginDeviceCard extends StatelessWidget {
     required this.keyPrefix,
     required this.fx,
     required this.onSetParam,
+    required this.onOpenEditor,
     required this.onRemove,
   });
 
@@ -473,6 +479,7 @@ class _PluginDeviceCard extends StatelessWidget {
   final String keyPrefix;
   final PluginEffect fx;
   final void Function(int paramId, double value) onSetParam;
+  final VoidCallback onOpenEditor;
   final VoidCallback onRemove;
 
   static const double _knobSlot = 60;
@@ -536,8 +543,7 @@ class _PluginDeviceCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Open Editor: present but inert until the native plugin
-                  // window lands (part 6).
+                  // Opens the plugin's own native editor window (D-WIN).
                   IconButton(
                     key: Key('${keyPrefix}_openEditor'),
                     padding: EdgeInsets.zero,
@@ -547,10 +553,10 @@ class _PluginDeviceCard extends StatelessWidget {
                       minHeight: 24,
                     ),
                     iconSize: 14,
-                    color: surface.textTertiary,
+                    color: surface.textSecondary,
                     tooltip: l10n.signalPluginOpenEditorTooltip,
                     icon: const Icon(Icons.open_in_new),
-                    onPressed: null,
+                    onPressed: onOpenEditor,
                   ),
                   _BypassToggle(
                     toggleKey: Key('${keyPrefix}_bypass'),

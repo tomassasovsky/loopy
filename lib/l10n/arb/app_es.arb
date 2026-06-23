@@ -155,7 +155,7 @@
     "removeLaneTooltip": "Eliminar carril",
     "addLane": "Añadir carril",
     "removeEffectTooltip": "Eliminar efecto",
-    "signalPluginOpenEditorTooltip": "Abrir el editor del plugin (próximamente)",
+    "signalPluginOpenEditorTooltip": "Abrir la ventana del editor del plugin",
     "signalPluginBypassTooltip": "Omitir plugin",
     "signalPluginUnknownName": "Plugin",
     "startEngine": "Iniciar motor",

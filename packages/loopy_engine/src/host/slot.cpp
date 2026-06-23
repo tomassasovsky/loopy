@@ -271,6 +271,13 @@ void le_plugin_slot_set_ready(le_plugin_slot* slot, int32_t ready) {
 
 void le_plugin_slot_destroy(le_plugin_slot* slot) {
   if (!slot) return;
+  // D-WIN: a slot torn down with its editor still open must force-close the
+  // window first, so no native window outlives its plugin. Idempotent — the
+  // host destructor closes again if needed. This runs on the control thread,
+  // which in this single-isolate engine IS the platform/main thread the Dart
+  // FFI editor calls use (see engine_plugin.c's control-thread precondition),
+  // so the main-thread-only GUI teardown contract holds.
+  if (slot->host) slot->host->editorClose();
   delete slot->host;  // control-thread destruction (VST3/CLAP teardown)
   delete slot;
 }
@@ -313,6 +320,25 @@ int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id, double value) {
   if (next == slot->paramHead.load(std::memory_order_acquire)) return LE_OK;
   slot->paramRing[tail] = ParamChange{id, value};
   slot->paramTail.store(next, std::memory_order_release);
+  return LE_OK;
+}
+
+int32_t le_plugin_editor_open(le_plugin_slot* slot) {
+  if (!slot) return LE_ERR_INVALID;
+  // No editor / unsupported platform view → LE_ERR_UNSUPPORTED so the UI can
+  // tell "no window to show" apart from a hard error.
+  return slot->host->editorOpen() ? LE_OK : LE_ERR_UNSUPPORTED;
+}
+
+int32_t le_plugin_editor_close(le_plugin_slot* slot) {
+  if (!slot) return LE_ERR_INVALID;
+  slot->host->editorClose();
+  return LE_OK;
+}
+
+int32_t le_plugin_editor_is_open(le_plugin_slot* slot, int32_t* open) {
+  if (!slot || !open) return LE_ERR_INVALID;
+  *open = slot->host->editorIsOpen() ? 1 : 0;
   return LE_OK;
 }
 

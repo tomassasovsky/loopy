@@ -313,6 +313,7 @@ class _SignalDock extends StatelessWidget {
         onSetParam: (i, p, v) => monitorCubit.setEffectParam(fi, i, p, v),
         onSetPluginParam: (i, id, v) =>
             monitorCubit.setPluginParam(fi, i, id, v),
+        onOpenPluginEditor: (i) => monitorCubit.openPluginEditor(fi, i),
         onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
         onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
       );
@@ -346,6 +347,8 @@ class _SignalDock extends StatelessWidget {
         onSetPluginParam: (i, id, v) => bloc.add(
           LooperLanePluginParamChanged(ft.track, ft.lane, i, id, v),
         ),
+        onOpenPluginEditor: (i) =>
+            bloc.add(LooperLanePluginEditorOpened(ft.track, ft.lane, i)),
         onReorderEffect: (from, to) =>
             bloc.add(LooperLaneEffectMoved(ft.track, ft.lane, from, to)),
         onMuteToggled: () => bloc.add(LooperLaneMuteToggled(ft.track, ft.lane)),

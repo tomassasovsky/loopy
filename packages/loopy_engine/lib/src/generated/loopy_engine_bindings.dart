@@ -532,6 +532,70 @@ class LoopyEngineBindings {
   late final _le_plugin_param_set = _le_plugin_param_setPtr
       .asFunction<int Function(ffi.Pointer<le_plugin_slot>, int, double)>();
 
+  /// Opens the plugin's own native editor in a HOST-OWNED top-level OS window
+  /// (D-WIN) — not embedded in the Flutter tree. Idempotent: a second call while
+  /// the editor is already open is a no-op success. Returns LE_OK, LE_ERR_INVALID
+  /// for a null slot, or LE_ERR_UNSUPPORTED when the plugin has no editor / the
+  /// platform view type is unsupported (or on a non-macOS build).
+  int le_plugin_editor_open(
+    ffi.Pointer<le_plugin_slot> slot,
+  ) {
+    return _le_plugin_editor_open(
+      slot,
+    );
+  }
+
+  late final _le_plugin_editor_openPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_plugin_slot>)>
+      >('le_plugin_editor_open');
+  late final _le_plugin_editor_open = _le_plugin_editor_openPtr
+      .asFunction<int Function(ffi.Pointer<le_plugin_slot>)>();
+
+  /// Force-closes the editor window and detaches the plugin view (D-WIN teardown).
+  /// Idempotent: closing an already-closed editor is a no-op success. Returns
+  /// LE_OK, or LE_ERR_INVALID for a null slot.
+  int le_plugin_editor_close(
+    ffi.Pointer<le_plugin_slot> slot,
+  ) {
+    return _le_plugin_editor_close(
+      slot,
+    );
+  }
+
+  late final _le_plugin_editor_closePtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_plugin_slot>)>
+      >('le_plugin_editor_close');
+  late final _le_plugin_editor_close = _le_plugin_editor_closePtr
+      .asFunction<int Function(ffi.Pointer<le_plugin_slot>)>();
+
+  /// Writes 1 into *open if the editor window is currently open, else 0. Returns
+  /// LE_OK, or LE_ERR_INVALID for a null argument.
+  int le_plugin_editor_is_open(
+    ffi.Pointer<le_plugin_slot> slot,
+    ffi.Pointer<ffi.Int32> open,
+  ) {
+    return _le_plugin_editor_is_open(
+      slot,
+      open,
+    );
+  }
+
+  late final _le_plugin_editor_is_openPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_plugin_editor_is_open');
+  late final _le_plugin_editor_is_open = _le_plugin_editor_is_openPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_plugin_slot>, ffi.Pointer<ffi.Int32>)
+      >();
+
   /// Allocates an engine. Returns NULL on allocation failure.
   ffi.Pointer<le_engine> le_engine_create() {
     return _le_engine_create();

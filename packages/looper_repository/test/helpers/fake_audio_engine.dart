@@ -513,6 +513,10 @@ class FakeAudioEngine implements AudioEngine {
   /// Param surface returned by [pluginParamInfos] (the loaded plugin's knobs).
   List<PluginParamInfo> nextParamInfos = const [];
 
+  /// Live values [pluginParamGet] returns, keyed by param id — lets a test
+  /// simulate an editor moving a param (the D-SYNC inbound read-back).
+  final Map<int, double> nextParamValues = {};
+
   /// Every `(slot, paramId, value)` triple passed to [pluginParamSet], in call
   /// order — so a test can assert the RT-queued sets and their ordering.
   final List<({PluginSlotHandle slot, int paramId, double value})>
@@ -566,7 +570,7 @@ class FakeAudioEngine implements AudioEngine {
   @override
   double pluginParamGet(PluginSlotHandle slot, int paramId) {
     calls.add('pluginParamGet');
-    return 0;
+    return nextParamValues[paramId] ?? 0;
   }
 
   @override
@@ -579,4 +583,24 @@ class FakeAudioEngine implements AudioEngine {
     pluginParamSets.add((slot: slot, paramId: paramId, value: value));
     return EngineResult.ok;
   }
+
+  /// Slots whose (fake) native editor is currently open.
+  final Set<PluginSlotHandle> openEditors = {};
+
+  @override
+  EngineResult pluginEditorOpen(PluginSlotHandle slot) {
+    calls.add('pluginEditorOpen');
+    openEditors.add(slot);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult pluginEditorClose(PluginSlotHandle slot) {
+    calls.add('pluginEditorClose');
+    openEditors.remove(slot);
+    return EngineResult.ok;
+  }
+
+  @override
+  bool pluginEditorIsOpen(PluginSlotHandle slot) => openEditors.contains(slot);
 }

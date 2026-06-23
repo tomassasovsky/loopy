@@ -83,13 +83,22 @@ if [ "$(uname -s)" = "Darwin" ]; then
     $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS $PLUGIN_INC \
       -c "src/host/$cxx.cpp" -o "$P3/$cxx.o"
   done
+  # The host-owned editor NSWindow (ObjC++, part 6) — links AppKit/Foundation.
+  $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS $PLUGIN_INC \
+    -c src/host/native_window_controller.mm \
+    -o "$P3/native_window_controller.o"
   $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS -Ithird_party/vst3sdk \
     -c third_party/vst3sdk/pluginterfaces/base/coreiids.cpp -o "$P3/coreiids.o"
   $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS -Ithird_party/vst3sdk \
     -c third_party/vst3sdk/public.sdk/source/vst/vstinitiids.cpp \
     -o "$P3/vstinitiids.o"
+  # GUI IIDs (IPlugView / IPlugFrame) for the editor view interfaces (part 6).
+  $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS -Ithird_party/vst3sdk \
+    -c third_party/vst3sdk/public.sdk/source/common/commoniids.cpp \
+    -o "$P3/commoniids.o"
   # shellcheck disable=SC2086
-  $CXX "$P3"/*.o -framework CoreFoundation \
+  $CXX "$P3"/*.o -framework CoreFoundation -framework AppKit \
+    -framework Foundation \
     -o "$OUT/loopy_plugin_slot_tests.exe"
   "$OUT/loopy_plugin_slot_tests.exe"
 fi

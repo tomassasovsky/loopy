@@ -315,7 +315,7 @@
     "removeLaneTooltip": "Remove lane",
     "addLane": "Add lane",
     "removeEffectTooltip": "Remove effect",
-    "signalPluginOpenEditorTooltip": "Open the plugin's own editor (coming soon)",
+    "signalPluginOpenEditorTooltip": "Open the plugin's editor window",
     "signalPluginBypassTooltip": "Bypass plugin",
     "signalPluginUnknownName": "Plugin",
     "startEngine": "Start engine",

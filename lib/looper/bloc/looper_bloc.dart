@@ -180,6 +180,46 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ),
       );
     });
+    on<LooperLanePluginEditorOpened>((event, _) {
+      final key = (event.channel, event.lane, event.index);
+      _repository.openLanePluginEditor(
+        channel: event.channel,
+        lane: event.lane,
+        index: event.index,
+      );
+      // Start (or restart) the ≤10 Hz inbound sync poll for this entry: each
+      // tick reads the plugin's live param values back into the model, which
+      // re-emits through the repository stream and moves the in-app knobs.
+      _lanePluginEditorTimers.remove(key)?.cancel();
+      _lanePluginEditorTimers[key] = Timer.periodic(_editorPollInterval, (
+        timer,
+      ) {
+        _repository.refreshLanePluginParams(
+          channel: event.channel,
+          lane: event.lane,
+          index: event.index,
+        );
+        // The user can close the native window directly; when it's gone, stop
+        // polling so no timer leaks (D-WIN/D-SYNC).
+        if (!_repository.isLanePluginEditorOpen(
+          channel: event.channel,
+          lane: event.lane,
+          index: event.index,
+        )) {
+          timer.cancel();
+          _lanePluginEditorTimers.remove(key);
+        }
+      });
+    });
+    on<LooperLanePluginEditorClosed>((event, _) {
+      final key = (event.channel, event.lane, event.index);
+      _lanePluginEditorTimers.remove(key)?.cancel(); // no leaked timer
+      _repository.closeLanePluginEditor(
+        channel: event.channel,
+        lane: event.lane,
+        index: event.index,
+      );
+    });
     on<LooperTrackQuantizeChanged>((event, _) {
       _repository.setTrackQuantize(
         channel: event.channel,
@@ -234,6 +274,14 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   late final StreamSubscription<LooperState> _subscription;
   StreamSubscription<ControllerEvent>? _controllerSubscription;
 
+  /// The inbound editor-sync poll cadence (D-SYNC: ≤10 Hz).
+  static const Duration _editorPollInterval = Duration(milliseconds: 100);
+
+  /// Per-open-editor sync poll timers, keyed by `(channel, lane, index)`. Each
+  /// is started when an editor opens and cancelled on close / [close] so a
+  /// closed editor never leaves a ticking timer (D-WIN/D-SYNC).
+  final Map<(int, int, int), Timer> _lanePluginEditorTimers = {};
+
   bool _isMuted(int channel) =>
       channel >= 0 &&
       channel < state.tracks.length &&
@@ -257,10 +305,26 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// single home for lane FX structural edits — every add/remove/retype/move
   /// handler routes here so the chain surgery lives in one place, never the UI.
   void _pushLaneEffects(int channel, int lane, List<TrackEffect> effects) {
+    // A structural edit reseats every slot in the lane (the engine rebuilds
+    // the chain), so any editor-sync poll keyed by a now-stale chain index must
+    // be cancelled — otherwise a reorder would silently rebind a poll to a
+    // different plugin and close the wrong window.
+    _cancelLaneEditorTimers(channel, lane);
     _repository.setLaneEffects(channel: channel, lane: lane, effects: effects);
     unawaited(
       _settings?.saveLaneEffects(channel, lane, encodeTrackEffects(effects)),
     );
+  }
+
+  /// Cancels every editor-sync poll timer for lane [lane] of [channel].
+  void _cancelLaneEditorTimers(int channel, int lane) {
+    _lanePluginEditorTimers.removeWhere((key, timer) {
+      if (key.$1 == channel && key.$2 == lane) {
+        timer.cancel();
+        return true;
+      }
+      return false;
+    });
   }
 
   void _onControllerEvent(ControllerEvent event) {
@@ -284,6 +348,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   @override
   Future<void> close() {
+    for (final timer in _lanePluginEditorTimers.values) {
+      timer.cancel();
+    }
+    _lanePluginEditorTimers.clear();
     unawaited(_subscription.cancel());
     unawaited(_controllerSubscription?.cancel());
     return super.close();

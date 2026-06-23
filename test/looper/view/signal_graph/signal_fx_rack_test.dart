@@ -12,6 +12,7 @@ void main() {
       required List<TrackEffect> effects,
       void Function(int index, int param, double value)? onSetParam,
       void Function(int index, int paramId, double value)? onSetPluginParam,
+      void Function(int index)? onOpenPluginEditor,
       void Function(int oldIndex, int newIndex)? onReorder,
       VoidCallback? onAddEffect,
       void Function(int index, TrackEffectType type)? onSetType,
@@ -25,6 +26,7 @@ void main() {
         onSetType: onSetType ?? (_, _) {},
         onSetParam: onSetParam ?? (_, _, _) {},
         onSetPluginParam: onSetPluginParam ?? (_, _, _) {},
+        onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
         onReorder: onReorder ?? (_, _) {},
       ),
     );
@@ -288,6 +290,7 @@ void main() {
     Widget build({
       required PluginEffect fx,
       void Function(int index, int paramId, double value)? onSetPluginParam,
+      void Function(int index)? onOpenPluginEditor,
       void Function(int index)? onRemoveEffect,
     }) => Scaffold(
       body: SignalFxRack(
@@ -298,11 +301,12 @@ void main() {
         onSetType: (_, _) {},
         onSetParam: (_, _, _) {},
         onSetPluginParam: onSetPluginParam ?? (_, _, _) {},
+        onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
         onReorder: (_, _) {},
       ),
     );
 
-    testWidgets('renders the plugin name and an inert Open Editor button', (
+    testWidgets('renders the plugin name and Open Editor button', (
       tester,
     ) async {
       await tester.pumpApp(build(fx: plugin(id: 'My Plugin')));
@@ -311,11 +315,23 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('My Plugin'), findsOneWidget);
-      final openEditor = tester.widget<IconButton>(
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_openEditor')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the Open Editor button dispatches for the entry', (
+      tester,
+    ) async {
+      final opened = <int>[];
+      await tester.pumpApp(
+        build(fx: plugin(), onOpenPluginEditor: opened.add),
+      );
+      await tester.tap(
         find.byKey(const Key('signalGraph_lane_device_0_openEditor')),
       );
-      // Inert until the native editor window lands (part 6).
-      expect(openEditor.onPressed, isNull);
+      expect(opened, [0]);
     });
 
     testWidgets('falls back to a generic name for an unresolved plugin', (

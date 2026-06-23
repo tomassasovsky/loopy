@@ -601,6 +601,24 @@ LE_EXPORT int32_t le_plugin_param_get(le_plugin_slot* slot, uint32_t id,
 LE_EXPORT int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id,
                                       double value);
 
+/* ---- Native editor window (MAIN THREAD; macOS only) ---- */
+
+/* Opens the plugin's own native editor in a HOST-OWNED top-level OS window
+ * (D-WIN) — not embedded in the Flutter tree. Idempotent: a second call while
+ * the editor is already open is a no-op success. Returns LE_OK, LE_ERR_INVALID
+ * for a null slot, or LE_ERR_UNSUPPORTED when the plugin has no editor / the
+ * platform view type is unsupported (or on a non-macOS build). */
+LE_EXPORT int32_t le_plugin_editor_open(le_plugin_slot* slot);
+
+/* Force-closes the editor window and detaches the plugin view (D-WIN teardown).
+ * Idempotent: closing an already-closed editor is a no-op success. Returns
+ * LE_OK, or LE_ERR_INVALID for a null slot. */
+LE_EXPORT int32_t le_plugin_editor_close(le_plugin_slot* slot);
+
+/* Writes 1 into *open if the editor window is currently open, else 0. Returns
+ * LE_OK, or LE_ERR_INVALID for a null argument. */
+LE_EXPORT int32_t le_plugin_editor_is_open(le_plugin_slot* slot, int32_t* open);
+
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
 
