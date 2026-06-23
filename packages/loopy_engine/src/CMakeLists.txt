@@ -176,3 +176,43 @@ if(LOOPY_ENABLE_ASIO)
       PROPERTIES COMPILE_OPTIONS "/UUNICODE;/U_UNICODE")
   endif()
 endif()
+
+# --- VST3 + CLAP plugin hosting (vendored SDK include roots) ----------------
+#
+# Plugin hosting (third_party/vst3sdk + third_party/clap, both MIT — see
+# third_party/README.md) is sequenced macOS-first: the macOS build (SPM
+# Package.swift / CocoaPods podspec) defines LOOPY_ENABLE_PLUGINS and compiles
+# the include-probe (src/host/plugin_probe.cpp) directly. On Windows/Linux this
+# is OFF by default and, when enabled, only adds the vendored header search
+# paths — NO plugin sources are compiled through CMake until the ports
+# (parts 8–9). This keeps the Windows/Linux build byte-identical by default.
+option(LOOPY_ENABLE_PLUGINS "Build VST3/CLAP plugin hosting" OFF)
+# As with ASIO, the Flutter build drives CMake through the plugin and cannot
+# forward -D cache flags, so honor an env override applied after option() (e.g.
+# a CI build that opts into the Windows/Linux ports early).
+if(DEFINED ENV{LOOPY_ENABLE_PLUGINS} AND NOT "$ENV{LOOPY_ENABLE_PLUGINS}" STREQUAL "")
+  set(LOOPY_ENABLE_PLUGINS "$ENV{LOOPY_ENABLE_PLUGINS}")
+endif()
+
+# Vendored and used as-is — fixed (non-configurable) paths normalized to an
+# absolute location every configure, so they can never go stale.
+get_filename_component(LOOPY_VST3_SDK_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/vst3sdk" ABSOLUTE)
+get_filename_component(LOOPY_CLAP_DIR
+  "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/clap/include" ABSOLUTE)
+
+if(LOOPY_ENABLE_PLUGINS)
+  if(NOT EXISTS "${LOOPY_VST3_SDK_DIR}" OR NOT EXISTS "${LOOPY_CLAP_DIR}")
+    message(FATAL_ERROR
+      "LOOPY_ENABLE_PLUGINS=ON but the vendored VST3/CLAP SDKs are missing under "
+      "${CMAKE_CURRENT_SOURCE_DIR}/../third_party (a broken or partial checkout?). "
+      "Restore them. See third_party/README.md.")
+  endif()
+  # The VST3 SDK is C++; CLAP is a C header API consumed from C++.
+  enable_language(CXX)
+  target_include_directories(loopy_engine PRIVATE
+    "${LOOPY_VST3_SDK_DIR}"
+    "${LOOPY_CLAP_DIR}"
+  )
+  target_compile_definitions(loopy_engine PRIVATE LOOPY_ENABLE_PLUGINS)
+endif()
