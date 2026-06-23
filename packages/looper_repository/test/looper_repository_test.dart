@@ -1557,6 +1557,16 @@ void main() {
     });
   });
 
+  group('pluginCatalog', () {
+    test('exposes a lazily-built, stable catalog over the engine', () {
+      final repo = buildRepo();
+      final catalog = repo.pluginCatalog;
+      expect(catalog, isA<PluginCatalog>());
+      // Lazy + cached: the same instance every read.
+      expect(repo.pluginCatalog, same(catalog));
+    });
+  });
+
   group('engine factories', () {
     test('createMockEngine builds a mock + its deterministic start config', () {
       final mock = createMockEngine();

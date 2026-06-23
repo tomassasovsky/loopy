@@ -143,6 +143,15 @@ class MonitorCubit extends Cubit<MonitorState> {
     ]);
   }
 
+  /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain.
+  /// The repository loads it through the slot ABI on the next chain apply.
+  void insertPlugin(int input, PluginRef ref) {
+    _pushEffects(input, [
+      ...state.forInput(input).effects,
+      PluginEffect(ref: ref),
+    ]);
+  }
+
   /// Removes monitor [input]'s chain entry at [index].
   void removeEffect(int input, int index) {
     final effects = state.forInput(input).effects;

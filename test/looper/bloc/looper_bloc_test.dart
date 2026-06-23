@@ -470,6 +470,37 @@ void main() {
     ).called(1),
   );
 
+  blocTest<LooperBloc, LooperState>(
+    'LooperLanePluginInserted appends a PluginEffect to the lane chain',
+    build: buildBloc,
+    act: (bloc) => bloc.add(
+      const LooperLanePluginInserted(
+        1,
+        0,
+        PluginRef(format: PluginFormat.clap, id: 'com.acme.reverb'),
+      ),
+    ),
+    verify: (_) {
+      final effects =
+          verify(
+                () => repository.setLaneEffects(
+                  channel: 1,
+                  lane: 0,
+                  effects: captureAny(named: 'effects'),
+                ),
+              ).captured.single
+              as List<TrackEffect>;
+      expect(
+        effects.single,
+        isA<PluginEffect>().having(
+          (e) => e.ref.id,
+          'ref.id',
+          'com.acme.reverb',
+        ),
+      );
+    },
+  );
+
   group('plugin editor', () {
     blocTest<LooperBloc, LooperState>(
       'opening starts the inbound sync poll',
