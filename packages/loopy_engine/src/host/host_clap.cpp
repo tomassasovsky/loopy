@@ -9,6 +9,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include <clap/clap.h>
@@ -60,6 +61,7 @@ class ClapHost final : public loopy::IPluginHost {
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
     using loopy::LoadStatus;
+    name_ = desc.name;  // for the editor window title
     CFStringRef cfPath = CFStringCreateWithCString(
         kCFAllocatorDefault, desc.path.c_str(), kCFStringEncodingUTF8);
     if (!cfPath) return LoadStatus::failed;
@@ -222,8 +224,8 @@ class ClapHost final : public loopy::IPluginHost {
     uint32_t h = 300;
     if (gui_->get_size) gui_->get_size(plugin_, &w, &h);
     window_ = lpw_window_open(static_cast<int>(w), static_cast<int>(h),
-                              "Plugin Editor", &ClapHost::onWindowClosedThunk,
-                              this);
+                              name_.empty() ? "Plugin Editor" : name_.c_str(),
+                              &ClapHost::onWindowClosedThunk, this);
     if (!window_) {
       gui_->destroy(plugin_);
       return false;
@@ -325,6 +327,7 @@ class ClapHost final : public loopy::IPluginHost {
   int64_t steady_ = 0;
   int channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
   bool editorOpen_ = false;
+  std::string name_;  // plugin display name, for the editor window title
   lpw_window* window_ = nullptr;
 };
 

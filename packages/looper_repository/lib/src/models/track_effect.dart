@@ -178,6 +178,7 @@ class PluginEffect extends TrackEffect {
     required this.ref,
     this.paramValues = const {},
     this.params = const [],
+    this.name = '',
   });
 
   /// The hosted plugin's identity.
@@ -192,6 +193,11 @@ class PluginEffect extends TrackEffect {
   /// order. Transient — never persisted.
   final List<PluginParamInfo> params;
 
+  /// The plugin's user-visible display name, resolved from the scan catalog
+  /// when loaded. Transient (never persisted — re-resolved from [ref]); empty
+  /// when unresolved, in which case the UI falls back to the stable id.
+  final String name;
+
   @override
   int get typeCode => engine.kPluginFxCode;
 
@@ -200,14 +206,16 @@ class PluginEffect extends TrackEffect {
     PluginRef? ref,
     Map<int, double>? paramValues,
     List<PluginParamInfo>? params,
+    String? name,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
     params: params ?? this.params,
+    name: name ?? this.name,
   );
 
   @override
-  List<Object?> get props => [ref, paramValues, params];
+  List<Object?> get props => [ref, paramValues, params, name];
 }
 
 /// Maps an engine readout kind to its domain mirror.

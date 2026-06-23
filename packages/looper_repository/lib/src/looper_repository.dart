@@ -1011,7 +1011,17 @@ class LooperRepository {
     for (final entry in fx.paramValues.entries) {
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
-    return fx.copyWith(params: infos);
+    return fx.copyWith(params: infos, name: _resolvePluginName(fx));
+  }
+
+  /// The plugin's display name from the most recent scan, or its existing name
+  /// (then the empty string) when the catalog hasn't seen it — so a name never
+  /// regresses to blank once resolved.
+  String _resolvePluginName(PluginEffect fx) {
+    for (final d in pluginCatalog.descriptors) {
+      if (d.id == fx.ref.id) return d.name;
+    }
+    return fx.name;
   }
 
   /// Replaces track [channel]'s lane 0 effect chain. Convenience for lane 0.

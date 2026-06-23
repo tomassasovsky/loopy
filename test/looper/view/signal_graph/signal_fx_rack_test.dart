@@ -281,10 +281,12 @@ void main() {
       String id = 'com.acme.reverb',
       List<PluginParamInfo> params = const [],
       Map<int, double> values = const {},
+      String name = '',
     }) => PluginEffect(
       ref: PluginRef(format: PluginFormat.clap, id: id),
       params: params,
       paramValues: values,
+      name: name,
     );
 
     Widget build({
@@ -332,6 +334,16 @@ void main() {
         find.byKey(const Key('signalGraph_lane_device_0_openEditor')),
       );
       expect(opened, [0]);
+    });
+
+    testWidgets('shows the resolved display name over the id', (tester) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(id: 'ABCDEF0123', name: 'Spoton'),
+        ),
+      );
+      expect(find.text('Spoton'), findsOneWidget);
+      expect(find.text('ABCDEF0123'), findsNothing);
     });
 
     testWidgets('falls back to a generic name for an unresolved plugin', (

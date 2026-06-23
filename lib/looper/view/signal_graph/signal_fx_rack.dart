@@ -504,9 +504,11 @@ class _PluginDeviceCard extends StatelessWidget {
     final bypass = _bypassParam;
     final bodyWidth = knobs.length * _knobSlot;
     final cardWidth = bodyWidth + 20 < 150 ? 150.0 : bodyWidth + 20;
-    // No display name on the persisted model yet — the stable id stands in
-    // until the catalog resolves a friendly name (a later part).
-    final name = fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id;
+    // Prefer the catalog-resolved display name; fall back to the stable id
+    // (then a generic label) when it hasn't resolved.
+    final name = fx.name.isNotEmpty
+        ? fx.name
+        : (fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id);
     return Container(
       key: cardKey,
       width: cardWidth,
