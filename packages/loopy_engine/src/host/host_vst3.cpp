@@ -489,6 +489,9 @@ class Vst3Host final : public loopy::IPluginHost {
       }
     }
     pending_ = 0;
+    // A fresh, empty output container each block — the plugin fills it with any
+    // param changes it originates; we discard them but must not pass null.
+    outParamChanges_.clear();
 
     ProcessData data;  // default ctor zeroes the optional pointers
     data.processMode = kRealtime;
@@ -499,6 +502,7 @@ class Vst3Host final : public loopy::IPluginHost {
     data.inputs = &in;
     data.outputs = &out;
     data.inputParameterChanges = &paramChanges_;
+    data.outputParameterChanges = &outParamChanges_;
     processor_->process(data);
 
     const size_t bytes = sizeof(float) * static_cast<size_t>(n);
@@ -767,6 +771,10 @@ class Vst3Host final : public loopy::IPluginHost {
   double pendingVal_[kMaxPending] = {};
   int pending_ = 0;
   HostParamChanges paramChanges_;
+  // The plugin writes its own param gestures (e.g. GUI moves) here. We don't
+  // read them back, but a valid container must be supplied: some plugins
+  // (notably DPF-based VST3s) assert on a null outputParameterChanges.
+  HostParamChanges outParamChanges_;
 
   // Native editor window (main thread). view_ non-null == editor open.
   IPlugView* view_ = nullptr;
