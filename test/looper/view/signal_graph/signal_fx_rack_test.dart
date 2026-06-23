@@ -559,5 +559,53 @@ void main() {
       );
       expect(relinked, [0]);
     });
+
+    testWidgets('an unsupported plugin shows the distinct reason', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            id: 'synth',
+          ).copyWith(unavailable: true, unsupported: true),
+        ),
+      );
+      // The placeholder distinguishes "unsupported" (installed but rejected)
+      // from the plain "unavailable" (missing) message.
+      expect(find.text('Plugin unsupported'), findsOneWidget);
+      expect(find.text('Plugin unavailable'), findsNothing);
+      // Still relinkable.
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_relink')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a version-changed plugin shows the drift badge', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(fx: plugin(id: 'My Plugin').copyWith(versionChanged: true)),
+      );
+      // The plugin still loads (live controls present) but flags the drift.
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_versionChanged')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_openEditor')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a current-version plugin shows no drift badge', (
+      tester,
+    ) async {
+      await tester.pumpApp(build(fx: plugin(id: 'My Plugin')));
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_versionChanged')),
+        findsNothing,
+      );
+    });
   });
 }

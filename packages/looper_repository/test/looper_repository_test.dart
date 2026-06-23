@@ -25,7 +25,14 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffectType;
 import 'package:loopy_engine/loopy_engine.dart'
     as le
-    show AudioDevice, LatencyState, LoopbackInfo, LoopbackKind, PluginParamInfo;
+    show
+        AudioDevice,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind,
+        PluginDescriptor,
+        PluginFormat,
+        PluginParamInfo;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -1055,6 +1062,97 @@ void main() {
       // Preserved as a placeholder, never dropped to `none`.
       expect(fx.unavailable, isTrue);
       expect(fx.ref.id, 'gone');
+      // Not in the scan catalog -> missing, not an unsupported topology.
+      expect(fx.unsupported, isFalse);
+    });
+
+    test('a failed load whose id is in the catalog is flagged '
+        'unsupported', () async {
+      // The plugin IS installed (the scan found it) but the engine refused to
+      // load it — an instrument / multi-bus topology (D-BUS), not a missing
+      // file. The card must say "unsupported", not "missing".
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'synth',
+          name: 'Big Synth',
+          vendor: 'Acme',
+          path: '/Library/Audio/Plug-Ins/CLAP/synth.clap',
+          format: le.PluginFormat.clap,
+          version: 0,
+        ),
+      ];
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      await repo.pluginCatalog.scan();
+
+      engine.nextSlotHandle = null; // engine rejects the load (topology)
+      repo.setTrackEffects(
+        channel: 0,
+        effects: const [
+          PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'synth')),
+        ],
+      );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.unavailable, isTrue);
+      expect(fx.unsupported, isTrue);
+    });
+
+    test('a loaded plugin whose installed version drifts is flagged', () async {
+      // Same id, different installed version than the saved ref -> the plugin
+      // still loads, but the card notes the drift (D-MISS).
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'p',
+          name: 'Reverb',
+          vendor: 'Acme',
+          path: '/Library/Audio/Plug-Ins/CLAP/reverb.clap',
+          format: le.PluginFormat.clap,
+          version: 0x00020000, // 2.0.0 installed
+        ),
+      ];
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      await repo.pluginCatalog.scan();
+
+      engine.nextSlotHandle = MockPluginSlotHandle('p');
+      repo.setTrackEffects(
+        channel: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(
+              format: PluginFormat.clap,
+              id: 'p',
+              version: 0x00010000, // 1.0.0 saved
+            ),
+          ),
+        ],
+      );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.unavailable, isFalse);
+      expect(fx.versionChanged, isTrue);
+    });
+
+    test('a loaded plugin the catalog has not seen is not flagged drifted', () {
+      // No scan has run, so there is no descriptor to compare against: drift is
+      // undetectable and must stay false (never a false "versions match").
+      engine.nextSlotHandle = MockPluginSlotHandle('p');
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(
+                format: PluginFormat.clap,
+                id: 'p',
+                version: 0x00010000,
+              ),
+            ),
+          ],
+        );
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.unavailable, isFalse);
+      expect(fx.versionChanged, isFalse);
     });
 
     test('relinkLanePlugin swaps the ref, keeps state, and reloads', () {

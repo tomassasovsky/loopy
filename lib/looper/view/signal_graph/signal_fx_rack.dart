@@ -520,6 +520,7 @@ class _PluginDeviceCard extends StatelessWidget {
         cardKey: cardKey,
         keyPrefix: keyPrefix,
         title: fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id,
+        unsupported: fx.unsupported,
         onRelink: onRelink,
         onRemove: onRemove,
       );
@@ -569,6 +570,18 @@ class _PluginDeviceCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // D-MISS: the installed version differs from the saved one;
+                  // the plugin still loaded, but flag the drift.
+                  if (fx.versionChanged)
+                    Tooltip(
+                      key: Key('${keyPrefix}_versionChanged'),
+                      message: l10n.signalPluginVersionChanged,
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 13,
+                        color: surface.textTertiary,
+                      ),
+                    ),
                   // Opens the plugin's own native editor window (D-WIN).
                   IconButton(
                     key: Key('${keyPrefix}_openEditor'),
@@ -653,6 +666,7 @@ class _PluginPlaceholderCard extends StatelessWidget {
     required this.cardKey,
     required this.keyPrefix,
     required this.title,
+    required this.unsupported,
     required this.onRelink,
     required this.onRemove,
   });
@@ -660,6 +674,10 @@ class _PluginPlaceholderCard extends StatelessWidget {
   final Key cardKey;
   final String keyPrefix;
   final String title;
+
+  /// Whether the plugin is installed but rejected (unsupported topology, D-BUS)
+  /// rather than simply missing — selects the explanatory message.
+  final bool unsupported;
   final VoidCallback onRelink;
   final VoidCallback onRemove;
 
@@ -731,7 +749,10 @@ class _PluginPlaceholderCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    l10n.signalPluginUnavailable,
+                    key: Key('${keyPrefix}_reason'),
+                    unsupported
+                        ? l10n.signalPluginUnsupported
+                        : l10n.signalPluginUnavailable,
                     textAlign: TextAlign.center,
                     style: signalMono(color: surface.textTertiary, size: 10),
                   ),
