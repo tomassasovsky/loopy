@@ -267,9 +267,16 @@ class MonitorCubit extends Cubit<MonitorState> {
     // poll keyed by a now-stale chain index (a reorder would otherwise rebind
     // the poll to a different plugin).
     _cancelEditorTimers(input);
-    final next = state.forInput(input).copyWith(effects: effects);
-    emit(state.withInput(next));
+    emit(state.withInput(state.forInput(input).copyWith(effects: effects)));
     _repository.setMonitorEffects(input: input, effects: effects);
+    // The repository enriches plugin entries with their enumerated params
+    // while applying the chain (so the in-app knobs render). Re-read to pick
+    // those up; fall back to the optimistic chain when the repo reports nothing
+    // (engine not running yet, or a unit-test fake).
+    final applied = _repository.monitorEffects(input);
+    if (applied.isNotEmpty) {
+      emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
+    }
     unawaited(
       _settings.saveMonitorEffects(input, encodeTrackEffects(effects)),
     );
