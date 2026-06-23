@@ -12,6 +12,7 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -21,10 +22,23 @@
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/vst/ivsthostapplication.h"
+#include "pluginterfaces/vst/ivstmessage.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/vst/vstspeaker.h"
 #include "native_window_controller.h"
 #include "plugin_host.h"
+
+// Opt-in stderr tracing for diagnosing real-plugin load/editor failures.
+// Define LOOPY_VST3_TRACE=1 at compile time to enable.
+#ifndef LOOPY_VST3_TRACE
+#define LOOPY_VST3_TRACE 1
+#endif
+#if LOOPY_VST3_TRACE
+#define LPV_LOG(...) std::fprintf(stderr, "[loopy vst3] " __VA_ARGS__)
+#else
+#define LPV_LOG(...) ((void)0)
+#endif
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -195,6 +209,57 @@ bool parseTuid(const std::string& hex, TUID out) {
   return true;
 }
 
+// Minimal host context. Real commercial plugins refuse a NULL context in
+// initialize(); most only need a non-null IHostApplication to exist. We do not
+// implement IMessage marshalling (createInstance fails) — a follow-up if a
+// plugin needs component<->controller messaging. Stack-owned.
+class HostApplication : public IHostApplication {
+ public:
+  tresult PLUGIN_API getName(String128 name) override {
+    static const char16 kName[] = u"Loopy";
+    std::memcpy(name, kName, sizeof(kName));
+    return kResultOk;
+  }
+  tresult PLUGIN_API createInstance(TUID, TUID, void** obj) override {
+    if (obj) *obj = nullptr;
+    return kResultFalse;
+  }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IHostApplication::iid) || iidEq(iid, FUnknown::iid)) {
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return 1; }
+  uint32 PLUGIN_API release() override { return 1; }
+};
+
+// No-op component handler — the controller/editor needs one set, and the editor
+// calls beginEdit/performEdit/endEdit as the user moves a control. We mirror
+// those via the low-rate editor poll instead (D-SYNC), so these stay no-ops.
+// Stack-owned.
+class ComponentHandler : public IComponentHandler {
+ public:
+  tresult PLUGIN_API beginEdit(ParamID) override { return kResultOk; }
+  tresult PLUGIN_API performEdit(ParamID, ParamValue) override {
+    return kResultOk;
+  }
+  tresult PLUGIN_API endEdit(ParamID) override { return kResultOk; }
+  tresult PLUGIN_API restartComponent(int32) override { return kResultOk; }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IComponentHandler::iid) || iidEq(iid, FUnknown::iid)) {
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return 1; }
+  uint32 PLUGIN_API release() override { return 1; }
+};
+
 class Vst3Host final : public loopy::IPluginHost {
  public:
   ~Vst3Host() override { unload(); }
@@ -202,7 +267,11 @@ class Vst3Host final : public loopy::IPluginHost {
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
     using loopy::LoadStatus;
-    if (!openBundle(desc.path)) return LoadStatus::failed;
+    LPV_LOG("load '%s' (id %s)\n", desc.path.c_str(), desc.id.c_str());
+    if (!openBundle(desc.path)) {
+      LPV_LOG("  openBundle failed\n");
+      return LoadStatus::failed;
+    }
 
     IPluginFactory* factory = getFactory_();
     if (!factory) return LoadStatus::failed;
@@ -220,11 +289,16 @@ class Vst3Host final : public loopy::IPluginHost {
                 static_cast<const TUID&>(IComponent::iid)),
             &obj) != kResultOk ||
         !obj) {
+      LPV_LOG("  createInstance(IComponent) failed\n");
       return LoadStatus::failed;
     }
     component_ = static_cast<IComponent*>(obj);
 
-    if (component_->initialize(nullptr) != kResultOk) return LoadStatus::failed;
+    // Pass a real host context — commercial plugins reject a null context.
+    if (component_->initialize(&hostApp_) != kResultOk) {
+      LPV_LOG("  component initialize failed\n");
+      return LoadStatus::failed;
+    }
     if (component_->queryInterface(IAudioProcessor::iid,
                                    reinterpret_cast<void**>(&processor_)) !=
             kResultOk ||
@@ -240,8 +314,11 @@ class Vst3Host final : public loopy::IPluginHost {
     // multi-bus / sidechain plugin — both rejected so no partial slot exists.
     const int32_t numIn = component_->getBusCount(kAudio, kInput);
     const int32_t numOut = component_->getBusCount(kAudio, kOutput);
-    if (numIn < 1 || numOut < 1) return LoadStatus::unsupportedTopology;
-    if (numIn > 1 || numOut > 1) return LoadStatus::unsupportedTopology;
+    if (numIn < 1 || numOut < 1 || numIn > 1 || numOut > 1) {
+      LPV_LOG("  unsupported topology: %d audio-in bus(es), %d audio-out\n",
+              numIn, numOut);
+      return LoadStatus::unsupportedTopology;
+    }
 
     // Request stereo-in/stereo-out; a mono-only effect is adapted (L duplicated
     // to R) in process(). The negotiated arrangement decides the channel count.
@@ -272,12 +349,15 @@ class Vst3Host final : public loopy::IPluginHost {
     if (component_->setActive(true) != kResultOk) return LoadStatus::failed;
     processor_->setProcessing(true);  // some plugins return notImplemented
 
-    // Edit controller for parameter metadata: the component IS the controller
-    // for a single-component effect, otherwise a separate class. Null is fine
-    // (the plugin simply exposes no in-app params).
+    // Edit controller for parameter metadata + the editor view: the component
+    // IS the controller for a single-component effect, otherwise a separate
+    // class instantiated from getControllerClassId. Null is tolerated (the
+    // plugin simply exposes no in-app params / editor).
+    bool separateController = false;
     if (component_->queryInterface(IEditController::iid,
                                    reinterpret_cast<void**>(&controller_)) !=
         kResultOk) {
+      controller_ = nullptr;
       TUID ctrlCid;
       void* cobj = nullptr;
       if (component_->getControllerClassId(ctrlCid) == kResultOk &&
@@ -287,9 +367,22 @@ class Vst3Host final : public loopy::IPluginHost {
                   static_cast<const TUID&>(IEditController::iid)),
               &cobj) == kResultOk) {
         controller_ = static_cast<IEditController*>(cobj);
+        separateController = true;
       }
     }
-    if (controller_) controller_->initialize(nullptr);
+    if (controller_) {
+      // A separate controller must be initialized with the host context and
+      // synced to the component's current state, then connected so the two
+      // halves talk; the editor needs a component handler set to function.
+      if (separateController) {
+        controller_->initialize(&hostApp_);
+      }
+      controller_->setComponentHandler(&componentHandler_);
+      connectComponentAndController();
+    }
+    LPV_LOG("  loaded ok: controller=%p params=%d channels=%d\n",
+            static_cast<void*>(controller_),
+            controller_ ? controller_->getParameterCount() : -1, channels_);
 
     outL_.assign(maxBlock, 0.0f);
     outR_.assign(maxBlock, 0.0f);
@@ -396,11 +489,18 @@ class Vst3Host final : public loopy::IPluginHost {
   // --- Native editor (main thread; D-WIN) ---
 
   bool editorOpen() override {
-    if (view_) return true;        // idempotent
-    if (!controller_) return false;  // no controller => no editor
+    if (view_) return true;  // idempotent
+    if (!controller_) {
+      LPV_LOG("editorOpen: no controller\n");
+      return false;  // no controller => no editor
+    }
     IPlugView* view = controller_->createView(Vst::ViewType::kEditor);
-    if (!view) return false;
+    if (!view) {
+      LPV_LOG("editorOpen: createView returned null (no GUI?)\n");
+      return false;
+    }
     if (view->isPlatformTypeSupported(kPlatformTypeNSView) != kResultTrue) {
+      LPV_LOG("editorOpen: NSView platform type unsupported\n");
       view->release();
       return false;
     }
@@ -426,6 +526,7 @@ class Vst3Host final : public loopy::IPluginHost {
     }
     view_ = view;
     lpw_window_show(window_);
+    LPV_LOG("editorOpen: window shown (%dx%d)\n", w, h);
     return true;
   }
 
@@ -440,6 +541,27 @@ class Vst3Host final : public loopy::IPluginHost {
   bool editorIsOpen() const override { return view_ != nullptr; }
 
  private:
+  // Connects the component and controller via their IConnectionPoints so the
+  // two halves of a separated plugin exchange state/notifications. Best-effort:
+  // some plugins need the host to proxy IMessage between them (not implemented),
+  // but most function with a direct peer connection.
+  void connectComponentAndController() {
+    if (component_->queryInterface(IConnectionPoint::iid,
+                                   reinterpret_cast<void**>(&compCP_)) !=
+        kResultOk) {
+      compCP_ = nullptr;
+    }
+    if (controller_->queryInterface(IConnectionPoint::iid,
+                                    reinterpret_cast<void**>(&ctrlCP_)) !=
+        kResultOk) {
+      ctrlCP_ = nullptr;
+    }
+    if (compCP_ && ctrlCP_) {
+      compCP_->connect(ctrlCP_);
+      ctrlCP_->connect(compCP_);
+    }
+  }
+
   // Detaches + releases the plugin view (no window teardown). Shared by the
   // host-driven close and the user-close callback.
   void detachView() {
@@ -485,6 +607,18 @@ class Vst3Host final : public loopy::IPluginHost {
 
   void unload() {
     editorClose();  // D-WIN: never leak the editor window past the plugin
+    if (compCP_ && ctrlCP_) {
+      compCP_->disconnect(ctrlCP_);
+      ctrlCP_->disconnect(compCP_);
+    }
+    if (compCP_) {
+      compCP_->release();
+      compCP_ = nullptr;
+    }
+    if (ctrlCP_) {
+      ctrlCP_->release();
+      ctrlCP_ = nullptr;
+    }
     if (processor_) processor_->setProcessing(false);
     if (component_) component_->setActive(false);
     if (controller_) {
@@ -534,6 +668,14 @@ class Vst3Host final : public loopy::IPluginHost {
   IPlugView* view_ = nullptr;
   lpw_window* window_ = nullptr;
   HostPlugFrame frame_;
+
+  // Host context + controller wiring (stack-owned host objects; queried
+  // connection points). Real commercial plugins need these to load and to
+  // expose params / an editor.
+  HostApplication hostApp_;
+  ComponentHandler componentHandler_;
+  IConnectionPoint* compCP_ = nullptr;
+  IConnectionPoint* ctrlCP_ = nullptr;
 };
 
 }  // namespace
