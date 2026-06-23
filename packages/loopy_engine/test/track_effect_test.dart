@@ -217,6 +217,27 @@ void main() {
       expect(a, isNot(const PluginEffect(ref: ref)));
     });
 
+    test('opaque state round-trips through JSON and counts in equality', () {
+      const fx = PluginEffect(ref: ref, state: 'YmxvYg=='); // base64 "blob"
+      final json = fx.toJson();
+      expect(json['state'], 'YmxvYg==');
+      final decoded = TrackEffect.fromJson(json) as PluginEffect;
+      expect(decoded.state, 'YmxvYg==');
+      expect(decoded, fx);
+      expect(fx, isNot(const PluginEffect(ref: ref)));
+    });
+
+    test('omits state when empty (part-4/5 byte-for-byte back-compat)', () {
+      expect(const PluginEffect(ref: ref).toJson().containsKey('state'), false);
+    });
+
+    test('a pre-state entry decodes to an empty state', () {
+      final decoded =
+          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
+              as PluginEffect;
+      expect(decoded.state, isEmpty);
+    });
+
     test('params metadata is transient — excluded from toJson + equality', () {
       const params = [
         PluginParamInfo(

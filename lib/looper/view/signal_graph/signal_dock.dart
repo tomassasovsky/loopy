@@ -98,6 +98,7 @@ class SignalInputDock extends StatelessWidget {
     required this.onSetParam,
     required this.onSetPluginParam,
     required this.onOpenPluginEditor,
+    required this.onRelinkPlugin,
     required this.onRemoveEffect,
     required this.onReorderEffect,
     super.key,
@@ -117,6 +118,7 @@ class SignalInputDock extends StatelessWidget {
   final void Function(int index, int param, double value) onSetParam;
   final void Function(int index, int paramId, double value) onSetPluginParam;
   final ValueChanged<int> onOpenPluginEditor;
+  final ValueChanged<int> onRelinkPlugin;
   final ValueChanged<int> onRemoveEffect;
   final void Function(int oldIndex, int newIndex) onReorderEffect;
 
@@ -182,6 +184,7 @@ class SignalInputDock extends StatelessWidget {
                   onSetParam: onSetParam,
                   onSetPluginParam: onSetPluginParam,
                   onOpenPluginEditor: onOpenPluginEditor,
+                  onRelinkPlugin: onRelinkPlugin,
                   onReorder: onReorderEffect,
                 ),
               ),
@@ -209,6 +212,7 @@ class SignalLaneDock extends StatelessWidget {
     required this.onSetParam,
     required this.onSetPluginParam,
     required this.onOpenPluginEditor,
+    required this.onRelinkPlugin,
     required this.onReorderEffect,
     required this.onMuteToggled,
     required this.onVolumeChanged,
@@ -243,6 +247,7 @@ class SignalLaneDock extends StatelessWidget {
   final void Function(int index, int param, double value) onSetParam;
   final void Function(int index, int paramId, double value) onSetPluginParam;
   final ValueChanged<int> onOpenPluginEditor;
+  final ValueChanged<int> onRelinkPlugin;
   final void Function(int oldIndex, int newIndex) onReorderEffect;
   final VoidCallback onMuteToggled;
   final ValueChanged<double> onVolumeChanged;
@@ -338,6 +343,7 @@ class SignalLaneDock extends StatelessWidget {
                   onSetParam: onSetParam,
                   onSetPluginParam: onSetPluginParam,
                   onOpenPluginEditor: onOpenPluginEditor,
+                  onRelinkPlugin: onRelinkPlugin,
                   onReorder: onReorderEffect,
                 ),
               ),

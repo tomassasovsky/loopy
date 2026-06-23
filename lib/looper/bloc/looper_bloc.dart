@@ -186,6 +186,23 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         PluginEffect(ref: event.ref),
       ]);
     });
+    on<LooperLanePluginRelinked>((event, _) {
+      _repository.relinkLanePlugin(
+        channel: event.channel,
+        lane: event.lane,
+        index: event.index,
+        ref: event.ref,
+      );
+      unawaited(
+        _settings?.saveLaneEffects(
+          event.channel,
+          event.lane,
+          encodeTrackEffects(
+            _repository.laneEffects(event.channel, event.lane),
+          ),
+        ),
+      );
+    });
     on<LooperLanePluginEditorOpened>((event, _) {
       final key = (event.channel, event.lane, event.index);
       _repository.openLanePluginEditor(

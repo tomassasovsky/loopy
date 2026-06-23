@@ -158,6 +158,8 @@
     "signalPluginOpenEditorTooltip": "Abrir la ventana del editor del plugin",
     "signalPluginBypassTooltip": "Omitir plugin",
     "signalPluginUnknownName": "Plugin",
+    "signalPluginUnavailable": "Plugin no disponible",
+    "signalPluginRelinkTooltip": "Volver a vincular a un plugin instalado",
     "startEngine": "Iniciar motor",
     "sampleRateGroup": "Frecuencia de muestreo",
     "bufferSizeGroup": "Tamaño del búfer",

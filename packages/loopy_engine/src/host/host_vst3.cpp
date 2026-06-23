@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ipluginbase.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
@@ -155,6 +156,67 @@ class HostParamChanges : public IParameterChanges {
   static constexpr int32 kMax = 64;
   HostParamQueue queues_[kMax];
   int32 count_ = 0;
+};
+
+// A growable in-memory IBStream for plugin state get/set (D-P1). Stack-owned.
+class MemoryStream : public IBStream {
+ public:
+  std::vector<uint8_t> data;
+  int64 pos = 0;
+
+  MemoryStream() = default;
+  MemoryStream(const uint8_t* d, int n) : data(d, d + n) {}
+
+  tresult PLUGIN_API read(void* buffer, int32 numBytes,
+                          int32* numRead) override {
+    if (numBytes < 0) numBytes = 0;  // mirror write()'s clamp
+    int64 avail = static_cast<int64>(data.size()) - pos;
+    int32 n = (avail <= 0) ? 0
+              : (numBytes < avail ? numBytes : static_cast<int32>(avail));
+    if (n > 0) std::memcpy(buffer, data.data() + pos, static_cast<size_t>(n));
+    pos += n;
+    if (numRead) *numRead = n;
+    return kResultOk;
+  }
+  tresult PLUGIN_API write(void* buffer, int32 numBytes,
+                           int32* numWritten) override {
+    if (numBytes < 0) numBytes = 0;
+    if (pos + numBytes > static_cast<int64>(data.size())) {
+      data.resize(static_cast<size_t>(pos + numBytes));
+    }
+    if (numBytes > 0) {
+      std::memcpy(data.data() + pos, buffer, static_cast<size_t>(numBytes));
+    }
+    pos += numBytes;
+    if (numWritten) *numWritten = numBytes;
+    return kResultOk;
+  }
+  tresult PLUGIN_API seek(int64 p, int32 mode, int64* result) override {
+    if (mode == kIBSeekSet) {
+      pos = p;
+    } else if (mode == kIBSeekCur) {
+      pos += p;
+    } else {
+      pos = static_cast<int64>(data.size()) + p;
+    }
+    if (pos < 0) pos = 0;
+    if (result) *result = pos;
+    return kResultOk;
+  }
+  tresult PLUGIN_API tell(int64* p) override {
+    if (p) *p = pos;
+    return kResultOk;
+  }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IBStream::iid) || iidEq(iid, FUnknown::iid)) {
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return 1; }
+  uint32 PLUGIN_API release() override { return 1; }
 };
 
 // Host-side IPlugFrame: the plugin calls resizeView when it wants its editor a
@@ -546,6 +608,29 @@ class Vst3Host final : public loopy::IPluginHost {
   }
 
   bool editorIsOpen() const override { return view_ != nullptr; }
+
+  // --- Opaque state (main thread; D-P1) ---
+
+  bool stateGet(std::vector<uint8_t>& out) override {
+    if (!component_) return false;
+    MemoryStream stream;
+    if (component_->getState(&stream) != kResultOk) return false;
+    out.insert(out.end(), stream.data.begin(), stream.data.end());
+    return true;
+  }
+
+  bool stateSet(const uint8_t* data, int size) override {
+    if (!component_ || !data || size <= 0) return false;
+    MemoryStream stream(data, size);
+    stream.seek(0, IBStream::kIBSeekSet, nullptr);
+    if (component_->setState(&stream) != kResultOk) return false;
+    // Sync the controller so its params + editor reflect the restored state.
+    if (controller_) {
+      stream.seek(0, IBStream::kIBSeekSet, nullptr);
+      controller_->setComponentState(&stream);
+    }
+    return true;
+  }
 
  private:
   // Connects the component and controller via their IConnectionPoints so the

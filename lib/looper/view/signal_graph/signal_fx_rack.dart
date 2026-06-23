@@ -30,6 +30,7 @@ class SignalFxRack extends StatefulWidget {
     required this.onSetParam,
     required this.onSetPluginParam,
     required this.onOpenPluginEditor,
+    required this.onRelinkPlugin,
     required this.onReorder,
     super.key,
   });
@@ -51,6 +52,9 @@ class SignalFxRack extends StatefulWidget {
 
   /// Opens the native editor window for the plugin chain entry at `index`.
   final ValueChanged<int> onOpenPluginEditor;
+
+  /// Relinks the unavailable plugin chain entry at `index` (D-MISS).
+  final ValueChanged<int> onRelinkPlugin;
 
   /// Moves the chain entry at `oldIndex` to `newIndex` (a post-removal target).
   /// The processing order is the signal order, so a drag re-sequences the FX.
@@ -77,6 +81,7 @@ class _SignalFxRackState extends State<SignalFxRack> {
         fx: fx,
         onSetParam: (id, v) => widget.onSetPluginParam(i, id, v),
         onOpenEditor: () => widget.onOpenPluginEditor(i),
+        onRelink: () => widget.onRelinkPlugin(i),
         onRemove: () => widget.onRemoveEffect(i),
       );
     }
@@ -462,9 +467,9 @@ class _DeviceCard extends StatelessWidget {
 }
 
 /// A hosted-plugin device card (sibling to [_DeviceCard]): the plugin's name +
-/// bypass + an **Open Editor** button (inert until the native window lands in
-/// part 6), with the first [kPluginKnobs] automatable, non-hidden params as
-/// in-app knobs. A plugin that exposes no such params shows just the chrome.
+/// bypass + an **Open Editor** button (opens the plugin's native window), with
+/// the first [kPluginKnobs] automatable, non-hidden params as in-app knobs. A
+/// plugin that exposes no such params shows just the chrome.
 class _PluginDeviceCard extends StatelessWidget {
   const _PluginDeviceCard({
     required this.cardKey,
@@ -472,6 +477,7 @@ class _PluginDeviceCard extends StatelessWidget {
     required this.fx,
     required this.onSetParam,
     required this.onOpenEditor,
+    required this.onRelink,
     required this.onRemove,
   });
 
@@ -480,6 +486,7 @@ class _PluginDeviceCard extends StatelessWidget {
   final PluginEffect fx;
   final void Function(int paramId, double value) onSetParam;
   final VoidCallback onOpenEditor;
+  final VoidCallback onRelink;
   final VoidCallback onRemove;
 
   static const double _knobSlot = 60;
@@ -500,6 +507,17 @@ class _PluginDeviceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    // D-MISS: an unresolved plugin renders a placeholder that preserves the
+    // entry (ref + state survive) and offers a relink, not its controls.
+    if (fx.unavailable) {
+      return _PluginPlaceholderCard(
+        cardKey: cardKey,
+        keyPrefix: keyPrefix,
+        title: fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id,
+        onRelink: onRelink,
+        onRemove: onRemove,
+      );
+    }
     final knobs = _knobParams;
     final bypass = _bypassParam;
     final bodyWidth = knobs.length * _knobSlot;
@@ -613,6 +631,123 @@ class _PluginDeviceCard extends StatelessWidget {
                           ),
                       ],
                     ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The D-MISS placeholder for an unresolved plugin (uninstalled / moved): keeps
+/// the slot visible with its id, a relink action, and remove — the entry's
+/// identity + opaque state are preserved in the model, never silently dropped.
+class _PluginPlaceholderCard extends StatelessWidget {
+  const _PluginPlaceholderCard({
+    required this.cardKey,
+    required this.keyPrefix,
+    required this.title,
+    required this.onRelink,
+    required this.onRemove,
+  });
+
+  final Key cardKey;
+  final String keyPrefix;
+  final String title;
+  final VoidCallback onRelink;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    return Container(
+      key: cardKey,
+      width: 150,
+      decoration: BoxDecoration(
+        color: surface.cardHigh,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: surface.textTertiary.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(9, 6, 4, 6),
+            decoration: BoxDecoration(
+              color: surface.textTertiary.withValues(alpha: 0.10),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(8),
+              ),
+              border: Border(bottom: BorderSide(color: surface.line)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  size: 13,
+                  color: surface.textTertiary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    key: Key('${keyPrefix}_name'),
+                    overflow: TextOverflow.ellipsis,
+                    style: signalMono(
+                      color: surface.textSecondary,
+                      tracking: 0.4,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: Key('${keyPrefix}_remove'),
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 24,
+                    minHeight: 24,
+                  ),
+                  iconSize: 15,
+                  color: surface.textTertiary,
+                  tooltip: l10n.removeEffectTooltip,
+                  icon: const Icon(Icons.close),
+                  onPressed: onRemove,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    l10n.signalPluginUnavailable,
+                    textAlign: TextAlign.center,
+                    style: signalMono(color: surface.textTertiary, size: 10),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    key: Key('${keyPrefix}_relink'),
+                    onPressed: onRelink,
+                    icon: const Icon(Icons.link, size: 14),
+                    label: Text(
+                      l10n.signalPluginRelinkTooltip,
+                      style: signalMono(color: surface.textSecondary, size: 9),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      side: BorderSide(color: surface.line),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

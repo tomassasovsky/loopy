@@ -152,6 +152,21 @@ class MonitorCubit extends Cubit<MonitorState> {
     ]);
   }
 
+  /// Relinks monitor [input]'s plugin chain entry [index] to [ref] (D-MISS),
+  /// keeping its captured state + tweaks.
+  void relinkPlugin(int input, int index, PluginRef ref) {
+    final monitor = state.forInput(input);
+    if (index < 0 || index >= monitor.effects.length) return;
+    final fx = monitor.effects[index];
+    if (fx is! PluginEffect) return;
+    _repository.relinkMonitorPlugin(input: input, index: index, ref: ref);
+    final applied = _repository.monitorEffects(input);
+    emit(state.withInput(monitor.copyWith(effects: applied)));
+    unawaited(
+      _settings.saveMonitorEffects(input, encodeTrackEffects(applied)),
+    );
+  }
+
   /// Removes monitor [input]'s chain entry at [index].
   void removeEffect(int input, int index) {
     final effects = state.forInput(input).effects;

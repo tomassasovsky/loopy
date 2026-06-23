@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:looper_repository/src/models/audio_config.dart';
@@ -549,9 +550,39 @@ class LooperRepository {
       if (chain == null || chain.isEmpty) {
         _laneEffects.remove((channel, lane));
       } else {
-        _laneEffects[(channel, lane)] = List<TrackEffect>.of(chain);
+        // D-P1: a plugin in the monitor chain can't be value-copied — capture
+        // its live opaque state so the lane re-instantiates a frozen instance
+        // from that exact state on playback. The recorded audio is dry either
+        // way, so a capture failure just drops the entry (bypassed) without
+        // affecting the take.
+        final snapshot = <TrackEffect>[];
+        for (var i = 0; i < chain.length; i++) {
+          final captured = _capturePluginForLane(chain[i], input, i);
+          if (captured != null) snapshot.add(captured);
+        }
+        if (snapshot.isEmpty) {
+          _laneEffects.remove((channel, lane));
+        } else {
+          _laneEffects[(channel, lane)] = snapshot;
+        }
       }
     }
+  }
+
+  /// Snapshots one monitor chain entry onto a recording lane. Built-in effects
+  /// copy by value; a plugin captures its live state blob from monitor slot
+  /// `(input, index)`. Returns null when a plugin's capture fails (the entry is
+  /// dropped → bypassed on playback; the dry take is unaffected).
+  TrackEffect? _capturePluginForLane(TrackEffect fx, int input, int index) {
+    if (fx is! PluginEffect) return fx;
+    final handle = _monitorSlots[(input, index)];
+    // Not loaded (engine settling): keep the entry + any prior persisted state.
+    if (handle == null) return fx;
+    final blob = _engine.pluginStateGet(handle);
+    // Loaded but capture failed: drop the entry so the lane plays dry for it
+    // (bypass). The recorded buffer is dry regardless, so the take is unharmed.
+    if (blob.isEmpty) return null;
+    return fx.copyWith(state: base64Encode(blob));
   }
 
   /// Halts track [channel]'s playback (retaining the buffer).
@@ -846,6 +877,51 @@ class LooperRepository {
     return _engine.pluginParamSet(handle, paramId, value);
   }
 
+  /// Relinks lane [lane]'s chain entry [index] to plugin [ref] (umbrella
+  /// D-MISS), keeping the captured [PluginEffect.state] + paramValues and
+  /// clearing the unavailable flag, then reloads it. Use to resolve a
+  /// placeholder (uninstalled/moved) or accept a version change. Returns
+  /// [EngineResult.invalid] when the entry is not a plugin.
+  EngineResult relinkLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+    required PluginRef ref,
+  }) {
+    final effects = _laneEffects[(channel, lane)];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    // Re-applying reloads the new plugin and restores the preserved state blob.
+    return _applyLaneEffects(channel, lane);
+  }
+
+  /// Relinks monitor [input]'s chain entry [index] to plugin [ref] (D-MISS),
+  /// keeping its state + tweaks. Returns [EngineResult.invalid] when the entry
+  /// is not a plugin.
+  EngineResult relinkMonitorPlugin({
+    required int input,
+    required int index,
+    required PluginRef ref,
+  }) {
+    final effects = _monitorEffects[input];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    _monitorEffects[input] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(ref: ref, unavailable: false);
+    if (!_intendRunning) return EngineResult.ok;
+    return _applyMonitorEffects(input);
+  }
+
   /// Opens the native editor window for lane [lane]'s plugin chain entry
   /// [index] (umbrella D-WIN). Returns [EngineResult.invalid] when no plugin is
   /// loaded there.
@@ -1002,7 +1078,20 @@ class LooperRepository {
   /// stale metadata so the card renders the unresolved state.
   PluginEffect _bindPluginSlot(PluginSlotHandle? handle, PluginEffect fx) {
     if (handle == null) {
-      return fx.params.isEmpty ? fx : fx.copyWith(params: const []);
+      // The plugin failed to load on the running engine (uninstalled / moved /
+      // incompatible) — flag the D-MISS placeholder, preserving ref + state for
+      // relink; the entry is never dropped to a silent `none`.
+      return fx.copyWith(params: const [], unavailable: true);
+    }
+    // Restore the captured opaque state first (D-P1 frozen instance) — a
+    // corrupt blob is ignored, never fatal (D-MISS) — then replay the user's
+    // param tweaks on top.
+    if (fx.state.isNotEmpty) {
+      try {
+        _engine.pluginStateSet(handle, base64Decode(fx.state));
+      } on FormatException {
+        // Corrupt blob: leave the plugin at its default state.
+      }
     }
     final infos = _engine
         .pluginParamInfos(handle)
@@ -1011,7 +1100,11 @@ class LooperRepository {
     for (final entry in fx.paramValues.entries) {
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
-    return fx.copyWith(params: infos, name: _resolvePluginName(fx));
+    return fx.copyWith(
+      params: infos,
+      name: _resolvePluginName(fx),
+      unavailable: false,
+    );
   }
 
   /// The plugin's display name from the most recent scan, or its existing name

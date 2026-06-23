@@ -475,6 +475,56 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  Uint8List pluginStateGet(PluginSlotHandle slot) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return Uint8List(0);
+    final sizePtr = calloc<Int32>();
+    try {
+      if (_bindings.le_plugin_state_size(slot.pointer, sizePtr) != 0) {
+        return Uint8List(0);
+      }
+      final size = sizePtr.value;
+      if (size <= 0) return Uint8List(0);
+      final buf = calloc<Uint8>(size);
+      final written = calloc<Int32>();
+      try {
+        if (_bindings.le_plugin_state_get(slot.pointer, buf, size, written) !=
+            0) {
+          return Uint8List(0);
+        }
+        // Copy out of native memory before it's freed.
+        return Uint8List.fromList(buf.asTypedList(written.value));
+      } finally {
+        calloc
+          ..free(buf)
+          ..free(written);
+      }
+    } finally {
+      calloc.free(sizePtr);
+    }
+  }
+
+  @override
+  EngineResult pluginStateSet(PluginSlotHandle slot, Uint8List state) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
+    if (state.isEmpty) {
+      return EngineResult.fromCode(
+        _bindings.le_plugin_state_set(slot.pointer, nullptr, 0),
+      );
+    }
+    final buf = calloc<Uint8>(state.length);
+    try {
+      buf.asTypedList(state.length).setAll(0, state);
+      return EngineResult.fromCode(
+        _bindings.le_plugin_state_set(slot.pointer, buf, state.length),
+      );
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
   EngineResult measureLatency() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_measure_latency(_engine));

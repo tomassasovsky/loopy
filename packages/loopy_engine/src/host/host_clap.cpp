@@ -54,6 +54,30 @@ bool CLAP_ABI outEventsTryPush(const clap_output_events*,
   return true;  // we drop the plugin's output events in this slice
 }
 
+// State streams (D-P1): the output stream appends to a vector; the input stream
+// reads from a fixed blob.
+int64_t CLAP_ABI clapOStreamWrite(const clap_ostream_t* s, const void* buffer,
+                                  uint64_t size) {
+  auto* out = static_cast<std::vector<uint8_t>*>(s->ctx);
+  const auto* b = static_cast<const uint8_t*>(buffer);
+  out->insert(out->end(), b, b + size);
+  return static_cast<int64_t>(size);
+}
+struct ClapReadCtx {
+  const uint8_t* data;
+  uint64_t size;
+  uint64_t pos;
+};
+int64_t CLAP_ABI clapIStreamRead(const clap_istream_t* s, void* buffer,
+                                 uint64_t size) {
+  auto* ctx = static_cast<ClapReadCtx*>(s->ctx);
+  const uint64_t avail = ctx->size - ctx->pos;
+  const uint64_t n = size < avail ? size : avail;
+  if (n) std::memcpy(buffer, ctx->data + ctx->pos, n);
+  ctx->pos += n;
+  return static_cast<int64_t>(n);
+}
+
 class ClapHost final : public loopy::IPluginHost {
  public:
   ~ClapHost() override { unload(); }
@@ -253,6 +277,31 @@ class ClapHost final : public loopy::IPluginHost {
   }
 
   bool editorIsOpen() const override { return editorOpen_; }
+
+  // --- Opaque state (main thread; D-P1) ---
+
+  bool stateGet(std::vector<uint8_t>& out) override {
+    if (!plugin_) return false;
+    auto* state = static_cast<const clap_plugin_state_t*>(
+        plugin_->get_extension(plugin_, CLAP_EXT_STATE));
+    if (!state || !state->save) return false;
+    clap_ostream_t os{};
+    os.ctx = &out;
+    os.write = clapOStreamWrite;
+    return state->save(plugin_, &os);
+  }
+
+  bool stateSet(const uint8_t* data, int size) override {
+    if (!plugin_ || !data || size <= 0) return false;
+    auto* state = static_cast<const clap_plugin_state_t*>(
+        plugin_->get_extension(plugin_, CLAP_EXT_STATE));
+    if (!state || !state->load) return false;
+    ClapReadCtx ctx{data, static_cast<uint64_t>(size), 0};
+    clap_istream_t is{};
+    is.ctx = &ctx;
+    is.read = clapIStreamRead;
+    return state->load(plugin_, &is);
+  }
 
   // Resizes the host window to a plugin-requested content size (clap_host_gui
   // request_resize). Returns true — we always honour the request.
