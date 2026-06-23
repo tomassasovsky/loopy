@@ -1363,8 +1363,9 @@ class _ModeSegment extends StatelessWidget {
   }
 }
 
-/// The trailing "+" card: opens a menu to add a built-in effect or browse for a
-/// hosted plugin. Disabled (both null) when the chain is at [kTrackEffectMax].
+/// The trailing add card: two stacked buttons — add a built-in effect, or
+/// browse for a hosted plugin — shown directly (no menu). Disabled (both null)
+/// when the chain is at [kTrackEffectMax].
 class _AddDeviceCard extends StatelessWidget {
   const _AddDeviceCard({
     required this.cardKey,
@@ -1379,51 +1380,74 @@ class _AddDeviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final surface = context.surface;
-    final disabled = onAddEffect == null;
-    final tint = disabled ? surface.textTertiary : surface.textSecondary;
-    return PopupMenuButton<bool>(
+    return Container(
       key: cardKey,
-      enabled: !disabled,
-      tooltip: l10n.signalAddEffectTooltip,
-      color: kSignalMenu,
-      shape: signalMenuShape(),
-      position: PopupMenuPosition.under,
-      onSelected: (plugin) =>
-          plugin ? onAddPlugin?.call() : onAddEffect?.call(),
-      itemBuilder: (context) => [
-        PopupMenuItem<bool>(
-          value: false,
-          height: 38,
-          child: Text(
-            l10n.signalAddEffect,
-            style: signalMono(color: surface.textPrimary, size: 12),
+      width: 104,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: kSignalLine2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Expanded(
+            child: _AddDeviceButton(
+              buttonKey: const Key('signalGraph_addEffect'),
+              icon: Icons.graphic_eq,
+              label: l10n.signalAddEffect,
+              onTap: onAddEffect,
+            ),
           ),
-        ),
-        PopupMenuItem<bool>(
-          value: true,
-          height: 38,
-          child: Text(
-            l10n.signalAddPlugin,
-            style: signalMono(color: surface.textPrimary, size: 12),
+          Container(height: 1, color: kSignalLine2),
+          Expanded(
+            child: _AddDeviceButton(
+              buttonKey: const Key('signalGraph_addPlugin'),
+              icon: Icons.extension_outlined,
+              label: l10n.signalAddPlugin,
+              onTap: onAddPlugin,
+            ),
           ),
-        ),
-      ],
-      child: Container(
-        width: 92,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: kSignalLine2),
-        ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One half of the [_AddDeviceCard]: an icon + label tap target, greyed and
+/// inert when its [onTap] is null (the chain is full).
+class _AddDeviceButton extends StatelessWidget {
+  const _AddDeviceButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final Key buttonKey;
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final tint = onTap == null ? surface.textTertiary : surface.textSecondary;
+    return InkWell(
+      key: buttonKey,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.add, size: 18, color: tint),
-            const SizedBox(height: 6),
+            Icon(icon, size: 16, color: tint),
+            const SizedBox(height: 5),
             Text(
-              l10n.signalAddEffectTooltip,
+              label,
               textAlign: TextAlign.center,
-              style: signalMono(color: tint, size: 9, tracking: 0.5),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: signalMono(color: tint, size: 9, tracking: 0.3),
             ),
           ],
         ),

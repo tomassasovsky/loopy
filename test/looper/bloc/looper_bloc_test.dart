@@ -770,6 +770,38 @@ void main() {
     );
 
     blocTest<LooperBloc, LooperState>(
+      'inserting a plugin persists the chain enriched with its resolved name',
+      build: () {
+        // The repository resolves the display name while applying the chain;
+        // the save must persist THAT enriched chain, not the name-less input —
+        // else the name is lost on restart and the card shows the raw id.
+        when(() => repository.laneEffects(1, 2)).thenReturn(const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.clap, id: 'com.acme.reverb'),
+            name: 'Acme Reverb',
+          ),
+        ]);
+        return LooperBloc(repository: repository, settings: settings);
+      },
+      act: (bloc) => bloc.add(
+        const LooperLanePluginInserted(
+          1,
+          2,
+          PluginRef(format: PluginFormat.clap, id: 'com.acme.reverb'),
+        ),
+      ),
+      verify: (_) {
+        final encoded =
+            verify(
+                  () => settings.saveLaneEffects(1, 2, captureAny()),
+                ).captured.single
+                as String;
+        final decoded = decodeTrackEffects(encoded).single as PluginEffect;
+        expect(decoded.name, 'Acme Reverb');
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
       'LooperLaneEffectParamChanged persists the re-encoded chain',
       build: () => LooperBloc(repository: repository, settings: settings),
       act: (bloc) =>
