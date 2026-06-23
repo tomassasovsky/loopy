@@ -502,7 +502,21 @@ class FakeAudioEngine implements AudioEngine {
 
   /// Handle returned by [setLanePlugin] / [setMonitorPlugin]; set to `null` to
   /// simulate a load failure.
-  PluginSlotHandle? nextSlotHandle = const MockPluginSlotHandle('fake-plugin');
+  PluginSlotHandle? nextSlotHandle = MockPluginSlotHandle('fake-plugin');
+
+  /// Plugin ids passed to [setLanePlugin], keyed by `(channel, lane, index)`.
+  final Map<(int, int, int), String> lanePlugins = {};
+
+  /// Plugin ids passed to [setMonitorPlugin], keyed by `(input, index)`.
+  final Map<(int, int), String> monitorPlugins = {};
+
+  /// Param surface returned by [pluginParamInfos] (the loaded plugin's knobs).
+  List<PluginParamInfo> nextParamInfos = const [];
+
+  /// Every `(slot, paramId, value)` triple passed to [pluginParamSet], in call
+  /// order — so a test can assert the RT-queued sets and their ordering.
+  final List<({PluginSlotHandle slot, int paramId, double value})>
+  pluginParamSets = [];
 
   @override
   PluginSlotHandle? setLanePlugin({
@@ -512,6 +526,7 @@ class FakeAudioEngine implements AudioEngine {
     required String pluginId,
   }) {
     calls.add('setLanePlugin');
+    lanePlugins[(channel, lane, index)] = pluginId;
     return nextSlotHandle;
   }
 
@@ -522,6 +537,7 @@ class FakeAudioEngine implements AudioEngine {
     required String pluginId,
   }) {
     calls.add('setMonitorPlugin');
+    monitorPlugins[(input, index)] = pluginId;
     return nextSlotHandle;
   }
 
@@ -538,6 +554,29 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult clearMonitorPlugin({required int input, required int index}) {
     calls.add('clearMonitorPlugin');
+    return EngineResult.ok;
+  }
+
+  @override
+  List<PluginParamInfo> pluginParamInfos(PluginSlotHandle slot) {
+    calls.add('pluginParamInfos');
+    return nextParamInfos;
+  }
+
+  @override
+  double pluginParamGet(PluginSlotHandle slot, int paramId) {
+    calls.add('pluginParamGet');
+    return 0;
+  }
+
+  @override
+  EngineResult pluginParamSet(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    calls.add('pluginParamSet');
+    pluginParamSets.add((slot: slot, paramId: paramId, value: value));
     return EngineResult.ok;
   }
 }

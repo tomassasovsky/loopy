@@ -551,6 +551,56 @@ LE_EXPORT int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel
 LE_EXPORT int32_t le_engine_clear_monitor_plugin(le_engine* engine,
                                                  int32_t input, int32_t index);
 
+/* ---- Plugin parameters (control thread; D-PARAM) ----
+ *
+ * A plugin's parameters are a VARIABLE-LENGTH list sourced live from the plugin
+ * — separate from the built-in fixed 4-float LE_FX_PARAMS surface, which is left
+ * untouched. Values are PLAIN (not normalized): VST3's normalized params are
+ * converted via normalizedParamToPlain; CLAP params are already plain. */
+
+/* Bit flags for le_plugin_param_info.flags. */
+typedef enum le_plugin_param_flags {
+  LE_PARAM_AUTOMATABLE = 1 << 0,
+  LE_PARAM_READONLY = 1 << 1,
+  LE_PARAM_BYPASS = 1 << 2,
+  LE_PARAM_HIDDEN = 1 << 3,
+  LE_PARAM_STEPPED = 1 << 4,
+} le_plugin_param_flags;
+
+/* One plugin parameter's metadata. Fixed-size POD for FFI, like le_plugin_desc. */
+typedef struct le_plugin_param_info {
+  uint32_t id;        /* stable param id (VST3 ParamID / CLAP clap_id) */
+  char name[128];
+  char unit[32];
+  double min;
+  double max;
+  double def;         /* default plain value */
+  int32_t step_count; /* 0 = continuous; >0 = discrete steps */
+  uint32_t flags;     /* le_plugin_param_flags bitmask */
+} le_plugin_param_info;
+
+/* The number of parameters the plugin in `slot` exposes. Returns LE_OK, or
+ * LE_ERR_INVALID for a null argument. */
+LE_EXPORT int32_t le_plugin_param_count(le_plugin_slot* slot, int32_t* count);
+
+/* Copies the metadata of the parameter at `index` (0-based, < count) into *out.
+ * Returns LE_OK, or LE_ERR_INVALID for a null argument / out-of-range index. */
+LE_EXPORT int32_t le_plugin_param_info_at(le_plugin_slot* slot, int32_t index,
+                                          le_plugin_param_info* out);
+
+/* Reads the current plain value of parameter `id` into *plain. Returns LE_OK,
+ * or LE_ERR_INVALID for a null argument. */
+LE_EXPORT int32_t le_plugin_param_get(le_plugin_slot* slot, uint32_t id,
+                                      double* plain);
+
+/* Sets parameter `id` to the plain `value`. THREAD-SAFE: enqueues onto the
+ * slot's lock-free SPSC ring, drained into the SDK's own event mechanism
+ * (VST3 IParameterChanges / CLAP clap_input_events) at the top of the next
+ * process() — never a direct store from the audio thread (D-PARAM). Returns
+ * LE_OK, or LE_ERR_INVALID for a null slot. */
+LE_EXPORT int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id,
+                                      double value);
+
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
 

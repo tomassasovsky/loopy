@@ -317,40 +317,98 @@ final class BuiltInEffect extends TrackEffect {
 
 /// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref].
 ///
-/// This part carries the plugin identity only; the variable parameter values
-/// and the opaque state blob are added in later parts. An unresolved plugin
-/// (its `ref` no longer matches an installed plugin) is still a [PluginEffect]
-/// — never silently dropped — so its identity survives a reload.
+/// Carries the plugin identity, the user-tweaked [paramValues] (persisted), and
+/// the live [params] metadata enumerated from the loaded plugin (transient).
+/// The opaque state blob lands in a later part. An unresolved plugin (its `ref`
+/// no longer matches an installed plugin) is still a [PluginEffect] — never
+/// silently dropped — so its identity survives a reload.
 @immutable
 final class PluginEffect extends TrackEffect {
-  /// Creates a [PluginEffect] for [ref].
-  const PluginEffect({required this.ref});
+  /// Creates a [PluginEffect] for [ref], optionally seeded with persisted
+  /// [paramValues] and live [params] metadata.
+  const PluginEffect({
+    required this.ref,
+    this.paramValues = const {},
+    this.params = const [],
+  });
 
-  /// Rebuilds a [PluginEffect] from a persisted `{type, plugin}` entry.
-  factory PluginEffect.fromJson(Map<String, dynamic> json) => PluginEffect(
-    ref: PluginRef.fromJson(json['plugin'] as Map<String, dynamic>),
-  );
+  /// Rebuilds a [PluginEffect] from a persisted `{type, plugin, paramValues}`
+  /// entry. Absent / malformed `paramValues` decodes to an empty map (every
+  /// param falls back to its default), keeping a part-4 `{type, plugin}` entry
+  /// readable.
+  factory PluginEffect.fromJson(Map<String, dynamic> json) {
+    final raw = json['paramValues'];
+    final values = <int, double>{};
+    if (raw is Map) {
+      raw.forEach((key, value) {
+        final id = int.tryParse(key.toString());
+        if (id != null && value is num) values[id] = value.toDouble();
+      });
+    }
+    return PluginEffect(
+      ref: PluginRef.fromJson(json['plugin'] as Map<String, dynamic>),
+      paramValues: values,
+    );
+  }
 
   /// The hosted plugin's identity.
   final PluginRef ref;
 
+  /// Persisted plain parameter values keyed by parameter id. Only params the
+  /// user has changed are stored; an absent id falls back to the plugin's
+  /// default. Empty when no param has been tweaked.
+  final Map<int, double> paramValues;
+
+  /// Live parameter metadata enumerated from the loaded plugin, in plugin
+  /// order. Transient — populated at load time, never persisted (a reload
+  /// re-enumerates it), so it is excluded from equality and [toJson].
+  final List<PluginParamInfo> params;
+
   @override
   int get typeCode => kPluginFxCode;
 
-  /// Returns a copy with [ref] replaced.
-  PluginEffect copyWith({PluginRef? ref}) => PluginEffect(ref: ref ?? this.ref);
+  /// Returns a copy with the given fields replaced.
+  PluginEffect copyWith({
+    PluginRef? ref,
+    Map<int, double>? paramValues,
+    List<PluginParamInfo>? params,
+  }) => PluginEffect(
+    ref: ref ?? this.ref,
+    paramValues: paramValues ?? this.paramValues,
+    params: params ?? this.params,
+  );
 
   @override
   Map<String, dynamic> toJson() => {
     'type': kPluginFxCode,
     'plugin': ref.toJson(),
+    if (paramValues.isNotEmpty)
+      'paramValues': {
+        for (final e in paramValues.entries) '${e.key}': e.value,
+      },
   };
 
   @override
-  bool operator ==(Object other) => other is PluginEffect && other.ref == ref;
+  bool operator ==(Object other) =>
+      other is PluginEffect &&
+      other.ref == ref &&
+      _mapEquals(other.paramValues, paramValues);
 
   @override
-  int get hashCode => ref.hashCode;
+  int get hashCode => Object.hash(
+    ref,
+    Object.hashAllUnordered([
+      for (final e in paramValues.entries) Object.hash(e.key, e.value),
+    ]),
+  );
+
+  static bool _mapEquals(Map<int, double> a, Map<int, double> b) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
+  }
 }
 
 /// Encodes an ordered effects chain to a JSON string for persistence.

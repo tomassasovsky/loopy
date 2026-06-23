@@ -187,6 +187,53 @@ void main() {
         const PluginRef(format: PluginFormat.clap, id: 'com.x'),
       );
     });
+
+    test('paramValues round-trip through fromJson with string keys', () {
+      const fx = PluginEffect(ref: ref, paramValues: {100: 0.25, 300: 0.9});
+      final json = fx.toJson();
+      // Persisted as JSON object keys (strings), values plain.
+      expect(json['paramValues'], {'100': 0.25, '300': 0.9});
+      final decoded = TrackEffect.fromJson(json) as PluginEffect;
+      expect(decoded.paramValues, {100: 0.25, 300: 0.9});
+      expect(decoded, fx);
+    });
+
+    test('omits paramValues when empty (part-4 byte-for-byte back-compat)', () {
+      final json = const PluginEffect(ref: ref).toJson();
+      expect(json.containsKey('paramValues'), isFalse);
+    });
+
+    test('a part-4 entry without paramValues decodes to an empty map', () {
+      final decoded =
+          TrackEffect.fromJson({'type': kPluginFxCode, 'plugin': ref.toJson()})
+              as PluginEffect;
+      expect(decoded.paramValues, isEmpty);
+    });
+
+    test('paramValues participates in equality', () {
+      const a = PluginEffect(ref: ref, paramValues: {100: 0.5});
+      expect(a, const PluginEffect(ref: ref, paramValues: {100: 0.5}));
+      expect(a, isNot(const PluginEffect(ref: ref, paramValues: {100: 0.6})));
+      expect(a, isNot(const PluginEffect(ref: ref)));
+    });
+
+    test('params metadata is transient — excluded from toJson + equality', () {
+      const params = [
+        PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      const withMeta = PluginEffect(ref: ref, params: params);
+      expect(withMeta.toJson().containsKey('params'), isFalse);
+      expect(withMeta, const PluginEffect(ref: ref));
+    });
   });
 
   group('TrackEffectType', () {

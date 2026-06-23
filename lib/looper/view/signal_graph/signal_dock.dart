@@ -96,6 +96,7 @@ class SignalInputDock extends StatelessWidget {
     required this.onAddEffect,
     required this.onSetType,
     required this.onSetParam,
+    required this.onSetPluginParam,
     required this.onRemoveEffect,
     required this.onReorderEffect,
     super.key,
@@ -113,6 +114,7 @@ class SignalInputDock extends StatelessWidget {
   final VoidCallback onAddEffect;
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
+  final void Function(int index, int paramId, double value) onSetPluginParam;
   final ValueChanged<int> onRemoveEffect;
   final void Function(int oldIndex, int newIndex) onReorderEffect;
 
@@ -176,6 +178,7 @@ class SignalInputDock extends StatelessWidget {
                   onRemoveEffect: onRemoveEffect,
                   onSetType: onSetType,
                   onSetParam: onSetParam,
+                  onSetPluginParam: onSetPluginParam,
                   onReorder: onReorderEffect,
                 ),
               ),
@@ -201,6 +204,7 @@ class SignalLaneDock extends StatelessWidget {
     required this.onRemoveEffect,
     required this.onSetType,
     required this.onSetParam,
+    required this.onSetPluginParam,
     required this.onReorderEffect,
     required this.onMuteToggled,
     required this.onVolumeChanged,
@@ -233,6 +237,7 @@ class SignalLaneDock extends StatelessWidget {
   final ValueChanged<int> onRemoveEffect;
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
+  final void Function(int index, int paramId, double value) onSetPluginParam;
   final void Function(int oldIndex, int newIndex) onReorderEffect;
   final VoidCallback onMuteToggled;
   final ValueChanged<double> onVolumeChanged;
@@ -326,6 +331,7 @@ class SignalLaneDock extends StatelessWidget {
                   onRemoveEffect: onRemoveEffect,
                   onSetType: onSetType,
                   onSetParam: onSetParam,
+                  onSetPluginParam: onSetPluginParam,
                   onReorder: onReorderEffect,
                 ),
               ),

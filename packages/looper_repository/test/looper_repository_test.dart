@@ -16,13 +16,14 @@ import 'package:loopy_engine/loopy_engine.dart'
         ParamReadout,
         PluginEffect,
         PluginFormat,
+        PluginParamInfo,
         PluginRef,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType;
 import 'package:loopy_engine/loopy_engine.dart'
     as le
-    show AudioDevice, LatencyState, LoopbackInfo, LoopbackKind;
+    show AudioDevice, LatencyState, LoopbackInfo, LoopbackKind, PluginParamInfo;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -676,12 +677,12 @@ void main() {
     });
 
     test(
-      'a plugin entry is skipped by the built-in FX push (loaded in part 5)',
+      'a plugin entry loads through the slot ABI, not the built-in FX push',
       () {
-        // A plugin slot is loaded through the dedicated slot ABI, not the
-        // built-in setLaneFx push. Until that wiring lands (part 5), a plugin
-        // entry in a chain must be skipped here without disturbing the built-in
-        // entries around it; the active count still spans the whole chain.
+        // A plugin slot loads through the dedicated slot ABI (setLanePlugin)
+        // rather than the built-in setLaneFx push: it must not disturb the
+        // built-in entries around it, and the active count still spans the
+        // whole chain (so trailing built-ins keep their indices).
         buildRepo()
           ..startEngine(const EngineConfig())
           ..setTrackEffects(
@@ -696,14 +697,194 @@ void main() {
             ],
           );
 
-        // Built-in entries pushed at their own indices; plugin index skipped.
+        // Built-in entries pushed at their own indices; the plugin loads via
+        // the slot ABI at index 1 (never setLaneFx).
         expect(engine.laneFx[(0, 0, 0)]?.code, TrackEffectType.drive.code);
         expect(engine.laneFx.containsKey((0, 0, 1)), isFalse);
+        expect(engine.lanePlugins[(0, 0, 1)], 'p');
         expect(engine.laneFx[(0, 0, 2)]?.code, TrackEffectType.reverb.code);
         // The active count still spans all three entries.
         expect(engine.laneFxCount[(0, 0)], 3);
       },
     );
+
+    test('a plugin entry enumerates its params into the projected chain', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.params, hasLength(1));
+      expect(fx.params.single.id, 100);
+      expect(fx.params.single.name, 'Mix');
+    });
+
+    test('persisted plugin paramValues replay through the RT queue', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              paramValues: {100: 0.25},
+            ),
+          ],
+        );
+      expect(engine.pluginParamSets, hasLength(1));
+      expect(engine.pluginParamSets.single.paramId, 100);
+      expect(engine.pluginParamSets.single.value, 0.25);
+    });
+
+    test('setLanePluginParam routes to the loaded slot and remembers it', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      expect(
+        repo.setLanePluginParam(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          paramId: 200,
+          value: 0.8,
+        ),
+        EngineResult.ok,
+      );
+      // The set reached the plugin via the RT queue...
+      expect(engine.pluginParamSets.last.paramId, 200);
+      expect(engine.pluginParamSets.last.value, 0.8);
+      // ...and is remembered on the entry so it survives a reload / persists.
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.paramValues[200], 0.8);
+    });
+
+    test('setLanePluginParam on a non-plugin entry is invalid', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+      expect(
+        repo.setLanePluginParam(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('setMonitorPluginParam on a non-plugin entry is invalid', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        );
+      expect(
+        repo.setMonitorPluginParam(
+          input: 1,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        EngineResult.invalid,
+      );
+    });
+
+    test('setMonitorPluginParam routes to the loaded monitor slot', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 2,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'm'),
+            ),
+          ],
+        );
+      expect(engine.monitorPlugins[(2, 0)], 'm');
+
+      expect(
+        repo.setMonitorPluginParam(
+          input: 2,
+          index: 0,
+          paramId: 300,
+          value: 0.4,
+        ),
+        EngineResult.ok,
+      );
+      expect(engine.pluginParamSets.last.paramId, 300);
+      expect(engine.pluginParamSets.last.value, 0.4);
+      expect(
+        (repo.monitorEffects(2).single as PluginEffect).paramValues[300],
+        0.4,
+      );
+    });
+
+    test('a plugin param set with no loaded slot is invalid', () {
+      // Engine not started => no slot loaded for the remembered chain.
+      final repo = buildRepo()
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..startEngine(const EngineConfig());
+      // Simulate a failed load: the next plugin load returns no handle.
+      engine.nextSlotHandle = null;
+      repo.setTrackEffects(
+        channel: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+          ),
+        ],
+      );
+      expect(
+        repo.setLanePluginParam(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        EngineResult.invalid,
+      );
+    });
 
     test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()

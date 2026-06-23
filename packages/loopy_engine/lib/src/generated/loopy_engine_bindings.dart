@@ -414,6 +414,124 @@ class LoopyEngineBindings {
       _le_engine_clear_monitor_pluginPtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// The number of parameters the plugin in `slot` exposes. Returns LE_OK, or
+  /// LE_ERR_INVALID for a null argument.
+  int le_plugin_param_count(
+    ffi.Pointer<le_plugin_slot> slot,
+    ffi.Pointer<ffi.Int32> count,
+  ) {
+    return _le_plugin_param_count(
+      slot,
+      count,
+    );
+  }
+
+  late final _le_plugin_param_countPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_plugin_param_count');
+  late final _le_plugin_param_count = _le_plugin_param_countPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_plugin_slot>, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Copies the metadata of the parameter at `index` (0-based, < count) into *out.
+  /// Returns LE_OK, or LE_ERR_INVALID for a null argument / out-of-range index.
+  int le_plugin_param_info_at(
+    ffi.Pointer<le_plugin_slot> slot,
+    int index,
+    ffi.Pointer<le_plugin_param_info> out,
+  ) {
+    return _le_plugin_param_info_at(
+      slot,
+      index,
+      out,
+    );
+  }
+
+  late final _le_plugin_param_info_atPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Int32,
+            ffi.Pointer<le_plugin_param_info>,
+          )
+        >
+      >('le_plugin_param_info_at');
+  late final _le_plugin_param_info_at = _le_plugin_param_info_atPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_plugin_slot>,
+          int,
+          ffi.Pointer<le_plugin_param_info>,
+        )
+      >();
+
+  /// Reads the current plain value of parameter `id` into *plain. Returns LE_OK,
+  /// or LE_ERR_INVALID for a null argument.
+  int le_plugin_param_get(
+    ffi.Pointer<le_plugin_slot> slot,
+    int id,
+    ffi.Pointer<ffi.Double> plain,
+  ) {
+    return _le_plugin_param_get(
+      slot,
+      id,
+      plain,
+    );
+  }
+
+  late final _le_plugin_param_getPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Uint32,
+            ffi.Pointer<ffi.Double>,
+          )
+        >
+      >('le_plugin_param_get');
+  late final _le_plugin_param_get = _le_plugin_param_getPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_plugin_slot>, int, ffi.Pointer<ffi.Double>)
+      >();
+
+  /// Sets parameter `id` to the plain `value`. THREAD-SAFE: enqueues onto the
+  /// slot's lock-free SPSC ring, drained into the SDK's own event mechanism
+  /// (VST3 IParameterChanges / CLAP clap_input_events) at the top of the next
+  /// process() — never a direct store from the audio thread (D-PARAM). Returns
+  /// LE_OK, or LE_ERR_INVALID for a null slot.
+  int le_plugin_param_set(
+    ffi.Pointer<le_plugin_slot> slot,
+    int id,
+    double value,
+  ) {
+    return _le_plugin_param_set(
+      slot,
+      id,
+      value,
+    );
+  }
+
+  late final _le_plugin_param_setPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Uint32,
+            ffi.Double,
+          )
+        >
+      >('le_plugin_param_set');
+  late final _le_plugin_param_set = _le_plugin_param_setPtr
+      .asFunction<int Function(ffi.Pointer<le_plugin_slot>, int, double)>();
+
   /// Allocates an engine. Returns NULL on allocation failure.
   ffi.Pointer<le_engine> le_engine_create() {
     return _le_engine_create();
@@ -2603,6 +2721,58 @@ final class le_plugin_desc extends ffi.Struct {
 final class le_engine extends ffi.Opaque {}
 
 final class le_plugin_slot extends ffi.Opaque {}
+
+/// Bit flags for le_plugin_param_info.flags.
+enum le_plugin_param_flags {
+  LE_PARAM_AUTOMATABLE(1),
+  LE_PARAM_READONLY(2),
+  LE_PARAM_BYPASS(4),
+  LE_PARAM_HIDDEN(8),
+  LE_PARAM_STEPPED(16);
+
+  final int value;
+  const le_plugin_param_flags(this.value);
+
+  static le_plugin_param_flags fromValue(int value) => switch (value) {
+    1 => LE_PARAM_AUTOMATABLE,
+    2 => LE_PARAM_READONLY,
+    4 => LE_PARAM_BYPASS,
+    8 => LE_PARAM_HIDDEN,
+    16 => LE_PARAM_STEPPED,
+    _ => throw ArgumentError('Unknown value for le_plugin_param_flags: $value'),
+  };
+}
+
+/// One plugin parameter's metadata. Fixed-size POD for FFI, like le_plugin_desc.
+final class le_plugin_param_info extends ffi.Struct {
+  /// stable param id (VST3 ParamID / CLAP clap_id)
+  @ffi.Uint32()
+  external int id;
+
+  @ffi.Array.multi([128])
+  external ffi.Array<ffi.Char> name;
+
+  @ffi.Array.multi([32])
+  external ffi.Array<ffi.Char> unit;
+
+  @ffi.Double()
+  external double min;
+
+  @ffi.Double()
+  external double max;
+
+  /// default plain value
+  @ffi.Double()
+  external double def;
+
+  /// 0 = continuous; >0 = discrete steps
+  @ffi.Int32()
+  external int step_count;
+
+  /// le_plugin_param_flags bitmask
+  @ffi.Uint32()
+  external int flags;
+}
 
 /// A MIDI input port discovered by le_midi_enumerate.
 ///

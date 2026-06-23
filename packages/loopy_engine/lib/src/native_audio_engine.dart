@@ -379,6 +379,71 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  List<PluginParamInfo> pluginParamInfos(PluginSlotHandle slot) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return const [];
+    final countPtr = calloc<Int32>();
+    final infoPtr = calloc<le_plugin_param_info>();
+    try {
+      if (_bindings.le_plugin_param_count(slot.pointer, countPtr) != 0) {
+        return const [];
+      }
+      final count = countPtr.value;
+      final result = <PluginParamInfo>[];
+      for (var i = 0; i < count; i++) {
+        if (_bindings.le_plugin_param_info_at(slot.pointer, i, infoPtr) != 0) {
+          continue;
+        }
+        result.add(
+          PluginParamInfo(
+            id: infoPtr.ref.id,
+            name: readNativeString(infoPtr.ref.name, capacity: 128),
+            unit: readNativeString(infoPtr.ref.unit, capacity: 32),
+            min: infoPtr.ref.min,
+            max: infoPtr.ref.max,
+            def: infoPtr.ref.def,
+            stepCount: infoPtr.ref.step_count,
+            flags: infoPtr.ref.flags,
+          ),
+        );
+      }
+      return result;
+    } finally {
+      calloc
+        ..free(countPtr)
+        ..free(infoPtr);
+    }
+  }
+
+  @override
+  double pluginParamGet(PluginSlotHandle slot, int paramId) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return 0;
+    final out = calloc<Double>();
+    try {
+      if (_bindings.le_plugin_param_get(slot.pointer, paramId, out) != 0) {
+        return 0;
+      }
+      return out.value;
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  @override
+  EngineResult pluginParamSet(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    _checkAlive();
+    if (slot is! _NativePluginSlotHandle) return EngineResult.invalid;
+    return EngineResult.fromCode(
+      _bindings.le_plugin_param_set(slot.pointer, paramId, value),
+    );
+  }
+
+  @override
   EngineResult measureLatency() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_measure_latency(_engine));
