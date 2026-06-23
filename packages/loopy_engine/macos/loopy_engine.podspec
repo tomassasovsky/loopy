@@ -37,6 +37,14 @@ A hand-written miniaudio-based looping engine exposed to Dart over FFI.
     # its symbols get dead-stripped since nothing references them at link time.
     'MACH_O_TYPE' => 'mh_dylib',
     'GCC_C_LANGUAGE_STANDARD' => 'gnu11',
-    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../src/core" "$(PODS_TARGET_SRCROOT)/../src/midi" "$(PODS_TARGET_SRCROOT)/../src/miniaudio"',
+    # The plugin include-probe (Classes/plugin_probe.cpp -> ../../src/host) is
+    # C++; the VST3 SDK (3.8) needs C++17. Only the C++ TU is affected.
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    # The vendored VST3/CLAP SDK roots are added so the probe's root-relative
+    # cross-includes ("pluginterfaces/base/...", <clap/entry.h>) resolve.
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../src/core" "$(PODS_TARGET_SRCROOT)/../src/midi" "$(PODS_TARGET_SRCROOT)/../src/miniaudio" "$(PODS_TARGET_SRCROOT)/../third_party/vst3sdk" "$(PODS_TARGET_SRCROOT)/../third_party/clap/include"',
+    # Activate the plugin include-probe on macOS (default ON here; the
+    # Windows/Linux CMake build leaves it OFF until parts 8–9).
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) LOOPY_ENABLE_PLUGINS=1',
   }
 end
