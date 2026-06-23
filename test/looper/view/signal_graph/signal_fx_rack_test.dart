@@ -11,17 +11,20 @@ void main() {
     Widget build({
       required List<TrackEffect> effects,
       void Function(int index, int param, double value)? onSetParam,
+      void Function(int index, int paramId, double value)? onSetPluginParam,
       void Function(int oldIndex, int newIndex)? onReorder,
       VoidCallback? onAddEffect,
       void Function(int index, TrackEffectType type)? onSetType,
+      void Function(int index)? onRemoveEffect,
     }) => Scaffold(
       body: SignalFxRack(
         keyPrefix: 'signalGraph_lane',
         effects: effects,
         onAddEffect: onAddEffect ?? () {},
-        onRemoveEffect: (_) {},
+        onRemoveEffect: onRemoveEffect ?? (_) {},
         onSetType: onSetType ?? (_, _) {},
         onSetParam: onSetParam ?? (_, _, _) {},
+        onSetPluginParam: onSetPluginParam ?? (_, _, _) {},
         onReorder: onReorder ?? (_, _) {},
       ),
     );
@@ -250,6 +253,213 @@ void main() {
       // dropping a device is the × button's job.
       expect(find.text('Reverb'), findsOneWidget);
       expect(find.text('None'), findsNothing);
+    });
+  });
+
+  group('SignalFxRack plugin card', () {
+    PluginParamInfo param(
+      int id,
+      String name, {
+      int flags = 0x01, // automatable
+      double min = 0,
+      double max = 1,
+      double def = 0.5,
+    }) => PluginParamInfo(
+      id: id,
+      name: name,
+      unit: '',
+      min: min,
+      max: max,
+      def: def,
+      stepCount: 0,
+      flags: flags,
+    );
+
+    PluginEffect plugin({
+      String id = 'com.acme.reverb',
+      List<PluginParamInfo> params = const [],
+      Map<int, double> values = const {},
+    }) => PluginEffect(
+      ref: PluginRef(format: PluginFormat.clap, id: id),
+      params: params,
+      paramValues: values,
+    );
+
+    Widget build({
+      required PluginEffect fx,
+      void Function(int index, int paramId, double value)? onSetPluginParam,
+      void Function(int index)? onRemoveEffect,
+    }) => Scaffold(
+      body: SignalFxRack(
+        keyPrefix: 'signalGraph_lane',
+        effects: [fx],
+        onAddEffect: () {},
+        onRemoveEffect: onRemoveEffect ?? (_) {},
+        onSetType: (_, _) {},
+        onSetParam: (_, _, _) {},
+        onSetPluginParam: onSetPluginParam ?? (_, _, _) {},
+        onReorder: (_, _) {},
+      ),
+    );
+
+    testWidgets('renders the plugin name and an inert Open Editor button', (
+      tester,
+    ) async {
+      await tester.pumpApp(build(fx: plugin(id: 'My Plugin')));
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_name')),
+        findsOneWidget,
+      );
+      expect(find.text('My Plugin'), findsOneWidget);
+      final openEditor = tester.widget<IconButton>(
+        find.byKey(const Key('signalGraph_lane_device_0_openEditor')),
+      );
+      // Inert until the native editor window lands (part 6).
+      expect(openEditor.onPressed, isNull);
+    });
+
+    testWidgets('falls back to a generic name for an unresolved plugin', (
+      tester,
+    ) async {
+      await tester.pumpApp(build(fx: plugin(id: '')));
+      expect(find.text('Plugin'), findsOneWidget);
+    });
+
+    testWidgets('a 0-param plugin shows just chrome, no knobs', (tester) async {
+      await tester.pumpApp(build(fx: plugin()));
+      expect(find.byType(SignalKnob), findsNothing);
+      // The empty-body placeholder (em dash) stands in for the knob row.
+      expect(find.text('—'), findsOneWidget);
+    });
+
+    testWidgets('renders one knob per user-visible param', (tester) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            params: [param(10, 'A'), param(20, 'B'), param(30, 'C')],
+          ),
+        ),
+      );
+      expect(find.byType(SignalKnob), findsNWidgets(3));
+    });
+
+    testWidgets('caps the in-app knobs at kPluginKnobs', (tester) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            params: [for (var i = 0; i < 8; i++) param(i, 'P$i')],
+          ),
+        ),
+      );
+      expect(find.byType(SignalKnob), findsNWidgets(kPluginKnobs));
+    });
+
+    testWidgets('hidden and read-only params get no knob', (tester) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            params: [
+              param(10, 'Visible'),
+              param(20, 'Hidden', flags: 0x01 | 0x08),
+              param(30, 'ReadOnly', flags: 0x02),
+            ],
+          ),
+        ),
+      );
+      // Only the automatable, non-hidden param earns a knob.
+      expect(find.byType(SignalKnob), findsOneWidget);
+    });
+
+    testWidgets('turning a knob dispatches the plain value by param id', (
+      tester,
+    ) async {
+      final calls = <(int, int, double)>[];
+      await tester.pumpApp(
+        build(
+          fx: plugin(params: [param(42, 'Gain', max: 10, def: 5)]),
+          onSetPluginParam: (i, id, v) => calls.add((i, id, v)),
+        ),
+      );
+
+      final knob = find.byKey(const Key('signalGraph_lane_device_0_param_0'));
+      final gesture = await tester.startGesture(tester.getCenter(knob));
+      await tester.pump(const Duration(milliseconds: 40));
+      await gesture.moveBy(const Offset(0, -30));
+      await gesture.moveBy(const Offset(0, -30));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(calls, isNotEmpty);
+      // Routed by the stable param id, on entry 0.
+      expect(calls.last.$1, 0);
+      expect(calls.last.$2, 42);
+      // The dispatched value is plain (in [min=0, max=10]) — a normalized value
+      // would never exceed 1, so a value above 1 proves the de-normalization.
+      expect(calls.last.$3, greaterThan(1));
+      expect(calls.last.$3, lessThanOrEqualTo(10));
+    });
+
+    testWidgets('a bypass param drives the header toggle', (tester) async {
+      final calls = <(int, int, double)>[];
+      await tester.pumpApp(
+        build(
+          // A bypass control (automatable + bypass flag), currently off.
+          fx: plugin(
+            params: [param(99, 'Bypass', flags: 0x01 | 0x04, def: 0)],
+          ),
+          onSetPluginParam: (i, id, v) => calls.add((i, id, v)),
+        ),
+      );
+
+      // The bypass param has its own header toggle, not a knob.
+      expect(find.byType(SignalKnob), findsNothing);
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_bypass')),
+      );
+      await tester.pump();
+      expect(calls, [(0, 99, 1.0)]);
+    });
+
+    testWidgets('an already-bypassed plugin toggles back on', (tester) async {
+      final calls = <(int, int, double)>[];
+      await tester.pumpApp(
+        build(
+          // Bypass param present and currently engaged (value 1 >= 0.5).
+          fx: plugin(
+            params: [param(99, 'Bypass', flags: 0x01 | 0x04, def: 0)],
+            values: {99: 1},
+          ),
+          onSetPluginParam: (i, id, v) => calls.add((i, id, v)),
+        ),
+      );
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_bypass')),
+      );
+      await tester.pump();
+      // Tapping a bypassed plugin clears the bypass (0).
+      expect(calls, [(0, 99, 0.0)]);
+    });
+
+    testWidgets('the bypass toggle is disabled without a bypass param', (
+      tester,
+    ) async {
+      await tester.pumpApp(build(fx: plugin(params: [param(10, 'A')])));
+      final toggle = tester.widget<IconButton>(
+        find.byKey(const Key('signalGraph_lane_device_0_bypass')),
+      );
+      expect(toggle.onPressed, isNull);
+    });
+
+    testWidgets('the × button removes the plugin entry', (tester) async {
+      final removed = <int>[];
+      await tester.pumpApp(
+        build(fx: plugin(), onRemoveEffect: removed.add),
+      );
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_remove')),
+      );
+      expect(removed, [0]);
     });
   });
 }

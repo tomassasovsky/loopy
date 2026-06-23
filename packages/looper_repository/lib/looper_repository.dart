@@ -32,7 +32,8 @@ export 'src/models/engine_status.dart';
 export 'src/models/input_monitor.dart';
 export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
-export 'src/models/plugin_descriptor.dart' show PluginDescriptor, PluginFormat;
+export 'src/models/plugin_descriptor.dart'
+    show PluginDescriptor, PluginFormat, PluginParamInfo;
 export 'src/models/track.dart';
 // Domain effect models replace the engine's raw effect types in the UI. The
 // engine-typed boundary mappers stay package-internal (not shown here).

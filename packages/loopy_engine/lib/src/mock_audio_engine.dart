@@ -8,7 +8,6 @@ import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
-import 'package:meta/meta.dart';
 
 /// In-memory [AudioEngine] that simulates a multichannel interface for UI
 /// development and manual testing without real hardware.
@@ -257,6 +256,26 @@ class MockAudioEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
+  List<PluginParamInfo> pluginParamInfos(PluginSlotHandle slot) =>
+      MockPluginSlotHandle.mockParams;
+
+  @override
+  double pluginParamGet(PluginSlotHandle slot, int paramId) {
+    if (slot is! MockPluginSlotHandle) return 0;
+    return slot.paramValue(paramId);
+  }
+
+  @override
+  EngineResult pluginParamSet(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    if (slot is! MockPluginSlotHandle) return EngineResult.invalid;
+    return slot.setParamValue(paramId, value);
+  }
+
+  @override
   EngineResult measureLatency() {
     if (!_running) return EngineResult.notRunning;
     _latencyState = LatencyState.done;
@@ -484,21 +503,63 @@ class MockAudioEngine implements AudioEngine {
 }
 
 /// A deterministic [PluginSlotHandle] returned by [MockAudioEngine], carrying
-/// the loaded plugin id so tests and UI development can assert on it.
-@immutable
+/// the loaded plugin id so tests and UI development can assert on it, plus a
+/// small set of fake parameters with mutable values.
 class MockPluginSlotHandle implements PluginSlotHandle {
-  /// Creates a [MockPluginSlotHandle] for [pluginId].
-  const MockPluginSlotHandle(this.pluginId);
+  /// Creates a [MockPluginSlotHandle] for [pluginId], seeded with the default
+  /// value of each [mockParams] entry.
+  MockPluginSlotHandle(this.pluginId)
+    : _values = {for (final p in mockParams) p.id: p.def};
 
   /// The id of the plugin this handle was loaded from.
   final String pluginId;
 
-  @override
-  bool operator ==(Object other) =>
-      other is MockPluginSlotHandle && other.pluginId == pluginId;
+  final Map<int, double> _values;
 
-  @override
-  int get hashCode => pluginId.hashCode;
+  /// The deterministic fake parameter set every mock plugin exposes: three
+  /// automatable knobs ranged 0..1, mirroring the native StubHost.
+  static const List<PluginParamInfo> mockParams = [
+    PluginParamInfo(
+      id: 100,
+      name: 'Mock Gain',
+      unit: 'dB',
+      min: 0,
+      max: 1,
+      def: 0.5,
+      stepCount: 0,
+      flags: 0x01, // automatable
+    ),
+    PluginParamInfo(
+      id: 200,
+      name: 'Mock Tone',
+      unit: '',
+      min: 0,
+      max: 1,
+      def: 0.5,
+      stepCount: 0,
+      flags: 0x01,
+    ),
+    PluginParamInfo(
+      id: 300,
+      name: 'Mock Mix',
+      unit: '',
+      min: 0,
+      max: 1,
+      def: 0.5,
+      stepCount: 0,
+      flags: 0x01,
+    ),
+  ];
+
+  /// The current value of parameter [paramId], or `0` if unknown.
+  double paramValue(int paramId) => _values[paramId] ?? 0;
+
+  /// Sets parameter [paramId] to [value]; unknown ids report invalid.
+  EngineResult setParamValue(int paramId, double value) {
+    if (!_values.containsKey(paramId)) return EngineResult.invalid;
+    _values[paramId] = value;
+    return EngineResult.ok;
+  }
 }
 
 class _MockLane {

@@ -60,7 +60,91 @@ class PluginDescriptor extends Equatable {
   List<Object?> get props => [id, name, vendor, path, format, version];
 }
 
+/// One hosted-plugin parameter's metadata, unified across VST3 and CLAP into
+/// plain-valued fields. Domain mirror of the engine's `PluginParamInfo`.
+class PluginParamInfo extends Equatable {
+  /// Creates a [PluginParamInfo].
+  const PluginParamInfo({
+    required this.id,
+    required this.name,
+    required this.unit,
+    required this.min,
+    required this.max,
+    required this.def,
+    required this.stepCount,
+    required this.flags,
+  });
+
+  /// The stable parameter id (VST3 ParamID / CLAP clap_id).
+  final int id;
+
+  /// The user-visible parameter name.
+  final String name;
+
+  /// The parameter's unit (e.g. `dB`), or an empty string.
+  final String unit;
+
+  /// The minimum plain value.
+  final double min;
+
+  /// The maximum plain value.
+  final double max;
+
+  /// The default plain value.
+  final double def;
+
+  /// Number of discrete steps: `0` is continuous, `>0` is stepped.
+  final int stepCount;
+
+  /// The raw `le_plugin_param_flags` bitmask (see the `is*` getters).
+  final int flags;
+
+  /// Whether the host may automate / set this parameter.
+  bool get isAutomatable => flags & 0x01 != 0;
+
+  /// Whether the parameter is read-only.
+  bool get isReadOnly => flags & 0x02 != 0;
+
+  /// Whether the parameter is the plugin's bypass control.
+  bool get isBypass => flags & 0x04 != 0;
+
+  /// Whether the parameter is hidden from the user.
+  bool get isHidden => flags & 0x08 != 0;
+
+  /// Whether the parameter snaps to discrete steps.
+  bool get isStepped => flags & 0x10 != 0;
+
+  /// Whether this parameter should be shown as an in-app knob: automatable and
+  /// not hidden.
+  bool get isUserVisible => isAutomatable && !isHidden;
+
+  @override
+  List<Object?> get props => [
+    id,
+    name,
+    unit,
+    min,
+    max,
+    def,
+    stepCount,
+    flags,
+  ];
+}
+
 // --- Boundary mappers (package-internal; not exported from the barrel). ---
+
+/// Maps an engine `PluginParamInfo` to its domain mirror.
+PluginParamInfo pluginParamInfoFromEngine(engine.PluginParamInfo p) =>
+    PluginParamInfo(
+      id: p.id,
+      name: p.name,
+      unit: p.unit,
+      min: p.min,
+      max: p.max,
+      def: p.def,
+      stepCount: p.stepCount,
+      flags: p.flags,
+    );
 
 /// Maps an engine `PluginFormat` to its domain mirror.
 PluginFormat pluginFormatFromEngine(engine.PluginFormat format) =>

@@ -160,6 +160,26 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         ),
       );
     });
+    on<LooperLanePluginParamChanged>((event, _) {
+      _repository.setLanePluginParam(
+        channel: event.channel,
+        lane: event.lane,
+        index: event.index,
+        paramId: event.paramId,
+        value: event.value,
+      );
+      // Persist the whole chain (the param set above was granular); the encoded
+      // chain carries the plugin's remembered paramValues.
+      unawaited(
+        _settings?.saveLaneEffects(
+          event.channel,
+          event.lane,
+          encodeTrackEffects(
+            _repository.laneEffects(event.channel, event.lane),
+          ),
+        ),
+      );
+    });
     on<LooperTrackQuantizeChanged>((event, _) {
       _repository.setTrackQuantize(
         channel: event.channel,

@@ -19,6 +19,8 @@
 #include "pluginterfaces/base/ipluginbase.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
+#include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "pluginterfaces/vst/vstspeaker.h"
 #include "plugin_host.h"
 
@@ -30,6 +32,109 @@ namespace {
 typedef bool (*BundleEntryFunc)(CFBundleRef);
 typedef bool (*BundleExitFunc)();
 typedef IPluginFactory* (*GetFactoryFunc)();
+
+bool iidEq(const TUID a, const TUID& b) { return std::memcmp(a, b, 16) == 0; }
+
+// Converts a VST3 String128 (UTF-16) to a UTF-8 std::string (BMP).
+std::string u16ToUtf8(const char16* s) {
+  std::string out;
+  for (int i = 0; i < 128 && s[i]; ++i) {
+    const char16_t c = static_cast<char16_t>(s[i]);
+    if (c < 0x80) {
+      out.push_back(static_cast<char>(c));
+    } else if (c < 0x800) {
+      out.push_back(static_cast<char>(0xC0 | (c >> 6)));
+      out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+    } else {
+      out.push_back(static_cast<char>(0xE0 | (c >> 12)));
+      out.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
+      out.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+    }
+  }
+  return out;
+}
+
+// A minimal host-side IParamValueQueue holding a single point — enough to feed
+// one queued plain->normalized param change per id into a process() block.
+class HostParamQueue : public IParamValueQueue {
+ public:
+  void reset(ParamID id) {
+    id_ = id;
+    value_ = 0.0;
+    has_ = false;
+  }
+  ParamID PLUGIN_API getParameterId() override { return id_; }
+  int32 PLUGIN_API getPointCount() override { return has_ ? 1 : 0; }
+  tresult PLUGIN_API getPoint(int32 index, int32& sampleOffset,
+                              ParamValue& value) override {
+    if (index != 0 || !has_) return kResultFalse;
+    sampleOffset = 0;
+    value = value_;
+    return kResultOk;
+  }
+  tresult PLUGIN_API addPoint(int32, ParamValue value, int32& index) override {
+    value_ = value;
+    has_ = true;
+    index = 0;
+    return kResultOk;
+  }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IParamValueQueue::iid) || iidEq(iid, FUnknown::iid)) {
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return 1; }   // stack-owned
+  uint32 PLUGIN_API release() override { return 1; }  // stack-owned
+
+ private:
+  ParamID id_ = 0;
+  ParamValue value_ = 0.0;
+  bool has_ = false;
+};
+
+// A fixed-capacity host IParameterChanges (no allocation in process()).
+class HostParamChanges : public IParameterChanges {
+ public:
+  void clear() { count_ = 0; }
+  int32 PLUGIN_API getParameterCount() override { return count_; }
+  IParamValueQueue* PLUGIN_API getParameterData(int32 index) override {
+    return (index >= 0 && index < count_) ? &queues_[index] : nullptr;
+  }
+  IParamValueQueue* PLUGIN_API addParameterData(const ParamID& id,
+                                                int32& index) override {
+    for (int32 i = 0; i < count_; ++i) {
+      if (queues_[i].getParameterId() == id) {
+        index = i;
+        return &queues_[i];
+      }
+    }
+    if (count_ >= kMax) {
+      index = -1;
+      return nullptr;
+    }
+    index = count_;
+    queues_[count_].reset(id);
+    return &queues_[count_++];
+  }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IParameterChanges::iid) || iidEq(iid, FUnknown::iid)) {
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return 1; }
+  uint32 PLUGIN_API release() override { return 1; }
+
+ private:
+  static constexpr int32 kMax = 64;
+  HostParamQueue queues_[kMax];
+  int32 count_ = 0;
+};
 
 bool hexNibble(char c, int& v) {
   if (c >= '0' && c <= '9') {
@@ -139,6 +244,25 @@ class Vst3Host final : public loopy::IPluginHost {
     if (component_->setActive(true) != kResultOk) return LoadStatus::failed;
     processor_->setProcessing(true);  // some plugins return notImplemented
 
+    // Edit controller for parameter metadata: the component IS the controller
+    // for a single-component effect, otherwise a separate class. Null is fine
+    // (the plugin simply exposes no in-app params).
+    if (component_->queryInterface(IEditController::iid,
+                                   reinterpret_cast<void**>(&controller_)) !=
+        kResultOk) {
+      TUID ctrlCid;
+      void* cobj = nullptr;
+      if (component_->getControllerClassId(ctrlCid) == kResultOk &&
+          factory_->createInstance(
+              reinterpret_cast<FIDString>(ctrlCid),
+              reinterpret_cast<FIDString>(
+                  static_cast<const TUID&>(IEditController::iid)),
+              &cobj) == kResultOk) {
+        controller_ = static_cast<IEditController*>(cobj);
+      }
+    }
+    if (controller_) controller_->initialize(nullptr);
+
     outL_.assign(maxBlock, 0.0f);
     outR_.assign(maxBlock, 0.0f);
     return LoadStatus::ok;
@@ -160,6 +284,23 @@ class Vst3Host final : public loopy::IPluginHost {
     out.silenceFlags = 0;
     out.channelBuffers32 = outCh;
 
+    // Drain the params staged since the last block into the SDK's
+    // IParameterChanges (plain -> normalized via the controller). D-PARAM.
+    paramChanges_.clear();
+    if (controller_) {
+      for (int i = 0; i < pending_; ++i) {
+        const ParamValue norm =
+            controller_->plainParamToNormalized(pendingId_[i], pendingVal_[i]);
+        int32 qIdx = 0;
+        IParamValueQueue* q = paramChanges_.addParameterData(pendingId_[i], qIdx);
+        if (q) {
+          int32 pIdx = 0;
+          q->addPoint(0, norm, pIdx);
+        }
+      }
+    }
+    pending_ = 0;
+
     ProcessData data;  // default ctor zeroes the optional pointers
     data.processMode = kRealtime;
     data.symbolicSampleSize = kSample32;
@@ -168,12 +309,60 @@ class Vst3Host final : public loopy::IPluginHost {
     data.numOutputs = 1;
     data.inputs = &in;
     data.outputs = &out;
+    data.inputParameterChanges = &paramChanges_;
     processor_->process(data);
 
     const size_t bytes = sizeof(float) * static_cast<size_t>(n);
     std::memcpy(l, outL_.data(), bytes);
     // Mono -> stereo: duplicate the single processed channel to the right.
     std::memcpy(r, channels_ == 1 ? outL_.data() : outR_.data(), bytes);
+  }
+
+  int paramCount() override {
+    return controller_ ? controller_->getParameterCount() : 0;
+  }
+
+  bool paramInfoAt(int index, loopy::PluginParamInfo& out) override {
+    if (!controller_ || index < 0 ||
+        index >= controller_->getParameterCount()) {
+      return false;
+    }
+    ParameterInfo info;
+    if (controller_->getParameterInfo(index, info) != kResultOk) return false;
+    out = loopy::PluginParamInfo{};
+    out.id = info.id;
+    out.name = u16ToUtf8(info.title);
+    out.unit = u16ToUtf8(info.units);
+    // VST3 params are normalized; report the plain range/default.
+    out.min = controller_->normalizedParamToPlain(info.id, 0.0);
+    out.max = controller_->normalizedParamToPlain(info.id, 1.0);
+    out.def =
+        controller_->normalizedParamToPlain(info.id, info.defaultNormalizedValue);
+    out.stepCount = info.stepCount;
+    uint32_t flags = 0;
+    if (info.flags & ParameterInfo::kCanAutomate) {
+      flags |= loopy::kParamAutomatable;
+    }
+    if (info.flags & ParameterInfo::kIsReadOnly) flags |= loopy::kParamReadOnly;
+    if (info.flags & ParameterInfo::kIsBypass) flags |= loopy::kParamBypass;
+    if (info.flags & ParameterInfo::kIsHidden) flags |= loopy::kParamHidden;
+    if (info.stepCount > 0) flags |= loopy::kParamStepped;
+    out.flags = flags;
+    return true;
+  }
+
+  double paramGet(uint32_t id) override {
+    if (!controller_) return 0.0;
+    return controller_->normalizedParamToPlain(id,
+                                               controller_->getParamNormalized(id));
+  }
+
+  void queueParam(uint32_t id, double plain) override {
+    if (pending_ < kMaxPending) {
+      pendingId_[pending_] = id;
+      pendingVal_[pending_] = plain;
+      ++pending_;
+    }
   }
 
  private:
@@ -202,6 +391,11 @@ class Vst3Host final : public loopy::IPluginHost {
   void unload() {
     if (processor_) processor_->setProcessing(false);
     if (component_) component_->setActive(false);
+    if (controller_) {
+      controller_->terminate();
+      controller_->release();
+      controller_ = nullptr;
+    }
     if (processor_) {
       processor_->release();
       processor_ = nullptr;
@@ -228,8 +422,17 @@ class Vst3Host final : public loopy::IPluginHost {
   IPluginFactory* factory_ = nullptr;
   IComponent* component_ = nullptr;
   IAudioProcessor* processor_ = nullptr;
+  IEditController* controller_ = nullptr;
   int32 channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
   std::vector<float> outL_, outR_;
+
+  // Params staged on the audio thread (queueParam) and drained into the SDK in
+  // process(). Fixed-size — no allocation on the audio thread.
+  static constexpr int kMaxPending = 64;
+  ParamID pendingId_[kMaxPending] = {};
+  double pendingVal_[kMaxPending] = {};
+  int pending_ = 0;
+  HostParamChanges paramChanges_;
 };
 
 }  // namespace

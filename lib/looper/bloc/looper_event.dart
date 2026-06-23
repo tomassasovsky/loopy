@@ -259,6 +259,33 @@ final class LooperLaneEffectParamChanged extends LooperLaneEvent {
   List<Object?> get props => [channel, lane, index, param, value];
 }
 
+/// Sets a hosted-plugin parameter on lane [lane]'s chain entry [index]. Unlike
+/// [LooperLaneEffectParamChanged] (built-in, normalized + positional), this
+/// addresses a parameter by its stable plugin [paramId] and carries a plain
+/// (already-scaled) [value], routed to the plugin through the RT param queue.
+final class LooperLanePluginParamChanged extends LooperLaneEvent {
+  /// Creates a [LooperLanePluginParamChanged].
+  const LooperLanePluginParamChanged(
+    super.channel,
+    super.lane,
+    this.index,
+    this.paramId,
+    this.value,
+  );
+
+  /// The chain entry index (`0..kTrackEffectMax-1`).
+  final int index;
+
+  /// The stable plugin parameter id (VST3 ParamID / CLAP clap_id).
+  final int paramId;
+
+  /// The plain (already-scaled) parameter value.
+  final double value;
+
+  @override
+  List<Object?> get props => [channel, lane, index, paramId, value];
+}
+
 /// Play every track that has content.
 final class LooperPlayAllPressed extends LooperEvent {
   /// Creates a [LooperPlayAllPressed].

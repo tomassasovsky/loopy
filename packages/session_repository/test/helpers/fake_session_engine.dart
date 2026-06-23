@@ -263,6 +263,46 @@ class FakeSessionEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
+  EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
+  @override
+  PluginScanProgress scanPoll() => PluginScanProgress.empty;
+  @override
+  List<PluginDescriptor> scanResults() => const [];
+  @override
+  EngineResult scanCancel() => EngineResult.ok;
+  @override
+  PluginSlotHandle? setLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+    required String pluginId,
+  }) => null;
+  @override
+  PluginSlotHandle? setMonitorPlugin({
+    required int input,
+    required int index,
+    required String pluginId,
+  }) => null;
+  @override
+  EngineResult clearLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+  }) => EngineResult.ok;
+  @override
+  EngineResult clearMonitorPlugin({required int input, required int index}) =>
+      EngineResult.ok;
+  @override
+  List<PluginParamInfo> pluginParamInfos(PluginSlotHandle slot) => const [];
+  @override
+  double pluginParamGet(PluginSlotHandle slot, int paramId) => 0;
+  @override
+  EngineResult pluginParamSet(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) => EngineResult.ok;
+  @override
   Float32List readVisual() => Float32List(0);
   @override
   Float32List readTrackVisual(int channel) => Float32List(0);

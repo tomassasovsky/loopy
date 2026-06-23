@@ -431,6 +431,19 @@ abstract interface class EnginePluginHosting {
 
   /// Like [clearLanePlugin] but for monitor input [input]'s chain slot [index].
   EngineResult clearMonitorPlugin({required int input, required int index});
+
+  /// The metadata for every parameter the plugin in [slot] exposes, in index
+  /// order (umbrella D-PARAM). Empty if [slot] is not a live plugin slot.
+  List<PluginParamInfo> pluginParamInfos(PluginSlotHandle slot);
+
+  /// The current plain value of parameter [paramId] of the plugin in [slot].
+  double pluginParamGet(PluginSlotHandle slot, int paramId);
+
+  /// Queues parameter [paramId] of the plugin in [slot] to the plain [value].
+  /// Thread-safe: enqueued and applied via the SDK's event mechanism on the
+  /// next process block — never a direct audio-thread store. Returns
+  /// [EngineResult.ok] or [EngineResult.invalid].
+  EngineResult pluginParamSet(PluginSlotHandle slot, int paramId, double value);
 }
 
 /// The data-layer boundary over the native audio engine, composed from the

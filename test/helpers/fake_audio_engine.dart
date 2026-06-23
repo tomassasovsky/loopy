@@ -427,14 +427,14 @@ class FakeAudioEngine implements AudioEngine {
     required int lane,
     required int index,
     required String pluginId,
-  }) => const MockPluginSlotHandle('fake-plugin');
+  }) => MockPluginSlotHandle('fake-plugin');
 
   @override
   PluginSlotHandle? setMonitorPlugin({
     required int input,
     required int index,
     required String pluginId,
-  }) => const MockPluginSlotHandle('fake-plugin');
+  }) => MockPluginSlotHandle('fake-plugin');
 
   @override
   EngineResult clearLanePlugin({
@@ -446,6 +446,19 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult clearMonitorPlugin({required int input, required int index}) =>
       EngineResult.ok;
+
+  @override
+  List<PluginParamInfo> pluginParamInfos(PluginSlotHandle slot) => const [];
+
+  @override
+  double pluginParamGet(PluginSlotHandle slot, int paramId) => 0;
+
+  @override
+  EngineResult pluginParamSet(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) => EngineResult.ok;
 
   @override
   void dispose() => disposeCalls++;

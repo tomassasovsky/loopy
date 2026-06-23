@@ -23,15 +23,26 @@ const void* CLAP_ABI hostGetExtension(const clap_host*, const char*) {
 }
 void CLAP_ABI hostNoop(const clap_host*) {}
 
-// Empty event lists: the plugin sees no input events and we drop its output.
-uint32_t CLAP_ABI inEventsSize(const clap_input_events*) { return 0; }
-const clap_event_header_t* CLAP_ABI inEventsGet(const clap_input_events*,
-                                                uint32_t) {
-  return nullptr;
+// Fixed-size buffer of queued param-value events the input-events list serves to
+// the plugin during process(). Audio-thread-owned; no allocation.
+struct ClapEventBuffer {
+  static constexpr uint32_t kMax = 64;
+  clap_event_param_value_t events[kMax];
+  uint32_t count = 0;
+};
+
+// Input events: serve the queued param-value events (ctx points at the buffer).
+uint32_t CLAP_ABI inEventsSize(const clap_input_events* list) {
+  return static_cast<const ClapEventBuffer*>(list->ctx)->count;
+}
+const clap_event_header_t* CLAP_ABI inEventsGet(const clap_input_events* list,
+                                                uint32_t index) {
+  const auto* buf = static_cast<const ClapEventBuffer*>(list->ctx);
+  return index < buf->count ? &buf->events[index].header : nullptr;
 }
 bool CLAP_ABI outEventsTryPush(const clap_output_events*,
                                const clap_event_header_t*) {
-  return true;
+  return true;  // we drop the plugin's output events in this slice
 }
 
 class ClapHost final : public loopy::IPluginHost {
@@ -100,6 +111,9 @@ class ClapHost final : public loopy::IPluginHost {
       channels_ = (chIn >= 2 && chOut >= 2) ? 2 : 1;
     }
 
+    params_ = static_cast<const clap_plugin_params_t*>(
+        plugin_->get_extension(plugin_, CLAP_EXT_PARAMS));
+
     if (!plugin_->activate(plugin_, sampleRate, 1,
                            static_cast<uint32_t>(maxBlock))) {
       return LoadStatus::failed;
@@ -108,7 +122,7 @@ class ClapHost final : public loopy::IPluginHost {
 
     outL_.assign(maxBlock, 0.0f);
     outR_.assign(maxBlock, 0.0f);
-    inEvents_.ctx = nullptr;
+    inEvents_.ctx = &events_;  // serves the queued param events
     inEvents_.size = inEventsSize;
     inEvents_.get = inEventsGet;
     outEvents_.ctx = nullptr;
@@ -139,11 +153,65 @@ class ClapHost final : public loopy::IPluginHost {
     proc.out_events = &outEvents_;
     plugin_->process(plugin_, &proc);
     steady_ += n;
+    events_.count = 0;  // param events consumed by this block
 
     const size_t bytes = sizeof(float) * static_cast<size_t>(n);
     std::memcpy(l, outL_.data(), bytes);
     // Mono -> stereo: duplicate the single processed channel to the right.
     std::memcpy(r, channels_ == 1 ? outL_.data() : outR_.data(), bytes);
+  }
+
+  int paramCount() override {
+    return params_ ? static_cast<int>(params_->count(plugin_)) : 0;
+  }
+
+  bool paramInfoAt(int index, loopy::PluginParamInfo& out) override {
+    if (!params_ || index < 0 ||
+        index >= static_cast<int>(params_->count(plugin_))) {
+      return false;
+    }
+    clap_param_info_t info;
+    if (!params_->get_info(plugin_, static_cast<uint32_t>(index), &info)) {
+      return false;
+    }
+    out = loopy::PluginParamInfo{};
+    out.id = info.id;
+    out.name = info.name;
+    out.min = info.min_value;
+    out.max = info.max_value;
+    out.def = info.default_value;  // CLAP values are already plain
+    uint32_t flags = 0;
+    if (info.flags & CLAP_PARAM_IS_AUTOMATABLE) flags |= loopy::kParamAutomatable;
+    if (info.flags & CLAP_PARAM_IS_READONLY) flags |= loopy::kParamReadOnly;
+    if (info.flags & CLAP_PARAM_IS_BYPASS) flags |= loopy::kParamBypass;
+    if (info.flags & CLAP_PARAM_IS_HIDDEN) flags |= loopy::kParamHidden;
+    if (info.flags & CLAP_PARAM_IS_STEPPED) {
+      flags |= loopy::kParamStepped;
+      out.stepCount = static_cast<int32_t>(info.max_value - info.min_value);
+    }
+    out.flags = flags;
+    return true;
+  }
+
+  double paramGet(uint32_t id) override {
+    double value = 0.0;
+    if (params_ && params_->get_value) params_->get_value(plugin_, id, &value);
+    return value;
+  }
+
+  void queueParam(uint32_t id, double plain) override {
+    if (events_.count >= ClapEventBuffer::kMax) return;
+    clap_event_param_value_t& e = events_.events[events_.count++];
+    e = clap_event_param_value_t{};
+    e.header.size = sizeof(e);
+    e.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+    e.header.type = CLAP_EVENT_PARAM_VALUE;
+    e.param_id = id;
+    e.note_id = -1;
+    e.port_index = -1;
+    e.channel = -1;
+    e.key = -1;
+    e.value = plain;
   }
 
  private:
@@ -168,6 +236,8 @@ class ClapHost final : public loopy::IPluginHost {
   clap_host_t host_{};
   clap_input_events_t inEvents_{};
   clap_output_events_t outEvents_{};
+  const clap_plugin_params_t* params_ = nullptr;
+  ClapEventBuffer events_;  // queued param-value events for the next process()
   std::vector<float> outL_, outR_;
   int64_t steady_ = 0;
   int channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)

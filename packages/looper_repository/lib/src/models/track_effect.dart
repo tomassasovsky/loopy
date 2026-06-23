@@ -167,23 +167,47 @@ class BuiltInEffect extends TrackEffect {
   List<Object?> get props => [type, params];
 }
 
-/// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref]. The
-/// variable parameter values and opaque state blob land in later parts.
+/// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref]. Carries
+/// the user-tweaked [paramValues] (persisted) and the live [params] metadata
+/// enumerated from the loaded plugin (transient). The opaque state blob lands
+/// in a later part.
 class PluginEffect extends TrackEffect {
-  /// Creates a [PluginEffect] for [ref].
-  const PluginEffect({required this.ref});
+  /// Creates a [PluginEffect] for [ref], optionally seeded with persisted
+  /// [paramValues] and live [params] metadata.
+  const PluginEffect({
+    required this.ref,
+    this.paramValues = const {},
+    this.params = const [],
+  });
 
   /// The hosted plugin's identity.
   final PluginRef ref;
 
+  /// Persisted plain parameter values keyed by parameter id. Only params the
+  /// user has changed are stored; an absent id falls back to the plugin's
+  /// default.
+  final Map<int, double> paramValues;
+
+  /// Live parameter metadata enumerated from the loaded plugin, in plugin
+  /// order. Transient — never persisted.
+  final List<PluginParamInfo> params;
+
   @override
   int get typeCode => engine.kPluginFxCode;
 
-  /// Returns a copy with [ref] replaced.
-  PluginEffect copyWith({PluginRef? ref}) => PluginEffect(ref: ref ?? this.ref);
+  /// Returns a copy with the given fields replaced.
+  PluginEffect copyWith({
+    PluginRef? ref,
+    Map<int, double>? paramValues,
+    List<PluginParamInfo>? params,
+  }) => PluginEffect(
+    ref: ref ?? this.ref,
+    paramValues: paramValues ?? this.paramValues,
+    params: params ?? this.params,
+  );
 
   @override
-  List<Object?> get props => [ref];
+  List<Object?> get props => [ref, paramValues, params];
 }
 
 /// Maps an engine readout kind to its domain mirror.
@@ -204,12 +228,13 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     type: trackEffectTypeToEngine(type),
     params: params,
   ),
-  PluginEffect(:final ref) => engine.PluginEffect(
+  PluginEffect(:final ref, :final paramValues) => engine.PluginEffect(
     ref: engine.PluginRef(
       format: pluginFormatToEngine(ref.format),
       id: ref.id,
       version: ref.version,
     ),
+    paramValues: paramValues,
   ),
 };
 
@@ -220,12 +245,13 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         type: TrackEffectType.fromCode(type.code),
         params: params,
       ),
-      engine.PluginEffect(:final ref) => PluginEffect(
+      engine.PluginEffect(:final ref, :final paramValues) => PluginEffect(
         ref: PluginRef(
           format: pluginFormatFromEngine(ref.format),
           id: ref.id,
           version: ref.version,
         ),
+        paramValues: paramValues,
       ),
     };
 
