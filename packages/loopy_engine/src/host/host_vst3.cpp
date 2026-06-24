@@ -12,8 +12,10 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -276,10 +278,167 @@ bool parseTuid(const std::string& hex, TUID out) {
   return true;
 }
 
+// Host-side IAttributeList backing an IMessage. Heap-allocated and reference
+// counted (the plugin owns it for the message's lifetime), unlike the stack
+// helpers above. Stores one value per string key; a later setX overwrites the
+// prior value/type. Mirrors the SDK's reference HostAttributeList.
+class HostAttributeList final : public IAttributeList {
+ public:
+  tresult PLUGIN_API setInt(AttrID id, int64 value) override {
+    attrs_[id] = Attr::ofInt(value);
+    return kResultOk;
+  }
+  tresult PLUGIN_API getInt(AttrID id, int64& value) override {
+    const Attr* a = find(id, Attr::kInt);
+    if (!a) return kResultFalse;
+    value = a->i;
+    return kResultOk;
+  }
+  tresult PLUGIN_API setFloat(AttrID id, double value) override {
+    attrs_[id] = Attr::ofFloat(value);
+    return kResultOk;
+  }
+  tresult PLUGIN_API getFloat(AttrID id, double& value) override {
+    const Attr* a = find(id, Attr::kFloat);
+    if (!a) return kResultFalse;
+    value = a->f;
+    return kResultOk;
+  }
+  tresult PLUGIN_API setString(AttrID id, const TChar* string) override {
+    attrs_[id] = Attr::ofString(string);
+    return kResultOk;
+  }
+  tresult PLUGIN_API getString(AttrID id, TChar* string,
+                               uint32 sizeInBytes) override {
+    const Attr* a = find(id, Attr::kString);
+    if (!a || !string) return kResultFalse;
+    // str includes its null terminator; copy as many whole bytes as fit.
+    const uint32 have = static_cast<uint32>(a->str.size() * sizeof(TChar));
+    const uint32 n = have < sizeInBytes ? have : sizeInBytes;
+    std::memcpy(string, a->str.data(), n);
+    return kResultOk;
+  }
+  tresult PLUGIN_API setBinary(AttrID id, const void* data,
+                               uint32 sizeInBytes) override {
+    attrs_[id] = Attr::ofBinary(data, sizeInBytes);
+    return kResultOk;
+  }
+  tresult PLUGIN_API getBinary(AttrID id, const void*& data,
+                               uint32& sizeInBytes) override {
+    const Attr* a = find(id, Attr::kBinary);
+    if (!a) {
+      data = nullptr;
+      sizeInBytes = 0;
+      return kResultFalse;
+    }
+    data = a->bin.data();
+    sizeInBytes = static_cast<uint32>(a->bin.size());
+    return kResultOk;
+  }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IAttributeList::iid) || iidEq(iid, FUnknown::iid)) {
+      addRef();
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return ++refs_; }
+  uint32 PLUGIN_API release() override {
+    const uint32 r = --refs_;
+    if (r == 0) delete this;
+    return r;
+  }
+
+ private:
+  struct Attr {
+    enum Type { kInt, kFloat, kString, kBinary } type = kInt;
+    int64 i = 0;
+    double f = 0.0;
+    std::vector<TChar> str;     // UTF-16, includes the null terminator
+    std::vector<uint8_t> bin;
+    static Attr ofInt(int64 v) {
+      Attr a;
+      a.type = kInt;
+      a.i = v;
+      return a;
+    }
+    static Attr ofFloat(double v) {
+      Attr a;
+      a.type = kFloat;
+      a.f = v;
+      return a;
+    }
+    static Attr ofString(const TChar* s) {
+      Attr a;
+      a.type = kString;
+      size_t n = 0;
+      if (s) {
+        while (s[n]) ++n;
+      }
+      a.str.assign(s, s + n);
+      a.str.push_back(0);  // keep the terminator for getString
+      return a;
+    }
+    static Attr ofBinary(const void* d, uint32 n) {
+      Attr a;
+      a.type = kBinary;
+      const uint8_t* p = static_cast<const uint8_t*>(d);
+      if (p && n) a.bin.assign(p, p + n);
+      return a;
+    }
+  };
+  const Attr* find(AttrID id, Attr::Type type) const {
+    auto it = attrs_.find(id);
+    if (it == attrs_.end() || it->second.type != type) return nullptr;
+    return &it->second;
+  }
+  std::map<std::string, Attr> attrs_;
+  std::atomic<uint32> refs_{1};
+};
+
+// Host-side IMessage handed to plugins via IHostApplication::createInstance.
+// DPF-based plugins (and many others) mint one to carry parameter/state gestures
+// between their controller and processor halves over IConnectionPoint; with a
+// null message the editor's notify path asserts and the GUI can't reach the DSP.
+// Heap-allocated + reference counted; owns its attribute list (getAttributes
+// returns a borrowed pointer per the VST3 convention).
+class HostMessage final : public IMessage {
+ public:
+  HostMessage() : attributes_(new HostAttributeList()) {}
+  FIDString PLUGIN_API getMessageID() override { return messageId_.c_str(); }
+  void PLUGIN_API setMessageID(FIDString id) override {
+    messageId_ = id ? id : "";
+  }
+  IAttributeList* PLUGIN_API getAttributes() override { return attributes_; }
+  tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
+    if (iidEq(iid, IMessage::iid) || iidEq(iid, FUnknown::iid)) {
+      addRef();
+      *obj = this;
+      return kResultOk;
+    }
+    *obj = nullptr;
+    return kNoInterface;
+  }
+  uint32 PLUGIN_API addRef() override { return ++refs_; }
+  uint32 PLUGIN_API release() override {
+    const uint32 r = --refs_;
+    if (r == 0) delete this;
+    return r;
+  }
+
+ private:
+  ~HostMessage() { attributes_->release(); }
+  std::string messageId_;
+  HostAttributeList* attributes_;
+  std::atomic<uint32> refs_{1};
+};
+
 // Minimal host context. Real commercial plugins refuse a NULL context in
-// initialize(); most only need a non-null IHostApplication to exist. We do not
-// implement IMessage marshalling (createInstance fails) — a follow-up if a
-// plugin needs component<->controller messaging. Stack-owned.
+// initialize(); most only need a non-null IHostApplication to exist. We also
+// mint IMessage / IAttributeList on request so component<->controller messaging
+// (notably DPF-based editors) works. Stack-owned.
 class HostApplication : public IHostApplication {
  public:
   tresult PLUGIN_API getName(String128 name) override {
@@ -287,8 +446,24 @@ class HostApplication : public IHostApplication {
     std::memcpy(name, kName, sizeof(kName));
     return kResultOk;
   }
-  tresult PLUGIN_API createInstance(TUID, TUID, void** obj) override {
-    if (obj) *obj = nullptr;
+  tresult PLUGIN_API createInstance(TUID cid, TUID _iid, void** obj) override {
+    if (!obj) return kInvalidArgument;
+    *obj = nullptr;
+    // The two objects plugins ask the host to allocate for controller<->processor
+    // messaging. queryInterface adds a ref; release our construction ref so the
+    // caller owns exactly one (it releases when done, freeing the object).
+    if (iidEq(cid, IMessage::iid)) {
+      auto* m = new HostMessage();
+      const tresult r = m->queryInterface(_iid, obj);
+      m->release();
+      return r == kResultOk ? kResultOk : kResultFalse;
+    }
+    if (iidEq(cid, IAttributeList::iid)) {
+      auto* a = new HostAttributeList();
+      const tresult r = a->queryInterface(_iid, obj);
+      a->release();
+      return r == kResultOk ? kResultOk : kResultFalse;
+    }
     return kResultFalse;
   }
   tresult PLUGIN_API queryInterface(const TUID iid, void** obj) override {
