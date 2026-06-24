@@ -75,6 +75,7 @@
     "altset",
     "amixer",
     "aquiles",
+    "asan",
     "asio",
     "asiodrivers",
     "asiolist",
