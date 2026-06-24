@@ -10,6 +10,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/cubit/track_indicators_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/session/session.dart';
@@ -658,7 +659,45 @@ class _TrackColumn extends StatelessWidget {
               ),
             ),
           ),
+          // A discrete arm/readiness strip, shown only when the view preference
+          // is on. When off the widget is absent and the tile reflows.
+          if (context.watch<TrackIndicatorsCubit>().state) ...[
+            const SizedBox(height: 6),
+            _TrackIndicator(
+              key: Key('bigpicture_indicator_${track.channel}'),
+              status: TrackIndicator.of(
+                track.state,
+                muted: track.muted,
+                selected: selected,
+                playMode: playMode,
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// A static, full-width status strip below a track name. Its colour is the
+/// track's [TrackIndicator] state. Carries no semantics of its own
+/// ([ExcludeSemantics]): the tile already names its state for screen readers,
+/// so a second label here would double-announce. Static colour ⇒ no motion.
+class _TrackIndicator extends StatelessWidget {
+  const _TrackIndicator({required this.status, super.key});
+
+  final TrackIndicator status;
+
+  @override
+  Widget build(BuildContext context) {
+    final looper = Theme.of(context).extension<LooperTheme>()!;
+    return ExcludeSemantics(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: looper.indicatorColor(status),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: const SizedBox(height: 5, width: double.infinity),
       ),
     );
   }

@@ -63,6 +63,23 @@ const _hcPlayMeterColors = <LooperMeterState, Color>{
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 
+/// Per-track status-indicator colors: a dim `idle` that still reads above the
+/// tile surface, reusing the meter green/red for the play/record states.
+const _indicatorColors = <TrackIndicator, Color>{
+  TrackIndicator.idle: Color(0xFF3A3F49), // dim, above tileBackground
+  TrackIndicator.play: Color(0xFF4CDA4A), // meter green
+  TrackIndicator.record: Color(0xFFFF1744), // meter red
+};
+
+/// High-contrast status-indicator colors: `idle` reuses the brighter HC
+/// "empty" tone so it clears the 3:1 non-text threshold (1.4.11) against the
+/// brighter tile, and play/record stay vivid.
+const _hcIndicatorColors = <TrackIndicator, Color>{
+  TrackIndicator.idle: Color(0xFF6B6D78),
+  TrackIndicator.play: Color(0xFF6EE77F),
+  TrackIndicator.record: Color(0xFFFF5470),
+};
+
 /// Loopy's visual theme: a high-contrast neon-on-black **Big Picture** theme
 /// for the performance/visualizer windows.
 abstract final class AppTheme {
@@ -85,6 +102,7 @@ abstract final class AppTheme {
         recordColor: Color(0xFFFF1744),
         recordMeterColors: _recordMeterColors,
         playMeterColors: _playMeterColors,
+        indicatorColors: _indicatorColors,
       ),
     );
   }
@@ -111,6 +129,7 @@ abstract final class AppTheme {
         recordColor: Color(0xFFFF5470),
         recordMeterColors: _hcRecordMeterColors,
         playMeterColors: _hcPlayMeterColors,
+        indicatorColors: _hcIndicatorColors,
       ),
     );
   }

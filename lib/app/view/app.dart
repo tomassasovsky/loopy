@@ -121,6 +121,15 @@ class App extends StatelessWidget {
           ),
           BlocProvider(
             create: (context) {
+              final cubit = TrackIndicatorsCubit(
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          BlocProvider(
+            create: (context) {
               final cubit = WaveformWindowCubit(
                 settings: context.read<SettingsRepository>(),
               );
