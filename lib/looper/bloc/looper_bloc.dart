@@ -35,15 +35,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperPlayPressed>(
       (event, _) => _repository.play(channel: event.channel),
     );
-    on<LooperClearPressed>(
-      (event, _) => _repository.clear(channel: event.channel),
-    );
+    on<LooperClearPressed>((event, _) => _clearAndArm(event.channel));
     on<LooperUndoPressed>((event, _) {
       // A track with content but no overdub layers has nothing to undo; undo
       // would be a no-op. Treat U there as "clear this track" so a single press
       // discards the lone base loop instead of doing nothing.
       if (_hasOnlyBaseLoop(event.channel)) {
-        _repository.clear(channel: event.channel);
+        _clearAndArm(event.channel);
       } else {
         _repository.undo(channel: event.channel);
       }
@@ -273,7 +271,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     });
     on<LooperClearAllPressed>((_, _) {
       for (final track in state.tracks) {
-        if (track.hasContent) _repository.clear(channel: track.channel);
+        if (track.hasContent) _clearAndArm(track.channel);
       }
     });
     on<LooperOutputEnabledToggled>((event, _) {
@@ -309,6 +307,18 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       channel >= 0 &&
       channel < state.tracks.length &&
       state.tracks[channel].muted;
+
+  /// Clears track [channel] and returns it to its default armed-to-play state:
+  /// unmuted. A cleared track should be ready to sound again on the next
+  /// record/play rather than staying silently muted, and the unmute is
+  /// persisted so it survives a restart. Shared by every clear path (per-track,
+  /// clear-all, and the undo that empties a track holding only its base loop).
+  void _clearAndArm(int channel) {
+    _repository
+      ..clear(channel: channel)
+      ..setMute(muted: false, channel: channel);
+    unawaited(_settings?.saveLaneMute(channel, 0, muted: false));
+  }
 
   /// Whether [channel] holds a single recorded loop with no overdub layers to
   /// undo — the case where `U` clears the track instead of removing a layer.
