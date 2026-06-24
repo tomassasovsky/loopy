@@ -303,6 +303,12 @@ class FakeSessionEngine implements AudioEngine {
     double value,
   ) => EngineResult.ok;
   @override
+  EngineResult pluginEditorOpen(PluginSlotHandle slot) => EngineResult.ok;
+  @override
+  EngineResult pluginEditorClose(PluginSlotHandle slot) => EngineResult.ok;
+  @override
+  bool pluginEditorIsOpen(PluginSlotHandle slot) => false;
+  @override
   Float32List readVisual() => Float32List(0);
   @override
   Float32List readTrackVisual(int channel) => Float32List(0);

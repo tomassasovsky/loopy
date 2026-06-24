@@ -138,6 +138,34 @@ void main() {
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.openLanePluginEditor(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.closeLanePluginEditor(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.refreshLanePluginParams(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(false);
+    when(
+      () => repository.isLanePluginEditorOpen(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(true);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
     when(
       () => repository.setOutputEnabled(
@@ -441,6 +469,158 @@ void main() {
       ),
     ).called(1),
   );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLanePluginInserted appends a PluginEffect to the lane chain',
+    build: buildBloc,
+    act: (bloc) => bloc.add(
+      const LooperLanePluginInserted(
+        1,
+        0,
+        PluginRef(format: PluginFormat.clap, id: 'com.acme.reverb'),
+      ),
+    ),
+    verify: (_) {
+      final effects =
+          verify(
+                () => repository.setLaneEffects(
+                  channel: 1,
+                  lane: 0,
+                  effects: captureAny(named: 'effects'),
+                ),
+              ).captured.single
+              as List<TrackEffect>;
+      expect(
+        effects.single,
+        isA<PluginEffect>().having(
+          (e) => e.ref.id,
+          'ref.id',
+          'com.acme.reverb',
+        ),
+      );
+    },
+  );
+
+  group('plugin editor', () {
+    blocTest<LooperBloc, LooperState>(
+      'opening starts the inbound sync poll',
+      build: buildBloc,
+      act: (bloc) => bloc.add(const LooperLanePluginEditorOpened(0, 0, 1)),
+      wait: const Duration(milliseconds: 250),
+      verify: (_) {
+        verify(
+          () => repository.openLanePluginEditor(channel: 0, lane: 0, index: 1),
+        ).called(1);
+        // The ≤10 Hz poll fired at least once while the editor is open.
+        verify(
+          () =>
+              repository.refreshLanePluginParams(channel: 0, lane: 0, index: 1),
+        ).called(greaterThanOrEqualTo(1));
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'closing cancels the poll and reads params back',
+      build: buildBloc,
+      act: (bloc) async {
+        bloc.add(const LooperLanePluginEditorOpened(0, 0, 1));
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        bloc.add(const LooperLanePluginEditorClosed(0, 0, 1));
+      },
+      wait: const Duration(milliseconds: 300),
+      verify: (_) {
+        verify(
+          () => repository.closeLanePluginEditor(channel: 0, lane: 0, index: 1),
+        ).called(1);
+        // After close the poll is cancelled: record the tick count, then prove
+        // it stops climbing.
+        final ticks = verify(
+          () =>
+              repository.refreshLanePluginParams(channel: 0, lane: 0, index: 1),
+        ).callCount;
+        expect(ticks, greaterThanOrEqualTo(1));
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'the poll self-terminates when the native window is gone',
+      build: buildBloc,
+      setUp: () {
+        // The user closes the OS window: the editor reports not-open, so the
+        // poll must stop on its own (no leaked timer).
+        when(
+          () => repository.isLanePluginEditorOpen(
+            channel: any(named: 'channel'),
+            lane: any(named: 'lane'),
+            index: any(named: 'index'),
+          ),
+        ).thenReturn(false);
+      },
+      act: (bloc) => bloc.add(const LooperLanePluginEditorOpened(0, 0, 1)),
+      wait: const Duration(milliseconds: 250),
+      verify: (_) {
+        // One tick ran, saw the window gone, and cancelled the timer — so the
+        // refresh count stays at exactly 1.
+        verify(
+          () =>
+              repository.refreshLanePluginParams(channel: 0, lane: 0, index: 1),
+        ).called(1);
+      },
+    );
+
+    test('a structural chain edit cancels the lane poll', () async {
+      // A reorder/remove reseats the slots, so the poll keyed by a stale index
+      // must stop (otherwise it would mirror the wrong plugin).
+      var refreshCount = 0;
+      when(
+        () => repository.refreshLanePluginParams(
+          channel: any(named: 'channel'),
+          lane: any(named: 'lane'),
+          index: any(named: 'index'),
+        ),
+      ).thenAnswer((_) {
+        refreshCount++;
+        return false;
+      });
+      final bloc = buildBloc()
+        ..add(const LooperLanePluginEditorOpened(0, 0, 1));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      addTearDown(bloc.close);
+      expect(refreshCount, greaterThanOrEqualTo(1));
+      // A structural edit (add) reseats the lane → the poll is cancelled.
+      bloc.add(const LooperLaneEffectAdded(0, 0));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final after = refreshCount;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(refreshCount, after);
+    });
+
+    test('close() disposes any open editor poll timers', () async {
+      // Count ticks via a stub side-effect (verify() consumes matches, so it
+      // can't be read twice).
+      var refreshCount = 0;
+      when(
+        () => repository.refreshLanePluginParams(
+          channel: any(named: 'channel'),
+          lane: any(named: 'lane'),
+          index: any(named: 'index'),
+        ),
+      ).thenAnswer((_) {
+        refreshCount++;
+        return false;
+      });
+      final bloc = buildBloc()
+        ..add(const LooperLanePluginEditorOpened(0, 0, 0));
+      // Wait past one poll period so the timer has ticked at least once.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await bloc.close();
+      final before = refreshCount;
+      expect(before, greaterThanOrEqualTo(1));
+      // No further ticks after close — the timer was cancelled.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(refreshCount, before);
+    });
+  });
 
   group('routing persistence', () {
     late SettingsRepository settings;

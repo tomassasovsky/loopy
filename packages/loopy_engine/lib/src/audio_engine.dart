@@ -444,6 +444,20 @@ abstract interface class EnginePluginHosting {
   /// next process block — never a direct audio-thread store. Returns
   /// [EngineResult.ok] or [EngineResult.invalid].
   EngineResult pluginParamSet(PluginSlotHandle slot, int paramId, double value);
+
+  /// Opens the plugin in [slot]'s own native editor in a host-owned top-level
+  /// window (umbrella D-WIN; macOS only). Idempotent. Returns
+  /// [EngineResult.ok], [EngineResult.invalid] for a non-live slot, or
+  /// [EngineResult.unsupported] when there is no editor / the platform is not
+  /// supported.
+  EngineResult pluginEditorOpen(PluginSlotHandle slot);
+
+  /// Force-closes the plugin in [slot]'s editor window (D-WIN teardown).
+  /// Idempotent. Returns [EngineResult.ok] or [EngineResult.invalid].
+  EngineResult pluginEditorClose(PluginSlotHandle slot);
+
+  /// Whether the plugin in [slot]'s editor window is currently open.
+  bool pluginEditorIsOpen(PluginSlotHandle slot);
 }
 
 /// The data-layer boundary over the native audio engine, composed from the

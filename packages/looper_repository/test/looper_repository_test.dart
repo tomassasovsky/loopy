@@ -886,6 +886,157 @@ void main() {
       );
     });
 
+    test('openLanePluginEditor opens the loaded slot editor', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+      expect(
+        repo.openLanePluginEditor(channel: 0, lane: 0, index: 0),
+        EngineResult.ok,
+      );
+      expect(engine.openEditors, hasLength(1));
+      expect(
+        repo.isLanePluginEditorOpen(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+    });
+
+    test('openLanePluginEditor without a loaded plugin is invalid', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      expect(
+        repo.openLanePluginEditor(channel: 0, lane: 0, index: 0),
+        EngineResult.invalid,
+      );
+    });
+
+    test('refreshLanePluginParams mirrors editor-driven values (D-SYNC)', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+      // The editor moves param 100 to 0.7; the next read-back mirrors it.
+      engine.nextParamValues[100] = 0.7;
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isTrue,
+      );
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[100],
+        0.7,
+      );
+      // A second read-back with no change reports nothing moved.
+      expect(
+        repo.refreshLanePluginParams(channel: 0, lane: 0, index: 0),
+        isFalse,
+      );
+    });
+
+    test('closeLanePluginEditor closes the slot and reads params back', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Mix',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..openLanePluginEditor(channel: 0, lane: 0, index: 0);
+      engine.nextParamValues[100] = 0.9; // the editor's final state
+
+      expect(
+        repo.closeLanePluginEditor(channel: 0, lane: 0, index: 0),
+        EngineResult.ok,
+      );
+      expect(engine.openEditors, isEmpty);
+      // The close re-read landed the editor's final value in the model.
+      expect(
+        (repo.laneEffects(0, 0).single as PluginEffect).paramValues[100],
+        0.9,
+      );
+    });
+
+    test('a monitor plugin editor opens, reads back, and closes', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 200,
+          name: 'Tone',
+          unit: '',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 1,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.vst3, id: 'm'),
+            ),
+          ],
+        );
+      expect(
+        repo.openMonitorPluginEditor(input: 1, index: 0),
+        EngineResult.ok,
+      );
+      expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isTrue);
+
+      engine.nextParamValues[200] = 0.4;
+      expect(repo.refreshMonitorPluginParams(input: 1, index: 0), isTrue);
+      expect(
+        (repo.monitorEffects(1).single as PluginEffect).paramValues[200],
+        0.4,
+      );
+
+      expect(
+        repo.closeMonitorPluginEditor(input: 1, index: 0),
+        EngineResult.ok,
+      );
+      expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isFalse);
+    });
+
     test('an empty chain drops the lane and zeroes the count on restart', () {
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1403,6 +1554,16 @@ void main() {
       final repo = buildRepo();
       await repo.dispose();
       expect(engine.calls, contains('dispose'));
+    });
+  });
+
+  group('pluginCatalog', () {
+    test('exposes a lazily-built, stable catalog over the engine', () {
+      final repo = buildRepo();
+      final catalog = repo.pluginCatalog;
+      expect(catalog, isA<PluginCatalog>());
+      // Lazy + cached: the same instance every read.
+      expect(repo.pluginCatalog, same(catalog));
     });
   });
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -298,23 +299,27 @@ class _SignalDock extends StatelessWidget {
     final fi = focusedInput;
     if (fi != null && fi < looper.status.inputChannels) {
       final m = monitor.forInput(fi);
-      return SignalInputDock(
-        input: fi,
-        monitor: m,
-        onMuteToggled: () =>
-            unawaited(monitorCubit.setMute(fi, muted: !m.muted)),
-        onVolumeChanged: (v) => unawaited(monitorCubit.setVolume(fi, v)),
-        onStop: () {
-          unawaited(monitorCubit.setEnabled(fi, enabled: false));
-          onClear();
-        },
-        onAddEffect: () => monitorCubit.addEffect(fi),
-        onSetType: (i, t) => monitorCubit.setEffectType(fi, i, t),
-        onSetParam: (i, p, v) => monitorCubit.setEffectParam(fi, i, p, v),
-        onSetPluginParam: (i, id, v) =>
-            monitorCubit.setPluginParam(fi, i, id, v),
-        onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
-        onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
+      return _withDebugPluginInsert(
+        (ref) => monitorCubit.insertPlugin(fi, ref),
+        SignalInputDock(
+          input: fi,
+          monitor: m,
+          onMuteToggled: () =>
+              unawaited(monitorCubit.setMute(fi, muted: !m.muted)),
+          onVolumeChanged: (v) => unawaited(monitorCubit.setVolume(fi, v)),
+          onStop: () {
+            unawaited(monitorCubit.setEnabled(fi, enabled: false));
+            onClear();
+          },
+          onAddEffect: () => monitorCubit.addEffect(fi),
+          onSetType: (i, t) => monitorCubit.setEffectType(fi, i, t),
+          onSetParam: (i, p, v) => monitorCubit.setEffectParam(fi, i, p, v),
+          onSetPluginParam: (i, id, v) =>
+              monitorCubit.setPluginParam(fi, i, id, v),
+          onOpenPluginEditor: (i) => monitorCubit.openPluginEditor(fi, i),
+          onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
+          onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
+        ),
       );
     }
     final ft = focusedTake;
@@ -323,36 +328,123 @@ class _SignalDock extends StatelessWidget {
         ft.lane < looper.tracks[ft.track].lanes.length) {
       final lane = looper.tracks[ft.track].lanes[ft.lane];
       final laneCount = looper.tracks[ft.track].lanes.length;
-      return SignalLaneDock(
-        inputNumber: lane.inputChannel >= 0 ? lane.inputChannel + 1 : 0,
-        effects: lane.effects,
-        muted: lane.muted,
-        volume: lane.volume,
-        canAddLane: laneCount < kMaxLanes,
-        canRemoveLane: laneCount > 1 && ft.lane == laneCount - 1,
-        onAddLane: () =>
-            bloc.add(LooperLaneCountChanged(ft.track, laneCount + 1)),
-        onRemoveLane: () {
-          bloc.add(LooperLaneCountChanged(ft.track, laneCount - 1));
-          onClear();
-        },
-        onAddEffect: () => bloc.add(LooperLaneEffectAdded(ft.track, ft.lane)),
-        onRemoveEffect: (i) =>
-            bloc.add(LooperLaneEffectRemoved(ft.track, ft.lane, i)),
-        onSetType: (i, t) =>
-            bloc.add(LooperLaneEffectTypeChanged(ft.track, ft.lane, i, t)),
-        onSetParam: (i, p, v) =>
-            bloc.add(LooperLaneEffectParamChanged(ft.track, ft.lane, i, p, v)),
-        onSetPluginParam: (i, id, v) => bloc.add(
-          LooperLanePluginParamChanged(ft.track, ft.lane, i, id, v),
+      return _withDebugPluginInsert(
+        (ref) => bloc.add(LooperLanePluginInserted(ft.track, ft.lane, ref)),
+        SignalLaneDock(
+          inputNumber: lane.inputChannel >= 0 ? lane.inputChannel + 1 : 0,
+          effects: lane.effects,
+          muted: lane.muted,
+          volume: lane.volume,
+          canAddLane: laneCount < kMaxLanes,
+          canRemoveLane: laneCount > 1 && ft.lane == laneCount - 1,
+          onAddLane: () =>
+              bloc.add(LooperLaneCountChanged(ft.track, laneCount + 1)),
+          onRemoveLane: () {
+            bloc.add(LooperLaneCountChanged(ft.track, laneCount - 1));
+            onClear();
+          },
+          onAddEffect: () => bloc.add(LooperLaneEffectAdded(ft.track, ft.lane)),
+          onRemoveEffect: (i) =>
+              bloc.add(LooperLaneEffectRemoved(ft.track, ft.lane, i)),
+          onSetType: (i, t) =>
+              bloc.add(LooperLaneEffectTypeChanged(ft.track, ft.lane, i, t)),
+          onSetParam: (i, p, v) => bloc.add(
+            LooperLaneEffectParamChanged(ft.track, ft.lane, i, p, v),
+          ),
+          onSetPluginParam: (i, id, v) => bloc.add(
+            LooperLanePluginParamChanged(ft.track, ft.lane, i, id, v),
+          ),
+          onOpenPluginEditor: (i) =>
+              bloc.add(LooperLanePluginEditorOpened(ft.track, ft.lane, i)),
+          onReorderEffect: (from, to) =>
+              bloc.add(LooperLaneEffectMoved(ft.track, ft.lane, from, to)),
+          onMuteToggled: () =>
+              bloc.add(LooperLaneMuteToggled(ft.track, ft.lane)),
+          onVolumeChanged: (v) =>
+              bloc.add(LooperLaneVolumeChanged(ft.track, ft.lane, v)),
         ),
-        onReorderEffect: (from, to) =>
-            bloc.add(LooperLaneEffectMoved(ft.track, ft.lane, from, to)),
-        onMuteToggled: () => bloc.add(LooperLaneMuteToggled(ft.track, ft.lane)),
-        onVolumeChanged: (v) =>
-            bloc.add(LooperLaneVolumeChanged(ft.track, ft.lane, v)),
       );
     }
     return SignalHintDock(message: context.l10n.signalHint);
+  }
+
+  /// DEBUG-ONLY scaffolding: overlays a button that scans for plugins and
+  /// inserts the first one into the focused chain via [onInsert] — a temporary
+  /// seam to exercise the plugin device card + native editor until the plugin
+  /// browser lands. Compiled out of release builds via [kDebugMode].
+  Widget _withDebugPluginInsert(
+    void Function(PluginRef) onInsert,
+    Widget dock,
+  ) {
+    if (!kDebugMode) return dock;
+    return Stack(
+      children: [
+        dock,
+        Positioned(
+          right: 12,
+          top: 6,
+          child: _DebugInsertPluginButton(onInsert: onInsert),
+        ),
+      ],
+    );
+  }
+}
+
+/// DEBUG-ONLY button: scans the [LooperRepository]'s plugin catalog and inserts
+/// the first available plugin into the focused chain. A stop-gap for manual
+/// editor/knob testing; replaced by the real plugin browser later.
+class _DebugInsertPluginButton extends StatefulWidget {
+  const _DebugInsertPluginButton({required this.onInsert});
+
+  final void Function(PluginRef) onInsert;
+
+  @override
+  State<_DebugInsertPluginButton> createState() =>
+      _DebugInsertPluginButtonState();
+}
+
+class _DebugInsertPluginButtonState extends State<_DebugInsertPluginButton> {
+  bool _busy = false;
+
+  Future<void> _run() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final catalog = context.read<LooperRepository>().pluginCatalog;
+    final found = await catalog.scan();
+    if (!mounted) return;
+    final available = found.where((p) => p.isAvailable).toList();
+    if (available.isEmpty) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('No plugins found to insert')),
+      );
+    } else {
+      final d = available.first;
+      widget.onInsert(
+        PluginRef(format: d.format, id: d.id, version: d.version),
+      );
+      messenger?.showSnackBar(
+        SnackBar(content: Text('Inserted ${d.name}')),
+      );
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'DEBUG: insert first scanned plugin',
+      child: FloatingActionButton.small(
+        heroTag: 'debugInsertPlugin',
+        onPressed: _busy ? null : _run,
+        child: _busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.electrical_services),
+      ),
+    );
   }
 }

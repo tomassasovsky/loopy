@@ -136,6 +136,21 @@ class IPluginHost {
   // ring) to apply on the next process(). Stores into an audio-thread-owned
   // pending buffer only — no SDK call here, no allocation.
   virtual void queueParam(uint32_t id, double plain) = 0;
+
+  // --- Native editor window (MAIN THREAD; umbrella D-WIN) ---
+
+  // Open the plugin's own editor in a host-owned top-level OS window. Returns
+  // false when the plugin has no editor, the platform view type is unsupported,
+  // or this backend has no editor support (non-macOS / stub). Idempotent: a
+  // second call while open is a no-op success. Default: no editor.
+  virtual bool editorOpen() { return false; }
+
+  // Force-close the editor window and detach the plugin view. Idempotent; called
+  // on teardown before the host is destroyed (D-WIN: zero leaked windows).
+  virtual void editorClose() {}
+
+  // Whether the editor window is currently open.
+  virtual bool editorIsOpen() const { return false; }
 };
 
 // Backend factories. Each returns a not-yet-loaded host (the caller calls
