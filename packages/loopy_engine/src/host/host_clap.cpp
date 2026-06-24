@@ -343,7 +343,12 @@ bool CLAP_ABI hostGuiRequestHide(const clap_host_t*) { return false; }
 void CLAP_ABI hostGuiClosed(const clap_host_t* host, bool was_destroyed) {
   (void)was_destroyed;
   auto* self = static_cast<ClapHost*>(host->host_data);
-  if (self) self->onWindowClosed();
+  // The plugin (not the user) closed the editor, so there is no NSWindow
+  // windowWillClose to drive the shim's deferred free. Use the host-driven
+  // editorClose(), which tears down the GUI AND closes+frees the window handle.
+  // Calling the bare onWindowClosed() here would null window_ without ever
+  // closing it — leaking the NSWindow + handle and orphaning a visible window.
+  if (self) self->editorClose();
 }
 
 const clap_host_gui_t kHostGui = {
