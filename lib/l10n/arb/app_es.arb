@@ -145,6 +145,44 @@
     "signalInputNone": "Ninguna (limpia)",
     "signalReassignInput": "Cambiar entrada grabada",
     "signalTooltip": "Flujo de señal (G)",
+    "settingsTooltip": "Ajustes (S)",
+    "@settingsTooltip": {
+        "description": "Tooltip for the top-bar button that opens the settings page. The parenthetical names the keyboard shortcut (also reachable by right-click)."
+    },
+    "playAllTooltip": "Reproducir todo (Espacio)",
+    "@playAllTooltip": {
+        "description": "Tooltip for the top-bar button that starts playback of every track. The parenthetical names the keyboard shortcut."
+    },
+    "stopAllTooltip": "Detener todo (Espacio)",
+    "@stopAllTooltip": {
+        "description": "Tooltip for the top-bar button that stops every playing track. The parenthetical names the keyboard shortcut."
+    },
+    "clearAllTooltip": "Borrar todo (C)",
+    "@clearAllTooltip": {
+        "description": "Tooltip for the top-bar button that clears every track. The parenthetical names the keyboard shortcut."
+    },
+    "fullscreenTooltip": "Pantalla completa (F)",
+    "@fullscreenTooltip": {
+        "description": "Tooltip for the top-bar button (desktop only) that toggles OS fullscreen. The parenthetical names the keyboard shortcut."
+    },
+    "undoTooltip": "Deshacer ({shortcut})",
+    "@undoTooltip": {
+        "description": "Tooltip for the per-track Undo button. The placeholder is the platform-specific keyboard shortcut, e.g. ⌘Z or Ctrl+Z.",
+        "placeholders": {
+            "shortcut": {
+                "type": "String"
+            }
+        }
+    },
+    "redoTooltip": "Rehacer ({shortcut})",
+    "@redoTooltip": {
+        "description": "Tooltip for the per-track Redo button. The placeholder is the platform-specific keyboard shortcut, e.g. ⌘⇧Z or Ctrl+Y.",
+        "placeholders": {
+            "shortcut": {
+                "type": "String"
+            }
+        }
+    },
     "signalInputLive": "en vivo",
     "signalInputOff": "apagado",
     "signalThisTakeLabel": "Esta toma · instantánea de Ent {inputNumber}",
