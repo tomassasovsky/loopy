@@ -517,6 +517,11 @@ class FakeAudioEngine implements AudioEngine {
   /// simulate an editor moving a param (the D-SYNC inbound read-back).
   final Map<int, double> nextParamValues = {};
 
+  /// Display strings [pluginParamValueText] returns, keyed by
+  /// `(paramId, value)` — lets a test seed discrete step labels / continuous
+  /// readouts. An absent key returns null (no text), as the real ABI does.
+  final Map<(int, double), String> paramValueTexts = {};
+
   /// Every `(slot, paramId, value)` triple passed to [pluginParamSet], in call
   /// order — so a test can assert the RT-queued sets and their ordering.
   final List<({PluginSlotHandle slot, int paramId, double value})>
@@ -571,6 +576,16 @@ class FakeAudioEngine implements AudioEngine {
   double pluginParamGet(PluginSlotHandle slot, int paramId) {
     calls.add('pluginParamGet');
     return nextParamValues[paramId] ?? 0;
+  }
+
+  @override
+  String? pluginParamValueText(
+    PluginSlotHandle slot,
+    int paramId,
+    double value,
+  ) {
+    calls.add('pluginParamValueText');
+    return paramValueTexts[(paramId, value)];
   }
 
   @override

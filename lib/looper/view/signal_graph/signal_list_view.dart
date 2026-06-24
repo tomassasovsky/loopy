@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -9,6 +8,7 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/view/signal_graph/plugin_browser.dart';
 import 'package:loopy/looper/view/signal_graph/signal_dock.dart';
 import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
 import 'package:loopy/looper/view/signal_graph/signal_rows.dart';
@@ -295,32 +295,38 @@ class _SignalDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final monitorCubit = context.read<MonitorCubit>();
     final bloc = context.read<LooperBloc>();
+    // Read-only query for the live plugin knob readouts (the plugin's own
+    // value-to-text). A pure lookup, so the dock reads the repository directly.
+    final repo = context.read<LooperRepository>();
 
     final fi = focusedInput;
     if (fi != null && fi < looper.status.inputChannels) {
       final m = monitor.forInput(fi);
-      return _withDebugPluginInsert(
-        (ref) => monitorCubit.insertPlugin(fi, ref),
-        SignalInputDock(
+      return SignalInputDock(
+        input: fi,
+        monitor: m,
+        onMuteToggled: () =>
+            unawaited(monitorCubit.setMute(fi, muted: !m.muted)),
+        onVolumeChanged: (v) => unawaited(monitorCubit.setVolume(fi, v)),
+        onStop: () {
+          unawaited(monitorCubit.setEnabled(fi, enabled: false));
+          onClear();
+        },
+        onAddEffect: () => monitorCubit.addEffect(fi),
+        onAddPlugin: () => unawaited(_addMonitorPlugin(context, fi)),
+        onSetType: (i, t) => monitorCubit.setEffectType(fi, i, t),
+        onSetParam: (i, p, v) => monitorCubit.setEffectParam(fi, i, p, v),
+        onSetPluginParam: (i, id, v) =>
+            monitorCubit.setPluginParam(fi, i, id, v),
+        onOpenPluginEditor: (i) => monitorCubit.openPluginEditor(fi, i),
+        onRelinkPlugin: (i) => unawaited(_relinkMonitorPlugin(context, fi, i)),
+        onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
+        onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
+        onFormatPluginValue: (i, id, v) => repo.monitorPluginParamText(
           input: fi,
-          monitor: m,
-          onMuteToggled: () =>
-              unawaited(monitorCubit.setMute(fi, muted: !m.muted)),
-          onVolumeChanged: (v) => unawaited(monitorCubit.setVolume(fi, v)),
-          onStop: () {
-            unawaited(monitorCubit.setEnabled(fi, enabled: false));
-            onClear();
-          },
-          onAddEffect: () => monitorCubit.addEffect(fi),
-          onSetType: (i, t) => monitorCubit.setEffectType(fi, i, t),
-          onSetParam: (i, p, v) => monitorCubit.setEffectParam(fi, i, p, v),
-          onSetPluginParam: (i, id, v) =>
-              monitorCubit.setPluginParam(fi, i, id, v),
-          onOpenPluginEditor: (i) => monitorCubit.openPluginEditor(fi, i),
-          onRelinkPlugin: (i) =>
-              unawaited(_relinkMonitorPlugin(context, fi, i)),
-          onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
-          onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
+          index: i,
+          paramId: id,
+          value: v,
         ),
       );
     }
@@ -330,51 +336,81 @@ class _SignalDock extends StatelessWidget {
         ft.lane < looper.tracks[ft.track].lanes.length) {
       final lane = looper.tracks[ft.track].lanes[ft.lane];
       final laneCount = looper.tracks[ft.track].lanes.length;
-      return _withDebugPluginInsert(
-        (ref) => bloc.add(LooperLanePluginInserted(ft.track, ft.lane, ref)),
-        SignalLaneDock(
-          inputNumber: lane.inputChannel >= 0 ? lane.inputChannel + 1 : 0,
-          effects: lane.effects,
-          muted: lane.muted,
-          volume: lane.volume,
-          canAddLane: laneCount < kMaxLanes,
-          canRemoveLane: laneCount > 1 && ft.lane == laneCount - 1,
-          onAddLane: () =>
-              bloc.add(LooperLaneCountChanged(ft.track, laneCount + 1)),
-          onRemoveLane: () {
-            bloc.add(LooperLaneCountChanged(ft.track, laneCount - 1));
-            onClear();
-          },
-          onAddEffect: () => bloc.add(LooperLaneEffectAdded(ft.track, ft.lane)),
-          onRemoveEffect: (i) =>
-              bloc.add(LooperLaneEffectRemoved(ft.track, ft.lane, i)),
-          onSetType: (i, t) =>
-              bloc.add(LooperLaneEffectTypeChanged(ft.track, ft.lane, i, t)),
-          onSetParam: (i, p, v) => bloc.add(
-            LooperLaneEffectParamChanged(ft.track, ft.lane, i, p, v),
-          ),
-          onSetPluginParam: (i, id, v) => bloc.add(
-            LooperLanePluginParamChanged(ft.track, ft.lane, i, id, v),
-          ),
-          onOpenPluginEditor: (i) =>
-              bloc.add(LooperLanePluginEditorOpened(ft.track, ft.lane, i)),
-          onRelinkPlugin: (i) =>
-              unawaited(_relinkLanePlugin(context, ft.track, ft.lane, i)),
-          onReorderEffect: (from, to) =>
-              bloc.add(LooperLaneEffectMoved(ft.track, ft.lane, from, to)),
-          onMuteToggled: () =>
-              bloc.add(LooperLaneMuteToggled(ft.track, ft.lane)),
-          onVolumeChanged: (v) =>
-              bloc.add(LooperLaneVolumeChanged(ft.track, ft.lane, v)),
+      return SignalLaneDock(
+        inputNumber: lane.inputChannel >= 0 ? lane.inputChannel + 1 : 0,
+        effects: lane.effects,
+        muted: lane.muted,
+        volume: lane.volume,
+        canAddLane: laneCount < kMaxLanes,
+        canRemoveLane: laneCount > 1 && ft.lane == laneCount - 1,
+        onAddLane: () =>
+            bloc.add(LooperLaneCountChanged(ft.track, laneCount + 1)),
+        onRemoveLane: () {
+          bloc.add(LooperLaneCountChanged(ft.track, laneCount - 1));
+          onClear();
+        },
+        onAddEffect: () => bloc.add(LooperLaneEffectAdded(ft.track, ft.lane)),
+        onAddPlugin: () =>
+            unawaited(_addLanePlugin(context, ft.track, ft.lane)),
+        onRemoveEffect: (i) =>
+            bloc.add(LooperLaneEffectRemoved(ft.track, ft.lane, i)),
+        onSetType: (i, t) =>
+            bloc.add(LooperLaneEffectTypeChanged(ft.track, ft.lane, i, t)),
+        onSetParam: (i, p, v) => bloc.add(
+          LooperLaneEffectParamChanged(ft.track, ft.lane, i, p, v),
+        ),
+        onSetPluginParam: (i, id, v) => bloc.add(
+          LooperLanePluginParamChanged(ft.track, ft.lane, i, id, v),
+        ),
+        onOpenPluginEditor: (i) =>
+            bloc.add(LooperLanePluginEditorOpened(ft.track, ft.lane, i)),
+        onRelinkPlugin: (i) =>
+            unawaited(_relinkLanePlugin(context, ft.track, ft.lane, i)),
+        onReorderEffect: (from, to) =>
+            bloc.add(LooperLaneEffectMoved(ft.track, ft.lane, from, to)),
+        onMuteToggled: () => bloc.add(LooperLaneMuteToggled(ft.track, ft.lane)),
+        onVolumeChanged: (v) =>
+            bloc.add(LooperLaneVolumeChanged(ft.track, ft.lane, v)),
+        onFormatPluginValue: (i, id, v) => repo.lanePluginParamText(
+          channel: ft.track,
+          lane: ft.lane,
+          index: i,
+          paramId: id,
+          value: v,
         ),
       );
     }
     return SignalHintDock(message: context.l10n.signalHint);
   }
 
-  /// Relinks an unavailable lane plugin (D-MISS). Until the plugin browser
-  /// lands, this resolves to the first installed plugin from a scan — enough to
-  /// re-establish a working slot from the preserved ref + state.
+  PluginRef _refOf(PluginDescriptor d) =>
+      PluginRef(format: d.format, id: d.id, version: d.version);
+
+  /// Opens the plugin browser and inserts the chosen plugin into lane [lane].
+  Future<void> _addLanePlugin(
+    BuildContext context,
+    int track,
+    int lane,
+  ) async {
+    final bloc = context.read<LooperBloc>();
+    final descriptor = await showPluginBrowser(context);
+    if (descriptor != null) {
+      bloc.add(LooperLanePluginInserted(track, lane, _refOf(descriptor)));
+    }
+  }
+
+  /// Opens the plugin browser and inserts the chosen plugin into monitor
+  /// [input]'s chain.
+  Future<void> _addMonitorPlugin(BuildContext context, int input) async {
+    final cubit = context.read<MonitorCubit>();
+    final descriptor = await showPluginBrowser(context);
+    if (descriptor != null) {
+      cubit.insertPlugin(input, _refOf(descriptor));
+    }
+  }
+
+  /// Relinks an unavailable lane plugin (D-MISS) to a browser-chosen plugin,
+  /// keeping the preserved ref + opaque state.
   Future<void> _relinkLanePlugin(
     BuildContext context,
     int track,
@@ -382,10 +418,11 @@ class _SignalDock extends StatelessWidget {
     int index,
   ) async {
     final bloc = context.read<LooperBloc>();
-    final catalog = context.read<LooperRepository>().pluginCatalog;
-    final ref = await _firstInstalledRef(catalog);
-    if (ref != null) {
-      bloc.add(LooperLanePluginRelinked(track, lane, index, ref));
+    final descriptor = await showPluginBrowser(context);
+    if (descriptor != null) {
+      bloc.add(
+        LooperLanePluginRelinked(track, lane, index, _refOf(descriptor)),
+      );
     }
   }
 
@@ -396,96 +433,9 @@ class _SignalDock extends StatelessWidget {
     int index,
   ) async {
     final cubit = context.read<MonitorCubit>();
-    final catalog = context.read<LooperRepository>().pluginCatalog;
-    final ref = await _firstInstalledRef(catalog);
-    if (ref != null) cubit.relinkPlugin(input, index, ref);
-  }
-
-  Future<PluginRef?> _firstInstalledRef(PluginCatalog catalog) async {
-    final found = await catalog.scan();
-    final available = found.where((p) => p.isAvailable).toList();
-    if (available.isEmpty) return null;
-    final d = available.first;
-    return PluginRef(format: d.format, id: d.id, version: d.version);
-  }
-
-  /// DEBUG-ONLY scaffolding: overlays a button that scans for plugins and
-  /// inserts the first one into the focused chain via [onInsert] — a temporary
-  /// seam to exercise the plugin device card + native editor until the plugin
-  /// browser lands. Compiled out of release builds via [kDebugMode].
-  Widget _withDebugPluginInsert(
-    void Function(PluginRef) onInsert,
-    Widget dock,
-  ) {
-    if (!kDebugMode) return dock;
-    return Stack(
-      children: [
-        dock,
-        Positioned(
-          right: 12,
-          top: 6,
-          child: _DebugInsertPluginButton(onInsert: onInsert),
-        ),
-      ],
-    );
-  }
-}
-
-/// DEBUG-ONLY button: scans the [LooperRepository]'s plugin catalog and inserts
-/// the first available plugin into the focused chain. A stop-gap for manual
-/// editor/knob testing; replaced by the real plugin browser later.
-class _DebugInsertPluginButton extends StatefulWidget {
-  const _DebugInsertPluginButton({required this.onInsert});
-
-  final void Function(PluginRef) onInsert;
-
-  @override
-  State<_DebugInsertPluginButton> createState() =>
-      _DebugInsertPluginButtonState();
-}
-
-class _DebugInsertPluginButtonState extends State<_DebugInsertPluginButton> {
-  bool _busy = false;
-
-  Future<void> _run() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final catalog = context.read<LooperRepository>().pluginCatalog;
-    final found = await catalog.scan();
-    if (!mounted) return;
-    final available = found.where((p) => p.isAvailable).toList();
-    if (available.isEmpty) {
-      messenger?.showSnackBar(
-        const SnackBar(content: Text('No plugins found to insert')),
-      );
-    } else {
-      final d = available.first;
-      widget.onInsert(
-        PluginRef(format: d.format, id: d.id, version: d.version),
-      );
-      messenger?.showSnackBar(
-        SnackBar(content: Text('Inserted ${d.name}')),
-      );
+    final descriptor = await showPluginBrowser(context);
+    if (descriptor != null) {
+      cubit.relinkPlugin(input, index, _refOf(descriptor));
     }
-    if (mounted) setState(() => _busy = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'DEBUG: insert first scanned plugin',
-      child: FloatingActionButton.small(
-        heroTag: 'debugInsertPlugin',
-        onPressed: _busy ? null : _run,
-        child: _busy
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.electrical_services),
-      ),
-    );
   }
 }

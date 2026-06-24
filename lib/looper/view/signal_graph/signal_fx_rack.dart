@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/l10n/l10n.dart';
@@ -11,10 +13,21 @@ import 'package:loopy/theme/surface_theme.dart';
 /// rather than an M3 motion token.
 const Curve _dropSettleCurve = Curves.easeOutBack;
 
-/// How many of a hosted plugin's parameters get an in-app knob on its device
-/// card (D-UI). The rest live in the plugin's own editor window (part 6); this
-/// is a UI affordance cap, not an engine limit.
-const int kPluginKnobs = 4;
+/// The widest a hosted-plugin device card grows in-rack before its knob row
+/// scrolls internally rather than pushing the rack wider. Every user-visible
+/// parameter still gets a knob; this only bounds the card's footprint so a
+/// many-param plugin doesn't run off the rack (the native editor, part 6, is
+/// still the full surface).
+const double kPluginCardMaxBodyWidth = 360;
+
+/// The standard device-card height (one control row) — the rack's floor. A
+/// plugin with more controls than fit one row grows the whole strip taller
+/// (uniform, so drag-drop stays simple) up to [kSignalRackMaxHeight].
+const double kSignalRackMinHeight = 150;
+
+/// The tallest the rack grows for a many-control plugin before that plugin's
+/// control grid scrolls vertically inside its card instead.
+const double kSignalRackMaxHeight = 348;
 
 /// An **Ableton-style FX rack**: the chain laid out as horizontal **device
 /// cards**, each showing its type and its parameters as live knobs — rather
@@ -25,6 +38,7 @@ class SignalFxRack extends StatefulWidget {
     required this.keyPrefix,
     required this.effects,
     required this.onAddEffect,
+    required this.onAddPlugin,
     required this.onRemoveEffect,
     required this.onSetType,
     required this.onSetParam,
@@ -32,6 +46,7 @@ class SignalFxRack extends StatefulWidget {
     required this.onOpenPluginEditor,
     required this.onRelinkPlugin,
     required this.onReorder,
+    this.onFormatPluginValue,
     super.key,
   });
 
@@ -42,6 +57,10 @@ class SignalFxRack extends StatefulWidget {
   final List<TrackEffect> effects;
 
   final VoidCallback onAddEffect;
+
+  /// Opens the plugin browser to add a hosted plugin to the chain.
+  final VoidCallback onAddPlugin;
+
   final ValueChanged<int> onRemoveEffect;
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
@@ -59,6 +78,12 @@ class SignalFxRack extends StatefulWidget {
   /// Moves the chain entry at `oldIndex` to `newIndex` (a post-removal target).
   /// The processing order is the signal order, so a drag re-sequences the FX.
   final void Function(int oldIndex, int newIndex) onReorder;
+
+  /// Formats plugin chain entry `index`'s parameter `paramId` at the plain
+  /// `value` to the plugin's own display string, or null when unavailable —
+  /// drives the in-app knob readout in the plugin's real units. Optional.
+  final String? Function(int index, int paramId, double value)?
+  onFormatPluginValue;
 
   @override
   State<SignalFxRack> createState() => _SignalFxRackState();
@@ -80,6 +105,8 @@ class _SignalFxRackState extends State<SignalFxRack> {
         keyPrefix: '${widget.keyPrefix}_device_$i',
         fx: fx,
         onSetParam: (id, v) => widget.onSetPluginParam(i, id, v),
+        onFormatValue: (paramId, value) =>
+            widget.onFormatPluginValue?.call(i, paramId, value),
         onOpenEditor: () => widget.onOpenPluginEditor(i),
         onRelink: () => widget.onRelinkPlugin(i),
         onRemove: () => widget.onRemoveEffect(i),
@@ -114,8 +141,16 @@ class _SignalFxRackState extends State<SignalFxRack> {
     final keyPrefix = widget.keyPrefix;
     final effects = widget.effects;
     final full = effects.length >= kTrackEffectMax;
+    // All devices in a chain share one height (so the strip + drag-drop stay
+    // uniform), grown to fit the tallest plugin's multi-row control grid.
+    var rackHeight = kSignalRackMinHeight;
+    for (final fx in effects) {
+      if (fx is PluginEffect) {
+        rackHeight = math.max(rackHeight, _PluginDeviceCard.heightFor(fx));
+      }
+    }
     return SizedBox(
-      height: 150,
+      height: rackHeight,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -127,10 +162,12 @@ class _SignalFxRackState extends State<SignalFxRack> {
               _DropSlot(
                 slotKey: Key('${keyPrefix}_drop_$i'),
                 insertAt: i,
+                height: rackHeight - 32,
                 onDrop: _reorderTo,
               ),
               _DraggableDevice(
                 index: i,
+                height: rackHeight,
                 card: _card(i),
                 landingKey: i == _landedAt ? ValueKey(_dropGen) : null,
               ),
@@ -138,11 +175,13 @@ class _SignalFxRackState extends State<SignalFxRack> {
             _DropSlot(
               slotKey: Key('${keyPrefix}_drop_${effects.length}'),
               insertAt: effects.length,
+              height: rackHeight - 32,
               onDrop: _reorderTo,
             ),
             _AddDeviceCard(
               cardKey: Key('${keyPrefix}_addDevice'),
-              onAdd: full ? null : widget.onAddEffect,
+              onAddEffect: full ? null : widget.onAddEffect,
+              onAddPlugin: full ? null : widget.onAddPlugin,
             ),
           ],
         ),
@@ -157,11 +196,15 @@ class _SignalFxRackState extends State<SignalFxRack> {
 class _DraggableDevice extends StatelessWidget {
   const _DraggableDevice({
     required this.index,
+    required this.height,
     required this.card,
     this.landingKey,
   });
 
   final int index;
+
+  /// The shared device-card height for this chain (the rack's resolved height).
+  final double height;
   final Widget card;
 
   /// When set, the in-place card just landed here — wrap it in a settle pop.
@@ -174,7 +217,7 @@ class _DraggableDevice extends StatelessWidget {
     return Draggable<int>(
       data: index,
       affinity: Axis.horizontal,
-      feedback: _LiftedCard(child: card),
+      feedback: _LiftedCard(height: height, child: card),
       childWhenDragging: Opacity(opacity: 0.3, child: card),
       child: inPlace,
     );
@@ -184,8 +227,9 @@ class _DraggableDevice extends StatelessWidget {
 /// The lifted card shown under the pointer while dragging — scaled up a touch
 /// and dropped on a soft shadow so it reads as picked up off the rack.
 class _LiftedCard extends StatelessWidget {
-  const _LiftedCard({required this.child});
+  const _LiftedCard({required this.height, required this.child});
 
+  final double height;
   final Widget child;
 
   @override
@@ -194,7 +238,7 @@ class _LiftedCard extends StatelessWidget {
       color: Colors.transparent,
       // The overlay is unbounded vertically, so pin the lifted card's height.
       child: SizedBox(
-        height: 150,
+        height: height,
         child: Transform.scale(
           scale: 1.04,
           child: DecoratedBox(
@@ -242,6 +286,7 @@ class _DropSlot extends StatelessWidget {
   const _DropSlot({
     required this.slotKey,
     required this.insertAt,
+    required this.height,
     required this.onDrop,
   });
 
@@ -249,6 +294,9 @@ class _DropSlot extends StatelessWidget {
 
   /// The index this gap would insert a dropped card at, in the current list.
   final int insertAt;
+
+  /// The height of the insertion bar — matches the chain's card height.
+  final double height;
   final void Function(int from, int insertAt) onDrop;
 
   @override
@@ -269,7 +317,7 @@ class _DropSlot extends StatelessWidget {
           child: active
               ? Container(
                   width: 3,
-                  height: 118,
+                  height: height,
                   decoration: BoxDecoration(
                     color: surface.accent,
                     borderRadius: BorderRadius.circular(2),
@@ -468,8 +516,11 @@ class _DeviceCard extends StatelessWidget {
 
 /// A hosted-plugin device card (sibling to [_DeviceCard]): the plugin's name +
 /// bypass + an **Open Editor** button (opens the plugin's native window), with
-/// the first [kPluginKnobs] automatable, non-hidden params as in-app knobs. A
-/// plugin that exposes no such params shows just the chrome.
+/// every automatable, non-hidden param as an in-app knob. The knob strip
+/// scrolls horizontally once it would push the card past
+/// [kPluginCardMaxBodyWidth], so a many-param plugin shows all its controls
+/// without running off the rack. A plugin that exposes no such params shows
+/// just the chrome.
 class _PluginDeviceCard extends StatelessWidget {
   const _PluginDeviceCard({
     required this.cardKey,
@@ -479,29 +530,75 @@ class _PluginDeviceCard extends StatelessWidget {
     required this.onOpenEditor,
     required this.onRelink,
     required this.onRemove,
+    this.onFormatValue,
   });
 
   final Key cardKey;
   final String keyPrefix;
   final PluginEffect fx;
   final void Function(int paramId, double value) onSetParam;
+
+  /// Formats a parameter's plain value to the plugin's own display string (e.g.
+  /// `-6.0 dB`), or null when no live readout is available — drives the knob
+  /// readout in the plugin's real units. Null disables the live readout.
+  final String? Function(int paramId, double value)? onFormatValue;
+
   final VoidCallback onOpenEditor;
   final VoidCallback onRelink;
   final VoidCallback onRemove;
 
   static const double _knobSlot = 60;
+  static const double _enumSlot = 108;
+  static const double _cellHeight = 92; // one control + its label/readout
+  static const double _headerHeight = 33;
+  static const double _bodyVPad = 16; // 8 top + 8 bottom
 
   /// The plugin's bypass control, if it exposes one — drives the header toggle.
   PluginParamInfo? get _bypassParam =>
       fx.params.where((p) => p.isBypass).firstOrNull;
 
-  /// The params that earn an in-app knob: user-visible (automatable + not
-  /// hidden), excluding the bypass control (it has its own header toggle),
-  /// capped at [kPluginKnobs].
-  List<PluginParamInfo> get _knobParams => fx.params
-      .where((p) => p.isUserVisible && !p.isBypass)
-      .take(kPluginKnobs)
-      .toList();
+  /// The params that earn an in-app control: every user-visible (automatable
+  /// and not hidden) param, except the bypass control (it has its own header
+  /// toggle). Each renders as a switch / dropdown / knob per its kind.
+  static List<PluginParamInfo> _visibleControls(PluginEffect fx) =>
+      fx.params.where((p) => p.isUserVisible && !p.isBypass).toList();
+
+  List<PluginParamInfo> get _controlParams => _visibleControls(fx);
+
+  /// The in-strip width a [param]'s control occupies — an enum dropdown needs
+  /// room for a worded value; a switch or knob fits the standard slot.
+  static double _slotWidth(PluginParamInfo param) =>
+      param.isEnum ? _enumSlot : _knobSlot;
+
+  /// How many rows [widths] wrap into within a [maxWidth] body (greedy, the way
+  /// [Wrap] packs them) — drives the card's height so every control is visible.
+  static int _rowsFor(List<double> widths, double maxWidth) {
+    var rows = 1;
+    var x = 0.0;
+    for (final w in widths) {
+      if (x > 0 && x + w > maxWidth + 0.5) {
+        rows++;
+        x = 0;
+      }
+      x += w;
+    }
+    return rows;
+  }
+
+  /// The shared device-card height this plugin needs to lay its controls out in
+  /// a multi-row grid — the rack grows every card to the tallest of these. An
+  /// unavailable / control-less plugin keeps the standard one-row height; a very
+  /// dense plugin is clamped to [kSignalRackMaxHeight] (its grid then scrolls).
+  static double heightFor(PluginEffect fx) {
+    final controls = _visibleControls(fx);
+    if (fx.unavailable || controls.isEmpty) return kSignalRackMinHeight;
+    final rows = _rowsFor(
+      [for (final p in controls) _slotWidth(p)],
+      kPluginCardMaxBodyWidth,
+    );
+    final needed = _headerHeight + _bodyVPad + rows * _cellHeight;
+    return needed.clamp(kSignalRackMinHeight, kSignalRackMaxHeight);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -513,14 +610,28 @@ class _PluginDeviceCard extends StatelessWidget {
       return _PluginPlaceholderCard(
         cardKey: cardKey,
         keyPrefix: keyPrefix,
-        title: fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id,
+        // Prefer the persisted display name so a missing plugin reads as its
+        // name, not a cryptic id; fall back to the id, then a generic label.
+        title: fx.name.isNotEmpty
+            ? fx.name
+            : (fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id),
+        unsupported: fx.unsupported,
         onRelink: onRelink,
         onRemove: onRemove,
       );
     }
-    final knobs = _knobParams;
+    final controls = _controlParams;
     final bypass = _bypassParam;
-    final bodyWidth = knobs.length * _knobSlot;
+    // The full control strip, clamped so a many-param plugin scrolls inside the
+    // card instead of stretching the rack. Knobs turn on a vertical drag, so a
+    // horizontal scroll of the strip never fights the knob gesture.
+    final fullStripWidth = controls.fold<double>(
+      0,
+      (w, p) => w + _slotWidth(p),
+    );
+    final bodyWidth = fullStripWidth > kPluginCardMaxBodyWidth
+        ? kPluginCardMaxBodyWidth
+        : fullStripWidth;
     final cardWidth = bodyWidth + 20 < 150 ? 150.0 : bodyWidth + 20;
     // Prefer the catalog-resolved display name; fall back to the stable id
     // (then a generic label) when it hasn't resolved.
@@ -563,6 +674,18 @@ class _PluginDeviceCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  // D-MISS: the installed version differs from the saved one;
+                  // the plugin still loaded, but flag the drift.
+                  if (fx.versionChanged)
+                    Tooltip(
+                      key: Key('${keyPrefix}_versionChanged'),
+                      message: l10n.signalPluginVersionChanged,
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 13,
+                        color: surface.textTertiary,
+                      ),
+                    ),
                   // Opens the plugin's own native editor window (D-WIN).
                   IconButton(
                     key: Key('${keyPrefix}_openEditor'),
@@ -607,29 +730,39 @@ class _PluginDeviceCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              child: knobs.isEmpty
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: controls.isEmpty
                   ? Center(
                       child: Text(
                         l10n.emDash,
                         style: signalMono(color: surface.textTertiary),
                       ),
                     )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var k = 0; k < knobs.length; k++)
-                          SizedBox(
-                            width: _knobSlot,
-                            child: _PluginParamKnob(
-                              knobKey: Key('${keyPrefix}_param_$k'),
-                              spec: knobs[k],
-                              value:
-                                  fx.paramValues[knobs[k].id] ?? knobs[k].def,
-                              onChanged: (v) => onSetParam(knobs[k].id, v),
+                  // Every control is shown: they wrap into rows and the rack
+                  // grew to fit. A very dense plugin scrolls vertically here
+                  // (the native editor stays the full-control surface).
+                  : SingleChildScrollView(
+                      key: Key('${keyPrefix}_params'),
+                      child: Wrap(
+                        alignment: WrapAlignment.center,
+                        runAlignment: WrapAlignment.center,
+                        children: [
+                          for (var k = 0; k < controls.length; k++)
+                            SizedBox(
+                              width: _slotWidth(controls[k]),
+                              height: _cellHeight,
+                              child: _PluginParamControl(
+                                controlKey: Key('${keyPrefix}_param_$k'),
+                                spec: controls[k],
+                                value:
+                                    fx.paramValues[controls[k].id] ??
+                                    controls[k].def,
+                                onChanged: (v) => onSetParam(controls[k].id, v),
+                                onFormatValue: onFormatValue,
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
             ),
           ),
@@ -647,6 +780,7 @@ class _PluginPlaceholderCard extends StatelessWidget {
     required this.cardKey,
     required this.keyPrefix,
     required this.title,
+    required this.unsupported,
     required this.onRelink,
     required this.onRemove,
   });
@@ -654,6 +788,10 @@ class _PluginPlaceholderCard extends StatelessWidget {
   final Key cardKey;
   final String keyPrefix;
   final String title;
+
+  /// Whether the plugin is installed but rejected (unsupported topology, D-BUS)
+  /// rather than simply missing — selects the explanatory message.
+  final bool unsupported;
   final VoidCallback onRelink;
   final VoidCallback onRemove;
 
@@ -725,7 +863,10 @@ class _PluginPlaceholderCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    l10n.signalPluginUnavailable,
+                    key: Key('${keyPrefix}_reason'),
+                    unsupported
+                        ? l10n.signalPluginUnsupported
+                        : l10n.signalPluginUnavailable,
                     textAlign: TextAlign.center,
                     style: signalMono(color: surface.textTertiary, size: 10),
                   ),
@@ -795,15 +936,68 @@ class _BypassToggle extends StatelessWidget {
   }
 }
 
+/// One hosted-plugin parameter, rendered as the control its kind calls for: a
+/// two-state [_PluginParamSwitch], a named-step [_PluginParamDropdown], or a
+/// continuous rotary [_PluginParamKnob]. Plugins are not all knobs.
+class _PluginParamControl extends StatelessWidget {
+  const _PluginParamControl({
+    required this.controlKey,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+    this.onFormatValue,
+  });
+
+  final Key controlKey;
+  final PluginParamInfo spec;
+
+  /// The current plain value (in `[spec.min, spec.max]`).
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  /// Only the continuous knob path uses this (switch / dropdown read their
+  /// labels from [PluginParamInfo.valueTexts] baked in at load time).
+  final String? Function(int paramId, double value)? onFormatValue;
+
+  @override
+  Widget build(BuildContext context) {
+    if (spec.isToggle) {
+      return _PluginParamSwitch(
+        switchKey: controlKey,
+        spec: spec,
+        value: value,
+        onChanged: onChanged,
+      );
+    }
+    if (spec.isEnum) {
+      return _PluginParamDropdown(
+        dropdownKey: controlKey,
+        spec: spec,
+        value: value,
+        onChanged: onChanged,
+      );
+    }
+    return _PluginParamKnob(
+      knobKey: controlKey,
+      spec: spec,
+      value: value,
+      onChanged: onChanged,
+      onFormatValue: onFormatValue,
+    );
+  }
+}
+
 /// One hosted-plugin parameter as a rotary [SignalKnob]. The plugin reports the
 /// value in its own plain `[min, max]` range; the knob works in `0..1`, so we
-/// normalize in and de-normalize out, and read out the live plain value.
+/// normalize in and de-normalize out, and read out the live plain value — in
+/// the plugin's own words ([onFormatValue]) when available, else a number.
 class _PluginParamKnob extends StatelessWidget {
   const _PluginParamKnob({
     required this.knobKey,
     required this.spec,
     required this.value,
     required this.onChanged,
+    required this.onFormatValue,
   });
 
   final Key knobKey;
@@ -814,6 +1008,9 @@ class _PluginParamKnob extends StatelessWidget {
 
   /// Called with the new plain value as the knob turns.
   final ValueChanged<double> onChanged;
+
+  /// The plugin's own readout for a plain value, or null for a numeric one.
+  final String? Function(int paramId, double value)? onFormatValue;
 
   double get _span => spec.max - spec.min;
 
@@ -835,11 +1032,149 @@ class _PluginParamKnob extends StatelessWidget {
       size: 36,
       readoutBuilder: (norm) {
         final plain = _denormalize(norm);
+        // Prefer the plugin's own formatting ("-6.0 dB"); fall back to the bare
+        // number + unit when the plugin offers no text for this value.
+        final fromPlugin = onFormatValue?.call(spec.id, plain);
+        if (fromPlugin != null && fromPlugin.isNotEmpty) return fromPlugin;
         final text = spec.stepCount > 0
             ? plain.round().toString()
             : plain.toStringAsFixed(2);
         return spec.unit.isEmpty ? text : '$text ${spec.unit}';
       },
+    );
+  }
+}
+
+/// A two-state (on/off) plugin parameter as a labeled switch — a knob reads
+/// poorly for a boolean. The plain value is `>= midpoint` when on; toggling
+/// drives it to [PluginParamInfo.max] / `min`. The on/off captions come from
+/// the plugin's own step text when present, else a generic On/Off.
+class _PluginParamSwitch extends StatelessWidget {
+  const _PluginParamSwitch({
+    required this.switchKey,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Key switchKey;
+  final PluginParamInfo spec;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final mid = (spec.min + spec.max) / 2;
+    final on = value >= mid;
+    final labels = spec.valueTexts.length == 2
+        ? spec.valueTexts
+        : const <String>[];
+    final caption = labels.isEmpty
+        ? (on ? l10n.signalPluginToggleOn : l10n.signalPluginToggleOff)
+        : (on ? labels[1] : labels[0]);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          spec.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: signalMono(color: surface.textSecondary, size: 9),
+        ),
+        const SizedBox(height: 4),
+        Transform.scale(
+          scale: 0.7,
+          child: Switch(
+            key: switchKey,
+            value: on,
+            activeThumbColor: surface.accent,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            onChanged: (next) => onChanged(next ? spec.max : spec.min),
+          ),
+        ),
+        Text(
+          caption,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: signalMono(color: surface.textTertiary, size: 9),
+        ),
+      ],
+    );
+  }
+}
+
+/// A discrete enumeration plugin parameter as a dropdown of its named steps —
+/// e.g. a filter type. Selecting step `k` drives the plain value to the `k`-th
+/// step across `[min, max]`. Labels come from [PluginParamInfo.valueTexts].
+class _PluginParamDropdown extends StatelessWidget {
+  const _PluginParamDropdown({
+    required this.dropdownKey,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Key dropdownKey;
+  final PluginParamInfo spec;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  /// The step index nearest the current plain value (in `0..stepCount`).
+  int get _selectedStep {
+    final span = spec.max - spec.min;
+    if (span == 0) return 0;
+    final norm = ((value - spec.min) / span).clamp(0.0, 1.0);
+    return (norm * spec.stepCount).round();
+  }
+
+  double _valueForStep(int step) =>
+      spec.min + (spec.max - spec.min) * step / spec.stepCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          spec.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: signalMono(color: surface.textSecondary, size: 9),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonHideUnderline(
+          child: DropdownButton<int>(
+            key: dropdownKey,
+            value: _selectedStep,
+            isDense: true,
+            isExpanded: true,
+            iconSize: 16,
+            dropdownColor: surface.cardHigh,
+            style: signalMono(color: surface.textPrimary, size: 10),
+            onChanged: (step) {
+              if (step != null) onChanged(_valueForStep(step));
+            },
+            items: [
+              for (var i = 0; i < spec.valueTexts.length; i++)
+                DropdownMenuItem<int>(
+                  value: i,
+                  child: Text(
+                    spec.valueTexts[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: signalMono(color: surface.textPrimary, size: 10),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1028,42 +1363,93 @@ class _ModeSegment extends StatelessWidget {
   }
 }
 
+/// The trailing add card: two stacked buttons — add a built-in effect, or
+/// browse for a hosted plugin — shown directly (no menu). Disabled (both null)
+/// when the chain is at [kTrackEffectMax].
 class _AddDeviceCard extends StatelessWidget {
-  const _AddDeviceCard({required this.cardKey, required this.onAdd});
+  const _AddDeviceCard({
+    required this.cardKey,
+    required this.onAddEffect,
+    required this.onAddPlugin,
+  });
 
   final Key cardKey;
-  final VoidCallback? onAdd;
+  final VoidCallback? onAddEffect;
+  final VoidCallback? onAddPlugin;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final surface = context.surface;
-    final disabled = onAdd == null;
-    final tint = disabled ? surface.textTertiary : surface.textSecondary;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: cardKey,
-        onTap: onAdd,
+    return Container(
+      key: cardKey,
+      width: 104,
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(9),
-        child: Container(
-          width: 92,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: kSignalLine2),
+        border: Border.all(color: kSignalLine2),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Expanded(
+            child: _AddDeviceButton(
+              buttonKey: const Key('signalGraph_addEffect'),
+              icon: Icons.graphic_eq,
+              label: l10n.signalAddEffect,
+              onTap: onAddEffect,
+            ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.add, size: 18, color: tint),
-              const SizedBox(height: 6),
-              Text(
-                l10n.signalAddEffectTooltip,
-                textAlign: TextAlign.center,
-                style: signalMono(color: tint, size: 9, tracking: 0.5),
-              ),
-            ],
+          Container(height: 1, color: kSignalLine2),
+          Expanded(
+            child: _AddDeviceButton(
+              buttonKey: const Key('signalGraph_addPlugin'),
+              icon: Icons.extension_outlined,
+              label: l10n.signalAddPlugin,
+              onTap: onAddPlugin,
+            ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One half of the [_AddDeviceCard]: an icon + label tap target, greyed and
+/// inert when its [onTap] is null (the chain is full).
+class _AddDeviceButton extends StatelessWidget {
+  const _AddDeviceButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final Key buttonKey;
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final tint = onTap == null ? surface.textTertiary : surface.textSecondary;
+    return InkWell(
+      key: buttonKey,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: tint),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: signalMono(color: tint, size: 9, tracking: 0.3),
+            ),
+          ],
         ),
       ),
     );

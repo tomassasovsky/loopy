@@ -1,0 +1,7 @@
+# Built harness binaries + ASan debug symbols (built on demand via build.sh).
+stress
+soak
+editor_probe
+*_asan
+*.dSYM
+*.o

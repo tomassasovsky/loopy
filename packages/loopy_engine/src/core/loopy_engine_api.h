@@ -601,6 +601,15 @@ LE_EXPORT int32_t le_plugin_param_get(le_plugin_slot* slot, uint32_t id,
 LE_EXPORT int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id,
                                       double value);
 
+/* Formats parameter `id`'s plain `value` to the plugin's own display string
+ * (e.g. "-6.0 dB", "Lowpass"), copied NUL-terminated into out[out_size]. Lets
+ * the UI label discrete params and read out continuous ones in real units.
+ * CONTROL THREAD. Returns LE_OK, LE_ERR_INVALID for a null argument, or
+ * LE_ERR_UNSUPPORTED when the plugin offers no text for it. */
+LE_EXPORT int32_t le_plugin_param_value_text(le_plugin_slot* slot, uint32_t id,
+                                             double value, char* out,
+                                             int32_t out_size);
+
 /* ---- Native editor window (MAIN THREAD; macOS only) ---- */
 
 /* Opens the plugin's own native editor in a HOST-OWNED top-level OS window

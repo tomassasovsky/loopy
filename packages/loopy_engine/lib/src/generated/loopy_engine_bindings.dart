@@ -532,6 +532,50 @@ class LoopyEngineBindings {
   late final _le_plugin_param_set = _le_plugin_param_setPtr
       .asFunction<int Function(ffi.Pointer<le_plugin_slot>, int, double)>();
 
+  /// Formats parameter `id`'s plain `value` to the plugin's own display string
+  /// (e.g. "-6.0 dB", "Lowpass"), copied NUL-terminated into out[out_size]. Lets
+  /// the UI label discrete params and read out continuous ones in real units.
+  /// CONTROL THREAD. Returns LE_OK, LE_ERR_INVALID for a null argument, or
+  /// LE_ERR_UNSUPPORTED when the plugin offers no text for it.
+  int le_plugin_param_value_text(
+    ffi.Pointer<le_plugin_slot> slot,
+    int id,
+    double value,
+    ffi.Pointer<ffi.Char> out,
+    int out_size,
+  ) {
+    return _le_plugin_param_value_text(
+      slot,
+      id,
+      value,
+      out,
+      out_size,
+    );
+  }
+
+  late final _le_plugin_param_value_textPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Uint32,
+            ffi.Double,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int32,
+          )
+        >
+      >('le_plugin_param_value_text');
+  late final _le_plugin_param_value_text = _le_plugin_param_value_textPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_plugin_slot>,
+          int,
+          double,
+          ffi.Pointer<ffi.Char>,
+          int,
+        )
+      >();
+
   /// Opens the plugin's own native editor in a HOST-OWNED top-level OS window
   /// (D-WIN) — not embedded in the Flutter tree. Idempotent: a second call while
   /// the editor is already open is a no-op success. Returns LE_OK, LE_ERR_INVALID

@@ -25,7 +25,14 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffectType;
 import 'package:loopy_engine/loopy_engine.dart'
     as le
-    show AudioDevice, LatencyState, LoopbackInfo, LoopbackKind, PluginParamInfo;
+    show
+        AudioDevice,
+        LatencyState,
+        LoopbackInfo,
+        LoopbackKind,
+        PluginDescriptor,
+        PluginFormat,
+        PluginParamInfo;
 
 import 'helpers/fake_audio_engine.dart';
 
@@ -740,6 +747,170 @@ void main() {
       expect(fx.params.single.name, 'Mix');
     });
 
+    test('a discrete param is enriched with its per-step labels', () {
+      // A 3-state enum (stepCount 2 over [0, 2]) -> step values 0/1/2.
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Filter Type',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          flags: 0x01 | 0x10, // automatable + stepped
+        ),
+      ];
+      engine.paramValueTexts.addAll({
+        (100, 0.0): 'Lowpass',
+        (100, 1.0): 'Highpass',
+        (100, 2.0): 'Bandpass',
+      });
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      final param = fx.params.single;
+      expect(param.valueTexts, ['Lowpass', 'Highpass', 'Bandpass']);
+      expect(param.isEnum, isTrue);
+    });
+
+    test('a discrete param with incomplete labels stays a bare knob', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Filter Type',
+          unit: '',
+          min: 0,
+          max: 2,
+          def: 0,
+          stepCount: 2,
+          flags: 0x01 | 0x10,
+        ),
+      ];
+      // Only two of the three steps resolve to text -> no dropdown.
+      engine.paramValueTexts.addAll({
+        (100, 0.0): 'Lowpass',
+        (100, 2.0): 'Bandpass',
+      });
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      final param = fx.params.single;
+      expect(param.valueTexts, isEmpty);
+      expect(param.isEnum, isFalse);
+    });
+
+    test('lanePluginParamText forwards to the loaded slot', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      engine.paramValueTexts[(100, 0.5)] = '-6.0 dB';
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      expect(
+        repo.lanePluginParamText(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        '-6.0 dB',
+      );
+      // No plugin at that index -> null, not a throw.
+      expect(
+        repo.lanePluginParamText(
+          channel: 0,
+          lane: 0,
+          index: 5,
+          paramId: 100,
+          value: 0.5,
+        ),
+        isNull,
+      );
+    });
+
+    test('monitorPluginParamText forwards to the loaded monitor slot', () {
+      engine.nextParamInfos = const [
+        le.PluginParamInfo(
+          id: 100,
+          name: 'Gain',
+          unit: 'dB',
+          min: 0,
+          max: 1,
+          def: 0.5,
+          stepCount: 0,
+          flags: 0x01,
+        ),
+      ];
+      engine.paramValueTexts[(100, 0.5)] = '-6.0 dB';
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+
+      expect(
+        repo.monitorPluginParamText(
+          input: 0,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        '-6.0 dB',
+      );
+      expect(
+        repo.monitorPluginParamText(
+          input: 9,
+          index: 0,
+          paramId: 100,
+          value: 0.5,
+        ),
+        isNull,
+      );
+    });
+
     test('persisted plugin paramValues replay through the RT queue', () {
       buildRepo()
         ..startEngine(const EngineConfig())
@@ -1055,6 +1226,164 @@ void main() {
       // Preserved as a placeholder, never dropped to `none`.
       expect(fx.unavailable, isTrue);
       expect(fx.ref.id, 'gone');
+      // Not in the scan catalog -> missing, not an unsupported topology.
+      expect(fx.unsupported, isFalse);
+    });
+
+    test('a restored plugin keeps its persisted name before any scan', () {
+      engine.nextSlotHandle = null; // not loadable yet (catalog unscanned)
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
+              name: 'Saved Reverb',
+            ),
+          ],
+        );
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      // The persisted name survives the bind, so the placeholder reads as the
+      // plugin's name rather than a cryptic id.
+      expect(fx.unavailable, isTrue);
+      expect(fx.name, 'Saved Reverb');
+    });
+
+    test(
+      'startEngine scans + rebinds restored '
+      'plugins, resolving names',
+      () async {
+        // A cold restart: the chain is restored before any scan, so the first
+        // apply can't resolve the name from the (empty) catalog. startEngine
+        // must kick a scan and re-apply, resolving the name from the
+        // descriptor.
+        engine
+          ..pluginScanResults = const [
+            le.PluginDescriptor(
+              id: 'p',
+              name: 'Catalog Reverb',
+              vendor: 'Acme',
+              path: '/Library/Audio/Plug-Ins/CLAP/reverb.clap',
+              format: le.PluginFormat.clap,
+              version: 0,
+            ),
+          ]
+          ..nextSlotHandle = MockPluginSlotHandle('p');
+        final repo = buildRepo()
+          // Stored while stopped -> applied (and the startup scan kicked) on
+          // start.
+          ..setTrackEffects(
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              ),
+            ],
+          );
+        // Before start, nothing is applied; the name is still unresolved.
+        expect((repo.laneEffects(0, 0).single as PluginEffect).name, isEmpty);
+
+        repo.startEngine(const EngineConfig());
+        // Joins the startup scan already in flight; the rebind runs when it
+        // lands.
+        await repo.pluginCatalog.scan();
+
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.unavailable, isFalse);
+        expect(fx.name, 'Catalog Reverb');
+      },
+    );
+
+    test('a failed load whose id is in the catalog is flagged '
+        'unsupported', () async {
+      // The plugin IS installed (the scan found it) but the engine refused to
+      // load it — an instrument / multi-bus topology (D-BUS), not a missing
+      // file. The card must say "unsupported", not "missing".
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'synth',
+          name: 'Big Synth',
+          vendor: 'Acme',
+          path: '/Library/Audio/Plug-Ins/CLAP/synth.clap',
+          format: le.PluginFormat.clap,
+          version: 0,
+        ),
+      ];
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      await repo.pluginCatalog.scan();
+
+      engine.nextSlotHandle = null; // engine rejects the load (topology)
+      repo.setTrackEffects(
+        channel: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.clap, id: 'synth'),
+          ),
+        ],
+      );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.unavailable, isTrue);
+      expect(fx.unsupported, isTrue);
+    });
+
+    test('a loaded plugin whose installed version drifts is flagged', () async {
+      // Same id, different installed version than the saved ref -> the plugin
+      // still loads, but the card notes the drift (D-MISS).
+      engine.pluginScanResults = const [
+        le.PluginDescriptor(
+          id: 'p',
+          name: 'Reverb',
+          vendor: 'Acme',
+          path: '/Library/Audio/Plug-Ins/CLAP/reverb.clap',
+          format: le.PluginFormat.clap,
+          version: 0x00020000, // 2.0.0 installed
+        ),
+      ];
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      await repo.pluginCatalog.scan();
+
+      engine.nextSlotHandle = MockPluginSlotHandle('p');
+      repo.setTrackEffects(
+        channel: 0,
+        effects: const [
+          PluginEffect(
+            ref: PluginRef(
+              format: PluginFormat.clap,
+              id: 'p',
+              version: 0x00010000, // 1.0.0 saved
+            ),
+          ),
+        ],
+      );
+
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.unavailable, isFalse);
+      expect(fx.versionChanged, isTrue);
+    });
+
+    test('a loaded plugin the catalog has not seen is not flagged drifted', () {
+      // No scan has run, so there is no descriptor to compare against: drift is
+      // undetectable and must stay false (never a false "versions match").
+      engine.nextSlotHandle = MockPluginSlotHandle('p');
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(
+                format: PluginFormat.clap,
+                id: 'p',
+                version: 0x00010000,
+              ),
+            ),
+          ],
+        );
+      final fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.unavailable, isFalse);
+      expect(fx.versionChanged, isFalse);
     });
 
     test('relinkLanePlugin swaps the ref, keeps state, and reloads', () {

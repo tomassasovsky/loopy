@@ -292,8 +292,14 @@ class MonitorCubit extends Cubit<MonitorState> {
     if (applied.isNotEmpty) {
       emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
     }
+    // Persist the enriched chain (it carries each plugin's resolved display
+    // name, so it survives a restart); fall back to the optimistic input only
+    // when the repo reported nothing (engine not running / a unit-test fake).
     unawaited(
-      _settings.saveMonitorEffects(input, encodeTrackEffects(effects)),
+      _settings.saveMonitorEffects(
+        input,
+        encodeTrackEffects(applied.isNotEmpty ? applied : effects),
+      ),
     );
   }
 

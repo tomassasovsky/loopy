@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -98,6 +99,16 @@ class StubHost final : public loopy::IPluginHost {
   double paramGet(uint32_t id) override {
     const int slot = paramSlot(id);
     return slot >= 0 ? values_[slot] : 0.0;
+  }
+
+  // Deterministic display text so the native harness can verify the value-text
+  // path: a known param formats "<value> u", an unknown one offers no text.
+  bool paramValueText(uint32_t id, double value, std::string& out) override {
+    if (paramSlot(id) < 0) return false;
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.2f u", value);
+    out = buf;
+    return true;
   }
 
   void queueParam(uint32_t id, double plain) override {
@@ -334,6 +345,15 @@ int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id, double value) {
   if (next == slot->paramHead.load(std::memory_order_acquire)) return LE_OK;
   slot->paramRing[tail] = ParamChange{id, value};
   slot->paramTail.store(next, std::memory_order_release);
+  return LE_OK;
+}
+
+int32_t le_plugin_param_value_text(le_plugin_slot* slot, uint32_t id,
+                                   double value, char* out, int32_t out_size) {
+  if (!slot || !out || out_size <= 0) return LE_ERR_INVALID;
+  std::string text;
+  if (!slot->host->paramValueText(id, value, text)) return LE_ERR_UNSUPPORTED;
+  std::snprintf(out, static_cast<size_t>(out_size), "%s", text.c_str());
   return LE_OK;
 }
 
