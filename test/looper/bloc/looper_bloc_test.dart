@@ -347,7 +347,7 @@ void main() {
     verify: (_) {
       final pushed = capturePushedChain();
       expect(pushed, hasLength(1));
-      expect(pushed.single.type, TrackEffectType.drive);
+      expect((pushed.single as BuiltInEffect).type, TrackEffectType.drive);
     },
   );
 
@@ -355,14 +355,14 @@ void main() {
     'LooperLaneEffectRemoved drops the entry at the given index',
     build: () {
       when(() => repository.laneEffects(1, 2)).thenReturn([
-        TrackEffect(type: TrackEffectType.delay),
-        TrackEffect(type: TrackEffectType.reverb),
+        BuiltInEffect(type: TrackEffectType.delay),
+        BuiltInEffect(type: TrackEffectType.reverb),
       ]);
       return buildBloc();
     },
     act: (bloc) => bloc.add(const LooperLaneEffectRemoved(1, 2, 0)),
     verify: (_) => expect(
-      capturePushedChain().map((e) => e.type),
+      capturePushedChain().map((e) => (e as BuiltInEffect).type),
       [TrackEffectType.reverb],
     ),
   );
@@ -371,31 +371,34 @@ void main() {
     'LooperLaneEffectTypeChanged retypes the entry at the given index',
     build: () {
       when(() => repository.laneEffects(1, 2)).thenReturn([
-        TrackEffect(type: TrackEffectType.delay),
+        BuiltInEffect(type: TrackEffectType.delay),
       ]);
       return buildBloc();
     },
     act: (bloc) => bloc.add(
       const LooperLaneEffectTypeChanged(1, 2, 0, TrackEffectType.reverb),
     ),
-    verify: (_) =>
-        expect(capturePushedChain().single.type, TrackEffectType.reverb),
+    verify: (_) => expect(
+      (capturePushedChain().single as BuiltInEffect).type,
+      TrackEffectType.reverb,
+    ),
   );
 
   blocTest<LooperBloc, LooperState>(
     'LooperLaneEffectMoved reorders the chain',
     build: () {
       when(() => repository.laneEffects(1, 2)).thenReturn([
-        TrackEffect(type: TrackEffectType.delay),
-        TrackEffect(type: TrackEffectType.reverb),
+        BuiltInEffect(type: TrackEffectType.delay),
+        BuiltInEffect(type: TrackEffectType.reverb),
       ]);
       return buildBloc();
     },
     act: (bloc) => bloc.add(const LooperLaneEffectMoved(1, 2, 0, 1)),
-    verify: (_) => expect(capturePushedChain().map((e) => e.type), [
-      TrackEffectType.reverb,
-      TrackEffectType.delay,
-    ]),
+    verify: (_) =>
+        expect(capturePushedChain().map((e) => (e as BuiltInEffect).type), [
+          TrackEffectType.reverb,
+          TrackEffectType.delay,
+        ]),
   );
 
   blocTest<LooperBloc, LooperState>(

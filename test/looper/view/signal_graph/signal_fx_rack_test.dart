@@ -28,7 +28,7 @@ void main() {
 
     testWidgets('renders one knob per continuous param', (tester) async {
       await tester.pumpApp(
-        build(effects: [TrackEffect(type: TrackEffectType.delay)]),
+        build(effects: [BuiltInEffect(type: TrackEffectType.delay)]),
       );
       // Delay has three continuous params — all knobs, no mode switch.
       expect(find.byType(SignalKnob), findsNWidgets(3));
@@ -38,7 +38,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        build(effects: [TrackEffect(type: TrackEffectType.octaver)]),
+        build(effects: [BuiltInEffect(type: TrackEffectType.octaver)]),
       );
       // Shift, Tone, Mix stay knobs; Mode is the switch.
       expect(find.byType(SignalKnob), findsNWidgets(3));
@@ -53,7 +53,7 @@ void main() {
       await tester.pumpApp(
         build(
           // Default octaver mode is 0 (Phase Vocoder).
-          effects: [TrackEffect(type: TrackEffectType.octaver)],
+          effects: [BuiltInEffect(type: TrackEffectType.octaver)],
           onSetParam: (i, p, v) => calls.add((i, p, v)),
         ),
       );
@@ -70,7 +70,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        build(effects: [TrackEffect(type: TrackEffectType.delay)]),
+        build(effects: [BuiltInEffect(type: TrackEffectType.delay)]),
       );
       // The old grip handle is gone; the card itself is the drag target.
       expect(
@@ -86,8 +86,8 @@ void main() {
       await tester.pumpApp(
         build(
           effects: [
-            TrackEffect(type: TrackEffectType.delay),
-            TrackEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb),
           ],
           onReorder: (from, to) => reorders.add((from, to)),
         ),
@@ -119,8 +119,8 @@ void main() {
       await tester.pumpApp(
         build(
           effects: [
-            TrackEffect(type: TrackEffectType.delay),
-            TrackEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb),
           ],
           onReorder: (from, to) => reorders.add((from, to)),
         ),
@@ -149,9 +149,9 @@ void main() {
       await tester.pumpApp(
         build(
           effects: [
-            TrackEffect(type: TrackEffectType.delay),
-            TrackEffect(type: TrackEffectType.reverb),
-            TrackEffect(type: TrackEffectType.drive),
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.drive),
           ],
           onReorder: (from, to) => reorders.add((from, to)),
         ),
@@ -177,7 +177,7 @@ void main() {
       var added = 0;
       await tester.pumpApp(
         build(
-          effects: [TrackEffect(type: TrackEffectType.delay)],
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
           onAddEffect: () => added++,
         ),
       );
@@ -192,7 +192,7 @@ void main() {
       final calls = <(int, TrackEffectType)>[];
       await tester.pumpApp(
         build(
-          effects: [TrackEffect(type: TrackEffectType.delay)],
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
           onSetType: (i, t) => calls.add((i, t)),
         ),
       );
@@ -213,8 +213,8 @@ void main() {
       await tester.pumpApp(
         build(
           effects: [
-            TrackEffect(type: TrackEffectType.delay),
-            TrackEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb),
           ],
           onReorder: (from, to) => reorders.add((from, to)),
           onSetParam: (i, p, v) => params.add((i, p, v)),
@@ -239,7 +239,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        build(effects: [TrackEffect(type: TrackEffectType.delay)]),
+        build(effects: [BuiltInEffect(type: TrackEffectType.delay)]),
       );
       await tester.tap(
         find.byKey(const Key('signalGraph_lane_device_0_type')),

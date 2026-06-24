@@ -108,7 +108,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     on<LooperLaneEffectAdded>((event, _) {
       _pushLaneEffects(event.channel, event.lane, [
         ..._repository.laneEffects(event.channel, event.lane),
-        TrackEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: TrackEffectType.drive),
       ]);
     });
     on<LooperLaneEffectRemoved>((event, _) {
@@ -126,7 +126,7 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       _pushLaneEffects(
         event.channel,
         event.lane,
-        [...effects]..[event.index] = TrackEffect(type: event.type),
+        [...effects]..[event.index] = BuiltInEffect(type: event.type),
       );
     });
     on<LooperLaneEffectMoved>((event, _) {

@@ -54,14 +54,20 @@ class _SignalFxRackState extends State<SignalFxRack> {
 
   /// A card is built up to three times by [_DraggableDevice] (in place, as the
   /// lifted feedback, and as the faded gap left behind) — one builder for all.
-  Widget _card(int i) => _DeviceCard(
-    cardKey: Key('${widget.keyPrefix}_device_$i'),
-    keyPrefix: '${widget.keyPrefix}_device_$i',
-    fx: widget.effects[i],
-    onSetType: (t) => widget.onSetType(i, t),
-    onSetParam: (p, v) => widget.onSetParam(i, p, v),
-    onRemove: () => widget.onRemoveEffect(i),
-  );
+  Widget _card(int i) {
+    final fx = widget.effects[i];
+    // Built-in device cards only. A plugin entry has no card here until the
+    // insert flow + plugin card land in part 5; a chain can't hold one yet.
+    if (fx is! BuiltInEffect) return const SizedBox.shrink();
+    return _DeviceCard(
+      cardKey: Key('${widget.keyPrefix}_device_$i'),
+      keyPrefix: '${widget.keyPrefix}_device_$i',
+      fx: fx,
+      onSetType: (t) => widget.onSetType(i, t),
+      onSetParam: (p, v) => widget.onSetParam(i, p, v),
+      onRemove: () => widget.onRemoveEffect(i),
+    );
+  }
 
   /// A drop onto the gap [insertAt] (an index in the current list). Adjacent
   /// gaps are no-ops; otherwise normalise to the post-removal target and flag
@@ -262,7 +268,7 @@ class _DeviceCard extends StatelessWidget {
 
   final Key cardKey;
   final String keyPrefix;
-  final TrackEffect fx;
+  final BuiltInEffect fx;
   final ValueChanged<TrackEffectType> onSetType;
   final void Function(int param, double value) onSetParam;
   final VoidCallback onRemove;
@@ -445,7 +451,7 @@ class _ParamControl extends StatelessWidget {
   });
 
   final String keyPrefix;
-  final TrackEffect fx;
+  final BuiltInEffect fx;
   final int param;
   final void Function(int param, double value) onSetParam;
 

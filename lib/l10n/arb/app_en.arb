@@ -589,5 +589,23 @@
             }
         }
     },
-    "pedalOutputHint": "Pick the pedal's MIDI output so loopy can drive its LEDs. Its footswitches use the MIDI input above."
+    "pedalOutputHint": "Pick the pedal's MIDI output so loopy can drive its LEDs. Its footswitches use the MIDI input above.",
+    "pluginUnsupportedTopology": "{name} can't be used here — it isn't a stereo effect (it may be an instrument or use multiple buses).",
+    "@pluginUnsupportedTopology": {
+        "description": "Shown when a user inserts a plugin whose audio bus layout is not a supported stereo/mono effect.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "pluginLoadFailed": "Couldn't load {name}.",
+    "@pluginLoadFailed": {
+        "description": "Shown when a plugin fails to load for a reason other than an unsupported topology.",
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    }
 }

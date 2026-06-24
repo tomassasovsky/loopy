@@ -38,27 +38,28 @@ class ClapHost final : public loopy::IPluginHost {
  public:
   ~ClapHost() override { unload(); }
 
-  bool load(const loopy::PluginDescriptor& desc, double sampleRate,
-            int maxBlock) override {
+  loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
+                         int maxBlock) override {
+    using loopy::LoadStatus;
     CFStringRef cfPath = CFStringCreateWithCString(
         kCFAllocatorDefault, desc.path.c_str(), kCFStringEncodingUTF8);
-    if (!cfPath) return false;
+    if (!cfPath) return LoadStatus::failed;
     CFURLRef url = CFURLCreateWithFileSystemPath(
         kCFAllocatorDefault, cfPath, kCFURLPOSIXPathStyle, true);
     CFRelease(cfPath);
-    if (!url) return false;
+    if (!url) return LoadStatus::failed;
     bundle_ = CFBundleCreate(kCFAllocatorDefault, url);
     CFRelease(url);
-    if (!bundle_) return false;
+    if (!bundle_) return LoadStatus::failed;
 
     entry_ = reinterpret_cast<const clap_plugin_entry_t*>(
         CFBundleGetDataPointerForName(bundle_, CFSTR("clap_entry")));
     if (!entry_ || !entry_->init || !entry_->init(desc.path.c_str())) {
-      return false;
+      return LoadStatus::failed;
     }
     auto factory = reinterpret_cast<const clap_plugin_factory_t*>(
         entry_->get_factory(CLAP_PLUGIN_FACTORY_ID));
-    if (!factory || !factory->create_plugin) return false;
+    if (!factory || !factory->create_plugin) return LoadStatus::failed;
 
     host_.clap_version = CLAP_VERSION;
     host_.host_data = this;
@@ -72,12 +73,38 @@ class ClapHost final : public loopy::IPluginHost {
     host_.request_callback = hostNoop;
 
     plugin_ = factory->create_plugin(factory, &host_, desc.id.c_str());
-    if (!plugin_ || !plugin_->init(plugin_)) return false;
+    if (!plugin_ || !plugin_->init(plugin_)) return LoadStatus::failed;
+
+    // Topology guard (D-BUS): accept only a single mono/stereo audio-in +
+    // audio-out port. No input port is an instrument; >1 port is multi-bus /
+    // sidechain. A plugin without the audio-ports extension is assumed stereo.
+    auto ports = static_cast<const clap_plugin_audio_ports_t*>(
+        plugin_->get_extension(plugin_, CLAP_EXT_AUDIO_PORTS));
+    if (ports && ports->count) {
+      const uint32_t inPorts = ports->count(plugin_, true);
+      const uint32_t outPorts = ports->count(plugin_, false);
+      if (inPorts < 1 || outPorts < 1) return LoadStatus::unsupportedTopology;
+      if (inPorts > 1 || outPorts > 1) return LoadStatus::unsupportedTopology;
+      uint32_t chIn = 2;
+      uint32_t chOut = 2;
+      clap_audio_port_info_t info;
+      if (ports->get && ports->get(plugin_, 0, true, &info)) {
+        chIn = info.channel_count;
+      }
+      if (ports->get && ports->get(plugin_, 0, false, &info)) {
+        chOut = info.channel_count;
+      }
+      if (chIn < 1 || chOut < 1 || chIn > 2 || chOut > 2) {
+        return LoadStatus::unsupportedTopology;
+      }
+      channels_ = (chIn >= 2 && chOut >= 2) ? 2 : 1;
+    }
+
     if (!plugin_->activate(plugin_, sampleRate, 1,
                            static_cast<uint32_t>(maxBlock))) {
-      return false;
+      return LoadStatus::failed;
     }
-    if (!plugin_->start_processing(plugin_)) return false;
+    if (!plugin_->start_processing(plugin_)) return LoadStatus::failed;
 
     outL_.assign(maxBlock, 0.0f);
     outR_.assign(maxBlock, 0.0f);
@@ -86,7 +113,7 @@ class ClapHost final : public loopy::IPluginHost {
     inEvents_.get = inEventsGet;
     outEvents_.ctx = nullptr;
     outEvents_.try_push = outEventsTryPush;
-    return true;
+    return LoadStatus::ok;
   }
 
   void process(float* l, float* r, int n) override {
@@ -96,10 +123,10 @@ class ClapHost final : public loopy::IPluginHost {
 
     clap_audio_buffer_t in{};
     in.data32 = inCh;
-    in.channel_count = 2;
+    in.channel_count = static_cast<uint32_t>(channels_);
     clap_audio_buffer_t out{};
     out.data32 = outCh;
-    out.channel_count = 2;
+    out.channel_count = static_cast<uint32_t>(channels_);
 
     clap_process_t proc{};
     proc.steady_time = steady_;
@@ -113,8 +140,10 @@ class ClapHost final : public loopy::IPluginHost {
     plugin_->process(plugin_, &proc);
     steady_ += n;
 
-    std::memcpy(l, outL_.data(), sizeof(float) * static_cast<size_t>(n));
-    std::memcpy(r, outR_.data(), sizeof(float) * static_cast<size_t>(n));
+    const size_t bytes = sizeof(float) * static_cast<size_t>(n);
+    std::memcpy(l, outL_.data(), bytes);
+    // Mono -> stereo: duplicate the single processed channel to the right.
+    std::memcpy(r, channels_ == 1 ? outL_.data() : outR_.data(), bytes);
   }
 
  private:
@@ -141,6 +170,7 @@ class ClapHost final : public loopy::IPluginHost {
   clap_output_events_t outEvents_{};
   std::vector<float> outL_, outR_;
   int64_t steady_ = 0;
+  int channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
 };
 
 }  // namespace

@@ -20,14 +20,17 @@ void main() {
         outputMask: 0x1,
         volume: 0.5,
         muted: true,
-        effects: [TrackEffect(type: TrackEffectType.delay)],
+        effects: [BuiltInEffect(type: TrackEffectType.delay)],
       );
       expect(updated.input, 2);
       expect(updated.enabled, isTrue);
       expect(updated.outputMask, 0x1);
       expect(updated.volume, 0.5);
       expect(updated.muted, isTrue);
-      expect(updated.effects.single.type, TrackEffectType.delay);
+      expect(
+        (updated.effects.single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
 
       // Omitted fields are preserved.
       final onlyEnabled = base.copyWith(enabled: true);
@@ -64,11 +67,11 @@ void main() {
     test('the effect chain participates in equality', () {
       final withFx = InputMonitor(
         input: 0,
-        effects: [TrackEffect(type: TrackEffectType.drive)],
+        effects: [BuiltInEffect(type: TrackEffectType.drive)],
       );
       final withOtherFx = InputMonitor(
         input: 0,
-        effects: [TrackEffect(type: TrackEffectType.delay)],
+        effects: [BuiltInEffect(type: TrackEffectType.delay)],
       );
       expect(withFx, isNot(const InputMonitor(input: 0))); // vs clean chain
       expect(withFx, isNot(withOtherFx)); // a differing chain breaks equality

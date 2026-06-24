@@ -127,8 +127,11 @@ static int32_t install(le_engine* e, le_fx_state* fx, _Atomic int32_t* type,
   double sr = (double)load_i32(&e->a_sample_rate);
   if (sr <= 0.0) sr = e->sample_rate > 0 ? (double)e->sample_rate : 48000.0;
 
-  le_plugin_slot* slot = le_plugin_slot_create(plugin_id, sr);
-  if (!slot) return LE_ERR_DEVICE; /* unknown id / load failure / disabled build */
+  /* The reason distinguishes a topology rejection (LE_ERR_UNSUPPORTED, D-BUS)
+   * from an unknown id / generic load failure, so the UI can localize it. */
+  int32_t reason = LE_ERR_DEVICE;
+  le_plugin_slot* slot = le_plugin_slot_create(plugin_id, sr, &reason);
+  if (!slot) return reason;
 
   /* Publish the pointer and mark ready BEFORE marking the entry LE_FX_PLUGIN, so
    * the first time the audio thread dispatches it the slot is live. Ordering is
