@@ -15,6 +15,10 @@
     }
   ],
   "useGitignore": true,
+  "ignorePaths": [
+    "**/third_party/clap/**",
+    "**/third_party/vst3sdk/**"
+  ],
   "words": [
     "AHCT",
     "AREF",
@@ -268,6 +272,23 @@
     "patchbay",
     "capturable",
     "centralising",
-    "bigpicture"
+    "bigpicture",
+    "automatable",
+    "denormal",
+    "denormals",
+    "hotspot",
+    "iface",
+    "pluginterfaces",
+    "relinkable",
+    "relinks",
+    "rescan",
+    "sandboxing",
+    "sidechain",
+    "steinbergmedia",
+    "TUID",
+    "varargs",
+    "VSTGUI",
+    "COMMONPROGRAMFILES",
+    "LOCALAPPDATA"
   ]
 }
