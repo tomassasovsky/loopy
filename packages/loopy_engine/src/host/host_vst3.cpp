@@ -555,6 +555,7 @@ class Vst3Host final : public loopy::IPluginHost {
       return loadImpl(desc, sampleRate, maxBlock);
     } __except (loadSehFilter(GetExceptionCode())) {
       LPV_LOG("load: structured exception in plugin — load failed\n");
+      crashed_ = true;  // unload() must not call back into the dead plugin
       return loopy::LoadStatus::failed;
     }
 #else
@@ -980,6 +981,26 @@ class Vst3Host final : public loopy::IPluginHost {
   }
 
   void unload() {
+#if defined(_WIN32)
+    if (crashed_) {
+      // A plugin that faulted mid-load left its module + factory in an unknown
+      // (possibly corrupt) state — calling back into it (release / ExitDll /
+      // FreeLibrary) crashes again. Deliberately forget every handle WITHOUT
+      // touching the plugin: the dead plugin's DLL stays mapped (a bounded,
+      // best-effort leak — D-RT) but the app survives. No editor can be open
+      // (the fault was during load, before any editor).
+      component_ = nullptr;
+      processor_ = nullptr;
+      controller_ = nullptr;
+      compCP_ = nullptr;
+      ctrlCP_ = nullptr;
+      factory_ = nullptr;
+      dll_ = nullptr;
+      exitDll_ = nullptr;
+      getFactory_ = nullptr;
+      return;
+    }
+#endif
     editorClose();  // D-WIN: never leak the editor window past the plugin
     if (compCP_ && ctrlCP_) {
       compCP_->disconnect(ctrlCP_);
@@ -1043,6 +1064,7 @@ class Vst3Host final : public loopy::IPluginHost {
   IEditController* controller_ = nullptr;
   int32 channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
   bool firstProcess_ = true;  // one-shot diagnostic trace gate (see process())
+  bool crashed_ = false;  // load SEH-faulted: unload() must not touch the plugin
   std::vector<float> outL_, outR_;
 
   // Params staged on the audio thread (queueParam) and drained into the SDK in
