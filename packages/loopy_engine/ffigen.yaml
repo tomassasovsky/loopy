@@ -30,6 +30,7 @@ structs:
     - 'le_device_info'
     - 'le_midi_info'
     - 'le_plugin_desc'
+    - 'le_plugin_param_info'
 enums:
   include:
     - 'le_result'
@@ -38,6 +39,7 @@ enums:
     - 'le_command_code'
     - 'le_loopback_kind'
     - 'le_plugin_format'
+    - 'le_plugin_param_flags'
 preamble: |
   // ignore_for_file: type=lint, doc_directive_unknown
   // coverage:ignore-file

@@ -224,6 +224,56 @@ static void test_unsupported_topology(void) {
   le_plugin_slot_destroy(ok);
 }
 
+/* The param ABI + RT queue: enumeration, and a queued set reaching the plugin
+ * via the lock-free ring + process (verified through paramGet, ordering = last
+ * write wins). The stub exposes 3 automatable params (ids 100/200/300). */
+static void test_param_queue(void) {
+  printf("test_param_queue\n");
+  le_plugin_slot* slot =
+      le_plugin_slot_create_stub(LE_PLUGIN_STUB_IDENTITY, 48000, NULL);
+  CHECK(slot != NULL);
+
+  int32_t count = -1;
+  CHECK(le_plugin_param_count(slot, &count) == LE_OK);
+  CHECK(count == 3);
+  le_plugin_param_info info;
+  CHECK(le_plugin_param_info_at(slot, 0, &info) == LE_OK);
+  CHECK(info.id == 100);
+  CHECK((info.flags & LE_PARAM_AUTOMATABLE) != 0);
+  CHECK(le_plugin_param_info_at(slot, 9, &info) == LE_ERR_INVALID);
+
+  le_fx_state fx;
+  memset(&fx, 0, sizeof(fx));
+  atomic_store(&fx.plugin[0], slot);
+  le_plugin_slot_set_ready(slot, 1);
+
+  /* Queue several sets before any block processes. */
+  CHECK(le_plugin_param_set(slot, 100, 0.3) == LE_OK);
+  CHECK(le_plugin_param_set(slot, 100, 0.7) == LE_OK); /* later write wins */
+  CHECK(le_plugin_param_set(slot, 200, 0.9) == LE_OK);
+
+  double v = -1.0;
+  CHECK(le_plugin_param_get(slot, 100, &v) == LE_OK);
+  CHECK(v == 0.5); /* still the default until a block applies the queue */
+
+  /* One block: the ring drains into the host, which applies it in order. */
+  float in[SLOT_BLOCK];
+  float out[SLOT_BLOCK];
+  memset(in, 0, sizeof(in));
+  drive(&fx, in, out, SLOT_BLOCK);
+
+  CHECK(le_plugin_param_get(slot, 100, &v) == LE_OK);
+  CHECK(v == 0.7);
+  CHECK(le_plugin_param_get(slot, 200, &v) == LE_OK);
+  CHECK(v == 0.9);
+
+  CHECK(le_plugin_param_count(NULL, &count) == LE_ERR_INVALID);
+  CHECK(le_plugin_param_set(NULL, 1, 0.5) == LE_ERR_INVALID);
+
+  atomic_store(&fx.plugin[0], (le_plugin_slot*)NULL);
+  le_plugin_slot_destroy(slot);
+}
+
 int main(void) {
   test_adapter_latency();
   test_dry_when_not_ready();
@@ -232,6 +282,7 @@ int main(void) {
   test_teardown_is_safe();
   test_engine_abi_errors();
   test_unsupported_topology();
+  test_param_queue();
   if (g_failures == 0) {
     printf("ALL PASSED\n");
     return 0;

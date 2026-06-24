@@ -186,6 +186,28 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_settings.saveMonitorEffects(input, encodeTrackEffects(next)));
   }
 
+  /// Sets hosted-plugin parameter [paramId] of monitor [input]'s chain entry
+  /// [index] to the plain [value], routing it to the plugin through the RT
+  /// param queue. Mirrors [setEffectParam] for [PluginEffect] entries, keyed by
+  /// the stable plugin param id rather than a positional built-in index.
+  void setPluginParam(int input, int index, int paramId, double value) {
+    final monitor = state.forInput(input);
+    if (index < 0 || index >= monitor.effects.length) return;
+    final fx = monitor.effects[index];
+    if (fx is! PluginEffect) return;
+    final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
+    final next = [...monitor.effects]
+      ..[index] = fx.copyWith(paramValues: values);
+    emit(state.withInput(monitor.copyWith(effects: next)));
+    _repository.setMonitorPluginParam(
+      input: input,
+      index: index,
+      paramId: paramId,
+      value: value,
+    );
+    unawaited(_settings.saveMonitorEffects(input, encodeTrackEffects(next)));
+  }
+
   void _pushEffects(int input, List<TrackEffect> effects) {
     final next = state.forInput(input).copyWith(effects: effects);
     emit(state.withInput(next));

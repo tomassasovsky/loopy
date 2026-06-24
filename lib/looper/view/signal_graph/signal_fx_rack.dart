@@ -11,6 +11,11 @@ import 'package:loopy/theme/surface_theme.dart';
 /// rather than an M3 motion token.
 const Curve _dropSettleCurve = Curves.easeOutBack;
 
+/// How many of a hosted plugin's parameters get an in-app knob on its device
+/// card (D-UI). The rest live in the plugin's own editor window (part 6); this
+/// is a UI affordance cap, not an engine limit.
+const int kPluginKnobs = 4;
+
 /// An **Ableton-style FX rack**: the chain laid out as horizontal **device
 /// cards**, each showing its type and its parameters as live knobs — rather
 /// than a chip list with one editor at a time. Shared by both docks.
@@ -23,6 +28,7 @@ class SignalFxRack extends StatefulWidget {
     required this.onRemoveEffect,
     required this.onSetType,
     required this.onSetParam,
+    required this.onSetPluginParam,
     required this.onReorder,
     super.key,
   });
@@ -37,6 +43,10 @@ class SignalFxRack extends StatefulWidget {
   final ValueChanged<int> onRemoveEffect;
   final void Function(int index, TrackEffectType type) onSetType;
   final void Function(int index, int param, double value) onSetParam;
+
+  /// Sets a hosted-plugin parameter (by stable id, plain value) on the chain
+  /// entry at `index`. Distinct from [onSetParam] (built-in, positional).
+  final void Function(int index, int paramId, double value) onSetPluginParam;
 
   /// Moves the chain entry at `oldIndex` to `newIndex` (a post-removal target).
   /// The processing order is the signal order, so a drag re-sequences the FX.
@@ -56,8 +66,15 @@ class _SignalFxRackState extends State<SignalFxRack> {
   /// lifted feedback, and as the faded gap left behind) — one builder for all.
   Widget _card(int i) {
     final fx = widget.effects[i];
-    // Built-in device cards only. A plugin entry has no card here until the
-    // insert flow + plugin card land in part 5; a chain can't hold one yet.
+    if (fx is PluginEffect) {
+      return _PluginDeviceCard(
+        cardKey: Key('${widget.keyPrefix}_device_$i'),
+        keyPrefix: '${widget.keyPrefix}_device_$i',
+        fx: fx,
+        onSetParam: (id, v) => widget.onSetPluginParam(i, id, v),
+        onRemove: () => widget.onRemoveEffect(i),
+      );
+    }
     if (fx is! BuiltInEffect) return const SizedBox.shrink();
     return _DeviceCard(
       cardKey: Key('${widget.keyPrefix}_device_$i'),
@@ -435,6 +452,251 @@ class _DeviceCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A hosted-plugin device card (sibling to [_DeviceCard]): the plugin's name +
+/// bypass + an **Open Editor** button (inert until the native window lands in
+/// part 6), with the first [kPluginKnobs] automatable, non-hidden params as
+/// in-app knobs. A plugin that exposes no such params shows just the chrome.
+class _PluginDeviceCard extends StatelessWidget {
+  const _PluginDeviceCard({
+    required this.cardKey,
+    required this.keyPrefix,
+    required this.fx,
+    required this.onSetParam,
+    required this.onRemove,
+  });
+
+  final Key cardKey;
+  final String keyPrefix;
+  final PluginEffect fx;
+  final void Function(int paramId, double value) onSetParam;
+  final VoidCallback onRemove;
+
+  static const double _knobSlot = 60;
+
+  /// The plugin's bypass control, if it exposes one — drives the header toggle.
+  PluginParamInfo? get _bypassParam =>
+      fx.params.where((p) => p.isBypass).firstOrNull;
+
+  /// The params that earn an in-app knob: user-visible (automatable + not
+  /// hidden), excluding the bypass control (it has its own header toggle),
+  /// capped at [kPluginKnobs].
+  List<PluginParamInfo> get _knobParams => fx.params
+      .where((p) => p.isUserVisible && !p.isBypass)
+      .take(kPluginKnobs)
+      .toList();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final surface = context.surface;
+    final knobs = _knobParams;
+    final bypass = _bypassParam;
+    final bodyWidth = knobs.length * _knobSlot;
+    final cardWidth = bodyWidth + 20 < 150 ? 150.0 : bodyWidth + 20;
+    // No display name on the persisted model yet — the stable id stands in
+    // until the catalog resolves a friendly name (a later part).
+    final name = fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id;
+    return Container(
+      key: cardKey,
+      width: cardWidth,
+      decoration: BoxDecoration(
+        color: surface.cardHigh,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: kSignalLine2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MouseRegion(
+            cursor: SystemMouseCursors.grab,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(9, 6, 4, 6),
+              decoration: BoxDecoration(
+                color: surface.accent.withValues(alpha: 0.10),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(8),
+                ),
+                border: Border(bottom: BorderSide(color: surface.line)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      name,
+                      key: Key('${keyPrefix}_name'),
+                      overflow: TextOverflow.ellipsis,
+                      style: signalMono(
+                        color: surface.textPrimary,
+                        tracking: 0.4,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  // Open Editor: present but inert until the native plugin
+                  // window lands (part 6).
+                  IconButton(
+                    key: Key('${keyPrefix}_openEditor'),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                    iconSize: 14,
+                    color: surface.textTertiary,
+                    tooltip: l10n.signalPluginOpenEditorTooltip,
+                    icon: const Icon(Icons.open_in_new),
+                    onPressed: null,
+                  ),
+                  _BypassToggle(
+                    toggleKey: Key('${keyPrefix}_bypass'),
+                    bypass: bypass,
+                    value: bypass == null
+                        ? 0
+                        : fx.paramValues[bypass.id] ?? bypass.def,
+                    onChanged: (v) => onSetParam(bypass!.id, v),
+                    tooltip: l10n.signalPluginBypassTooltip,
+                  ),
+                  IconButton(
+                    key: Key('${keyPrefix}_remove'),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                    iconSize: 15,
+                    color: surface.textTertiary,
+                    tooltip: l10n.removeEffectTooltip,
+                    icon: const Icon(Icons.close),
+                    onPressed: onRemove,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: knobs.isEmpty
+                  ? Center(
+                      child: Text(
+                        l10n.emDash,
+                        style: signalMono(color: surface.textTertiary),
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var k = 0; k < knobs.length; k++)
+                          SizedBox(
+                            width: _knobSlot,
+                            child: _PluginParamKnob(
+                              knobKey: Key('${keyPrefix}_param_$k'),
+                              spec: knobs[k],
+                              value:
+                                  fx.paramValues[knobs[k].id] ?? knobs[k].def,
+                              onChanged: (v) => onSetParam(knobs[k].id, v),
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The plugin card's bypass control: an accent-lit toggle when the plugin
+/// exposes a bypass param, or a disabled icon when it does not (so the chrome
+/// stays consistent across plugins).
+class _BypassToggle extends StatelessWidget {
+  const _BypassToggle({
+    required this.toggleKey,
+    required this.bypass,
+    required this.value,
+    required this.onChanged,
+    required this.tooltip,
+  });
+
+  final Key toggleKey;
+  final PluginParamInfo? bypass;
+
+  /// The bypass param's current plain value (`>= 0.5` = bypassed).
+  final double value;
+  final ValueChanged<double> onChanged;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final bypassed = bypass != null && value >= 0.5;
+    return IconButton(
+      key: toggleKey,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+      iconSize: 15,
+      color: bypassed ? surface.accent : surface.textTertiary,
+      tooltip: tooltip,
+      icon: Icon(bypassed ? Icons.power_settings_new : Icons.power_off),
+      // Disabled (null) when there is no bypass param to drive.
+      onPressed: bypass == null ? null : () => onChanged(bypassed ? 0 : 1),
+    );
+  }
+}
+
+/// One hosted-plugin parameter as a rotary [SignalKnob]. The plugin reports the
+/// value in its own plain `[min, max]` range; the knob works in `0..1`, so we
+/// normalize in and de-normalize out, and read out the live plain value.
+class _PluginParamKnob extends StatelessWidget {
+  const _PluginParamKnob({
+    required this.knobKey,
+    required this.spec,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Key knobKey;
+  final PluginParamInfo spec;
+
+  /// The current plain value (in `[spec.min, spec.max]`).
+  final double value;
+
+  /// Called with the new plain value as the knob turns.
+  final ValueChanged<double> onChanged;
+
+  double get _span => spec.max - spec.min;
+
+  double _normalize(double plain) =>
+      _span == 0 ? 0.0 : ((plain - spec.min) / _span).clamp(0.0, 1.0);
+
+  double _denormalize(double norm) => spec.min + norm * _span;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return SignalKnob(
+      knobKey: knobKey,
+      value: _normalize(value),
+      resetValue: _normalize(spec.def),
+      onChanged: (norm) => onChanged(_denormalize(norm)),
+      label: spec.name,
+      color: surface.accent,
+      size: 36,
+      readoutBuilder: (norm) {
+        final plain = _denormalize(norm);
+        final text = spec.stepCount > 0
+            ? plain.round().toString()
+            : plain.toStringAsFixed(2);
+        return spec.unit.isEmpty ? text : '$text ${spec.unit}';
+      },
     );
   }
 }

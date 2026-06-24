@@ -148,10 +148,8 @@ void main() {
           index: 0,
           pluginId: 'com.acme.delay',
         );
-        expect(
-          handle,
-          const MockPluginSlotHandle('com.acme.delay'),
-        );
+        expect(handle, isA<MockPluginSlotHandle>());
+        expect((handle! as MockPluginSlotHandle).pluginId, 'com.acme.delay');
       });
 
       test('clear calls return ok', () {
@@ -163,6 +161,48 @@ void main() {
           engine.clearMonitorPlugin(input: 0, index: 0),
           EngineResult.ok,
         );
+      });
+
+      test('enumerates three deterministic automatable params', () {
+        final slot = engine.setLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          pluginId: 'com.acme.reverb',
+        )!;
+        final params = engine.pluginParamInfos(slot);
+        expect(params, hasLength(3));
+        expect(params.map((p) => p.id), [100, 200, 300]);
+        expect(params.every((p) => p.isUserVisible), isTrue);
+      });
+
+      test('paramGet returns the default until a set, then the new value', () {
+        final slot = engine.setMonitorPlugin(
+          input: 0,
+          index: 0,
+          pluginId: 'com.acme.delay',
+        )!;
+        expect(engine.pluginParamGet(slot, 100), 0.5);
+        expect(engine.pluginParamSet(slot, 100, 0.8), EngineResult.ok);
+        expect(engine.pluginParamGet(slot, 100), 0.8);
+        // A second handle is an independent slot — unaffected by the set above.
+        final other = engine.setMonitorPlugin(
+          input: 1,
+          index: 0,
+          pluginId: 'com.acme.delay',
+        )!;
+        expect(engine.pluginParamGet(other, 100), 0.5);
+      });
+
+      test('an unknown param id reports invalid and reads zero', () {
+        final slot = engine.setLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          pluginId: 'com.acme.reverb',
+        )!;
+        expect(engine.pluginParamSet(slot, 999, 0.5), EngineResult.invalid);
+        expect(engine.pluginParamGet(slot, 999), 0);
       });
     });
   });

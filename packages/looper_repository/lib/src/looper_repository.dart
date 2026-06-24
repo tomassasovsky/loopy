@@ -5,6 +5,8 @@ import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
+import 'package:looper_repository/src/models/plugin_descriptor.dart'
+    show pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
@@ -19,6 +21,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         LoopbackKind,
         ParamReadout,
         PluginEffect,
+        PluginParamInfo,
         PluginRef,
         TrackEffect,
         TrackEffectParam,
@@ -146,6 +149,15 @@ class LooperRepository {
   final Map<int, double> _monitorVolume = {};
   final Map<int, bool> _monitorMute = {};
   final Map<int, List<TrackEffect>> _monitorEffects = {};
+
+  /// Live plugin slot handles keyed by chain position — `(channel, lane,
+  /// index)` for lane chains, `(input, index)` for monitor chains. Repopulated
+  /// every time a chain is (re)applied to the running engine; an absent entry
+  /// means the plugin is not currently loaded (engine stopped, or its load
+  /// failed), so a parameter set has nowhere to go. Handles are opaque tokens
+  /// the engine owns; the repository never frees them directly.
+  final Map<(int, int, int), PluginSlotHandle> _laneSlots = {};
+  final Map<(int, int), PluginSlotHandle> _monitorSlots = {};
 
   /// Structural output gate: outputs the user explicitly turned OFF (absent =>
   /// enabled). Only off entries are stored (default-on, self-cleaning), and
@@ -483,6 +495,10 @@ class LooperRepository {
   EngineResult stopEngine() {
     _intendRunning = false;
     _stopReconnectPolling();
+    // The engine tears down all plugin slots on stop; drop our stale handles so
+    // a later param set doesn't address a freed slot.
+    _laneSlots.clear();
+    _monitorSlots.clear();
     return _engine.stop();
   }
 
@@ -792,6 +808,35 @@ class LooperRepository {
     );
   }
 
+  /// Sets hosted-plugin parameter [paramId] of lane [lane]'s chain entry
+  /// [index] to the plain [value], routing it to the loaded plugin through the
+  /// RT param queue. The value is remembered on the [PluginEffect] so it
+  /// persists and re-applies when the plugin reloads. Returns [EngineResult
+  /// .invalid] if the entry is not a plugin, or the running plugin has no live
+  /// slot (e.g. its load failed).
+  EngineResult setLanePluginParam({
+    required int channel,
+    required int lane,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final effects = _laneEffects[(channel, lane)];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
+    _laneEffects[(channel, lane)] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(paramValues: values);
+    _reproject();
+    if (!_intendRunning) return EngineResult.ok;
+    final handle = _laneSlots[(channel, lane, index)];
+    if (handle == null) return EngineResult.invalid;
+    return _engine.pluginParamSet(handle, paramId, value);
+  }
+
   /// Lane [lane] of track [channel]'s remembered effect chain (empty if none),
   /// in processing order.
   List<TrackEffect> laneEffects(int channel, int lane) =>
@@ -802,10 +847,29 @@ class LooperRepository {
   /// then the active count. Called on (re)start and after a structural edit.
   EngineResult _applyLaneEffects(int channel, int lane) {
     final effects = _laneEffects[(channel, lane)] ?? const <TrackEffect>[];
+    // Drop any slot handles from a previous apply of this lane before reloading
+    // — the engine reseats the chain, so old handles no longer address it.
+    _laneSlots.removeWhere((key, _) => key.$1 == channel && key.$2 == lane);
+    final next = <TrackEffect>[];
+    var mutated = false;
     for (var i = 0; i < effects.length; i++) {
-      // Plugin entries are loaded through the slot ABI, not this built-in FX
-      // push — that wiring lands in part 5; here a plugin entry is skipped.
       final fx = effects[i];
+      if (fx is PluginEffect) {
+        // Load the plugin through the slot ABI, then enumerate its parameter
+        // surface and replay any persisted values through the RT queue.
+        final handle = _engine.setLanePlugin(
+          channel: channel,
+          lane: lane,
+          index: i,
+          pluginId: fx.ref.id,
+        );
+        final loaded = _bindPluginSlot(handle, fx);
+        if (handle != null) _laneSlots[(channel, lane, i)] = handle;
+        if (loaded != fx) mutated = true;
+        next.add(loaded);
+        continue;
+      }
+      next.add(fx);
       if (fx is! BuiltInEffect) continue;
       _engine.setLaneFx(
         channel: channel,
@@ -823,11 +887,36 @@ class LooperRepository {
         );
       }
     }
+    // Store the params-enriched chain so the projected state carries the live
+    // knob metadata, then re-emit (only when something actually changed).
+    if (mutated) {
+      _laneEffects[(channel, lane)] = next;
+      _reproject();
+    }
     return _engine.setLaneFxCount(
       channel: channel,
       lane: lane,
       count: effects.length,
     );
+  }
+
+  /// Reconciles a freshly-loaded plugin [handle] with its chain entry [fx]:
+  /// enumerates the plugin's live parameter surface into [PluginEffect.params]
+  /// and replays each persisted value in [PluginEffect.paramValues] through the
+  /// RT param queue. A `null` handle (load failed / engine stopped) clears the
+  /// stale metadata so the card renders the unresolved state.
+  PluginEffect _bindPluginSlot(PluginSlotHandle? handle, PluginEffect fx) {
+    if (handle == null) {
+      return fx.params.isEmpty ? fx : fx.copyWith(params: const []);
+    }
+    final infos = _engine
+        .pluginParamInfos(handle)
+        .map(pluginParamInfoFromEngine)
+        .toList();
+    for (final entry in fx.paramValues.entries) {
+      _engine.pluginParamSet(handle, entry.key, entry.value);
+    }
+    return fx.copyWith(params: infos);
   }
 
   /// Replaces track [channel]'s lane 0 effect chain. Convenience for lane 0.
@@ -907,6 +996,32 @@ class LooperRepository {
     );
   }
 
+  /// Sets hosted-plugin parameter [paramId] of monitor [input]'s chain entry
+  /// [index] to the plain [value], routing it through the RT param queue and
+  /// remembering it on the [PluginEffect]. No `_reproject()`: monitor chains
+  /// are not part of the projected `LooperState`. Returns
+  /// [EngineResult.invalid] if the entry is not a plugin, or its slot is gone.
+  EngineResult setMonitorPluginParam({
+    required int input,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final effects = _monitorEffects[input];
+    if (effects == null || index < 0 || index >= effects.length) {
+      return EngineResult.invalid;
+    }
+    final fx = effects[index];
+    if (fx is! PluginEffect) return EngineResult.invalid;
+    final values = Map<int, double>.of(fx.paramValues)..[paramId] = value;
+    _monitorEffects[input] = List<TrackEffect>.of(effects)
+      ..[index] = fx.copyWith(paramValues: values);
+    if (!_intendRunning) return EngineResult.ok;
+    final handle = _monitorSlots[(input, index)];
+    if (handle == null) return EngineResult.invalid;
+    return _engine.pluginParamSet(handle, paramId, value);
+  }
+
   /// Monitor [input]'s remembered effect chain (empty if none), in processing
   /// order.
   List<TrackEffect> monitorEffects(int input) =>
@@ -917,9 +1032,24 @@ class LooperRepository {
   /// count. Called on (re)start and after a structural edit.
   EngineResult _applyMonitorEffects(int input) {
     final effects = _monitorEffects[input] ?? const <TrackEffect>[];
+    _monitorSlots.removeWhere((key, _) => key.$1 == input);
+    final next = <TrackEffect>[];
+    var mutated = false;
     for (var i = 0; i < effects.length; i++) {
-      // Plugin entries load through the slot ABI (part 5); skip here.
       final fx = effects[i];
+      if (fx is PluginEffect) {
+        final handle = _engine.setMonitorPlugin(
+          input: input,
+          index: i,
+          pluginId: fx.ref.id,
+        );
+        final loaded = _bindPluginSlot(handle, fx);
+        if (handle != null) _monitorSlots[(input, i)] = handle;
+        if (loaded != fx) mutated = true;
+        next.add(loaded);
+        continue;
+      }
+      next.add(fx);
       if (fx is! BuiltInEffect) continue;
       _engine.setMonitorInputFx(
         input: input,
@@ -935,6 +1065,10 @@ class LooperRepository {
         );
       }
     }
+    // Monitor chains are not part of the projected `LooperState` (the
+    // MonitorCubit owns and emits them), so we only refresh the remembered
+    // chain with the live param metadata — no `_reproject()`.
+    if (mutated) _monitorEffects[input] = next;
     return _engine.setMonitorInputFxCount(input: input, count: effects.length);
   }
 
