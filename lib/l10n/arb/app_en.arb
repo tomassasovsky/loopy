@@ -121,6 +121,17 @@
             }
         }
     },
+    "a11yTrackTilePlay": "{name}, {state}, activate to mute or unmute",
+    "@a11yTrackTilePlay": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
     "a11yRenameTrack": "Rename {name}",
     "@a11yRenameTrack": {
         "placeholders": {

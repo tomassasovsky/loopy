@@ -55,6 +55,7 @@
     "a11yBankTab": "Mostrar banco {bank}",
     "a11yModeToggle": "Modo de actuación {mode}, activar para cambiar",
     "a11yTrackTile": "{name}, {state}, activar para grabar",
+    "a11yTrackTilePlay": "{name}, {state}, activar para silenciar o reactivar",
     "a11yRenameTrack": "Renombrar {name}",
     "renameTrackTitle": "Renombrar pista {trackNumber}",
     "cancel": "Cancelar",

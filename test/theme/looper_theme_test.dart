@@ -182,6 +182,7 @@ void main() {
           TrackIndicator.of(
             state,
             muted: true,
+            hasContent: true,
             selected: true,
             playMode: false,
           ),
@@ -196,6 +197,7 @@ void main() {
         TrackIndicator.of(
           TrackState.recording,
           muted: false,
+          hasContent: false,
           selected: false,
           playMode: true,
         ),
@@ -205,6 +207,7 @@ void main() {
         TrackIndicator.of(
           TrackState.overdubbing,
           muted: false,
+          hasContent: true,
           selected: false,
           playMode: true,
         ),
@@ -215,6 +218,7 @@ void main() {
         TrackIndicator.of(
           TrackState.playing,
           muted: false,
+          hasContent: true,
           selected: true,
           playMode: false,
         ),
@@ -222,12 +226,34 @@ void main() {
       );
     });
 
-    test('empty/stopped + selected arms by mode', () {
+    test('a stopped track that holds a loop is armed to play (green)', () {
+      // Regardless of selection or mode — it will sound on the next play-all,
+      // so the indicator stays lit after a stop rather than going dark.
+      for (final selected in [true, false]) {
+        for (final playMode in [true, false]) {
+          expect(
+            TrackIndicator.of(
+              TrackState.stopped,
+              muted: false,
+              hasContent: true,
+              selected: selected,
+              playMode: playMode,
+            ),
+            TrackIndicator.play,
+          );
+        }
+      }
+    });
+
+    test('empty/contentless + selected arms by mode', () {
+      // Empty is always contentless; a stopped track with no loop behaves the
+      // same (e.g. after a clear). Selected -> arm by mode.
       for (final state in [TrackState.empty, TrackState.stopped]) {
         expect(
           TrackIndicator.of(
             state,
             muted: false,
+            hasContent: false,
             selected: true,
             playMode: false,
           ),
@@ -238,6 +264,7 @@ void main() {
           TrackIndicator.of(
             state,
             muted: false,
+            hasContent: false,
             selected: true,
             playMode: true,
           ),
@@ -247,13 +274,14 @@ void main() {
       }
     });
 
-    test('empty/stopped + unselected is idle in either mode', () {
+    test('empty/contentless + unselected is idle in either mode', () {
       for (final state in [TrackState.empty, TrackState.stopped]) {
         for (final playMode in [true, false]) {
           expect(
             TrackIndicator.of(
               state,
               muted: false,
+              hasContent: false,
               selected: false,
               playMode: playMode,
             ),
