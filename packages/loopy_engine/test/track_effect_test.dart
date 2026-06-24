@@ -238,6 +238,20 @@ void main() {
       expect(decoded.state, isEmpty);
     });
 
+    test('display name round-trips through JSON and counts in equality', () {
+      const fx = PluginEffect(ref: ref, name: 'Big Reverb');
+      final json = fx.toJson();
+      expect(json['name'], 'Big Reverb');
+      final decoded = TrackEffect.fromJson(json) as PluginEffect;
+      expect(decoded.name, 'Big Reverb');
+      expect(decoded, fx);
+      expect(fx, isNot(const PluginEffect(ref: ref)));
+    });
+
+    test('omits name when empty (back-compat)', () {
+      expect(const PluginEffect(ref: ref).toJson().containsKey('name'), false);
+    });
+
     test('params metadata is transient — excluded from toJson + equality', () {
       const params = [
         PluginParamInfo(

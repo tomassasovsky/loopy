@@ -7,7 +7,7 @@ import 'package:looper_repository/src/models/engine_status.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
-    show pluginParamInfoFromEngine;
+    show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
@@ -22,6 +22,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         LoopbackInfo,
         LoopbackKind,
         ParamReadout,
+        PluginDescriptor,
         PluginEffect,
         PluginParamInfo,
         PluginRef,
@@ -496,8 +497,41 @@ class LooperRepository {
         (output, enabled) =>
             _engine.setOutputEnabled(output: output, enabled: enabled),
       );
+      // Restored plugins load by id through the native scan cache, which is
+      // empty on a cold start — so the apply above leaves them unavailable.
+      // Kick a scan and rebind them once it lands (resolving names too).
+      unawaited(_ensureRestoredPluginsLoaded());
     }
     return result;
+  }
+
+  /// Whether [effects] holds at least one hosted-plugin entry.
+  static bool _hasPlugin(Iterable<TrackEffect> effects) =>
+      effects.any((e) => e is PluginEffect);
+
+  /// A restored chain loads its plugins by id through the engine's in-process
+  /// scan cache. On a cold start nothing has scanned yet, so those loads fail
+  /// and the entries render as unavailable placeholders. If any restored chain
+  /// has a plugin and the catalog hasn't been populated, run a scan and
+  /// re-apply the plugin chains so they load (and resolve their display names)
+  /// without the user relinking by hand. A no-op once the catalog is populated.
+  Future<void> _ensureRestoredPluginsLoaded() async {
+    final laneKeys = [
+      for (final e in _laneEffects.entries)
+        if (_hasPlugin(e.value)) e.key,
+    ];
+    final monitorKeys = [
+      for (final e in _monitorEffects.entries)
+        if (_hasPlugin(e.value)) e.key,
+    ];
+    if (laneKeys.isEmpty && monitorKeys.isEmpty) return;
+    if (pluginCatalog.descriptors.isNotEmpty) return; // already scanned
+    await pluginCatalog.scan();
+    if (!_intendRunning) return; // stopped while scanning
+    for (final key in laneKeys) {
+      _applyLaneEffects(key.$1, key.$2);
+    }
+    monitorKeys.forEach(_applyMonitorEffects);
   }
 
   /// Closes the audio device. A deliberate stop also cancels any in-flight
@@ -1078,10 +1112,17 @@ class LooperRepository {
   /// stale metadata so the card renders the unresolved state.
   PluginEffect _bindPluginSlot(PluginSlotHandle? handle, PluginEffect fx) {
     if (handle == null) {
-      // The plugin failed to load on the running engine (uninstalled / moved /
-      // incompatible) — flag the D-MISS placeholder, preserving ref + state for
-      // relink; the entry is never dropped to a silent `none`.
-      return fx.copyWith(params: const [], unavailable: true);
+      // The plugin failed to load on the running engine — flag the D-MISS
+      // placeholder, preserving ref + state for relink (never a silent `none`).
+      // A failed load whose id IS in the scan catalog means the plugin is
+      // installed but rejected (instrument / multi-bus — D-BUS), as opposed to
+      // simply missing; the card shows the right message.
+      final installed = _descriptorFor(fx.ref.id) != null;
+      return fx.copyWith(
+        params: const [],
+        unavailable: true,
+        unsupported: installed,
+      );
     }
     // Restore the captured opaque state first (D-P1 frozen instance) — a
     // corrupt blob is ignored, never fatal (D-MISS) — then replay the user's
@@ -1093,28 +1134,97 @@ class LooperRepository {
         // Corrupt blob: leave the plugin at its default state.
       }
     }
-    final infos = _engine
-        .pluginParamInfos(handle)
-        .map(pluginParamInfoFromEngine)
-        .toList();
+    final infos = _enrichParamLabels(
+      handle,
+      _engine.pluginParamInfos(handle).map(pluginParamInfoFromEngine).toList(),
+    );
     for (final entry in fx.paramValues.entries) {
       _engine.pluginParamSet(handle, entry.key, entry.value);
     }
+    final descriptor = _descriptorFor(fx.ref.id);
+    // The installed version differs from what the take saved (same id, new
+    // version) — the plugin still loaded, but note the drift (D-MISS). Drift is
+    // only detectable once the catalog has the descriptor, so a false flag here
+    // means "no drift OR not yet scanned", never a hard "versions match".
+    final versionDrift =
+        descriptor != null &&
+        fx.ref.version != 0 &&
+        descriptor.version != 0 &&
+        descriptor.version != fx.ref.version;
     return fx.copyWith(
       params: infos,
-      name: _resolvePluginName(fx),
+      name: descriptor?.name ?? fx.name,
       unavailable: false,
+      unsupported: false,
+      versionChanged: versionDrift,
     );
   }
 
-  /// The plugin's display name from the most recent scan, or its existing name
-  /// (then the empty string) when the catalog hasn't seen it — so a name never
-  /// regresses to blank once resolved.
-  String _resolvePluginName(PluginEffect fx) {
+  /// The scanned descriptor for plugin [id], or null when the catalog hasn't
+  /// seen it (not yet scanned, or uninstalled).
+  PluginDescriptor? _descriptorFor(String id) {
     for (final d in pluginCatalog.descriptors) {
-      if (d.id == fx.ref.id) return d.name;
+      if (d.id == id) return d;
     }
-    return fx.name;
+    return null;
+  }
+
+  /// A discrete param with more steps than this stays a knob rather than
+  /// becoming a dropdown — enumerating every step of, say, a 128-value param
+  /// would be a wall of menu items, not a usable control.
+  static const int _maxEnumSteps = 24;
+
+  /// Enriches each small discrete param in [infos] with its per-step display
+  /// labels (so the UI can render a switch / dropdown), by asking the plugin to
+  /// format every step value. A param whose steps don't all resolve to text is
+  /// left bare (it falls back to a knob). Continuous params are untouched.
+  List<PluginParamInfo> _enrichParamLabels(
+    PluginSlotHandle handle,
+    List<PluginParamInfo> infos,
+  ) => [
+    for (final p in infos)
+      if (p.stepCount >= 1 && p.stepCount <= _maxEnumSteps)
+        _withStepLabels(handle, p)
+      else
+        p,
+  ];
+
+  PluginParamInfo _withStepLabels(PluginSlotHandle handle, PluginParamInfo p) {
+    final labels = <String>[];
+    for (var k = 0; k <= p.stepCount; k++) {
+      final value = p.min + (p.max - p.min) * k / p.stepCount;
+      final text = _engine.pluginParamValueText(handle, p.id, value);
+      if (text == null || text.isEmpty) return p; // incomplete -> keep the knob
+      labels.add(text);
+    }
+    return p.withValueTexts(labels);
+  }
+
+  /// The plugin's own display string for lane [lane] chain entry [index]'s
+  /// parameter [paramId] at the plain [value] (e.g. `-6.0 dB`), or null when no
+  /// plugin is loaded there or it offers no text. Drives live knob readouts.
+  String? lanePluginParamText({
+    required int channel,
+    required int lane,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final handle = _laneSlots[(channel, lane, index)];
+    if (handle == null) return null;
+    return _engine.pluginParamValueText(handle, paramId, value);
+  }
+
+  /// Like [lanePluginParamText] for monitor [input]'s chain entry [index].
+  String? monitorPluginParamText({
+    required int input,
+    required int index,
+    required int paramId,
+    required double value,
+  }) {
+    final handle = _monitorSlots[(input, index)];
+    if (handle == null) return null;
+    return _engine.pluginParamValueText(handle, paramId, value);
   }
 
   /// Replaces track [channel]'s lane 0 effect chain. Convenience for lane 0.

@@ -22,6 +22,7 @@ void main() {
         keyPrefix: 'signalGraph_lane',
         effects: effects,
         onAddEffect: onAddEffect ?? () {},
+        onAddPlugin: () {},
         onRemoveEffect: onRemoveEffect ?? (_) {},
         onSetType: onSetType ?? (_, _) {},
         onSetParam: onSetParam ?? (_, _, _) {},
@@ -179,7 +180,9 @@ void main() {
       expect(reorders, [(2, 0)]);
     });
 
-    testWidgets('the add-device card fires onAddEffect', (tester) async {
+    testWidgets('the add-device "Add effect" button fires onAddEffect', (
+      tester,
+    ) async {
       var added = 0;
       await tester.pumpApp(
         build(
@@ -187,9 +190,36 @@ void main() {
           onAddEffect: () => added++,
         ),
       );
-      await tester.tap(find.byKey(const Key('signalGraph_lane_addDevice')));
+      // The two add buttons show directly — no menu to open.
+      await tester.tap(find.byKey(const Key('signalGraph_addEffect')));
       await tester.pumpAndSettle();
       expect(added, 1);
+    });
+
+    testWidgets('the add-device "Add plugin…" button fires onAddPlugin', (
+      tester,
+    ) async {
+      var addedPlugin = 0;
+      await tester.pumpApp(
+        Scaffold(
+          body: SignalFxRack(
+            keyPrefix: 'signalGraph_lane',
+            effects: [BuiltInEffect(type: TrackEffectType.delay)],
+            onAddEffect: () {},
+            onAddPlugin: () => addedPlugin++,
+            onRemoveEffect: (_) {},
+            onSetType: (_, _) {},
+            onSetParam: (_, _, _) {},
+            onSetPluginParam: (_, _, _) {},
+            onOpenPluginEditor: (_) {},
+            onRelinkPlugin: (_) {},
+            onReorder: (_, _) {},
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(const Key('signalGraph_addPlugin')));
+      await tester.pumpAndSettle();
+      expect(addedPlugin, 1);
     });
 
     testWidgets('picking a type from the header dispatches onSetType', (
@@ -267,6 +297,8 @@ void main() {
       double min = 0,
       double max = 1,
       double def = 0.5,
+      int stepCount = 0,
+      List<String> valueTexts = const [],
     }) => PluginParamInfo(
       id: id,
       name: name,
@@ -274,8 +306,9 @@ void main() {
       min: min,
       max: max,
       def: def,
-      stepCount: 0,
+      stepCount: stepCount,
       flags: flags,
+      valueTexts: valueTexts,
     );
 
     PluginEffect plugin({
@@ -296,11 +329,14 @@ void main() {
       void Function(int index)? onOpenPluginEditor,
       void Function(int index)? onRelinkPlugin,
       void Function(int index)? onRemoveEffect,
+      String? Function(int index, int paramId, double value)?
+      onFormatPluginValue,
     }) => Scaffold(
       body: SignalFxRack(
         keyPrefix: 'signalGraph_lane',
         effects: [fx],
         onAddEffect: () {},
+        onAddPlugin: () {},
         onRemoveEffect: onRemoveEffect ?? (_) {},
         onSetType: (_, _) {},
         onSetParam: (_, _, _) {},
@@ -308,6 +344,7 @@ void main() {
         onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
         onRelinkPlugin: onRelinkPlugin ?? (_) {},
         onReorder: (_, _) {},
+        onFormatPluginValue: onFormatPluginValue,
       ),
     );
 
@@ -374,15 +411,94 @@ void main() {
       expect(find.byType(SignalKnob), findsNWidgets(3));
     });
 
-    testWidgets('caps the in-app knobs at kPluginKnobs', (tester) async {
+    testWidgets('renders a knob for every user-visible param, uncapped', (
+      tester,
+    ) async {
       await tester.pumpApp(
         build(
           fx: plugin(
-            params: [for (var i = 0; i < 8; i++) param(i, 'P$i')],
+            params: [for (var i = 0; i < 12; i++) param(i, 'P$i')],
           ),
         ),
       );
-      expect(find.byType(SignalKnob), findsNWidgets(kPluginKnobs));
+      // Every automatable param gets a knob — they wrap into rows and the card
+      // grows taller rather than truncating (no cap, no horizontal scroll).
+      expect(find.byType(SignalKnob), findsNWidgets(12));
+      final params = find.byKey(const Key('signalGraph_lane_device_0_params'));
+      expect(params, findsOneWidget);
+      // 12 knobs at 60px in a 360px body = 6 per row -> a second row, so the
+      // control area is taller than a single row.
+      expect(tester.getSize(params).height, greaterThan(100));
+    });
+
+    testWidgets('a boolean param renders a switch, not a knob', (tester) async {
+      var lastSet = -1.0;
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            // stepCount 1 = on/off; seeded off (def 0).
+            params: [param(10, 'Sync', stepCount: 1, def: 0)],
+          ),
+          onSetPluginParam: (_, _, v) => lastSet = v,
+        ),
+      );
+      expect(find.byType(Switch), findsOneWidget);
+      expect(find.byType(SignalKnob), findsNothing);
+
+      // Flipping the switch drives the param to its max (on).
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_param_0')),
+      );
+      expect(lastSet, 1.0);
+    });
+
+    testWidgets('a discrete enum param renders a dropdown of its labels', (
+      tester,
+    ) async {
+      var lastSet = -1.0;
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            params: [
+              param(
+                10,
+                'Filter',
+                flags: 0x01 | 0x10, // automatable + stepped
+                max: 2,
+                def: 0,
+                stepCount: 2,
+                valueTexts: const ['Lowpass', 'Highpass', 'Bandpass'],
+              ),
+            ],
+          ),
+          onSetPluginParam: (_, _, v) => lastSet = v,
+        ),
+      );
+      expect(find.byType(SignalKnob), findsNothing);
+      // The current step label shows; the others appear on open.
+      expect(find.text('Lowpass'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_param_0')),
+      );
+      await tester.pumpAndSettle();
+      // Picking 'Bandpass' (step 2 over [0, 2]) sets the plain value to 2.0.
+      await tester.tap(find.text('Bandpass').last);
+      await tester.pumpAndSettle();
+      expect(lastSet, 2.0);
+    });
+
+    testWidgets('the knob readout uses the plugin format when provided', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(params: [param(10, 'Gain')]),
+          onFormatPluginValue: (_, _, _) => '-6.0 dB',
+        ),
+      );
+      // The live plugin-formatted readout wins over the bare number.
+      expect(find.text('-6.0 dB'), findsOneWidget);
     });
 
     testWidgets('hidden and read-only params get no knob', (tester) async {
@@ -524,6 +640,54 @@ void main() {
         find.byKey(const Key('signalGraph_lane_device_0_relink')),
       );
       expect(relinked, [0]);
+    });
+
+    testWidgets('an unsupported plugin shows the distinct reason', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(
+          fx: plugin(
+            id: 'synth',
+          ).copyWith(unavailable: true, unsupported: true),
+        ),
+      );
+      // The placeholder distinguishes "unsupported" (installed but rejected)
+      // from the plain "unavailable" (missing) message.
+      expect(find.text('Plugin unsupported'), findsOneWidget);
+      expect(find.text('Plugin unavailable'), findsNothing);
+      // Still relinkable.
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_relink')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a version-changed plugin shows the drift badge', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(fx: plugin(id: 'My Plugin').copyWith(versionChanged: true)),
+      );
+      // The plugin still loads (live controls present) but flags the drift.
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_versionChanged')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_openEditor')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a current-version plugin shows no drift badge', (
+      tester,
+    ) async {
+      await tester.pumpApp(build(fx: plugin(id: 'My Plugin')));
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_versionChanged')),
+        findsNothing,
+      );
     });
   });
 }

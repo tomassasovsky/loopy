@@ -67,12 +67,15 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpApp(
-        MultiBlocProvider(
-          providers: [
-            BlocProvider<LooperBloc>.value(value: bloc),
-            BlocProvider<MonitorCubit>.value(value: monitor),
-          ],
-          child: const Scaffold(body: SignalListView()),
+        RepositoryProvider<LooperRepository>.value(
+          value: repository,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<MonitorCubit>.value(value: monitor),
+            ],
+            child: const Scaffold(body: SignalListView()),
+          ),
         ),
       );
       await tester.pumpAndSettle();

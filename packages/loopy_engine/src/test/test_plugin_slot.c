@@ -270,6 +270,17 @@ static void test_param_queue(void) {
   CHECK(le_plugin_param_count(NULL, &count) == LE_ERR_INVALID);
   CHECK(le_plugin_param_set(NULL, 1, 0.5) == LE_ERR_INVALID);
 
+  /* Value-to-text: a known param formats its plain value; an unknown id has no
+   * text mapping; null args are rejected. */
+  char text[32];
+  CHECK(le_plugin_param_value_text(slot, 100, 0.7, text, sizeof(text)) == LE_OK);
+  CHECK(strcmp(text, "0.70 u") == 0);
+  CHECK(le_plugin_param_value_text(slot, 999, 0.5, text, sizeof(text)) ==
+        LE_ERR_UNSUPPORTED);
+  CHECK(le_plugin_param_value_text(NULL, 100, 0.5, text, sizeof(text)) ==
+        LE_ERR_INVALID);
+  CHECK(le_plugin_param_value_text(slot, 100, 0.5, NULL, 32) == LE_ERR_INVALID);
+
   atomic_store(&fx.plugin[0], (le_plugin_slot*)NULL);
   le_plugin_slot_destroy(slot);
 }

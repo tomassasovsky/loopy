@@ -204,6 +204,19 @@ void main() {
         expect(engine.pluginParamSet(slot, 999, 0.5), EngineResult.invalid);
         expect(engine.pluginParamGet(slot, 999), 0);
       });
+
+      test('paramValueText formats a known param and nulls an unknown', () {
+        final slot = engine.setLanePlugin(
+          channel: 0,
+          lane: 0,
+          index: 0,
+          pluginId: 'com.acme.reverb',
+        )!;
+        // Param 100 carries the 'dB' unit; 200 is unitless.
+        expect(engine.pluginParamValueText(slot, 100, 0.5), '0.50 dB');
+        expect(engine.pluginParamValueText(slot, 200, 0.25), '0.25');
+        expect(engine.pluginParamValueText(slot, 999, 0.5), isNull);
+      });
     });
   });
 }
