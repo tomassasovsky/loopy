@@ -121,6 +121,7 @@ class ClapHost final : public loopy::IPluginHost {
     __try {
       return loadImpl(desc, sampleRate, maxBlock);
     } __except (loadSehFilter(GetExceptionCode())) {
+      crashed_ = true;  // unload() must not call back into the dead plugin
       return loopy::LoadStatus::failed;
     }
 #else
@@ -424,6 +425,18 @@ class ClapHost final : public loopy::IPluginHost {
   }
 
   void unload() {
+#if defined(_WIN32)
+    if (crashed_) {
+      // A plugin that faulted mid-load left its module in an unknown (possibly
+      // corrupt) state — calling destroy/deinit/FreeLibrary crashes again.
+      // Forget every handle WITHOUT touching the plugin: its DLL stays mapped (a
+      // bounded best-effort leak — D-RT) but the app survives.
+      plugin_ = nullptr;
+      entry_ = nullptr;
+      dll_ = nullptr;
+      return;
+    }
+#endif
     editorClose();  // D-WIN: never leak the editor window past the plugin
     if (plugin_) {
       plugin_->stop_processing(plugin_);
@@ -462,6 +475,7 @@ class ClapHost final : public loopy::IPluginHost {
   std::vector<float> outL_, outR_;
   int64_t steady_ = 0;
   int channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
+  bool crashed_ = false;  // load SEH-faulted: unload() must not touch the plugin
   bool editorOpen_ = false;
   std::string name_;  // plugin display name, for the editor window title
   lpw_window* window_ = nullptr;
