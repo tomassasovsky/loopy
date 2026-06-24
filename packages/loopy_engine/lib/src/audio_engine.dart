@@ -392,6 +392,39 @@ abstract interface class EnginePluginHosting {
   /// Cancels an in-progress scan and joins the scan thread. Idempotent and safe
   /// to call when no scan is running.
   EngineResult scanCancel();
+
+  /// Loads the scanned plugin [pluginId] into lane FX chain slot [index] of
+  /// (channel, lane), at the plugin's default state (umbrella D-LIFE). The load
+  /// + activate happen on the control thread; the audio thread renders dry
+  /// passthrough until the slot is published. Returns a [PluginSlotHandle] on
+  /// success, or `null` on failure (unknown id / load error / unsupported
+  /// build). Activate the entry in the chain with the matching
+  /// `setLaneFxCount`, as for a built-in effect.
+  PluginSlotHandle? setLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+    required String pluginId,
+  });
+
+  /// Like [setLanePlugin] but for monitor input [input]'s chain slot [index].
+  PluginSlotHandle? setMonitorPlugin({
+    required int input,
+    required int index,
+    required String pluginId,
+  });
+
+  /// Clears the plugin in lane FX slot [index] of (channel, lane): the audio
+  /// thread stops forwarding to it, then the host is destroyed after a
+  /// quiescent handshake (no audio-thread free). The entry returns to empty.
+  EngineResult clearLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+  });
+
+  /// Like [clearLanePlugin] but for monitor input [input]'s chain slot [index].
+  EngineResult clearMonitorPlugin({required int input, required int index});
 }
 
 /// The data-layer boundary over the native audio engine, composed from the

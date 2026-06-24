@@ -1,5 +1,12 @@
 import 'package:flutter/foundation.dart';
 
+/// An opaque handle to a plugin loaded into a lane / monitor FX chain slot.
+///
+/// Returned by `AudioEngine.setLanePlugin` / `setMonitorPlugin`, it is a token
+/// the caller holds to address that slot in later operations (parameters,
+/// editor window — added in later slices). It carries no public surface here.
+abstract interface class PluginSlotHandle {}
+
 /// The format a hosted plugin was discovered in. Mirrors the native
 /// `le_plugin_format` enum.
 enum PluginFormat {

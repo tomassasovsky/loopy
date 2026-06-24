@@ -116,6 +116,12 @@ typedef struct le_fx_state {
   int32_t rev_comb_pos[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   float rev_comb_lp[LE_FX_MAX][LE_REV_COMBS * LE_REV_BANKS];
   int32_t rev_ap_pos[LE_FX_MAX][LE_REV_APS * LE_REV_BANKS];
+  /* For an LE_FX_PLUGIN slot: the hosted-plugin slot handle the audio thread
+   * forwards to, or NULL. The control thread publishes/retracts it
+   * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
+   * NULL or not-ready slot renders dry passthrough — no plugin is ever created
+   * or freed on the audio thread (D-LIFE). */
+  _Atomic(le_plugin_slot*) plugin[LE_FX_MAX];
 } le_fx_state;
 
 /* One recordable input lane — the fundamental unit of captured audio.

@@ -191,6 +191,12 @@ typedef enum le_fx_type {
   LE_FX_OCTAVER = 5,
   LE_FX_ECHO = 6,
   LE_FX_REVERB = 7,
+  /* A hosted VST3/CLAP plugin. Unlike the built-ins this row carries no fixed
+   * params and no DSP state in le_fx_state — its `process` forwards to a plugin
+   * host owned by an le_plugin_slot, loaded on the control thread (see
+   * le_engine_set_lane_plugin). An LE_FX_PLUGIN entry whose slot is not yet
+   * published (or is being torn down) renders dry passthrough. */
+  LE_FX_PLUGIN = 8,
 } le_fx_type;
 
 /* Which device backend to open. The default (0) opens miniaudio's default
@@ -502,6 +508,45 @@ LE_EXPORT int32_t le_plugin_scan_get(le_engine* engine, int32_t index,
  * in-flight candidate finishes). Idempotent; safe when no scan is running.
  * Returns LE_OK, or LE_ERR_INVALID for a null engine. */
 LE_EXPORT int32_t le_plugin_scan_cancel(le_engine* engine);
+
+/* ---- Plugin slot lifecycle (control thread; D-LIFE) ----
+ *
+ * An opaque handle to a plugin loaded into one lane / monitor FX chain slot.
+ * Valid from a successful le_engine_set_*_plugin until that slot is cleared or
+ * the engine is destroyed. The heavy work — instancing, activation, buffer
+ * allocation — runs on the CONTROL thread; the audio thread only ever reads an
+ * atomically-published "ready" flag and forwards samples. No plugin is ever
+ * created, destroyed, or dylib-loaded on the audio callback. */
+typedef struct le_plugin_slot le_plugin_slot;
+
+/* Loads the plugin identified by `plugin_id` (a scanned le_plugin_desc.id) into
+ * FX chain slot `index` of a lane (channel, lane) or a monitor input. The load
+ * + activate happen here on the control thread, BYPASSED, then the slot is
+ * atomically published so the audio thread begins forwarding to it; until ready
+ * the slot renders dry passthrough (no click). On success the chain entry's type
+ * becomes LE_FX_PLUGIN and *out_slot receives the handle. The entry is activated
+ * in the chain the same way as a built-in, via le_engine_set_lane_fx_count /
+ * le_engine_set_monitor_input_fx_count. Returns LE_OK, LE_ERR_INVALID for a bad
+ * argument / unknown plugin_id, or LE_ERR_DEVICE on a plugin load/activate
+ * failure. (out_slot may be NULL if the caller does not need the handle.) */
+LE_EXPORT int32_t le_engine_set_lane_plugin(le_engine* engine, int32_t channel,
+                                            int32_t lane, int32_t index,
+                                            const char* plugin_id,
+                                            le_plugin_slot** out_slot);
+LE_EXPORT int32_t le_engine_set_monitor_plugin(le_engine* engine, int32_t input,
+                                               int32_t index,
+                                               const char* plugin_id,
+                                               le_plugin_slot** out_slot);
+
+/* Clears a plugin slot: the audio thread is signalled to stop forwarding to it,
+ * and the host is destroyed on the control thread only AFTER a published-
+ * quiescent handshake (so there is never a use-after-free or an audio-thread
+ * free). The chain entry returns to LE_FX_NONE. Idempotent on an empty slot.
+ * Returns LE_OK or LE_ERR_INVALID. */
+LE_EXPORT int32_t le_engine_clear_lane_plugin(le_engine* engine, int32_t channel,
+                                              int32_t lane, int32_t index);
+LE_EXPORT int32_t le_engine_clear_monitor_plugin(le_engine* engine,
+                                                 int32_t input, int32_t index);
 
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
