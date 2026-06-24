@@ -11,6 +11,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
@@ -40,6 +41,8 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
     implements AudioSetupCubit {}
 
 class _MockMidiDeviceRepository extends Mock implements MidiDeviceRepository {}
+
+class _MockPedalCubit extends MockCubit<PedalState> implements PedalCubit {}
 
 Future<void> _loadFont(String family, List<String> paths) async {
   final loader = FontLoader(family);
@@ -82,6 +85,7 @@ void main() {
   late LooperRepository repository;
   late AudioSetupCubit audioSetup;
   late MidiDeviceRepository midi;
+  late PedalCubit pedal;
 
   const runningAudio = AudioSetupState(
     status: AudioSetupStatus.running,
@@ -132,6 +136,13 @@ void main() {
       () => midi.connections,
     ).thenAnswer((_) => const Stream<MidiConnection>.empty());
     when(() => midi.activity).thenAnswer((_) => const Stream<void>.empty());
+    pedal = _MockPedalCubit();
+    when(() => pedal.state).thenReturn(const PedalState());
+    whenListen(
+      pedal,
+      const Stream<PedalState>.empty(),
+      initialState: const PedalState(),
+    );
   });
 
   Future<void> pump(WidgetTester tester) async {
@@ -163,6 +174,9 @@ void main() {
               BlocProvider<HighContrastCubit>.value(
                 value: HighContrastCubit(settings: settings),
               ),
+              BlocProvider<TrackIndicatorsCubit>.value(
+                value: TrackIndicatorsCubit(settings: settings),
+              ),
               BlocProvider<MidiSetupCubit>.value(
                 value: MidiSetupCubit(repository: midi),
               ),
@@ -192,6 +206,7 @@ void main() {
                   settings: settings,
                 ),
               ),
+              BlocProvider<PedalCubit>.value(value: pedal),
             ],
             child: const BigPictureSettingsPage(),
           ),
