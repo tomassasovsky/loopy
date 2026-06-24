@@ -41,6 +41,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     required SettingsRepository settings,
     bool asioSelectable = false,
     List<AudioDevice> initialAsioDrivers = const [],
+    Duration deviceRefreshInterval = const Duration(seconds: 1),
   }) : _repository = repository,
        _settings = settings,
        _asioSelectable = asioSelectable,
@@ -80,11 +81,22 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
     // switch) — otherwise the chips would show no selection.
     if (initial.asioOnly) initial = _snapRateAndBuffer(initial);
     emit(initial);
+
+    // Periodically re-enumerate so an interface plugged in (or removed) after
+    // launch appears in / disappears from the picker without a restart. The
+    // pinned-device connectivity watch (see [_detectConnectivity]) only tracks
+    // the selected device, not the full list. Enumeration runs on a transient
+    // ma_context independent of the streaming device, so it is glitch-free.
+    _deviceRefreshTimer = Timer.periodic(
+      deviceRefreshInterval,
+      (_) => refreshDevices(),
+    );
   }
 
   final LooperRepository _repository;
   final SettingsRepository _settings;
   late final StreamSubscription<LooperState> _subscription;
+  Timer? _deviceRefreshTimer;
 
   /// Whether the ASIO backend is selectable on this platform (Windows only),
   /// injected by the presentation layer (`platformAsioSelectable`) so the cubit
@@ -335,6 +347,15 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
   void setRecordOffset(int frames) =>
       _repository.setRecordOffset(frames < 0 ? 0 : frames);
 
+  /// Re-enumerates the host's audio devices and updates the picker when the
+  /// set changed (an unchanged list is deduped by the state's value equality,
+  /// so this is a no-op when nothing was plugged in or removed). Driven by the
+  /// periodic refresh timer; also safe to call directly.
+  void refreshDevices() {
+    if (isClosed) return;
+    emit(state.copyWith(devices: _repository.devices()));
+  }
+
   void _onLooperState(LooperState looper) {
     emit(_projectFromRepository(looper, current: state));
     _detectConnectivity(looper.status);
@@ -493,6 +514,7 @@ class AudioSetupCubit extends Cubit<AudioSetupState> {
 
   @override
   Future<void> close() {
+    _deviceRefreshTimer?.cancel();
     unawaited(_subscription.cancel());
     return super.close();
   }
