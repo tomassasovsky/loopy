@@ -34,6 +34,7 @@
 #include <string.h>
 
 #include "engine_core.h" /* shared low-level helpers: le_push, valid_channel, ... */
+#include "../host/plugin_slot.h" /* le_plugin_slot_destroy (teardown of slots) */
 #include "engine_fx.h" /* effects DSP island: chain runner, reset/free, latency */
 #include "engine_internal.h"
 #include "engine_miniaudio.h"
@@ -123,6 +124,13 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
     ln->fx.delay[s][1] = NULL;
     le_fx_free_octaver(&ln->fx, s);
     le_fx_entry_reset(&ln->fx, s);
+    /* Destroy any hosted plugin slot too. Reset runs from le_engine_configure
+     * while the device is closed (no audio thread), so a direct destroy is safe
+     * — mirrors le_engine_destroy. Without this, a start→stop→start or any
+     * reconfigure leaks the live IPluginHost and its loaded plugin binary. */
+    le_plugin_slot_destroy(
+        atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
+    atomic_store_explicit(&ln->fx.plugin[s], NULL, memory_order_relaxed);
   }
 }
 
@@ -146,6 +154,11 @@ static void le_monitor_input_reset(le_monitor_input* m) {
     m->fx.delay[s][1] = NULL;
     le_fx_free_octaver(&m->fx, s);
     le_fx_entry_reset(&m->fx, s);
+    /* Destroy any hosted plugin slot too (see le_lane_reset) — otherwise a
+     * reconfigure leaks the monitor input's live plugin host + binary. */
+    le_plugin_slot_destroy(
+        atomic_load_explicit(&m->fx.plugin[s], memory_order_relaxed));
+    atomic_store_explicit(&m->fx.plugin[s], NULL, memory_order_relaxed);
   }
 }
 
@@ -399,6 +412,11 @@ void le_engine_destroy(le_engine* engine) {
         free(ln->fx.delay[s][0]);
         free(ln->fx.delay[s][1]);
         le_fx_free_octaver(&ln->fx, s);
+        /* The device is already closed (no audio thread), so any hosted plugin
+         * slot — including one left behind by a stalled-callback clear — can be
+         * destroyed directly without the quiescent handshake. */
+        le_plugin_slot_destroy(
+            atomic_load_explicit(&ln->fx.plugin[s], memory_order_relaxed));
       }
     }
   }
@@ -407,6 +425,8 @@ void le_engine_destroy(le_engine* engine) {
       free(engine->monitors[c].fx.delay[s][0]);
       free(engine->monitors[c].fx.delay[s][1]);
       le_fx_free_octaver(&engine->monitors[c].fx, s);
+      le_plugin_slot_destroy(atomic_load_explicit(
+          &engine->monitors[c].fx.plugin[s], memory_order_relaxed));
     }
   }
   free(engine->lat_buf);

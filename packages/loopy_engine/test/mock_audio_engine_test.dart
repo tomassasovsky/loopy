@@ -126,5 +126,44 @@ void main() {
         expect(engine.scanResults(), isEmpty);
       });
     });
+
+    group('plugin slot stub', () {
+      test('setLanePlugin returns a handle carrying the plugin id', () {
+        final handle = engine.setLanePlugin(
+          channel: 0,
+          lane: 1,
+          index: 2,
+          pluginId: 'com.acme.reverb',
+        );
+        expect(handle, isA<MockPluginSlotHandle>());
+        expect(
+          (handle! as MockPluginSlotHandle).pluginId,
+          'com.acme.reverb',
+        );
+      });
+
+      test('setMonitorPlugin returns a handle', () {
+        final handle = engine.setMonitorPlugin(
+          input: 3,
+          index: 0,
+          pluginId: 'com.acme.delay',
+        );
+        expect(
+          handle,
+          const MockPluginSlotHandle('com.acme.delay'),
+        );
+      });
+
+      test('clear calls return ok', () {
+        expect(
+          engine.clearLanePlugin(channel: 0, lane: 0, index: 0),
+          EngineResult.ok,
+        );
+        expect(
+          engine.clearMonitorPlugin(input: 0, index: 0),
+          EngineResult.ok,
+        );
+      });
+    });
   });
 }

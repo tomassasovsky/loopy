@@ -31,10 +31,10 @@ export 'src/engine_snapshot.dart'
         kMaxInputs,
         kMaxLanes;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
-export 'src/mock_audio_engine.dart' show MockAudioEngine;
+export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
 export 'src/native_audio_engine.dart' show NativeAudioEngine;
 export 'src/plugin_descriptor.dart'
-    show PluginDescriptor, PluginFormat, PluginScanProgress;
+    show PluginDescriptor, PluginFormat, PluginScanProgress, PluginSlotHandle;
 export 'src/track_effect.dart'
     show
         ParamReadout,

@@ -31,6 +31,7 @@ esac
 # with the core primitives. Mirrors src/CMakeLists.txt's library sources (minus
 # the MIDI TUs, which the engine test does not link).
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
+  src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c"
 
 echo "== building engine tests =="
@@ -63,4 +64,32 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_plugin_scan_tests.exe"
   "$OUT/loopy_plugin_scan_tests.exe"
+
+  # Slot lifecycle / adapter / sanitize, driven end-to-end through the real
+  # fx_apply_chain (engine_fx.c — the self-contained DSP island) with a stub
+  # host. C engine TUs and C++ host TUs are compiled separately, then linked.
+  echo "== building plugin slot tests =="
+  P3="$OUT/loopy_p3_obj"
+  mkdir -p "$P3"
+  CENGINE_INC="-Isrc/core -Isrc/midi -Isrc/miniaudio -Isrc/host"
+  clang -std=gnu11 -DLOOPY_ENABLE_PLUGINS $CENGINE_INC \
+    -c src/test/test_plugin_slot.c -o "$P3/test.o"
+  clang -std=gnu11 -DLOOPY_ENABLE_PLUGINS $CENGINE_INC \
+    -c src/core/engine_fx.c -o "$P3/engine_fx.o"
+  clang -std=gnu11 -DLOOPY_ENABLE_PLUGINS $CENGINE_INC \
+    -c src/core/engine_plugin.c -o "$P3/engine_plugin.o"
+  # shellcheck disable=SC2086
+  for cxx in slot host_clap host_vst3 plugin_scan scan_vst3 scan_clap; do
+    $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS $PLUGIN_INC \
+      -c "src/host/$cxx.cpp" -o "$P3/$cxx.o"
+  done
+  $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS -Ithird_party/vst3sdk \
+    -c third_party/vst3sdk/pluginterfaces/base/coreiids.cpp -o "$P3/coreiids.o"
+  $CXX -std=c++17 -DLOOPY_ENABLE_PLUGINS -Ithird_party/vst3sdk \
+    -c third_party/vst3sdk/public.sdk/source/vst/vstinitiids.cpp \
+    -o "$P3/vstinitiids.o"
+  # shellcheck disable=SC2086
+  $CXX "$P3"/*.o -framework CoreFoundation \
+    -o "$OUT/loopy_plugin_slot_tests.exe"
+  "$OUT/loopy_plugin_slot_tests.exe"
 fi

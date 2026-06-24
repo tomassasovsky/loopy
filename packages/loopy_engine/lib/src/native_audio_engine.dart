@@ -12,6 +12,7 @@ import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
+import 'package:meta/meta.dart';
 
 /// Opens the bundled native engine library for the current platform.
 ///
@@ -301,6 +302,80 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult scanCancel() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_plugin_scan_cancel(_engine));
+  }
+
+  @override
+  PluginSlotHandle? setLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+    required String pluginId,
+  }) => _loadPlugin(
+    pluginId,
+    (idPtr, outSlot) => _bindings.le_engine_set_lane_plugin(
+      _engine,
+      channel,
+      lane,
+      index,
+      idPtr,
+      outSlot,
+    ),
+  );
+
+  @override
+  PluginSlotHandle? setMonitorPlugin({
+    required int input,
+    required int index,
+    required String pluginId,
+  }) => _loadPlugin(
+    pluginId,
+    (idPtr, outSlot) => _bindings.le_engine_set_monitor_plugin(
+      _engine,
+      input,
+      index,
+      idPtr,
+      outSlot,
+    ),
+  );
+
+  /// Shared marshalling for the two plugin-load calls: passes [pluginId] as a C
+  /// string + an out-slot pointer to [call], and wraps the published handle.
+  PluginSlotHandle? _loadPlugin(
+    String pluginId,
+    int Function(Pointer<Char> idPtr, Pointer<Pointer<le_plugin_slot>> outSlot)
+    call,
+  ) {
+    _checkAlive();
+    final idPtr = pluginId.toNativeUtf8();
+    final outSlot = calloc<Pointer<le_plugin_slot>>();
+    try {
+      final code = call(idPtr.cast(), outSlot);
+      if (code != 0) return null;
+      return _NativePluginSlotHandle(outSlot.value);
+    } finally {
+      malloc.free(idPtr);
+      calloc.free(outSlot);
+    }
+  }
+
+  @override
+  EngineResult clearLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+  }) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_clear_lane_plugin(_engine, channel, lane, index),
+    );
+  }
+
+  @override
+  EngineResult clearMonitorPlugin({required int input, required int index}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_clear_monitor_plugin(_engine, input, index),
+    );
   }
 
   @override
@@ -710,4 +785,22 @@ class NativeAudioEngine implements AudioEngine {
       ..free(_lanePtr)
       ..free(_vizPtr);
   }
+}
+
+/// A [PluginSlotHandle] wrapping the native `le_plugin_slot*`. The pointer is
+/// owned by the engine (freed when the slot is cleared / the engine is
+/// disposed); this is only a token, never freed here.
+@immutable
+class _NativePluginSlotHandle implements PluginSlotHandle {
+  const _NativePluginSlotHandle(this.pointer);
+
+  /// The opaque native slot pointer.
+  final Pointer<le_plugin_slot> pointer;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _NativePluginSlotHandle && other.pointer == pointer;
+
+  @override
+  int get hashCode => pointer.hashCode;
 }
