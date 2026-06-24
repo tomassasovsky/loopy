@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -91,6 +91,17 @@ void main() {
     // The chrome carries one global affordance opening the Signal surface
     // (the per-track routing dialog is gone — wiring lives on Signal now).
     expect(find.byKey(const Key('bigpicture_openSignal')), findsOneWidget);
+  });
+
+  testWidgets('exposes a visible Settings button', (tester) async {
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+
+    // Settings was previously reachable only by the `S` key or right-click;
+    // the top-bar button makes it operable by pointer/touch.
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(find.byKey(const Key('bigpicture_openSettings')), findsOneWidget);
+    expect(find.byTooltip(l10n.settingsTooltip), findsOneWidget);
   });
 
   testWidgets('tapping a tile records that channel in record mode', (
@@ -847,6 +858,348 @@ void main() {
 
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.sessionErrorSampleRate), findsOneWidget);
+    });
+  });
+
+  group('transport controls', () {
+    // A connected engine holding recorded audio — the state in which the
+    // global transport buttons are live.
+    LooperState connected({
+      List<Track> tracks = const [
+        Track(state: TrackState.stopped, lengthFrames: 100),
+      ],
+    }) => LooperState(
+      tracks: tracks,
+      status: const EngineStatus(isConnected: true),
+    );
+
+    testWidgets('play/stop all and clear all render', (tester) async {
+      seed(connected());
+      await pump(tester);
+
+      expect(find.byKey(const Key('bigpicture_playStopAll')), findsOneWidget);
+      expect(find.byKey(const Key('bigpicture_clearAll')), findsOneWidget);
+      // With nothing playing, the toggle shows the play icon.
+      final icon = tester.widget<Icon>(
+        find.descendant(
+          of: find.byKey(const Key('bigpicture_playStopAll')),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(icon.icon, Icons.play_arrow);
+    });
+
+    testWidgets('play all dispatches when nothing is playing', (tester) async {
+      seed(connected());
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
+    });
+
+    testWidgets('the toggle shows stop and stops all when a track is active', (
+      tester,
+    ) async {
+      seed(
+        connected(
+          tracks: const [Track(state: TrackState.playing, lengthFrames: 100)],
+        ),
+      );
+      await pump(tester);
+
+      // Icon flips to stop while a track is active.
+      final icon = tester.widget<Icon>(
+        find.descendant(
+          of: find.byKey(const Key('bigpicture_playStopAll')),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(icon.icon, Icons.stop);
+
+      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      verify(() => bloc.add(const LooperStopAllPressed())).called(1);
+    });
+
+    for (final state in const [
+      TrackState.recording,
+      TrackState.overdubbing,
+    ]) {
+      testWidgets('the toggle reads "active" while $state', (tester) async {
+        seed(connected(tracks: [Track(state: state, lengthFrames: 100)]));
+        await pump(tester);
+
+        final icon = tester.widget<Icon>(
+          find.descendant(
+            of: find.byKey(const Key('bigpicture_playStopAll')),
+            matching: find.byType(Icon),
+          ),
+        );
+        expect(icon.icon, Icons.stop);
+      });
+    }
+
+    testWidgets('clear all announces to assistive tech', (tester) async {
+      final announcements = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler(
+        SystemChannels.accessibility,
+        (message) async {
+          final data = message! as Map<dynamic, dynamic>;
+          if (data['type'] == 'announce') {
+            announcements.add(
+              (data['data'] as Map<dynamic, dynamic>)['message'] as String,
+            );
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger
+            .setMockDecodedMessageHandler(SystemChannels.accessibility, null),
+      );
+
+      seed(connected());
+      await pump(tester);
+      await tester.tap(find.byKey(const Key('bigpicture_clearAll')));
+      await tester.pump();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      // The button shares the keyboard path's announcement (anti-drift).
+      expect(announcements, contains(l10n.a11yAllCleared));
+    });
+
+    testWidgets('clear all dispatches instantly (no dialog)', (tester) async {
+      seed(connected());
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('bigpicture_clearAll')));
+      verify(() => bloc.add(const LooperClearAllPressed())).called(1);
+    });
+
+    testWidgets('both are disabled when the engine is disconnected', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.stopped, lengthFrames: 100)],
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('bigpicture_playStopAll')))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('bigpicture_clearAll')))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('both are disabled when there is no content', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track()],
+          status: EngineStatus(isConnected: true),
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('bigpicture_playStopAll')))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('bigpicture_clearAll')))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('fullscreen button renders on desktop and is tappable', (
+      tester,
+    ) async {
+      // Reset inline (not via addTearDown): the foundation-var invariant check
+      // runs at the end of the test body, before tearDown callbacks.
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      seed(connected());
+      await pump(tester);
+
+      expect(find.byKey(const Key('bigpicture_fullscreen')), findsOneWidget);
+      // The helper swallows the missing platform channel in tests.
+      await tester.tap(find.byKey(const Key('bigpicture_fullscreen')));
+      await tester.pump();
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('fullscreen button is absent off desktop windowing', (
+      tester,
+    ) async {
+      // A mobile target stands in for "not desktop windowing" (the gate also
+      // hides the button on web).
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      seed(connected());
+      await pump(tester);
+
+      expect(find.byKey(const Key('bigpicture_fullscreen')), findsNothing);
+      debugDefaultTargetPlatformOverride = null;
+    });
+  });
+
+  group('per-track undo/redo', () {
+    testWidgets('appear only on the selected column', (tester) async {
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(lengthFrames: 100, state: TrackState.stopped),
+            Track(channel: 1, lengthFrames: 100, state: TrackState.stopped),
+          ],
+          status: EngineStatus(isConnected: true),
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('bigpicture_undo_0')), findsOneWidget);
+      expect(find.byKey(const Key('bigpicture_redo_0')), findsOneWidget);
+      expect(find.byKey(const Key('bigpicture_undo_1')), findsNothing);
+      expect(find.byKey(const Key('bigpicture_redo_1')), findsNothing);
+    });
+
+    testWidgets('undo dispatches for the selected channel', (tester) async {
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
+        ),
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('bigpicture_undo_0')));
+      verify(() => bloc.add(const LooperUndoPressed(0))).called(1);
+    });
+
+    testWidgets('undo is disabled when the track has no content', (
+      tester,
+    ) async {
+      bigPicture.select(0);
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('bigpicture_undo_0')))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('redo is disabled with no redo history', (tester) async {
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('bigpicture_redo_0')))
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets('redo dispatches when a layer can be redone', (tester) async {
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [
+            Track(lengthFrames: 100, state: TrackState.stopped, redoDepth: 1),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('bigpicture_redo_0')));
+      verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
+    });
+
+    testWidgets('the tooltips name the macOS shortcut', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
+        ),
+      );
+      await pump(tester);
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.byTooltip(l10n.undoTooltip('⌘Z')), findsOneWidget);
+      expect(find.byTooltip(l10n.redoTooltip('⌘⇧Z')), findsOneWidget);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('the tooltips use Ctrl off macOS', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      bigPicture.select(0);
+      seed(
+        const LooperState(
+          tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
+        ),
+      );
+      await pump(tester);
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.byTooltip(l10n.undoTooltip('Ctrl+Z')), findsOneWidget);
+      expect(find.byTooltip(l10n.redoTooltip('Ctrl+Y')), findsOneWidget);
+      debugDefaultTargetPlatformOverride = null;
+    });
+  });
+
+  group('keyboard refactor parity', () {
+    testWidgets('U undoes the selected track', (tester) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyU);
+      await tester.pump();
+      verify(() => bloc.add(const LooperUndoPressed(1))).called(1);
+    });
+
+    testWidgets('Ctrl+Y redoes the selected track', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyY);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
+    });
+
+    testWidgets('Cmd/Ctrl+Z undoes and Cmd/Ctrl+Shift+Z redoes', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      verify(() => bloc.add(const LooperUndoPressed(0))).called(1);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      verify(() => bloc.add(const LooperRedoPressed(0))).called(1);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     });
   });
 }

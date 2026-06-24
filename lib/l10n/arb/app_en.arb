@@ -301,6 +301,44 @@
     "@signalTooltip": {
       "description": "Tooltip for the performance-view button that opens the full-screen Signal surface."
     },
+    "settingsTooltip": "Settings (S)",
+    "@settingsTooltip": {
+        "description": "Tooltip for the top-bar button that opens the settings page. The parenthetical names the keyboard shortcut (also reachable by right-click)."
+    },
+    "playAllTooltip": "Play all (Space)",
+    "@playAllTooltip": {
+        "description": "Tooltip for the top-bar button that starts playback of every track. The parenthetical names the keyboard shortcut."
+    },
+    "stopAllTooltip": "Stop all (Space)",
+    "@stopAllTooltip": {
+        "description": "Tooltip for the top-bar button that stops every playing track. The parenthetical names the keyboard shortcut."
+    },
+    "clearAllTooltip": "Clear all (C)",
+    "@clearAllTooltip": {
+        "description": "Tooltip for the top-bar button that clears every track. The parenthetical names the keyboard shortcut."
+    },
+    "fullscreenTooltip": "Fullscreen (F)",
+    "@fullscreenTooltip": {
+        "description": "Tooltip for the top-bar button (desktop only) that toggles OS fullscreen. The parenthetical names the keyboard shortcut."
+    },
+    "undoTooltip": "Undo ({shortcut})",
+    "@undoTooltip": {
+        "description": "Tooltip for the per-track Undo button. The placeholder is the platform-specific keyboard shortcut, e.g. ⌘Z or Ctrl+Z.",
+        "placeholders": {
+            "shortcut": {
+                "type": "String"
+            }
+        }
+    },
+    "redoTooltip": "Redo ({shortcut})",
+    "@redoTooltip": {
+        "description": "Tooltip for the per-track Redo button. The placeholder is the platform-specific keyboard shortcut, e.g. ⌘⇧Z or Ctrl+Y.",
+        "placeholders": {
+            "shortcut": {
+                "type": "String"
+            }
+        }
+    },
     "signalInputLive": "live",
     "signalInputOff": "off",
     "signalThisTakeLabel": "This take · snapshot of In {inputNumber}",
