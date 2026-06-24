@@ -10,6 +10,7 @@ import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
 
 /// Opens the bundled native engine library for the current platform.
@@ -226,6 +227,80 @@ class NativeAudioEngine implements AudioEngine {
         ..free(outPtr)
         ..free(countPtr);
     }
+  }
+
+  @override
+  EngineResult scanBegin({bool rescan = false}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_plugin_scan_begin(_engine, rescan ? 1 : 0),
+    );
+  }
+
+  @override
+  PluginScanProgress scanPoll() {
+    _checkAlive();
+    final donePtr = calloc<Int32>();
+    final foundPtr = calloc<Int32>();
+    final scannedPtr = calloc<Int32>();
+    final totalPtr = calloc<Int32>();
+    try {
+      _bindings.le_plugin_scan_poll(
+        _engine,
+        donePtr,
+        foundPtr,
+        scannedPtr,
+        totalPtr,
+      );
+      return PluginScanProgress(
+        done: donePtr.value != 0,
+        found: foundPtr.value,
+        scanned: scannedPtr.value,
+        total: totalPtr.value,
+      );
+    } finally {
+      calloc
+        ..free(donePtr)
+        ..free(foundPtr)
+        ..free(scannedPtr)
+        ..free(totalPtr);
+    }
+  }
+
+  @override
+  List<PluginDescriptor> scanResults() {
+    _checkAlive();
+    // The native `found` count is monotonic, so polling it here bounds the read
+    // to the entries published so far — a mid-scan call returns a valid prefix,
+    // a post-`done` call returns the full set.
+    final found = scanPoll().found;
+    if (found <= 0) return const [];
+    final descPtr = calloc<le_plugin_desc>();
+    try {
+      final result = <PluginDescriptor>[];
+      for (var i = 0; i < found; i++) {
+        if (_bindings.le_plugin_scan_get(_engine, i, descPtr) != 0) continue;
+        result.add(
+          PluginDescriptor(
+            id: readNativeString(descPtr.ref.id),
+            name: readNativeString(descPtr.ref.name, capacity: 128),
+            vendor: readNativeString(descPtr.ref.vendor, capacity: 128),
+            path: readNativeString(descPtr.ref.path, capacity: 1024),
+            format: PluginFormat.fromCode(descPtr.ref.format),
+            version: descPtr.ref.version,
+          ),
+        );
+      }
+      return result;
+    } finally {
+      calloc.free(descPtr);
+    }
+  }
+
+  @override
+  EngineResult scanCancel() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_plugin_scan_cancel(_engine));
   }
 
   @override

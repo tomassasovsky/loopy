@@ -27,6 +27,10 @@ add_library(loopy_engine SHARED
   core/engine_miniaudio.c
   core/lockfree_ring.c
   core/loop_clock.c
+  # le_plugin_scan_* stub for non-LOOPY_ENABLE_PLUGINS builds (Windows/Linux
+  # today). Internally #ifndef-guarded, so it compiles to an empty object when
+  # plugins are enabled and host/plugin_scan.cpp provides the real symbols.
+  core/plugin_scan_disabled.c
   # ---- platform/: per-OS device seams (engine_platform.h) ----
   # Each is wrapped whole in its OS guard, so the two that don't match the build
   # target compile to near-empty objects — every build lists all three.
@@ -182,10 +186,12 @@ endif()
 # Plugin hosting (third_party/vst3sdk + third_party/clap, both MIT — see
 # third_party/README.md) is sequenced macOS-first: the macOS build (SPM
 # Package.swift / CocoaPods podspec) defines LOOPY_ENABLE_PLUGINS and compiles
-# the include-probe (src/host/plugin_probe.cpp) directly. On Windows/Linux this
-# is OFF by default and, when enabled, only adds the vendored header search
-# paths — NO plugin sources are compiled through CMake until the ports
-# (parts 8–9). This keeps the Windows/Linux build byte-identical by default.
+# the host sources directly. On Windows/Linux this is OFF by default; the engine
+# then links only the le_plugin_scan_* stub (core/plugin_scan_disabled.c, above)
+# so FFI resolves, and the build stays byte-identical apart from that stub. When
+# enabled, the VST3/CLAP scan backends compile here too — though the directory
+# walkers are macOS-only until the Windows/Linux ports (parts 8–9), so an
+# enabled non-Apple build scans nothing yet.
 option(LOOPY_ENABLE_PLUGINS "Build VST3/CLAP plugin hosting" OFF)
 # As with ASIO, the Flutter build drives CMake through the plugin and cannot
 # forward -D cache flags, so honor an env override applied after option() (e.g.
@@ -215,4 +221,17 @@ if(LOOPY_ENABLE_PLUGINS)
     "${LOOPY_CLAP_DIR}"
   )
   target_compile_definitions(loopy_engine PRIVATE LOOPY_ENABLE_PLUGINS)
+  # The scan ABI + thread and the two format backends. The vendored
+  # coreiids.cpp supplies the pluginterfaces IID symbols the VST3 backend
+  # queryInterface()s — the only VST3 SDK source needed for scanning (no
+  # base/public.sdk). The backends' directory walkers are macOS-only for now;
+  # on Windows/Linux they compile to empty until parts 8–9.
+  target_sources(loopy_engine PRIVATE
+    host/plugin_scan.cpp
+    host/scan_vst3.cpp
+    host/scan_clap.cpp
+    "${LOOPY_VST3_SDK_DIR}/pluginterfaces/base/coreiids.cpp"
+  )
+  set_target_properties(loopy_engine PROPERTIES CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON)
 endif()

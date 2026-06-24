@@ -153,6 +153,120 @@ class LoopyEngineBindings {
         int Function(ffi.Pointer<le_device_info>, int, ffi.Pointer<ffi.Int32>)
       >();
 
+  /// Starts an async scan. Returns LE_OK once the scan thread is launched, or
+  /// LE_ERR_INVALID for a null engine, LE_ERR_ALREADY_RUNNING if a scan is already
+  /// in progress.
+  int le_plugin_scan_begin(
+    ffi.Pointer<le_engine> engine,
+    int rescan,
+  ) {
+    return _le_plugin_scan_begin(
+      engine,
+      rescan,
+    );
+  }
+
+  late final _le_plugin_scan_beginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_plugin_scan_begin');
+  late final _le_plugin_scan_begin = _le_plugin_scan_beginPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Polls scan progress. Any out-pointer may be NULL. *done is 0 while scanning,
+  /// 1 once the scan thread has finished (or was cancelled). *found is the number
+  /// of entries currently retrievable via le_plugin_scan_get (grows as the scan
+  /// proceeds and includes failed entries). *scanned / *total are candidate files
+  /// processed / discovered. Returns LE_OK, or LE_ERR_INVALID for a null engine.
+  int le_plugin_scan_poll(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Int32> done,
+    ffi.Pointer<ffi.Int32> found,
+    ffi.Pointer<ffi.Int32> scanned,
+    ffi.Pointer<ffi.Int32> total,
+  ) {
+    return _le_plugin_scan_poll(
+      engine,
+      done,
+      found,
+      scanned,
+      total,
+    );
+  }
+
+  late final _le_plugin_scan_pollPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_plugin_scan_poll');
+  late final _le_plugin_scan_poll = _le_plugin_scan_pollPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Copies the descriptor at `index` (0-based, < the last polled *found) into
+  /// *out. Returns LE_OK, or LE_ERR_INVALID for a null argument / out-of-range
+  /// index. Safe to call during or after a scan.
+  int le_plugin_scan_get(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    ffi.Pointer<le_plugin_desc> out,
+  ) {
+    return _le_plugin_scan_get(
+      engine,
+      index,
+      out,
+    );
+  }
+
+  late final _le_plugin_scan_getPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<le_plugin_desc>,
+          )
+        >
+      >('le_plugin_scan_get');
+  late final _le_plugin_scan_get = _le_plugin_scan_getPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<le_plugin_desc>)
+      >();
+
+  /// Requests cancellation and joins the scan thread (blocks briefly until the
+  /// in-flight candidate finishes). Idempotent; safe when no scan is running.
+  /// Returns LE_OK, or LE_ERR_INVALID for a null engine.
+  int le_plugin_scan_cancel(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_plugin_scan_cancel(
+      engine,
+    );
+  }
+
+  late final _le_plugin_scan_cancelPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_plugin_scan_cancel',
+      );
+  late final _le_plugin_scan_cancel = _le_plugin_scan_cancelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
   /// Allocates an engine. Returns NULL on allocation failure.
   ffi.Pointer<le_engine> le_engine_create() {
     return _le_engine_create();
@@ -2286,6 +2400,53 @@ final class le_snapshot extends ffi.Struct {
   external ffi.Array<le_track_snapshot> tracks;
 }
 
+/// The plugin format a descriptor was discovered in.
+enum le_plugin_format {
+  LE_PLUGIN_VST3(0),
+  LE_PLUGIN_CLAP(1);
+
+  final int value;
+  const le_plugin_format(this.value);
+
+  static le_plugin_format fromValue(int value) => switch (value) {
+    0 => LE_PLUGIN_VST3,
+    1 => LE_PLUGIN_CLAP,
+    _ => throw ArgumentError('Unknown value for le_plugin_format: $value'),
+  };
+}
+
+/// One discovered plugin class. Fixed-size POD so it round-trips over FFI like
+/// le_device_info. A *failed* candidate (a file that could not be loaded or
+/// described) is reported as an entry with an EMPTY `id` and `name`/`path` set to
+/// the offending file, so a single broken plugin surfaces in the list instead of
+/// aborting the scan (umbrella D-SCAN). The Dart layer treats `id == ""` as the
+/// unavailable/failed marker.
+final class le_plugin_desc extends ffi.Struct {
+  /// VST3 TUID as 32 hex chars / CLAP descriptor id — stable
+  /// identity. Empty for a failed-to-scan entry.
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> id;
+
+  @ffi.Array.multi([128])
+  external ffi.Array<ffi.Char> name;
+
+  @ffi.Array.multi([128])
+  external ffi.Array<ffi.Char> vendor;
+
+  /// the .vst3 bundle / .clap file the class lives in
+  @ffi.Array.multi([1024])
+  external ffi.Array<ffi.Char> path;
+
+  /// le_plugin_format
+  @ffi.Int32()
+  external int format;
+
+  /// packed major<<16 | minor<<8 | patch, parsed from the
+  /// plugin's version string (0 if unknown)
+  @ffi.Uint32()
+  external int version;
+}
+
 final class le_engine extends ffi.Opaque {}
 
 /// A MIDI input port discovered by le_midi_enumerate.
@@ -2343,5 +2504,7 @@ const int LE_MAX_TRACKS = 8;
 const int LE_MAX_INPUTS = 8;
 
 const int LE_MAX_LANES = 8;
+
+const double LE_MAX_GAIN = 2.0;
 
 const int LE_VIZ_POINTS = 512;

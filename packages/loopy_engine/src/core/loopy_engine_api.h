@@ -393,6 +393,39 @@ typedef struct le_snapshot {
   le_track_snapshot tracks[LE_MAX_TRACKS];
 } le_snapshot;
 
+/* ============================ Plugin hosting ==============================
+ * Discovery of installed VST3 / CLAP audio-effect plugins. This first slice is
+ * SCAN ONLY: no plugin is loaded into the audio graph, no audio thread is
+ * touched. The whole surface runs on the control thread and an engine-owned
+ * dedicated scan thread (see le_plugin_scan_begin) — never the audio callback.
+ *
+ * The hosting backends are compiled only in a LOOPY_ENABLE_PLUGINS build (macOS
+ * today); other builds link a stub that reports "no plugins" so the symbols
+ * always resolve over FFI. */
+
+/* The plugin format a descriptor was discovered in. */
+typedef enum le_plugin_format {
+  LE_PLUGIN_VST3 = 0,
+  LE_PLUGIN_CLAP = 1,
+} le_plugin_format;
+
+/* One discovered plugin class. Fixed-size POD so it round-trips over FFI like
+ * le_device_info. A *failed* candidate (a file that could not be loaded or
+ * described) is reported as an entry with an EMPTY `id` and `name`/`path` set to
+ * the offending file, so a single broken plugin surfaces in the list instead of
+ * aborting the scan (umbrella D-SCAN). The Dart layer treats `id == ""` as the
+ * unavailable/failed marker. */
+typedef struct le_plugin_desc {
+  char id[256];    /* VST3 TUID as 32 hex chars / CLAP descriptor id — stable
+                    * identity. Empty for a failed-to-scan entry. */
+  char name[128];
+  char vendor[128];
+  char path[1024]; /* the .vst3 bundle / .clap file the class lives in */
+  int32_t format;  /* le_plugin_format */
+  uint32_t version; /* packed major<<16 | minor<<8 | patch, parsed from the
+                     * plugin's version string (0 if unknown) */
+} le_plugin_desc;
+
 /* Opaque engine handle. */
 typedef struct le_engine le_engine;
 
@@ -431,6 +464,44 @@ LE_EXPORT int32_t le_enumerate_capture_devices(le_device_info* out, int32_t max,
  * or LE_ERR_INVALID for a null argument / non-positive `max`. */
 LE_EXPORT int32_t le_enumerate_asio_drivers(le_device_info* out, int32_t max,
                                             int32_t* count);
+
+/* ---- Plugin scanning (control thread; runs on a dedicated scan thread) ----
+ *
+ * le_plugin_scan_begin spawns ONE dedicated OS scan thread (the engine has no
+ * thread pool) that walks the standard VST3 / CLAP install locations and loads
+ * each candidate under a per-candidate guard, so one broken plugin yields a
+ * "failed" entry rather than aborting the scan (D-SCAN). Dart polls
+ * le_plugin_scan_poll on a timer and reads finished entries with
+ * le_plugin_scan_get. The scan thread never touches the audio callback, so a
+ * scan is safe while the engine is running.
+ *
+ * Only one scan runs at a time. `rescan != 0` is a hint to ignore any native
+ * caching (none in this slice — caching lives in the Dart catalog). */
+
+/* Starts an async scan. Returns LE_OK once the scan thread is launched, or
+ * LE_ERR_INVALID for a null engine, LE_ERR_ALREADY_RUNNING if a scan is already
+ * in progress. */
+LE_EXPORT int32_t le_plugin_scan_begin(le_engine* engine, int32_t rescan);
+
+/* Polls scan progress. Any out-pointer may be NULL. *done is 0 while scanning,
+ * 1 once the scan thread has finished (or was cancelled). *found is the number
+ * of entries currently retrievable via le_plugin_scan_get (grows as the scan
+ * proceeds and includes failed entries). *scanned / *total are candidate files
+ * processed / discovered. Returns LE_OK, or LE_ERR_INVALID for a null engine. */
+LE_EXPORT int32_t le_plugin_scan_poll(le_engine* engine, int32_t* done,
+                                      int32_t* found, int32_t* scanned,
+                                      int32_t* total);
+
+/* Copies the descriptor at `index` (0-based, < the last polled *found) into
+ * *out. Returns LE_OK, or LE_ERR_INVALID for a null argument / out-of-range
+ * index. Safe to call during or after a scan. */
+LE_EXPORT int32_t le_plugin_scan_get(le_engine* engine, int32_t index,
+                                     le_plugin_desc* out);
+
+/* Requests cancellation and joins the scan thread (blocks briefly until the
+ * in-flight candidate finishes). Idempotent; safe when no scan is running.
+ * Returns LE_OK, or LE_ERR_INVALID for a null engine. */
+LE_EXPORT int32_t le_plugin_scan_cancel(le_engine* engine);
 
 /* Allocates an engine. Returns NULL on allocation failure. */
 LE_EXPORT le_engine* le_engine_create(void);
