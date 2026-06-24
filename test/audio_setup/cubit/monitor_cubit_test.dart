@@ -56,6 +56,31 @@ void main() {
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.openMonitorPluginEditor(
+        input: any(named: 'input'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.closeMonitorPluginEditor(
+        input: any(named: 'input'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.refreshMonitorPluginParams(
+        input: any(named: 'input'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(false);
+    when(
+      () => repository.isMonitorPluginEditorOpen(
+        input: any(named: 'input'),
+        index: any(named: 'index'),
+      ),
+    ).thenReturn(true);
+    when(() => repository.monitorEffects(any())).thenReturn(const []);
   });
 
   MonitorCubit build() =>
@@ -284,6 +309,71 @@ void main() {
           expect(await settings.loadMonitorEffects(0), isNotNull);
         },
       );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'insertPlugin appends a PluginEffect, applies, and persists',
+        build: build,
+        act: (cubit) => cubit.insertPlugin(
+          0,
+          const PluginRef(format: PluginFormat.vst3, id: 'TUID-HEX'),
+        ),
+        expect: () => [
+          isA<MonitorState>().having(
+            (s) => s.forInput(0).effects.single,
+            'inserted effect',
+            isA<PluginEffect>().having((e) => e.ref.id, 'ref.id', 'TUID-HEX'),
+          ),
+        ],
+        verify: (_) async {
+          verify(
+            () => repository.setMonitorEffects(
+              input: 0,
+              effects: any(named: 'effects'),
+            ),
+          ).called(1);
+          expect(await settings.loadMonitorEffects(0), isNotNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'openPluginEditor opens the editor and starts the sync poll',
+        build: build,
+        act: (cubit) => cubit.openPluginEditor(0, 0),
+        wait: const Duration(milliseconds: 250),
+        verify: (_) {
+          verify(
+            () => repository.openMonitorPluginEditor(input: 0, index: 0),
+          ).called(1);
+          verify(
+            () => repository.refreshMonitorPluginParams(input: 0, index: 0),
+          ).called(greaterThanOrEqualTo(1));
+        },
+      );
+
+      test('closePluginEditor closes the editor and stops the poll', () async {
+        var refreshCount = 0;
+        when(
+          () => repository.refreshMonitorPluginParams(
+            input: any(named: 'input'),
+            index: any(named: 'index'),
+          ),
+        ).thenAnswer((_) {
+          refreshCount++;
+          return false;
+        });
+        final cubit = build()..openPluginEditor(0, 0);
+        addTearDown(cubit.close);
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        expect(refreshCount, greaterThanOrEqualTo(1));
+        cubit.closePluginEditor(0, 0);
+        verify(
+          () => repository.closeMonitorPluginEditor(input: 0, index: 0),
+        ).called(1);
+        // The poll stops climbing once the editor closes.
+        final after = refreshCount;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        expect(refreshCount, after);
+      });
 
       blocTest<MonitorCubit, MonitorState>(
         'removeEffect drops an entry (back to the clean path)',

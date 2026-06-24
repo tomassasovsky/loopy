@@ -9,16 +9,25 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include <clap/clap.h>
 
+#include "native_window_controller.h"
 #include "plugin_host.h"
 
 namespace {
 
-// Minimal host vtable — we advertise no host extensions in this slice.
-const void* CLAP_ABI hostGetExtension(const clap_host*, const char*) {
+// The CLAP gui host extension (defined after ClapHost, which its callbacks
+// dispatch to). Advertised from hostGetExtension so a plugin can request an
+// editor resize.
+extern const clap_host_gui_t kHostGui;
+
+// Host vtable: we advertise the gui extension (for plugin-requested resizes);
+// everything else is unsupported in this slice.
+const void* CLAP_ABI hostGetExtension(const clap_host*, const char* id) {
+  if (id && std::strcmp(id, CLAP_EXT_GUI) == 0) return &kHostGui;
   return nullptr;
 }
 void CLAP_ABI hostNoop(const clap_host*) {}
@@ -52,6 +61,7 @@ class ClapHost final : public loopy::IPluginHost {
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
     using loopy::LoadStatus;
+    name_ = desc.name;  // for the editor window title
     CFStringRef cfPath = CFStringCreateWithCString(
         kCFAllocatorDefault, desc.path.c_str(), kCFStringEncodingUTF8);
     if (!cfPath) return LoadStatus::failed;
@@ -113,6 +123,8 @@ class ClapHost final : public loopy::IPluginHost {
 
     params_ = static_cast<const clap_plugin_params_t*>(
         plugin_->get_extension(plugin_, CLAP_EXT_PARAMS));
+    gui_ = static_cast<const clap_plugin_gui_t*>(
+        plugin_->get_extension(plugin_, CLAP_EXT_GUI));
 
     if (!plugin_->activate(plugin_, sampleRate, 1,
                            static_cast<uint32_t>(maxBlock))) {
@@ -199,6 +211,67 @@ class ClapHost final : public loopy::IPluginHost {
     return value;
   }
 
+  // --- Native editor (main thread; D-WIN) ---
+
+  bool editorOpen() override {
+    if (editorOpen_) return true;  // idempotent
+    if (!gui_ || !plugin_) return false;
+    if (!gui_->is_api_supported(plugin_, CLAP_WINDOW_API_COCOA, false)) {
+      return false;
+    }
+    if (!gui_->create(plugin_, CLAP_WINDOW_API_COCOA, false)) return false;
+    uint32_t w = 400;
+    uint32_t h = 300;
+    if (gui_->get_size) gui_->get_size(plugin_, &w, &h);
+    window_ = lpw_window_open(static_cast<int>(w), static_cast<int>(h),
+                              name_.empty() ? "Plugin Editor" : name_.c_str(),
+                              &ClapHost::onWindowClosedThunk, this);
+    if (!window_) {
+      gui_->destroy(plugin_);
+      return false;
+    }
+    clap_window_t cw{};
+    cw.api = CLAP_WINDOW_API_COCOA;
+    cw.cocoa = lpw_window_content_view(window_);
+    if (!gui_->set_parent(plugin_, &cw)) {
+      gui_->destroy(plugin_);
+      lpw_window_close(window_);
+      window_ = nullptr;
+      return false;
+    }
+    if (gui_->show) gui_->show(plugin_);
+    editorOpen_ = true;
+    return true;
+  }
+
+  void editorClose() override {
+    destroyGui();
+    if (window_) {
+      lpw_window_close(window_);  // host-driven; delegate callback suppressed
+      window_ = nullptr;
+    }
+  }
+
+  bool editorIsOpen() const override { return editorOpen_; }
+
+  // Resizes the host window to a plugin-requested content size (clap_host_gui
+  // request_resize). Returns true — we always honour the request.
+  bool onPluginResize(uint32_t w, uint32_t h) {
+    if (!window_) return false;
+    lpw_window_resize(window_, static_cast<int>(w), static_cast<int>(h));
+    return true;
+  }
+
+  // Fired from windowWillClose when the USER closes the window: tear down the
+  // plugin GUI; the window handle frees itself (deferred) in the shim.
+  static void onWindowClosedThunk(void* ctx) {
+    static_cast<ClapHost*>(ctx)->onWindowClosed();
+  }
+  void onWindowClosed() {
+    destroyGui();
+    window_ = nullptr;  // the shim owns the deferred free
+  }
+
   void queueParam(uint32_t id, double plain) override {
     if (events_.count >= ClapEventBuffer::kMax) return;
     clap_event_param_value_t& e = events_.events[events_.count++];
@@ -215,7 +288,18 @@ class ClapHost final : public loopy::IPluginHost {
   }
 
  private:
+  // Tears down the plugin GUI (idempotent). Shared by editorClose (host-driven)
+  // and the user-close callback.
+  void destroyGui() {
+    if (editorOpen_ && gui_ && plugin_) {
+      if (gui_->hide) gui_->hide(plugin_);
+      gui_->destroy(plugin_);
+    }
+    editorOpen_ = false;
+  }
+
   void unload() {
+    editorClose();  // D-WIN: never leak the editor window past the plugin
     if (plugin_) {
       plugin_->stop_processing(plugin_);
       plugin_->deactivate(plugin_);
@@ -237,10 +321,39 @@ class ClapHost final : public loopy::IPluginHost {
   clap_input_events_t inEvents_{};
   clap_output_events_t outEvents_{};
   const clap_plugin_params_t* params_ = nullptr;
+  const clap_plugin_gui_t* gui_ = nullptr;
   ClapEventBuffer events_;  // queued param-value events for the next process()
   std::vector<float> outL_, outR_;
   int64_t steady_ = 0;
   int channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
+  bool editorOpen_ = false;
+  std::string name_;  // plugin display name, for the editor window title
+  lpw_window* window_ = nullptr;
+};
+
+// CLAP gui host extension — dispatches to the owning ClapHost via host_data.
+void CLAP_ABI hostGuiResizeHintsChanged(const clap_host_t*) {}
+bool CLAP_ABI hostGuiRequestResize(const clap_host_t* host, uint32_t w,
+                                   uint32_t h) {
+  auto* self = static_cast<ClapHost*>(host->host_data);
+  return self && self->onPluginResize(w, h);
+}
+bool CLAP_ABI hostGuiRequestShow(const clap_host_t*) { return false; }
+bool CLAP_ABI hostGuiRequestHide(const clap_host_t*) { return false; }
+void CLAP_ABI hostGuiClosed(const clap_host_t* host, bool was_destroyed) {
+  (void)was_destroyed;
+  auto* self = static_cast<ClapHost*>(host->host_data);
+  // The plugin (not the user) closed the editor, so there is no NSWindow
+  // windowWillClose to drive the shim's deferred free. Use the host-driven
+  // editorClose(), which tears down the GUI AND closes+frees the window handle.
+  // Calling the bare onWindowClosed() here would null window_ without ever
+  // closing it — leaking the NSWindow + handle and orphaning a visible window.
+  if (self) self->editorClose();
+}
+
+const clap_host_gui_t kHostGui = {
+    hostGuiResizeHintsChanged, hostGuiRequestResize, hostGuiRequestShow,
+    hostGuiRequestHide,        hostGuiClosed,
 };
 
 }  // namespace

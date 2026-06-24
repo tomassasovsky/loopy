@@ -47,6 +47,13 @@ class MonitorCubit extends Cubit<MonitorState> {
   final SettingsRepository _settings;
   Future<void>? _loadFuture;
 
+  /// The inbound editor-sync poll cadence (D-SYNC: ≤10 Hz).
+  static const Duration _editorPollInterval = Duration(milliseconds: 100);
+
+  /// Per-open-editor sync poll timers, keyed by `(input, index)`. Cancelled on
+  /// close / [close] so a closed editor never leaves a ticking timer.
+  final Map<(int, int), Timer> _editorTimers = {};
+
   /// Restores the persisted per-input monitors and applies them to the
   /// repository. Reads the single-chain keys; the multi-lane → single-chain
   /// fold (v3) runs at bootstrap, before this.
@@ -136,6 +143,15 @@ class MonitorCubit extends Cubit<MonitorState> {
     ]);
   }
 
+  /// Appends a hosted plugin (identified by [ref]) to monitor [input]'s chain.
+  /// The repository loads it through the slot ABI on the next chain apply.
+  void insertPlugin(int input, PluginRef ref) {
+    _pushEffects(input, [
+      ...state.forInput(input).effects,
+      PluginEffect(ref: ref),
+    ]);
+  }
+
   /// Removes monitor [input]'s chain entry at [index].
   void removeEffect(int input, int index) {
     final effects = state.forInput(input).effects;
@@ -208,13 +224,73 @@ class MonitorCubit extends Cubit<MonitorState> {
     unawaited(_settings.saveMonitorEffects(input, encodeTrackEffects(next)));
   }
 
-  void _pushEffects(int input, List<TrackEffect> effects) {
-    final next = state.forInput(input).copyWith(effects: effects);
+  /// Opens the native editor window for monitor [input]'s plugin chain entry
+  /// [index] (D-WIN) and starts the ≤10 Hz inbound sync poll (D-SYNC): each
+  /// tick mirrors editor-driven param moves onto the in-app knobs.
+  void openPluginEditor(int input, int index) {
+    _repository.openMonitorPluginEditor(input: input, index: index);
+    final key = (input, index);
+    _editorTimers.remove(key)?.cancel();
+    _editorTimers[key] = Timer.periodic(_editorPollInterval, (timer) {
+      if (_repository.refreshMonitorPluginParams(input: input, index: index)) {
+        _emitInputEffects(input);
+      }
+      // Self-terminate when the user closes the native window directly.
+      if (!_repository.isMonitorPluginEditorOpen(input: input, index: index)) {
+        timer.cancel();
+        _editorTimers.remove(key);
+      }
+    });
+  }
+
+  /// Closes monitor [input] chain entry [index]'s editor, stops its poll, and
+  /// reflects the plugin's final params (D-SYNC read-back) into state.
+  void closePluginEditor(int input, int index) {
+    _editorTimers.remove((input, index))?.cancel(); // no leaked timer
+    _repository.closeMonitorPluginEditor(input: input, index: index);
+    _emitInputEffects(input);
+  }
+
+  /// Re-reads [input]'s remembered chain from the repository (where the inbound
+  /// sync wrote the live values) and emits it, so the knobs follow the editor.
+  void _emitInputEffects(int input) {
+    final next = state
+        .forInput(input)
+        .copyWith(
+          effects: _repository.monitorEffects(input),
+        );
     emit(state.withInput(next));
+  }
+
+  void _pushEffects(int input, List<TrackEffect> effects) {
+    // A structural edit reseats the input's slots, so cancel any editor-sync
+    // poll keyed by a now-stale chain index (a reorder would otherwise rebind
+    // the poll to a different plugin).
+    _cancelEditorTimers(input);
+    emit(state.withInput(state.forInput(input).copyWith(effects: effects)));
     _repository.setMonitorEffects(input: input, effects: effects);
+    // The repository enriches plugin entries with their enumerated params
+    // while applying the chain (so the in-app knobs render). Re-read to pick
+    // those up; fall back to the optimistic chain when the repo reports nothing
+    // (engine not running yet, or a unit-test fake).
+    final applied = _repository.monitorEffects(input);
+    if (applied.isNotEmpty) {
+      emit(state.withInput(state.forInput(input).copyWith(effects: applied)));
+    }
     unawaited(
       _settings.saveMonitorEffects(input, encodeTrackEffects(effects)),
     );
+  }
+
+  /// Cancels every editor-sync poll timer for monitor [input].
+  void _cancelEditorTimers(int input) {
+    _editorTimers.removeWhere((key, timer) {
+      if (key.$1 == input) {
+        timer.cancel();
+        return true;
+      }
+      return false;
+    });
   }
 
   /// Pushes the whole [monitor] to the repository: enable, then the chain's
@@ -227,5 +303,14 @@ class MonitorCubit extends Cubit<MonitorState> {
       ..setMonitorVolume(input: input, volume: monitor.volume)
       ..setMonitorMute(input: input, muted: monitor.muted)
       ..setMonitorEffects(input: input, effects: monitor.effects);
+  }
+
+  @override
+  Future<void> close() {
+    for (final timer in _editorTimers.values) {
+      timer.cancel();
+    }
+    _editorTimers.clear();
+    return super.close();
   }
 }

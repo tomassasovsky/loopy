@@ -23,8 +23,10 @@ A hand-written miniaudio-based looping engine exposed to Dart over FFI.
 
   s.dependency 'FlutterMacOS'
   s.platform = :osx, '10.14'
-  # CoreMIDI backs the native MIDI-input seam (midi_backend_apple.c).
-  s.frameworks = 'CoreAudio', 'AudioToolbox', 'AudioUnit', 'CoreFoundation', 'CoreMIDI'
+  # CoreMIDI backs the native MIDI-input seam (midi_backend_apple.c); AppKit +
+  # Foundation back the host-owned plugin editor window (part 6,
+  # native_window_controller.mm).
+  s.frameworks = 'CoreAudio', 'AudioToolbox', 'AudioUnit', 'CoreFoundation', 'CoreMIDI', 'AppKit', 'Foundation'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
