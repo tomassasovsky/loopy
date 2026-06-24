@@ -10,6 +10,7 @@ library;
 export 'package:loopy_engine/loopy_engine.dart'
     show
         EngineResult,
+        PluginScanProgress,
         TrackState,
         kMaxInputs,
         kMaxLanes,
@@ -31,6 +32,7 @@ export 'src/models/engine_status.dart';
 export 'src/models/input_monitor.dart';
 export 'src/models/lane.dart';
 export 'src/models/looper_state.dart';
+export 'src/models/plugin_descriptor.dart' show PluginDescriptor, PluginFormat;
 export 'src/models/track.dart';
 // Domain effect models replace the engine's raw effect types in the UI. The
 // engine-typed boundary mappers stay package-internal (not shown here).
@@ -43,6 +45,10 @@ export 'src/models/track_effect.dart'
         decodeTrackEffects,
         encodeTrackEffects;
 export 'src/models/transport_state.dart';
+// Plugin discovery: the async scan driver + its cache. PluginDescriptor itself
+// is exported above with the other domain models.
+export 'src/plugin_catalog.dart'
+    show PluginCacheKey, PluginCatalog, PluginCatalogCache, PluginFileStat;
 
 /// The iteration ceiling for the structural output gate's bootstrap reapply
 /// scan, engine-aligned with `kMaxInputs` (`LE_MAX_INPUTS == 8`).

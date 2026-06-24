@@ -101,5 +101,30 @@ void main() {
       expect(lane.inputChannel, 5);
       expect(lane.outputMask, 0x40);
     });
+
+    group('plugin scan stub', () {
+      test('returns no results before a scan begins', () {
+        expect(engine.scanResults(), isEmpty);
+        expect(engine.scanPoll(), PluginScanProgress.empty);
+      });
+
+      test('returns the deterministic fixed list after scanBegin', () {
+        expect(engine.scanBegin(), EngineResult.ok);
+        final progress = engine.scanPoll();
+        expect(progress.done, isTrue);
+        expect(progress.found, MockAudioEngine.mockScanResults.length);
+
+        final results = engine.scanResults();
+        expect(results, MockAudioEngine.mockScanResults);
+        expect(results.where((d) => d.isAvailable).length, 2);
+        expect(results.where((d) => !d.isAvailable).length, 1);
+      });
+
+      test('cancel clears the started state', () {
+        engine.scanBegin();
+        expect(engine.scanCancel(), EngineResult.ok);
+        expect(engine.scanResults(), isEmpty);
+      });
+    });
   });
 }

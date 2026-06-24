@@ -4,6 +4,7 @@ import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
 
 /// Result of an [AudioEngine] lifecycle call.
@@ -365,6 +366,34 @@ abstract interface class SessionIo {
   EngineResult commitSession(int baseFrames);
 }
 
+/// Discovery of installed VST3 / CLAP plugins (umbrella D-SCAN).
+///
+/// The whole surface runs on the control thread and an engine-owned dedicated
+/// scan thread — never the audio callback — so a scan is safe while the engine
+/// is running. A scan is asynchronous: [scanBegin] launches it, the caller
+/// polls [scanPoll] for progress and reads finished entries with [scanResults],
+/// and [scanCancel] stops it. Loading a plugin into the FX graph is a later
+/// slice.
+abstract interface class EnginePluginHosting {
+  /// Starts an asynchronous scan of the installed plugins. Returns
+  /// [EngineResult.ok] once the scan thread is launched,
+  /// [EngineResult.alreadyRunning] if a scan is already in progress. Pass
+  /// [rescan] to hint that any native cache should be ignored.
+  EngineResult scanBegin({bool rescan = false});
+
+  /// Reads the current scan progress. Safe to call repeatedly on a timer.
+  PluginScanProgress scanPoll();
+
+  /// Reads every descriptor discovered so far (growing while the scan runs,
+  /// complete once [PluginScanProgress.done]). Includes failed entries
+  /// ([PluginDescriptor.isAvailable] is `false` for those).
+  List<PluginDescriptor> scanResults();
+
+  /// Cancels an in-progress scan and joins the scan thread. Idempotent and safe
+  /// to call when no scan is running.
+  EngineResult scanCancel();
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -382,4 +411,5 @@ abstract interface class AudioEngine
         MasterBusControl,
         EffectsControl,
         MonitorControl,
+        EnginePluginHosting,
         SessionIo {}

@@ -6,6 +6,7 @@ import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
 
 /// In-memory [AudioEngine] that simulates a multichannel interface for UI
@@ -169,6 +170,64 @@ class MockAudioEngine implements AudioEngine {
       sampleRates: [48000, 96000],
     ),
   ];
+
+  /// Deterministic fixed scan result for UI development and tests: one VST3 and
+  /// one CLAP plugin, plus one failed entry (empty id) so the failed-scan path
+  /// can be exercised without real hardware.
+  static const List<PluginDescriptor> mockScanResults = [
+    PluginDescriptor(
+      id: '0102030405060708090A0B0C0D0E0F10',
+      name: 'Mock Reverb',
+      vendor: 'Loopy Labs',
+      path: '/Library/Audio/Plug-Ins/VST3/Mock Reverb.vst3',
+      format: PluginFormat.vst3,
+      version: 0x00010200, // 1.2.0
+    ),
+    PluginDescriptor(
+      id: 'com.loopy.mock-delay',
+      name: 'Mock Delay',
+      vendor: 'Loopy Labs',
+      path: '/Library/Audio/Plug-Ins/CLAP/Mock Delay.clap',
+      format: PluginFormat.clap,
+      version: 0x00000300, // 0.3.0
+    ),
+    PluginDescriptor(
+      id: '', // failed entry
+      name: 'Broken Plugin.clap',
+      vendor: '',
+      path: '/Library/Audio/Plug-Ins/CLAP/Broken Plugin.clap',
+      format: PluginFormat.clap,
+      version: 0,
+    ),
+  ];
+
+  bool _scanStarted = false;
+
+  @override
+  EngineResult scanBegin({bool rescan = false}) {
+    _scanStarted = true;
+    return EngineResult.ok;
+  }
+
+  @override
+  PluginScanProgress scanPoll() => _scanStarted
+      ? PluginScanProgress(
+          done: true,
+          found: mockScanResults.length,
+          scanned: mockScanResults.length,
+          total: mockScanResults.length,
+        )
+      : PluginScanProgress.empty;
+
+  @override
+  List<PluginDescriptor> scanResults() =>
+      _scanStarted ? mockScanResults : const [];
+
+  @override
+  EngineResult scanCancel() {
+    _scanStarted = false;
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult measureLatency() {
