@@ -500,6 +500,17 @@ void main() {
     });
   });
 
+  group('track indicators', () {
+    test('defaults to enabled when unset', () async {
+      expect(await repository.loadShowTrackIndicators(), isTrue);
+    });
+
+    test('round-trips a saved preference', () async {
+      await repository.saveShowTrackIndicators(value: false);
+      expect(await repository.loadShowTrackIndicators(), isFalse);
+    });
+  });
+
   group('default performance mode', () {
     test('returns null when unset', () async {
       expect(await repository.loadDefaultPerformanceMode(), isNull);

@@ -8,6 +8,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
 import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
+import 'package:loopy/looper/cubit/track_indicators_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
@@ -115,6 +116,7 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
     final l10n = context.l10n;
     final waveformEnabled = context.watch<WaveformWindowCubit>().state;
     final highContrast = context.watch<HighContrastCubit>().state;
+    final showIndicators = context.watch<TrackIndicatorsCubit>().state;
     final defaultMode = context.watch<BigPictureCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
@@ -138,6 +140,16 @@ class _BigPictureSettingsPageState extends State<BigPictureSettingsPage> {
         value: highContrast,
         onChanged: (on) =>
             unawaited(context.read<HighContrastCubit>().setEnabled(value: on)),
+      ),
+      const SizedBox(height: 12),
+      SetupToggleRow(
+        toggleKey: const Key('bpSettings_trackIndicators_switch'),
+        title: l10n.trackIndicatorsTitle,
+        subtitle: l10n.trackIndicatorsSubtitle,
+        value: showIndicators,
+        onChanged: (on) => unawaited(
+          context.read<TrackIndicatorsCubit>().setEnabled(value: on),
+        ),
       ),
       const SizedBox(height: 28),
       SetupGroupLabel(l10n.performanceGroupLabel),

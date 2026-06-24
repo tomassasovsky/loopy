@@ -30,6 +30,7 @@ void main() {
   late BigPictureCubit bigPicture;
   late WaveformWindowCubit waveformWindow;
   late HighContrastCubit highContrast;
+  late TrackIndicatorsCubit trackIndicators;
   late BankCubit bank;
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
@@ -45,6 +46,7 @@ void main() {
     bigPicture = BigPictureCubit(settings: settings);
     waveformWindow = WaveformWindowCubit(settings: settings);
     highContrast = HighContrastCubit(settings: settings);
+    trackIndicators = TrackIndicatorsCubit(settings: settings);
     bank = BankCubit();
     audioSetup = _MockAudioSetupCubit();
     when(() => audioSetup.state).thenReturn(const AudioSetupState());
@@ -111,6 +113,7 @@ void main() {
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<HighContrastCubit>.value(value: highContrast),
+            BlocProvider<TrackIndicatorsCubit>.value(value: trackIndicators),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
@@ -153,6 +156,23 @@ void main() {
 
     expect(highContrast.state, isTrue);
     expect(await settings.loadHighContrast(), isTrue);
+  });
+
+  testWidgets('track-indicators toggle renders, reflects state, and flips it', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    final toggle = find.byKey(const Key('bpSettings_trackIndicators_switch'));
+    expect(toggle, findsOneWidget);
+    // Default on (the cubit seeds true).
+    expect(trackIndicators.state, isTrue);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(trackIndicators.state, isFalse);
+    expect(await settings.loadShowTrackIndicators(), isFalse);
   });
 
   testWidgets('renaming a track updates the list and persists it', (
@@ -286,6 +306,7 @@ void main() {
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<WaveformWindowCubit>.value(value: waveformWindow),
             BlocProvider<HighContrastCubit>.value(value: highContrast),
+            BlocProvider<TrackIndicatorsCubit>.value(value: trackIndicators),
             BlocProvider<BankCubit>.value(value: bank),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
