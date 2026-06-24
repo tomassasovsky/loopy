@@ -138,9 +138,7 @@ void main() {
   });
 
   testWidgets('shows one bank of four and switches A/B', (tester) async {
-    seed(
-      LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
-    );
+    seed(LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]));
     await pump(tester);
 
     // Bank A shows channels 0-3 only.
@@ -431,14 +429,8 @@ void main() {
       seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
       await pump(tester);
 
-      expect(
-        find.byKey(const Key('bigpicture_indicator_0')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('bigpicture_indicator_1')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('bigpicture_indicator_0')), findsOneWidget);
+      expect(find.byKey(const Key('bigpicture_indicator_1')), findsOneWidget);
     });
 
     testWidgets('is absent from the tree when the pref is off', (tester) async {
@@ -477,9 +469,7 @@ void main() {
       );
     });
 
-    testWidgets('play mode arms the selected empty tile green', (
-      tester,
-    ) async {
+    testWidgets('play mode arms the selected empty tile green', (tester) async {
       bigPicture
         ..toggleMode() // record -> play
         ..select(0);
@@ -605,10 +595,7 @@ void main() {
     ) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      expect(
-        find.byKey(const Key('bigpicture_indicator_0')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('bigpicture_indicator_0')), findsOneWidget);
 
       await trackIndicators.setEnabled(value: false);
       await tester.pump();
@@ -616,10 +603,7 @@ void main() {
 
       await trackIndicators.setEnabled(value: true);
       await tester.pump();
-      expect(
-        find.byKey(const Key('bigpicture_indicator_0')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('bigpicture_indicator_0')), findsOneWidget);
     });
 
     testWidgets('carries no semantics of its own (ExcludeSemantics)', (
@@ -662,10 +646,7 @@ void main() {
       );
       await pump(tester);
 
-      expect(
-        find.byKey(const Key('bigpicture_audioNotRunning')),
-        findsNothing,
-      );
+      expect(find.byKey(const Key('bigpicture_audioNotRunning')), findsNothing);
     });
   });
 
@@ -920,10 +901,7 @@ void main() {
       verify(() => bloc.add(const LooperStopAllPressed())).called(1);
     });
 
-    for (final state in const [
-      TrackState.recording,
-      TrackState.overdubbing,
-    ]) {
+    for (final state in const [TrackState.recording, TrackState.overdubbing]) {
       testWidgets('the toggle reads "active" while $state', (tester) async {
         seed(connected(tracks: [Track(state: state, lengthFrames: 100)]));
         await pump(tester);
@@ -1020,6 +998,100 @@ void main() {
             .onPressed,
         isNull,
       );
+    });
+
+    testWidgets(
+      'play is blocked when every loaded track is muted (clear stays on)',
+      (tester) async {
+        seed(
+          connected(
+            tracks: const [
+              Track(state: TrackState.stopped, lengthFrames: 100, muted: true),
+              Track(
+                channel: 1,
+                state: TrackState.stopped,
+                lengthFrames: 100,
+                muted: true,
+              ),
+            ],
+          ),
+        );
+        await pump(tester);
+
+        // Nothing would sound, so Play All is disabled...
+        expect(
+          tester
+              .widget<IconButton>(
+                find.byKey(const Key('bigpicture_playStopAll')),
+              )
+              .onPressed,
+          isNull,
+        );
+        // ...but Clear All stays available (there is still content to clear).
+        expect(
+          tester
+              .widget<IconButton>(find.byKey(const Key('bigpicture_clearAll')))
+              .onPressed,
+          isNotNull,
+        );
+      },
+    );
+
+    testWidgets('play is allowed when at least one loaded track is unmuted', (
+      tester,
+    ) async {
+      seed(
+        connected(
+          tracks: const [
+            Track(state: TrackState.stopped, lengthFrames: 100, muted: true),
+            Track(channel: 1, state: TrackState.stopped, lengthFrames: 100),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('bigpicture_playStopAll')))
+            .onPressed,
+        isNotNull,
+      );
+      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      verify(() => bloc.add(const LooperPlayAllPressed())).called(1);
+    });
+
+    testWidgets('stop stays available while a muted track is active', (
+      tester,
+    ) async {
+      seed(
+        connected(
+          tracks: const [
+            Track(state: TrackState.playing, lengthFrames: 100, muted: true),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      // A muted but active track can still be stopped.
+      await tester.tap(find.byKey(const Key('bigpicture_playStopAll')));
+      verify(() => bloc.add(const LooperStopAllPressed())).called(1);
+    });
+
+    testWidgets('Space is a no-op when every loaded track is muted', (
+      tester,
+    ) async {
+      seed(
+        connected(
+          tracks: const [
+            Track(state: TrackState.stopped, lengthFrames: 100, muted: true),
+          ],
+        ),
+      );
+      await pump(tester);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      verifyNever(() => bloc.add(const LooperPlayAllPressed()));
     });
 
     testWidgets('fullscreen button renders on desktop and is tappable', (

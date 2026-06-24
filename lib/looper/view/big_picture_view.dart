@@ -46,6 +46,12 @@ class _BigPictureViewState extends State<BigPictureView> {
     // Both global transport buttons are no-ops with no recorded audio or a
     // stopped engine; disabling them avoids dead-feeling controls.
     final transportEnabled = state.status.isConnected && state.hasContent;
+    // The Play direction is additionally blocked when nothing would sound —
+    // every loaded track is muted (or none holds a loop). Stopping stays
+    // available whenever something is active.
+    final playStopEnabled = anyActive
+        ? transportEnabled
+        : state.status.isConnected && _anyPlayable(state);
 
     // Settings are reachable from the performance view by right-clicking
     // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
@@ -87,10 +93,8 @@ class _BigPictureViewState extends State<BigPictureView> {
                           visualDensity: VisualDensity.compact,
                           iconSize: 20,
                           color: Colors.white70,
-                          icon: Icon(
-                            anyActive ? Icons.stop : Icons.play_arrow,
-                          ),
-                          onPressed: transportEnabled
+                          icon: Icon(anyActive ? Icons.stop : Icons.play_arrow),
+                          onPressed: playStopEnabled
                               ? () => _togglePlayAll(playing: anyActive)
                               : null,
                         ),
@@ -251,6 +255,13 @@ class _BigPictureViewState extends State<BigPictureView> {
         t.state == TrackState.recording,
   );
 
+  /// Whether any track would actually sound on a play-all: it holds a loop and
+  /// is not muted. When false, every loaded track is muted (or there is no
+  /// loop at all), so starting playback would be silent — the Play All control
+  /// is disabled and the `Space` key is a no-op in that case.
+  bool _anyPlayable(LooperState state) =>
+      state.tracks.any((t) => t.hasContent && !t.muted);
+
   // The dispatch+announce helpers below are the single source of truth shared
   // by the keyboard handler (`_onKey`) and the on-screen transport buttons, so
   // the two paths can never drift in what they dispatch or announce.
@@ -337,7 +348,13 @@ class _BigPictureViewState extends State<BigPictureView> {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {
-      _togglePlayAll(playing: _anyActive(bloc.state));
+      // Mirror the on-screen toggle: stop when active, otherwise play — but
+      // only when something would actually sound. Swallow the key regardless
+      // so a blocked play does not beep.
+      final active = _anyActive(bloc.state);
+      if (active || _anyPlayable(bloc.state)) {
+        _togglePlayAll(playing: active);
+      }
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyC) {
