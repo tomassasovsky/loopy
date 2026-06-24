@@ -129,6 +129,15 @@ void main() {
         value: any(named: 'value'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setLanePluginParam(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        index: any(named: 'index'),
+        paramId: any(named: 'paramId'),
+        value: any(named: 'value'),
+      ),
+    ).thenReturn(EngineResult.ok);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
     when(
       () => repository.setOutputEnabled(
@@ -417,6 +426,22 @@ void main() {
     ).called(1),
   );
 
+  blocTest<LooperBloc, LooperState>(
+    'LooperLanePluginParamChanged routes the plain value by plugin param id',
+    build: buildBloc,
+    act: (bloc) =>
+        bloc.add(const LooperLanePluginParamChanged(2, 1, 0, 100, 0.8)),
+    verify: (_) => verify(
+      () => repository.setLanePluginParam(
+        channel: 2,
+        lane: 1,
+        index: 0,
+        paramId: 100,
+        value: 0.8,
+      ),
+    ).called(1),
+  );
+
   group('routing persistence', () {
     late SettingsRepository settings;
 
@@ -545,6 +570,25 @@ void main() {
             index: 1,
             param: 2,
             value: 0.25,
+          ),
+        ).called(1);
+        verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperLanePluginParamChanged persists the re-encoded chain',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      act: (bloc) =>
+          bloc.add(const LooperLanePluginParamChanged(0, 1, 0, 100, 0.8)),
+      verify: (_) {
+        verify(
+          () => repository.setLanePluginParam(
+            channel: 0,
+            lane: 1,
+            index: 0,
+            paramId: 100,
+            value: 0.8,
           ),
         ).called(1);
         verify(() => settings.saveLaneEffects(0, 1, any())).called(1);

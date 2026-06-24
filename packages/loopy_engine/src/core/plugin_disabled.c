@@ -76,4 +76,34 @@ void le_plugin_slot_set_ready(le_plugin_slot* slot, int32_t ready) {
 
 void le_plugin_slot_destroy(le_plugin_slot* slot) { (void)slot; }
 
+/* ---- Plugin parameters ---- */
+
+int32_t le_plugin_param_count(le_plugin_slot* slot, int32_t* count) {
+  (void)slot;
+  if (count) *count = 0;
+  return LE_ERR_INVALID;
+}
+
+int32_t le_plugin_param_info_at(le_plugin_slot* slot, int32_t index,
+                                le_plugin_param_info* out) {
+  (void)slot;
+  (void)index;
+  (void)out;
+  return LE_ERR_INVALID;
+}
+
+int32_t le_plugin_param_get(le_plugin_slot* slot, uint32_t id, double* plain) {
+  (void)slot;
+  (void)id;
+  if (plain) *plain = 0.0;
+  return LE_ERR_INVALID;
+}
+
+int32_t le_plugin_param_set(le_plugin_slot* slot, uint32_t id, double value) {
+  (void)slot;
+  (void)id;
+  (void)value;
+  return LE_ERR_INVALID;
+}
+
 #endif /* !LOOPY_ENABLE_PLUGINS */

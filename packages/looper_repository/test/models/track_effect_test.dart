@@ -208,5 +208,49 @@ void main() {
       expect((decoded[1] as PluginEffect).ref.format, PluginFormat.clap);
       expect((decoded[2] as PluginEffect).ref.format, PluginFormat.vst3);
     });
+
+    test('paramValues survive the engine-serializer round-trip', () {
+      final chain = <TrackEffect>[
+        const PluginEffect(ref: ref, paramValues: {100: 0.25, 300: 0.9}),
+      ];
+
+      final decoded = decodeTrackEffects(encodeTrackEffects(chain));
+
+      expect(decoded, chain);
+      expect((decoded.single as PluginEffect).paramValues, {
+        100: 0.25,
+        300: 0.9,
+      });
+    });
+
+    test(
+      'paramValues and params participate in/are excluded from equality',
+      () {
+        const base = PluginEffect(ref: ref);
+        // paramValues is persisted state — it counts toward equality.
+        expect(
+          const PluginEffect(ref: ref, paramValues: {100: 0.5}),
+          isNot(base),
+        );
+        // params is transient metadata — Equatable props include it, so a card
+        // can rebuild when it arrives, but it never persists.
+        const withMeta = PluginEffect(
+          ref: ref,
+          params: [
+            PluginParamInfo(
+              id: 100,
+              name: 'Gain',
+              unit: 'dB',
+              min: 0,
+              max: 1,
+              def: 0.5,
+              stepCount: 0,
+              flags: 0x01,
+            ),
+          ],
+        );
+        expect(encodeTrackEffects([withMeta]), encodeTrackEffects([base]));
+      },
+    );
   });
 }

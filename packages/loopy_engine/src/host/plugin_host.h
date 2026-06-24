@@ -79,10 +79,35 @@ enum class LoadStatus {
                        // multi-bus / sidechain / wrong channel count
 };
 
+// Bit flags describing a plugin parameter (mirrors the ABI's
+// le_plugin_param_info.flags). The UI shows only automatable, non-hidden params
+// as in-app knobs (umbrella D-UI).
+enum ParamFlags : uint32_t {
+  kParamAutomatable = 1u << 0,
+  kParamReadOnly = 1u << 1,
+  kParamBypass = 1u << 2,
+  kParamHidden = 1u << 3,
+  kParamStepped = 1u << 4,
+};
+
+// One plugin parameter's metadata (CONTROL thread). Unifies VST3 ParameterInfo
+// (normalized; converted to plain via normalizedParamToPlain) and CLAP
+// clap_param_info (already plain) into one PLAIN-valued shape.
+struct PluginParamInfo {
+  uint32_t id = 0;
+  std::string name;
+  std::string unit;
+  double min = 0.0;
+  double max = 1.0;
+  double def = 0.0;
+  int32_t stepCount = 0;  // 0 = continuous; >0 = discrete steps
+  uint32_t flags = 0;
+};
+
 // One live plugin loaded into a single FX chain slot. The VST3 and CLAP backends
 // (host_vst3.cpp / host_clap.cpp) and the test stub (slot.cpp) implement this.
-// Every method runs on the CONTROL thread EXCEPT process(), which the slot's
-// sample-to-block adapter calls on the AUDIO THREAD.
+// Every method runs on the CONTROL thread EXCEPT process() and queueParam(),
+// which the slot's sample-to-block adapter calls on the AUDIO THREAD.
 class IPluginHost {
  public:
   virtual ~IPluginHost() = default;
@@ -95,7 +120,22 @@ class IPluginHost {
 
   // AUDIO THREAD ONLY: process exactly `frames` samples of stereo audio in
   // place (left[frames], right[frames]). Must not allocate, lock, or block.
+  // Any params staged by queueParam() since the last call are applied here via
+  // the SDK's own event mechanism (D-PARAM: never a direct store).
   virtual void process(float* left, float* right, int frames) = 0;
+
+  // --- Parameters ---
+
+  // CONTROL THREAD: the number of parameters, and metadata / current plain
+  // value by index / id. paramInfoAt returns false for an out-of-range index.
+  virtual int paramCount() = 0;
+  virtual bool paramInfoAt(int index, PluginParamInfo& out) = 0;
+  virtual double paramGet(uint32_t id) = 0;
+
+  // AUDIO THREAD: stage a queued param change (drained from the slot's lock-free
+  // ring) to apply on the next process(). Stores into an audio-thread-owned
+  // pending buffer only — no SDK call here, no allocation.
+  virtual void queueParam(uint32_t id, double plain) = 0;
 };
 
 // Backend factories. Each returns a not-yet-loaded host (the caller calls

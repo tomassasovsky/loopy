@@ -245,6 +245,47 @@ void main() {
       );
 
       blocTest<MonitorCubit, MonitorState>(
+        'setPluginParam routes a plain value by plugin param id and persists',
+        setUp: () async {
+          when(
+            () => repository.setMonitorPluginParam(
+              input: any(named: 'input'),
+              index: any(named: 'index'),
+              paramId: any(named: 'paramId'),
+              value: any(named: 'value'),
+            ),
+          ).thenReturn(EngineResult.ok);
+          // Seed a monitor chain with a single plugin entry, then restore it.
+          await settings.saveMonitorEffects(
+            0,
+            encodeTrackEffects(const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              ),
+            ]),
+          );
+        },
+        build: build,
+        act: (cubit) async {
+          await cubit.load();
+          cubit.setPluginParam(0, 0, 100, 0.7);
+        },
+        verify: (cubit) async {
+          final fx = cubit.state.forInput(0).effects.single as PluginEffect;
+          expect(fx.paramValues[100], 0.7);
+          verify(
+            () => repository.setMonitorPluginParam(
+              input: 0,
+              index: 0,
+              paramId: 100,
+              value: 0.7,
+            ),
+          ).called(1);
+          expect(await settings.loadMonitorEffects(0), isNotNull);
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
         'removeEffect drops an entry (back to the clean path)',
         build: build,
         act: (cubit) {
