@@ -294,6 +294,17 @@ class MockAudioEngine implements AudioEngine {
       slot is MockPluginSlotHandle && slot.editorOpen;
 
   @override
+  Uint8List pluginStateGet(PluginSlotHandle slot) =>
+      slot is MockPluginSlotHandle ? slot.stateBlob : Uint8List(0);
+
+  @override
+  EngineResult pluginStateSet(PluginSlotHandle slot, Uint8List state) {
+    if (slot is! MockPluginSlotHandle) return EngineResult.invalid;
+    slot.stateBlob = Uint8List.fromList(state);
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult measureLatency() {
     if (!_running) return EngineResult.notRunning;
     _latencyState = LatencyState.done;
@@ -527,7 +538,8 @@ class MockPluginSlotHandle implements PluginSlotHandle {
   /// Creates a [MockPluginSlotHandle] for [pluginId], seeded with the default
   /// value of each [mockParams] entry.
   MockPluginSlotHandle(this.pluginId)
-    : _values = {for (final p in mockParams) p.id: p.def};
+    : _values = {for (final p in mockParams) p.id: p.def},
+      stateBlob = Uint8List.fromList('mock-state:$pluginId'.codeUnits);
 
   /// The id of the plugin this handle was loaded from.
   final String pluginId;
@@ -537,6 +549,10 @@ class MockPluginSlotHandle implements PluginSlotHandle {
   /// Whether this slot's (fake) native editor window is open. Toggled by
   /// [MockAudioEngine.pluginEditorOpen] / `pluginEditorClose`.
   bool editorOpen = false;
+
+  /// The slot's fake opaque state — deterministic + non-empty (derived from
+  /// [pluginId]) so D-P1 capture/restore round-trips in tests.
+  Uint8List stateBlob;
 
   /// The deterministic fake parameter set every mock plugin exposes: three
   /// automatable knobs ranged 0..1, mirroring the native StubHost.

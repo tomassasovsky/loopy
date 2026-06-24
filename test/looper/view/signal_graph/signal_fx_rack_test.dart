@@ -27,6 +27,7 @@ void main() {
         onSetParam: onSetParam ?? (_, _, _) {},
         onSetPluginParam: onSetPluginParam ?? (_, _, _) {},
         onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
+        onRelinkPlugin: (_) {},
         onReorder: onReorder ?? (_, _) {},
       ),
     );
@@ -293,6 +294,7 @@ void main() {
       required PluginEffect fx,
       void Function(int index, int paramId, double value)? onSetPluginParam,
       void Function(int index)? onOpenPluginEditor,
+      void Function(int index)? onRelinkPlugin,
       void Function(int index)? onRemoveEffect,
     }) => Scaffold(
       body: SignalFxRack(
@@ -304,6 +306,7 @@ void main() {
         onSetParam: (_, _, _) {},
         onSetPluginParam: onSetPluginParam ?? (_, _, _) {},
         onOpenPluginEditor: onOpenPluginEditor ?? (_) {},
+        onRelinkPlugin: onRelinkPlugin ?? (_) {},
         onReorder: (_, _) {},
       ),
     );
@@ -488,6 +491,39 @@ void main() {
         find.byKey(const Key('signalGraph_lane_device_0_remove')),
       );
       expect(removed, [0]);
+    });
+
+    testWidgets('an unavailable plugin renders the D-MISS placeholder', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        build(fx: plugin(id: 'gone').copyWith(unavailable: true)),
+      );
+      // No controls — just the placeholder + relink + remove.
+      expect(find.byType(SignalKnob), findsNothing);
+      expect(find.text('Plugin unavailable'), findsOneWidget);
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_relink')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_openEditor')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the relink button dispatches for the entry', (tester) async {
+      final relinked = <int>[];
+      await tester.pumpApp(
+        build(
+          fx: plugin(id: 'gone').copyWith(unavailable: true),
+          onRelinkPlugin: relinked.add,
+        ),
+      );
+      await tester.tap(
+        find.byKey(const Key('signalGraph_lane_device_0_relink')),
+      );
+      expect(relinked, [0]);
     });
   });
 }

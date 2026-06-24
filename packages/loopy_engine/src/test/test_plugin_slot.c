@@ -305,6 +305,62 @@ static void test_editor_abi_no_editor(void) {
   le_plugin_slot_destroy(slot);
 }
 
+/* Opaque state round-trips: capture a blob, mutate the plugin (a queued param),
+ * restore the blob, and confirm the mutation is undone. Also size + null
+ * guards. The stub's state IS its param values, so this exercises the ABI
+ * without a real plugin. */
+static void test_plugin_state(void) {
+  printf("test_plugin_state\n");
+  le_plugin_slot* slot =
+      le_plugin_slot_create_stub(LE_PLUGIN_STUB_IDENTITY, 48000, NULL);
+  CHECK(slot != NULL);
+
+  int32_t size = -1;
+  CHECK(le_plugin_state_size(slot, &size) == LE_OK);
+  CHECK(size == (int32_t)(3 * sizeof(double))); /* three param values */
+
+  uint8_t blob[64];
+  int32_t written = -1;
+  CHECK(le_plugin_state_get(slot, blob, sizeof(blob), &written) == LE_OK);
+  CHECK(written == size);
+
+  /* A too-small buffer reports the needed size without copying (not an error). */
+  int32_t need = -1;
+  CHECK(le_plugin_state_get(slot, blob, 4, &need) == LE_OK);
+  CHECK(need == size);
+
+  /* Mutate param 100 through a processed block, then confirm it changed. */
+  le_fx_state fx;
+  memset(&fx, 0, sizeof(fx));
+  atomic_store(&fx.plugin[0], slot);
+  le_plugin_slot_set_ready(slot, 1);
+  CHECK(le_plugin_param_set(slot, 100, 0.9) == LE_OK);
+  float in[SLOT_BLOCK];
+  float out[SLOT_BLOCK];
+  memset(in, 0, sizeof(in));
+  drive(&fx, in, out, SLOT_BLOCK);
+  double v = -1.0;
+  CHECK(le_plugin_param_get(slot, 100, &v) == LE_OK);
+  CHECK(v == 0.9);
+
+  /* Restore the captured blob: the mutation is undone. */
+  CHECK(le_plugin_state_set(slot, blob, written) == LE_OK);
+  CHECK(le_plugin_param_get(slot, 100, &v) == LE_OK);
+  CHECK(v == 0.5);
+
+  /* Null / argument guards. */
+  CHECK(le_plugin_state_size(NULL, &size) == LE_ERR_INVALID);
+  CHECK(le_plugin_state_get(NULL, blob, sizeof(blob), &written) ==
+        LE_ERR_INVALID);
+  CHECK(le_plugin_state_set(NULL, blob, written) == LE_ERR_INVALID);
+  CHECK(le_plugin_state_set(slot, NULL, 8) == LE_ERR_INVALID);
+  /* A wrong-size blob is rejected by the stub (unsupported, not a crash). */
+  CHECK(le_plugin_state_set(slot, blob, 7) == LE_ERR_UNSUPPORTED);
+
+  atomic_store(&fx.plugin[0], (le_plugin_slot*)NULL);
+  le_plugin_slot_destroy(slot);
+}
+
 int main(void) {
   test_adapter_latency();
   test_dry_when_not_ready();
@@ -315,6 +371,7 @@ int main(void) {
   test_unsupported_topology();
   test_param_queue();
   test_editor_abi_no_editor();
+  test_plugin_state();
   if (g_failures == 0) {
     printf("ALL PASSED\n");
     return 0;

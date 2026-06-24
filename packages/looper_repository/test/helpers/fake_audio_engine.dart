@@ -603,4 +603,22 @@ class FakeAudioEngine implements AudioEngine {
 
   @override
   bool pluginEditorIsOpen(PluginSlotHandle slot) => openEditors.contains(slot);
+
+  /// Fake opaque state returned by [pluginStateGet] (configure per test); the
+  /// last blob passed to [pluginStateSet] is recorded for assertions.
+  Uint8List nextState = Uint8List(0);
+  final List<Uint8List> stateSets = [];
+
+  @override
+  Uint8List pluginStateGet(PluginSlotHandle slot) {
+    calls.add('pluginStateGet');
+    return nextState;
+  }
+
+  @override
+  EngineResult pluginStateSet(PluginSlotHandle slot, Uint8List state) {
+    calls.add('pluginStateSet');
+    stateSets.add(state);
+    return EngineResult.ok;
+  }
 }

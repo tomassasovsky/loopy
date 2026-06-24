@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace loopy {
 
@@ -151,6 +152,24 @@ class IPluginHost {
 
   // Whether the editor window is currently open.
   virtual bool editorIsOpen() const { return false; }
+
+  // --- Opaque state for session persistence (MAIN THREAD; umbrella D-P1) ---
+
+  // Captures the plugin's full opaque state, appending it to `out`. Returns
+  // false when the plugin has no state or capture failed (the dry-recording
+  // invariant never depends on success). Default: no state.
+  virtual bool stateGet(std::vector<uint8_t>& out) {
+    (void)out;
+    return false;
+  }
+
+  // Restores the plugin from a blob captured by stateGet(). Returns false when
+  // the plugin rejects it. Default: no state.
+  virtual bool stateSet(const uint8_t* data, int size) {
+    (void)data;
+    (void)size;
+    return false;
+  }
 };
 
 // Backend factories. Each returns a not-yet-loaded host (the caller calls

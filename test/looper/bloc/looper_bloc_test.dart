@@ -32,7 +32,10 @@ void main() {
   late LooperRepository repository;
   late StreamController<LooperState> stateController;
 
-  setUpAll(() => registerFallbackValue(<TrackEffect>[]));
+  setUpAll(() {
+    registerFallbackValue(<TrackEffect>[]);
+    registerFallbackValue(const PluginRef(format: PluginFormat.vst3, id: ''));
+  });
 
   setUp(() {
     repository = _MockLooperRepository();
@@ -166,6 +169,14 @@ void main() {
         index: any(named: 'index'),
       ),
     ).thenReturn(true);
+    when(
+      () => repository.relinkLanePlugin(
+        channel: any(named: 'channel'),
+        lane: any(named: 'lane'),
+        index: any(named: 'index'),
+        ref: any(named: 'ref'),
+      ),
+    ).thenReturn(EngineResult.ok);
     when(() => repository.laneEffects(any(), any())).thenReturn(const []);
     when(
       () => repository.setOutputEnabled(
@@ -499,6 +510,27 @@ void main() {
         ),
       );
     },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperLanePluginRelinked relinks the entry to the new ref',
+    build: buildBloc,
+    act: (bloc) => bloc.add(
+      const LooperLanePluginRelinked(
+        2,
+        1,
+        0,
+        PluginRef(format: PluginFormat.vst3, id: 'replacement'),
+      ),
+    ),
+    verify: (_) => verify(
+      () => repository.relinkLanePlugin(
+        channel: 2,
+        lane: 1,
+        index: 0,
+        ref: const PluginRef(format: PluginFormat.vst3, id: 'replacement'),
+      ),
+    ).called(1),
   );
 
   group('plugin editor', () {
