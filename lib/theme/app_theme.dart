@@ -27,7 +27,9 @@ const _recordMeterColors = <LooperMeterState, Color>{
   LooperMeterState.recording: Color(0xFFFF1744),
   LooperMeterState.overdubbing: Color(0xFFFF1744),
   LooperMeterState.playing: Color(0xFF4CDA4A),
-  LooperMeterState.stopped: Colors.transparent,
+  // A stopped loop holds its frozen level; show it (white) rather than hiding
+  // the bar, so a loaded-but-paused track stays visible after a stop.
+  LooperMeterState.stopped: Color(0xFFFFFFFF),
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 
@@ -50,7 +52,8 @@ const _hcRecordMeterColors = <LooperMeterState, Color>{
   LooperMeterState.recording: Color(0xFFFF5470),
   LooperMeterState.overdubbing: Color(0xFFFF5470),
   LooperMeterState.playing: Color(0xFF6EE77F),
-  LooperMeterState.stopped: Colors.transparent,
+  // Visible frozen-level bar for a stopped loop (matches the play table).
+  LooperMeterState.stopped: Color(0xFFFFFFFF),
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 

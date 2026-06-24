@@ -63,9 +63,15 @@ enum TrackIndicator {
   /// Indicator state for a track. Transport state wins over the
   /// selected/armed derivation; `muted` reads as [idle] (matching the meter's
   /// muted-first precedence on the same tile).
+  ///
+  /// A **stopped** track that still holds a loop ([hasContent]) reads as
+  /// [play] — it is armed to play and will sound on the next play-all, so the
+  /// indicator stays lit after a stop rather than going dark. An empty/cleared
+  /// track only arms (by mode) when [selected].
   factory TrackIndicator.of(
     TrackState state, {
     required bool muted,
+    required bool hasContent,
     required bool selected,
     required bool playMode,
   }) {
@@ -73,6 +79,7 @@ enum TrackIndicator {
     return switch (state) {
       TrackState.recording || TrackState.overdubbing => TrackIndicator.record,
       TrackState.playing => TrackIndicator.play,
+      TrackState.stopped when hasContent => TrackIndicator.play,
       TrackState.empty || TrackState.stopped =>
         selected
             ? (playMode ? TrackIndicator.play : TrackIndicator.record)
