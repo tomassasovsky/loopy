@@ -9,11 +9,14 @@ import 'package:loopy_engine/loopy_engine.dart'
     hide
         AudioBackend,
         AudioDevice,
+        BuiltInEffect,
         EngineConfig,
         LatencyState,
         LoopbackInfo,
         LoopbackKind,
         ParamReadout,
+        PluginEffect,
+        PluginRef,
         TrackEffect,
         TrackEffectParam,
         TrackEffectType,
@@ -323,8 +326,8 @@ void main() {
         0,
         0,
         encodeTrackEffects([
-          TrackEffect(type: TrackEffectType.filter),
-          TrackEffect(
+          BuiltInEffect(type: TrackEffectType.filter),
+          BuiltInEffect(
             type: TrackEffectType.delay,
             params: const [0.3, 0.42, 0.5],
           ),
@@ -375,7 +378,7 @@ void main() {
       await settings.saveLaneEffects(
         0,
         1,
-        encodeTrackEffects([TrackEffect(type: TrackEffectType.tremolo)]),
+        encodeTrackEffects([BuiltInEffect(type: TrackEffectType.tremolo)]),
       );
       engine.nextSnapshot = const EngineSnapshot(
         isRunning: true,

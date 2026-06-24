@@ -57,7 +57,7 @@ static void test_adapter_latency(void) {
   printf("test_adapter_latency\n");
   le_fx_state fx;
   memset(&fx, 0, sizeof(fx));
-  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_IDENTITY, 48000);
+  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_IDENTITY, 48000, NULL);
   CHECK(slot != NULL);
   atomic_store(&fx.plugin[0], slot);
   le_plugin_slot_set_ready(slot, 1);
@@ -83,7 +83,7 @@ static void test_dry_when_not_ready(void) {
   printf("test_dry_when_not_ready\n");
   le_fx_state fx;
   memset(&fx, 0, sizeof(fx));
-  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_GAIN, 48000);
+  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_GAIN, 48000, NULL);
   CHECK(slot != NULL);
   atomic_store(&fx.plugin[0], slot);
   /* NOT ready: the audio thread must pass audio through untouched. */
@@ -105,7 +105,7 @@ static void test_sanitize_nan(void) {
   printf("test_sanitize_nan\n");
   le_fx_state fx;
   memset(&fx, 0, sizeof(fx));
-  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_NAN, 48000);
+  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_NAN, 48000, NULL);
   CHECK(slot != NULL);
   atomic_store(&fx.plugin[0], slot);
   le_plugin_slot_set_ready(slot, 1);
@@ -130,7 +130,7 @@ static void test_sanitize_denormal(void) {
   le_fx_state fx;
   memset(&fx, 0, sizeof(fx));
   le_plugin_slot* slot =
-      le_plugin_slot_create_stub(LE_PLUGIN_STUB_DENORMAL, 48000);
+      le_plugin_slot_create_stub(LE_PLUGIN_STUB_DENORMAL, 48000, NULL);
   CHECK(slot != NULL);
   atomic_store(&fx.plugin[0], slot);
   le_plugin_slot_set_ready(slot, 1);
@@ -150,7 +150,7 @@ static void test_teardown_is_safe(void) {
   printf("test_teardown_is_safe\n");
   le_fx_state fx;
   memset(&fx, 0, sizeof(fx));
-  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_GAIN, 48000);
+  le_plugin_slot* slot = le_plugin_slot_create_stub(LE_PLUGIN_STUB_GAIN, 48000, NULL);
   CHECK(slot != NULL);
   atomic_store(&fx.plugin[0], slot);
   le_plugin_slot_set_ready(slot, 1);
@@ -186,10 +186,10 @@ static void test_engine_abi_errors(void) {
   le_plugin_slot* out = NULL;
   /* Unknown plugin id (no scan has run): load fails cleanly, no slot. */
   CHECK(le_engine_set_lane_plugin(e, 0, 0, 0, "no.such.plugin", &out) ==
-        LE_ERR_DEVICE);
+        LE_ERR_INVALID);
   CHECK(out == NULL);
   CHECK(le_engine_set_monitor_plugin(e, 0, 0, "no.such.plugin", &out) ==
-        LE_ERR_DEVICE);
+        LE_ERR_INVALID);
 
   /* Bad addresses / null args are rejected before any load. */
   CHECK(le_engine_set_lane_plugin(NULL, 0, 0, 0, "x", &out) == LE_ERR_INVALID);
@@ -206,6 +206,24 @@ static void test_engine_abi_errors(void) {
   free(e);
 }
 
+/* Topology guard (D-BUS): a host that rejects its bus layout surfaces the
+ * distinct LE_ERR_UNSUPPORTED reason; a normal load reports LE_OK. */
+static void test_unsupported_topology(void) {
+  printf("test_unsupported_topology\n");
+  int32_t reason = LE_OK;
+  le_plugin_slot* bad =
+      le_plugin_slot_create_stub(LE_PLUGIN_STUB_UNSUPPORTED, 48000, &reason);
+  CHECK(bad == NULL);
+  CHECK(reason == LE_ERR_UNSUPPORTED);
+
+  reason = LE_ERR_DEVICE;
+  le_plugin_slot* ok =
+      le_plugin_slot_create_stub(LE_PLUGIN_STUB_IDENTITY, 48000, &reason);
+  CHECK(ok != NULL);
+  CHECK(reason == LE_OK);
+  le_plugin_slot_destroy(ok);
+}
+
 int main(void) {
   test_adapter_latency();
   test_dry_when_not_ready();
@@ -213,6 +231,7 @@ int main(void) {
   test_sanitize_denormal();
   test_teardown_is_safe();
   test_engine_abi_errors();
+  test_unsupported_topology();
   if (g_failures == 0) {
     printf("ALL PASSED\n");
     return 0;

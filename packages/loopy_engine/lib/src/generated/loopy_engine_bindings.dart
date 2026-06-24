@@ -1978,7 +1978,12 @@ enum le_result {
   LE_ERR_NOT_RUNNING(-3),
 
   /// miniaudio failed to init/start the device
-  LE_ERR_DEVICE(-4);
+  LE_ERR_DEVICE(-4),
+
+  /// a plugin's bus topology is not a stereo (or
+  /// mono-adaptable) effect — instrument / multi-bus /
+  /// sidechain / wrong channel count (D-BUS)
+  LE_ERR_UNSUPPORTED(-5);
 
   final int value;
   const le_result(this.value);
@@ -1989,6 +1994,7 @@ enum le_result {
     -2 => LE_ERR_ALREADY_RUNNING,
     -3 => LE_ERR_NOT_RUNNING,
     -4 => LE_ERR_DEVICE,
+    -5 => LE_ERR_UNSUPPORTED,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }

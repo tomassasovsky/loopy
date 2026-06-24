@@ -40,6 +40,9 @@ typedef enum le_result {
   LE_ERR_ALREADY_RUNNING = -2,
   LE_ERR_NOT_RUNNING = -3,
   LE_ERR_DEVICE = -4,        /* miniaudio failed to init/start the device */
+  LE_ERR_UNSUPPORTED = -5,   /* a plugin's bus topology is not a stereo (or
+                              * mono-adaptable) effect — instrument / multi-bus /
+                              * sidechain / wrong channel count (D-BUS) */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */

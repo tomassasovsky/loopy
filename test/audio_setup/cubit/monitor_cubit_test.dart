@@ -161,7 +161,7 @@ void main() {
         await settings.saveMonitorMute(0, muted: true);
         await settings.saveMonitorEffects(
           0,
-          encodeTrackEffects([TrackEffect(type: TrackEffectType.delay)]),
+          encodeTrackEffects([BuiltInEffect(type: TrackEffectType.delay)]),
         );
       },
       build: build,
@@ -172,7 +172,10 @@ void main() {
         expect(monitor.outputMask, 0x2);
         expect(monitor.volume, 0.4);
         expect(monitor.muted, isTrue);
-        expect(monitor.effects.single.type, TrackEffectType.delay);
+        expect(
+          (monitor.effects.single as BuiltInEffect).type,
+          TrackEffectType.delay,
+        );
         verify(
           () => repository.setMonitorInputEnabled(input: 0, enabled: true),
         ).called(1);
@@ -201,7 +204,7 @@ void main() {
         act: (cubit) => cubit.addEffect(0),
         expect: () => [
           isA<MonitorState>().having(
-            (s) => s.forInput(0).effects.single.type,
+            (s) => (s.forInput(0).effects.single as BuiltInEffect).type,
             'type',
             TrackEffectType.drive,
           ),
@@ -226,7 +229,10 @@ void main() {
             ..setEffectParam(0, 0, 0, 0.9);
         },
         verify: (cubit) {
-          expect(cubit.state.forInput(0).effects.single.params[0], 0.9);
+          expect(
+            (cubit.state.forInput(0).effects.single as BuiltInEffect).params[0],
+            0.9,
+          );
           verify(
             () => repository.setMonitorEffectParam(
               input: 0,
@@ -262,7 +268,10 @@ void main() {
         },
         verify: (cubit) async {
           expect(
-            cubit.state.forInput(0).effects.map((e) => e.type),
+            cubit.state
+                .forInput(0)
+                .effects
+                .map((e) => (e as BuiltInEffect).type),
             [TrackEffectType.delay, TrackEffectType.drive],
           );
           verify(

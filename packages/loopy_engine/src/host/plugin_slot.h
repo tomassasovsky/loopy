@@ -30,14 +30,19 @@ void le_plugin_slot_process(le_plugin_slot* slot, float* l, float* r);
 
 /* CONTROL THREAD: create + activate (bypassed) a slot hosting `plugin_id`
  * (resolved from the last scan) at `sample_rate`. The slot is created NOT ready;
- * publish it, then le_plugin_slot_set_ready(slot, 1). Returns NULL on an unknown
- * id, a load/activate failure, or a non-plugin build. */
-le_plugin_slot* le_plugin_slot_create(const char* plugin_id, double sample_rate);
+ * publish it, then le_plugin_slot_set_ready(slot, 1). Returns NULL on failure
+ * and writes the reason (LE_OK on success; LE_ERR_INVALID for an unknown id /
+ * disabled build; LE_ERR_UNSUPPORTED for a rejected bus topology, D-BUS;
+ * LE_ERR_DEVICE for a generic load failure) into *out_reason if non-NULL. */
+le_plugin_slot* le_plugin_slot_create(const char* plugin_id, double sample_rate,
+                                      int32_t* out_reason);
 
 /* CONTROL THREAD, TEST ONLY: create a slot backed by a deterministic stub host
  * (le_plugin_stub_mode) so the native harness can exercise the lifecycle +
- * sanitize + adapter without a real plugin install. Created NOT ready. */
-le_plugin_slot* le_plugin_slot_create_stub(int32_t mode, double sample_rate);
+ * sanitize + adapter without a real plugin install. Created NOT ready; same
+ * *out_reason contract as le_plugin_slot_create. */
+le_plugin_slot* le_plugin_slot_create_stub(int32_t mode, double sample_rate,
+                                           int32_t* out_reason);
 
 /* CONTROL THREAD: publish (`ready` != 0) or retract (`ready` == 0) the slot.
  * Retracting makes the audio thread render dry on the next sample; it is the
@@ -56,6 +61,7 @@ typedef enum le_plugin_stub_mode {
   LE_PLUGIN_STUB_NAN = 2,      /* emit NaN/Inf (exercises the sanitize boundary) */
   LE_PLUGIN_STUB_DENORMAL = 3, /* emit denormals (exercises denormal flush) */
   LE_PLUGIN_STUB_SILENCE = 4,  /* emit silence */
+  LE_PLUGIN_STUB_UNSUPPORTED = 5, /* load() rejects with unsupported topology */
 } le_plugin_stub_mode;
 
 #ifdef __cplusplus

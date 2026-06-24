@@ -6,7 +6,7 @@ import 'package:loopy/common/effect_params_editor.dart';
 import '../helpers/pump_app.dart';
 
 void main() {
-  Widget editorFor(TrackEffect fx, {double addedLatencyMs = 0}) => Scaffold(
+  Widget editorFor(BuiltInEffect fx, {double addedLatencyMs = 0}) => Scaffold(
     body: EffectParamsEditor(
       keyPrefix: 'laneGraph',
       fx: fx,
@@ -20,9 +20,9 @@ void main() {
 
   // A PV-mode octaver keeps the default Mode (0.0); a PSOLA octaver sets it to
   // 1.0. (Shift, Tone, Mix are irrelevant to the latency hint.)
-  TrackEffect octaver({required bool psola}) {
+  BuiltInEffect octaver({required bool psola}) {
     final mode = psola ? 1.0 : 0.0;
-    return TrackEffect(
+    return BuiltInEffect(
       type: TrackEffectType.octaver,
       params: [0.25, 0.5, 0.5, mode],
     );
@@ -35,7 +35,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        editorFor(TrackEffect(type: TrackEffectType.octaver)),
+        editorFor(BuiltInEffect(type: TrackEffectType.octaver)),
       );
 
       // The octaver exposes four param rows; the last is Mode.
@@ -56,7 +56,9 @@ void main() {
     ) async {
       // Drive uses two params; the widening must not add a slider for the inert
       // trailing slots.
-      await tester.pumpApp(editorFor(TrackEffect(type: TrackEffectType.drive)));
+      await tester.pumpApp(
+        editorFor(BuiltInEffect(type: TrackEffectType.drive)),
+      );
 
       expect(find.byKey(const Key('laneGraph_fxParam0')), findsOneWidget);
       expect(find.byKey(const Key('laneGraph_fxParam1')), findsOneWidget);
@@ -68,7 +70,9 @@ void main() {
       tester,
     ) async {
       // Delay uses three params; the widening must not surface the inert p3.
-      await tester.pumpApp(editorFor(TrackEffect(type: TrackEffectType.delay)));
+      await tester.pumpApp(
+        editorFor(BuiltInEffect(type: TrackEffectType.delay)),
+      );
 
       expect(find.byKey(const Key('laneGraph_fxParam2')), findsOneWidget);
       expect(find.byKey(const Key('laneGraph_fxParam3')), findsNothing);
@@ -113,7 +117,7 @@ void main() {
       testWidgets('hides for a non-octaver effect', (tester) async {
         await tester.pumpApp(
           editorFor(
-            TrackEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.delay),
             addedLatencyMs: 21.3,
           ),
         );

@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/src/models/plugin_descriptor.dart';
 import 'package:loopy_engine/loopy_engine.dart' as engine;
 
 /// How a parameter's `0..1` value is read out in the UI, in its own units, when
@@ -108,16 +109,45 @@ enum TrackEffectType {
   List<double> get defaultParams => _engine.defaultParams;
 }
 
-/// One entry in an effects chain: a [type] with its [params] (normalized
-/// `0..1`, length `kTrackEffectParams`).
+/// The identity of a hosted plugin in a chain entry. Domain mirror of the
+/// engine's `PluginRef`: format + stable id + packed version.
+class PluginRef extends Equatable {
+  /// Creates a [PluginRef].
+  const PluginRef({required this.format, required this.id, this.version = 0});
+
+  /// The plugin format.
+  final PluginFormat format;
+
+  /// The stable plugin id (VST3 TUID hex / CLAP descriptor id).
+  final String id;
+
+  /// Packed version `major << 16 | minor << 8 | patch`, or `0` if unknown.
+  final int version;
+
+  @override
+  List<Object?> get props => [format, id, version];
+}
+
+/// One entry in an effects chain — a sealed hierarchy of either a built-in DSP
+/// effect ([BuiltInEffect]) or a hosted plugin ([PluginEffect]). Domain mirror
+/// of the engine's sealed `TrackEffect`.
 ///
 /// The chain is non-destructive and stageless — the recording is always dry and
 /// every active entry colors playback in order. The same model backs a lane's
 /// record-route chain and a hardware input's live-monitor chain.
-class TrackEffect extends Equatable {
-  /// Creates a [TrackEffect]. [params] defaults to the [type]'s musical
+sealed class TrackEffect extends Equatable {
+  /// Const base constructor for the sealed subtypes.
+  const TrackEffect();
+
+  /// The native `le_fx_type` code for this entry.
+  int get typeCode;
+}
+
+/// A built-in DSP effect: a [type] with its normalized [params].
+class BuiltInEffect extends TrackEffect {
+  /// Creates a [BuiltInEffect]. [params] defaults to the [type]'s musical
   /// defaults.
-  TrackEffect({required this.type, List<double>? params})
+  BuiltInEffect({required this.type, List<double>? params})
     : params = List<double>.unmodifiable(params ?? type.defaultParams);
 
   /// The effect type.
@@ -126,12 +156,34 @@ class TrackEffect extends Equatable {
   /// The normalized parameter values (length `kTrackEffectParams`).
   final List<double> params;
 
+  @override
+  int get typeCode => type.code;
+
   /// Returns a copy with the given fields replaced. [params] is copied.
-  TrackEffect copyWith({TrackEffectType? type, List<double>? params}) =>
-      TrackEffect(type: type ?? this.type, params: params ?? this.params);
+  BuiltInEffect copyWith({TrackEffectType? type, List<double>? params}) =>
+      BuiltInEffect(type: type ?? this.type, params: params ?? this.params);
 
   @override
   List<Object?> get props => [type, params];
+}
+
+/// A hosted VST3/CLAP plugin in a chain entry, identified by its [ref]. The
+/// variable parameter values and opaque state blob land in later parts.
+class PluginEffect extends TrackEffect {
+  /// Creates a [PluginEffect] for [ref].
+  const PluginEffect({required this.ref});
+
+  /// The hosted plugin's identity.
+  final PluginRef ref;
+
+  @override
+  int get typeCode => engine.kPluginFxCode;
+
+  /// Returns a copy with [ref] replaced.
+  PluginEffect copyWith({PluginRef? ref}) => PluginEffect(ref: ref ?? this.ref);
+
+  @override
+  List<Object?> get props => [ref];
 }
 
 /// Maps an engine readout kind to its domain mirror.
@@ -146,22 +198,48 @@ ParamReadout _readoutFromEngine(engine.ParamReadout readout) =>
 engine.TrackEffectType trackEffectTypeToEngine(TrackEffectType type) =>
     engine.TrackEffectType.fromCode(type.code);
 
+/// Maps a domain [TrackEffect] to its engine counterpart (boundary; internal).
+engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
+  BuiltInEffect(:final type, :final params) => engine.BuiltInEffect(
+    type: trackEffectTypeToEngine(type),
+    params: params,
+  ),
+  PluginEffect(:final ref) => engine.PluginEffect(
+    ref: engine.PluginRef(
+      format: pluginFormatToEngine(ref.format),
+      id: ref.id,
+      version: ref.version,
+    ),
+  ),
+};
+
+/// Maps an engine [TrackEffect] to its domain mirror (boundary; internal).
+TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
+    switch (effect) {
+      engine.BuiltInEffect(:final type, :final params) => BuiltInEffect(
+        type: TrackEffectType.fromCode(type.code),
+        params: params,
+      ),
+      engine.PluginEffect(:final ref) => PluginEffect(
+        ref: PluginRef(
+          format: pluginFormatFromEngine(ref.format),
+          id: ref.id,
+          version: ref.version,
+        ),
+      ),
+    };
+
 /// Encodes an ordered effects chain to a JSON string for persistence.
 ///
 /// Delegates to the engine's wire-format serializer so the persisted format
 /// stays the single source of truth (no domain/engine drift).
 String encodeTrackEffects(List<TrackEffect> effects) =>
     engine.encodeTrackEffects([
-      for (final e in effects)
-        engine.TrackEffect(
-          type: trackEffectTypeToEngine(e.type),
-          params: e.params,
-        ),
+      for (final e in effects) _trackEffectToEngine(e),
     ]);
 
 /// Decodes a chain produced by [encodeTrackEffects]; malformed input yields an
 /// empty chain. Delegates to the engine serializer, then maps to domain types.
 List<TrackEffect> decodeTrackEffects(String? encoded) => [
-  for (final e in engine.decodeTrackEffects(encoded))
-    TrackEffect(type: TrackEffectType.fromCode(e.type.code), params: e.params),
+  for (final e in engine.decodeTrackEffects(encoded)) _trackEffectFromEngine(e),
 ];

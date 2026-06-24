@@ -407,6 +407,46 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult commitSession(int baseFrames) => EngineResult.ok;
 
+  // --- Plugin hosting (scan: part 2; slots: part 3) ---
+
+  @override
+  EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
+
+  @override
+  PluginScanProgress scanPoll() => PluginScanProgress.empty;
+
+  @override
+  List<PluginDescriptor> scanResults() => const [];
+
+  @override
+  EngineResult scanCancel() => EngineResult.ok;
+
+  @override
+  PluginSlotHandle? setLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+    required String pluginId,
+  }) => const MockPluginSlotHandle('fake-plugin');
+
+  @override
+  PluginSlotHandle? setMonitorPlugin({
+    required int input,
+    required int index,
+    required String pluginId,
+  }) => const MockPluginSlotHandle('fake-plugin');
+
+  @override
+  EngineResult clearLanePlugin({
+    required int channel,
+    required int lane,
+    required int index,
+  }) => EngineResult.ok;
+
+  @override
+  EngineResult clearMonitorPlugin({required int input, required int index}) =>
+      EngineResult.ok;
+
   @override
   void dispose() => disposeCalls++;
 }

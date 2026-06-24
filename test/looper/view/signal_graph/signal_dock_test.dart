@@ -124,8 +124,8 @@ void main() {
       await tester.pumpApp(
         build(
           effects: [
-            TrackEffect(type: TrackEffectType.drive),
-            TrackEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.drive),
+            BuiltInEffect(type: TrackEffectType.delay),
           ],
           onRemoveEffect: (i) => removedAt = i,
         ),
