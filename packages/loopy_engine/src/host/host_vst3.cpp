@@ -82,6 +82,15 @@ std::wstring widen(const std::string& utf8) {
   MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, out.data(), n);
   return out;
 }
+
+// SEH filter for the load guard: catch hardware faults (access violation,
+// illegal instruction, …) raised inside a misbehaving plugin's load path so it
+// fails gracefully instead of killing the host; let real C++ exceptions
+// (MSVC code 0xE06D7363) propagate normally.
+inline int loadSehFilter(unsigned long code) {
+  return code == 0xE06D7363ul ? EXCEPTION_CONTINUE_SEARCH
+                              : EXCEPTION_EXECUTE_HANDLER;
+}
 #endif
 
 bool iidEq(const TUID a, const TUID& b) { return std::memcmp(a, b, 16) == 0; }
@@ -535,6 +544,26 @@ class Vst3Host final : public loopy::IPluginHost {
 
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
+#if defined(_WIN32)
+    // A third-party plugin can fault (access violation) inside its own
+    // createInstance/initialize on load — observed with a VST3 that derefs a
+    // failed handle (INVALID_HANDLE_VALUE, e.g. a missing model/resource file).
+    // SEH-guard the load so a misbehaving plugin yields a clean load failure
+    // instead of crashing the whole app (D-RT: documented best-effort, no
+    // watchdog). The discarded host's destructor (unload) frees what was set.
+    __try {
+      return loadImpl(desc, sampleRate, maxBlock);
+    } __except (loadSehFilter(GetExceptionCode())) {
+      LPV_LOG("load: structured exception in plugin — load failed\n");
+      return loopy::LoadStatus::failed;
+    }
+#else
+    return loadImpl(desc, sampleRate, maxBlock);
+#endif
+  }
+
+  loopy::LoadStatus loadImpl(const loopy::PluginDescriptor& desc,
+                             double sampleRate, int maxBlock) {
     using loopy::LoadStatus;
     name_ = desc.name;  // for the editor window title
     LPV_LOG("load '%s' (id %s)\n", desc.path.c_str(), desc.id.c_str());
@@ -542,10 +571,12 @@ class Vst3Host final : public loopy::IPluginHost {
       LPV_LOG("  openBundle failed\n");
       return LoadStatus::failed;
     }
+    LPV_LOG("  openBundle ok\n");
 
     IPluginFactory* factory = getFactory_();
     if (!factory) return LoadStatus::failed;
     factory_ = factory;
+    LPV_LOG("  got factory\n");
 
     TUID cid;
     if (!parseTuid(desc.id, cid)) return LoadStatus::failed;
@@ -563,12 +594,14 @@ class Vst3Host final : public loopy::IPluginHost {
       return LoadStatus::failed;
     }
     component_ = static_cast<IComponent*>(obj);
+    LPV_LOG("  IComponent created\n");
 
     // Pass a real host context — commercial plugins reject a null context.
     if (component_->initialize(&hostApp_) != kResultOk) {
       LPV_LOG("  component initialize failed\n");
       return LoadStatus::failed;
     }
+    LPV_LOG("  component initialized\n");
     if (component_->queryInterface(IAudioProcessor::iid,
                                    reinterpret_cast<void**>(&processor_)) !=
             kResultOk ||
@@ -578,6 +611,7 @@ class Vst3Host final : public loopy::IPluginHost {
     if (processor_->canProcessSampleSize(kSample32) != kResultOk) {
       return LoadStatus::failed;
     }
+    LPV_LOG("  got IAudioProcessor (sample32 ok)\n");
 
     // Topology guard (D-BUS): accept only a single main audio-in + audio-out
     // bus. Zero audio inputs is an instrument; more than one audio bus is a
@@ -589,6 +623,7 @@ class Vst3Host final : public loopy::IPluginHost {
               numIn, numOut);
       return LoadStatus::unsupportedTopology;
     }
+    LPV_LOG("  buses in=%d out=%d\n", numIn, numOut);
 
     // Request stereo-in/stereo-out; a mono-only effect is adapted (L duplicated
     // to R) in process(). The negotiated arrangement decides the channel count.
@@ -604,6 +639,8 @@ class Vst3Host final : public loopy::IPluginHost {
       return LoadStatus::unsupportedTopology;  // not a mono/stereo effect
     }
     channels_ = (chIn >= 2 && chOut >= 2) ? 2 : 1;
+    LPV_LOG("  arrangement chIn=%d chOut=%d -> channels=%d\n", chIn, chOut,
+            channels_);
 
     ProcessSetup setup;
     setup.processMode = kRealtime;
@@ -613,11 +650,13 @@ class Vst3Host final : public loopy::IPluginHost {
     if (processor_->setupProcessing(setup) != kResultOk) {
       return LoadStatus::failed;
     }
+    LPV_LOG("  setupProcessing ok\n");
 
     component_->activateBus(kAudio, kInput, 0, true);
     component_->activateBus(kAudio, kOutput, 0, true);
     if (component_->setActive(true) != kResultOk) return LoadStatus::failed;
     processor_->setProcessing(true);  // some plugins return notImplemented
+    LPV_LOG("  activated + processing\n");
 
     // Edit controller for parameter metadata + the editor view: the component
     // IS the controller for a single-component effect, otherwise a separate
@@ -661,6 +700,10 @@ class Vst3Host final : public loopy::IPluginHost {
 
   void process(float* l, float* r, int n) override {
     if (!processor_) return;
+    if (firstProcess_) {  // one-shot: did the audio thread reach process()?
+      firstProcess_ = false;
+      LPV_LOG("process: first call n=%d channels=%d\n", n, channels_);
+    }
     // For a mono effect only channel 0 is fed; the output is duplicated L->R
     // below. For stereo both channels are live.
     Sample32* inCh[2] = {l, r};
@@ -999,6 +1042,7 @@ class Vst3Host final : public loopy::IPluginHost {
   IAudioProcessor* processor_ = nullptr;
   IEditController* controller_ = nullptr;
   int32 channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
+  bool firstProcess_ = true;  // one-shot diagnostic trace gate (see process())
   std::vector<float> outL_, outR_;
 
   // Params staged on the audio thread (queueParam) and drained into the SDK in
