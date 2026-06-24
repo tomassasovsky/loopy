@@ -123,6 +123,17 @@ class _BigPictureViewState extends State<BigPictureView> {
                           icon: const Icon(Icons.account_tree_outlined),
                           onPressed: () => unawaited(showSignalPage(context)),
                         ),
+                        // Settings is also reachable by `S` or right-click;
+                        // this surfaces it for pointer/touch users.
+                        IconButton(
+                          key: const Key('bigpicture_openSettings'),
+                          tooltip: l10n.settingsTooltip,
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          color: Colors.white70,
+                          icon: const Icon(Icons.settings_outlined),
+                          onPressed: () => unawaited(openLoopySettings()),
+                        ),
                         const SizedBox(width: 4),
                         const _SessionMenu(),
                       ],

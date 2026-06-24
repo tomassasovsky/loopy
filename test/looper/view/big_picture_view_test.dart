@@ -88,6 +88,17 @@ void main() {
     expect(find.byKey(const Key('bigpicture_openSignal')), findsOneWidget);
   });
 
+  testWidgets('exposes a visible Settings button', (tester) async {
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+
+    // Settings was previously reachable only by the `S` key or right-click;
+    // the top-bar button makes it operable by pointer/touch.
+    final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+    expect(find.byKey(const Key('bigpicture_openSettings')), findsOneWidget);
+    expect(find.byTooltip(l10n.settingsTooltip), findsOneWidget);
+  });
+
   testWidgets('tapping a tile records that channel', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
