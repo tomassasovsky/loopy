@@ -492,8 +492,13 @@ class NativeAudioEngine implements AudioEngine {
             0) {
           return Uint8List(0);
         }
-        // Copy out of native memory before it's freed.
-        return Uint8List.fromList(buf.asTypedList(written.value));
+        // Copy out of native memory before it's freed. Clamp to the allocated
+        // size: `buf` was sized from le_plugin_state_size, but `written` comes
+        // from le_plugin_state_get's own (later) size query — if the plugin's
+        // state grew between the two calls, an unclamped length would read past
+        // the buffer.
+        final n = written.value < size ? written.value : size;
+        return Uint8List.fromList(buf.asTypedList(n));
       } finally {
         calloc
           ..free(buf)
