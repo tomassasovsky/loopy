@@ -323,6 +323,17 @@ class SettingsRepository {
   Future<void> saveHighContrast({required bool value}) =>
       _store.setBool(_highContrastKey, value: value);
 
+  static const String _showTrackIndicatorsKey = 'big_picture.track_indicators';
+
+  /// Whether per-track status indicators show on the Big Picture tiles.
+  /// Defaults to `true` when unset.
+  Future<bool> loadShowTrackIndicators() async =>
+      await _store.getBool(_showTrackIndicatorsKey) ?? true;
+
+  /// Saves whether per-track status indicators show on the Big Picture tiles.
+  Future<void> saveShowTrackIndicators({required bool value}) =>
+      _store.setBool(_showTrackIndicatorsKey, value: value);
+
   static const String _defaultPerformanceModeKey = 'big_picture.default_mode';
 
   /// Loads the persisted default Big Picture performance mode (an opaque token,

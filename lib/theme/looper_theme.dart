@@ -48,6 +48,46 @@ enum LooperMeterState {
   }
 }
 
+/// The discrete arm/readiness appearance of a track's status indicator —
+/// independent of the meter palette and of the hardware pedal LEDs.
+enum TrackIndicator {
+  /// Inactive / not armed. Dim.
+  idle,
+
+  /// Playing, or armed to play (selected in play mode). Green.
+  play,
+
+  /// Recording/overdubbing, or armed to record (selected in record mode). Red.
+  record;
+
+  /// Indicator state for a track. Transport state wins over the
+  /// selected/armed derivation; `muted` reads as [idle] (matching the meter's
+  /// muted-first precedence on the same tile).
+  ///
+  /// A **stopped** track that still holds a loop ([hasContent]) reads as
+  /// [play] — it is armed to play and will sound on the next play-all, so the
+  /// indicator stays lit after a stop rather than going dark. An empty/cleared
+  /// track only arms (by mode) when [selected].
+  factory TrackIndicator.of(
+    TrackState state, {
+    required bool muted,
+    required bool hasContent,
+    required bool selected,
+    required bool playMode,
+  }) {
+    if (muted) return TrackIndicator.idle;
+    return switch (state) {
+      TrackState.recording || TrackState.overdubbing => TrackIndicator.record,
+      TrackState.playing => TrackIndicator.play,
+      TrackState.stopped when hasContent => TrackIndicator.play,
+      TrackState.empty || TrackState.stopped =>
+        selected
+            ? (playMode ? TrackIndicator.play : TrackIndicator.record)
+            : TrackIndicator.idle,
+    };
+  }
+}
+
 /// Loopy-specific design tokens layered on top of [ThemeData] via a
 /// [ThemeExtension], so the looper grid and visualizer pick up per-mode colors
 /// (per-track accents, waveform stroke, tile surfaces) without hard-coding them
@@ -63,6 +103,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.recordColor,
     required this.recordMeterColors,
     required this.playMeterColors,
+    required this.indicatorColors,
   });
 
   /// Background of a track tile.
@@ -86,11 +127,19 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Track-meter (peak bar) colors by [LooperMeterState] in play mode.
   final Map<LooperMeterState, Color> playMeterColors;
 
+  /// Per-track status-indicator colors by [TrackIndicator].
+  final Map<TrackIndicator, Color> indicatorColors;
+
   /// The meter color for [state] in the current mode ([playMode] selects the
   /// play table, else the record table). Transparent if the table omits it.
   Color meterColor(LooperMeterState state, {required bool playMode}) =>
       (playMode ? playMeterColors : recordMeterColors)[state] ??
       Colors.transparent;
+
+  /// The status-indicator color for [indicator]. Transparent if the table
+  /// omits it.
+  Color indicatorColor(TrackIndicator indicator) =>
+      indicatorColors[indicator] ?? Colors.transparent;
 
   @override
   LooperTheme copyWith({
@@ -101,6 +150,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? recordColor,
     Map<LooperMeterState, Color>? recordMeterColors,
     Map<LooperMeterState, Color>? playMeterColors,
+    Map<TrackIndicator, Color>? indicatorColors,
   }) => LooperTheme(
     tileBackground: tileBackground ?? this.tileBackground,
     tileBorder: tileBorder ?? this.tileBorder,
@@ -109,11 +159,12 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     recordColor: recordColor ?? this.recordColor,
     recordMeterColors: recordMeterColors ?? this.recordMeterColors,
     playMeterColors: playMeterColors ?? this.playMeterColors,
+    indicatorColors: indicatorColors ?? this.indicatorColors,
   );
 
-  static Map<LooperMeterState, Color> _lerpMeters(
-    Map<LooperMeterState, Color> a,
-    Map<LooperMeterState, Color> b,
+  static Map<K, Color> _lerpColorMap<K>(
+    Map<K, Color> a,
+    Map<K, Color> b,
     double t,
   ) => {
     for (final entry in a.entries)
@@ -133,12 +184,21 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
           Color.lerp(waveformBackground, other.waveformBackground, t) ??
           waveformBackground,
       recordColor: Color.lerp(recordColor, other.recordColor, t) ?? recordColor,
-      recordMeterColors: _lerpMeters(
+      recordMeterColors: _lerpColorMap(
         recordMeterColors,
         other.recordMeterColors,
         t,
       ),
-      playMeterColors: _lerpMeters(playMeterColors, other.playMeterColors, t),
+      playMeterColors: _lerpColorMap(
+        playMeterColors,
+        other.playMeterColors,
+        t,
+      ),
+      indicatorColors: _lerpColorMap(
+        indicatorColors,
+        other.indicatorColors,
+        t,
+      ),
     );
   }
 }

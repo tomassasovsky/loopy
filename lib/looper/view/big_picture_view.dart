@@ -10,6 +10,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/bank_cubit.dart';
 import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/cubit/track_indicators_cubit.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/session/session.dart';
@@ -619,12 +620,20 @@ class _TrackColumn extends StatelessWidget {
           Expanded(
             child: FocusableTapTarget(
               key: Key('bigpicture_tile_${track.channel}'),
-              semanticLabel: l10n.a11yTrackTile(name, stateWord),
+              // The tap action follows the mode (mirroring the 1–8 number
+              // keys): record/overdub in record mode, mute/unmute in play mode.
+              semanticLabel: playMode
+                  ? l10n.a11yTrackTilePlay(name, stateWord)
+                  : l10n.a11yTrackTile(name, stateWord),
               selected: selected,
               borderRadius: 8,
               onTap: () {
                 context.read<BigPictureCubit>().select(track.channel);
-                bloc.add(LooperRecordPressed(track.channel));
+                bloc.add(
+                  playMode
+                      ? LooperMuteToggled(track.channel)
+                      : LooperRecordPressed(track.channel),
+                );
               },
               child: GestureDetector(
                 key: Key('bigpicture_tileStop_${track.channel}'),
@@ -634,6 +643,9 @@ class _TrackColumn extends StatelessWidget {
                   peak: track.peak,
                   color: barColor,
                   hasContent: track.hasContent,
+                  // A stopped track reports no live peak; hold the last fill so
+                  // a loaded-but-paused loop keeps a visible bar after a stop.
+                  frozen: track.state == TrackState.stopped,
                 ),
               ),
             ),
@@ -658,7 +670,46 @@ class _TrackColumn extends StatelessWidget {
               ),
             ),
           ),
+          // A discrete arm/readiness strip, shown only when the view preference
+          // is on. When off the widget is absent and the tile reflows.
+          if (context.watch<TrackIndicatorsCubit>().state) ...[
+            const SizedBox(height: 6),
+            _TrackIndicator(
+              key: Key('bigpicture_indicator_${track.channel}'),
+              status: TrackIndicator.of(
+                track.state,
+                muted: track.muted,
+                hasContent: track.hasContent,
+                selected: selected,
+                playMode: playMode,
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// A static, full-width status strip below a track name. Its colour is the
+/// track's [TrackIndicator] state. Carries no semantics of its own
+/// ([ExcludeSemantics]): the tile already names its state for screen readers,
+/// so a second label here would double-announce. Static colour ⇒ no motion.
+class _TrackIndicator extends StatelessWidget {
+  const _TrackIndicator({required this.status, super.key});
+
+  final TrackIndicator status;
+
+  @override
+  Widget build(BuildContext context) {
+    final looper = Theme.of(context).extension<LooperTheme>()!;
+    return ExcludeSemantics(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: looper.indicatorColor(status),
+          borderRadius: BorderRadius.circular(2),
+        ),
+        child: const SizedBox(height: 5, width: double.infinity),
       ),
     );
   }
@@ -666,26 +717,46 @@ class _TrackColumn extends StatelessWidget {
 
 /// A bottom-anchored level meter driven by the track's current [peak]. Updates
 /// with the watched looper state — no own timer.
-class _PeakBar extends StatelessWidget {
+///
+/// When [frozen] (the track is stopped), the bar holds the last live fill
+/// instead of collapsing to the stopped track's zero peak, so a loaded-but-
+/// paused loop keeps a visible level after a stop.
+class _PeakBar extends StatefulWidget {
   const _PeakBar({
     required this.peak,
     required this.color,
     required this.hasContent,
+    required this.frozen,
   });
 
   final double peak;
   final Color color;
   final bool hasContent;
+  final bool frozen;
+
+  @override
+  State<_PeakBar> createState() => _PeakBarState();
+}
+
+class _PeakBarState extends State<_PeakBar> {
+  /// The last fill rendered while the track had a live level, held across the
+  /// stopped (frozen) phase. Recomputed every live tick; reset when emptied.
+  double _fill = 0;
 
   @override
   Widget build(BuildContext context) {
+    // A track with nothing recorded has no bar; a live track tracks its peak;
+    // a frozen (stopped) track keeps the last live fill.
+    if (!widget.hasContent) {
+      _fill = 0;
+    } else if (!widget.frozen) {
+      _fill = peakMeterFill(widget.peak);
+    }
     return Align(
       alignment: Alignment.bottomCenter,
       child: FractionallySizedBox(
-        // A track with nothing recorded has no bar (height 0); otherwise the
-        // bar tracks the live peak.
-        heightFactor: hasContent ? peakMeterFill(peak) : 0.0,
-        child: Container(color: color),
+        heightFactor: _fill,
+        child: Container(color: widget.color),
       ),
     );
   }
