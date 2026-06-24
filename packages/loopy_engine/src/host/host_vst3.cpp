@@ -579,17 +579,33 @@ class Vst3Host final : public loopy::IPluginHost {
     factory_ = factory;
     LPV_LOG("  got factory\n");
 
+    // Hand the factory our host context BEFORE creating any instance. Plugins
+    // built on IPluginFactory3 (notably DPF-based ones — Dragonfly, AIDA-X, …)
+    // read this context during createInstance; without setHostContext they
+    // dereference an uninitialized pointer and crash. The SDK's own PlugProvider
+    // does this too. hostApp_ outlives every instance (it is a host member).
+    IPluginFactory3* factory3 = nullptr;
+    if (factory_->queryInterface(IPluginFactory3::iid,
+                                 reinterpret_cast<void**>(&factory3)) == kResultOk &&
+        factory3) {
+      factory3->setHostContext(static_cast<IHostApplication*>(&hostApp_));
+      factory3->release();
+      LPV_LOG("  setHostContext ok\n");
+    }
+
     TUID cid;
     if (!parseTuid(desc.id, cid)) return LoadStatus::failed;
 
     void* obj = nullptr;
-    // createInstance takes FIDString (const char*); a TUID is signed char[16],
-    // so reinterpret both the class id and IComponent's iid.
-    if (factory_->createInstance(
-            reinterpret_cast<FIDString>(cid),
-            reinterpret_cast<FIDString>(
-                static_cast<const TUID&>(IComponent::iid)),
-            &obj) != kResultOk ||
+    // createInstance takes FIDString (const char*) for the class id; cid is a
+    // local TUID array, reinterpret to match the signedness. The interface iid
+    // is passed as the FUID directly (FUID -> const TUID& -> const char*): the
+    // reinterpret-of-a-cast form miscompiled under MSVC into passing the iid
+    // BY VALUE, so the plugin dereferenced the iid bytes as a pointer and
+    // crashed. This direct form mirrors the SDK's own host and our queryInterface
+    // calls below.
+    if (factory_->createInstance(reinterpret_cast<FIDString>(cid),
+                                 IComponent::iid, &obj) != kResultOk ||
         !obj) {
       LPV_LOG("  createInstance(IComponent) failed\n");
       return LoadStatus::failed;
@@ -671,11 +687,8 @@ class Vst3Host final : public loopy::IPluginHost {
       TUID ctrlCid;
       void* cobj = nullptr;
       if (component_->getControllerClassId(ctrlCid) == kResultOk &&
-          factory_->createInstance(
-              reinterpret_cast<FIDString>(ctrlCid),
-              reinterpret_cast<FIDString>(
-                  static_cast<const TUID&>(IEditController::iid)),
-              &cobj) == kResultOk) {
+          factory_->createInstance(reinterpret_cast<FIDString>(ctrlCid),
+                                   IEditController::iid, &cobj) == kResultOk) {
         controller_ = static_cast<IEditController*>(cobj);
         separateController = true;
       }
