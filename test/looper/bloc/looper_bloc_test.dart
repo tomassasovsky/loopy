@@ -290,6 +290,42 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
+    'LooperClearPressed clears the track and re-arms it (unmutes)',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [
+        Track(state: TrackState.stopped, lengthFrames: 100, muted: true),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperClearPressed(0)),
+    verify: (_) {
+      verify(() => repository.clear()).called(1);
+      verify(() => repository.setMute(muted: false)).called(1);
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperUndoPressed that clears a base-loop track also re-arms it',
+    build: buildBloc,
+    seed: () => const LooperState(
+      tracks: [
+        Track(),
+        Track(
+          channel: 1,
+          state: TrackState.stopped,
+          lengthFrames: 100,
+          muted: true,
+        ),
+      ],
+    ),
+    act: (bloc) => bloc.add(const LooperUndoPressed(1)),
+    verify: (_) {
+      verify(() => repository.clear(channel: 1)).called(1);
+      verify(() => repository.setMute(muted: false, channel: 1)).called(1);
+    },
+  );
+
+  blocTest<LooperBloc, LooperState>(
     'LooperTrackQuantizeChanged forwards the override to the repository',
     build: buildBloc,
     act: (bloc) => bloc.add(const LooperTrackQuantizeChanged(2, enabled: true)),
@@ -754,6 +790,27 @@ void main() {
     );
 
     blocTest<LooperBloc, LooperState>(
+      'LooperClearPressed persists the unmute so a cleared track stays armed',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      seed: () => const LooperState(
+        tracks: [
+          Track(),
+          Track(
+            channel: 1,
+            state: TrackState.stopped,
+            lengthFrames: 100,
+            muted: true,
+          ),
+        ],
+      ),
+      act: (bloc) => bloc.add(const LooperClearPressed(1)),
+      verify: (_) {
+        verify(() => repository.setMute(muted: false, channel: 1)).called(1);
+        verify(() => settings.saveLaneMute(1, 0, muted: false)).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
       'a lane effect structural edit persists the encoded chain onto the lane',
       build: () => LooperBloc(repository: repository, settings: settings),
       act: (bloc) => bloc.add(const LooperLaneEffectAdded(1, 2)),
@@ -870,7 +927,10 @@ void main() {
     act: (bloc) => bloc.add(const LooperClearAllPressed()),
     verify: (_) {
       verify(() => repository.clear()).called(1);
+      // Each cleared track is re-armed (unmuted); the empty track is skipped.
+      verify(() => repository.setMute(muted: false)).called(1);
       verifyNever(() => repository.clear(channel: 1));
+      verifyNever(() => repository.setMute(muted: false, channel: 1));
     },
   );
 
