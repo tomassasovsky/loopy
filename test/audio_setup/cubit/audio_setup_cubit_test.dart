@@ -46,11 +46,13 @@ void main() {
   AudioSetupCubit buildCubit({
     bool asioSelectable = false,
     List<AudioDevice> initialAsioDrivers = const [],
+    Duration deviceRefreshInterval = const Duration(seconds: 1),
   }) => AudioSetupCubit(
     repository: repository,
     settings: settings,
     asioSelectable: asioSelectable,
     initialAsioDrivers: initialAsioDrivers,
+    deviceRefreshInterval: deviceRefreshInterval,
   );
 
   const mockAsioDriver = AudioDevice(
@@ -524,6 +526,43 @@ void main() {
       expect(cubit.state.playbackDeviceId, 'out-1');
       expect(cubit.state.captureDeviceId, 'in-1');
     });
+
+    const plugged = AudioDevice(
+      id: 'in-9',
+      name: 'Scarlett 4i4',
+      isDefault: false,
+      isInput: true,
+    );
+
+    test('refreshDevices re-enumerates and updates the picker', () {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      expect(cubit.state.devices, isEmpty);
+
+      // An interface is plugged in after launch.
+      when(repository.devices).thenReturn(const [plugged]);
+      cubit.refreshDevices();
+
+      expect(cubit.state.devices, const [plugged]);
+      expect(cubit.state.captureDevices, const [plugged]);
+    });
+
+    test(
+      'periodically re-enumerates so a later-plugged device appears',
+      () async {
+        final cubit = buildCubit(
+          deviceRefreshInterval: const Duration(milliseconds: 10),
+        );
+        addTearDown(cubit.close);
+        expect(cubit.state.devices, isEmpty);
+
+        when(repository.devices).thenReturn(const [plugged]);
+        // Let the refresh timer fire (interval 10ms; ample margin).
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        expect(cubit.state.devices, const [plugged]);
+      },
+    );
 
     test('setPlaybackDevice updates state and persists', () async {
       final cubit = buildCubit();

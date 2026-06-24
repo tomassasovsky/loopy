@@ -121,6 +121,17 @@
             }
         }
     },
+    "a11yTrackTilePlay": "{name}, {state}, activate to mute or unmute",
+    "@a11yTrackTilePlay": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
     "a11yRenameTrack": "Rename {name}",
     "@a11yRenameTrack": {
         "placeholders": {
@@ -181,6 +192,8 @@
     "waveformWindowSubtitle": "Open a second window showing the whole-loop output waveform",
     "highContrastTitle": "High contrast",
     "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
+    "trackIndicatorsTitle": "Track indicators",
+    "trackIndicatorsSubtitle": "Show a status light on each track",
     "performanceGroupLabel": "PERFORMANCE",
     "bpDefaultModeIntro": "Mode the Big Picture view starts in. Number keys select tracks; in Record mode R/P arm and play the selection, in Play mode they mute / unmute.",
     "recordModeLabel": "Record",
