@@ -39,6 +39,14 @@ std::wstring widen(const std::string& utf8) {
   MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, out.data(), n);
   return out;
 }
+
+// SEH filter for the load guard: catch hardware faults raised inside a
+// misbehaving plugin's load path so it fails gracefully instead of killing the
+// host; let real C++ exceptions (MSVC code 0xE06D7363) propagate normally.
+inline int loadSehFilter(unsigned long code) {
+  return code == 0xE06D7363ul ? EXCEPTION_CONTINUE_SEARCH
+                              : EXCEPTION_EXECUTE_HANDLER;
+}
 #endif
 
 // The CLAP gui host extension (defined after ClapHost, which its callbacks
@@ -106,6 +114,22 @@ class ClapHost final : public loopy::IPluginHost {
 
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
+#if defined(_WIN32)
+    // SEH-guard the load so a plugin that faults inside its own init yields a
+    // clean failure instead of crashing the whole app (parity with the VST3
+    // host; D-RT best-effort, no watchdog).
+    __try {
+      return loadImpl(desc, sampleRate, maxBlock);
+    } __except (loadSehFilter(GetExceptionCode())) {
+      return loopy::LoadStatus::failed;
+    }
+#else
+    return loadImpl(desc, sampleRate, maxBlock);
+#endif
+  }
+
+  loopy::LoadStatus loadImpl(const loopy::PluginDescriptor& desc,
+                             double sampleRate, int maxBlock) {
     using loopy::LoadStatus;
     name_ = desc.name;  // for the editor window title
     // Load the module + read the exported `clap_entry` data symbol (the only
