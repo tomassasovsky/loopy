@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -32,6 +33,7 @@ class BigPictureView extends StatefulWidget {
 class _BigPictureViewState extends State<BigPictureView> {
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final state = context.watch<LooperBloc>().state;
     final big = context.watch<BigPictureCubit>().state;
     final bank = context.watch<BankCubit>().state;
@@ -39,6 +41,10 @@ class _BigPictureViewState extends State<BigPictureView> {
       for (final track in state.tracks)
         if (bank.contains(track.channel)) track,
     ];
+    final anyActive = _anyActive(state);
+    // Both global transport buttons are no-ops with no recorded audio or a
+    // stopped engine; disabling them avoids dead-feeling controls.
+    final transportEnabled = state.status.isConnected && state.hasContent;
 
     // Settings are reachable from the performance view by right-clicking
     // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
@@ -71,9 +77,46 @@ class _BigPictureViewState extends State<BigPictureView> {
                         const SizedBox(width: 12),
                         _BankSwitch(active: bank.activeBank),
                         const Spacer(),
+                        // Play/Stop All — state-aware toggle mirroring `Space`.
+                        IconButton(
+                          key: const Key('bigpicture_playStopAll'),
+                          tooltip: anyActive
+                              ? l10n.stopAllTooltip
+                              : l10n.playAllTooltip,
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          color: Colors.white70,
+                          icon: Icon(
+                            anyActive ? Icons.stop : Icons.play_arrow,
+                          ),
+                          onPressed: transportEnabled
+                              ? () => _togglePlayAll(playing: anyActive)
+                              : null,
+                        ),
+                        // Clear All — instant, mirroring `C`.
+                        IconButton(
+                          key: const Key('bigpicture_clearAll'),
+                          tooltip: l10n.clearAllTooltip,
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          color: Colors.white70,
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                          onPressed: transportEnabled ? _clearAll : null,
+                        ),
+                        // Fullscreen — desktop only, mirroring `F`.
+                        if (loopySupportsDesktopWindowing)
+                          IconButton(
+                            key: const Key('bigpicture_fullscreen'),
+                            tooltip: l10n.fullscreenTooltip,
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 20,
+                            color: Colors.white70,
+                            icon: const Icon(Icons.fullscreen),
+                            onPressed: () => unawaited(toggleLoopyFullScreen()),
+                          ),
                         IconButton(
                           key: const Key('bigpicture_openSignal'),
-                          tooltip: context.l10n.signalTooltip,
+                          tooltip: l10n.signalTooltip,
                           visualDensity: VisualDensity.compact,
                           iconSize: 20,
                           color: Colors.white70,
@@ -105,13 +148,15 @@ class _BigPictureViewState extends State<BigPictureView> {
                                   alignment: Alignment.bottomCenter,
                                   child: _TrackColumn(
                                     track: track,
-                                    name: context.l10n.displayTrackName(
+                                    name: l10n.displayTrackName(
                                       big.nameOf(track.channel),
                                       track.channel,
                                     ),
                                     selected:
                                         track.channel == big.selectedChannel,
                                     playMode: big.mode == PerformanceMode.play,
+                                    onUndo: _undo,
+                                    onRedo: _redo,
                                   ),
                                 ),
                               ),
@@ -185,6 +230,49 @@ class _BigPictureViewState extends State<BigPictureView> {
     );
   }
 
+  /// Whether any track is currently playing, overdubbing, or recording — the
+  /// predicate the `Space` handler and the Play/Stop All toggle both read.
+  bool _anyActive(LooperState state) => state.tracks.any(
+    (t) =>
+        t.state == TrackState.playing ||
+        t.state == TrackState.overdubbing ||
+        t.state == TrackState.recording,
+  );
+
+  // The dispatch+announce helpers below are the single source of truth shared
+  // by the keyboard handler (`_onKey`) and the on-screen transport buttons, so
+  // the two paths can never drift in what they dispatch or announce.
+
+  /// Toggles global transport: stops all when [playing], otherwise plays all,
+  /// announcing the result.
+  void _togglePlayAll({required bool playing}) {
+    context.read<LooperBloc>().add(
+      playing ? const LooperStopAllPressed() : const LooperPlayAllPressed(),
+    );
+    _announce(
+      playing ? context.l10n.a11yStoppedAll : context.l10n.a11yPlayingAll,
+    );
+  }
+
+  /// Clears every track and announces it.
+  void _clearAll() {
+    context.read<LooperBloc>().add(const LooperClearAllPressed());
+    _announce(context.l10n.a11yAllCleared);
+  }
+
+  /// Undoes the latest layer on [channel] (the bloc clears a lone base loop)
+  /// and announces it.
+  void _undo(int channel) {
+    context.read<LooperBloc>().add(LooperUndoPressed(channel));
+    _announce(context.l10n.a11yUndone);
+  }
+
+  /// Redoes the last undone layer on [channel] and announces it.
+  void _redo(int channel) {
+    context.read<LooperBloc>().add(LooperRedoPressed(channel));
+    _announce(context.l10n.a11yRedone);
+  }
+
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
@@ -197,31 +285,18 @@ class _BigPictureViewState extends State<BigPictureView> {
     final big = context.read<BigPictureCubit>();
     final l10n = context.l10n;
     final selected = big.state.selectedChannel;
-    final playing = bloc.state.tracks
-        .map((t) => t.state)
-        .toList()
-        .any(
-          (t) => [
-            TrackState.playing,
-            TrackState.overdubbing,
-            TrackState.recording,
-          ].contains(t),
-        );
 
     if (keyboard.isMetaPressed || keyboard.isControlPressed) {
       if (key == LogicalKeyboardKey.keyZ) {
         if (keyboard.isShiftPressed) {
-          bloc.add(LooperRedoPressed(selected));
-          _announce(l10n.a11yRedone);
+          _redo(selected);
         } else {
-          bloc.add(LooperUndoPressed(selected));
-          _announce(l10n.a11yUndone);
+          _undo(selected);
         }
         return KeyEventResult.handled;
       }
       if (key == LogicalKeyboardKey.keyY) {
-        bloc.add(LooperRedoPressed(selected));
-        _announce(l10n.a11yRedone);
+        _redo(selected);
         return KeyEventResult.handled;
       }
       return KeyEventResult.ignored; // let OS / menu shortcuts through
@@ -250,15 +325,11 @@ class _BigPictureViewState extends State<BigPictureView> {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.space) {
-      bloc.add(
-        playing ? const LooperStopAllPressed() : const LooperPlayAllPressed(),
-      );
-      _announce(playing ? l10n.a11yStoppedAll : l10n.a11yPlayingAll);
+      _togglePlayAll(playing: _anyActive(bloc.state));
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyC) {
-      bloc.add(const LooperClearAllPressed());
-      _announce(l10n.a11yAllCleared);
+      _clearAll();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyB) {
@@ -272,8 +343,7 @@ class _BigPictureViewState extends State<BigPictureView> {
     // `U` undoes the latest overdub layer; on a track that holds only its base
     // loop (nothing to undo) it clears the track instead. The bloc decides.
     if (key == LogicalKeyboardKey.keyU) {
-      context.read<LooperBloc>().add(LooperUndoPressed(selected));
-      _announce(l10n.a11yUndone);
+      _undo(selected);
       return KeyEventResult.handled;
     }
 
@@ -555,12 +625,21 @@ class _TrackColumn extends StatelessWidget {
     required this.name,
     required this.selected,
     required this.playMode,
+    required this.onUndo,
+    required this.onRedo,
   });
 
   final Track track;
   final String name;
   final bool selected;
   final bool playMode;
+
+  /// Dispatches an undo for the given channel (shares the keyboard path's
+  /// dispatch+announce, wired in [_BigPictureViewState]).
+  final void Function(int channel) onUndo;
+
+  /// Dispatches a redo for the given channel.
+  final void Function(int channel) onRedo;
 
   @override
   Widget build(BuildContext context) {
@@ -574,6 +653,11 @@ class _TrackColumn extends StatelessWidget {
     // see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final barColor = looper.meterColor(meterState, playMode: playMode);
+    // Undo/Redo shortcut hints adapt to the host platform — Loopy targets
+    // Windows/Linux too, so this must not hardcode the macOS modifier.
+    final isMac = defaultTargetPlatform == TargetPlatform.macOS;
+    final undoShortcut = isMac ? '⌘Z' : 'Ctrl+Z';
+    final redoShortcut = isMac ? '⌘⇧Z' : 'Ctrl+Y';
     // The meter conveys state through colour only (WCAG 1.4.1); name the state
     // in words so it reaches the tile's accessible label.
     final stateWord = switch (meterState) {
@@ -614,6 +698,32 @@ class _TrackColumn extends StatelessWidget {
                     color: theme.colorScheme.primary,
                   ),
                 ),
+              // Undo/Redo surface only on the selected column; the keyboard
+              // shortcut hint in each tooltip adapts to the host platform.
+              if (selected) ...[
+                IconButton(
+                  key: Key('bigpicture_undo_${track.channel}'),
+                  tooltip: l10n.undoTooltip(undoShortcut),
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  color: Colors.white70,
+                  icon: const Icon(Icons.undo),
+                  // Mirrors the `U` key: enabled whenever the track holds
+                  // content, since undo also clears a lone base loop.
+                  onPressed: track.hasContent
+                      ? () => onUndo(track.channel)
+                      : null,
+                ),
+                IconButton(
+                  key: Key('bigpicture_redo_${track.channel}'),
+                  tooltip: l10n.redoTooltip(redoShortcut),
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  color: Colors.white70,
+                  icon: const Icon(Icons.redo),
+                  onPressed: track.canRedo ? () => onRedo(track.channel) : null,
+                ),
+              ],
             ],
           ),
           Expanded(
