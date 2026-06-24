@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -28,6 +29,7 @@ void main() {
   late LooperBloc bloc;
   late BigPictureCubit bigPicture;
   late BankCubit bank;
+  late TrackIndicatorsCubit trackIndicators;
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
@@ -37,6 +39,7 @@ void main() {
     bloc = _MockLooperBloc();
     bigPicture = BigPictureCubit(settings: settings);
     bank = BankCubit();
+    trackIndicators = TrackIndicatorsCubit(settings: settings);
     repository = _MockLooperRepository();
     when(() => repository.readTrackWaveform(any())).thenReturn(Float32List(0));
     session = _MockSessionCubit();
@@ -64,6 +67,7 @@ void main() {
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<BigPictureCubit>.value(value: bigPicture),
             BlocProvider<BankCubit>.value(value: bank),
+            BlocProvider<TrackIndicatorsCubit>.value(value: trackIndicators),
             BlocProvider<SessionCubit>.value(value: session),
           ],
           child: const BigPictureView(),
@@ -89,12 +93,29 @@ void main() {
     expect(find.byKey(const Key('bigpicture_openSignal')), findsOneWidget);
   });
 
-  testWidgets('tapping a tile records that channel', (tester) async {
+  testWidgets('tapping a tile records that channel in record mode', (
+    tester,
+  ) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
     await tester.tap(find.byKey(const Key('bigpicture_tile_1')));
     verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
+  });
+
+  testWidgets('tapping a tile mutes/unmutes that channel in play mode', (
+    tester,
+  ) async {
+    bigPicture.toggleMode(); // record -> play
+    seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('bigpicture_tile_1')));
+    // Mirrors the play-mode number-key behavior; does not arm recording.
+    verify(() => bloc.add(const LooperMuteToggled(1))).called(1);
+    verifyNever(() => bloc.add(const LooperRecordPressed(1)));
+    // The tap also selects the tapped channel.
+    expect(bigPicture.state.selectedChannel, 1);
   });
 
   testWidgets('long-pressing a tile stops that channel', (tester) async {
@@ -229,6 +250,45 @@ void main() {
                 .child!
             as Container;
 
+    // The meter fill fraction (the _PeakBar's height factor) for a tile.
+    double fillOf(WidgetTester tester, int channel) => tester
+        .widget<FractionallySizedBox>(
+          find.descendant(
+            of: find.byKey(Key('bigpicture_tile_$channel')),
+            matching: find.byType(FractionallySizedBox),
+          ),
+        )
+        .heightFactor!;
+
+    testWidgets('a stopped loaded track freezes its last meter level', (
+      tester,
+    ) async {
+      const playing = LooperState(
+        tracks: [
+          Track(state: TrackState.playing, lengthFrames: 1000, peak: 0.81),
+        ],
+      );
+      const stopped = LooperState(
+        tracks: [Track(state: TrackState.stopped, lengthFrames: 1000)],
+      );
+      final controller = StreamController<LooperState>();
+      addTearDown(controller.close);
+      var current = playing;
+      when(() => bloc.state).thenAnswer((_) => current);
+      whenListen(bloc, controller.stream, initialState: playing);
+      await pump(tester);
+
+      final live = fillOf(tester, 0);
+      expect(live, greaterThan(0));
+
+      // Stop: the track reports peak 0, but the bar holds its last live fill
+      // instead of collapsing.
+      current = stopped;
+      controller.add(stopped);
+      await tester.pump();
+      expect(fillOf(tester, 0), live);
+    });
+
     testWidgets('a track with nothing recorded has no bar (height 0)', (
       tester,
     ) async {
@@ -338,6 +398,236 @@ void main() {
       );
       final decoration = tile.decoration! as BoxDecoration;
       expect(decoration.boxShadow, anyOf(isNull, isEmpty));
+    });
+  });
+
+  group('track indicators', () {
+    final looper = AppTheme.bigPicture.extension<LooperTheme>()!;
+
+    Color indicatorColorOf(WidgetTester tester, int channel) {
+      final box = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: find.byKey(Key('bigpicture_indicator_$channel')),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      return (box.decoration as BoxDecoration).color!;
+    }
+
+    testWidgets('renders one strip per visible tile when the pref is on', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+
+      expect(
+        find.byKey(const Key('bigpicture_indicator_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('bigpicture_indicator_1')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('is absent from the tree when the pref is off', (tester) async {
+      await trackIndicators.setEnabled(value: false);
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      expect(find.byKey(const Key('bigpicture_indicator_0')), findsNothing);
+      // The tile itself still renders — only the strip is gone.
+      expect(find.byKey(const Key('bigpicture_tile_0')), findsOneWidget);
+    });
+
+    testWidgets('colour reflects the track status', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [
+            Track(state: TrackState.recording), // -> record
+            Track(channel: 1, state: TrackState.playing), // -> play
+            Track(channel: 2), // empty, unselected -> idle
+          ],
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        indicatorColorOf(tester, 0),
+        looper.indicatorColor(TrackIndicator.record),
+      );
+      expect(
+        indicatorColorOf(tester, 1),
+        looper.indicatorColor(TrackIndicator.play),
+      );
+      expect(
+        indicatorColorOf(tester, 2),
+        looper.indicatorColor(TrackIndicator.idle),
+      );
+    });
+
+    testWidgets('play mode arms the selected empty tile green', (
+      tester,
+    ) async {
+      bigPicture
+        ..toggleMode() // record -> play
+        ..select(0);
+      seed(const LooperState(tracks: [Track()])); // empty + selected
+      await pump(tester);
+
+      // Proves playMode flows from BigPictureCubit.state.mode into
+      // TrackIndicator.of: an empty selected track arms play (green) in play
+      // mode, not record (red).
+      expect(
+        indicatorColorOf(tester, 0),
+        looper.indicatorColor(TrackIndicator.play),
+      );
+    });
+
+    testWidgets('a stopped track that holds a loop is armed to play', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.stopped, lengthFrames: 1000)],
+        ),
+      );
+      await pump(tester);
+
+      // After a stop, a loaded loop stays lit green (armed to play) rather
+      // than going dim.
+      expect(
+        indicatorColorOf(tester, 0),
+        looper.indicatorColor(TrackIndicator.play),
+      );
+    });
+
+    testWidgets('a muted track reads as idle', (tester) async {
+      seed(
+        const LooperState(
+          tracks: [Track(state: TrackState.playing, muted: true)],
+        ),
+      );
+      await pump(tester);
+
+      expect(
+        indicatorColorOf(tester, 0),
+        looper.indicatorColor(TrackIndicator.idle),
+      );
+    });
+
+    testWidgets('only the selected tile arms (empty + selected)', (
+      tester,
+    ) async {
+      bigPicture.select(1);
+      seed(
+        const LooperState(
+          tracks: [Track(), Track(channel: 1), Track(channel: 2)],
+        ),
+      );
+      await pump(tester);
+
+      // Record mode by default: the selected empty track arms red, the rest
+      // stay idle.
+      expect(
+        indicatorColorOf(tester, 0),
+        looper.indicatorColor(TrackIndicator.idle),
+      );
+      expect(
+        indicatorColorOf(tester, 1),
+        looper.indicatorColor(TrackIndicator.record),
+      );
+      expect(
+        indicatorColorOf(tester, 2),
+        looper.indicatorColor(TrackIndicator.idle),
+      );
+    });
+
+    testWidgets('selecting an off-bank channel arms no visible tile', (
+      tester,
+    ) async {
+      bigPicture.select(5); // channel in bank B, not visible in bank A
+      seed(
+        LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
+      );
+      await pump(tester);
+
+      // Bank A (0-3) is showing; none of them is the selected channel.
+      for (var channel = 0; channel < 4; channel++) {
+        expect(
+          indicatorColorOf(tester, channel),
+          looper.indicatorColor(TrackIndicator.idle),
+        );
+      }
+    });
+
+    testWidgets('a bank switch reassigns the armed tile', (tester) async {
+      bigPicture.select(0);
+      seed(
+        LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
+      );
+      await pump(tester);
+
+      // Channel 0 is selected and visible in bank A -> armed.
+      expect(
+        indicatorColorOf(tester, 0),
+        looper.indicatorColor(TrackIndicator.record),
+      );
+
+      // Switch to bank B and select channel 4.
+      await tester.tap(find.byKey(const Key('bigpicture_bank_1')));
+      await tester.pumpAndSettle();
+      bigPicture.select(4);
+      await tester.pumpAndSettle();
+
+      // The previously-armed tile is no longer in the tree; the newly-selected
+      // visible tile arms.
+      expect(find.byKey(const Key('bigpicture_indicator_0')), findsNothing);
+      expect(
+        indicatorColorOf(tester, 4),
+        looper.indicatorColor(TrackIndicator.record),
+      );
+    });
+
+    testWidgets('toggling the pref live-updates without restart', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(
+        find.byKey(const Key('bigpicture_indicator_0')),
+        findsOneWidget,
+      );
+
+      await trackIndicators.setEnabled(value: false);
+      await tester.pump();
+      expect(find.byKey(const Key('bigpicture_indicator_0')), findsNothing);
+
+      await trackIndicators.setEnabled(value: true);
+      await tester.pump();
+      expect(
+        find.byKey(const Key('bigpicture_indicator_0')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('carries no semantics of its own (ExcludeSemantics)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      seed(const LooperState(tracks: [Track(state: TrackState.recording)]));
+      await pump(tester);
+
+      // The strip is wrapped in ExcludeSemantics, so no semantics node is
+      // attached to its key — the tile's label remains the only state source.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('bigpicture_indicator_0')),
+          matching: find.byType(ExcludeSemantics),
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
     });
   });
 
