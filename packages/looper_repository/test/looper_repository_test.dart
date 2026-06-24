@@ -771,7 +771,9 @@ void main() {
         ..setTrackEffects(
           channel: 0,
           effects: const [
-            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
           ],
         );
 
@@ -804,7 +806,9 @@ void main() {
         ..setTrackEffects(
           channel: 0,
           effects: const [
-            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
           ],
         );
 
@@ -833,7 +837,9 @@ void main() {
         ..setTrackEffects(
           channel: 0,
           effects: const [
-            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
           ],
         );
 
@@ -879,7 +885,9 @@ void main() {
         ..setMonitorEffects(
           input: 0,
           effects: const [
-            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
           ],
         );
 
@@ -1242,40 +1250,50 @@ void main() {
       expect(fx.name, 'Saved Reverb');
     });
 
-    test('startEngine scans + rebinds restored plugins, resolving names', () async {
-      // A cold restart: the chain is restored before any scan, so the first
-      // apply can't resolve the name from the (empty) catalog. startEngine must
-      // kick a scan and re-apply, resolving the name from the descriptor.
-      engine.pluginScanResults = const [
-        le.PluginDescriptor(
-          id: 'p',
-          name: 'Catalog Reverb',
-          vendor: 'Acme',
-          path: '/Library/Audio/Plug-Ins/CLAP/reverb.clap',
-          format: le.PluginFormat.clap,
-          version: 0,
-        ),
-      ];
-      engine.nextSlotHandle = MockPluginSlotHandle('p');
-      final repo = buildRepo()
-        // Stored while stopped -> applied (and the startup scan kicked) on start.
-        ..setTrackEffects(
-          channel: 0,
-          effects: const [
-            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
-          ],
-        );
-      // Before start, nothing is applied; the name is still unresolved.
-      expect((repo.laneEffects(0, 0).single as PluginEffect).name, isEmpty);
+    test(
+      'startEngine scans + rebinds restored '
+      'plugins, resolving names',
+      () async {
+        // A cold restart: the chain is restored before any scan, so the first
+        // apply can't resolve the name from the (empty) catalog. startEngine
+        // must kick a scan and re-apply, resolving the name from the
+        // descriptor.
+        engine
+          ..pluginScanResults = const [
+            le.PluginDescriptor(
+              id: 'p',
+              name: 'Catalog Reverb',
+              vendor: 'Acme',
+              path: '/Library/Audio/Plug-Ins/CLAP/reverb.clap',
+              format: le.PluginFormat.clap,
+              version: 0,
+            ),
+          ]
+          ..nextSlotHandle = MockPluginSlotHandle('p');
+        final repo = buildRepo()
+          // Stored while stopped -> applied (and the startup scan kicked) on
+          // start.
+          ..setTrackEffects(
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+              ),
+            ],
+          );
+        // Before start, nothing is applied; the name is still unresolved.
+        expect((repo.laneEffects(0, 0).single as PluginEffect).name, isEmpty);
 
-      repo.startEngine(const EngineConfig());
-      // Joins the startup scan already in flight; the rebind runs when it lands.
-      await repo.pluginCatalog.scan();
+        repo.startEngine(const EngineConfig());
+        // Joins the startup scan already in flight; the rebind runs when it
+        // lands.
+        await repo.pluginCatalog.scan();
 
-      final fx = repo.laneEffects(0, 0).single as PluginEffect;
-      expect(fx.unavailable, isFalse);
-      expect(fx.name, 'Catalog Reverb');
-    });
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.unavailable, isFalse);
+        expect(fx.name, 'Catalog Reverb');
+      },
+    );
 
     test('a failed load whose id is in the catalog is flagged '
         'unsupported', () async {
@@ -1299,7 +1317,9 @@ void main() {
       repo.setTrackEffects(
         channel: 0,
         effects: const [
-          PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'synth')),
+          PluginEffect(
+            ref: PluginRef(format: PluginFormat.clap, id: 'synth'),
+          ),
         ],
       );
 
