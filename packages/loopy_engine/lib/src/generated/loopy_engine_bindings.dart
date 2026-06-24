@@ -596,6 +596,103 @@ class LoopyEngineBindings {
         int Function(ffi.Pointer<le_plugin_slot>, ffi.Pointer<ffi.Int32>)
       >();
 
+  /// Writes the byte size of the plugin's current opaque state into *bytes.
+  /// Returns LE_OK, LE_ERR_INVALID for a null argument, or LE_ERR_UNSUPPORTED when
+  /// the plugin exposes no state (then *bytes is 0).
+  int le_plugin_state_size(
+    ffi.Pointer<le_plugin_slot> slot,
+    ffi.Pointer<ffi.Int32> bytes,
+  ) {
+    return _le_plugin_state_size(
+      slot,
+      bytes,
+    );
+  }
+
+  late final _le_plugin_state_sizePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_plugin_state_size');
+  late final _le_plugin_state_size = _le_plugin_state_sizePtr
+      .asFunction<
+        int Function(ffi.Pointer<le_plugin_slot>, ffi.Pointer<ffi.Int32>)
+      >();
+
+  /// Captures the plugin's opaque state into `buf` (capacity `cap`), writing the
+  /// full byte size into *written. If `cap` is smaller than *written (or `buf` is
+  /// NULL), nothing is copied — the caller should retry with a buffer of at least
+  /// *written bytes. Returns LE_OK, LE_ERR_INVALID for a null slot/`written`, or
+  /// LE_ERR_UNSUPPORTED when the plugin has no state.
+  int le_plugin_state_get(
+    ffi.Pointer<le_plugin_slot> slot,
+    ffi.Pointer<ffi.Uint8> buf,
+    int cap,
+    ffi.Pointer<ffi.Int32> written,
+  ) {
+    return _le_plugin_state_get(
+      slot,
+      buf,
+      cap,
+      written,
+    );
+  }
+
+  late final _le_plugin_state_getPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_plugin_state_get');
+  late final _le_plugin_state_get = _le_plugin_state_getPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_plugin_slot>,
+          ffi.Pointer<ffi.Uint8>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Restores the plugin from an opaque state blob previously captured with
+  /// le_plugin_state_get. Returns LE_OK, LE_ERR_INVALID for a null slot (or null
+  /// `buf` with `bytes` > 0), or LE_ERR_UNSUPPORTED when the plugin rejects it.
+  int le_plugin_state_set(
+    ffi.Pointer<le_plugin_slot> slot,
+    ffi.Pointer<ffi.Uint8> buf,
+    int bytes,
+  ) {
+    return _le_plugin_state_set(
+      slot,
+      buf,
+      bytes,
+    );
+  }
+
+  late final _le_plugin_state_setPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_plugin_slot>,
+            ffi.Pointer<ffi.Uint8>,
+            ffi.Int32,
+          )
+        >
+      >('le_plugin_state_set');
+  late final _le_plugin_state_set = _le_plugin_state_setPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_plugin_slot>, ffi.Pointer<ffi.Uint8>, int)
+      >();
+
   /// Allocates an engine. Returns NULL on allocation failure.
   ffi.Pointer<le_engine> le_engine_create() {
     return _le_engine_create();

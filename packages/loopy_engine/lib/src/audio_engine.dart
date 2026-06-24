@@ -458,6 +458,16 @@ abstract interface class EnginePluginHosting {
 
   /// Whether the plugin in [slot]'s editor window is currently open.
   bool pluginEditorIsOpen(PluginSlotHandle slot);
+
+  /// Captures the plugin in [slot]'s opaque state for session persistence
+  /// (umbrella D-P1). Empty when the plugin exposes no state or capture failed
+  /// — the dry-recording invariant never depends on success.
+  Uint8List pluginStateGet(PluginSlotHandle slot);
+
+  /// Restores the plugin in [slot] from a blob captured by [pluginStateGet].
+  /// Returns [EngineResult.ok], [EngineResult.invalid] for a non-live slot, or
+  /// [EngineResult.unsupported] when the plugin rejects it.
+  EngineResult pluginStateSet(PluginSlotHandle slot, Uint8List state);
 }
 
 /// The data-layer boundary over the native audio engine, composed from the

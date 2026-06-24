@@ -179,6 +179,8 @@ class PluginEffect extends TrackEffect {
     this.paramValues = const {},
     this.params = const [],
     this.name = '',
+    this.state = '',
+    this.unavailable = false,
   });
 
   /// The hosted plugin's identity.
@@ -189,6 +191,10 @@ class PluginEffect extends TrackEffect {
   /// default.
   final Map<int, double> paramValues;
 
+  /// The plugin's opaque state, base64-encoded (persisted; D-P1). Empty when
+  /// the plugin has no state. The repository decodes it to bytes to restore.
+  final String state;
+
   /// Live parameter metadata enumerated from the loaded plugin, in plugin
   /// order. Transient — never persisted.
   final List<PluginParamInfo> params;
@@ -197,6 +203,12 @@ class PluginEffect extends TrackEffect {
   /// when loaded. Transient (never persisted — re-resolved from [ref]); empty
   /// when unresolved, in which case the UI falls back to the stable id.
   final String name;
+
+  /// Whether the plugin failed to resolve/load on the running engine
+  /// (uninstalled / moved / incompatible — umbrella D-MISS). Transient. A
+  /// placeholder card surfaces it, preserving [ref] + [state] for relink; the
+  /// entry is never silently dropped.
+  final bool unavailable;
 
   @override
   int get typeCode => engine.kPluginFxCode;
@@ -207,15 +219,26 @@ class PluginEffect extends TrackEffect {
     Map<int, double>? paramValues,
     List<PluginParamInfo>? params,
     String? name,
+    String? state,
+    bool? unavailable,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
     params: params ?? this.params,
     name: name ?? this.name,
+    state: state ?? this.state,
+    unavailable: unavailable ?? this.unavailable,
   );
 
   @override
-  List<Object?> get props => [ref, paramValues, params, name];
+  List<Object?> get props => [
+    ref,
+    paramValues,
+    params,
+    name,
+    state,
+    unavailable,
+  ];
 }
 
 /// Maps an engine readout kind to its domain mirror.
@@ -236,14 +259,16 @@ engine.TrackEffect _trackEffectToEngine(TrackEffect effect) => switch (effect) {
     type: trackEffectTypeToEngine(type),
     params: params,
   ),
-  PluginEffect(:final ref, :final paramValues) => engine.PluginEffect(
-    ref: engine.PluginRef(
-      format: pluginFormatToEngine(ref.format),
-      id: ref.id,
-      version: ref.version,
+  PluginEffect(:final ref, :final paramValues, :final state) =>
+    engine.PluginEffect(
+      ref: engine.PluginRef(
+        format: pluginFormatToEngine(ref.format),
+        id: ref.id,
+        version: ref.version,
+      ),
+      paramValues: paramValues,
+      state: state,
     ),
-    paramValues: paramValues,
-  ),
 };
 
 /// Maps an engine [TrackEffect] to its domain mirror (boundary; internal).
@@ -253,14 +278,16 @@ TrackEffect _trackEffectFromEngine(engine.TrackEffect effect) =>
         type: TrackEffectType.fromCode(type.code),
         params: params,
       ),
-      engine.PluginEffect(:final ref, :final paramValues) => PluginEffect(
-        ref: PluginRef(
-          format: pluginFormatFromEngine(ref.format),
-          id: ref.id,
-          version: ref.version,
+      engine.PluginEffect(:final ref, :final paramValues, :final state) =>
+        PluginEffect(
+          ref: PluginRef(
+            format: pluginFormatFromEngine(ref.format),
+            id: ref.id,
+            version: ref.version,
+          ),
+          paramValues: paramValues,
+          state: state,
         ),
-        paramValues: paramValues,
-      ),
     };
 
 /// Encodes an ordered effects chain to a JSON string for persistence.

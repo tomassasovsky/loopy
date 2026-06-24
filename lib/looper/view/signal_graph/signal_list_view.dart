@@ -317,6 +317,8 @@ class _SignalDock extends StatelessWidget {
           onSetPluginParam: (i, id, v) =>
               monitorCubit.setPluginParam(fi, i, id, v),
           onOpenPluginEditor: (i) => monitorCubit.openPluginEditor(fi, i),
+          onRelinkPlugin: (i) =>
+              unawaited(_relinkMonitorPlugin(context, fi, i)),
           onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
           onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
         ),
@@ -356,6 +358,8 @@ class _SignalDock extends StatelessWidget {
           ),
           onOpenPluginEditor: (i) =>
               bloc.add(LooperLanePluginEditorOpened(ft.track, ft.lane, i)),
+          onRelinkPlugin: (i) =>
+              unawaited(_relinkLanePlugin(context, ft.track, ft.lane, i)),
           onReorderEffect: (from, to) =>
               bloc.add(LooperLaneEffectMoved(ft.track, ft.lane, from, to)),
           onMuteToggled: () =>
@@ -366,6 +370,43 @@ class _SignalDock extends StatelessWidget {
       );
     }
     return SignalHintDock(message: context.l10n.signalHint);
+  }
+
+  /// Relinks an unavailable lane plugin (D-MISS). Until the plugin browser
+  /// lands, this resolves to the first installed plugin from a scan — enough to
+  /// re-establish a working slot from the preserved ref + state.
+  Future<void> _relinkLanePlugin(
+    BuildContext context,
+    int track,
+    int lane,
+    int index,
+  ) async {
+    final bloc = context.read<LooperBloc>();
+    final catalog = context.read<LooperRepository>().pluginCatalog;
+    final ref = await _firstInstalledRef(catalog);
+    if (ref != null) {
+      bloc.add(LooperLanePluginRelinked(track, lane, index, ref));
+    }
+  }
+
+  /// Relinks an unavailable monitor plugin (D-MISS); see [_relinkLanePlugin].
+  Future<void> _relinkMonitorPlugin(
+    BuildContext context,
+    int input,
+    int index,
+  ) async {
+    final cubit = context.read<MonitorCubit>();
+    final catalog = context.read<LooperRepository>().pluginCatalog;
+    final ref = await _firstInstalledRef(catalog);
+    if (ref != null) cubit.relinkPlugin(input, index, ref);
+  }
+
+  Future<PluginRef?> _firstInstalledRef(PluginCatalog catalog) async {
+    final found = await catalog.scan();
+    final available = found.where((p) => p.isAvailable).toList();
+    if (available.isEmpty) return null;
+    final d = available.first;
+    return PluginRef(format: d.format, id: d.id, version: d.version);
   }
 
   /// DEBUG-ONLY scaffolding: overlays a button that scans for plugins and
