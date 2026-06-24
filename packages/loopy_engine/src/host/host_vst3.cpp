@@ -8,9 +8,19 @@
 // thread. A richer host context (IHostApplication) is a follow-up — some
 // plugins refuse a null context; those simply fail to load here.
 
-#if defined(LOOPY_ENABLE_PLUGINS) && defined(__APPLE__)
+#if defined(LOOPY_ENABLE_PLUGINS) && (defined(__APPLE__) || defined(_WIN32))
 
+// The whole host class is portable C++ against pluginterfaces; only bundle
+// loading (openBundle) and the editor's platform view type differ per OS, each
+// isolated in a small #if below. macOS loads a CFBundle; Windows LoadLibrary's a
+// DLL. Everything between is byte-identical across the two platforms.
+#if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
+#elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 #include <atomic>
 #include <cstdio>
@@ -53,9 +63,26 @@ using namespace Steinberg::Vst;
 
 namespace {
 
+#if defined(__APPLE__)
 typedef bool (*BundleEntryFunc)(CFBundleRef);
 typedef bool (*BundleExitFunc)();
 typedef IPluginFactory* (*GetFactoryFunc)();
+#elif defined(_WIN32)
+typedef bool(PLUGIN_API* InitDllFunc)();
+typedef bool(PLUGIN_API* ExitDllFunc)();
+typedef IPluginFactory*(PLUGIN_API* GetFactoryFunc)();
+
+// Converts a UTF-8 path (as carried on PluginDescriptor) to a wide string for
+// LoadLibraryExW.
+std::wstring widen(const std::string& utf8) {
+  if (utf8.empty()) return std::wstring();
+  const int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+  if (n <= 0) return std::wstring();
+  std::wstring out(static_cast<size_t>(n - 1), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, out.data(), n);
+  return out;
+}
+#endif
 
 bool iidEq(const TUID a, const TUID& b) { return std::memcmp(a, b, 16) == 0; }
 
@@ -758,8 +785,13 @@ class Vst3Host final : public loopy::IPluginHost {
       LPV_LOG("editorOpen: createView returned null (no GUI?)\n");
       return false;
     }
-    if (view->isPlatformTypeSupported(kPlatformTypeNSView) != kResultTrue) {
-      LPV_LOG("editorOpen: NSView platform type unsupported\n");
+#if defined(__APPLE__)
+    const FIDString platformType = kPlatformTypeNSView;
+#elif defined(_WIN32)
+    const FIDString platformType = kPlatformTypeHWND;
+#endif
+    if (view->isPlatformTypeSupported(platformType) != kResultTrue) {
+      LPV_LOG("editorOpen: platform view type unsupported\n");
       view->release();
       return false;
     }
@@ -776,8 +808,8 @@ class Vst3Host final : public loopy::IPluginHost {
     }
     frame_.window = window_;
     view->setFrame(&frame_);
-    void* nsView = lpw_window_content_view(window_);
-    if (view->attached(nsView, kPlatformTypeNSView) != kResultOk) {
+    void* parent = lpw_window_content_view(window_);
+    if (view->attached(parent, platformType) != kResultOk) {
       view->setFrame(nullptr);
       view->release();
       lpw_window_close(window_);
@@ -866,7 +898,12 @@ class Vst3Host final : public loopy::IPluginHost {
     window_ = nullptr;  // the shim owns the deferred free; just forget it
   }
 
+  // The plugin's binary is the only platform-specific load step. The scan stores
+  // the resolved loadable path on the descriptor (a Windows .vst3 bundle is
+  // resolved to its inner Contents\x86_64-win DLL there), so the host loads
+  // `path` directly on both platforms.
   bool openBundle(const std::string& path) {
+#if defined(__APPLE__)
     CFStringRef cfPath = CFStringCreateWithCString(
         kCFAllocatorDefault, path.c_str(), kCFStringEncodingUTF8);
     if (!cfPath) return false;
@@ -886,6 +923,17 @@ class Vst3Host final : public loopy::IPluginHost {
         CFBundleGetFunctionPointerForName(bundle_, CFSTR("bundleExit")));
     if (!getFactory_ || (entry && !entry(bundle_))) return false;
     return true;
+#elif defined(_WIN32)
+    const std::wstring wpath = widen(path);
+    dll_ = LoadLibraryExW(wpath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!dll_) return false;
+    auto initDll = reinterpret_cast<InitDllFunc>(GetProcAddress(dll_, "InitDll"));
+    getFactory_ =
+        reinterpret_cast<GetFactoryFunc>(GetProcAddress(dll_, "GetPluginFactory"));
+    exitDll_ = reinterpret_cast<ExitDllFunc>(GetProcAddress(dll_, "ExitDll"));
+    if (!getFactory_ || (initDll && !initDll())) return false;
+    return true;
+#endif
   }
 
   void unload() {
@@ -922,16 +970,30 @@ class Vst3Host final : public loopy::IPluginHost {
       factory_->release();
       factory_ = nullptr;
     }
+#if defined(__APPLE__)
     if (bundleExit_) bundleExit_();
     if (bundle_) {
       CFRelease(bundle_);
       bundle_ = nullptr;
     }
+#elif defined(_WIN32)
+    if (exitDll_) exitDll_();
+    if (dll_) {
+      FreeLibrary(dll_);
+      dll_ = nullptr;
+    }
+    getFactory_ = nullptr;
+#endif
   }
 
+#if defined(__APPLE__)
   CFBundleRef bundle_ = nullptr;
-  GetFactoryFunc getFactory_ = nullptr;
   BundleExitFunc bundleExit_ = nullptr;
+#elif defined(_WIN32)
+  HMODULE dll_ = nullptr;
+  ExitDllFunc exitDll_ = nullptr;
+#endif
+  GetFactoryFunc getFactory_ = nullptr;
   IPluginFactory* factory_ = nullptr;
   IComponent* component_ = nullptr;
   IAudioProcessor* processor_ = nullptr;
@@ -974,9 +1036,11 @@ IPluginHost* createVst3Host() { return new Vst3Host(); }
 
 #elif defined(LOOPY_ENABLE_PLUGINS)
 
+// Non-Apple, non-Windows plugin build: VST3 hosting lands with the Linux port
+// (part 9). Stub so the symbol resolves.
 #include "plugin_host.h"
 namespace loopy {
-IPluginHost* createVst3Host() { return nullptr; }  // ports: parts 8–9
+IPluginHost* createVst3Host() { return nullptr; }  // port: part 9
 }  // namespace loopy
 
 #endif
