@@ -166,6 +166,24 @@ peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
   Plugin (VST3/CLAP) hosting on the console would be where Pi 4 headroom gets
   tight; the core loopstation is comfortable.
 
+## Hardware (enclosure, protection, power, BOM)
+
+The console's hardware design lives under [`hardware/`](../hardware):
+
+- **BOM / shopping list:** [`hardware/loopy_console_shopping_list.md`](../hardware/loopy_console_shopping_list.md)
+  (Argentina-sourced) — Pi 5 + active cooler, 16″ touchscreen, **7″ HDMI**
+  display, USB interface, footswitches, EC11 encoder, WS2812 ring + strip, the
+  RP2040 LED driver, GPIO-protection passives, and power.
+- **GPIO protection + power/thermal budget + enclosure intent:**
+  [`hardware/console/README.md`](../hardware/console/README.md) — 3.3 V input
+  protection (series-R + RC + optional clamp; active-low to GND), the per-rail
+  power budget, and the active-cooling requirement.
+
+**7″ display decision: HDMI (not DSI).** Both screens are HDMI, so they
+enumerate as `HDMI-A-1` / `HDMI-A-2` and pin cleanly via `wlr-randr` (Part 5's
+`pin-displays.sh`), with no DSI compositor mapping. DSI's only gain — freeing a
+micro-HDMI — is moot here. Set the 7″ per-output `--scale` to taste.
+
 ## On-device bring-up checklist (run on a Pi 5)
 
 These cannot be verified in CI (no display, no audio). Tick them when the panels
@@ -201,3 +219,12 @@ and a Pi 5 are available:
       boot integrity check); record results above.
 - [ ] A corrupted writable partition boots to the "needs attention" screen, not
       a black display.
+- [ ] **≤10 ms round-trip audio latency** re-measured on the chosen USB
+      interface + Pi 5 + PipeWire quantum (48 kHz / Pro Audio profile); record
+      the figure here.
+- [ ] **≥2 h thermal soak** (audio + dual-display + GPU, closed enclosure):
+      `vcgencmd get_throttled` stays `0x0`, no xrun-rate regression; record
+      results here.
+- [ ] **Miswire test**: a 5 V touch to each protected GPIO input does not damage
+      the pin (per `hardware/console/README.md`).
+- [ ] Stompable footswitch panel survives stage-abuse testing.
