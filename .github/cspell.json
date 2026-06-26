@@ -348,6 +348,12 @@
     "noauto",
     "nonint",
     "poweroff",
-    "tmpfs"
+    "tmpfs",
+    "aluminium",
+    "fabbed",
+    "heatsink",
+    "protoboard",
+    "vcgencmd",
+    "Vishay"
   ]
 }
