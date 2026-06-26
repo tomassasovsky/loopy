@@ -337,6 +337,17 @@
     "BOOTSEL",
     "Pico",
     "raspi",
-    "rpipico"
+    "rpipico",
+    "automount",
+    "cmdline",
+    "dtoverlay",
+    "fscks",
+    "journaling",
+    "mmcblk",
+    "noatime",
+    "noauto",
+    "nonint",
+    "poweroff",
+    "tmpfs"
   ]
 }
