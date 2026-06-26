@@ -32,6 +32,10 @@
     "@singleDisplayNotice": {
         "description": "Notice shown on the dual-display console when only one display is connected."
     },
+    "audioRecoveryWaitingBanner": "Waiting for the audio interface — it will start automatically when reconnected.",
+    "@audioRecoveryWaitingBanner": {
+        "description": "Banner shown when the console booted with its pinned audio interface absent and is waiting to auto-start it."
+    },
     "close": "Close",
     "mixdownExported": "Mixdown exported",
     "stemsExported": "Stems exported",

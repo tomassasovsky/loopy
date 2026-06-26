@@ -405,5 +405,28 @@ void main() {
       await tester.pump(const Duration(milliseconds: 40));
       expect(windowService.pushCalls, 0);
     });
+
+    testWidgets('shows the audio-recovery banner when booted with the pinned '
+        'device absent', (tester) async {
+      // The fake engine reports stopped with no devices, so the pinned config
+      // is absent and the recovery cubit waits (and would auto-start on
+      // arrival). pump (not pumpAndSettle) — the cubit holds a periodic poll.
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
+          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+
+      expect(find.byKey(const Key('app_audioRecovery_banner')), findsOneWidget);
+    });
   });
 }

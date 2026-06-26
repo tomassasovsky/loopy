@@ -3,6 +3,7 @@
 library;
 
 export 'bloc/looper_bloc.dart';
+export 'cubit/audio_recovery_cubit.dart';
 export 'cubit/bank_cubit.dart';
 export 'cubit/big_picture_cubit.dart';
 export 'cubit/high_contrast_cubit.dart';

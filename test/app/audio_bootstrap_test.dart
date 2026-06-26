@@ -569,6 +569,26 @@ void main() {
         settings: settings,
       );
       expect(started.started, isFalse);
+      // System default (no pinned device) is never auto-recovered.
+      expect(started.recoveryConfig, isNull);
+    });
+
+    test('arms recovery when a pinned device fails to start', () async {
+      engine.startResult = EngineResult.device;
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(
+          sampleRate: 48000,
+          bufferFrames: 128,
+          playbackDeviceId: 'out-1',
+        ),
+      );
+
+      final result = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+      expect(result.started, isFalse);
+      expect(result.recoveryConfig?.playbackDeviceId, 'out-1');
     });
   });
 }

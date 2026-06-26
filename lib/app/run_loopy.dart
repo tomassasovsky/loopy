@@ -109,6 +109,9 @@ Future<void> runLoopy(
   // auto-starts from the saved config or a first-run default and returns the
   // ASIO drivers enumerated at startup for the audio-setup picker cache.
   var asioDrivers = const <AudioDevice>[];
+  // The pinned config a boot auto-start couldn't open (interface unplugged at
+  // boot); the audio-recovery cubit auto-starts when it reappears.
+  EngineConfig? audioRecoveryConfig;
   if (startConfig != null) {
     looper.startEngine(startConfig);
   } else {
@@ -117,6 +120,7 @@ Future<void> runLoopy(
       settings: settings,
     );
     asioDrivers = result.asioDrivers;
+    audioRecoveryConfig = result.recoveryConfig;
   }
 
   await bootstrap(
@@ -128,6 +132,7 @@ Future<void> runLoopy(
       ledRepository: ledRepository,
       displayCount: () =>
           WidgetsBinding.instance.platformDispatcher.displays.length,
+      audioRecoveryConfig: audioRecoveryConfig,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: session,
