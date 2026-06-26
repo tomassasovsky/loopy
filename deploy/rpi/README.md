@@ -14,10 +14,13 @@ keyboard or mouse.
 
 | File | Goes to | Purpose |
 |---|---|---|
-| `loopy-kiosk.service` | `/etc/systemd/system/` | Boots labwc on tty1, restarts on crash |
+| `loopy-kiosk.service` | `/etc/systemd/system/` | Boots the kiosk on tty1, respawns on crash |
+| `boot-integrity-check.sh` | (unit `ExecStartPre=+`, root) | fsck + mount the writable data partition |
+| `start-kiosk.sh` | (unit `ExecStart`) | Execs labwc, or shows the "needs attention" screen |
 | `compositor/labwc/autostart` | `~/.config/labwc/autostart` | Pins displays, then launches the app |
 | `compositor/labwc/rc.xml` | `~/.config/labwc/rc.xml` | Chromeless, maximized, no kill chord |
 | `pin-displays.sh` | (run from autostart) | Deterministic output pinning by name |
+| `overlayfs/README.md` | — | Read-only root + writable data partition setup |
 
 ## Install
 
@@ -29,10 +32,15 @@ keyboard or mouse.
    ```bash
    mkdir -p ~/.config/labwc
    cp deploy/rpi/compositor/labwc/* ~/.config/labwc/
-   chmod +x deploy/rpi/pin-displays.sh
+   chmod +x deploy/rpi/pin-displays.sh \
+            deploy/rpi/start-kiosk.sh \
+            deploy/rpi/boot-integrity-check.sh
    sudo cp deploy/rpi/loopy-kiosk.service /etc/systemd/system/
    sudo systemctl enable loopy-kiosk.service
    ```
+   For power-cut resilience (read-only root + a writable data partition that the
+   boot integrity check fscks and mounts), follow
+   [`overlayfs/README.md`](overlayfs/README.md).
 4. **Edit `pin-displays.sh`** for your wiring: run `wlr-randr` to get the real
    connector names (e.g. `HDMI-A-1`, `HDMI-A-2`, or `DSI-1`) and set
    `LOOPY_MAIN_OUTPUT` / `LOOPY_WAVE_OUTPUT` and the per-panel scales.
