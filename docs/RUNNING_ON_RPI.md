@@ -122,6 +122,50 @@ How the display edge cases are handled (all in [`run_loopy.dart`](../lib/app/run
 - **Per-display scale.** Set with `wlr-randr --scale` in `pin-displays.sh`; tune
   per panel after the Part-6 HDMI-vs-DSI choice.
 
+## Power-cut resilience (read-only root + supervision)
+
+A stompable unit gets its power cut mid-set, so the appliance is hardened against
+it (config in [`deploy/rpi/`](../deploy/rpi/README.md)):
+
+- **App/compositor supervision.** The `loopy-kiosk` systemd unit respawns the
+  whole kiosk on any crash (`Restart=always`, with a generous start-limit budget
+  for a keyboard-less unit). On relaunch the app cleans up any orphaned waveform
+  sub-window itself via `closeOrphanWindows()` in
+  [`run_loopy.dart`](../lib/app/run_loopy.dart) — no orphan window survives a
+  respawn.
+- **Read-only root + writable data partition.** `/` runs read-only (overlay), so
+  a power-cut can't corrupt the OS; app settings + sessions live on a separate
+  writable partition. Setup + the **≥20-cycle power-cut stress test** (the real
+  acceptance gate) are in [`deploy/rpi/overlayfs/README.md`](../deploy/rpi/overlayfs/README.md).
+- **Boot integrity check.** `start-kiosk.sh` runs `boot-integrity-check.sh`
+  before the UI: it fscks + mounts the writable partition, and on an
+  unrecoverable card shows a **"needs attention" screen** on the console instead
+  of a black display or a half-broken app.
+- **Durability scope.** The target is **no SD corruption**, *not* zero loop
+  loss — a read-only root protects the OS, not unsaved musical work. Live-loop
+  checkpoint/restore is a separate, product-wide concern.
+
+> Record the power-cut stress run (pass/fail per cycle, any fsck repairs) here
+> once verified on hardware.
+
+## Raspberry Pi 4 Model B (8GB) vs Pi 5
+
+The console targets a Pi 5, but the software is portable arm64 + standard
+peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
+
+- **GPIO** — the 40-pin header is `/dev/gpiochip0` on the Pi 4, which is exactly
+  what `gpio_client` defaults to. (On the Pi 5 the GPIO sits behind the RP1 chip
+  and is often `/dev/gpiochip4`, so the Pi 5 may instead need a chip-path
+  override — the Pi 4 needs none.)
+- **Displays** — Pi 4 has 2× micro-HDMI; labwc/Wayland + `wlr-randr` run on it.
+- **LED driver** — external RP2040 over UART (GPIO14/15), Pi-model-agnostic.
+- **Caveats are performance, not compatibility.** The Pi 4 CPU is ~2–3× slower,
+  so the ≤10 ms audio round-trip target is tighter — expect to use a slightly
+  larger buffer (256→512 frames) for xrun-free operation — and a stompable
+  always-on unit needs **active cooling**. Use a USB 3.0 port for the interface.
+  Plugin (VST3/CLAP) hosting on the console would be where Pi 4 headroom gets
+  tight; the core loopstation is comfortable.
+
 ## On-device bring-up checklist (run on a Pi 5)
 
 These cannot be verified in CI (no display, no audio). Tick them when the panels
@@ -151,3 +195,9 @@ and a Pi 5 are available:
 - [ ] Disconnecting the 7″ shows the single-display notice; a failed second
       window shows the waveform-failed banner (no silent dark screen).
 - [ ] Both panels render at a usable scale (tune `--scale` per panel).
+- [ ] Killing the app → it respawns within the budget; no orphan waveform
+      window remains on the 7″.
+- [ ] **Hard power-cut ×20 mid-session → no SD corruption** (read-only root +
+      boot integrity check); record results above.
+- [ ] A corrupted writable partition boots to the "needs attention" screen, not
+      a black display.

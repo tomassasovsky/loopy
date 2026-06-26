@@ -14,6 +14,10 @@
 Description=Loopy floor-console kiosk (labwc + app)
 After=multi-user.target systemd-user-sessions.service
 Conflicts=getty@tty1.service
+# Restart budget (these live in [Unit] in modern systemd): keep retrying on a
+# keyboard-less unit without tripping the start limiter.
+StartLimitIntervalSec=120
+StartLimitBurst=20
 
 [Service]
 Type=simple
@@ -26,11 +30,17 @@ StandardOutput=journal
 StandardError=journal
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=XDG_SESSION_TYPE=wayland
-# labwc reads ~/.config/labwc/{autostart,rc.xml,environment}; the autostart
-# script pins the outputs and execs the Loopy bundle.
-ExecStart=/usr/bin/labwc
-# A crashed compositor or app restarts the whole kiosk (foot-only recovery is
-# hardened further in Part 6).
+# Integrity check runs as root (the `+` prefix) before the UI: it fscks +
+# mounts the writable data partition, or drops a marker if it's unrecoverable.
+# start-kiosk.sh (as the kiosk user) then execs labwc on a clean check, or shows
+# a "needs attention" screen instead of a black display. Adjust the repo path if
+# not at ~/loopy.
+ExecStartPre=+/home/pi/loopy/deploy/rpi/boot-integrity-check.sh
+ExecStart=/home/pi/loopy/deploy/rpi/start-kiosk.sh
+# Supervision: respawn the whole kiosk on any crash (compositor or app). On
+# relaunch the app cleans up any orphaned waveform sub-window itself via
+# closeOrphanWindows() in run_loopy.dart. A generous restart budget keeps it
+# retrying on a keyboard-less unit without tripping systemd's start limiter.
 Restart=always
 RestartSec=2
 
