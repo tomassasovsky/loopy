@@ -69,10 +69,28 @@ void main() {
       );
     });
 
-    test('mirrors the default transport actions', () {
+    test('covers the default transport actions plus the encoder press', () {
+      final actions = mapping.entries.map((e) => e.action).toSet();
+      // The four footswitches mirror the MIDI defaults...
       expect(
-        mapping.entries.map((e) => e.action).toSet(),
-        ControllerMapping.defaults().entries.map((e) => e.action).toSet(),
+        actions,
+        containsAll(
+          ControllerMapping.defaults().entries.map((e) => e.action),
+        ),
+      );
+      // ...and the encoder push-switch adds a global play-all.
+      expect(actions, contains(LooperAction.playAll));
+    });
+
+    test('binds the encoder push-switch to play-all', () {
+      const press = RawControllerInput(
+        kind: ControllerSourceKind.gpio,
+        id: 26,
+        value: 1,
+      );
+      expect(
+        mapping.resolve(press),
+        const ControllerEvent(action: LooperAction.playAll),
       );
     });
   });
