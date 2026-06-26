@@ -70,6 +70,10 @@ if(MSVC)
   # toolset still requires it. Without it the whole Windows engine build fails on
   # lockfree_ring.h's `_Atomic size_t` head/tail.
   target_compile_options(loopy_engine PRIVATE /experimental:c11atomics)
+  # The C++ TUs (ASIO backend, plugin host) use std::vector/string and may
+  # throw; MSVC needs /EHsc to enable unwind semantics. Scoped to C++ via the
+  # genex so the C TUs (the bulk of the engine) are unaffected.
+  target_compile_options(loopy_engine PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/EHsc>)
   # The portable engine uses standard C string functions (strncpy, etc.); MSVC
   # flags every one with C4996 "consider strncpy_s". They're used correctly and
   # must stay portable (no _s variants on Clang/GCC), so quiet the deprecation
@@ -194,10 +198,18 @@ endif()
 # the host sources directly. On Windows/Linux this is OFF by default; the engine
 # then links only the le_plugin_scan_* stub (core/plugin_scan_disabled.c, above)
 # so FFI resolves, and the build stays byte-identical apart from that stub. When
-# enabled, the VST3/CLAP scan backends compile here too — though the directory
-# walkers are macOS-only until the Windows/Linux ports (parts 8–9), so an
-# enabled non-Apple build scans nothing yet.
-option(LOOPY_ENABLE_PLUGINS "Build VST3/CLAP plugin hosting" OFF)
+# enabled, the VST3/CLAP scan + host backends compile here too. The scan/host
+# directory walkers are implemented for macOS and Windows (part 8); Linux lands
+# in part 9, so an enabled Linux build scans nothing yet.
+#
+# Default-ON on Windows (like ASIO above): the Windows build ships plugin hosting
+# out of the box. macOS drives this through the podspec, not CMake; Linux keeps
+# it OFF until part 9. The env override below still wins for a non-plugin build.
+if(WIN32)
+  option(LOOPY_ENABLE_PLUGINS "Build VST3/CLAP plugin hosting" ON)
+else()
+  option(LOOPY_ENABLE_PLUGINS "Build VST3/CLAP plugin hosting" OFF)
+endif()
 # As with ASIO, the Flutter build drives CMake through the plugin and cannot
 # forward -D cache flags, so honor an env override applied after option() (e.g.
 # a CI build that opts into the Windows/Linux ports early).
@@ -226,11 +238,14 @@ if(LOOPY_ENABLE_PLUGINS)
     "${LOOPY_CLAP_DIR}"
   )
   target_compile_definitions(loopy_engine PRIVATE LOOPY_ENABLE_PLUGINS)
-  # The scan ABI + thread and the two format backends. The vendored
-  # coreiids.cpp supplies the pluginterfaces IID symbols the VST3 backend
-  # queryInterface()s — the only VST3 SDK source needed for scanning (no
-  # base/public.sdk). The backends' directory walkers are macOS-only for now;
-  # on Windows/Linux they compile to empty until parts 8–9.
+  # The scan ABI + thread and the two format backends, plus the three vendored
+  # IID translation units the host queryInterface()s against (the same set the
+  # macOS podspec compiles via its vst3_*iids.cpp forwarders):
+  #   - coreiids.cpp    : pluginterfaces base IIDs (IComponent / scanning).
+  #   - commoniids.cpp  : the GUI IIDs (IPlugView / IPlugFrame) the editor needs.
+  #   - vstinitiids.cpp : the VST-domain class IIDs (IAudioProcessor / …).
+  # The backends' directory walkers + DLL loading are implemented for macOS and
+  # Windows (part 8); Linux compiles to empty until part 9.
   target_sources(loopy_engine PRIVATE
     host/plugin_scan.cpp
     host/scan_vst3.cpp
@@ -239,11 +254,17 @@ if(LOOPY_ENABLE_PLUGINS)
     host/host_vst3.cpp
     host/host_clap.cpp
     "${LOOPY_VST3_SDK_DIR}/pluginterfaces/base/coreiids.cpp"
-    # The VST-domain class IIDs (IComponent / IAudioProcessor / …) the host
-    # queryInterface()s — self-contained, header-only deps. Needed for hosting
-    # (part 3), not scanning.
+    "${LOOPY_VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp"
     "${LOOPY_VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp"
   )
+  if(WIN32)
+    # The host-owned HWND editor window (native_window_controller_win.cpp, the
+    # Win32 analogue of native_window_controller.mm compiled by the macOS
+    # podspec). user32/gdi32 back the Win32 window calls; both are in CMake's
+    # default Windows link set, listed here for intent.
+    target_sources(loopy_engine PRIVATE host/native_window_controller_win.cpp)
+    target_link_libraries(loopy_engine PRIVATE user32 gdi32)
+  endif()
   set_target_properties(loopy_engine PROPERTIES CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON)
 endif()
