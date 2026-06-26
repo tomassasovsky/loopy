@@ -4,9 +4,18 @@
 // adapter (slot.cpp) calls process() with a fixed block on the audio thread;
 // everything else runs on the control thread.
 
-#if defined(LOOPY_ENABLE_PLUGINS) && defined(__APPLE__)
+#if defined(LOOPY_ENABLE_PLUGINS) && (defined(__APPLE__) || defined(_WIN32))
 
+// The whole host class is portable C++ against the CLAP C ABI; only the module
+// load (CFBundle vs LoadLibrary) and the editor's window-API type differ per OS,
+// each isolated in a small #if below.
+#if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
+#elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 #include <cstring>
 #include <string>
@@ -18,6 +27,27 @@
 #include "plugin_host.h"
 
 namespace {
+
+#if defined(_WIN32)
+// Converts a UTF-8 path (as carried on PluginDescriptor) to a wide string for
+// LoadLibraryExW.
+std::wstring widen(const std::string& utf8) {
+  if (utf8.empty()) return std::wstring();
+  const int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+  if (n <= 0) return std::wstring();
+  std::wstring out(static_cast<size_t>(n - 1), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, out.data(), n);
+  return out;
+}
+
+// SEH filter for the load guard: catch hardware faults raised inside a
+// misbehaving plugin's load path so it fails gracefully instead of killing the
+// host; let real C++ exceptions (MSVC code 0xE06D7363) propagate normally.
+inline int loadSehFilter(unsigned long code) {
+  return code == 0xE06D7363ul ? EXCEPTION_CONTINUE_SEARCH
+                              : EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
 
 // The CLAP gui host extension (defined after ClapHost, which its callbacks
 // dispatch to). Advertised from hostGetExtension so a plugin can request an
@@ -84,8 +114,28 @@ class ClapHost final : public loopy::IPluginHost {
 
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
+#if defined(_WIN32)
+    // SEH-guard the load so a plugin that faults inside its own init yields a
+    // clean failure instead of crashing the whole app (parity with the VST3
+    // host; D-RT best-effort, no watchdog).
+    __try {
+      return loadImpl(desc, sampleRate, maxBlock);
+    } __except (loadSehFilter(GetExceptionCode())) {
+      crashed_ = true;  // unload() must not call back into the dead plugin
+      return loopy::LoadStatus::failed;
+    }
+#else
+    return loadImpl(desc, sampleRate, maxBlock);
+#endif
+  }
+
+  loopy::LoadStatus loadImpl(const loopy::PluginDescriptor& desc,
+                             double sampleRate, int maxBlock) {
     using loopy::LoadStatus;
     name_ = desc.name;  // for the editor window title
+    // Load the module + read the exported `clap_entry` data symbol (the only
+    // platform-specific step; everything after is the portable CLAP C ABI).
+#if defined(__APPLE__)
     CFStringRef cfPath = CFStringCreateWithCString(
         kCFAllocatorDefault, desc.path.c_str(), kCFStringEncodingUTF8);
     if (!cfPath) return LoadStatus::failed;
@@ -99,6 +149,13 @@ class ClapHost final : public loopy::IPluginHost {
 
     entry_ = reinterpret_cast<const clap_plugin_entry_t*>(
         CFBundleGetDataPointerForName(bundle_, CFSTR("clap_entry")));
+#elif defined(_WIN32)
+    dll_ = LoadLibraryExW(widen(desc.path).c_str(), nullptr,
+                          LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!dll_) return LoadStatus::failed;
+    entry_ = reinterpret_cast<const clap_plugin_entry_t*>(
+        GetProcAddress(dll_, "clap_entry"));
+#endif
     if (!entry_ || !entry_->init || !entry_->init(desc.path.c_str())) {
       return LoadStatus::failed;
     }
@@ -251,10 +308,15 @@ class ClapHost final : public loopy::IPluginHost {
   bool editorOpen() override {
     if (editorOpen_) return true;  // idempotent
     if (!gui_ || !plugin_) return false;
-    if (!gui_->is_api_supported(plugin_, CLAP_WINDOW_API_COCOA, false)) {
+#if defined(__APPLE__)
+    const char* windowApi = CLAP_WINDOW_API_COCOA;
+#elif defined(_WIN32)
+    const char* windowApi = CLAP_WINDOW_API_WIN32;
+#endif
+    if (!gui_->is_api_supported(plugin_, windowApi, false)) {
       return false;
     }
-    if (!gui_->create(plugin_, CLAP_WINDOW_API_COCOA, false)) return false;
+    if (!gui_->create(plugin_, windowApi, false)) return false;
     uint32_t w = 400;
     uint32_t h = 300;
     if (gui_->get_size) gui_->get_size(plugin_, &w, &h);
@@ -266,8 +328,12 @@ class ClapHost final : public loopy::IPluginHost {
       return false;
     }
     clap_window_t cw{};
-    cw.api = CLAP_WINDOW_API_COCOA;
+    cw.api = windowApi;
+#if defined(__APPLE__)
     cw.cocoa = lpw_window_content_view(window_);
+#elif defined(_WIN32)
+    cw.win32 = lpw_window_content_view(window_);
+#endif
     if (!gui_->set_parent(plugin_, &cw)) {
       gui_->destroy(plugin_);
       lpw_window_close(window_);
@@ -359,6 +425,18 @@ class ClapHost final : public loopy::IPluginHost {
   }
 
   void unload() {
+#if defined(_WIN32)
+    if (crashed_) {
+      // A plugin that faulted mid-load left its module in an unknown (possibly
+      // corrupt) state — calling destroy/deinit/FreeLibrary crashes again.
+      // Forget every handle WITHOUT touching the plugin: its DLL stays mapped (a
+      // bounded best-effort leak — D-RT) but the app survives.
+      plugin_ = nullptr;
+      entry_ = nullptr;
+      dll_ = nullptr;
+      return;
+    }
+#endif
     editorClose();  // D-WIN: never leak the editor window past the plugin
     if (plugin_) {
       plugin_->stop_processing(plugin_);
@@ -368,13 +446,24 @@ class ClapHost final : public loopy::IPluginHost {
     }
     if (entry_ && entry_->deinit) entry_->deinit();
     entry_ = nullptr;
+#if defined(__APPLE__)
     if (bundle_) {
       CFRelease(bundle_);
       bundle_ = nullptr;
     }
+#elif defined(_WIN32)
+    if (dll_) {
+      FreeLibrary(dll_);
+      dll_ = nullptr;
+    }
+#endif
   }
 
+#if defined(__APPLE__)
   CFBundleRef bundle_ = nullptr;
+#elif defined(_WIN32)
+  HMODULE dll_ = nullptr;
+#endif
   const clap_plugin_entry_t* entry_ = nullptr;
   const clap_plugin_t* plugin_ = nullptr;
   clap_host_t host_{};
@@ -386,6 +475,7 @@ class ClapHost final : public loopy::IPluginHost {
   std::vector<float> outL_, outR_;
   int64_t steady_ = 0;
   int channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
+  bool crashed_ = false;  // load SEH-faulted: unload() must not touch the plugin
   bool editorOpen_ = false;
   std::string name_;  // plugin display name, for the editor window title
   lpw_window* window_ = nullptr;
@@ -424,9 +514,11 @@ IPluginHost* createClapHost() { return new ClapHost(); }
 
 #elif defined(LOOPY_ENABLE_PLUGINS)
 
+// Non-Apple, non-Windows plugin build: CLAP hosting lands with the Linux port
+// (part 9). Stub so the symbol resolves.
 #include "plugin_host.h"
 namespace loopy {
-IPluginHost* createClapHost() { return nullptr; }  // ports: parts 8–9
+IPluginHost* createClapHost() { return nullptr; }  // port: part 9
 }  // namespace loopy
 
 #endif
