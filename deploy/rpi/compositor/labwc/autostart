@@ -1,0 +1,15 @@
+# labwc autostart for the Loopy floor console.
+# Copied to ~/.config/labwc/autostart. Runs once when labwc starts.
+#
+# Order matters: pin the displays deterministically FIRST (so the 16" is the
+# primary main-UI output and the 7" is the waveform output at a known position),
+# then launch the app full-screen. The app opens its waveform second window,
+# which the compositor places on the secondary output.
+
+# Pin outputs by connector name (idempotent; safe to re-run).
+"$HOME/loopy/deploy/rpi/pin-displays.sh" &
+
+# Launch the Loopy release bundle full-screen. Adjust the path to your build
+# output (flutter build linux --release on the Pi).
+LOOPY_BIN="${LOOPY_BIN:-$HOME/loopy/build/linux/arm64/release/bundle/loopy}"
+exec "$LOOPY_BIN" &

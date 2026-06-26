@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!--
+  Minimal labwc config for the Loopy floor console (kiosk).
+  Copied to ~/.config/labwc/rc.xml.
+
+  Goals: no window decorations (the app is chromeless on BigPictureView), no
+  focus-stealing prompts, and windows opened maximized so the main UI fills the
+  16" and the waveform fills the 7". Per-output scale is set by pin-displays.sh
+  using wlr-randr's scale option, not here.
+-->
+<labwc_config>
+  <core>
+    <decoration>none</decoration>
+    <gap>0</gap>
+  </core>
+  <placement>
+    <policy>automatic</policy>
+  </placement>
+  <!-- Open every window maximized on its output; the kiosk has no overlapping
+       windows, so this fills each panel. -->
+  <windowRules>
+    <windowRule identifier="*" maximize="yes" skipTaskbar="yes" />
+  </windowRules>
+  <!-- No keyboard shortcuts on a foot-only appliance (recovery is handled by
+       the systemd Restart= in Part 6, not by a kill chord). -->
+  <keyboard />
+</labwc_config>

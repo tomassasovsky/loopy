@@ -14,7 +14,10 @@ abstract interface class WaveformWindowService {
   /// Opens the waveform window (idempotent).
   ///
   /// [title] sets the OS window title; defaults to English when omitted.
-  Future<void> open({String title = 'Loopy — Output'});
+  /// Returns `true` once the window is ready, or `false` if it failed to signal
+  /// readiness within the timeout — so the caller can surface the failure
+  /// instead of degrading silently.
+  Future<bool> open({String title = 'Loopy — Output'});
 
   /// Closes the waveform window (idempotent).
   Future<void> close();
@@ -61,8 +64,8 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
   }
 
   @override
-  Future<void> open({String title = 'Loopy — Output'}) async {
-    if (_controller != null) return;
+  Future<bool> open({String title = 'Loopy — Output'}) async {
+    if (_controller != null) return true;
     await closeOrphanWindows();
     await _ensureMainChannelRegistered();
 
@@ -74,11 +77,16 @@ class DesktopMultiWindowWaveformService implements WaveformWindowService {
     );
     _controller = controller;
 
+    // The sub-window signals readiness over the channel; a timeout means it
+    // never came up. Report that so the caller can show an operator-visible
+    // indicator instead of leaving a dark second screen.
+    var ready = true;
     await _readyCompleter!.future.timeout(
       const Duration(seconds: 10),
-      onTimeout: () {},
+      onTimeout: () => ready = false,
     );
     await controller.show();
+    return ready;
   }
 
   @override
@@ -111,7 +119,7 @@ class NoopWaveformWindowService implements WaveformWindowService {
   bool get isOpen => false;
 
   @override
-  Future<void> open({String title = 'Loopy — Output'}) async {}
+  Future<bool> open({String title = 'Loopy — Output'}) async => true;
 
   @override
   Future<void> close() async {}

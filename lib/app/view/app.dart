@@ -43,6 +43,7 @@ class App extends StatelessWidget {
     required this.sessionDirectory,
     this.pedalRepository,
     this.ledRepository,
+    this.displayCount,
     this.initialAsioDrivers = const [],
     super.key,
   });
@@ -68,6 +69,12 @@ class App extends StatelessWidget {
   /// channel is substituted so the [LedCubit] always exists. Owned by the
   /// [LedCubit], which disposes it.
   final LedRepository? ledRepository;
+
+  /// Reports the number of connected displays, for the dual-display console's
+  /// single-display fallback. `null` (the default) disables the fallback
+  /// (assumes the usual multi-window desktop); the Pi entrypoint wires the real
+  /// platform display count.
+  final int Function()? displayCount;
 
   /// The shared settings repository (persists latency calibration + config).
   final SettingsRepository settings;
@@ -252,6 +259,7 @@ class App extends StatelessWidget {
         child: _AppView(
           waveformWindow: waveformWindow,
           sessionDirectory: sessionDirectory,
+          displayCount: displayCount,
         ),
       ),
     );
@@ -264,10 +272,12 @@ class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
     required this.sessionDirectory,
+    this.displayCount,
   });
 
   final WaveformWindowService waveformWindow;
   final Future<String> Function() sessionDirectory;
+  final int Function()? displayCount;
 
   @override
   State<_AppView> createState() => _AppViewState();
@@ -314,15 +324,33 @@ class _AppViewState extends State<_AppView> {
     super.dispose();
   }
 
+  /// Whether only one display is connected (the console expects two). `null`
+  /// detection (desktop default) is treated as multi-display.
+  bool get _isSingleDisplay => (widget.displayCount?.call() ?? 2) < 2;
+
   /// Opens the secondary waveform window when it is enabled; closes it
   /// otherwise.
   Future<void> _syncWindow() async {
     if (!mounted) return;
     final shouldOpen = context.read<WaveformWindowCubit>().state;
     if (shouldOpen) {
-      await widget.waveformWindow.open(
+      // On a single-display console the waveform has nowhere to land: skip the
+      // second window and show a notice rather than a half-blank setup.
+      if (_isSingleDisplay) {
+        _showSingleDisplayNotice();
+        return;
+      }
+      final ready = await widget.waveformWindow.open(
         title: _l10n.outputWaveformWindowTitle,
       );
+      if (!mounted) return;
+      if (!ready) {
+        // The window never readied: surface it and don't stream frames to a
+        // dead window (the real service has already set its controller, so
+        // pushWaveform would otherwise not no-op).
+        _showWaveformWindowFailedBanner();
+        return;
+      }
       _pushTimer ??= Timer.periodic(_waveformFrame, (_) {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
@@ -435,6 +463,48 @@ class _AppViewState extends State<_AppView> {
         key: const Key('app_ledMissing_banner'),
         content: Text(l10n.ledDriverMissingBanner),
         leading: const Icon(Icons.lightbulb_outline),
+        actions: [
+          TextButton(
+            onPressed: messenger.clearMaterialBanners,
+            child: Text(l10n.dismiss),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Operator-visible banner when the secondary waveform window failed to come
+  /// up (the open path would otherwise degrade silently to a dark screen).
+  void _showWaveformWindowFailedBanner() {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+    final l10n = _l10n;
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        key: const Key('app_waveformWindowFailed_banner'),
+        content: Text(l10n.waveformWindowFailedBanner),
+        leading: const Icon(Icons.desktop_access_disabled_outlined),
+        actions: [
+          TextButton(
+            onPressed: messenger.clearMaterialBanners,
+            child: Text(l10n.dismiss),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Notice when only one display is connected on the dual-display console, so
+  /// a missing second panel is obvious rather than a half-blank setup.
+  void _showSingleDisplayNotice() {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+    final l10n = _l10n;
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        key: const Key('app_singleDisplay_banner'),
+        content: Text(l10n.singleDisplayNotice),
+        leading: const Icon(Icons.monitor_outlined),
         actions: [
           TextButton(
             onPressed: messenger.clearMaterialBanners,

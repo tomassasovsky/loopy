@@ -27,6 +27,11 @@ import '../../led/helpers/fake_led_transport.dart';
 class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 class _RecordingWindowService implements WaveformWindowService {
+  _RecordingWindowService({this.openResult = true});
+
+  /// What [open] reports — `false` simulates a window that never readies.
+  final bool openResult;
+
   int openCalls = 0;
   int closeCalls = 0;
   int pushCalls = 0;
@@ -36,9 +41,10 @@ class _RecordingWindowService implements WaveformWindowService {
   bool get isOpen => _open;
 
   @override
-  Future<void> open({String title = 'Loopy — Output'}) async {
+  Future<bool> open({String title = 'Loopy — Output'}) async {
     openCalls++;
-    _open = true;
+    _open = openResult;
+    return openResult;
   }
 
   @override
@@ -132,6 +138,11 @@ void main() {
 
       expect(windowService.openCalls, greaterThanOrEqualTo(1));
       expect(windowService.isOpen, isTrue);
+      // A successful open shows no failure banner.
+      expect(
+        find.byKey(const Key('app_waveformWindowFailed_banner')),
+        findsNothing,
+      );
     });
 
     testWidgets('does not open the waveform window when it is disabled', (
@@ -354,6 +365,45 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('app_ledMissing_banner')), findsNothing);
+    });
+
+    testWidgets('shows a banner when the waveform window fails to open', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService(openResult: false);
+      await pumpApp(tester, windowService);
+
+      expect(
+        find.byKey(const Key('app_waveformWindowFailed_banner')),
+        findsOneWidget,
+      );
+      // No frames are streamed to a window that never readied.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.pushCalls, 0);
+    });
+
+    testWidgets('shows a single-display notice and skips the waveform window '
+        'when only one display is present', (tester) async {
+      final windowService = _RecordingWindowService();
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: windowService,
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
+          displayCount: () => 1,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('app_singleDisplay_banner')), findsOneWidget);
+      expect(windowService.openCalls, 0);
+      // The push timer never started either.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.pushCalls, 0);
     });
   });
 }

@@ -99,6 +99,29 @@ For audio bring-up on the device (interface selection, JACK/PipeWire quantum,
 latency calibration) follow [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md) verbatim —
 nothing changes on `arm64`.
 
+## Kiosk boot + dual-display
+
+The console boots straight into Loopy full-screen across both panels (16″ main
+UI, 7″ waveform) under labwc, with no keyboard or mouse. The systemd unit,
+compositor config, and the deterministic output-pinning script live in
+[`deploy/rpi/`](../deploy/rpi/README.md) — follow that README to install them and
+to set your real connector names with `wlr-randr`.
+
+How the display edge cases are handled (all in [`run_loopy.dart`](../lib/app/run_loopy.dart)
++ the app shell, so they are exercised in widget tests):
+
+- **Deterministic pinning.** `deploy/rpi/pin-displays.sh` pins each output by
+  connector name, so the 16″ and 7″ never swap across reboots. Verify the
+  mapping holds across **≥5 reboots** — that is the real acceptance gate.
+- **Second-window failure is visible.** If the waveform window does not become
+  ready, the app shows an operator banner instead of degrading to a dark screen
+  (`WaveformWindowService.open()` now returns readiness;
+  [`waveform_window_service.dart`](../lib/visualizer/waveform_window_service.dart)).
+- **Single-display fallback.** With only one display connected the app skips the
+  waveform window and shows a notice — no half-blank console.
+- **Per-display scale.** Set with `wlr-randr --scale` in `pin-displays.sh`; tune
+  per panel after the Part-6 HDMI-vs-DSI choice.
+
 ## On-device bring-up checklist (run on a Pi 5)
 
 These cannot be verified in CI (no display, no audio). Tick them when the panels
@@ -121,3 +144,10 @@ and a Pi 5 are available:
       labwc (or sway) before proceeding.
 - [ ] Audio captures and plays back per [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)
       with the chosen USB interface.
+- [ ] Cold boot lands on the app full-screen with **16″ = main UI, 7″ =
+      waveform**, with no keyboard/mouse (the `loopy-kiosk` systemd unit).
+- [ ] The display mapping is stable across **≥5 reboots** (no output-naming
+      race) — adjust `deploy/rpi/pin-displays.sh` connector names if it flips.
+- [ ] Disconnecting the 7″ shows the single-display notice; a failed second
+      window shows the waveform-failed banner (no silent dark screen).
+- [ ] Both panels render at a usable scale (tune `--scale` per panel).
