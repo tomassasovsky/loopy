@@ -295,6 +295,21 @@
     "varargs",
     "VSTGUI",
     "COMMONPROGRAMFILES",
-    "LOCALAPPDATA"
+    "LOCALAPPDATA",
+    "Adafruit",
+    "Biacco",
+    "bootloaded",
+    "Caterina",
+    "discretes",
+    "easyeda",
+    "electrolytics",
+    "HAOYU",
+    "LCSC",
+    "pinout",
+    "respin",
+    "Schottky",
+    "SMAJ",
+    "sparkfun",
+    "VRML"
   ]
 }
