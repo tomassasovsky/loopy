@@ -69,17 +69,24 @@ jobs:
   # Pi's architecture instead of x86_64. A native runner is used rather than
   # FLUTTER_TARGET_PLATFORM_SYSROOT cross-compilation (linux/CMakeLists.txt
   # honors that var) to avoid sysroot/toolchain drift; arm64 runners are free for
-  # public repos. Flutter is pinned to the same 3.44.x as the jobs above so the
-  # matrix can't silently drift.
+  # public repos.
+  #
+  # subosito/flutter-action is NOT used here: Flutter only publishes prebuilt SDK
+  # archives for x64 Linux, so the action fails on arm64 with "Unable to
+  # determine Flutter version ... architecture: arm64". Instead Flutter is
+  # installed from git — the same way it is set up on an actual Pi — and the
+  # tooling fetches the linux-arm64 Dart SDK + engine artifacts on first run.
+  # Pinned to 3.44.4 (latest 3.44 patch) to track the 3.44.x the other build jobs
+  # use; bump this together with them so the matrix can't silently drift.
   build-linux-arm64:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.44.x"
-          channel: stable
-          cache: true
+      - name: Install Flutter (git, arm64 host)
+        run: |
+          git clone --depth 1 --branch 3.44.4 \
+            https://github.com/flutter/flutter.git "$HOME/flutter"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
       - name: Install GTK build dependencies
         run: |
           sudo apt-get update
