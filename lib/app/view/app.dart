@@ -44,6 +44,7 @@ class App extends StatelessWidget {
     this.pedalRepository,
     this.ledRepository,
     this.displayCount,
+    this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
     super.key,
   });
@@ -75,6 +76,11 @@ class App extends StatelessWidget {
   /// (assumes the usual multi-window desktop); the Pi entrypoint wires the real
   /// platform display count.
   final int Function()? displayCount;
+
+  /// The pinned audio config a boot auto-start could not open, handed to the
+  /// [AudioRecoveryCubit] so the engine auto-starts when that device reappears.
+  /// `null` (the default) when the engine started or there is no pinned device.
+  final EngineConfig? audioRecoveryConfig;
 
   /// The shared settings repository (persists latency calibration + config).
   final SettingsRepository settings;
@@ -250,6 +256,21 @@ class App extends StatelessWidget {
               final cubit = LedCubit(
                 led: ledRepository ?? LedRepository(),
                 looper: context.read<LooperRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // Eager (not lazy): the recovery cubit must be watching at boot for a
+          // pinned interface that was unplugged when auto-start ran, so it can
+          // start audio the moment it reappears. Inert when there is nothing to
+          // recover (engine already running / no pinned device).
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = AudioRecoveryCubit(
+                looper: context.read<LooperRepository>(),
+                recoveryConfig: audioRecoveryConfig,
               );
               unawaited(cubit.load());
               return cubit;
@@ -473,6 +494,32 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// Non-pointer signal that the console is waiting for its pinned audio
+  /// interface to (re)appear at boot, after which it auto-starts the engine.
+  /// The banner clears itself when recovery finishes (status returns to idle).
+  void _showAudioRecoveryBanner(AudioRecoveryState state) {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+    final l10n = _l10n;
+    if (state.status != AudioRecoveryStatus.waitingForDevice) {
+      messenger.clearMaterialBanners();
+      return;
+    }
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        key: const Key('app_audioRecovery_banner'),
+        content: Text(l10n.audioRecoveryWaitingBanner),
+        leading: const Icon(Icons.usb_off_outlined),
+        actions: [
+          TextButton(
+            onPressed: () => unawaited(openLoopySettings()),
+            child: Text(l10n.settingsMenuItem),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Operator-visible banner when the secondary waveform window failed to come
   /// up (the open path would otherwise degrade silently to a dark screen).
   void _showWaveformWindowFailedBanner() {
@@ -551,6 +598,10 @@ class _AppViewState extends State<_AppView> {
         BlocListener<LedCubit, LedState>(
           listenWhen: (previous, current) => previous.health != current.health,
           listener: (_, state) => _showLedBanner(state),
+        ),
+        BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
+          listenWhen: (previous, current) => previous.status != current.status,
+          listener: (_, state) => _showAudioRecoveryBanner(state),
         ),
       ],
       child: MaterialApp(
