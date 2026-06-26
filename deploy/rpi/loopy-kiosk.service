@@ -1,0 +1,38 @@
+# Loopy floor-console kiosk — boots straight into the app full-screen under the
+# labwc Wayland compositor (chosen in Part 1), no keyboard/mouse.
+#
+# Install (as the console user, default `pi`):
+#   sudo cp deploy/rpi/loopy-kiosk.service /etc/systemd/system/
+#   sudo systemctl enable loopy-kiosk.service
+# Then drop the compositor config from deploy/rpi/compositor/labwc/ into
+# ~/.config/labwc/ (see deploy/rpi/README.md). labwc's autostart pins the
+# displays and launches the app.
+#
+# UNVERIFIED on hardware — bring up on a real Pi 5 + panels before relying on it.
+
+[Unit]
+Description=Loopy floor-console kiosk (labwc + app)
+After=multi-user.target systemd-user-sessions.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=pi
+# A real seat on tty1 so the Wayland compositor can take the DRM/KMS master.
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=XDG_SESSION_TYPE=wayland
+# labwc reads ~/.config/labwc/{autostart,rc.xml,environment}; the autostart
+# script pins the outputs and execs the Loopy bundle.
+ExecStart=/usr/bin/labwc
+# A crashed compositor or app restarts the whole kiosk (foot-only recovery is
+# hardened further in Part 6).
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
