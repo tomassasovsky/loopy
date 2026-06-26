@@ -22,6 +22,8 @@ dependencies:
   gpio_client:
     path: packages/gpio_client
   intl: ^0.20.2
+  led_client:
+    path: packages/led_client
   looper_repository:
     path: packages/looper_repository
   midi_device_repository:

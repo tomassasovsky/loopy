@@ -6,6 +6,7 @@
     "deviceDisconnectedBanner": "{deviceName} desconectado — intentando reconectar…",
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
     "dismiss": "Descartar",
+    "ledDriverMissingBanner": "El controlador de LED no responde: comprueba que esté conectado y con firmware.",
     "close": "Cerrar",
     "mixdownExported": "Mezcla exportada",
     "stemsExported": "Pistas exportadas",

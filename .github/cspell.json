@@ -333,6 +333,10 @@
     "stompable",
     "unflashed",
     "unwired",
-    "workstream"
+    "workstream",
+    "BOOTSEL",
+    "Pico",
+    "raspi",
+    "rpipico"
   ]
 }
