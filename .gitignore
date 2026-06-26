@@ -123,3 +123,6 @@ test/**/failures/
 /skidl*.log
 packages/loopy_engine/*.exe
 *.exe
+
+# Transient portfolio export output
+/.portfolio-output/

@@ -19,6 +19,8 @@ dependencies:
   flutter_bloc: ^9.1.1
   flutter_localizations:
     sdk: flutter
+  gpio_client:
+    path: packages/gpio_client
   intl: ^0.20.2
   looper_repository:
     path: packages/looper_repository

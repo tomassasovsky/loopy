@@ -1,6 +1,7 @@
 import 'package:controller_repository/controller_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
+import 'package:gpio_client/gpio_client.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/monitor_migration.dart';
@@ -67,8 +68,17 @@ Future<void> runLoopy(
   // runs with no controller source. The waveform sub-window already returned
   // above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
+  // The GPIO source feeds the same controller pipeline from the Raspberry Pi
+  // floor console's footswitches; it is null off-Pi (desktop, CI). On the Pi we
+  // seed both MIDI and GPIO defaults so footswitches work on first boot with
+  // zero config and a laptop MIDI pedal still works; off-Pi we fall back to the
+  // repository's MIDI-only defaults.
+  final gpioSource = createNativeGpioSource();
   final controllerRepository = ControllerRepository(
-    sources: [?midiSource],
+    sources: [?midiSource, ?gpioSource],
+    mapping: gpioSource != null
+        ? ControllerMapping.defaults().merge(ControllerMapping.gpioDefaults())
+        : null,
   );
   // The bidirectional pedal reuses the MIDI source's single input capture and
   // opens its own MIDI output for LED feedback; null when no MIDI backend, in
