@@ -45,6 +45,103 @@ void main() {
     });
   });
 
+  group('ControllerMapping.gpioDefaults', () {
+    final mapping = ControllerMapping.gpioDefaults();
+
+    test('binds GPIO footswitch pins to transport actions', () {
+      const press = RawControllerInput(
+        kind: ControllerSourceKind.gpio,
+        id: 17,
+        value: 1,
+      );
+      expect(
+        mapping.resolve(press),
+        const ControllerEvent(action: LooperAction.recordOverdub),
+      );
+    });
+
+    test('every entry is a GPIO trigger', () {
+      expect(
+        mapping.entries.every(
+          (e) => e.trigger.kind == ControllerSourceKind.gpio,
+        ),
+        isTrue,
+      );
+    });
+
+    test('mirrors the default transport actions', () {
+      expect(
+        mapping.entries.map((e) => e.action).toSet(),
+        ControllerMapping.defaults().entries.map((e) => e.action).toSet(),
+      );
+    });
+  });
+
+  group('ControllerMapping.merge', () {
+    test('combines MIDI and GPIO defaults so both resolve', () {
+      final merged = ControllerMapping.defaults().merge(
+        ControllerMapping.gpioDefaults(),
+      );
+
+      const midiPress = RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: 80,
+        value: 127,
+      );
+      const gpioPress = RawControllerInput(
+        kind: ControllerSourceKind.gpio,
+        id: 17,
+        value: 1,
+      );
+      expect(
+        merged.resolve(midiPress),
+        const ControllerEvent(action: LooperAction.recordOverdub),
+      );
+      expect(
+        merged.resolve(gpioPress),
+        const ControllerEvent(action: LooperAction.recordOverdub),
+      );
+    });
+
+    test('other wins on a shared trigger', () {
+      const trigger = MappingTrigger(kind: ControllerSourceKind.gpio, id: 17);
+      final base = const ControllerMapping().withBinding(
+        trigger,
+        LooperAction.play,
+      );
+      final other = const ControllerMapping().withBinding(
+        trigger,
+        LooperAction.clear,
+      );
+
+      const press = RawControllerInput(
+        kind: ControllerSourceKind.gpio,
+        id: 17,
+        value: 1,
+      );
+      expect(
+        base.merge(other).resolve(press),
+        const ControllerEvent(action: LooperAction.clear),
+      );
+    });
+
+    test('keeps the receiver name', () {
+      final merged = ControllerMapping.defaults().merge(
+        ControllerMapping.gpioDefaults(),
+      );
+      expect(merged.name, ControllerMapping.defaults().name);
+    });
+
+    test('merging an empty mapping is an identity on entries', () {
+      final base = ControllerMapping.defaults();
+      expect(base.merge(const ControllerMapping()).entries, base.entries);
+      expect(
+        const ControllerMapping().merge(base).entries,
+        base.entries,
+      );
+    });
+  });
+
   group('ControllerMapping.withBinding', () {
     test('replaces the entry for an existing trigger', () {
       const trigger = MappingTrigger(
