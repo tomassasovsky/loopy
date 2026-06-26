@@ -82,6 +82,12 @@ class ControllerMapping extends Equatable {
           trigger: MappingTrigger(kind: kind, id: 23),
           action: LooperAction.clear,
         ),
+        // The rotary encoder's push-switch (its rotation is decoded separately
+        // and reserved in v1).
+        MappingEntry(
+          trigger: MappingTrigger(kind: kind, id: 26),
+          action: LooperAction.playAll,
+        ),
       ],
     );
   }

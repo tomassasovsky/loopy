@@ -10,6 +10,7 @@ library;
 
 export 'src/gpio_bindings.dart' show GpioBindings, GpioEdgeCallback;
 export 'src/gpio_controller_source.dart' show GpioControllerSource;
+export 'src/gpio_encoder_config.dart' show GpioEncoderConfig;
 export 'src/lib_gpiod_bindings.dart' show GpioException, LibGpiodBindings;
 export 'src/native_gpio_source.dart'
     show createNativeGpioSource, gpioDefaultLines;

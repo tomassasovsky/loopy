@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gpio_client/src/gpio_controller_source.dart';
+import 'package:gpio_client/src/gpio_encoder_config.dart';
 
 /// Builds the long-lived [GpioControllerSource] for the controller pipeline, or
 /// `null` when the host has no GPIO (every desktop, and CI).
@@ -47,8 +48,15 @@ List<int> gpioDefaultLines() => [
 
 // coverage:ignore-start
 // On-device only: the real chip probe and FFI-backed source can't run in CI.
+
+/// The console's default rotary-encoder A/B pins (BCM offsets). The encoder's
+/// push-switch is a press line in [gpioDefaultLines], not here.
+const GpioEncoderConfig _defaultEncoder = GpioEncoderConfig(pinA: 5, pinB: 6);
+
 bool _defaultHasGpioChip() => File('/dev/gpiochip0').existsSync();
 
-GpioControllerSource _defaultGpioSource() =>
-    GpioControllerSource(lines: gpioDefaultLines());
+GpioControllerSource _defaultGpioSource() => GpioControllerSource(
+  lines: gpioDefaultLines(),
+  encoder: _defaultEncoder,
+);
 // coverage:ignore-end
