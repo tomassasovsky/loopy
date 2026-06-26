@@ -126,6 +126,8 @@ Future<void> runLoopy(
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
       ledRepository: ledRepository,
+      displayCount: () =>
+          WidgetsBinding.instance.platformDispatcher.displays.length,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: session,
