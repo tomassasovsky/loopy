@@ -2,6 +2,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/widgets.dart';
 import 'package:gpio_client/gpio_client.dart';
+import 'package:led_client/led_client.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/monitor_migration.dart';
@@ -84,6 +85,9 @@ Future<void> runLoopy(
   // opens its own MIDI output for LED feedback; null when no MIDI backend, in
   // which case the pedal cubit falls back to a no-op transport.
   final pedalRepository = createNativePedalRepository(midiSource);
+  // The Raspberry Pi console's WS2812 LED driver link; null off-Pi (desktop,
+  // CI), where the LED cubit falls back to a no-op channel.
+  final ledRepository = createNativeLedChannel();
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
@@ -121,6 +125,7 @@ Future<void> runLoopy(
       controllerRepository: controllerRepository,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
+      ledRepository: ledRepository,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: session,
