@@ -283,21 +283,25 @@ kicad-cli pcb export drill   -o fab/loopy_pi_main/ loopy_pi_main.kicad_pcb
 (The `_pi_*.py` helpers are local-path pipeline tooling, gitignored like the original
 board's `_pcb_*.py` scripts.)
 
-### 3D assembly render (board mounted on a Pi)
+### Seeing the Pi in 3D (board mounted on a Pi)
 
-`kicad/pi_assemble.py` builds a render-only assembly — this HAT mounted on a
-Raspberry Pi 4 with four standoffs — so you can preview the physical stack. It
-**downloads the Pi 4 STEP model on first run** (~17 MB, from the community
-[MGS-CAD-Files](https://github.com/multigamesystem/MGS-CAD-Files) repo) into
-`_models/` (gitignored, not redistributed); the standoffs come from KiCad's
-bundled Würth library. It writes `_assembly.kicad_pcb` (gitignored):
+The board carries the Pi 4 + four standoffs as **board-only 3D models** (added by
+`kicad/pi_mating_model.py`), so opening `loopy_pi_main.kicad_pcb` and pressing
+**Alt-3** shows the mounted stack directly. These footprints have no pads / silk /
+courtyard and are excluded from BOM, position files and the netlist — Gerbers,
+drill and DRC are byte-for-byte unaffected (verified). The standoffs come from
+KiCad's bundled Würth library; the Pi model is referenced as
+`${KIPRJMOD}/_models/RPi4.step` and is **downloaded on demand** (~17 MB, from the
+community [MGS-CAD-Files](https://github.com/multigamesystem/MGS-CAD-Files) repo)
+by `pi_assemble.py` — gitignored, not redistributed, so a fresh clone shows a
+missing-model placeholder until you fetch it:
 
 ```sh
 KP="C:\Program Files\KiCad\10.0\bin\python.exe"
-"$KP" hardware/kicad/pi_assemble.py
-kicad-cli pcb render --rotate "-72,0,52" --perspective --zoom 0.8 \
-    --quality high --floor -o _asm_hero.png hardware/kicad/_assembly.kicad_pcb
+"$KP" hardware/kicad/pi_assemble.py       # downloads the Pi model into _models/
+"$KP" hardware/kicad/pi_mating_model.py   # (re)attach the board-only Pi+standoffs
 ```
 
-Render-only: the Pi/standoff alignment is approximate (visual, not a fit-check),
-and the assembly file is never part of the fab outputs.
+`pi_assemble.py` also builds a standalone `_assembly.kicad_pcb` (gitignored) if you
+want an isolated render. Render-only: the Pi/standoff alignment is approximate
+(visual, not a fit-check).
