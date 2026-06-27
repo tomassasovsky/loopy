@@ -179,16 +179,15 @@ def faceplate_holes():
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
     cuts.append({"kind": "rect", "u": S7_U,  "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
     cuts.append({"kind": "rect", "u": 460.0, "v": SCREEN_TOP_V - BIG_H,   "w": BIG_W,   "h": BIG_H,   "ref": "SCREEN_16IN"})
-    # --- encoder + diffused ring to the LEFT of CLEAR/BANK, aligned on their --
-    #     vertical (height) centre line ----------------------------------------
-    enc_v = PEDAL_ROW2_V                                          # CLEAR/BANK height centre
-    enc_u = (_row1_u(2) - FSW_SLOT_W/2.0) - 12.0 - RING_OD/2.0    # left of the pedals
+    # --- encoder + diffused ring: left of CLEAR/BANK, on their height centre --
+    #     line, and centred under the 7" (left) screen -------------------------
+    enc_v = PEDAL_ROW2_V                 # CLEAR/BANK height centre
+    enc_u = S7_U + SMALL_W / 2.0         # horizontal centre of the 7" screen
     cuts.append({"kind": "ring",   "u": enc_u, "v": enc_v, "od": RING_OD, "id": RING_ID, "ref": "RING"})
     cuts.append({"kind": "circle", "u": enc_u, "v": enc_v, "d": D_ENC, "ref": "ENCODER"})
-    # power + mode LEDs stacked to the left of the ring
-    pm_u = enc_u - RING_OD/2.0 - 14.0
-    cuts.append({"kind": "circle", "u": pm_u, "v": enc_v - 12.0, "d": D_LEDBZ, "ref": "PWR_LED"})
-    cuts.append({"kind": "circle", "u": pm_u, "v": enc_v + 12.0, "d": D_LEDBZ, "ref": "MODE_LED"})
+    # power + mode LEDs flanking the encoder
+    cuts.append({"kind": "circle", "u": enc_u - RING_OD/2.0 - 13.0, "v": enc_v, "d": D_LEDBZ, "ref": "PWR_LED"})
+    cuts.append({"kind": "circle", "u": enc_u + RING_OD/2.0 + 13.0, "v": enc_v, "d": D_LEDBZ, "ref": "MODE_LED"})
     return cuts, engr
 
 def rear_holes():

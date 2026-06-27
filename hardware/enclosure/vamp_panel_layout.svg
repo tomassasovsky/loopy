@@ -25,10 +25,10 @@
     <rect class="slot" x="331.1" y="119" width="78" height="103" rx="3"/>
     <g fill="#9fb0c8" font-size="8" text-anchor="middle"><text x="264.4" y="112">CLEAR</text><text x="370.1" y="112">BANK</text></g>
 
-    <!-- encoder + ring to the LEFT of CLEAR/BANK, on their height centre line -->
-    <circle cx="184.375" cy="170.5" r="29" fill="none" stroke="#a855f7" stroke-width="6" stroke-opacity="0.5"/>
-    <circle cx="184.375" cy="170.5" r="29" fill="none" stroke="#a855f7" stroke-width="1.4"/><circle cx="184.375" cy="170.5" r="3.4" fill="#cbd5e1"/>
-    <circle cx="141.375" cy="182.5" r="4.5" fill="#22c55e"/><circle cx="141.375" cy="158.5" r="4.5" fill="#f59e0b"/>
+    <!-- encoder + ring centred under the 7" screen, on the CLEAR/BANK height line -->
+    <circle cx="108" cy="170.5" r="29" fill="none" stroke="#a855f7" stroke-width="6" stroke-opacity="0.5"/>
+    <circle cx="108" cy="170.5" r="29" fill="none" stroke="#a855f7" stroke-width="1.4"/><circle cx="108" cy="170.5" r="3.4" fill="#cbd5e1"/>
+    <circle cx="66" cy="170.5" r="4.5" fill="#22c55e"/><circle cx="150" cy="170.5" r="4.5" fill="#f59e0b"/>
 
     <!-- front row: 8 evenly spaced -->
     <g>
@@ -54,8 +54,8 @@
       <use href="#badge" x="793.1" y="320.5"/><text x="793.1" y="324.5" class="b">7</text>
       <use href="#badge" x="108" y="33"/><text x="108" y="37" class="b">3</text>
       <use href="#badge" x="635" y="33"/><text x="635" y="37" class="b">4</text>
-      <use href="#badge" x="184.375" y="138"/><text x="184.375" y="142" class="b">5</text>
-      <use href="#badge" x="110" y="170.5"/><text x="110" y="174.5" class="b">6</text>
+      <use href="#badge" x="108" y="138"/><text x="108" y="142" class="b">5</text>
+      <use href="#badge" x="66" y="148"/><text x="66" y="152" class="b">6</text>
     </g>
   </g>
 
@@ -83,8 +83,8 @@
     <use href="#badge" x="9" y="44"/><text x="9" y="48" class="b">2</text><text x="26" y="42" class="lt">CLEAR / BANK ×2</text><text x="26" y="57" class="lp">row 2, aligned over UNDO &amp; MODE</text>
     <use href="#badge" x="9" y="79"/><text x="9" y="83" class="b">3</text><text x="26" y="77" class="lt">7" touchscreen (left)</text><text x="26" y="92" class="lp">waveform · 156×88 · top-aligned</text>
     <use href="#badge" x="9" y="114"/><text x="9" y="118" class="b">4</text><text x="26" y="112" class="lt">16" touchscreen (right)</text><text x="26" y="127" class="lp">main UI · 350×199 · top-aligned</text>
-    <use href="#badge" x="9" y="149"/><text x="9" y="153" class="b">5</text><text x="26" y="147" class="lt">Encoder + diffused ring</text><text x="26" y="162" class="lp">left of CLEAR/BANK, on their height line · 12 LEDs</text>
-    <use href="#badge" x="9" y="184"/><text x="9" y="188" class="b">6</text><text x="26" y="182" class="lt">Power / Mode LED</text><text x="26" y="197" class="lp">Ø8 bezel, stacked beside the encoder</text>
+    <use href="#badge" x="9" y="149"/><text x="9" y="153" class="b">5</text><text x="26" y="147" class="lt">Encoder + diffused ring</text><text x="26" y="162" class="lp">under the 7" screen, on the CLEAR/BANK height line</text>
+    <use href="#badge" x="9" y="184"/><text x="9" y="188" class="b">6</text><text x="26" y="182" class="lt">Power / Mode LED</text><text x="26" y="197" class="lp">Ø8 bezel, flanking the encoder</text>
     <use href="#badge" x="9" y="219"/><text x="9" y="223" class="b">7</text><text x="26" y="217" class="lt">Track status LED ×4</text><text x="26" y="232" class="lp">Ø5.1 THT, aligned above TRACK 1–4 only</text>
     <line x1="0" y1="250" x2="270" y2="250" stroke="#26344a"/>
     <text x="0" y="272" class="lp">8 9V DC · 9 power btn · 10 fuse · 11 USB-A×2</text>
