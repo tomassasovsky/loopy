@@ -88,7 +88,7 @@ look with no visible fasteners and the switch wiring fully internal.
 | track status LED | 4 | Ø5.1 | aligned above TRACK 1–4 only (THT, cabled) |
 | 7" touchscreen | 1 | 156 × 88 aperture | waveform / loop view (left), top-aligned |
 | 16" touchscreen | 1 | 350 × 199 aperture | main loopy UI (right), top-aligned |
-| encoder + diffused ring | 1 | Ø7 + Ø58/40 | centred on the CLEAR/BANK line (in front of them); EC11 + 12 THT LEDs |
+| encoder + diffused ring | 1 | Ø7 + Ø58/40 | left of CLEAR/BANK, on their height centre line; EC11 + 12 THT LEDs |
 | power / mode LED | 2 | Ø8 | bezel, flanking the encoder |
 
 - **Screens mount from behind**; the aperture is **smaller than the bezel** so the
