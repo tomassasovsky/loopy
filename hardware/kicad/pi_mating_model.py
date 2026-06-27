@@ -1,20 +1,18 @@
 """Attach render-only 3D models of the Raspberry Pi 4 + four standoffs to
 loopy_pi_main.kicad_pcb, so the board's OWN 3D viewer (Alt-3) shows the mounted
-stack -- without a separate assembly file.
+stack -- no separate file, nothing to download.
 
-The added footprints are BOARD-ONLY: no pads, no courtyard, no silk, references
-hidden -> they are excluded from the BOM, position files and netlist, and are
-invisible on every 2D / fab layer, so Gerbers and DRC are unaffected.  They carry
-nothing but a 3D model.
+The added footprints carry nothing but a 3D model: no pads, no courtyard, no
+silk, references hidden, and they are excluded from the BOM and position files.
+They are typed THROUGH_HOLE only so KiCad's 3D viewer shows them under its
+default filters (a "board only / virtual" footprint can be hidden by the viewer's
+visibility toggle).  Gerbers, drill and DRC are byte-for-byte unaffected.
 
-Model paths are portable:
-  Pi 4    -> ${KIPRJMOD}/_models/RPi4.step   (download it once with pi_assemble.py;
-             gitignored, so other clones show a missing-model placeholder until then)
-  standoff-> ${KICAD10_3DMODEL_DIR}/...      (shipped with KiCad)
+Model paths are portable and shipped in-repo:
+  Pi 4    -> ${KIPRJMOD}/3dmodels/RaspberryPi4_ModelB.step  (vendored, ~17 MB)
+  standoff-> ${KICAD10_3DMODEL_DIR}/...                     (shipped with KiCad)
 
-Idempotent -- re-run it after regenerating the board from the SKiDL pipeline.
-
-Run with KiCad's bundled python:
+Idempotent -- re-run after regenerating the board from the SKiDL pipeline:
     "C:\\Program Files\\KiCad\\10.0\\bin\\python.exe" pi_mating_model.py
 """
 import os
@@ -22,7 +20,7 @@ import pcbnew
 
 HERE  = os.path.dirname(os.path.abspath(__file__))
 BOARD = os.path.join(HERE, "loopy_pi_main.kicad_pcb")
-PI = "${KIPRJMOD}/_models/RPi4.step"
+PI = "${KIPRJMOD}/3dmodels/RaspberryPi4_ModelB.step"
 SO = ("${KICAD10_3DMODEL_DIR}/Mounting_Wuerth.3dshapes/"
       "Mounting_Wuerth_WA-SMSE-ExternalM3_H15mm_9771150360.step")
 
@@ -37,7 +35,9 @@ for fp in list(b.GetFootprints()):
 def add(ref, px, py, fn, off):
     fp = pcbnew.FOOTPRINT(b)
     fp.SetReference(ref)
-    fp.SetAttributes(pcbnew.FP_BOARD_ONLY |
+    # THROUGH_HOLE type (shown by the viewer's default filter) but kept out of the
+    # BOM and placement files; it has no pads, so fab output is unchanged.
+    fp.SetAttributes(pcbnew.FP_THROUGH_HOLE |
                      pcbnew.FP_EXCLUDE_FROM_POS_FILES |
                      pcbnew.FP_EXCLUDE_FROM_BOM)
     fp.Reference().SetVisible(False)

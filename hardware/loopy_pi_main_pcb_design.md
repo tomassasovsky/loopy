@@ -285,23 +285,18 @@ board's `_pcb_*.py` scripts.)
 
 ### Seeing the Pi in 3D (board mounted on a Pi)
 
-The board carries the Pi 4 + four standoffs as **board-only 3D models** (added by
-`kicad/pi_mating_model.py`), so opening `loopy_pi_main.kicad_pcb` and pressing
-**Alt-3** shows the mounted stack directly. These footprints have no pads / silk /
-courtyard and are excluded from BOM, position files and the netlist — Gerbers,
-drill and DRC are byte-for-byte unaffected (verified). The standoffs come from
-KiCad's bundled Würth library; the Pi model is referenced as
-`${KIPRJMOD}/_models/RPi4.step` and is **downloaded on demand** (~17 MB, from the
-community [MGS-CAD-Files](https://github.com/multigamesystem/MGS-CAD-Files) repo)
-by `pi_assemble.py` — gitignored, not redistributed, so a fresh clone shows a
-missing-model placeholder until you fetch it:
+**Just open `loopy_pi_main.kicad_pcb` and press Alt-3** — the Pi 4 and four
+standoffs are already attached to the board, so the 3D viewer shows the mounted
+stack out of the box. Nothing to download or run.
 
-```sh
-KP="C:\Program Files\KiCad\10.0\bin\python.exe"
-"$KP" hardware/kicad/pi_assemble.py       # downloads the Pi model into _models/
-"$KP" hardware/kicad/pi_mating_model.py   # (re)attach the board-only Pi+standoffs
-```
+These are render-only footprints: no pads / silk / courtyard, excluded from BOM,
+position files and the netlist, so Gerbers, drill and DRC are byte-for-byte
+unaffected (verified; DRC stays 0/0). The Pi model is **vendored in-repo** at
+`3dmodels/RaspberryPi4_ModelB.step` (see `3dmodels/NOTICE.md` for provenance /
+license) and referenced portably as `${KIPRJMOD}/3dmodels/RaspberryPi4_ModelB.step`;
+the standoffs come from KiCad's bundled Würth library.
 
-`pi_assemble.py` also builds a standalone `_assembly.kicad_pcb` (gitignored) if you
-want an isolated render. Render-only: the Pi/standoff alignment is approximate
-(visual, not a fit-check).
+`kicad/pi_mating_model.py` (re)attaches these after a pipeline regen, and
+`kicad/pi_assemble.py` builds a standalone `_assembly.kicad_pcb` (gitignored) for
+an isolated render. Render-only: the Pi/standoff alignment is approximate (visual,
+not a fit-check).
