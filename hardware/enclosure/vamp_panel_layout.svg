@@ -20,15 +20,15 @@
     <rect x="30" y="23" width="156" height="88" rx="4" fill="#0c1a24" stroke="#38bdf8" stroke-width="1.8"/>
     <text x="108" y="71" fill="#4a7f96" font-size="11" text-anchor="middle">7" TOUCH · waveform</text>
 
-    <!-- encoder + ring below the 7" screen, flanked by power/mode LEDs -->
-    <circle cx="108" cy="153" r="29" fill="none" stroke="#a855f7" stroke-width="6" stroke-opacity="0.5"/>
-    <circle cx="108" cy="153" r="29" fill="none" stroke="#a855f7" stroke-width="1.4"/><circle cx="108" cy="153" r="3.4" fill="#cbd5e1"/>
-    <circle cx="66" cy="153" r="4.5" fill="#22c55e"/><circle cx="150" cy="153" r="4.5" fill="#f59e0b"/>
+    <!-- CLEAR / BANK over UNDO / MODE, bottoms aligned with the 16" screen bottom -->
+    <rect class="slot" x="225.4" y="119" width="78" height="103" rx="3"/>
+    <rect class="slot" x="331.1" y="119" width="78" height="103" rx="3"/>
+    <g fill="#9fb0c8" font-size="8" text-anchor="middle"><text x="264.4" y="112">CLEAR</text><text x="370.1" y="112">BANK</text></g>
 
-    <!-- CLEAR / BANK over UNDO / MODE (row 2) -->
-    <rect class="slot" x="225.4" y="204.5" width="78" height="103" rx="3"/>
-    <rect class="slot" x="331.1" y="204.5" width="78" height="103" rx="3"/>
-    <g fill="#9fb0c8" font-size="8" text-anchor="middle"><text x="264.4" y="323">CLEAR</text><text x="370.1" y="323">BANK</text></g>
+    <!-- encoder + ring on the vertical centre line of CLEAR/BANK, in front of them -->
+    <circle cx="317.25" cy="279.25" r="29" fill="none" stroke="#a855f7" stroke-width="6" stroke-opacity="0.5"/>
+    <circle cx="317.25" cy="279.25" r="29" fill="none" stroke="#a855f7" stroke-width="1.4"/><circle cx="317.25" cy="279.25" r="3.4" fill="#cbd5e1"/>
+    <circle cx="275.25" cy="279.25" r="4.5" fill="#22c55e"/><circle cx="359.25" cy="279.25" r="4.5" fill="#f59e0b"/>
 
     <!-- front row: 8 evenly spaced -->
     <g>
@@ -50,12 +50,12 @@
 
     <g>
       <use href="#badge" x="52.9" y="388"/><text x="52.9" y="392" class="b">1</text>
-      <use href="#badge" x="264.4" y="256"/><text x="264.4" y="260" class="b">2</text>
+      <use href="#badge" x="264.4" y="170"/><text x="264.4" y="174" class="b">2</text>
       <use href="#badge" x="793.1" y="320.5"/><text x="793.1" y="324.5" class="b">7</text>
       <use href="#badge" x="108" y="33"/><text x="108" y="37" class="b">3</text>
       <use href="#badge" x="635" y="33"/><text x="635" y="37" class="b">4</text>
-      <use href="#badge" x="108" y="124"/><text x="108" y="128" class="b">5</text>
-      <use href="#badge" x="66" y="130"/><text x="66" y="134" class="b">6</text>
+      <use href="#badge" x="317.25" y="248"/><text x="317.25" y="252" class="b">5</text>
+      <use href="#badge" x="246" y="279.25"/><text x="246" y="283.25" class="b">6</text>
     </g>
   </g>
 
@@ -83,7 +83,7 @@
     <use href="#badge" x="9" y="44"/><text x="9" y="48" class="b">2</text><text x="26" y="42" class="lt">CLEAR / BANK ×2</text><text x="26" y="57" class="lp">row 2, aligned over UNDO &amp; MODE</text>
     <use href="#badge" x="9" y="79"/><text x="9" y="83" class="b">3</text><text x="26" y="77" class="lt">7" touchscreen (left)</text><text x="26" y="92" class="lp">waveform · 156×88 · top-aligned</text>
     <use href="#badge" x="9" y="114"/><text x="9" y="118" class="b">4</text><text x="26" y="112" class="lt">16" touchscreen (right)</text><text x="26" y="127" class="lp">main UI · 350×199 · top-aligned</text>
-    <use href="#badge" x="9" y="149"/><text x="9" y="153" class="b">5</text><text x="26" y="147" class="lt">Encoder + diffused ring</text><text x="26" y="162" class="lp">below the left screen · 12 THT LEDs</text>
+    <use href="#badge" x="9" y="149"/><text x="9" y="153" class="b">5</text><text x="26" y="147" class="lt">Encoder + diffused ring</text><text x="26" y="162" class="lp">centred between CLEAR &amp; BANK · 12 THT LEDs</text>
     <use href="#badge" x="9" y="184"/><text x="9" y="188" class="b">6</text><text x="26" y="182" class="lt">Power / Mode LED</text><text x="26" y="197" class="lp">Ø8 bezel, flanking the encoder</text>
     <use href="#badge" x="9" y="219"/><text x="9" y="223" class="b">7</text><text x="26" y="217" class="lt">Track status LED ×4</text><text x="26" y="232" class="lp">Ø5.1 THT, aligned above TRACK 1–4 only</text>
     <line x1="0" y1="250" x2="270" y2="250" stroke="#26344a"/>

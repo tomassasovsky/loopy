@@ -141,10 +141,11 @@ PLATFORM_H = lid_top_z(FSW_V) + FOOTPLATE_PROUD - ASP1_H
 # is a whole ASP-1 on a welded platform; a status LED sits directly ABOVE each
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
 PEDAL_ROW1_V = 80.0      # front row centre
-PEDAL_ROW2_V = 212.0     # CLEAR/BANK centre
-LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear)
 SCREEN_TOP_V = 445.0     # common TOP (rear) edge for both screens
 S7_U         = 30.0      # 7" screen left edge
+LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear)
+# CLEAR/BANK sit so their BOTTOM (front) edge aligns with the 16" screen's bottom.
+PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
 
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
@@ -178,9 +179,12 @@ def faceplate_holes():
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
     cuts.append({"kind": "rect", "u": S7_U,  "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
     cuts.append({"kind": "rect", "u": 460.0, "v": SCREEN_TOP_V - BIG_H,   "w": BIG_W,   "h": BIG_H,   "ref": "SCREEN_16IN"})
-    # --- encoder + diffused ring BELOW the left (7") screen ----------------
-    enc_u = S7_U + SMALL_W / 2.0
-    enc_v = (SCREEN_TOP_V - SMALL_H) - 13.0 - RING_OD / 2.0
+    # --- encoder + diffused ring on the vertical centre line of CLEAR/BANK, --
+    #     sitting in the gap in FRONT of them (between the front row and CLEAR/BANK)
+    enc_u = (_row1_u(2) + _row1_u(3)) / 2.0
+    front_top = PEDAL_ROW1_V + FSW_SLOT_D / 2.0
+    cb_bottom = PEDAL_ROW2_V - FSW_SLOT_D / 2.0
+    enc_v = (front_top + cb_bottom) / 2.0
     cuts.append({"kind": "ring",   "u": enc_u, "v": enc_v, "od": RING_OD, "id": RING_ID, "ref": "RING"})
     cuts.append({"kind": "circle", "u": enc_u, "v": enc_v, "d": D_ENC, "ref": "ENCODER"})
     # power + mode LEDs flanking the encoder
