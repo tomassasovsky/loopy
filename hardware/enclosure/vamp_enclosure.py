@@ -559,7 +559,10 @@ def build_step(write_parts=True):
     front  = cq.Workplane("XY").box(T, W-2*T, H_FRONT, centered=False).translate((0, T, 0))
     rear   = _rear_flat(cq)
     side   = cq.Workplane("XZ").polyline([(0,0),(D,0),(D,H_REAR),(0,H_FRONT)]).close().extrude(-T)
-    fp     = _faceplate_flat(cq).mirror("XZ", (0, FP_W/2.0, 0))   # 7" -> player's LEFT
+    # NOT mirrored: the faceplate matches the DXF (u=0 .. FP_W) and lines up with the
+    # platforms/pedals/boards (all placed at Y=u). "7" on the player's left" is a
+    # render-viewpoint matter (camera looks from the front so +Y reads left->right).
+    fp     = _faceplate_flat(cq)
 
     asm.add(bottom, name="bottom", loc=cq.Location(cq.Vector(0, 0, 0)))
     asm.add(front,  name="front",  loc=cq.Location(cq.Vector(0, 0, 0)))
@@ -720,6 +723,66 @@ def layout_svg(path):
     return path
 
 # ===========================================================================
+# SHADED 3D RENDER  (VTK -- populated "all components" hero, optional)
+# ===========================================================================
+
+def _render_parts(cq):
+    """(shape, rgb) for the shell + all representative components, in the assembly
+    frame. Un-mirrored, so it matches the DXF and the parts line up."""
+    fp_loc = (cq.Location(cq.Vector(0, T, H_FRONT))
+              * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), -SLOPE_ANGLE))
+    on_fp = lambda wp: wp.val().moved(fp_loc)
+    ALU=(0.80,0.81,0.84); FACE=(0.22,0.23,0.26); DARK=(0.11,0.11,0.13); PLAT=(0.33,0.34,0.37)
+    P=[]; add=lambda s,c: P.append((s,c))
+    add(cq.Workplane("XY").box(D-2*T, W-2*T, T, centered=False).translate((T,T,0)).val(), ALU)
+    add(cq.Workplane("XY").box(T, W-2*T, H_FRONT, centered=False).translate((0,T,0)).val(), ALU)
+    rl=(cq.Location(cq.Vector(D-T,T,0))*cq.Location(cq.Vector(0,0,0),cq.Vector(0,1,0),90)*cq.Location(cq.Vector(0,0,0),cq.Vector(0,0,1),90))
+    add(_rear_flat(cq).val().moved(rl), ALU)
+    side=cq.Workplane("XZ").polyline([(0,0),(D,0),(D,H_REAR),(0,H_FRONT)]).close().extrude(-T)
+    add(side.val(), ALU); add(side.val().moved(cq.Location(cq.Vector(0,W-T,0))), ALU)
+    add(on_fp(_faceplate_flat(cq)), FACE)
+    cuts,_=faceplate_holes()
+    for label,u,v in PEDALS:
+        ph=platform_h(v); add(_platform_solid(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,0))), PLAT)
+        add(cq.Workplane("XY").box(ASP1_D,ASP1_W,ASP1_H,centered=(True,True,False)).translate((v,u+T,ph)).val(), DARK)
+    for c in cuts:
+        if c["kind"]=="rect" and c["ref"].startswith("SCREEN"):
+            vm=c["v"]+c["h"]/2; um=c["u"]+c["w"]/2; tint=(0.06,0.16,0.20) if "7" in c["ref"] else (0.05,0.08,0.11)
+            add(on_fp(cq.Workplane("XY").box(c["h"]-4,c["w"]-4,1.4).translate((vm,um,T+0.7))), tint)
+        if c["kind"]=="circle" and c["ref"]=="ENCODER": add(on_fp(cq.Workplane("XY").circle(11).extrude(13).translate((c["v"],c["u"],T))),(0.10,0.10,0.12))
+        if c["kind"]=="ring" and c["ref"]=="RING": add(on_fp(cq.Workplane("XY").circle(RING_OD/2).circle(RING_ID/2).extrude(2.2).translate((c["v"],c["u"],T))),(0.62,0.30,0.96))
+        if c["kind"]=="circle" and (c["ref"].endswith("_LED") or c["ref"]=="PWR_LED"):
+            col=(0.95,0.6,0.12) if c["ref"]=="MODE_LED" else (0.20,0.92,0.38)
+            add(on_fp(cq.Workplane("XY").circle(max(c["d"]/2,2.7)).extrude(3.6).translate((c["v"],c["u"],T))), col)
+    blk={"PI":(56,85,24,(0.10,0.45,0.22)),"BOARD":(75,110,16,(0.13,0.32,0.55))}
+    for name,cx,cy,_ in board_mounts():
+        bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
+    return P
+
+def render_png(path, direction=(-0.32, 0.05, 1.0)):
+    """Shaded VTK hero of the populated enclosure (needs cadquery + vtk)."""
+    import cadquery as cq, vtk, numpy as np
+    ren=vtk.vtkRenderer(); ren.SetBackground(0.07,0.10,0.16); ren.SetBackground2(0.02,0.03,0.07); ren.GradientBackgroundOn()
+    for s,rgb in _render_parts(cq):
+        m=vtk.vtkPolyDataMapper(); m.SetInputData(s.toVtkPolyData(0.4,0.25))
+        a=vtk.vtkActor(); a.SetMapper(m); p=a.GetProperty()
+        p.SetColor(*rgb); p.SetInterpolationToPhong(); p.SetSpecular(0.28); p.SetSpecularPower(28); p.SetDiffuse(0.95); p.SetAmbient(0.30)
+        ren.AddActor(a)
+    rw=vtk.vtkRenderWindow(); rw.SetOffScreenRendering(1); rw.AddRenderer(ren); rw.SetSize(1700,1150)
+    ren.ResetCamera(); cam=ren.GetActiveCamera()
+    dv=np.array(direction); dv=dv/np.linalg.norm(dv)
+    cam.SetPosition(*(np.array(cam.GetFocalPoint())+dv*cam.GetDistance())); cam.SetViewUp(0,0,1)
+    ren.ResetCameraClippingRange(); cam.Zoom(1.45)
+    for pos,inten in [((-0.3,-0.8,1.0),1.05),((1.0,0.5,0.5),0.55),((0.2,1.0,0.3),0.45)]:
+        l=vtk.vtkLight(); l.SetPosition(*pos); l.SetIntensity(inten); l.SetLightTypeToCameraLight(); ren.AddLight(l)
+    rw.Render(); w2i=vtk.vtkWindowToImageFilter(); w2i.SetInput(rw); w2i.Update()
+    wr=vtk.vtkPNGWriter(); wr.SetFileName(path); wr.SetInputConnection(w2i.GetOutputPort()); wr.Write()
+    # flip horizontally -> canonical player view (7" left, REC/PLAY leftmost)
+    import matplotlib; matplotlib.use("Agg"); import matplotlib.image as mi
+    mi.imsave(path, mi.imread(path)[:, ::-1])
+    return path
+
+# ===========================================================================
 # MAIN
 # ===========================================================================
 
@@ -762,6 +825,12 @@ def main(argv):
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except Exception as e:  # pragma: no cover
             print(f"\n(STEP skipped: {e})")
+    if "--render" in argv:
+        try:
+            r = render_png(os.path.join(OUT, "vamp_render.png"))
+            print("\nShaded render:\n  out/vamp_render.png")
+        except Exception as e:  # pragma: no cover
+            print(f"\n(render skipped: {e})")
 
 if __name__ == "__main__":
     main(set(sys.argv[1:]))
