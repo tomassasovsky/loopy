@@ -11,3 +11,8 @@ out/*.svg
 
 # scratch scripts
 _*.py
+out/vamp.glb
+out/vamp.gltf
+out/vamp.bin
+out/viewer.html
+out/index.html

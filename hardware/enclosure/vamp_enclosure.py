@@ -732,7 +732,9 @@ def _render_parts(cq):
     fp_loc = (cq.Location(cq.Vector(0, T, H_FRONT))
               * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), -SLOPE_ANGLE))
     on_fp = lambda wp: wp.val().moved(fp_loc)
-    ALU=(0.80,0.81,0.84); FACE=(0.22,0.23,0.26); DARK=(0.11,0.11,0.13); PLAT=(0.33,0.34,0.37)
+    # brighter, more colourful palette (GLTF export darkens, so keep these light)
+    ALU=(0.86,0.88,0.92); FACE=(0.40,0.45,0.55); PED=(0.34,0.35,0.40)
+    PLAT=(0.55,0.57,0.62); STRIP=(0.92,0.40,0.62)
     P=[]; add=lambda s,c: P.append((s,c))
     add(cq.Workplane("XY").box(D-2*T, W-2*T, T, centered=False).translate((T,T,0)).val(), ALU)
     add(cq.Workplane("XY").box(T, W-2*T, H_FRONT, centered=False).translate((0,T,0)).val(), ALU)
@@ -744,17 +746,19 @@ def _render_parts(cq):
     cuts,_=faceplate_holes()
     for label,u,v in PEDALS:
         ph=platform_h(v); add(_platform_solid(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,0))), PLAT)
-        add(cq.Workplane("XY").box(ASP1_D,ASP1_W,ASP1_H,centered=(True,True,False)).translate((v,u+T,ph)).val(), DARK)
+        add(cq.Workplane("XY").box(ASP1_D,ASP1_W,ASP1_H,centered=(True,True,False)).translate((v,u+T,ph)).val(), PED)
+        # pink/magenta bumper strip across the foot-plate (reference accent)
+        add(cq.Workplane("XY").box(16,ASP1_W-8,2,centered=(True,True,False)).translate((v-ASP1_D*0.22,u+T,ph+ASP1_H)).val(), STRIP)
     for c in cuts:
         if c["kind"]=="rect" and c["ref"].startswith("SCREEN"):
-            vm=c["v"]+c["h"]/2; um=c["u"]+c["w"]/2; tint=(0.06,0.16,0.20) if "7" in c["ref"] else (0.05,0.08,0.11)
+            vm=c["v"]+c["h"]/2; um=c["u"]+c["w"]/2; tint=(0.18,0.62,0.55) if "7" in c["ref"] else (0.28,0.40,0.70)
             add(on_fp(cq.Workplane("XY").box(c["h"]-4,c["w"]-4,1.4).translate((vm,um,T+0.7))), tint)
-        if c["kind"]=="circle" and c["ref"]=="ENCODER": add(on_fp(cq.Workplane("XY").circle(11).extrude(13).translate((c["v"],c["u"],T))),(0.10,0.10,0.12))
-        if c["kind"]=="ring" and c["ref"]=="RING": add(on_fp(cq.Workplane("XY").circle(RING_OD/2).circle(RING_ID/2).extrude(2.2).translate((c["v"],c["u"],T))),(0.62,0.30,0.96))
+        if c["kind"]=="circle" and c["ref"]=="ENCODER": add(on_fp(cq.Workplane("XY").circle(11).extrude(13).translate((c["v"],c["u"],T))),(0.18,0.18,0.22))
+        if c["kind"]=="ring" and c["ref"]=="RING": add(on_fp(cq.Workplane("XY").circle(RING_OD/2).circle(RING_ID/2).extrude(2.2).translate((c["v"],c["u"],T))),(0.78,0.45,1.0))
         if c["kind"]=="circle" and (c["ref"].endswith("_LED") or c["ref"]=="PWR_LED"):
-            col=(0.95,0.6,0.12) if c["ref"]=="MODE_LED" else (0.20,0.92,0.38)
+            col=(1.0,0.72,0.20) if c["ref"]=="MODE_LED" else (0.35,1.0,0.50)
             add(on_fp(cq.Workplane("XY").circle(max(c["d"]/2,2.7)).extrude(3.6).translate((c["v"],c["u"],T))), col)
-    blk={"PI":(56,85,24,(0.10,0.45,0.22)),"BOARD":(75,110,16,(0.13,0.32,0.55))}
+    blk={"PI":(56,85,24,(0.20,0.70,0.38)),"BOARD":(75,110,16,(0.26,0.52,0.92))}
     for name,cx,cy,_ in board_mounts():
         bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
     return P
