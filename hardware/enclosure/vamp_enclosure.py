@@ -9,15 +9,18 @@ through-hole indicator LEDs and a 7" + 16" touchscreen pair. Branded **VAMP**.
 Construction (see ../loopy_vamp_enclosure_design.md and
 ../../docs/plan/2026-06-27-feat-vamp-enclosure-rework-plan.md):
 
-  WELDED SHELL (one rigid body)             REMOVABLE / INSERT PARTS
-  - faceplate (sloped top, all cutouts)     - bottom plate (bolted, vented)
-  - front wall (45) + bottom flange         - 10x inner pedal platform (spot-welded)
-  - rear wall (100) + I/O + vents + flange  - 2x screen-retention bracket
-  - 2x side panel + bottom flange
+  WELDED LOWER BODY (one rigid tray)        REMOVABLE TOP LID
+  - front wall (12) + top flange (ledge)    - faceplate pan (sloped top, all cutouts)
+  - rear wall (100) + I/O + vents + flange    + down-turned front/side/rear skirts
+  - 2x side panel + top flange (ledge)        (lid screws on the SKIRTS, not the top)
+  - bottom plate (welded, vented, Pi/board) - 2x screen-retention bracket
+  - 10x inner pedal platform (welded)
 
 Foot controls = ten WHOLE Artesia ASP-1 pedals (100x75x25 mm) standing on the
 welded inner platforms, foot-plates protruding through ~75x100 mm slots. No
-top-face fasteners; pedal wiring stays internal. Service = unbolt the bottom plate.
+top-face fasteners; pedal wiring stays internal. Service = back out the side +
+front-lip screws and lift the lid (screens + ring PCB + LEDs go with it; pedals
+stay on their platforms).
 
 Geometry is validated by an **assertion suite** (`_check()`) run before any output,
 so "the generator runs" means the geometry is valid (width budget, no overlapping
@@ -55,7 +58,8 @@ H_FRONT  = 12.0      # front lip height (low end) -- nearly at the floor; the we
 T        = 2.0       # sheet thickness (2.0 mm 5052-H32 aluminium)
 RI       = 2.0       # inside bend radius (= T, safe for 5052)
 KF       = 0.33      # K-factor for bend-allowance development
-FLANGE   = 18.0      # bottom return-flange depth (PEM-nut land for the bottom plate)
+FLANGE   = 18.0      # return-flange depth (lid skirt + wall top flange)
+LID_FRONT_FL = 9.0   # front-lip flange flat (small, matches the low front wall)
 
 # --- foot pedals: whole Artesia ASP-1 (100 x 75 x 25 mm), PROVISIONAL ---------
 # Measure a real ASP-1 before cutting metal. Mounted 75 across the panel (u),
@@ -202,15 +206,9 @@ def faceplate_holes():
     # power + mode LEDs flanking the encoder
     cuts.append({"kind": "circle", "u": enc_u - RING_OD/2.0 - 13.0, "v": enc_v, "d": D_LEDBZ, "ref": "PWR_LED"})
     cuts.append({"kind": "circle", "u": enc_u + RING_OD/2.0 + 13.0, "v": enc_v, "d": D_LEDBZ, "ref": "MODE_LED"})
-    # --- the faceplate is a REMOVABLE LID: perimeter M4 fixings into the lower-
-    #     body wall top-flange PEM nuts (front edge hooks under a front-wall lip,
-    #     so no fixings in the tight front strip; the pedal slots clear the pedals
-    #     on the way up) -------------------------------------------------------
-    for v in (150.0, 260.0, FP_V - 18.0):
-        cuts.append({"kind": "circle", "u": 18.0, "v": v, "d": D_M4, "ref": "LID_FIX"})
-        cuts.append({"kind": "circle", "u": FP_W - 18.0, "v": v, "d": D_M4, "ref": "LID_FIX"})
-    for u in (230.0, 420.0, 620.0):
-        cuts.append({"kind": "circle", "u": u, "v": FP_V - 16.0, "d": D_M4, "ref": "LID_FIX"})
+    # The lid bolts to the body through its DOWN-TURNED SKIRT FLANGES (front lip +
+    # sides + rear), NOT through this top face -- those screw holes live on the
+    # flanges, added in dxf_faceplate / the render. So nothing more on the top here.
     return cuts, engr
 
 def rear_holes():
@@ -399,56 +397,75 @@ def _emit(msp, feats, ox=0.0, oy=0.0):
 # ---- parts -----------------------------------------------------------------
 
 def dxf_faceplate(path):
-    """REMOVABLE LID: flat sloped plate + all cutouts + perimeter M4 fixings into the
-    wall top-flange PEM nuts. Carries the screens, the encoder/ring PCB and the LEDs;
-    lifts straight up off the pedals for service."""
+    """REMOVABLE LID, developed flat as a CROSS: the sloped top plate (all cutouts)
+    plus DOWN-TURNED skirt flanges -- a small front lip + side + rear flanges. The
+    M4 fixings are ON THE FLANGES (so the screws are hidden on the front/side faces,
+    never on the top); the lid drops over the body, rests on the wall top-flanges and
+    bolts through the skirt into the walls."""
     doc = _doc(); msp = doc.modelspace()
-    _poly(msp, [(0, 0), (FP_W, 0), (FP_W, FP_V), (0, FP_V)], "CUT")
+    ffl, sfl = LID_FRONT_FL, FL          # front-lip flat / side+rear flange flat
+    PW, PV = FP_W, FP_V
+    x0, y0 = sfl, ffl                    # plate origin within the cross blank
+    cross = [(x0, 0), (x0+PW, 0), (x0+PW, ffl), (x0+PW+sfl, ffl), (x0+PW+sfl, ffl+PV),
+             (x0+PW, ffl+PV), (x0+PW, ffl+PV+sfl), (x0, ffl+PV+sfl), (x0, ffl+PV),
+             (0, ffl+PV), (0, ffl), (x0, ffl)]
+    _poly(msp, cross, "CUT")
+    _poly(msp, [(x0, ffl), (x0+PW, ffl)], "BEND", closed=False)            # front fold
+    _poly(msp, [(x0, ffl+PV), (x0+PW, ffl+PV)], "BEND", closed=False)      # rear fold
+    _poly(msp, [(x0, ffl), (x0, ffl+PV)], "BEND", closed=False)           # left fold
+    _poly(msp, [(x0+PW, ffl), (x0+PW, ffl+PV)], "BEND", closed=False)     # right fold
     cuts, engr = faceplate_holes()
-    _emit(msp, cuts)
+    _emit(msp, cuts, ox=x0, oy=ffl)
     for e in engr:
-        _text(msp, e["u"], e["v"], e["h"], e["s"])
-    _text(msp, 10, FP_V + 8, 8, "VAMP FACEPLATE (REMOVABLE LID)  2.0mm 5052  x1  M4 perimeter -> wall PEMs", "NOTE")
+        _text(msp, e["u"]+x0, e["v"]+ffl, e["h"], e["s"])
+    for u in (PW*0.18, PW*0.5, PW*0.82):                                  # front lip + rear flange: clearance (screw + nut)
+        _circle(msp, x0+u, ffl/2.0, D_M4); _circle(msp, x0+u, ffl+PV+sfl/2.0, D_M4)
+    for v in (PV*0.2, PV*0.5, PV*0.8):                                    # side skirts (18mm): PEM nuts (screw threads in from the wall)
+        _circle(msp, sfl/2.0, ffl+v, PEM_M4); _circle(msp, x0+PW+sfl/2.0, ffl+v, PEM_M4)
+    _text(msp, x0+10, ffl+PV+sfl+6, 8, "VAMP FACEPLATE LID  2.0mm  x1  screws on the SKIRT flanges (hidden), not the top", "NOTE")
     doc.saveas(path)
-    return {"blank": (FP_W, FP_V)}
+    return {"blank": (PW + 2*sfl, PV + ffl + sfl)}
 
-def _wall(doc, length, height, label, io=None):
-    """Wall panel: flat web + a TOP return-flange (folded inward) carrying PEM nuts
-    for the removable faceplate lid. The bottom edge WELDS to the bottom plate."""
+def _wall(doc, length, height, label, screw_us, io=None):
+    """Wall panel: flat web + a TOP return-flange (folded inward) that the lid plate
+    RESTS on (support ledge). The lid's down-turned skirt screws into the web -- so
+    the web carries M4 clearance holes near the top (screw heads sit on this outer
+    face, hidden). The bottom edge WELDS to the bottom plate."""
     msp = doc.modelspace()
     _poly(msp, [(0, 0), (length, 0), (length, height + FL), (0, height + FL)], "CUT")
-    _poly(msp, [(0, height), (length, height)], "BEND", closed=False)   # top fold (flange)
+    _poly(msp, [(0, height), (length, height)], "BEND", closed=False)   # top fold (ledge)
     _poly(msp, [(0, 0), (length, 0)], "WELD", closed=False)             # bottom edge -> weld to plate
-    n = max(2, int(length // 120))
-    for k in range(n + 1):                                              # PEM clinch holes for the lid
-        x = 20 + k * (length - 40) / n
-        _circle(msp, x, height + FL/2.0, PEM_M4)
+    for x in screw_us:                                                  # lid-skirt screws, near the top of the web
+        _circle(msp, x, height - 7.0, D_M4)
     if io:
         _emit(msp, io)
     _text(msp, 10, height + FL + 6, 8, label, "NOTE")
 
 def dxf_front(path):
-    doc = _doc(); _wall(doc, W - 2*T, H_FRONT, "VAMP FRONT  2.0mm  x1  bottom WELD, top flange = lid PEM")
+    us = [(W-2*T)*f for f in (0.18, 0.5, 0.82)]
+    doc = _doc(); _wall(doc, W - 2*T, H_FRONT, "VAMP FRONT  2.0mm  x1  bottom WELD, top flange = lid ledge", us)
     doc.saveas(path); return {}
 
 def dxf_rear(path):
-    doc = _doc(); _wall(doc, W - 2*T, H_REAR, "VAMP REAR  2.0mm  x1  I/O + vents + earth; top flange = lid PEM", io=rear_holes())
+    us = [(W-2*T)*f for f in (0.18, 0.5, 0.82)]
+    doc = _doc(); _wall(doc, W - 2*T, H_REAR, "VAMP REAR  2.0mm  x1  I/O + vents + earth; top flange = lid ledge", us, io=rear_holes())
     doc.saveas(path); return {}
 
 def dxf_side(path, hand):
-    """Trapezoid side web + a TOP (sloped) return-flange carrying PEM nuts for the
-    removable lid. Bottom edge WELDS to the bottom plate."""
+    """Trapezoid side web + a TOP (sloped) return-flange the lid rests on. The lid's
+    side skirt screws into the web -> M4 clearance holes near the sloped top edge.
+    Bottom edge WELDS to the bottom plate."""
     doc = _doc(); msp = doc.modelspace()
     drop, L = SLOPE_DROP, L_SLOPE
     nx, ny = -drop / L, D / L                       # outward normal of the sloped top edge
     t1 = (D + nx*FL, H_REAR + ny*FL); t2 = (0 + nx*FL, H_FRONT + ny*FL)
     _poly(msp, [(0, 0), (D, 0), (D, H_REAR), t1, t2, (0, H_FRONT)], "CUT")
-    _poly(msp, [(0, H_FRONT), (D, H_REAR)], "BEND", closed=False)        # top sloped fold (flange)
+    _poly(msp, [(0, H_FRONT), (D, H_REAR)], "BEND", closed=False)        # top sloped fold (ledge)
     _poly(msp, [(0, 0), (D, 0)], "WELD", closed=False)                   # bottom edge -> weld to plate
-    for frac in (0.12, 0.4, 0.68, 0.92):                                # PEM for lid on the flange
+    for frac in (0.2, 0.5, 0.8):                                         # lid-skirt screws below the sloped top
         x = frac * D; yedge = H_FRONT + drop * (x / D)
-        _circle(msp, x + nx*FL/2.0, yedge + ny*FL/2.0, PEM_M4)
-    _text(msp, 20, 20, 8, f"VAMP SIDE_{hand}  2.0mm  x1  bottom WELD, top flange = lid PEM", "NOTE")
+        _circle(msp, x, yedge - 8.0, D_M4)
+    _text(msp, 20, 20, 8, f"VAMP SIDE_{hand}  2.0mm  x1  bottom WELD, top flange = lid ledge", "NOTE")
     doc.saveas(path); return {}
 
 def dxf_bottom(path):
@@ -731,7 +748,7 @@ def layout_svg(path):
         elif c["kind"] == "rect":
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + H_REAR + 28
-    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: remove the vented bottom plate</text>')
+    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the side + front-lip screws, lift the lid</text>')
     e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
@@ -760,6 +777,13 @@ def _render_parts(cq, explode=0.0):
     side=cq.Workplane("XZ").polyline([(0,0),(D,0),(D,H_REAR),(0,H_FRONT)]).close().extrude(-T)
     add(side.val(), ALU); add(side.val().moved(cq.Location(cq.Vector(0,W-T,0))), ALU)
     add(on_fp(_faceplate_flat(cq)), FACE)
+    # lid skirt flanges: down-turned on the front (small lip), rear and both sides --
+    # these carry the lid screws on faces OTHER than the top, and lift with the lid.
+    for box,pos in (((T,FP_W,LID_FRONT_FL),(0,0,-LID_FRONT_FL)),         # front lip
+                    ((T,FP_W,FLANGE),(FP_V-T,0,-FLANGE)),               # rear
+                    ((FP_V,T,FLANGE),(0,0,-FLANGE)),                    # left
+                    ((FP_V,T,FLANGE),(0,FP_W-T,-FLANGE))):              # right
+        add(on_fp(cq.Workplane("XY").box(*box,centered=False).translate(pos)), FACE)
     cuts,_=faceplate_holes()
     for label,u,v in PEDALS:
         ph=platform_h(v); add(_platform_solid(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,0))), PLAT)
@@ -792,6 +816,13 @@ def _render_parts(cq, explode=0.0):
         for dx in (-sx/2,sx/2):
             for dy in (-sy/2,sy/2):
                 add(cq.Workplane("XY").circle(3).extrude(STANDOFF_H).translate((gx(cy+dy),gy(cx+dx),0)).val(), BRASS)
+    # --- lid screws on the wall faces (NOT the top): front lip + both sides -------
+    for f in (0.18,0.5,0.82):                        # front wall, into the lid front lip
+        add(cq.Solid.makeCylinder(3.5,2.5,cq.Vector(0,(W-2*T)*f+T,H_FRONT-7),cq.Vector(-1,0,0)), SCR)
+    for f in (0.2,0.5,0.8):                          # side walls, into the lid side skirts
+        v=f*D; z=H_FRONT+SLOPE_DROP*(v/D)-8
+        add(cq.Solid.makeCylinder(3.5,2.5,cq.Vector(v,0,z),cq.Vector(0,-1,0)), SCR)
+        add(cq.Solid.makeCylinder(3.5,2.5,cq.Vector(v,W,z),cq.Vector(0,1,0)), SCR)
     return P
 
 def render_png(path, direction=(-0.32, 0.05, 1.0), explode=0.0):

@@ -32,27 +32,33 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 
 **Construction = welded lower body + removable top lid.** The front wall, rear
 wall, two sides and the bottom plate are **welded** into a rigid tray; the
-**faceplate is a removable lid** that bolts down at the perimeter (M4 into PEM nuts
-in the walls' **top** return-flanges). Lifting the lid takes the **screens, the
-encoder/ring PCB and the indicator LEDs** with it, while the **pedals stay on their
-welded platforms** in the lower body (the slots clear the pedals straight up) — so
-service is "unbolt the perimeter and lift the lid," and the Pi/board are reached
-from the open top.
+**faceplate is a removable lid**. The faceplate is **not a bare plate** — it is a
+shallow pan whose front lip, rear edge and **both sides fold down into skirt
+flanges**, and the **screws go through those skirt flanges**, never through the
+faceplate's top face. The lid drops over the body, **resting on the walls' inward
+top flanges** (a support ledge), and M4 screws pass through each **wall web** into
+the down-turned **lid skirt** behind it — so every fixing sits on a vertical face
+(front lip + the two sides), hidden from the playing surface. Lifting the lid takes
+the **screens, the encoder/ring PCB and the indicator LEDs** with it, while the
+**pedals stay on their welded platforms** in the lower body (the slots clear the
+pedals straight up) — so service is "back out the side + front-lip screws and lift
+the lid," and the Pi/board are reached from the open top.
 
 ```
   REMOVABLE TOP LID                       WELDED LOWER BODY
-  └ faceplate (cutouts) + screens +       ├ front wall (12) + top flange (lid PEM)
-    encoder/ring PCB + indicator LEDs     ├ rear wall (100) + I/O + vents + top flange
-                                          ├ 2× side panel + top flange
-                                          ├ bottom plate (welded, vented, Pi/board)
+  └ faceplate pan (cutouts) + down-turned ├ front wall (12) + top flange (lid ledge)
+    front/side/rear skirt flanges +       ├ rear wall (100) + I/O + vents + top flange
+    screens + encoder/ring PCB + LEDs     ├ 2× side panel + top flange (lid ledge)
+    (screws through the skirts)           ├ bottom plate (welded, vented, Pi/board)
                                           └ 10× inner pedal platform (welded) + pedals
 ```
 
 Joints are `WELD`-layer callouts, not modelled beads. Per-edge intent: the wall
 **bottom edges weld** to the bottom plate; the wall+side **top edges fold** to an
-inward flange that carries the **PEM nuts for the lid**; the lid bolts down onto
-those flanges (its **front edge hooks under a front-wall lip**, so no fixings sit
-in the tight front strip).
+inward flange that the lid **rests on** (support ledge, no fixings on the top face);
+the lid's **down-turned skirt flanges** take M4 screws driven horizontally through
+the **wall webs** (front lip + both sides), so no fixing ever pierces the faceplate
+surface.
 
 ---
 
@@ -149,7 +155,9 @@ feet. The electronics are reached from the **open top** once the lid is lifted.
 - Folded edges (wall bottom flanges): 90°, inside R = `t` = 2.0, **K 0.33** → bend
   allowance 4.18 mm. Welded edges get a weld gap, no allowance.
 - **PEM:** clinch hole Ø6.3 (distinct from M4 Ø4.3 clearance), ≥ 8 mm edge distance
-  — the 18 mm flanges host them.
+  — the **18 mm side skirt flanges** host them, so the lid threads straight onto the
+  side screws; the **wall webs** get Ø4.3 clearance, and the shallow **9 mm front lip**
+  is a clearance hole + nut (too short for a clinch nut).
 - DXF layers: `CUT` (thru) · `BEND` (score) · `WELD` (callout) · `VENT` ·
   `ENGRAVE` · `NOTE`.
 - Finish: deburr → powder coat (mask bond pads).
@@ -203,8 +211,8 @@ the assertions re-validate before re-cutting every panel.
 | item | qty | note |
 |------|-----|------|
 | 2.0 mm 5052-H32 sheet | ~1.1 m² | shell + bottom + platforms + brackets |
-| PEM M4 clinch nuts | ~16 | bottom-plate fixings |
-| M4 screws | ~16 | bottom plate |
+| PEM M4 clinch nuts | ~6 | lid side-skirt fixings |
+| M4 screws (+ ~6 nuts) | ~12 | lid skirt: 6 side (into PEM) + 6 front/rear (screw + nut) |
 | M3 standoffs (≥10 mm) | ~6 | Pi / board, airflow gap |
 | M6 earth stud + hardware | 1 | chassis bond |
 | Rubber feet | 4 | bottom |
