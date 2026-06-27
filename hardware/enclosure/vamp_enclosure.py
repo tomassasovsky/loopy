@@ -202,6 +202,15 @@ def faceplate_holes():
     # power + mode LEDs flanking the encoder
     cuts.append({"kind": "circle", "u": enc_u - RING_OD/2.0 - 13.0, "v": enc_v, "d": D_LEDBZ, "ref": "PWR_LED"})
     cuts.append({"kind": "circle", "u": enc_u + RING_OD/2.0 + 13.0, "v": enc_v, "d": D_LEDBZ, "ref": "MODE_LED"})
+    # --- the faceplate is a REMOVABLE LID: perimeter M4 fixings into the lower-
+    #     body wall top-flange PEM nuts (front edge hooks under a front-wall lip,
+    #     so no fixings in the tight front strip; the pedal slots clear the pedals
+    #     on the way up) -------------------------------------------------------
+    for v in (150.0, 260.0, FP_V - 18.0):
+        cuts.append({"kind": "circle", "u": 18.0, "v": v, "d": D_M4, "ref": "LID_FIX"})
+        cuts.append({"kind": "circle", "u": FP_W - 18.0, "v": v, "d": D_M4, "ref": "LID_FIX"})
+    for u in (230.0, 420.0, 620.0):
+        cuts.append({"kind": "circle", "u": u, "v": FP_V - 16.0, "d": D_M4, "ref": "LID_FIX"})
     return cuts, engr
 
 def rear_holes():
@@ -390,57 +399,67 @@ def _emit(msp, feats, ox=0.0, oy=0.0):
 # ---- parts -----------------------------------------------------------------
 
 def dxf_faceplate(path):
-    """Flat top plate (welded to front/rear/sides) + all cutouts. No flanges."""
+    """REMOVABLE LID: flat sloped plate + all cutouts + perimeter M4 fixings into the
+    wall top-flange PEM nuts. Carries the screens, the encoder/ring PCB and the LEDs;
+    lifts straight up off the pedals for service."""
     doc = _doc(); msp = doc.modelspace()
     _poly(msp, [(0, 0), (FP_W, 0), (FP_W, FP_V), (0, FP_V)], "CUT")
     cuts, engr = faceplate_holes()
     _emit(msp, cuts)
     for e in engr:
         _text(msp, e["u"], e["v"], e["h"], e["s"])
-    _text(msp, 10, FP_V + 8, 8, "VAMP FACEPLATE  2.0mm 5052  x1  WELD all 4 edges to shell", "NOTE")
+    _text(msp, 10, FP_V + 8, 8, "VAMP FACEPLATE (REMOVABLE LID)  2.0mm 5052  x1  M4 perimeter -> wall PEMs", "NOTE")
     doc.saveas(path)
     return {"blank": (FP_W, FP_V)}
 
 def _wall(doc, length, height, label, io=None):
-    """A wall panel: flat web (length x height) + a bottom return-flange (folded
-    inward for the bottom plate's PEM nuts). io = optional feature list."""
+    """Wall panel: flat web + a TOP return-flange (folded inward) carrying PEM nuts
+    for the removable faceplate lid. The bottom edge WELDS to the bottom plate."""
     msp = doc.modelspace()
-    _poly(msp, [(0, -FL), (length, -FL), (length, height), (0, height)], "CUT")
-    _poly(msp, [(0, 0), (length, 0)], "BEND", closed=False)            # bottom fold
-    # PEM clinch holes along the bottom flange
+    _poly(msp, [(0, 0), (length, 0), (length, height + FL), (0, height + FL)], "CUT")
+    _poly(msp, [(0, height), (length, height)], "BEND", closed=False)   # top fold (flange)
+    _poly(msp, [(0, 0), (length, 0)], "WELD", closed=False)             # bottom edge -> weld to plate
     n = max(2, int(length // 120))
-    for k in range(n + 1):
+    for k in range(n + 1):                                              # PEM clinch holes for the lid
         x = 20 + k * (length - 40) / n
-        _circle(msp, x, -FL/2.0, PEM_M4, "WELD" if False else "CUT")
+        _circle(msp, x, height + FL/2.0, PEM_M4)
     if io:
         _emit(msp, io)
-    _text(msp, 10, height + 6, 8, label, "NOTE")
+    _text(msp, 10, height + FL + 6, 8, label, "NOTE")
 
 def dxf_front(path):
-    doc = _doc(); _wall(doc, W - 2*T, H_FRONT, "VAMP FRONT  2.0mm  x1  bottom flange fold")
+    doc = _doc(); _wall(doc, W - 2*T, H_FRONT, "VAMP FRONT  2.0mm  x1  bottom WELD, top flange = lid PEM")
     doc.saveas(path); return {}
 
 def dxf_rear(path):
-    doc = _doc(); _wall(doc, W - 2*T, H_REAR, "VAMP REAR  2.0mm  x1  I/O + vents + earth", io=rear_holes())
+    doc = _doc(); _wall(doc, W - 2*T, H_REAR, "VAMP REAR  2.0mm  x1  I/O + vents + earth; top flange = lid PEM", io=rear_holes())
     doc.saveas(path); return {}
 
 def dxf_side(path, hand):
-    """Trapezoid side web + bottom return-flange (fold)."""
+    """Trapezoid side web + a TOP (sloped) return-flange carrying PEM nuts for the
+    removable lid. Bottom edge WELDS to the bottom plate."""
     doc = _doc(); msp = doc.modelspace()
-    _poly(msp, [(0, -FL), (D, -FL), (D, H_REAR), (0, H_FRONT)], "CUT")
-    _poly(msp, [(0, 0), (D, 0)], "BEND", closed=False)
-    _poly(msp, [(0, H_FRONT), (D, H_REAR)], "WELD", closed=False)  # weld edge to faceplate
-    for x in (40.0, D/2.0, D-40.0):
-        _circle(msp, x, -FL/2.0, PEM_M4)
-    _text(msp, 20, 20, 8, f"VAMP SIDE_{hand}  2.0mm  x1  top edge WELD to faceplate", "NOTE")
+    drop, L = SLOPE_DROP, L_SLOPE
+    nx, ny = -drop / L, D / L                       # outward normal of the sloped top edge
+    t1 = (D + nx*FL, H_REAR + ny*FL); t2 = (0 + nx*FL, H_FRONT + ny*FL)
+    _poly(msp, [(0, 0), (D, 0), (D, H_REAR), t1, t2, (0, H_FRONT)], "CUT")
+    _poly(msp, [(0, H_FRONT), (D, H_REAR)], "BEND", closed=False)        # top sloped fold (flange)
+    _poly(msp, [(0, 0), (D, 0)], "WELD", closed=False)                   # bottom edge -> weld to plate
+    for frac in (0.12, 0.4, 0.68, 0.92):                                # PEM for lid on the flange
+        x = frac * D; yedge = H_FRONT + drop * (x / D)
+        _circle(msp, x + nx*FL/2.0, yedge + ny*FL/2.0, PEM_M4)
+    _text(msp, 20, 20, 8, f"VAMP SIDE_{hand}  2.0mm  x1  bottom WELD, top flange = lid PEM", "NOTE")
     doc.saveas(path); return {}
 
 def dxf_bottom(path):
-    """Removable vented bottom plate: vents + Pi standoff holes + perimeter M4
-    clearance (bolts up into the shell's bottom-flange PEM nuts) + feet + ground."""
+    """Vented bottom plate, WELDED to the wall bottom edges (part of the lower body):
+    vents + Pi/board M3 standoff holes + rubber feet. The Pi/board are reached from
+    the top once the faceplate lid is lifted off."""
     doc = _doc(); msp = doc.modelspace()
     bw, bd = W - 2*T, D - 2*T
     _poly(msp, [(0, 0), (bw, 0), (bw, bd), (0, bd)], "CUT")
+    for e in ([(0,0),(bw,0)], [(0,bd),(bw,bd)], [(0,0),(0,bd)], [(bw,0),(bw,bd)]):
+        _poly(msp, e, "WELD", closed=False)        # all 4 edges WELD to the wall bottoms
     _emit(msp, _bottom_vents_local(bw, bd))
     # Pi + loopy_pi_main board M3 standoff patterns (rear clear zone)
     for name, cx, cy, (sx, sy) in board_mounts():
@@ -448,17 +467,10 @@ def dxf_bottom(path):
             for dy in (-sy/2, sy/2):
                 _circle(msp, cx+dx, cy+dy, D_M3)
         _text(msp, cx - sx/2, cy + sy/2 + 4, 5, name, "NOTE")
-    # perimeter M4 clearance to the shell flanges
-    for x in (25, bw/2, bw-25):
-        _circle(msp, x, 12, D_M4); _circle(msp, x, bd-12, D_M4)
-    for y in (bd*0.33, bd*0.66):
-        _circle(msp, 12, y, D_M4); _circle(msp, bw-12, y, D_M4)
-    # feet + masked ground contact pad note
-    for x in (35, bw-35):
+    for x in (35, bw-35):                          # rubber feet
         for y in (35, bd-35):
             _circle(msp, x, y, D_FOOT)
-    _text(msp, 25, bd-10, 5, "MASK powder-coat at perimeter M4 pads (chassis bond)", "WELD")
-    _text(msp, 10, bd+6, 8, "VAMP BOTTOM (removable)  2.0mm  x1  vented + Pi/board M3 standoffs", "NOTE")
+    _text(msp, 10, bd+6, 8, "VAMP BOTTOM (WELDED to lower body)  2.0mm  x1  vented + Pi/board M3 standoffs", "NOTE")
     doc.saveas(path); return {}
 
 def _bottom_vents_local(bw, bd):
@@ -644,7 +656,8 @@ def report():
     P(f"Envelope        : {W:.0f} W x {D:.0f} D x {H_REAR:.0f} H mm (front lip {H_FRONT:.0f})")
     P(f"Top slope       : {SLOPE_ANGLE:.2f}deg, sloped length {L_SLOPE:.1f} mm")
     P(f"Material        : {T:.1f} mm 5052-H32 Al, bend R {RI:.1f}, K={KF}, BA90 {BA90:.2f}")
-    P(f"Construction    : WELDED shell + removable bottom plate (service)")
+    P(f"Construction    : welded lower body + REMOVABLE TOP LID (faceplate carries")
+    P(f"                  screens + encoder/ring PCB + LEDs; pedals stay on platforms)")
     P("-"*68)
     n1 = sum(1 for _, _, v in PEDALS if v == PEDAL_ROW1_V)
     P(f"Foot pedals     : {len(PEDALS)}x WHOLE Artesia ASP-1 ({ASP1_W:.0f}x{ASP1_D:.0f}x{ASP1_H:.0f}mm)")
@@ -729,10 +742,11 @@ def layout_svg(path):
 # SHADED 3D RENDER  (VTK -- populated "all components" hero, optional)
 # ===========================================================================
 
-def _render_parts(cq):
-    """(shape, rgb) for the shell + all representative components, in the assembly
-    frame. Un-mirrored, so it matches the DXF and the parts line up."""
-    fp_loc = (cq.Location(cq.Vector(0, T, H_FRONT))
+def _render_parts(cq, explode=0.0):
+    """(shape, rgb) for the lower body + all representative components. Un-mirrored,
+    matches the DXF. explode>0 lifts the LID parts (faceplate + screens + encoder/
+    ring + LEDs) straight up while the pedals/platforms/body stay -- shows service."""
+    fp_loc = (cq.Location(cq.Vector(0, T, H_FRONT + explode))
               * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), -SLOPE_ANGLE))
     on_fp = lambda wp: wp.val().moved(fp_loc)
     # brighter, more colourful palette (GLTF export darkens, so keep these light)
@@ -780,11 +794,12 @@ def _render_parts(cq):
                 add(cq.Workplane("XY").circle(3).extrude(STANDOFF_H).translate((gx(cy+dy),gy(cx+dx),0)).val(), BRASS)
     return P
 
-def render_png(path, direction=(-0.32, 0.05, 1.0)):
-    """Shaded VTK hero of the populated enclosure (needs cadquery + vtk)."""
+def render_png(path, direction=(-0.32, 0.05, 1.0), explode=0.0):
+    """Shaded VTK hero of the populated enclosure (needs cadquery + vtk).
+    explode>0 raises the removable lid to show how it comes apart."""
     import cadquery as cq, vtk, numpy as np
     ren=vtk.vtkRenderer(); ren.SetBackground(0.07,0.10,0.16); ren.SetBackground2(0.02,0.03,0.07); ren.GradientBackgroundOn()
-    for s,rgb in _render_parts(cq):
+    for s,rgb in _render_parts(cq, explode):
         m=vtk.vtkPolyDataMapper(); m.SetInputData(s.toVtkPolyData(0.4,0.25))
         a=vtk.vtkActor(); a.SetMapper(m); p=a.GetProperty()
         p.SetColor(*rgb); p.SetInterpolationToPhong(); p.SetSpecular(0.28); p.SetSpecularPower(28); p.SetDiffuse(0.95); p.SetAmbient(0.30)

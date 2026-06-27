@@ -25,29 +25,34 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 | dimension | value | note |
 |-----------|-------|------|
 | Width `W` | **850 mm** | reference footprint |
-| Depth `D` | **412 mm** | sized to a comfortable gap behind the front row (no dead band) |
-| Rear height | **100 mm** / front lip **45 mm** | wedge |
-| Top slope | **7.6°** | sloped length 416 mm |
+| Depth `D` | **397 mm** | sized to a comfortable gap behind the front row (no dead band) |
+| Rear height | **100 mm** / front lip **12 mm** | low-raked wedge |
+| Top slope | **12.5°** | sloped length 407 mm |
 | Material | **2.0 mm 5052-H32 aluminium** | bend R 2.0, K 0.33 |
 
-**Construction = welded shell + removable bottom plate.** The faceplate (sloped
-top), front wall, rear wall and two side panels are **welded** into one rigid
-body; the **bottom plate bolts on** (M4 into PEM nuts in the walls' bottom
-return-flanges). Service = flip the unit, unbolt the bottom — the pedals stay on
-their fixed platforms and never have to clear the top.
+**Construction = welded lower body + removable top lid.** The front wall, rear
+wall, two sides and the bottom plate are **welded** into a rigid tray; the
+**faceplate is a removable lid** that bolts down at the perimeter (M4 into PEM nuts
+in the walls' **top** return-flanges). Lifting the lid takes the **screens, the
+encoder/ring PCB and the indicator LEDs** with it, while the **pedals stay on their
+welded platforms** in the lower body (the slots clear the pedals straight up) — so
+service is "unbolt the perimeter and lift the lid," and the Pi/board are reached
+from the open top.
 
 ```
-  WELDED SHELL (one body)                 REMOVABLE / INSERT PARTS
-  ├ faceplate (sloped top, all cutouts)   ├ bottom plate (bolted, vented)
-  ├ front wall (45) + bottom flange       ├ 10× inner pedal platform (spot-welded)
-  ├ rear wall (100) + I/O + vents + flange├ screen-retention brackets (×4 + ×4)
-  └ 2× side panel + bottom flange
+  REMOVABLE TOP LID                       WELDED LOWER BODY
+  └ faceplate (cutouts) + screens +       ├ front wall (12) + top flange (lid PEM)
+    encoder/ring PCB + indicator LEDs     ├ rear wall (100) + I/O + vents + top flange
+                                          ├ 2× side panel + top flange
+                                          ├ bottom plate (welded, vented, Pi/board)
+                                          └ 10× inner pedal platform (welded) + pedals
 ```
 
-Weld joints are **callouts** (a `WELD` DXF layer + drawing notes), not modelled
-beads. Per-edge intent: the wall **bottom edges fold** (return-flange = PEM-nut
-land for the bottom plate); the wall **top edges weld** to the faceplate; the side
-**sloped top edges weld** to the faceplate.
+Joints are `WELD`-layer callouts, not modelled beads. Per-edge intent: the wall
+**bottom edges weld** to the bottom plate; the wall+side **top edges fold** to an
+inward flange that carries the **PEM nuts for the lid**; the lid bolts down onto
+those flanges (its **front edge hooks under a front-wall lip**, so no fixings sit
+in the tight front strip).
 
 ---
 
@@ -130,12 +135,12 @@ standoffs** (≥ `STANDOFF_H` for under-board airflow), linked by the 40-pin rib
 faceplate underside behind the encoder cutout; the **screens** clamp to the
 faceplate from behind (`screen_bracket`).
 
-The **bottom plate** (`board_mounts()` drives the patterns) carries: the **Pi**
-(58 × 49 M3) and **`loopy_pi_main` board** (110 × 75 M3, **provisional — confirm vs
-the board**) standoff holes in the rear; an **intake-vent block** in the clear gap
-between the two platform rows (air crosses the boards to the rear-wall exhaust);
-4 rubber feet; perimeter M4 clearance into the wall-flange PEM nuts; and masked
-ground pads. Bolting up from underneath, it lifts off for full service access.
+The **bottom plate** (`board_mounts()` drives the patterns) is **welded** to the
+wall bottom edges (part of the lower body) and carries: the **Pi** (58 × 49 M3) and
+**`loopy_pi_main` board** (110 × 75 M3, **provisional — confirm vs the board**)
+standoff holes in the rear; an **intake-vent block** in the clear gap between the
+two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubber
+feet. The electronics are reached from the **open top** once the lid is lifted.
 
 ---
 
