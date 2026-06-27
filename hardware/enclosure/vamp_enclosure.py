@@ -45,8 +45,9 @@ OUT = os.path.join(HERE, "out")
 # ===========================================================================
 
 W        = 850.0     # overall width
-D        = 412.0     # overall depth (front lip -> rear wall) -- sized so the screen
-                     # block sits a comfortable FRONT_GAP behind the front pedal row
+D        = 424.0     # overall depth (front lip -> rear wall) -- sized so the screen
+                     # block sits FRONT_GAP behind the front row AND the rear margin
+                     # matches the uniform EDGE margin (no dead band, even borders)
 H_REAR   = 100.0     # rear wall height (tall end, behind the main screen)
 H_FRONT  = 45.0      # front lip height (low end, nearest the player)
 
@@ -95,7 +96,8 @@ VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
 VENT_PITCH  = 9.0             # slot row pitch
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
 STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
-STANDOFF_PITCH = (58.0, 49.0) # Raspberry Pi mounting holes
+PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M3)
+BOARD_HOLES = (110.0, 75.0)   # loopy_pi_main board mounting rectangle (M3) -- PROVISIONAL
 D_FOOT    = 8.0      # rubber-foot fixing
 
 # --- fasteners ----------------------------------------------------------------
@@ -141,12 +143,13 @@ PLATFORM_H = lid_top_z(FSW_V) + FOOTPLATE_PROUD - ASP1_H
 # 4 tracks, with a centre gap) and an upper CENTRE pair (CLEAR/BANK). Each pedal
 # is a whole ASP-1 on a welded platform; a status LED sits directly ABOVE each
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
-PEDAL_ROW1_V = 80.0      # front row centre
-S7_U         = 30.0      # 7" screen left edge
+EDGE         = 30.0      # uniform edge margin (sides / front / rear)
 LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear)
 FRONT_GAP    = 65.0      # gap between the front-row rear edge and the screen block
-# The screen block sits just behind the front row; its TOP edge is the rearmost
-# control and sets how deep the enclosure needs to be (D is sized to suit).
+PEDAL_ROW1_V = EDGE + FSW_SLOT_D / 2.0     # front-row centre -> front margin = EDGE
+S7_U         = EDGE                         # 7" screen left margin = EDGE
+# The screen block sits FRONT_GAP behind the front row; its TOP edge is the rearmost
+# control. D is chosen so FP_V - SCREEN_TOP_V (rear margin) also equals EDGE.
 SCREEN_TOP_V = PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + FRONT_GAP + BIG_H
 # CLEAR/BANK sit so their BOTTOM (front) edge aligns with the 16" screen's bottom.
 PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
@@ -154,15 +157,18 @@ PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
 # Front row of 8, EVENLY spaced across the faceplate (no 4+4 grouping).
 _ROW1 = ["REC/PLAY", "STOP", "UNDO", "MODE", "TRACK1", "TRACK2", "TRACK3", "TRACK4"]
 def _row1_u(i):
-    return FP_W * (i + 0.5) / 8.0
+    """Evenly spaced across the faceplate inside the EDGE margin."""
+    first = EDGE + FSW_SLOT_W / 2.0
+    last  = FP_W - EDGE - FSW_SLOT_W / 2.0
+    return first + (last - first) * i / (len(_ROW1) - 1)
 
 # CLEAR/BANK ride row 2, aligned in u with UNDO (i=2) and MODE (i=3).
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
     ("CLEAR", _row1_u(2), PEDAL_ROW2_V), ("BANK", _row1_u(3), PEDAL_ROW2_V)]
 
-# Only the four TRACK pedals carry a status LED (reference: track state).
+# Status-LED pedals: the 4 tracks + REC/PLAY + CLEAR + BANK = loopy's 7 indicators.
 def _has_led(label):
-    return label.startswith("TRACK")
+    return label in ("REC/PLAY", "CLEAR", "BANK") or label.startswith("TRACK")
 
 def platform_h(v):
     """Platform shelf height that lands the ASP-1 foot-plate flush+proud at depth v."""
@@ -181,8 +187,8 @@ def faceplate_holes():
             cuts.append({"kind": "circle", "u": u, "v": v + FSW_SLOT_D/2 + LED_GAP,
                          "d": D_LED, "ref": label + "_LED"})
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
-    cuts.append({"kind": "rect", "u": S7_U,  "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
-    cuts.append({"kind": "rect", "u": 460.0, "v": SCREEN_TOP_V - BIG_H,   "w": BIG_W,   "h": BIG_H,   "ref": "SCREEN_16IN"})
+    cuts.append({"kind": "rect", "u": S7_U, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
+    cuts.append({"kind": "rect", "u": FP_W - EDGE - BIG_W, "v": SCREEN_TOP_V - BIG_H, "w": BIG_W, "h": BIG_H, "ref": "SCREEN_16IN"})
     # --- encoder + diffused ring: left of CLEAR/BANK, on their height centre --
     #     line, and centred under the 7" (left) screen -------------------------
     enc_v = PEDAL_ROW2_V                 # CLEAR/BANK height centre
@@ -318,7 +324,19 @@ def _check():
     return True
 
 def _bottom_vents():
-    return _vent_array(u0=W/2 - 120, z0=D/2 - 30, cols=6, rows=8)
+    return _bottom_vents_local(W - 2*T, D - 2*T)
+
+# --- internal board mounting -------------------------------------------------
+# Bottom-plate frame: x = width (0..W-2T), y = depth (0..D-2T, 0 = front).
+# The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
+# REAR strip of the bottom plate is the clear floor for the electronics. The Pi
+# and the loopy_pi_main board mount there on M3 standoffs (>= STANDOFF_H for
+# airflow), linked by the 40-pin ribbon; the 16" screen above is shallow so it
+# does not reach the floor. (BOARD_HOLES provisional -- confirm vs the board.)
+def board_mounts():
+    bw, bd = W - 2*T, D - 2*T
+    yr = bd - 72.0
+    return [("PI", bw*0.27, yr, PI_HOLES), ("BOARD", bw*0.62, yr, BOARD_HOLES)]
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -421,12 +439,12 @@ def dxf_bottom(path):
     bw, bd = W - 2*T, D - 2*T
     _poly(msp, [(0, 0), (bw, 0), (bw, bd), (0, bd)], "CUT")
     _emit(msp, _bottom_vents_local(bw, bd))
-    # Pi standoff pattern (M3 clearance holes; standoffs lift the Pi STANDOFF_H)
-    sx, sy = STANDOFF_PITCH
-    cx, cy = bw*0.30, bd*0.5
-    for dx in (-sx/2, sx/2):
-        for dy in (-sy/2, sy/2):
-            _circle(msp, cx+dx, cy+dy, D_M3)
+    # Pi + loopy_pi_main board M3 standoff patterns (rear clear zone)
+    for name, cx, cy, (sx, sy) in board_mounts():
+        for dx in (-sx/2, sx/2):
+            for dy in (-sy/2, sy/2):
+                _circle(msp, cx+dx, cy+dy, D_M3)
+        _text(msp, cx - sx/2, cy + sy/2 + 4, 5, name, "NOTE")
     # perimeter M4 clearance to the shell flanges
     for x in (25, bw/2, bw-25):
         _circle(msp, x, 12, D_M4); _circle(msp, x, bd-12, D_M4)
@@ -437,13 +455,17 @@ def dxf_bottom(path):
         for y in (35, bd-35):
             _circle(msp, x, y, D_FOOT)
     _text(msp, 25, bd-10, 5, "MASK powder-coat at perimeter M4 pads (chassis bond)", "WELD")
-    _text(msp, 10, bd+6, 8, "VAMP BOTTOM (removable)  2.0mm  x1  vented + Pi standoffs", "NOTE")
+    _text(msp, 10, bd+6, 8, "VAMP BOTTOM (removable)  2.0mm  x1  vented + Pi/board M3 standoffs", "NOTE")
     doc.saveas(path); return {}
 
 def _bottom_vents_local(bw, bd):
+    """Intake-vent block in the clear gap between the front and CLEAR/BANK platform
+    rows (air enters here, crosses the boards, exits the rear-wall vents)."""
     sl, sw = VENT_SLOT
-    cols, rows = 6, 8
-    u0, v0 = bw/2 - (cols*(sl+14))/2, bd/2 - (rows*VENT_PITCH)/2
+    cols, rows = 6, 5
+    gap_y = (PEDAL_ROW1_V + FSW_SLOT_D/2 + PLATFORM_MARGIN +
+             PEDAL_ROW2_V - FSW_SLOT_D/2 - PLATFORM_MARGIN) / 2.0
+    u0, v0 = bw/2 - (cols*(sl+14))/2, gap_y - (rows*VENT_PITCH)/2
     out = []
     for r in range(rows):
         for c in range(cols):
@@ -555,6 +577,12 @@ def build_step(write_parts=True):
     for i, (label, u, v) in enumerate(PEDALS):
         plat = _platform_solid(cq, platform_h(v))
         asm.add(plat, name=f"platform_{i}", loc=cq.Location(cq.Vector(v, u + T, 0)))
+    # representative Pi + loopy_pi_main board on standoffs, rear clear zone (visual)
+    blk = {"PI": (56.0, 85.0, 24.0), "BOARD": (75.0, 110.0, 16.0)}
+    for name, cx, cy, _pat in board_mounts():
+        bx, by, bz = blk[name]
+        b = cq.Workplane("XY").box(bx, by, bz, centered=(True, True, False)).translate((cy + T, cx + T, STANDOFF_H))
+        asm.add(b, name=name.lower())
 
     asm.save(os.path.join(OUT, "vamp_assembly.step"))
     if write_parts:
@@ -685,7 +713,7 @@ def layout_svg(path):
             e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
     fy = rear_base + H_REAR + 28
     e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: remove the vented bottom plate</text>')
-    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (slot/platform PROVISIONAL - measure a real ASP-1) · track LEDs above TRACK 1-4</text>')
+    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>')
     e.append('</svg>')
     with open(path, "w") as f:
         f.write("\n".join(e) + "\n")

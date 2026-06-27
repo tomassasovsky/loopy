@@ -66,9 +66,9 @@ look with no visible fasteners and the switch wiring fully internal.
   the local lid height.
 - **Layout (two rows, per the reference):** a front row of **8 evenly-spaced**
   pedals (REC/PLAY · STOP · UNDO · MODE · TRACK 1–4) and an upper pair **CLEAR /
-  BANK aligned in `u` over UNDO and MODE**. A **status LED sits aligned above each
-  of the four TRACK pedals only** (Ø5.1 THT) — the transport/CLEAR/BANK pedals have
-  none. The mid-row platforms are taller (the lid is higher there); the generator
+  BANK aligned in `u` over UNDO and MODE**. **7 indicator LEDs sit aligned above
+  REC/PLAY · CLEAR · BANK · TRACK 1–4** (Ø5.1 THT) — matching the board's
+  `indicatorLeds[7]`; STOP/UNDO/MODE have none. The mid-row platforms are taller (the lid is higher there); the generator
   computes both heights and the depth assertions confirm the 16" screen fits behind.
 
 > **PROVISIONAL.** `FSW_SLOT_*` and `PLATFORM_H` are computed from the ASP-1's
@@ -85,7 +85,7 @@ look with no visible fasteners and the switch wiring fully internal.
 | feature | qty | size (mm) | maps to |
 |---------|-----|-----------|---------|
 | ASP-1 pedal slot | 10 | 78 × 103 | 8 front (evenly spaced) + CLEAR/BANK over UNDO/MODE, no fasteners |
-| track status LED | 4 | Ø5.1 | aligned above TRACK 1–4 only (THT, cabled) |
+| indicator LED | 7 | Ø5.1 | aligned above REC/PLAY · CLEAR · BANK · TRACK 1–4 (= `indicatorLeds[7]`) |
 | 7" touchscreen | 1 | 156 × 88 aperture | waveform / loop view (left), top-aligned |
 | 16" touchscreen | 1 | 350 × 199 aperture | main loopy UI (right), top-aligned |
 | encoder + diffused ring | 1 | Ø7 + Ø58/40 | centred under the 7" screen, on the CLEAR/BANK height line; EC11 + 12 THT LEDs |
@@ -119,11 +119,23 @@ rear earth stud provides the bond point.
 
 ---
 
-## 5. Bottom plate (removable, vented)
+## 5. Internal mounting & the bottom plate
 
-Flat plate bolting up into the wall flanges' PEM nuts: vent intake array, **Pi/board
-M3 standoff pattern** (58 × 49), 4 rubber feet, masked ground pads. Lift it off for
-full service access.
+The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
+**rear strip of the bottom plate is the clear floor** for the electronics — and the
+16" screen above it is shallow (mounts to the faceplate, ~18 mm deep), leaving head
+height. The **Raspberry Pi and the `loopy_pi_main` board mount there on M3
+standoffs** (≥ `STANDOFF_H` for under-board airflow), linked by the 40-pin ribbon
+(they sit side-by-side per the board doc). The **EC11 ring board** mounts to the
+faceplate underside behind the encoder cutout; the **screens** clamp to the
+faceplate from behind (`screen_bracket`).
+
+The **bottom plate** (`board_mounts()` drives the patterns) carries: the **Pi**
+(58 × 49 M3) and **`loopy_pi_main` board** (110 × 75 M3, **provisional — confirm vs
+the board**) standoff holes in the rear; an **intake-vent block** in the clear gap
+between the two platform rows (air crosses the boards to the rear-wall exhaust);
+4 rubber feet; perimeter M4 clearance into the wall-flange PEM nuts; and masked
+ground pads. Bolting up from underneath, it lifts off for full service access.
 
 ---
 
