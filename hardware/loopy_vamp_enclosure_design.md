@@ -25,9 +25,9 @@ validated by an in-generator **assertion suite** (see §8). Decisions came from
 | dimension | value | note |
 |-----------|-------|------|
 | Width `W` | **850 mm** | reference footprint |
-| Depth `D` | **465 mm** | front lip → rear wall |
+| Depth `D` | **412 mm** | sized to a comfortable gap behind the front row (no dead band) |
 | Rear height | **100 mm** / front lip **45 mm** | wedge |
-| Top slope | **6.75°** | sloped length 468 mm |
+| Top slope | **7.6°** | sloped length 416 mm |
 | Material | **2.0 mm 5052-H32 aluminium** | bend R 2.0, K 0.33 |
 
 **Construction = welded shell + removable bottom plate.** The faceplate (sloped

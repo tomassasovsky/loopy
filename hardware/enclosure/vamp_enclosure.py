@@ -45,7 +45,8 @@ OUT = os.path.join(HERE, "out")
 # ===========================================================================
 
 W        = 850.0     # overall width
-D        = 465.0     # overall depth (front lip -> rear wall)
+D        = 412.0     # overall depth (front lip -> rear wall) -- sized so the screen
+                     # block sits a comfortable FRONT_GAP behind the front pedal row
 H_REAR   = 100.0     # rear wall height (tall end, behind the main screen)
 H_FRONT  = 45.0      # front lip height (low end, nearest the player)
 
@@ -141,9 +142,12 @@ PLATFORM_H = lid_top_z(FSW_V) + FOOTPLATE_PROUD - ASP1_H
 # is a whole ASP-1 on a welded platform; a status LED sits directly ABOVE each
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
 PEDAL_ROW1_V = 80.0      # front row centre
-SCREEN_TOP_V = 445.0     # common TOP (rear) edge for both screens
 S7_U         = 30.0      # 7" screen left edge
 LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear)
+FRONT_GAP    = 65.0      # gap between the front-row rear edge and the screen block
+# The screen block sits just behind the front row; its TOP edge is the rearmost
+# control and sets how deep the enclosure needs to be (D is sized to suit).
+SCREEN_TOP_V = PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + FRONT_GAP + BIG_H
 # CLEAR/BANK sit so their BOTTOM (front) edge aligns with the 16" screen's bottom.
 PEDAL_ROW2_V = (SCREEN_TOP_V - BIG_H) + FSW_SLOT_D / 2.0
 
@@ -202,7 +206,7 @@ def rear_holes():
         {"kind": "rect", "u": 245.0, "v": z-7, "w": 14.0, "h": 14.0, "ref": "USB-A_2"},
         {"kind": "circle", "u": 300.0, "v": 22.0, "d": D_GND, "ref": "EARTH_STUD"},
     ]
-    cuts += _vent_array(u0=360.0, z0=25.0, cols=10, rows=6)   # rear exhaust vents
+    cuts += _vent_array(u0=360.0, z0=25.0, cols=8, rows=6)   # rear exhaust vents (fit < W)
     return cuts
 
 def _vent_array(u0, z0, cols, rows):
@@ -301,6 +305,16 @@ def _check():
 
     # 7. PEM land width sufficient on the bottom flange
     assert FLANGE >= PEM_EDGE + 2.0, f"PEM: flange {FLANGE} < edge dist {PEM_EDGE}+2"
+
+    # 8. every rear-wall feature fits inside the rear wall (u in 0..W, z in 0..H_REAR)
+    for c in rear:
+        if c["kind"] == "circle":
+            r = c["d"] / 2.0
+            lo_u, hi_u, lo_z, hi_z = c["u"]-r, c["u"]+r, c["v"]-r, c["v"]+r
+        else:
+            lo_u, hi_u, lo_z, hi_z = c["u"], c["u"]+c["w"], c["v"], c["v"]+c["h"]
+        assert 0 <= lo_u and hi_u <= W and 0 <= lo_z and hi_z <= H_REAR, \
+            f"REAR_BOUNDS: {c['ref']} outside the rear wall"
     return True
 
 def _bottom_vents():
@@ -616,6 +630,68 @@ def report():
     return "\n".join(L)
 
 # ===========================================================================
+# ANNOTATED LAYOUT SVG  (player view, generated from the schedule)
+# ===========================================================================
+
+def layout_svg(path):
+    """Draw the faceplate + rear panel in player view (u left->right, front at the
+    bottom), straight from faceplate_holes()/rear_holes() so it never drifts."""
+    cuts, engr = faceplate_holes()
+    M, GAP, fw, fh = 44, 64, FP_W, FP_V
+    rear_base = M + fh + GAP + 24
+    Wv, Hv = fw + 2*M, rear_base + H_REAR + 70
+    X = lambda u: M + u
+    Yf = lambda v: M + (fh - v)            # faceplate: front (low v) at bottom
+    Yr = lambda z: rear_base + (H_REAR - z)
+    e = [f'<svg viewBox="0 0 {Wv:.0f} {Hv:.0f}" xmlns="http://www.w3.org/2000/svg" '
+         'font-family="Helvetica,Arial,sans-serif">',
+         f'<rect width="{Wv:.0f}" height="{Hv:.0f}" fill="#0f1623"/>',
+         f'<text x="{M}" y="{M-12}" fill="#94a3b8" font-size="12" font-weight="600">'
+         f'VAMP TOP FACEPLATE — player view · {W:.0f} x {D:.0f} x {H_REAR:.0f} mm · '
+         f'welded shell · slope {SLOPE_ANGLE:.1f}deg</text>',
+         f'<rect x="{M}" y="{M}" width="{fw:.1f}" height="{fh:.1f}" rx="9" '
+         'fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>']
+    for c in cuts:
+        ref = c["ref"]
+        if c["kind"] == "rect":
+            x, y, w, h = X(c["u"]), Yf(c["v"] + c["h"]), c["w"], c["h"]
+            if ref.startswith("SCREEN"):
+                lbl = '16" TOUCH - main UI' if "16" in ref else '7" TOUCH - waveform'
+                e.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>')
+                e.append(f'<text x="{x+w/2:.1f}" y="{y+h/2:.1f}" fill="#4a7f96" font-size="12" text-anchor="middle">{lbl}</text>')
+            else:
+                fill = "#243149" if ref.startswith("TRACK") else "#1c2740"
+                e.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="3" fill="{fill}" stroke="#8aa0c0" stroke-width="1.4"/>')
+        elif c["kind"] == "circle":
+            r = max(c["d"]/2, 2.0)
+            col = ("#22c55e" if ref.endswith("_LED") or ref == "PWR_LED" else
+                   "#f59e0b" if ref == "MODE_LED" else
+                   "#cbd5e1" if ref == "ENCODER" else "#8aa0c0")
+            e.append(f'<circle cx="{X(c["u"]):.1f}" cy="{Yf(c["v"]):.1f}" r="{r:.1f}" fill="{col}"/>')
+        elif c["kind"] == "ring":
+            e.append(f'<circle cx="{X(c["u"]):.1f}" cy="{Yf(c["v"]):.1f}" r="{c["od"]/2:.1f}" fill="none" stroke="#a855f7" stroke-width="3"/>')
+    for lab in engr:
+        e.append(f'<text x="{X(lab["u"]+16):.1f}" y="{Yf(lab["v"])+10:.1f}" fill="#9fb0c8" font-size="8" text-anchor="middle">{lab["s"]}</text>')
+    # rear panel
+    e.append(f'<text x="{M}" y="{rear_base-12:.1f}" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — {W:.0f} x {H_REAR:.0f} mm</text>')
+    e.append(f'<rect x="{M}" y="{rear_base:.1f}" width="{fw:.1f}" height="{H_REAR:.1f}" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>')
+    for c in rear_holes():
+        if c.get("layer") == "VENT":
+            e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="none" stroke="#7c8aa3" stroke-width="1"/>')
+        elif c["kind"] == "circle":
+            rcol = "#22c55e" if c["ref"] == "EARTH_STUD" else "#cbd5e1"
+            e.append(f'<circle cx="{X(c["u"]):.1f}" cy="{Yr(c["v"]):.1f}" r="{max(c["d"]/2,3):.1f}" fill="#0f1623" stroke="{rcol}" stroke-width="1.5"/>')
+        elif c["kind"] == "rect":
+            e.append(f'<rect x="{X(c["u"]):.1f}" y="{Yr(c["v"]+c["h"]):.1f}" width="{c["w"]:.1f}" height="{c["h"]:.1f}" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>')
+    fy = rear_base + H_REAR + 28
+    e.append(f'<text x="{M}" y="{fy:.1f}" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: remove the vented bottom plate</text>')
+    e.append(f'<text x="{M}" y="{fy+18:.1f}" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (slot/platform PROVISIONAL - measure a real ASP-1) · track LEDs above TRACK 1-4</text>')
+    e.append('</svg>')
+    with open(path, "w") as f:
+        f.write("\n".join(e) + "\n")
+    return path
+
+# ===========================================================================
 # MAIN
 # ===========================================================================
 
@@ -639,7 +715,9 @@ def main(argv):
     if "--report" in argv:
         return
     os.makedirs(OUT, exist_ok=True)
-    print("\nDXF flat patterns:")
+    layout_svg(os.path.join(HERE, "vamp_panel_layout.svg"))
+    print("\nAnnotated layout: vamp_panel_layout.svg")
+    print("DXF flat patterns:")
     for name, fn in DXF_PARTS:
         dxf = os.path.join(OUT, name + ".dxf"); fn(dxf)
         print("  out/" + name + ".dxf")
