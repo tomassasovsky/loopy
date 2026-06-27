@@ -45,9 +45,9 @@ OUT = os.path.join(HERE, "out")
 # ===========================================================================
 
 W        = 850.0     # overall width
-D        = 424.0     # overall depth (front lip -> rear wall) -- sized so the screen
+D        = 403.0     # overall depth (front lip -> rear wall) -- sized so the screen
                      # block sits FRONT_GAP behind the front row AND the rear margin
-                     # matches the uniform EDGE margin (no dead band, even borders)
+                     # matches EDGE (front pedals pulled toward the front edge)
 H_REAR   = 100.0     # rear wall height (tall end, behind the main screen)
 H_FRONT  = 45.0      # front lip height (low end, nearest the player)
 
@@ -143,10 +143,11 @@ PLATFORM_H = lid_top_z(FSW_V) + FOOTPLATE_PROUD - ASP1_H
 # 4 tracks, with a centre gap) and an upper CENTRE pair (CLEAR/BANK). Each pedal
 # is a whole ASP-1 on a welded platform; a status LED sits directly ABOVE each
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
-EDGE         = 30.0      # uniform edge margin (sides / front / rear)
+EDGE         = 30.0      # uniform edge margin (sides / rear)
+FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
 LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear)
 FRONT_GAP    = 65.0      # gap between the front-row rear edge and the screen block
-PEDAL_ROW1_V = EDGE + FSW_SLOT_D / 2.0     # front-row centre -> front margin = EDGE
+PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
 S7_U         = EDGE                         # 7" screen left margin = EDGE
 # The screen block sits FRONT_GAP behind the front row; its TOP edge is the rearmost
 # control. D is chosen so FP_V - SCREEN_TOP_V (rear margin) also equals EDGE.
@@ -171,8 +172,10 @@ def _has_led(label):
     return label in ("REC/PLAY", "CLEAR", "BANK") or label.startswith("TRACK")
 
 def platform_h(v):
-    """Platform shelf height that lands the ASP-1 foot-plate flush+proud at depth v."""
-    return lid_top_z(v) + FOOTPLATE_PROUD - ASP1_H
+    """Platform top sits at the slot's LOWER CUTOFF (the faceplate underside at depth
+    v), so the pedal body stands proud of the sloped top by ASP1_H - T -- foot easy
+    to reach. (Was: foot-plate flush; the pedals now sit higher.)"""
+    return lid_under_z(v)
 
 def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
@@ -278,9 +281,8 @@ def _check():
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
         ph = platform_h(v)
         assert ph > STANDOFF_H, f"PLATFORM_HEADROOM: platform {ph:.1f} <= standoff {STANDOFF_H} at v={v:.0f}"
-        body_top = ph + ASP1_H
-        assert abs(body_top - (lid_top_z(v) + FOOTPLATE_PROUD)) <= 0.5, \
-            f"PLATFORM_HEADROOM: pedal top {body_top:.1f} not flush at v={v:.0f}"
+        proud = ph + ASP1_H - lid_top_z(v)         # how far the pedal stands proud
+        assert 4.0 <= proud <= ASP1_H, f"PLATFORM_HEADROOM: pedal proud {proud:.1f} mm at v={v:.0f}"
 
     # 4. screen depth: each module clears the interior under the lid (read positions)
     for ref, dep in (("SCREEN_16IN", BIG_DEPTH), ("SCREEN_7IN", SMALL_DEPTH)):
@@ -648,7 +650,7 @@ def report():
     P(f"  layout        : {n1} front row + {len(PEDALS)-n1} centre (CLEAR/BANK), LEDs aligned above")
     P(f"  slot          : {FSW_SLOT_W:.0f}(u) x {FSW_SLOT_D:.0f}(v) mm  [PROVISIONAL]")
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
-      f"(foot-plate flush +{FOOTPLATE_PROUD:.0f})  [PROVISIONAL]")
+      f"(at slot lower cutoff; pedal proud {ASP1_H-T:.0f}mm)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 16in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
     P(f"Rear I/O        : 9V barrel + power btn + fuse + USB-A x2 + vents + earth stud")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
