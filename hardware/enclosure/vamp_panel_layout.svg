@@ -1,98 +1,98 @@
-<svg viewBox="0 0 934 709" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica,Arial,sans-serif">
-<rect width="934" height="709" fill="#0f1623"/>
-<text x="44" y="32" fill="#94a3b8" font-size="12" font-weight="600">VAMP TOP FACEPLATE — player view · 850 x 403 x 100 mm · welded shell · slope 7.8deg</text>
-<rect x="44" y="44" width="846.0" height="406.7" rx="9" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
-<rect x="74.0" y="337.7" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="113.0" cy="321.7" r="2.5" fill="#22c55e"/>
-<rect x="175.1" y="337.7" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="276.3" y="337.7" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="377.4" y="337.7" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="478.6" y="337.7" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="517.6" cy="321.7" r="2.5" fill="#22c55e"/>
-<rect x="579.7" y="337.7" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="618.7" cy="321.7" r="2.5" fill="#22c55e"/>
-<rect x="680.9" y="337.7" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="719.9" cy="321.7" r="2.5" fill="#22c55e"/>
-<rect x="782.0" y="337.7" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="821.0" cy="321.7" r="2.5" fill="#22c55e"/>
-<rect x="276.3" y="169.7" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="315.3" cy="153.7" r="2.5" fill="#22c55e"/>
-<rect x="377.4" y="169.7" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="416.4" cy="153.7" r="2.5" fill="#22c55e"/>
-<rect x="74.0" y="73.7" width="156.0" height="88.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
-<text x="152.0" y="117.7" fill="#4a7f96" font-size="12" text-anchor="middle">7" TOUCH - waveform</text>
-<rect x="510.0" y="73.7" width="350.0" height="199.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
-<text x="685.0" y="173.2" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
-<circle cx="152.0" cy="221.2" r="29.0" fill="none" stroke="#a855f7" stroke-width="3"/>
-<circle cx="152.0" cy="221.2" r="3.5" fill="#cbd5e1"/>
-<circle cx="110.0" cy="221.2" r="4.0" fill="#22c55e"/>
-<circle cx="194.0" cy="221.2" r="4.0" fill="#22c55e"/>
-<text x="113.0" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">REC/PLAY</text>
-<text x="214.1" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">STOP</text>
-<text x="315.3" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
-<text x="416.4" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
-<text x="517.6" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK1</text>
-<text x="618.7" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK2</text>
-<text x="719.9" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK3</text>
-<text x="821.0" y="461.7" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK4</text>
-<text x="315.3" y="293.7" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
-<text x="416.4" y="293.7" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
-<text x="44" y="526.7" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 100 mm</text>
-<rect x="44" y="538.7" width="846.0" height="100.0" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
-<circle cx="104.0" cy="583.7" r="6.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
-<circle cx="154.0" cy="583.7" r="8.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
-<circle cx="204.0" cy="583.7" r="6.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
-<rect x="254.0" y="576.7" width="14.0" height="14.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
-<rect x="289.0" y="576.7" width="14.0" height="14.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
-<circle cx="344.0" cy="616.7" r="3.2" fill="#0f1623" stroke="#22c55e" stroke-width="1.5"/>
-<rect x="404.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="609.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="600.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="591.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="582.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="573.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="564.7" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<text x="44" y="666.7" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: remove the vented bottom plate</text>
-<text x="44" y="684.7" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>
+<svg viewBox="0 0 934 711" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica,Arial,sans-serif">
+<rect width="934" height="711" fill="#0f1623"/>
+<text x="44" y="32" fill="#94a3b8" font-size="12" font-weight="600">VAMP TOP FACEPLATE — player view · 850 x 403 x 100 mm · welded shell · slope 9.9deg</text>
+<rect x="44" y="44" width="846.0" height="409.0" rx="9" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
+<rect x="74.0" y="340.0" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<circle cx="113.0" cy="324.0" r="2.5" fill="#22c55e"/>
+<rect x="175.1" y="340.0" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="276.3" y="340.0" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="377.4" y="340.0" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="478.6" y="340.0" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<circle cx="517.6" cy="324.0" r="2.5" fill="#22c55e"/>
+<rect x="579.7" y="340.0" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<circle cx="618.7" cy="324.0" r="2.5" fill="#22c55e"/>
+<rect x="680.9" y="340.0" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<circle cx="719.9" cy="324.0" r="2.5" fill="#22c55e"/>
+<rect x="782.0" y="340.0" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<circle cx="821.0" cy="324.0" r="2.5" fill="#22c55e"/>
+<rect x="276.3" y="172.0" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<circle cx="315.3" cy="156.0" r="2.5" fill="#22c55e"/>
+<rect x="377.4" y="172.0" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<circle cx="416.4" cy="156.0" r="2.5" fill="#22c55e"/>
+<rect x="74.0" y="76.0" width="156.0" height="88.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
+<text x="152.0" y="120.0" fill="#4a7f96" font-size="12" text-anchor="middle">7" TOUCH - waveform</text>
+<rect x="510.0" y="76.0" width="350.0" height="199.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
+<text x="685.0" y="175.5" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
+<circle cx="152.0" cy="223.5" r="29.0" fill="none" stroke="#a855f7" stroke-width="3"/>
+<circle cx="152.0" cy="223.5" r="3.5" fill="#cbd5e1"/>
+<circle cx="110.0" cy="223.5" r="4.0" fill="#22c55e"/>
+<circle cx="194.0" cy="223.5" r="4.0" fill="#22c55e"/>
+<text x="113.0" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">REC/PLAY</text>
+<text x="214.1" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">STOP</text>
+<text x="315.3" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
+<text x="416.4" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
+<text x="517.6" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK1</text>
+<text x="618.7" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK2</text>
+<text x="719.9" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK3</text>
+<text x="821.0" y="464.0" fill="#9fb0c8" font-size="8" text-anchor="middle">TRACK4</text>
+<text x="315.3" y="296.0" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
+<text x="416.4" y="296.0" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
+<text x="44" y="529.0" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 100 mm</text>
+<rect x="44" y="541.0" width="846.0" height="100.0" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
+<circle cx="104.0" cy="586.0" r="6.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
+<circle cx="154.0" cy="586.0" r="8.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
+<circle cx="204.0" cy="586.0" r="6.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
+<rect x="254.0" y="579.0" width="14.0" height="14.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
+<rect x="289.0" y="579.0" width="14.0" height="14.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
+<circle cx="344.0" cy="619.0" r="3.2" fill="#0f1623" stroke="#22c55e" stroke-width="1.5"/>
+<rect x="404.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="458.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="512.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="566.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="620.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="674.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="728.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="782.0" y="612.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="404.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="458.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="512.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="566.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="620.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="674.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="728.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="782.0" y="603.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="404.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="458.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="512.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="566.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="620.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="674.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="728.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="782.0" y="594.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="404.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="458.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="512.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="566.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="620.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="674.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="728.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="782.0" y="585.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="404.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="458.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="512.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="566.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="620.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="674.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="728.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="782.0" y="576.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="404.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="458.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="512.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="566.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="620.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="674.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="728.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="782.0" y="567.0" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<text x="44" y="669.0" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: remove the vented bottom plate</text>
+<text x="44" y="687.0" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>
 </svg>

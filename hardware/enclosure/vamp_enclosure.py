@@ -49,7 +49,8 @@ D        = 403.0     # overall depth (front lip -> rear wall) -- sized so the sc
                      # block sits FRONT_GAP behind the front row AND the rear margin
                      # matches EDGE (front pedals pulled toward the front edge)
 H_REAR   = 100.0     # rear wall height (tall end, behind the main screen)
-H_FRONT  = 45.0      # front lip height (low end, nearest the player)
+H_FRONT  = 30.0      # front lip height (low end, nearest the player) -- lowered for
+                     # a steeper, more raked control surface
 
 T        = 2.0       # sheet thickness (2.0 mm 5052-H32 aluminium)
 RI       = 2.0       # inside bend radius (= T, safe for 5052)
@@ -64,7 +65,7 @@ FSW_SLOT_W = ASP1_W + 3.0     # slot clearance around the foot-plate (u)
 FSW_SLOT_D = ASP1_D + 3.0     # slot clearance (v)
 FSW_V      = 80.0             # front-row centre line (v)
 FSW_PITCH  = 80.0             # centre-to-centre across the row
-FOOTPLATE_PROUD = 2.0         # how far the foot-plate sits above the panel
+FOOTPLATE_PROUD = -2.0        # foot-plate vs the sloped top (0 = flush, <0 = recessed)
 PLATFORM_MARGIN = 6.0         # platform shelf overhang past the pedal footprint
 PLATFORM_LEG_W  = 14.0        # weld-tab / leg width
 
@@ -172,10 +173,9 @@ def _has_led(label):
     return label in ("REC/PLAY", "CLEAR", "BANK") or label.startswith("TRACK")
 
 def platform_h(v):
-    """Platform top sits at the slot's LOWER CUTOFF (the faceplate underside at depth
-    v), so the pedal body stands proud of the sloped top by ASP1_H - T -- foot easy
-    to reach. (Was: foot-plate flush; the pedals now sit higher.)"""
-    return lid_under_z(v)
+    """Platform shelf height that lands the ASP-1 foot-plate ~flush with the sloped
+    top at depth v (FOOTPLATE_PROUD: 0 = flush, <0 = slightly recessed)."""
+    return lid_top_z(v) + FOOTPLATE_PROUD - ASP1_H
 
 def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
@@ -281,8 +281,8 @@ def _check():
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
         ph = platform_h(v)
         assert ph > STANDOFF_H, f"PLATFORM_HEADROOM: platform {ph:.1f} <= standoff {STANDOFF_H} at v={v:.0f}"
-        proud = ph + ASP1_H - lid_top_z(v)         # how far the pedal stands proud
-        assert 4.0 <= proud <= ASP1_H, f"PLATFORM_HEADROOM: pedal proud {proud:.1f} mm at v={v:.0f}"
+        proud = ph + ASP1_H - lid_top_z(v)         # pedal vs the sloped top (~flush)
+        assert -8.0 <= proud <= ASP1_H, f"PLATFORM_HEADROOM: pedal proud {proud:.1f} mm at v={v:.0f}"
 
     # 4. screen depth: each module clears the interior under the lid (read positions)
     for ref, dep in (("SCREEN_16IN", BIG_DEPTH), ("SCREEN_7IN", SMALL_DEPTH)):
@@ -650,7 +650,7 @@ def report():
     P(f"  layout        : {n1} front row + {len(PEDALS)-n1} centre (CLEAR/BANK), LEDs aligned above")
     P(f"  slot          : {FSW_SLOT_W:.0f}(u) x {FSW_SLOT_D:.0f}(v) mm  [PROVISIONAL]")
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
-      f"(at slot lower cutoff; pedal proud {ASP1_H-T:.0f}mm)  [PROVISIONAL]")
+      f"(foot-plate proud {FOOTPLATE_PROUD:+.0f} mm)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 16in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
     P(f"Rear I/O        : 9V barrel + power btn + fuse + USB-A x2 + vents + earth stud")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
@@ -763,6 +763,20 @@ def _render_parts(cq):
     blk={"PI":(56,85,24,(0.20,0.70,0.38)),"BOARD":(75,110,16,(0.26,0.52,0.92))}
     for name,cx,cy,_ in board_mounts():
         bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
+    # --- fasteners (show how it bolts together; visible from the underside) ----
+    bw,bd=W-2*T,D-2*T; SCR=(0.70,0.71,0.76); FEET=(0.10,0.10,0.12); BRASS=(0.74,0.62,0.34)
+    gx=lambda yd: yd+T; gy=lambda xw: xw+T          # bottom-plate (width,depth) -> global (X=depth,Y=width)
+    perim=[(x,12) for x in (25,bw/2,bw-25)]+[(x,bd-12) for x in (25,bw/2,bw-25)]
+    perim+=[(12,y) for y in (bd*0.33,bd*0.66)]+[(bw-12,y) for y in (bd*0.33,bd*0.66)]
+    for x,y in perim:                               # M4 bottom-plate screw heads
+        add(cq.Workplane("XY").circle(4).extrude(2.6).translate((gx(y),gy(x),-2.6)).val(), SCR)
+    for x in (35,bw-35):                            # rubber feet at the corners
+        for y in (35,bd-35):
+            add(cq.Workplane("XY").circle(9).extrude(7).translate((gx(y),gy(x),-7)).val(), FEET)
+    for name,cx,cy,(sx,sy) in board_mounts():       # M3 standoffs under Pi + board
+        for dx in (-sx/2,sx/2):
+            for dy in (-sy/2,sy/2):
+                add(cq.Workplane("XY").circle(3).extrude(STANDOFF_H).translate((gx(cy+dy),gy(cx+dx),0)).val(), BRASS)
     return P
 
 def render_png(path, direction=(-0.32, 0.05, 1.0)):
