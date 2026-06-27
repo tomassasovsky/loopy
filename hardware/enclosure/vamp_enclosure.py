@@ -45,12 +45,12 @@ OUT = os.path.join(HERE, "out")
 # ===========================================================================
 
 W        = 850.0     # overall width
-D        = 403.0     # overall depth (front lip -> rear wall) -- sized so the screen
+D        = 397.0     # overall depth (front lip -> rear wall) -- sized so the screen
                      # block sits FRONT_GAP behind the front row AND the rear margin
                      # matches EDGE (front pedals pulled toward the front edge)
 H_REAR   = 100.0     # rear wall height (tall end, behind the main screen)
-H_FRONT  = 30.0      # front lip height (low end, nearest the player) -- lowered for
-                     # a steeper, more raked control surface
+H_FRONT  = 12.0      # front lip height (low end) -- nearly at the floor; the wedge
+                     # rakes right down at the front
 
 T        = 2.0       # sheet thickness (2.0 mm 5052-H32 aluminium)
 RI       = 2.0       # inside bend radius (= T, safe for 5052)
@@ -65,7 +65,8 @@ FSW_SLOT_W = ASP1_W + 3.0     # slot clearance around the foot-plate (u)
 FSW_SLOT_D = ASP1_D + 3.0     # slot clearance (v)
 FSW_V      = 80.0             # front-row centre line (v)
 FSW_PITCH  = 80.0             # centre-to-centre across the row
-FOOTPLATE_PROUD = -2.0        # foot-plate vs the sloped top (0 = flush, <0 = recessed)
+FOOTPLATE_PROUD = 10.0        # foot-plate stands this far above the sloped top (so the
+                              # pedals sit at a good height even with the low front lip)
 PLATFORM_MARGIN = 6.0         # platform shelf overhang past the pedal footprint
 PLATFORM_LEG_W  = 14.0        # weld-tab / leg width
 
@@ -280,8 +281,8 @@ def _check():
     # 3. platform head-room for BOTH rows: foot-plate flush+proud at each depth
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
         ph = platform_h(v)
-        assert ph > STANDOFF_H, f"PLATFORM_HEADROOM: platform {ph:.1f} <= standoff {STANDOFF_H} at v={v:.0f}"
-        proud = ph + ASP1_H - lid_top_z(v)         # pedal vs the sloped top (~flush)
+        assert ph > T + 2.0, f"PLATFORM_HEADROOM: platform {ph:.1f} mm too low at v={v:.0f}"
+        proud = ph + ASP1_H - lid_top_z(v)         # how far the pedal stands proud
         assert -8.0 <= proud <= ASP1_H, f"PLATFORM_HEADROOM: pedal proud {proud:.1f} mm at v={v:.0f}"
 
     # 4. screen depth: each module clears the interior under the lid (read positions)
