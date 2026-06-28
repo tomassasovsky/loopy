@@ -14,5 +14,6 @@ _*.py
 out/vamp.glb
 out/vamp.gltf
 out/vamp.bin
+out/vamp_fromdxf.glb
 out/viewer.html
 out/index.html
