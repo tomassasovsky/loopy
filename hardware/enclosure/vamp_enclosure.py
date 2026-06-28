@@ -115,6 +115,12 @@ D_BARREL  = 12.0     # 9 V DC barrel jack nut
 D_PWRBTN  = 16.0     # power / shutdown button
 D_FUSE    = 12.0     # panel fuse holder
 D_GND     = 6.5      # M6 earth / bond stud
+D_HDMI    = (16.0, 8.0)  # HDMI Type-A panel cutout (w,h)
+D_USB     = (14.0, 7.0)  # USB-A panel cutout (w,h)
+# Rear connector WINDOW: a fixed opening in the welded rear wall, closed by a SWAPPABLE
+# I/O sub-panel that carries the version-specific connectors (Pi vs no-Pi).
+REAR_WIN_W = 290.0; REAR_WIN_H = 46.0    # window opening (w,h)
+REAR_WIN_U = 175.0; REAR_WIN_Z = 50.0    # window centre on the rear wall (u,z)
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -122,7 +128,11 @@ VENT_PITCH  = 9.0             # slot row pitch
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
 STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M3)
-BOARD_HOLES = (110.0, 75.0)   # loopy_pi_main board mounting rectangle (M3) -- PROVISIONAL
+# Shared main-board mount = the V1 board (hardware/kicad/loopy_pedal_main.kicad_pcb,
+# already manufactured): 4x M3 over a 73.5 x 84 mm rectangle on an 82 x 94 mm board.
+# The Pi-main board should be brought onto this same pattern so one chassis fits both.
+BOARD_HOLES = (73.5, 84.0)    # M3 mount rectangle, consistent V1 <-> Pi-main
+BOARD_SIZE  = (82.0, 94.0)    # board outline (for the 3D render)
 D_FOOT    = 8.0      # rubber-foot fixing
 
 # --- fasteners ----------------------------------------------------------------
@@ -274,19 +284,49 @@ def faceplate_holes():
     return cuts, engr
 
 def rear_holes():
-    """Rear-wall I/O: power in, button, fuse, USB x2, vents, earth stud.
-    Local x=0..W (u), z=0..REAR_WALL_H. No audio aperture, no pedal slot."""
-    z = 50.0
-    cuts = [
-        {"kind": "circle", "u": 60.0,  "v": z, "d": D_BARREL, "ref": "9V_DC"},
-        {"kind": "circle", "u": 110.0, "v": z, "d": D_PWRBTN, "ref": "POWER"},
-        {"kind": "circle", "u": 160.0, "v": z, "d": D_FUSE,   "ref": "FUSE"},
-        {"kind": "rect", "u": 210.0, "v": z-7, "w": 14.0, "h": 14.0, "ref": "USB-A_1"},
-        {"kind": "rect", "u": 245.0, "v": z-7, "w": 14.0, "h": 14.0, "ref": "USB-A_2"},
-        {"kind": "circle", "u": 300.0, "v": 22.0, "d": D_GND, "ref": "EARTH_STUD"},
-    ]
-    cuts += _vent_array(u0=360.0, z0=16.0, cols=8, rows=5)   # rear exhaust vents (fit < W, < REAR_WALL_H)
+    """Rear WALL features (welded, version-independent): the connector WINDOW (closed by a
+    swappable I/O sub-panel), bolt holes around it, fixed exhaust vents and an earth stud.
+    The version-specific connectors live on the sub-panel, NOT the wall. u=0..W, z=0..REAR_WALL_H."""
+    u, z = REAR_WIN_U, REAR_WIN_Z
+    cuts = [{"kind": "rect", "u": u-REAR_WIN_W/2, "v": z-REAR_WIN_H/2,
+             "w": REAR_WIN_W, "h": REAR_WIN_H, "ref": "IO_WINDOW"}]
+    for du in (-REAR_WIN_W/2-9, REAR_WIN_W/2+9):                 # 4 bolt holes around the window
+        for dz in (-REAR_WIN_H/2-9, REAR_WIN_H/2+9):
+            cuts.append({"kind": "circle", "u": u+du, "v": z+dz, "d": D_M3, "ref": "IO_BOLT"})
+    cuts.append({"kind": "circle", "u": u+REAR_WIN_W/2+28, "v": 22.0, "d": D_GND, "ref": "EARTH_STUD"})
+    cuts += _vent_array(u0=u+REAR_WIN_W/2+48, z0=16.0, cols=6, rows=5)
     return cuts
+
+def rear_panel_holes(variant):
+    """Connector cutouts for the swappable rear I/O sub-panel, in PANEL-LOCAL coords
+    (origin = window centre). 'pi' = on-board Pi; 'nopi' = external host (screens out)."""
+    hw, hh = D_HDMI; uw, uh = D_USB
+    pwr = [{"kind": "circle", "u": -120, "v": 0, "d": D_BARREL, "ref": "9V_DC"},
+           {"kind": "circle", "u":  -82, "v": 0, "d": D_PWRBTN, "ref": "POWER"},
+           {"kind": "circle", "u":  -44, "v": 0, "d": D_FUSE,   "ref": "FUSE"}]
+    if variant == "pi":
+        return pwr + [
+            {"kind": "rect", "u": 0-uw/2,  "v": -uh/2, "w": uw, "h": uh, "ref": "USB-A_1"},
+            {"kind": "rect", "u": 38-uw/2, "v": -uh/2, "w": uw, "h": uh, "ref": "USB-A_2"}]
+    return pwr + [        # nopi: external host -> 2x HDMI (16"+7") + 2x USB touch
+        {"kind": "rect", "u":   2-hw/2, "v": -hh/2, "w": hw, "h": hh, "ref": "HDMI_16"},
+        {"kind": "rect", "u":  42-hw/2, "v": -hh/2, "w": hw, "h": hh, "ref": "HDMI_7"},
+        {"kind": "rect", "u":  84-uw/2, "v": -uh/2, "w": uw, "h": uh, "ref": "USB_TOUCH_16"},
+        {"kind": "rect", "u": 120-uw/2, "v": -uh/2, "w": uw, "h": uh, "ref": "USB_TOUCH_7"}]
+
+def dxf_rear_panel(path, variant):
+    """Swappable rear I/O sub-panel: a plate that closes the rear WINDOW (with a bolt-on
+    overlap) carrying the version's connector cutouts. Built per variant ('pi'/'nopi')."""
+    doc = _doc(); msp = doc.modelspace(); ov = 12.0
+    pw, ph = REAR_WIN_W + 2*ov, REAR_WIN_H + 2*ov
+    _poly(msp, [(-pw/2,-ph/2), (pw/2,-ph/2), (pw/2,ph/2), (-pw/2,ph/2)], "CUT")
+    _emit(msp, rear_panel_holes(variant))
+    for du in (-REAR_WIN_W/2-9, REAR_WIN_W/2+9):                 # bolt holes match the wall
+        for dz in (-REAR_WIN_H/2-9, REAR_WIN_H/2+9):
+            _circle(msp, du, dz, D_M3)
+    label = "Pi: 9V+btn+fuse+USB-A x2" if variant == "pi" else "no-Pi: 9V+btn+fuse+HDMI x2+USB-touch x2"
+    _text(msp, -pw/2+4, ph/2+6, 6, f"VAMP REAR I/O PANEL ({variant})  2.0mm  x1  {label}  PROVISIONAL", "NOTE")
+    doc.saveas(path); return {}
 
 def _vent_array(u0, z0, cols, rows):
     """A block of louvre slots; returns rect features on the VENT layer."""
@@ -401,14 +441,13 @@ def _bottom_vents():
 # --- internal board mounting -------------------------------------------------
 # Bottom-plate frame: x = width (0..W-2T), y = depth (0..D-2T, 0 = front).
 # The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
-# REAR strip of the bottom plate is the clear floor for the electronics. The Pi
-# and the loopy_pi_main board mount there on M3 standoffs (>= STANDOFF_H for
-# airflow), linked by the 40-pin ribbon; the 16" screen above is shallow so it
-# does not reach the floor. (BOARD_HOLES provisional -- confirm vs the board.)
+# REAR strip of the bottom plate is the clear floor for the electronics. ONE main
+# board (V1 loopy_pedal_main, or the Pi-main with a Raspberry Pi riding its GPIO)
+# mounts there on M3 standoffs (>= STANDOFF_H for airflow). Same hole pattern both
+# ways so one chassis fits either version. 16" screen above is shallow -> clears it.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
-    yr = bd - 72.0
-    return [("PI", bw*0.27, yr, PI_HOLES), ("BOARD", bw*0.62, yr, BOARD_HOLES)]
+    return [("MAIN_BOARD", bw*0.5, bd - 60.0, BOARD_HOLES)]
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -809,8 +848,9 @@ def build_step(write_parts=True):
     for i, (label, u, v) in enumerate(PEDALS):
         plat = _platform_solid(cq, platform_h(v))
         addw(plat, f"platform_{i}", cq.Location(cq.Vector(v, u + T, 0)))
-    # representative Pi + loopy_pi_main board on standoffs, rear clear zone (visual)
-    blk = {"PI": (56.0, 85.0, 24.0), "BOARD": (75.0, 110.0, 16.0)}
+    # representative loopy_pi_main board on standoffs, rear clear zone (visual stand-in;
+    # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
+    blk = {"MAIN_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
     for name, cx, cy, _pat in board_mounts():
         bx, by, bz = blk[name]
         b = cq.Workplane("XY").box(bx, by, bz, centered=(True, True, False)).translate((cy + T, cx + T, STANDOFF_H))
@@ -999,7 +1039,7 @@ def _render_parts(cq, explode=0.0):
         if c["kind"]=="circle" and (c["ref"].endswith("_LED") or c["ref"]=="PWR_LED"):
             col=(1.0,0.72,0.20) if c["ref"]=="MODE_LED" else (0.35,1.0,0.50)
             add(on_fp(cq.Workplane("XY").circle(max(c["d"]/2,2.7)).extrude(3.6).translate((c["v"],c["u"],T))), col)
-    blk={"PI":(56,85,24,(0.20,0.70,0.38)),"BOARD":(75,110,16,(0.26,0.52,0.92))}
+    blk={"MAIN_BOARD":(BOARD_SIZE[0],BOARD_SIZE[1],16,(0.26,0.52,0.92))}
     for name,cx,cy,_ in board_mounts():
         bx,by,bz,col=blk[name]; add(cq.Workplane("XY").box(bx,by,bz,centered=(True,True,False)).translate((cy+T,cx+T,STANDOFF_H)).val(), col)
     # --- fasteners (show how it bolts together; visible from the underside) ----
@@ -1058,8 +1098,11 @@ DXF_PARTS = [
     ("vamp_platform_front",   lambda p: dxf_platform(p, platform_h(PEDAL_ROW1_V), 8, "FRONT")),
     ("vamp_platform_mid",     lambda p: dxf_platform(p, platform_h(PEDAL_ROW2_V), 2, "MID (CLEAR/BANK)")),
     ("vamp_screen_bracket",   dxf_screen_bracket),
+    ("vamp_rear_panel_pi",    lambda p: dxf_rear_panel(p, "pi")),    # swappable rear I/O
+    ("vamp_rear_panel_nopi",  lambda p: dxf_rear_panel(p, "nopi")),
 ]
-NO_PDF = {"vamp_platform_front", "vamp_platform_mid"}   # minimal parts: DXF only
+NO_PDF = {"vamp_platform_front", "vamp_platform_mid",
+          "vamp_rear_panel_pi", "vamp_rear_panel_nopi"}   # minimal parts: DXF only
 
 def main(argv):
     print(report())

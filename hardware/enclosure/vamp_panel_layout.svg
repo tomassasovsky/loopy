@@ -33,52 +33,42 @@
 <text x="432.4" y="160.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
 <text x="44" y="526.6" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 90 mm (lowered; transition shoulder carries the lid-lap screws)</text>
 <rect x="44" y="538.6" width="846.0" height="90.0" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
-<circle cx="104.0" cy="578.6" r="6.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
-<circle cx="154.0" cy="578.6" r="8.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
-<circle cx="204.0" cy="578.6" r="6.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
-<rect x="254.0" y="571.6" width="14.0" height="14.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
-<rect x="289.0" y="571.6" width="14.0" height="14.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
-<circle cx="344.0" cy="606.6" r="3.2" fill="#0f1623" stroke="#22c55e" stroke-width="1.5"/>
-<rect x="404.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="404.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="458.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="512.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="566.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="620.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="674.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="728.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
-<rect x="782.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="74.0" y="555.6" width="290.0" height="46.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
+<circle cx="65.0" cy="610.6" r="3.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
+<circle cx="65.0" cy="546.6" r="3.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
+<circle cx="373.0" cy="610.6" r="3.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
+<circle cx="373.0" cy="546.6" r="3.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.5"/>
+<circle cx="392.0" cy="606.6" r="3.2" fill="#0f1623" stroke="#22c55e" stroke-width="1.5"/>
+<rect x="412.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="466.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="520.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="574.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="628.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="682.0" y="608.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="412.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="466.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="520.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="574.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="628.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="682.0" y="599.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="412.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="466.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="520.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="574.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="628.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="682.0" y="590.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="412.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="466.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="520.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="574.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="628.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="682.0" y="581.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="412.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="466.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="520.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="574.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="628.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
+<rect x="682.0" y="572.6" width="40.0" height="4.0" fill="none" stroke="#7c8aa3" stroke-width="1"/>
 <text x="44" y="656.6" fill="#7c8aa3" font-size="10.5">9V · power · fuse · USB-A x2 · earth stud · vents   |   service: back out the front-lip + rear-lap screws, lift the lid (side wings just locate)</text>
 <text x="44" y="674.6" fill="#7c8aa3" font-size="10.5">10x ASP-1 pedals on welded inner platforms (PROVISIONAL) · 7 indicator LEDs (REC/PLAY · CLEAR · BANK · TRACK 1-4) · Pi+board mount on the rear bottom plate</text>
 </svg>
