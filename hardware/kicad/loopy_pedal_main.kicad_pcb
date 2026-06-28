@@ -758,7 +758,7 @@
 		(embedded_fonts no)
 		(model "${KIPRJMOD}/loopy.pretty/CONN-TH_DIN-504-M10.wrl"
 			(offset
-				(xyz 1 0.95 12)
+				(xyz 1 0.95 24)
 			)
 			(scale
 				(xyz 1 1 1)
@@ -1073,7 +1073,7 @@
 		(embedded_fonts no)
 		(model "${KIPRJMOD}/loopy.pretty/CONN-TH_DIN-504-M10.wrl"
 			(offset
-				(xyz 1 0.95 12)
+				(xyz 1 0.95 24)
 			)
 			(scale
 				(xyz 1 1 1)
