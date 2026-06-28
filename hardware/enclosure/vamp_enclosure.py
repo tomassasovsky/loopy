@@ -445,9 +445,13 @@ def _bottom_vents():
 # board (V1 loopy_pedal_main, or the Pi-main with a Raspberry Pi riding its GPIO)
 # mounts there on M3 standoffs (>= STANDOFF_H for airflow). Same hole pattern both
 # ways so one chassis fits either version. 16" screen above is shallow -> clears it.
+# Centred laterally on the rear I/O window (REAR_WIN_U) so the connector edge lines
+# up with the panel; sat forward of the rear wall to leave room for the Raspberry
+# Pi, which (in the Pi build) tucks behind the board with its port cluster out the
+# window. The mid-row platforms clear the rear strip, so depth is generous.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
-    return [("MAIN_BOARD", bw*0.5, bd - 60.0, BOARD_HOLES)]
+    return [("MAIN_BOARD", REAR_WIN_U, bd - 110.0, BOARD_HOLES)]
 
 # ===========================================================================
 # DXF  (ezdxf)
