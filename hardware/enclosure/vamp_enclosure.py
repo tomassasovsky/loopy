@@ -117,6 +117,7 @@ D_FUSE    = 12.0     # panel fuse holder
 D_GND     = 6.5      # M6 earth / bond stud
 D_HDMI    = (16.0, 8.0)  # HDMI Type-A panel cutout (w,h)
 D_USB     = (14.0, 7.0)  # USB-A panel cutout (w,h)
+D_PI_IO   = (54.0, 17.0) # Raspberry Pi rear-edge port stack (2x USB-A + RJ45) cutout (w,h)
 # Rear connector WINDOW: a fixed opening in the welded rear wall, closed by a SWAPPABLE
 # I/O sub-panel that carries the version-specific connectors (Pi vs no-Pi).
 REAR_WIN_W = 290.0; REAR_WIN_H = 46.0    # window opening (w,h)
@@ -127,7 +128,8 @@ VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
 VENT_PITCH  = 9.0             # slot row pitch
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
 STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
-PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M3)
+PI_RISER_H  = 38.0            # Pi build: risers lift the Pi so its rear port stack meets the window
+PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # Main board = the manufactured V1 THT Pro Micro board (the loopy_pedal_main THT design,
 # git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
 # 4x M3 over an 85 x 87 mm rectangle, centred on a 94 x 96 mm outline. Same board (alone)
@@ -306,9 +308,11 @@ def rear_panel_holes(variant):
            {"kind": "circle", "u":  -82, "v": 0, "d": D_PWRBTN, "ref": "POWER"},
            {"kind": "circle", "u":  -44, "v": 0, "d": D_FUSE,   "ref": "FUSE"}]
     if variant == "pi":
+        # The Raspberry Pi rides a riser so its rear-edge port stack reaches the window;
+        # ONE block exposes that stack directly (2x USB-A + Gigabit Ethernet), centred.
+        pio_w, pio_h = D_PI_IO
         return pwr + [
-            {"kind": "rect", "u": 0-uw/2,  "v": -uh/2, "w": uw, "h": uh, "ref": "USB-A_1"},
-            {"kind": "rect", "u": 38-uw/2, "v": -uh/2, "w": uw, "h": uh, "ref": "USB-A_2"}]
+            {"kind": "rect", "u": -pio_w/2, "v": -pio_h/2, "w": pio_w, "h": pio_h, "ref": "PI_USB_ETH"}]
     return pwr + [        # nopi: external host -> 2x HDMI (16"+7") + 2x USB touch
         {"kind": "rect", "u":   2-hw/2, "v": -hh/2, "w": hw, "h": hh, "ref": "HDMI_16"},
         {"kind": "rect", "u":  42-hw/2, "v": -hh/2, "w": hw, "h": hh, "ref": "HDMI_7"},
@@ -453,6 +457,14 @@ def _bottom_vents():
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
     return [("MAIN_BOARD", REAR_WIN_U, bd - 110.0, BOARD_HOLES)]
+
+# Pi build only: the Raspberry Pi rides four M2.5 risers (PI_RISER_H tall) so its rear-edge
+# USB/Ethernet stack lines up with the rear I/O window. It sits at the wall, centred on the
+# window, ports facing out -- above and behind the main board, so the two never clash.
+# Returns (centre_u, centre_depth, (u_span, depth_span)) for the 58x49 Pi 4 hole pattern.
+def pi_mount():
+    bd = D - 2*T
+    return (REAR_WIN_U, bd - 48.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -680,6 +692,11 @@ def dxf_base(path):
             for dy in (-sy/2, sy/2):
                 _circle(msp, cx+dx, cy+dy, D_M3)
         _text(msp, cx - sx/2, cy + sy/2 + 4, 5, name, "NOTE")
+    pcx, pcy, (psx, psy) = pi_mount()              # Pi build: 4 riser holes (M2.5) at the Pi pattern
+    for dx in (-psx/2, psx/2):
+        for dy in (-psy/2, psy/2):
+            _circle(msp, pcx+dx, pcy+dy, D_M3)
+    _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER x{PI_RISER_H:.0f}mm (Pi build)", "NOTE")
     for x in (45, BW-45):
         for y in (45, BD-45):
             _circle(msp, x, y, D_FOOT)
@@ -923,7 +940,7 @@ def report():
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(foot-plate proud {FOOTPLATE_PROUD:+.0f} mm)  [PROVISIONAL]")
     P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 16in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
-    P(f"Rear I/O        : 9V barrel + power btn + fuse + USB-A x2 + vents + earth stud")
+    P(f"Rear I/O        : 9V + btn + fuse + [pi: Pi USB/Ethernet block | nopi: 2xHDMI+2xUSB] + vents + earth")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
     P("-"*68)
     P(f"Faceplate cutouts : {len(cuts)}  |  rear-wall cutouts : {len(rear_holes())}")
