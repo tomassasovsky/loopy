@@ -128,11 +128,12 @@ VENT_PITCH  = 9.0             # slot row pitch
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
 STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M3)
-# Shared main-board mount = the V1 board (hardware/kicad/loopy_pedal_main.kicad_pcb,
-# already manufactured): 4x M3 over a 73.5 x 84 mm rectangle on an 82 x 94 mm board.
-# The Pi-main board should be brought onto this same pattern so one chassis fits both.
-BOARD_HOLES = (73.5, 84.0)    # M3 mount rectangle, consistent V1 <-> Pi-main
-BOARD_SIZE  = (82.0, 94.0)    # board outline (for the 3D render)
+# Main board = the manufactured V1 THT Pro Micro board (the loopy_pedal_main THT design,
+# git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
+# 4x M3 over an 85 x 87 mm rectangle, centred on a 94 x 96 mm outline. Same board (alone)
+# in the Base build; in the Pi build a Raspberry Pi rides alongside via the GPIO header.
+BOARD_HOLES = (85.0, 87.0)    # M3 mount rectangle (measured, THT Pro Micro V1)
+BOARD_SIZE  = (94.0, 96.0)    # board outline (for the 3D render)
 D_FOOT    = 8.0      # rubber-foot fixing
 
 # --- fasteners ----------------------------------------------------------------
