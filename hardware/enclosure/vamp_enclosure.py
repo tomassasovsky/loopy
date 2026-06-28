@@ -456,7 +456,7 @@ def _bottom_vents():
 # window. The mid-row platforms clear the rear strip, so depth is generous.
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
-    return [("MAIN_BOARD", REAR_WIN_U, bd - 110.0, BOARD_HOLES)]
+    return [("MAIN_BOARD", REAR_WIN_U, bd - 145.0, BOARD_HOLES)]
 
 # Pi build only: the Raspberry Pi rides four M2.5 risers (PI_RISER_H tall) so its rear-edge
 # USB/Ethernet stack lines up with the rear I/O window. It sits at the wall, centred on the
