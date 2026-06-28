@@ -89,8 +89,9 @@ FSW_V      = 80.0             # front-row centre line (v)
 FSW_PITCH  = 80.0             # centre-to-centre across the row
 FOOTPLATE_PROUD = 10.0        # foot-plate stands this far above the sloped top (so the
                               # pedals sit at a good height even with the low front lip)
-PLATFORM_MARGIN = 6.0         # platform shelf overhang past the pedal footprint
+PLATFORM_MARGIN = 2.0         # platform shelf overhang past the pedal footprint (stay within the slot)
 PLATFORM_LEG_W  = 14.0        # weld-tab / leg width
+PLATFORM_FOOT   = 12.0        # IN-turned foot-flange width (screwed down inside the footprint)
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
 BIG_BEZEL  = (355.0, 223.0)   # 16" module glass/bezel (ViewSonic TD1655 class)
@@ -180,7 +181,9 @@ PLATFORM_H = lid_top_z(FSW_V) + FOOTPLATE_PROUD - ASP1_H
 # (aligned in u). CLEAR/BANK ride centre so the 16" screen still fits depth-wise.
 EDGE         = 30.0      # uniform edge margin (sides / rear)
 FRONT_PEDAL_MARGIN = 10.0 # front-row pedals sit this close to the front edge
-LED_GAP      = 16.0      # status-LED offset behind a pedal (toward rear)
+LED_GAP      = 12.0      # status-LED offset behind a pedal (toward rear)
+SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-wide word
+SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
 FRONT_GAP    = 65.0      # gap between the front-row rear edge and the screen block
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
 S7_U         = EDGE                         # 7" screen left margin = EDGE
@@ -201,6 +204,10 @@ def _row1_u(i):
 # CLEAR/BANK ride row 2, aligned in u with UNDO (i=2) and MODE (i=3).
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
     ("CLEAR", _row1_u(2), PEDAL_ROW2_V), ("BANK", _row1_u(3), PEDAL_ROW2_V)]
+
+# Front-lip screws: outer two land in the GAPS between pedals 1-2 and 7-8 (clear of
+# every foot-plate), the middle one on centre. Shared by the lid lip and the front wall.
+FRONT_SCREW_U = [(_row1_u(0) + _row1_u(1)) / 2.0, FP_W / 2.0, (_row1_u(6) + _row1_u(7)) / 2.0]
 
 # Status-LED pedals: the 4 tracks + CLEAR + BANK (REC/PLAY has no LED -- the encoder
 # ring serves it; it's the first LED position in row 1, removed).
@@ -227,19 +234,32 @@ def faceplate_holes():
     # --- 10 pedal slots (two rows); a status LED above the TRACK pedals only -
     for label, u, v in PEDALS:
         cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2, "v": v - FSW_SLOT_D/2,
-                     "w": FSW_SLOT_W, "h": FSW_SLOT_D, "ref": label})
+                     "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
         led = _has_led(label)
         if led:
             cuts.append({"kind": "circle", "u": u, "v": v + FSW_SLOT_D/2 + LED_GAP,
                          "d": D_LED, "ref": label + "_LED"})
-        # silkscreen label ABOVE the pedal (rear side), stacked above its LED if present
+        # silkscreen label ABOVE the pedal (rear side); each line sized so its WIDTH spans
+        # ~one pedal (height from the bold char-advance factor ~0.66). u = centred left edge.
         lines = _silk_lines(label)
-        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 9.0 if led else 10.0)
-        for k, ln in enumerate(lines):
-            engr.append({"u": u - len(ln)*1.7, "v": v_lbl + (len(lines)-1-k)*8.5, "h": 5.5, "s": ln})
+        if not lines:                                  # tracks carry no silk text
+            continue
+        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 7.0 if led else 8.0)
+        infos = []                                     # (text, width-factor, displayed width)
+        for ln in lines:
+            est_w = SILK_H * len(ln) * SILK_CW         # natural width at the common height
+            infos.append((ln, min(1.0, FSW_SLOT_W / est_w), min(est_w, FSW_SLOT_W)))
+        left_x = u - max(d for _, _, d in infos) / 2.0   # multiline: flush-left, block centred
+        for k, (ln, wf, disp_w) in enumerate(infos):
+            vpos = v_lbl + (len(lines)-1-k)*(SILK_H*1.15)
+            if len(lines) > 1:                         # multiline (REC/PLAY) -> left-aligned
+                engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
+            else:                                      # single line -> centred on the pedal
+                engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
     cuts.append({"kind": "rect", "u": S7_U, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
-    cuts.append({"kind": "rect", "u": FP_W - EDGE - BIG_W, "v": SCREEN_TOP_V - BIG_H, "w": BIG_W, "h": BIG_H, "ref": "SCREEN_16IN"})
+    s16_uc = (_row1_u(4) + _row1_u(7)) / 2.0    # centre over the 4 track pedals (row-1 right group)
+    cuts.append({"kind": "rect", "u": s16_uc - BIG_W/2.0, "v": SCREEN_TOP_V - BIG_H, "w": BIG_W, "h": BIG_H, "ref": "SCREEN_16IN"})
     # --- encoder + diffused ring: left of CLEAR/BANK, on their height centre --
     #     line, and centred under the 7" (left) screen -------------------------
     enc_v = PEDAL_ROW2_V                 # CLEAR/BANK height centre
@@ -417,13 +437,15 @@ def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
     r = max(0.0, min(r, w / 2.0, h / 2.0))
     if r == 0.0:
         _poly(msp, [(x, y), (x+w, y), (x+w, y+h), (x, y+h)], layer); return
-    b = math.tan(math.radians(45.0))
+    b = math.tan(math.radians(22.5))      # bulge for a 90 deg corner fillet (NOT 45 -> that is a 180 deg bump)
     pts = [(x+r, y, 0.0), (x+w-r, y, b), (x+w, y+r, 0.0), (x+w, y+h-r, b),
            (x+w-r, y+h, 0.0), (x+r, y+h, b), (x, y+h-r, 0.0), (x, y+r, b)]
     msp.add_lwpolyline(pts, format="xyb", close=True, dxfattribs={"layer": layer})
 
-def _text(msp, x, y, h, s, layer="ENGRAVE"):
-    msp.add_text(s, height=h, dxfattribs={"layer": layer}).set_placement((x, y))
+def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
+    from ezdxf.enums import TextEntityAlignment
+    al = TextEntityAlignment.CENTER if halign == "center" else TextEntityAlignment.LEFT
+    msp.add_text(s, height=h, dxfattribs={"layer": layer, "width": wf}).set_placement((x, y), align=al)
 
 def _emit(msp, feats, ox=0.0, oy=0.0):
     for f in feats:
@@ -434,8 +456,8 @@ def _emit(msp, feats, ox=0.0, oy=0.0):
         elif f["kind"] == "ring":
             _circle(msp, x, y, f["od"], layer); _circle(msp, x, y, f["id"], layer)
         elif f["kind"] == "rect":
-            _rrect(msp, x, y, f["w"], f["h"],
-                   r=(0.0 if layer in ("ENGRAVE",) else R_FILLET), layer=layer)
+            r = f.get("r", 0.0 if layer in ("ENGRAVE",) else R_FILLET)
+            _rrect(msp, x, y, f["w"], f["h"], r=r, layer=layer)
 
 # ---- parts -----------------------------------------------------------------
 
@@ -469,9 +491,11 @@ def dxf_faceplate(path):
     cuts, engr = faceplate_holes()                    # canonical layout, 7" left
     _emit(msp, cuts, ox=0, oy=ffl)
     for e in engr:
-        _text(msp, e["u"], e["v"]+ffl, e["h"], e["s"], layer="SILK")
-    for u in (PW*0.18, PW*0.5, PW*0.82):
+        _text(msp, e["u"], e["v"]+ffl, e["h"], e["s"], layer="SILK",
+              wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
+    for u in FRONT_SCREW_U:
         _circle(msp, u, ffl/2.0, D_M4)                                     # front lip -> front wall
+    for u in (PW*0.18, PW*0.5, PW*0.82):
         _circle(msp, u, yr0 + rl/2.0, D_M4)                               # rear lap -> transition
     _text(msp, 10, yr1+8, 8, f"VAMP LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws", "NOTE")
     doc.saveas(path)
@@ -615,10 +639,11 @@ def dxf_base(path):
     for x in (45, BW-45):
         for y in (45, BD-45):
             _circle(msp, x, y, D_FOOT)
+    _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
 
     # ---- front wall: lid front-lip screws | rear wall: I/O + transition PEM --------
-    for f in (0.18, 0.5, 0.82):
-        _circle(msp, BW*f, -Hf*0.5, D_M4)                              # front-lip screws
+    for u in FRONT_SCREW_U:
+        _circle(msp, u, -Hf*0.5, D_M4)                                 # front-lip screws (match the lid lip)
     io = rear_holes()                                                  # canonical; no mirror
     for c in io:
         c["v"] = BD + c["v"]                                           # rear z -> depth on the flap
@@ -631,24 +656,56 @@ def dxf_base(path):
           "NOTE")
     doc.saveas(path); return {"blank": (BW + 2*pkh, BD + Hf + Hr + Ht)}
 
+def platform_foot_u(sw):
+    """The two x-fractions of the foot-flange screws, as offsets from the shelf centre."""
+    return (-sw*0.25, sw*0.25)
+
+def platform_foot_holes():
+    """M3 holes in the bottom plate for the 10 platform foot-flange screws (front + rear
+    in-turned flanges), projected from each pedal onto the horizontal bottom plate."""
+    cs = math.cos(math.radians(SLOPE_ANGLE))
+    sw = ASP1_W + 2*PLATFORM_MARGIN; sd = ASP1_D + 2*PLATFORM_MARGIN; ff = PLATFORM_FOOT
+    out = []
+    for _label, u, v in PEDALS:
+        vb = v * cs                                # pedal depth projected onto the flat bottom
+        for d in platform_foot_u(sw):
+            out.append({"kind": "circle", "u": u+d, "v": vb - sd/2 + ff/2, "d": D_M3, "ref": "PLAT_SCR"})
+            out.append({"kind": "circle", "u": u+d, "v": vb + sd/2 - ff/2, "d": D_M3, "ref": "PLAT_SCR"})
+    return out
+
 def dxf_platform(path, ph, qty, tag):
-    """Inner pedal platform: shelf the ASP-1 stands on + two downturned legs with weld
-    tabs (spot-welded to the bottom plate). The shelf height is per-ROW: the front-row
-    pedals sit lower, the CLEAR/BANK (mid) row higher (the lid is taller back there)."""
+    """Inner pedal platform: a closed 4-WALL box (skirt) the ASP-1 stands on. The box stays
+    WITHIN the pedal footprint; the front & rear walls carry IN-turned foot flanges that are
+    SCREWED to the bottom plate (M3) -- no spot welding. A closed box on screwed feet resists
+    a stomp far better than an open channel; matters most for the tall CLEAR/BANK platform."""
     doc = _doc(); msp = doc.modelspace()
     sw = ASP1_W + 2*PLATFORM_MARGIN
     sd = ASP1_D + 2*PLATFORM_MARGIN
-    leg = ph - T
-    # developed: [leg][shelf][leg] along the depth, legs fold down
-    _poly(msp, [(0, 0), (sw, 0), (sw, leg), (sw, leg+sd), (sw, leg+sd+leg),
-                (0, leg+sd+leg), (0, leg+sd), (0, leg), (0, 0)], "CUT")
-    _poly(msp, [(0, leg), (sw, leg)], "BEND", closed=False)
-    _poly(msp, [(0, leg+sd), (sw, leg+sd)], "BEND", closed=False)
-    # weld tabs along the leg feet
-    _poly(msp, [(0, 0), (sw, 0)], "WELD", closed=False)
-    _poly(msp, [(0, leg+sd+leg), (sw, leg+sd+leg)], "WELD", closed=False)
-    _text(msp, 5, leg+sd+leg+6, 6,
-          f"VAMP PLATFORM {tag}  2.0mm  x{qty}  shelf H {ph:.1f}  PROVISIONAL (set to ASP-1)  spot-weld feet", "NOTE")
+    # box stands ON the bottom plate (T thick), so its height = ph - T; wall = box - shelf - flange
+    h  = max(ph - 3*T, 3.0)                 # wall height (-T bottom plate, -T shelf, -T flange)
+    ff = PLATFORM_FOOT
+    ox, oy = h, h+ff                        # left/right walls have no flange; front/rear do
+    x0, x1 = ox, ox+sw                      # shelf x extents in the flat
+    y0, y1 = oy, oy+sd                      # shelf y extents
+    # cross outline: shelf + front/rear (wall+flange) arms + left/right (wall only) arms
+    _poly(msp, [
+        (x0, 0), (x1, 0), (x1, y0),                  # front arm (wall + in-turned flange)
+        (x1+h, y0), (x1+h, y1), (x1, y1),            # right wall
+        (x1, y1+h+ff), (x0, y1+h+ff), (x0, y1),      # rear arm (wall + in-turned flange)
+        (0, y1), (0, y0), (x0, y0),                  # left wall
+    ], "CUT")
+    for s in ([[(x0,y0),(x1,y0)], [(x0,ff),(x1,ff)],            # front: shelf->wall, wall->flange
+               [(x0,y1),(x1,y1)], [(x0,y1+h),(x1,y1+h)],       # rear
+               [(x0,y0),(x0,y1)], [(x1,y0),(x1,y1)]]):         # left & right walls (single fold)
+        _poly(msp, s, "BEND", closed=False)
+    # M3 screw holes through the two in-turned foot flanges (front + rear)
+    cxs = ((x0+x1)/2 + d for d in platform_foot_u(sw))
+    for cx in list(cxs):
+        _circle(msp, cx, ff/2, D_M3)               # front flange
+        _circle(msp, cx, y1+h+ff/2, D_M3)          # rear flange
+    _text(msp, x0, y1+h+ff+8, 6,
+          f"VAMP PLATFORM {tag}  2.0mm  x{qty}  closed 4-wall box H {ph:.1f}  PROVISIONAL  "
+          "M3-screw front+rear foot flanges to bottom; butt-weld 4 corners", "NOTE")
     doc.saveas(path); return {}
 
 def dxf_screen_bracket(path):
@@ -960,8 +1017,8 @@ def _render_parts(cq, explode=0.0):
             for dy in (-sy/2,sy/2):
                 add(cq.Workplane("XY").circle(3).extrude(STANDOFF_H).translate((gx(cy+dy),gy(cx+dx),0)).val(), BRASS)
     # --- lid fixings: front lip -> Front panel (horizontal); rear lap -> transition (down)
-    for f in (0.18,0.5,0.82):                        # Front panel, into the lid front lip
-        add(cq.Solid.makeCylinder(3.5,2.5,cq.Vector(0,(W-2*T)*f+T,H_FRONT-5),cq.Vector(-1,0,0)), SCR)
+    for u in FRONT_SCREW_U:                          # Front panel, into the lid front lip
+        add(cq.Solid.makeCylinder(3.5,2.5,cq.Vector(0,u+T,H_FRONT-5),cq.Vector(-1,0,0)), SCR)
     nrm = cq.Vector(math.sin(math.radians(TRANS_ANGLE)),0,math.cos(math.radians(TRANS_ANGLE)))  # transition outward normal
     lapx = FACE_RUN + LID_REAR_LAP*0.5*math.cos(math.radians(TRANS_ANGLE))
     lapz = H_REAR - LID_REAR_LAP*0.5*math.sin(math.radians(TRANS_ANGLE)) + T
