@@ -140,6 +140,7 @@ D_FOOT    = 8.0      # rubber-foot fixing
 
 # --- fasteners ----------------------------------------------------------------
 D_M3      = 3.2      # M3 clearance (Pi/board standoffs)
+D_M2      = 2.4      # M2 clearance (external buck standoffs)
 D_M4      = 4.3      # M4 clearance (bottom plate -> shell)
 PEM_M4    = 6.3      # PEM M4 clinch hole (DISTINCT from M4 clearance)
 PEM_EDGE  = 8.0      # min PEM centre-to-edge distance
@@ -464,7 +465,15 @@ def board_mounts():
 # Returns (centre_u, centre_depth, (u_span, depth_span)) for the 58x49 Pi 4 hole pattern.
 def pi_mount():
     bd = D - 2*T
-    return (REAR_WIN_U, bd - 48.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
+    return (REAR_WIN_U, bd - 42.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth; near wall so ports sit flush
+
+# External Pololu D24V90F5 buck (40.6 x 20.3 mm, 4x M2 at 35.6 x 15.2 mm) — the add-on that
+# makes 5V for the Pi + screens (the in-production board is untouched). Mounted on standoffs
+# in the rear airflow bay, to the right of the Pi/main-board column.
+BUCK_HOLES = (35.6, 15.2)
+def buck_mount():
+    bd = D - 2*T
+    return (REAR_WIN_U + 125.0, bd - 60.0, BUCK_HOLES)
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -697,6 +706,11 @@ def dxf_base(path):
         for dy in (-psy/2, psy/2):
             _circle(msp, pcx+dx, pcy+dy, D_M3)
     _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER x{PI_RISER_H:.0f}mm (Pi build)", "NOTE")
+    bkx, bky, (bsx, bsy) = buck_mount()            # external 5V buck (M2 standoffs)
+    for dx in (-bsx/2, bsx/2):
+        for dy in (-bsy/2, bsy/2):
+            _circle(msp, bkx+dx, bky+dy, D_M2)
+    _text(msp, bkx - bsx/2, bky + bsy/2 + 4, 5, "BUCK 5V (Pololu D24V90F5)", "NOTE")
     for x in (45, BW-45):
         for y in (45, BD-45):
             _circle(msp, x, y, D_FOOT)
