@@ -1137,6 +1137,16 @@ def render_png(path, direction=(-0.32, 0.05, 1.0), explode=0.0):
     # No image flip: the canonical orientation is baked into the geometry (see _render_parts).
     return path
 
+def dxf_ring_disc(path):
+    """Metal centre disc that fills the inside of the diffused LED ring (the ring cutout removes a
+    full RING_OD hole, so this centre is a separate piece). The EC11 encoder mounts through the
+    centre hole and its nut clamps the disc; the knob sits on top. Cut from 2mm sheet."""
+    doc = _doc(); msp = doc.modelspace()
+    _circle(msp, 0, 0, RING_ID)                 # outline: OD = ring inner diameter
+    _circle(msp, 0, 0, D_ENC)                   # encoder bush hole (centre)
+    _text(msp, -RING_ID/2, RING_ID/2 + 6, 5, "VAMP LED-RING CENTRE DISC  2.0mm  x1  (encoder clamps it)", "NOTE")
+    doc.saveas(path); return {}
+
 # ===========================================================================
 # MAIN
 # ===========================================================================
@@ -1147,10 +1157,11 @@ DXF_PARTS = [
     ("vamp_platform_front",   lambda p: dxf_platform(p, platform_h(PEDAL_ROW1_V), 8, "FRONT")),
     ("vamp_platform_mid",     lambda p: dxf_platform(p, platform_h(PEDAL_ROW2_V), 2, "MID (CLEAR/BANK)")),
     ("vamp_screen_bracket",   dxf_screen_bracket),
+    ("vamp_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("vamp_rear_panel_pi",    lambda p: dxf_rear_panel(p, "pi")),    # swappable rear I/O
     ("vamp_rear_panel_nopi",  lambda p: dxf_rear_panel(p, "nopi")),
 ]
-NO_PDF = {"vamp_platform_front", "vamp_platform_mid",
+NO_PDF = {"vamp_platform_front", "vamp_platform_mid", "vamp_ring_disc",
           "vamp_rear_panel_pi", "vamp_rear_panel_nopi"}   # minimal parts: DXF only
 
 def main(argv):
