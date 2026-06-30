@@ -298,10 +298,18 @@ def rear_holes():
     for du in (-REAR_WIN_W/2-9, REAR_WIN_W/2+9):                 # 4 bolt holes around the window
         for dz in (-REAR_WIN_H/2-9, REAR_WIN_H/2+9):
             cuts.append({"kind": "circle", "u": u+du, "v": z+dz, "d": D_M3, "ref": "IO_BOLT"})
-    cuts.append({"kind": "circle", "u": u+REAR_WIN_W/2+28, "v": REAR_WALL_H/2.0, "d": D_GND, "ref": "EARTH_STUD"})
-    vr = 7                                                       # denser vent block, centred on the wall mid-height
+    # Evenly fill the rear wall: matching margins (window left margin = vent right margin = EDGE,
+    # and the window->vents gap = EDGE), with the vent columns evenly pitched across the span.
+    sl = VENT_SLOT[0]
+    v_l = u + REAR_WIN_W/2 + EDGE                                # first vent column (EDGE gap after window)
+    v_r = W - EDGE                                               # last column's right edge (EDGE margin)
+    ncol = max(2, round((v_r - v_l - sl) / (sl + 8.0)) + 1)
+    cp = (v_r - v_l - sl) / (ncol - 1)                          # exact pitch so the block fills v_l..v_r
+    cuts.append({"kind": "circle", "u": (u+REAR_WIN_W/2 + v_l)/2.0, "v": REAR_WALL_H/2.0,
+                 "d": D_GND, "ref": "EARTH_STUD"})              # earth stud centred in the window->vents gap
+    vr = 7                                                       # rows, centred on the wall mid-height
     vz0 = REAR_WALL_H/2.0 - ((vr-1)*VENT_PITCH + VENT_SLOT[1])/2.0
-    cuts += _vent_array(u0=u+REAR_WIN_W/2+38, z0=vz0, cols=9, rows=vr)
+    cuts += _vent_array(u0=v_l, z0=vz0, cols=ncol, rows=vr, cp=cp)
     return cuts
 
 def rear_panel_holes(variant):
@@ -337,13 +345,15 @@ def dxf_rear_panel(path, variant):
     _text(msp, -pw/2+4, ph/2+6, 6, f"VAMP REAR I/O PANEL ({variant})  2.0mm  x1  {label}  PROVISIONAL", "NOTE")
     doc.saveas(path); return {}
 
-def _vent_array(u0, z0, cols, rows):
-    """A block of louvre slots; returns rect features on the VENT layer."""
+def _vent_array(u0, z0, cols, rows, cp=None):
+    """A block of louvre slots; returns rect features on the VENT layer. cp = column pitch."""
     sl, sw = VENT_SLOT
+    if cp is None:
+        cp = sl + 8.0
     out = []
     for r in range(rows):
         for c in range(cols):
-            out.append({"kind": "rect", "u": u0 + c * (sl + 8.0), "v": z0 + r * VENT_PITCH,
+            out.append({"kind": "rect", "u": u0 + c * cp, "v": z0 + r * VENT_PITCH,
                         "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"})
     return out
 
