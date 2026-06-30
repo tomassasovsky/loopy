@@ -125,10 +125,10 @@ REAR_WIN_U = 175.0                        # window centre u; REAR_WIN_Z set belo
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
-VENT_PITCH  = 9.0             # slot row pitch
+VENT_PITCH  = 7.0             # slot row pitch (denser)
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
 STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
-PI_RISER_H  = 38.0            # Pi build: risers lift the Pi so its rear port stack meets the window
+PI_RISER_H  = 33.0            # Pi build: risers lift the Pi so its rear port stack meets the (centred) window
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # Main board = the manufactured V1 THT Pro Micro board (the loopy_pedal_main THT design,
 # git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
@@ -299,9 +299,9 @@ def rear_holes():
         for dz in (-REAR_WIN_H/2-9, REAR_WIN_H/2+9):
             cuts.append({"kind": "circle", "u": u+du, "v": z+dz, "d": D_M3, "ref": "IO_BOLT"})
     cuts.append({"kind": "circle", "u": u+REAR_WIN_W/2+28, "v": REAR_WALL_H/2.0, "d": D_GND, "ref": "EARTH_STUD"})
-    vr = 5                                                       # vent block centred on the wall mid-height
+    vr = 7                                                       # denser vent block, centred on the wall mid-height
     vz0 = REAR_WALL_H/2.0 - ((vr-1)*VENT_PITCH + VENT_SLOT[1])/2.0
-    cuts += _vent_array(u0=u+REAR_WIN_W/2+48, z0=vz0, cols=6, rows=vr)
+    cuts += _vent_array(u0=u+REAR_WIN_W/2+38, z0=vz0, cols=9, rows=vr)
     return cuts
 
 def rear_panel_holes(variant):
@@ -343,7 +343,7 @@ def _vent_array(u0, z0, cols, rows):
     out = []
     for r in range(rows):
         for c in range(cols):
-            out.append({"kind": "rect", "u": u0 + c * (sl + 14.0), "v": z0 + r * VENT_PITCH,
+            out.append({"kind": "rect", "u": u0 + c * (sl + 8.0), "v": z0 + r * VENT_PITCH,
                         "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"})
     return out
 
