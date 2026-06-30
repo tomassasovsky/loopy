@@ -121,7 +121,7 @@ D_PI_IO   = (54.0, 17.0) # Raspberry Pi rear-edge port stack (2x USB-A + RJ45) c
 # Rear connector WINDOW: a fixed opening in the welded rear wall, closed by a SWAPPABLE
 # I/O sub-panel that carries the version-specific connectors (Pi vs no-Pi).
 REAR_WIN_W = 290.0; REAR_WIN_H = 46.0    # window opening (w,h)
-REAR_WIN_U = 175.0; REAR_WIN_Z = 50.0    # window centre on the rear wall (u,z)
+REAR_WIN_U = 175.0                        # window centre u; REAR_WIN_Z set below (= wall mid-height)
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
@@ -157,6 +157,7 @@ D           = FACE_RUN + TRANS_RUN + 2*T  # overall depth: +2T so the bottom pla
 # Profile A: the Top plate rises to the PEAK at its rear edge (H_REAR), then the angled
 # transition DROPS from the peak down to the shorter Rear panel at the very back.
 REAR_WALL_H = H_REAR - TRANS_DROP     # Rear panel height (reduced; below the peak)
+REAR_WIN_Z  = REAR_WALL_H / 2.0       # I/O window centred vertically on the rear wall
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
@@ -297,8 +298,10 @@ def rear_holes():
     for du in (-REAR_WIN_W/2-9, REAR_WIN_W/2+9):                 # 4 bolt holes around the window
         for dz in (-REAR_WIN_H/2-9, REAR_WIN_H/2+9):
             cuts.append({"kind": "circle", "u": u+du, "v": z+dz, "d": D_M3, "ref": "IO_BOLT"})
-    cuts.append({"kind": "circle", "u": u+REAR_WIN_W/2+28, "v": 22.0, "d": D_GND, "ref": "EARTH_STUD"})
-    cuts += _vent_array(u0=u+REAR_WIN_W/2+48, z0=16.0, cols=6, rows=5)
+    cuts.append({"kind": "circle", "u": u+REAR_WIN_W/2+28, "v": REAR_WALL_H/2.0, "d": D_GND, "ref": "EARTH_STUD"})
+    vr = 5                                                       # vent block centred on the wall mid-height
+    vz0 = REAR_WALL_H/2.0 - ((vr-1)*VENT_PITCH + VENT_SLOT[1])/2.0
+    cuts += _vent_array(u0=u+REAR_WIN_W/2+48, z0=vz0, cols=6, rows=vr)
     return cuts
 
 def rear_panel_holes(variant):
