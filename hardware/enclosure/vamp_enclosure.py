@@ -215,7 +215,8 @@ SILK_H       = 25.0      # silkscreen cap height -- SAME for every label (a too-
 SILK_CW      = 0.66      # gets squished horizontally). bold char advance / cap height.
 FRONT_GAP    = 65.0      # gap between the front-row rear edge and the screen block
 PEDAL_ROW1_V = FRONT_PEDAL_MARGIN + FSW_SLOT_D / 2.0   # front row pulled to the edge
-S7_U         = EDGE                         # 7" screen left margin = EDGE
+# 7" screen, LED ring and encoder share ONE vertical centre-line (COL_U, defined
+# with the pedal layout below): the gap between pedals 1 and 2.
 # The screen block sits FRONT_GAP behind the front row; its TOP edge is the rearmost
 # control. D is chosen so FP_V - SCREEN_TOP_V (rear margin) also equals EDGE.
 SCREEN_TOP_V = PEDAL_ROW1_V + FSW_SLOT_D / 2.0 + FRONT_GAP + BIG_H
@@ -230,13 +231,17 @@ def _row1_u(i):
     last  = FP_W - EDGE - FSW_SLOT_W / 2.0
     return first + (last - first) * i / (len(_ROW1) - 1)
 
+# Shared vertical centre-line for the LEFT control column (7" screen + LED ring +
+# encoder): the gap between pedals 1 and 2, so the whole column sits above that gap.
+COL_U = (_row1_u(0) + _row1_u(1)) / 2.0
+
 # CLEAR/BANK ride row 2, aligned in u with UNDO (i=2) and MODE (i=3).
 PEDALS = [(_ROW1[i], _row1_u(i), PEDAL_ROW1_V) for i in range(8)] + [
     ("CLEAR", _row1_u(2), PEDAL_ROW2_V), ("BANK", _row1_u(3), PEDAL_ROW2_V)]
 
 # Front-lip screws: outer two land in the GAPS between pedals 1-2 and 7-8 (clear of
 # every foot-plate), the middle one on centre. Shared by the lid lip and the front wall.
-FRONT_SCREW_U = [(_row1_u(0) + _row1_u(1)) / 2.0, FP_W / 2.0, (_row1_u(6) + _row1_u(7)) / 2.0]
+FRONT_SCREW_U = [COL_U, FP_W / 2.0, (_row1_u(6) + _row1_u(7)) / 2.0]
 
 # Status-LED pedals: the 4 tracks + CLEAR + BANK (REC/PLAY has no LED -- the encoder
 # ring serves it; it's the first LED position in row 1, removed).
@@ -286,13 +291,13 @@ def faceplate_holes():
             else:                                      # single line -> centred on the pedal
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
-    cuts.append({"kind": "rect", "u": S7_U, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
+    cuts.append({"kind": "rect", "u": COL_U - SMALL_W/2.0, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
     s16_uc = (_row1_u(4) + _row1_u(7)) / 2.0    # centre over the 4 track pedals (row-1 right group)
     cuts.append({"kind": "rect", "u": s16_uc - BIG_W/2.0, "v": SCREEN_TOP_V - BIG_H, "w": BIG_W, "h": BIG_H, "ref": "SCREEN_16IN"})
-    # --- encoder + diffused ring: left of CLEAR/BANK, on their height centre --
-    #     line, and centred under the 7" (left) screen -------------------------
+    # --- encoder + diffused ring: on the CLEAR/BANK height centre line, and on
+    #     COL_U -- the SAME vertical centre-line as the 7" screen (pedal 1/2 gap) -
     enc_v = PEDAL_ROW2_V                 # CLEAR/BANK height centre
-    enc_u = S7_U + SMALL_W / 2.0         # horizontal centre of the 7" screen
+    enc_u = COL_U                        # shared left-column centre-line (7" screen + ring)
     cuts.append({"kind": "ring",   "u": enc_u, "v": enc_v, "od": RING_OD, "id": RING_ID, "ref": "RING"})
     cuts.append({"kind": "circle", "u": enc_u, "v": enc_v, "d": D_ENC, "ref": "ENCODER"})
     # NOTE: no LEDs flank the encoder -- like the reference, the ring stands alone
