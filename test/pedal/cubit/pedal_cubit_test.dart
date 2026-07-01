@@ -101,7 +101,7 @@ void main() {
         transport.emit(0x90, PedalButton.track3.note, 100);
         await pumpEventQueue();
 
-        expect(cubit.state.armedTrack, 2); // track3 == channel 2 in bank A
+        expect(cubit.state.selectedTrack, 2); // track3 == channel 2 in bank A
         expect(trackSelections, [2]); // mirrored to loopy's on-screen selection
         verifyNever(() => looper.record(channel: any(named: 'channel')));
         await cubit.close();
@@ -124,7 +124,7 @@ void main() {
 
       verify(() => looper.record()).called(1); // finalize
       verify(() => looper.record(channel: 2)).called(1); // start pressed
-      expect(cubit.state.armedTrack, 2);
+      expect(cubit.state.selectedTrack, 2);
       await cubit.close();
     });
 
@@ -139,6 +139,74 @@ void main() {
       verify(() => looper.setMute(muted: true)).called(1);
       await cubit.close();
     });
+
+    test('Stop in Rec parks the sole audible track', () async {
+      final cubit = buildCubit();
+      looperStates.add(
+        _stateWith([
+          const Track(state: TrackState.playing, lengthFrames: 48000),
+          for (var i = 1; i < 8; i++) Track(channel: i),
+        ]),
+      );
+      await pumpEventQueue();
+
+      transport.emit(0x90, PedalButton.stop.note, 100);
+      await pumpEventQueue();
+      verify(() => looper.setMute(muted: true)).called(1);
+      verify(() => looper.stopTrack()).called(1); // sole track parked
+      await cubit.close();
+    });
+
+    test(
+      'Rec/Play unmutes and overdubs a muted, still-running track',
+      () async {
+        final cubit = buildCubit();
+        // Selected track 0 is muted but its loop is still running.
+        looperStates.add(
+          _stateWith([
+            const Track(
+              state: TrackState.playing,
+              muted: true,
+              lengthFrames: 48000,
+            ),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+
+        transport.emit(0x90, PedalButton.recPlay.note, 100);
+        await pumpEventQueue();
+        verify(() => looper.setMute(muted: false)).called(1);
+        verify(() => looper.record()).called(1); // unmute + overdub
+        await cubit.close();
+      },
+    );
+
+    test(
+      'Rec/Play resumes a muted, parked sole track without overdub',
+      () async {
+        final cubit = buildCubit();
+        // Selected track 0 is muted AND parked (stopped) — the sole-track case.
+        looperStates.add(
+          _stateWith([
+            const Track(
+              state: TrackState.stopped,
+              muted: true,
+              lengthFrames: 48000,
+            ),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+
+        transport.emit(0x90, PedalButton.recPlay.note, 100);
+        await pumpEventQueue();
+        verify(() => looper.setMute(muted: false)).called(1);
+        verify(() => looper.play()).called(1); // resume, no overdub
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        await cubit.close();
+      },
+    );
 
     test('Mode toggles between Rec and Play', () async {
       final cubit = buildCubit();
@@ -161,38 +229,123 @@ void main() {
       ]),
     );
 
-    test('a Play-mode track press arms (green) / disarms (off)', () async {
+    // Two stopped (parked) recorded tracks, so Play-mode track presses arm
+    // membership rather than muting.
+    void addTwoStoppedTracks() => looperStates.add(
+      _stateWith([
+        const Track(state: TrackState.stopped, lengthFrames: 48000),
+        const Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
+        for (var i = 2; i < 8; i++) Track(channel: i),
+      ]),
+    );
+
+    test(
+      'a parked Play-mode track press arms (green) / disarms (off)',
+      () async {
+        final cubit = buildCubit();
+        await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
+        addTwoStoppedTracks();
+        await pumpEventQueue();
+        transport.emit(0x90, PedalButton.mode.note, 100); // -> Play (arms 0,1)
+        await pumpEventQueue();
+        transport.sent.clear();
+
+        // Parked: disarm ch0 (track1) — membership only, no transport change.
+        transport.emit(0x90, PedalButton.track1.note, 100);
+        await pumpEventQueue();
+        verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
+        verifyNever(
+          () => looper.setMute(
+            muted: any(named: 'muted'),
+            channel: any(named: 'channel'),
+          ),
+        );
+        var frame = PedalCodec.decodeFrame(transport.sent.last);
+        expect(frame!.trackLeds[0], PedalTrackLed.off);
+        expect(frame.trackLeds[1], PedalTrackLed.green);
+
+        // Re-arm ch0: LED green again, still no transport change.
+        transport.emit(0x90, PedalButton.track1.note, 100);
+        await pumpEventQueue();
+        frame = PedalCodec.decodeFrame(transport.sent.last);
+        expect(frame!.trackLeds[0], PedalTrackLed.green);
+
+        // An empty track has nothing to arm.
+        transport.emit(0x90, PedalButton.track3.note, 100);
+        await pumpEventQueue();
+        expect(cubit.state.playArmed, isNot(contains(2)));
+        await cubit.close();
+      },
+    );
+
+    test('a playing Play-mode track press mutes / unmutes the track', () async {
       final cubit = buildCubit();
-      await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
-      addTwoPlayingTracks();
+      addTwoPlayingTracks(); // ch0, ch1 audible
       await pumpEventQueue();
       transport.emit(0x90, PedalButton.mode.note, 100); // -> Play (arms 0,1)
       await pumpEventQueue();
-      transport.sent.clear();
 
-      // Disarm ch0 (track1 button): stops it, LED off; ch1 stays armed (green).
+      // Playing: pressing track1 mutes ch0 (never stops it — ch1 keeps sound).
       transport.emit(0x90, PedalButton.track1.note, 100);
       await pumpEventQueue();
-      verify(() => looper.stopTrack()).called(1);
-      var frame = PedalCodec.decodeFrame(transport.sent.last);
-      expect(frame!.trackLeds[0], PedalTrackLed.off);
-      expect(frame.trackLeds[1], PedalTrackLed.green);
+      verify(() => looper.setMute(muted: true)).called(1);
+      verifyNever(() => looper.stopTrack(channel: any(named: 'channel')));
 
-      // Re-arm ch0: plays it, LED green again.
+      // Reflect the mute, then press again -> unmute.
+      looperStates.add(
+        _stateWith([
+          const Track(
+            state: TrackState.playing,
+            muted: true,
+            lengthFrames: 48000,
+          ),
+          const Track(
+            channel: 1,
+            state: TrackState.playing,
+            lengthFrames: 48000,
+          ),
+          for (var i = 2; i < 8; i++) Track(channel: i),
+        ]),
+      );
+      await pumpEventQueue();
       transport.emit(0x90, PedalButton.track1.note, 100);
       await pumpEventQueue();
-      verify(() => looper.play()).called(1);
-      frame = PedalCodec.decodeFrame(transport.sent.last);
-      expect(frame!.trackLeds[0], PedalTrackLed.green);
-
-      // An empty track has nothing to arm.
-      transport.emit(0x90, PedalButton.track3.note, 100);
-      await pumpEventQueue();
-      verifyNever(() => looper.play(channel: 2));
+      verify(() => looper.setMute(muted: false)).called(1);
       await cubit.close();
     });
 
-    test('Stop in Play mode freezes all tracks but keeps armed LEDs', () async {
+    test('muting the last audible armed track parks the transport', () async {
+      final cubit = buildCubit();
+      // ch0 already muted; ch1 is the only audible armed track.
+      looperStates.add(
+        _stateWith([
+          const Track(
+            state: TrackState.playing,
+            muted: true,
+            lengthFrames: 48000,
+          ),
+          const Track(
+            channel: 1,
+            state: TrackState.playing,
+            lengthFrames: 48000,
+          ),
+          for (var i = 2; i < 8; i++) Track(channel: i),
+        ]),
+      );
+      await pumpEventQueue();
+      transport.emit(0x90, PedalButton.mode.note, 100); // -> Play (arms 0,1)
+      await pumpEventQueue();
+
+      // Mute ch1 (track2): nothing audible remains -> park the armed set.
+      transport.emit(0x90, PedalButton.track2.note, 100);
+      await pumpEventQueue();
+      verify(() => looper.setMute(muted: true, channel: 1)).called(1);
+      verify(() => looper.stopTrack()).called(1);
+      verify(() => looper.stopTrack(channel: 1)).called(1);
+      await cubit.close();
+    });
+
+    test('Stop in Play mode parks the armed set, keeping armed LEDs', () async {
       final cubit = buildCubit();
       await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
       addTwoPlayingTracks();
@@ -202,9 +355,9 @@ void main() {
 
       transport.emit(0x90, PedalButton.stop.note, 100);
       await pumpEventQueue();
-      for (var channel = 0; channel < 8; channel++) {
-        verify(() => looper.stopTrack(channel: channel)).called(1);
-      }
+      verify(() => looper.stopTrack()).called(1);
+      verify(() => looper.stopTrack(channel: 1)).called(1);
+      verifyNever(() => looper.stopTrack(channel: 2));
 
       // Engine reflects the freeze (tracks stopped); armed LEDs stay green.
       looperStates.add(
@@ -306,7 +459,7 @@ void main() {
         await pumpEventQueue();
 
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.armedTrack, 4); // first track of bank B
+        expect(cubit.state.selectedTrack, 4); // first track of bank B
         expect(bankSelections, [1]);
         expect(trackSelections, [4]); // selection follows to bank B's track 1
         await cubit.close();
@@ -430,7 +583,7 @@ void main() {
         }
         // Re-armed bank A, track 1 (channel 0), mirrored to loopy's UI.
         expect(cubit.state.activeBank, 0);
-        expect(cubit.state.armedTrack, 0);
+        expect(cubit.state.selectedTrack, 0);
         expect(bankSelections, [0]);
         expect(trackSelections, [0]);
         await cubit.close();
@@ -524,7 +677,7 @@ void main() {
         expect(cubit.trackLedFor(1), PedalTrackLed.red);
         expect(cubit.trackLedFor(2), PedalTrackLed.off);
 
-        cubit.armTrack(2);
+        cubit.selectTrack(2);
         expect(cubit.trackLedFor(2), PedalTrackLed.red);
         await cubit.close();
       });
@@ -558,7 +711,7 @@ void main() {
       test('selectBank updates armed track to the bank base channel', () async {
         final cubit = buildCubit()..selectBank(1);
         expect(cubit.state.activeBank, 1);
-        expect(cubit.state.armedTrack, 4);
+        expect(cubit.state.selectedTrack, 4);
         await cubit.close();
       });
     });

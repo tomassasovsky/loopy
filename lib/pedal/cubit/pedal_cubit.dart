@@ -10,23 +10,48 @@ part 'pedal_state.dart';
 
 /// Drives the bidirectional foot pedal: turns inbound [PedalEvent]s into
 /// `LooperRepository` commands and projects the looper snapshot back into a
-/// [PedalStateFrame] that it pushes to the pedal's LEDs.
+/// [PedalStateFrame] pushed to the pedal's LEDs.
 ///
-/// loopy is the single source of truth — the cubit holds the pedal-facing
-/// overlay (mode / armed track / bank / clear-fade) in [PedalState], reads all
-/// transport/track truth from the looper, and never trusts pedal-side state.
+/// loopy is the single source of truth — the cubit holds only the pedal-facing
+/// overlay in [PedalState] (mode / Rec cursor / Play-armed set / bank), reads
+/// all transport & track truth from the looper, and never trusts pedal-side
+/// state.
 ///
-/// The behavior table (Rec vs Play mode) and the snapshot-driven derivation of
-/// discrete actions from the engine's single cycling `record` command live in
-/// [_handleEvent]. The encoder drives the global master gain.
+/// ## Behavior table
+///
+/// **Rec mode** — [PedalState.selectedTrack] is a single cursor:
+///
+/// | button   | action                                                       |
+/// |----------|--------------------------------------------------------------|
+/// | track    | select it (or, mid-capture, finalize the old + start it)     |
+/// | Rec/Play | advance the selected track: the engine's cycling `record()`  |
+/// |          | walks empty→record→(play↔overdub). A *muted* selected track  |
+/// |          | is first unmuted: overdub if the loop still runs, else just  |
+/// |          | resume playback (the parked sole-track case).                |
+/// | Stop     | mute the selected track (finalizing a capture first)         |
+///
+/// **Play mode** — [PedalState.playArmed] is a set, and the transport is either
+/// *playing* or *stopped* (parked = every armed track halted):
+///
+/// | button   | while STOPPED (parked)      | while PLAYING                   |
+/// |----------|-----------------------------|---------------------------------|
+/// | track    | arm/disarm its membership   | mute/unmute it; muting the last |
+/// |          |                             | audible track parks everything  |
+/// | Rec/Play | play the armed set (needs   | park (stop) everything          |
+/// |          | ≥1 armed)                   |                                 |
+/// | Stop     | (already parked)            | park everything                 |
+///
+/// mute ≠ stop: muting silences a track while its playhead keeps running in
+/// sync; stopping (parking) freezes the playhead. The encoder drives master
+/// gain.
 class PedalCubit extends Cubit<PedalState> {
   /// Creates a [PedalCubit].
   ///
   /// [onBankSelected] is called whenever the pedal changes the active bank, so
   /// the wiring layer can keep the app's `BankCubit` in sync (the pedal is the
   /// source of truth for its own bank in v1). [onTrackSelected] is called with
-  /// the absolute channel whenever the pedal arms a track, so the wiring layer
-  /// can move loopy's on-screen selected track to match.
+  /// the absolute channel whenever the pedal moves its Rec cursor, so the
+  /// wiring layer can move loopy's on-screen selected track to match.
   PedalCubit({
     required PedalRepository pedal,
     required LooperRepository looper,
@@ -74,12 +99,6 @@ class PedalCubit extends Cubit<PedalState> {
   Timer? _undoTimer;
   bool _undoArmed = false;
   bool _undoHandled = false;
-
-  // Play-mode "armed for play" set: the channels the user has selected to play.
-  // Membership (not the engine's playing/stopped state) drives the green track
-  // LEDs and persists across Stop, so the LEDs keep showing what Rec/Play will
-  // resume. Seeded from the recorded tracks on entering Play mode.
-  final Set<int> _playSet = {};
 
   // Latest looper snapshot + diff state for projection.
   LooperState? _looperState;
@@ -161,6 +180,10 @@ class PedalCubit extends Cubit<PedalState> {
     _syncOutputs();
   }
 
+  // ---------------------------------------------------------------------------
+  // Public API mirrored by the on-screen UI
+  // ---------------------------------------------------------------------------
+
   /// The pedal-track LED color for [channel], using the same rules as outbound
   /// projection ([_ledFor]). A read-only projection (used by tests and the
   /// hardware LED feedback), not a state mutation, so the non-void return is
@@ -172,28 +195,22 @@ class PedalCubit extends Cubit<PedalState> {
     return _ledFor(
       _trackAtIn(looperState, channel),
       state,
-      armed: channel == state.armedTrack,
+      selected: channel == state.selectedTrack,
     );
   }
 
-  /// Arms [channel] for Rec mode and mirrors the selection to loopy's UI.
-  void armTrack(int channel) => _setArmed(channel);
+  /// Selects [channel] as the Rec-mode cursor and mirrors it to loopy's UI.
+  void selectTrack(int channel) => _selectTrack(channel);
 
   /// Toggles Rec / Play mode (same rules as the pedal's Mode footswitch).
   void toggleMode() => _toggleMode();
 
-  /// Toggles [channel]'s play-mode armed set membership without transport
-  /// changes — for on-screen mute toggles while the looper handles playback.
+  /// Toggles [channel]'s Play-mode armed-set membership (no transport change) —
+  /// for on-screen arm toggles while the looper handles playback.
   void togglePlayArm(int channel) {
-    if (!state.isPlayMode) return;
-    final track = _trackAt(channel);
-    if (track == null || !track.hasContent) return;
-    if (_playSet.contains(channel)) {
-      _playSet.remove(channel);
-    } else {
-      _playSet.add(channel);
-    }
-    _emitPedal(state);
+    if (state.mode != PedalMode.play) return;
+    if (!_playable(_trackAt(channel))) return;
+    _setPlayArmed(_withToggled(state.playArmed, channel));
   }
 
   /// Mirrors the on-screen bank switch into pedal overlay state.
@@ -201,7 +218,7 @@ class PedalCubit extends Cubit<PedalState> {
     if (bank != 0 && bank != 1) return;
     if (bank == state.activeBank) return;
     final base = bank * PedalState.tracksPerBank;
-    _emitPedal(state.copyWith(activeBank: bank, armedTrack: base));
+    _emitPedal(state.copyWith(activeBank: bank, selectedTrack: base));
   }
 
   // ---------------------------------------------------------------------------
@@ -241,117 +258,225 @@ class PedalCubit extends Cubit<PedalState> {
     }
   }
 
+  // --- Rec/Play -------------------------------------------------------------
+
   void _onRecPlay() {
-    if (state.isPlayMode) {
-      _togglePlayback();
-    } else {
-      // Rec mode: the engine's cycling record handles idle -> record ->
-      // finalize (-> overdub per the looper's rec_dub) on the armed track.
-      _looper.record(channel: state.armedTrack);
+    switch (state.mode) {
+      case PedalMode.rec:
+        _recAdvanceSelected();
+      case PedalMode.play:
+        _playToggleTransport();
     }
   }
 
-  void _onTrack(int index) {
-    final channel = state.bankBaseChannel + index;
-    if (state.isPlayMode) {
-      // Play mode: toggle the pressed track's "armed for play" membership.
-      // Arming (green) starts it playing; disarming (off) stops it. Empty
-      // tracks have nothing to play.
-      final track = _trackAt(channel);
-      if (track == null || !track.hasContent) return;
-      if (_playSet.remove(channel)) {
-        _looper.stopTrack(channel: channel); // disarm -> off
+  /// Rec mode: advance the selected track through record / overdub / play.
+  void _recAdvanceSelected() {
+    final channel = state.selectedTrack;
+    final track = _trackAt(channel);
+    if (track != null && track.muted) {
+      // Stop had muted it. Unmute and bring it back: overdub if its loop is
+      // still running, or just resume playback if it was the parked sole track.
+      _looper.setMute(muted: false, channel: channel);
+      if (track.state == TrackState.stopped) {
+        _looper.play(channel: channel); // parked -> resume, no overdub
       } else {
-        _playSet.add(channel);
-        _looper.play(channel: channel); // arm -> green + play
+        _looper.record(channel: channel); // running -> unmute + overdub
       }
-      _pushProjected();
       return;
     }
-    // Rec mode.
+    // The engine's cycling record() walks empty→record, capturing→play
+    // (finalize), playing→overdub — the whole record/overdub↔play cycle.
+    _looper.record(channel: channel);
+  }
+
+  /// Play mode: Rec/Play toggles the whole armed set between playing and parked.
+  void _playToggleTransport() {
+    if (_playIsPlaying()) {
+      _parkPlay();
+    } else {
+      _resumePlay();
+    }
+  }
+
+  // --- Track buttons --------------------------------------------------------
+
+  void _onTrack(int index) {
+    final channel = state.bankBaseChannel + index;
+    switch (state.mode) {
+      case PedalMode.rec:
+        _recTrackButton(channel);
+      case PedalMode.play:
+        _playTrackButton(channel);
+    }
+  }
+
+  /// Rec mode: select the track, or hand off a live recording to it.
+  void _recTrackButton(int channel) {
     final capturing = _capturingChannel();
     if (capturing == null) {
-      // Nothing recording: pressing a track just (re)arms it.
-      _setArmed(channel);
+      // Nothing recording: pressing a track just (re)selects it.
+      _selectTrack(channel);
     } else if (capturing == channel) {
-      // Same track: finish the loop (engine cycles record).
+      // Same track: finish the loop (the engine cycles record).
       _looper.record(channel: channel);
     } else {
       // Hand-off: finalize the recording track, then start the pressed one.
       _looper
         ..record(channel: capturing)
         ..record(channel: channel);
-      _setArmed(channel);
+      _selectTrack(channel);
     }
   }
 
-  /// Arms [channel] and mirrors the selection to loopy's on-screen UI.
-  void _setArmed(int channel) {
-    _emitPedal(state.copyWith(armedTrack: channel));
-    _onTrackSelected?.call(channel);
+  /// Play mode: while playing a track button mutes/unmutes; while parked it
+  /// arms/disarms membership. Empty tracks have nothing to arm or mute.
+  void _playTrackButton(int channel) {
+    final track = _trackAt(channel);
+    if (!_playable(track)) return;
+    if (_playIsPlaying()) {
+      _playMuteToggle(channel, track!);
+    } else {
+      _setPlayArmed(_withToggled(state.playArmed, channel));
+    }
   }
+
+  /// Mutes or unmutes [channel]. Muting the last audible armed track parks the
+  /// whole transport (a track is never individually stopped while others play).
+  void _playMuteToggle(int channel, Track track) {
+    final muting = !track.muted;
+    _looper.setMute(muted: muting, channel: channel);
+    if (muting && _isLastAudibleArmed(channel)) {
+      _parkPlay(); // everything muted -> freeze the loop
+    }
+  }
+
+  // --- Stop -----------------------------------------------------------------
 
   void _onStop() {
-    if (state.isPlayMode) {
-      // Stop every track so all playback halts and the transport (and the
-      // on-screen playheads) freeze.
-      for (final track in _tracks) {
-        _looper.stopTrack(channel: track.channel);
-      }
-      return;
+    switch (state.mode) {
+      case PedalMode.rec:
+        _recStopSelected();
+      case PedalMode.play:
+        _parkPlay();
     }
-    // Rec mode: mute the armed track, finalizing a recording first.
-    final channel = state.armedTrack;
-    final track = _trackAt(channel);
-    if (track != null && track.isCapturing) {
-      _looper.record(channel: channel);
-    }
-    _looper.setMute(muted: true, channel: channel);
   }
 
-  void _toggleMode() {
-    final next = state.isPlayMode ? PedalMode.rec : PedalMode.play;
-    if (!state.isPlayMode) {
-      // Rec -> Play: finalize any capture, then auto-arm every track that has
-      // (or is finishing) content, so the recorded loops are immediately
-      // playable and shown green without pressing each one.
-      for (final track in _tracks) {
-        if (track.isCapturing) _looper.record(channel: track.channel);
-      }
-      _playSet
-        ..clear()
-        ..addAll([
-          for (final track in _tracks)
-            if (track.hasContent || track.isCapturing) track.channel,
-        ]);
+  /// Rec mode: mute the selected track (finalizing a capture first). Muting the
+  /// only audible track parks the loop — Rec/Play then resumes it (no overdub).
+  void _recStopSelected() {
+    final channel = state.selectedTrack;
+    final track = _trackAt(channel);
+    if (track == null) return;
+    if (track.isCapturing) _looper.record(channel: channel); // finalize first
+    _looper.setMute(muted: true, channel: channel);
+    // Sole-track case: muting the only audible loop parks the whole transport.
+    if (track.state == TrackState.playing && _isLastAudibleTrack(channel)) {
+      _parkAllTracks();
     }
-    _emitPedal(state.copyWith(mode: next));
+  }
+
+  // --- Play-transport helpers ----------------------------------------------
+
+  /// True when the Play transport is running (any armed track's playhead is
+  /// advancing — a muted-but-playing track still counts as running).
+  bool _playIsPlaying() =>
+      state.playArmed.any((c) => _trackAt(c)?.state == TrackState.playing);
+
+  /// Parks the armed set: freezes every armed track's playhead.
+  void _parkPlay() {
+    for (final channel in state.playArmed) {
+      _looper.stopTrack(channel: channel);
+    }
+  }
+
+  /// Resumes the armed set: unmutes and plays every armed track. No-op when
+  /// nothing is armed (the user must select tracks before playing).
+  void _resumePlay() {
+    if (state.playArmed.isEmpty) return;
+    for (final channel in state.playArmed) {
+      _looper
+        ..setMute(muted: false, channel: channel)
+        ..play(channel: channel);
+    }
+  }
+
+  /// Whether muting [channel] would leave no audible armed track (so the loop
+  /// should park). Reads the current snapshot, in which [channel] is not yet
+  /// muted, so it is excluded from the check.
+  bool _isLastAudibleArmed(int channel) => !state.playArmed.any((c) {
+    if (c == channel) return false;
+    final track = _trackAt(c);
+    return track != null && !track.muted && track.state == TrackState.playing;
+  });
+
+  /// Whether muting [channel] would silence every track (Rec-mode sole-track
+  /// case, where muting the last content track parks the whole loop).
+  bool _isLastAudibleTrack(int channel) => !_tracks.any(
+    (t) =>
+        t.channel != channel &&
+        !t.muted &&
+        t.hasContent &&
+        t.state == TrackState.playing,
+  );
+
+  void _parkAllTracks() {
+    for (final track in _tracks) {
+      _looper.stopTrack(channel: track.channel);
+    }
+  }
+
+  // --- Mode / bank / clear --------------------------------------------------
+
+  void _toggleMode() {
+    switch (state.mode) {
+      case PedalMode.play:
+        _emitPedal(state.copyWith(mode: PedalMode.rec));
+      case PedalMode.rec:
+        _enterPlayMode();
+    }
+  }
+
+  /// Rec → Play: finalize any capture, then auto-arm every track that holds (or
+  /// is finishing) content, so the recorded loops are immediately playable and
+  /// shown green without pressing each one.
+  void _enterPlayMode() {
+    for (final track in _tracks) {
+      if (track.isCapturing) _looper.record(channel: track.channel);
+    }
+    final armed = {
+      for (final track in _tracks)
+        if (track.hasContent || track.isCapturing) track.channel,
+    };
+    _emitPedal(state.copyWith(mode: PedalMode.play, playArmed: armed));
   }
 
   void _toggleBank() {
     final nextBank = state.activeBank == 0 ? 1 : 0;
     final base = nextBank * PedalState.tracksPerBank;
-    // Re-resolve the armed track to the new bank (default its first track).
-    _emitPedal(state.copyWith(activeBank: nextBank, armedTrack: base));
+    // Re-resolve the Rec cursor to the new bank (default its first track).
+    _emitPedal(state.copyWith(activeBank: nextBank, selectedTrack: base));
     _onBankSelected?.call(nextBank);
     _onTrackSelected?.call(base);
   }
 
   void _onClear() {
-    // Clear is instantaneous. Erase every track immediately, then re-arm the
-    // first track (bank A, track 1) so the pedal lands on a clean start point.
-    _clearAll();
-    _emitPedal(state.copyWith(activeBank: 0, armedTrack: 0));
+    // Clear is instantaneous. Erase every track immediately, then land the
+    // pedal on a clean start point (bank A, track 1, nothing armed).
+    _clearAllTracks();
+    _emitPedal(
+      state.copyWith(activeBank: 0, selectedTrack: 0, playArmed: const {}),
+    );
     _onBankSelected?.call(0);
     _onTrackSelected?.call(0);
   }
 
-  void _clearAll() {
+  void _clearAllTracks() {
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++) {
       _looper.clear(channel: channel);
     }
-    _playSet.clear();
   }
+
+  // --- Undo / encoder -------------------------------------------------------
 
   void _armUndo() {
     _undoArmed = true;
@@ -359,7 +484,7 @@ class PedalCubit extends Cubit<PedalState> {
     _undoTimer?.cancel();
     _undoTimer = Timer(_longPress, () {
       _undoHandled = true; // long-press = redo
-      _looper.redo(channel: state.armedTrack);
+      _looper.redo(channel: state.selectedTrack);
     });
   }
 
@@ -368,7 +493,7 @@ class PedalCubit extends Cubit<PedalState> {
     _undoArmed = false;
     _undoTimer?.cancel();
     _undoTimer = null;
-    if (!_undoHandled) _looper.undo(channel: state.armedTrack); // tap = undo
+    if (!_undoHandled) _looper.undo(channel: state.selectedTrack); // tap = undo
   }
 
   void _onEncoder(int delta) {
@@ -376,19 +501,21 @@ class PedalCubit extends Cubit<PedalState> {
     _looper.setMasterGain(_masterGain);
   }
 
-  /// Rec/Play in Play mode: toggle the whole armed set. If any armed track is
-  /// playing, freeze them all; otherwise resume the entire set.
-  void _togglePlayback() {
-    final anyPlaying = _playSet.any(
-      (channel) => _trackAt(channel)?.state == TrackState.playing,
-    );
-    for (final channel in _playSet) {
-      if (anyPlaying) {
-        _looper.stopTrack(channel: channel);
-      } else {
-        _looper.play(channel: channel);
-      }
-    }
+  // --- Overlay mutations ----------------------------------------------------
+
+  /// Selects [channel] as the Rec cursor and mirrors it to loopy's UI.
+  void _selectTrack(int channel) {
+    _emitPedal(state.copyWith(selectedTrack: channel));
+    _onTrackSelected?.call(channel);
+  }
+
+  void _setPlayArmed(Set<int> armed) =>
+      _emitPedal(state.copyWith(playArmed: armed));
+
+  static Set<int> _withToggled(Set<int> set, int value) {
+    final next = {...set};
+    if (!next.remove(value)) next.add(value);
+    return next;
   }
 
   // ---------------------------------------------------------------------------
@@ -397,14 +524,16 @@ class PedalCubit extends Cubit<PedalState> {
 
   void _onLooperState(LooperState looperState) {
     _looperState = looperState;
-    // Reconcile the pedal-side armed set against looper truth: drop any channel
-    // that is no longer a real (or finalizing) loop — e.g. cleared from the
-    // on-screen UI — so a stale green LED can't linger and _togglePlayback
-    // can't act on an empty channel. (loopy is the single source of truth.)
-    _playSet.removeWhere((channel) {
-      final track = _trackAtIn(looperState, channel);
-      return track == null || (!track.hasContent && !track.isCapturing);
-    });
+    // Reconcile the armed set against looper truth: drop any channel that is no
+    // longer a real (or finalizing) loop — e.g. cleared from the on-screen UI —
+    // so a stale green LED can't linger and the transport helpers can't act on
+    // an empty channel. (loopy is the single source of truth.)
+    final pruned = state.playArmed
+        .where((c) => _playable(_trackAtIn(looperState, c)))
+        .toSet();
+    if (pruned.length != state.playArmed.length) {
+      emit(state.copyWith(playArmed: pruned));
+    }
     _detectLoopTop(looperState);
     _pushProjected();
   }
@@ -430,8 +559,8 @@ class PedalCubit extends Cubit<PedalState> {
     _lastPosition = position;
   }
 
-  /// Emits [next] and re-projects, so a pedal-overlay change (mode / armed /
-  /// bank / clear-fade) is reflected on the LEDs immediately.
+  /// Emits [next] and re-projects, so a pedal-overlay change (mode / cursor /
+  /// armed set / bank) is reflected on the LEDs immediately.
   void _emitPedal(PedalState next) {
     if (isClosed) return;
     emit(next);
@@ -453,12 +582,12 @@ class PedalCubit extends Cubit<PedalState> {
         _ledFor(
           _trackAtIn(s, channel),
           pedal,
-          armed: channel == pedal.armedTrack,
+          selected: channel == pedal.selectedTrack,
         ),
     ];
     // global_color carries the ring's activity color: red while recording,
     // amber while overdubbing, green while a loop plays, off when idle. (The
-    // pedal's Rec/Play mode is shown separately by the mode LED, from playMode.)
+    // pedal's Rec/Play mode is shown separately by the mode LED, from mode.)
     final anyRecording = s.tracks.any((t) => t.state == TrackState.recording);
     final anyOverdub = s.tracks.any((t) => t.state == TrackState.overdubbing);
     final anyPlaying = s.tracks.any(
@@ -481,8 +610,8 @@ class PedalCubit extends Cubit<PedalState> {
       globalColor: global,
       trackLeds: leds,
       activeBank: pedal.activeBank,
-      armedTrack: pedal.armedTrack,
-      playMode: pedal.isPlayMode,
+      armedTrack: pedal.selectedTrack,
+      mode: pedal.mode,
       loopLengthMicros: lengthMicros.clamp(
         0,
         PedalStateFrame.maxLoopLengthMicros,
@@ -492,19 +621,25 @@ class PedalCubit extends Cubit<PedalState> {
     );
   }
 
-  PedalTrackLed _ledFor(Track? track, PedalState pedal, {required bool armed}) {
-    if (pedal.isPlayMode) {
-      // Green = armed for play (in [_playSet]), whether currently playing or
-      // frozen by Stop; everything else is off.
-      final channel = track?.channel;
-      return channel != null && _playSet.contains(channel)
-          ? PedalTrackLed.green
-          : PedalTrackLed.off;
+  PedalTrackLed _ledFor(
+    Track? track,
+    PedalState pedal, {
+    required bool selected,
+  }) {
+    switch (pedal.mode) {
+      case PedalMode.play:
+        // Green = armed for play (in the set), whether currently playing,
+        // muted, or parked — the LEDs show what Rec/Play will resume.
+        final channel = track?.channel;
+        return channel != null && pedal.playArmed.contains(channel)
+            ? PedalTrackLed.green
+            : PedalTrackLed.off;
+      case PedalMode.rec:
+        // The selected (cursor) track and any capturing track are red.
+        if (selected) return PedalTrackLed.red;
+        if (track?.isCapturing ?? false) return PedalTrackLed.red;
+        return PedalTrackLed.off;
     }
-    // Rec mode: the armed (selected) track and any capturing track are red.
-    if (armed) return PedalTrackLed.red;
-    if (track?.isCapturing ?? false) return PedalTrackLed.red;
-    return PedalTrackLed.off;
   }
 
   // ---------------------------------------------------------------------------
@@ -512,6 +647,10 @@ class PedalCubit extends Cubit<PedalState> {
   // ---------------------------------------------------------------------------
 
   List<Track> get _tracks => _looperState?.tracks ?? const [];
+
+  /// A track that exists and holds (or is finishing) a loop — armable/mutable.
+  bool _playable(Track? track) =>
+      track != null && (track.hasContent || track.isCapturing);
 
   Track? _trackAt(int channel) => _trackAtIn(_looperState, channel);
 

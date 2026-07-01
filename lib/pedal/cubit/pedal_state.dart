@@ -1,14 +1,5 @@
 part of 'pedal_cubit.dart';
 
-/// Which behavior set the pedal's footswitches drive.
-enum PedalMode {
-  /// Recording / transport control (Rec/Play starts and finalizes loops).
-  rec,
-
-  /// Mixing control (track buttons toggle mute; Rec/Play toggles the set).
-  play,
-}
-
 /// Sentinel for [PedalState.copyWith] so a `null` [PedalState.boundOutputId]
 /// (unbound) can be set explicitly while omitting it preserves the current id.
 const Object _unsetBoundOutputId = Object();
@@ -17,27 +8,40 @@ const Object _unsetBoundOutputId = Object();
 /// that is not already in the looper snapshot.
 ///
 /// The looper transport / track phases live in `LooperState`; this carries only
-/// the pedal-facing overlay: the [mode], the [armedTrack], the [activeBank],
-/// the output link status, and the host's enumerated MIDI outputs + bound
-/// destination (so the settings picker reads them from state, not via
-/// read-through accessors).
+/// the pedal-facing overlay. Arming is modeled as **two distinct concepts**,
+/// one per [mode]:
+///
+/// * Rec mode — [selectedTrack]: a single cursor (what Rec/Play, Stop, Undo and
+///   Redo act on).
+/// * Play mode — [playArmed]: a *set* of channels selected to play (what sounds
+///   when the transport starts, and what the green LEDs show).
+///
+/// [PedalMode] itself lives in `pedal_repository` so the wire frame can carry
+/// it; loopy re-exports it through this cubit.
 class PedalState extends Equatable {
   /// Creates a [PedalState].
   const PedalState({
     this.mode = PedalMode.rec,
-    this.armedTrack = 0,
+    this.selectedTrack = 0,
+    this.playArmed = const {},
     this.activeBank = 0,
     this.bindStatus = PedalBindStatus.none,
     this.availableOutputs = const [],
     this.boundOutputId,
   });
 
-  /// The active behavior set.
+  /// The active behavior set (Rec vs Play).
   final PedalMode mode;
 
-  /// The armed track as an absolute channel (`0..7`); recording and Undo target
-  /// it. Defaults to track 1 (channel 0) on a clean pedal.
-  final int armedTrack;
+  /// Rec-mode cursor: the single selected track as an absolute channel
+  /// (`0..7`). Rec/Play, Stop, Undo and Redo target it. Defaults to track 1
+  /// (channel 0) on a clean pedal.
+  final int selectedTrack;
+
+  /// Play-mode arming: the channels selected to play. This is *membership* —
+  /// what sounds when the transport is (re)started, what persists across a
+  /// stop, and what the green track LEDs show. Empty until tracks are armed.
+  final Set<int> playArmed;
 
   /// The active bank: `0` = A (tracks 1–4 / channels 0–3), `1` = B (channels
   /// 4–7).
@@ -53,9 +57,6 @@ class PedalState extends Equatable {
   /// The id of the currently bound output destination, or `null` when unbound.
   final String? boundOutputId;
 
-  /// Whether the pedal is in Play (mixing) mode.
-  bool get isPlayMode => mode == PedalMode.play;
-
   /// The lowest channel of the active bank (`0` for A, `4` for B).
   int get bankBaseChannel => activeBank * tracksPerBank;
 
@@ -65,7 +66,8 @@ class PedalState extends Equatable {
   /// Returns a copy with the given fields replaced.
   PedalState copyWith({
     PedalMode? mode,
-    int? armedTrack,
+    int? selectedTrack,
+    Set<int>? playArmed,
     int? activeBank,
     PedalBindStatus? bindStatus,
     List<PedalOutput>? availableOutputs,
@@ -73,7 +75,8 @@ class PedalState extends Equatable {
   }) {
     return PedalState(
       mode: mode ?? this.mode,
-      armedTrack: armedTrack ?? this.armedTrack,
+      selectedTrack: selectedTrack ?? this.selectedTrack,
+      playArmed: playArmed ?? this.playArmed,
       activeBank: activeBank ?? this.activeBank,
       bindStatus: bindStatus ?? this.bindStatus,
       availableOutputs: availableOutputs ?? this.availableOutputs,
@@ -86,7 +89,8 @@ class PedalState extends Equatable {
   @override
   List<Object?> get props => [
     mode,
-    armedTrack,
+    selectedTrack,
+    playArmed,
     activeBank,
     bindStatus,
     availableOutputs,

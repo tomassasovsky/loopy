@@ -10,7 +10,7 @@ void main() {
     ),
     activeBank: 1,
     armedTrack: 4,
-    playMode: true,
+    mode: PedalMode.play,
     loopLengthMicros: 1000,
     clearFadeActive: true,
   );
@@ -23,7 +23,7 @@ void main() {
       expect(blank.trackLeds, hasLength(PedalStateFrame.trackCount));
       expect(blank.activeBank, 0);
       expect(blank.armedTrack, 0);
-      expect(blank.playMode, isFalse);
+      expect(blank.mode, PedalMode.rec);
       expect(blank.loopLengthMicros, 0);
       expect(blank.clearFadeActive, isFalse);
       expect(blank.isGoodbye, isFalse);
@@ -58,7 +58,7 @@ void main() {
         globalColor: GlobalColor.red,
         activeBank: 0,
         armedTrack: 2,
-        playMode: false,
+        mode: PedalMode.rec,
         loopLengthMicros: 50,
         clearFadeActive: false,
         isGoodbye: true,
@@ -70,7 +70,7 @@ void main() {
       expect(updated.globalColor, GlobalColor.red);
       expect(updated.activeBank, 0);
       expect(updated.armedTrack, 2);
-      expect(updated.playMode, isFalse);
+      expect(updated.mode, PedalMode.rec);
       expect(updated.loopLengthMicros, 50);
       expect(updated.clearFadeActive, isFalse);
       expect(updated.isGoodbye, isTrue);
@@ -90,7 +90,7 @@ void main() {
           trackLeds: const [PedalTrackLed.off],
           activeBank: 0,
           armedTrack: 0,
-          playMode: false,
+          mode: PedalMode.rec,
           loopLengthMicros: 0,
           clearFadeActive: false,
         ),

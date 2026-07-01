@@ -36,7 +36,7 @@ void main() {
       // Cross-check the production codec against the test-only packer.
       final frame = goldenFrames()['playing_bankb']!;
       final reference = buildStateSysEx([
-        0x01, // flags: playMode
+        0x01, // flags: mode=play
         GlobalColor.amber.index,
         1, // bank B
         4, // armed
