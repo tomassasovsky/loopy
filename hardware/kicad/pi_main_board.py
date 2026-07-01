@@ -49,7 +49,6 @@ v5 = Net("+5V")          # single buck rail: powers the Pi AND the LED buffers
 v3v3 = Net("+3V3")       # OUTPUT from the Pi (pins 1/17); used on the I2C header
 v9 = Net("+9V")          # after reverse-polarity protection
 vin_raw = Net("VIN_RAW")  # barrel center pin (before the P-FET)
-sw_node = Net("SW_NODE")  # buck switch node (SW pin / catch diode / inductor)
 q1g = Net("Q1_GATE")
 pgood = Net("PWR_GOOD")
 ind_data = Net("IND_DATA")          # GPIO18 / PWM0 -> buffer
@@ -65,14 +64,15 @@ encA = Net("ENC_A")
 encB = Net("ENC_B")
 encSW = Net("ENC_SW")
 
-# ---- J1: Raspberry Pi 4/5 40-pin GPIO header (the Pi mounts here) -----------
+# ---- J1: Raspberry Pi 4/5 40-pin GPIO header (ribbon-connected) -------------
 
-# 2x20 female socket, mounted on the BOTTOM side (flipped in the layout) so it
-# plugs straight down onto the Pi's male GPIO header -- this board is an
-# (oversized) HAT/shield that stacks on the Pi.
+# 2x20 male boxed IDC header on the TOP side. A 40-pin ribbon cable links it to
+# the Pi's GPIO header, so this board sits separately instead of stacking on the
+# Pi (avoids the Pi's tall USB/Ethernet jacks fouling the board). Pinout is 1:1
+# with the Pi via a straight-through ribbon.
 pi = Part("Connector", "Raspberry_Pi_4",
-          footprint="Connector_PinSocket_2.54mm:PinSocket_2x20_P2.54mm_Vertical",
-          ref="J1", value="RPi_GPIO_HAT")
+          footprint="Connector_IDC:IDC-Header_2x20_P2.54mm_Vertical",
+          ref="J1", value="RPi_GPIO_Ribbon")
 pi[2, 4] += v5
 pi[1, 17] += v3v3
 pi[6, 9, 14, 20, 25, 30, 34, 39] += gnd
@@ -99,7 +99,7 @@ for i, (name, pin) in enumerate(fsw):
     jp[2] += gnd
     C("100nF", "C%d" % (12 + i))[1, 2] += n, gnd   # debounce cap (C12..C21)
 
-# ---- Power: 9V barrel -> reverse-prot P-FET -> LM2596 buck -> +5V -----------
+# ---- Power: 9V barrel -> reverse-prot P-FET -> 5V buck module -> +5V --------
 
 j2 = Part("Connector", "Barrel_Jack",
           footprint="Connector_BarrelJack:BarrelJack_Horizontal", ref="J2")
@@ -121,22 +121,17 @@ Part("Device", "D_TVS", value="P6KE15CA",
 CP("100uF", "C1")[1, 2] += v9, gnd        # input bulk
 C("100nF", "C2")[1, 2] += v9, gnd         # input HF bypass
 
-# LM2596T-5 (fixed 5V, 3A, non-synchronous): VIN=1, OUT=2, GND=3, FB=4, ON/OFF=5
-u1 = Part("Regulator_Switching", "LM2596T-5",
-          footprint="Package_TO_SOT_THT:TO-220-5_P3.4x3.7mm_StaggerOdd_Lead3.8mm_Vertical",
-          ref="U1")
+# 5V buck MODULE (synchronous, >90% efficient -> runs cool, NO heatsink needed),
+# replacing the LM2596 + its catch diode + inductor. 3-pin 7805-compatible
+# pinout (1=VIN, 2=GND, 3=VOUT): a Recom R-78H5.0-2.0 (2A) drops straight in; for
+# full Pi 3A headroom, wire a higher-current module (e.g. Pololu D36V28F5) to
+# these three pads.
+u1 = Part("Regulator_Linear", "L7805",
+          footprint="Package_TO_SOT_THT:TO-220-3_Vertical",
+          ref="U1", value="DCDC_5V_Buck")
 u1[1] += v9            # VIN
-u1[2] += sw_node       # OUT (switch node -> catch diode + inductor)
-u1[3] += gnd           # GND
-u1[4] += v5            # FB -> output (fixed 5V sense)
-u1[5] += gnd           # ON/~OFF tied low = enabled (running)
-# catch diode (1N5822 Schottky): cathode -> SW node, anode -> GND
-Part("Diode", "1N5822",
-     footprint="Diode_THT:D_DO-201AD_P15.24mm_Horizontal", ref="D3")[1, 2] += sw_node, gnd
-l1 = Part("Device", "L", value="33uH",
-          footprint="Inductor_THT:L_Radial_D12.0mm_P5.00mm_Fastron_11P", ref="L1")
-l1[1] += sw_node
-l1[2] += v5
+u1[2] += gnd           # GND
+u1[3] += v5            # VOUT (fixed 5V)
 CP("680uF", "C3")[1, 2] += v5, gnd        # output bulk
 C("100nF", "C4")[1, 2] += v5, gnd         # output HF bypass
 

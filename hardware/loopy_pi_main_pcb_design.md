@@ -283,20 +283,21 @@ kicad-cli pcb export drill   -o fab/loopy_pi_main/ loopy_pi_main.kicad_pcb
 (The `_pi_*.py` helpers are local-path pipeline tooling, gitignored like the original
 board's `_pcb_*.py` scripts.)
 
-### Seeing the Pi in 3D (board mounted on a Pi)
+### 3D assembly render (board mounted on a Pi)
 
-**Just open `loopy_pi_main.kicad_pcb` and press Alt-3** — the Pi 4 and four
-standoffs are already attached to the board, so the 3D viewer shows the mounted
-stack out of the box. Nothing to download or run.
+`kicad/pi_assemble.py` builds a render-only assembly — this HAT mounted on a
+Raspberry Pi 4 with four standoffs — so you can preview the physical stack. It
+**downloads the Pi 4 STEP model on first run** (~17 MB, from the community
+[MGS-CAD-Files](https://github.com/multigamesystem/MGS-CAD-Files) repo) into
+`_models/` (gitignored, not redistributed); the standoffs come from KiCad's
+bundled Würth library. It writes `_assembly.kicad_pcb` (gitignored):
 
-These are render-only footprints: no pads / silk / courtyard, excluded from BOM,
-position files and the netlist, so Gerbers, drill and DRC are byte-for-byte
-unaffected (verified; DRC stays 0/0). The Pi model is **vendored in-repo** at
-`3dmodels/RaspberryPi4_ModelB.step` (see `3dmodels/NOTICE.md` for provenance /
-license) and referenced portably as `${KIPRJMOD}/3dmodels/RaspberryPi4_ModelB.step`;
-the standoffs come from KiCad's bundled Würth library.
+```sh
+KP="C:\Program Files\KiCad\10.0\bin\python.exe"
+"$KP" hardware/kicad/pi_assemble.py
+kicad-cli pcb render --rotate "-72,0,52" --perspective --zoom 0.8 \
+    --quality high --floor -o _asm_hero.png hardware/kicad/_assembly.kicad_pcb
+```
 
-`kicad/pi_mating_model.py` (re)attaches these after a pipeline regen, and
-`kicad/pi_assemble.py` builds a standalone `_assembly.kicad_pcb` (gitignored) for
-an isolated render. Render-only: the Pi/standoff alignment is approximate (visual,
-not a fit-check).
+Render-only: the Pi/standoff alignment is approximate (visual, not a fit-check),
+and the assembly file is never part of the fab outputs.
