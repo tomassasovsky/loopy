@@ -52,7 +52,11 @@ FACE_RUN = 397.0     # depth of the TOP PLATE control area (front edge -> the pe
                      # sized so the screen block sits FRONT_GAP behind the front row
                      # with an EDGE rear margin
 H_REAR   = 100.0     # peak height (rear edge of the Top plate = tallest point)
-H_FRONT  = 12.0      # front lip height (low end) -- nearly at the floor
+H_FRONT  = 12.0      # front lip height (low end) -- nearly at the floor. The lid front lip
+                     # screws horizontally into this wall. DFM CAVEAT: at 12mm the flat wall
+                     # is only ~9mm, so the M4 lands ~2.5mm from the fold -- laser the hole and
+                     # tap/finish AFTER bending. A fully-clear front screw needs a taller front
+                     # (~17mm); an inward screw-ledge is blocked by the front-pedal row (~8mm).
 
 # Rear of the body steps down via an ANGLED TRANSITION SURFACE (a beveled shoulder)
 # instead of the Top plate folding straight to the Rear panel. The transition is a
@@ -69,7 +73,17 @@ T        = 2.0       # sheet thickness (2.0 mm 5052-H32 aluminium)
 RI       = 2.0       # inside bend radius (= T, safe for 5052)
 KF       = 0.33      # K-factor for bend-allowance development
 FLANGE   = 18.0      # return-flange depth (lid side wings + wall top flange)
-LID_FRONT_FL = 9.0   # front-lip flange flat (small, matches the low front wall)
+# Weld-free corner join: internal L-brackets riveted through both walls. These MUST match
+# between the base rivet holes, the bracket parts, and the viewer render.
+CORNER_RO = 8.0      # rivet offset ALONG each wall from the corner (hug the corner, clear the I/O panel)
+CORNER_LEG = 12.0    # bracket leg width (along the wall)
+# REAR-corner rivets are STAGGERED between the two legs so a wall-leg rivet and a side-leg
+# rivet never sit at the same height (their tips would meet at the corner). Heights are from
+# the bottom-plate top.
+CORNER_ZR_WALL = (8.0, 40.0, 72.0)    # rear-wall leg rivets (3)
+CORNER_ZR_SIDE = (24.0, 56.0)         # side-wall leg rivets (2), interleaved with the wall leg
+CORNER_HT      = 80.0                  # rear bracket height (covers the ~90 mm rear wall)
+LID_FRONT_FL = 9.0   # front-lip flange flat (down-turned lip; rests on the front wall, no screw)
 LID_REAR_LAP = 24.0  # how far the Top plate's rear edge laps onto the transition (screw land)
 LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to the base from below)
 # Lid -> body fixing scheme:
@@ -91,15 +105,15 @@ FOOTPLATE_PROUD = 10.0        # foot-plate stands this far above the sloped top 
                               # pedals sit at a good height even with the low front lip)
 PLATFORM_MARGIN = 2.0         # platform shelf overhang past the pedal footprint (stay within the slot)
 PLATFORM_LEG_W  = 14.0        # weld-tab / leg width
-PLATFORM_FOOT   = 12.0        # IN-turned foot-flange width (screwed down inside the footprint)
+PLATFORM_FOOT   = 18.0        # IN-turned foot-flange width (M3 screw >=7mm from the flange bend)
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
-BIG_BEZEL  = (355.0, 223.0)   # 16" module glass/bezel (ViewSonic TD1655 class)
-BIG_W, BIG_H     = 350.0, 199.0   # 16" aperture (active area, bezel overlaps)
-BIG_DEPTH  = 18.0             # module depth behind the panel (15 mm + cable slack)
-SMALL_BEZEL = (165.0, 100.0)  # 7" module outline
-SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (active ~154x86)
-SMALL_DEPTH = 30.0            # 7" module + DSI ribbon depth
+BIG_BEZEL  = (360.0, 224.0)   # 15.6" no-shell capacitive panel outline (glass edge-to-edge)
+BIG_W, BIG_H     = 344.0, 194.0   # 15.6" active area (344.16 x 193.59), 1920x1080 16:9 -> aperture
+BIG_DEPTH  = 8.0              # thin panel (3-6 mm); HDMI/USB driver board mounts flat inside
+SMALL_BEZEL = (165.0, 100.0)  # 7" module outline (APROTII: ears 164x99)
+SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
+SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 
 # --- LEDs / encoder -----------------------------------------------------------
 D_LED     = 5.1      # 5 mm through-hole LED (cabled)
@@ -125,7 +139,7 @@ REAR_WIN_U = 175.0                        # window centre u; REAR_WIN_Z set belo
 
 # --- ventilation / mounting ---------------------------------------------------
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
-VENT_PITCH  = 7.0             # slot row pitch (denser)
+VENT_PITCH  = 8.0             # slot row pitch (web = pitch - slot = 4mm = 2T)
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
 STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
 PI_RISER_H  = 33.0            # Pi build: risers lift the Pi so its rear port stack meets the (centred) window
@@ -334,7 +348,7 @@ def rear_panel_holes(variant):
 def dxf_rear_panel(path, variant):
     """Swappable rear I/O sub-panel: a plate that closes the rear WINDOW (with a bolt-on
     overlap) carrying the version's connector cutouts. Built per variant ('pi'/'nopi')."""
-    doc = _doc(); msp = doc.modelspace(); ov = 12.0
+    doc = _doc(); msp = doc.modelspace(); ov = 15.0   # overlap: bolts (+9 from window) clear the panel edge by >=4mm
     pw, ph = REAR_WIN_W + 2*ov, REAR_WIN_H + 2*ov
     _poly(msp, [(-pw/2,-ph/2), (pw/2,-ph/2), (pw/2,ph/2), (-pw/2,ph/2)], "CUT")
     _emit(msp, rear_panel_holes(variant))
@@ -554,9 +568,10 @@ def _mirror_u(feats, width):
 
 def dxf_faceplate(path):
     """REMOVABLE LID (top plate), developed flat = a simple rectangle: the sloped top
-    plate (all cutouts) + a down-turned FRONT LIP (screws into the front wall) + a REAR
-    LAP (folds onto the transition shoulder, screws down). The SIDES are on the base; the
-    lid drops in and rests on the side-wall top edges. No screws on the playing surface."""
+    plate (all cutouts) + a down-turned FRONT LIP (screws into the front wall) + a REAR LAP
+    (folds onto the transition shoulder, screws DOWN into PEMs). The SIDES are on the base;
+    the lid drops in and rests on the side-wall top edges. NOTE: the front-lip hole sits
+    close to the fold (12mm front) -- laser + tap after bending (see H_FRONT)."""
     doc = _doc(); msp = doc.modelspace()
     ffl, rl = LID_FRONT_FL, LRL
     PW, PV = FP_W, FP_V
@@ -566,18 +581,32 @@ def dxf_faceplate(path):
     _poly(msp, [(0, ffl), (PW, ffl)], "BEND", closed=False)                # front lip fold
     _poly(msp, [(0, yr0), (PW, yr0)], "BEND", closed=False)                # rear lap fold
 
-    cuts, engr = faceplate_holes()                    # canonical layout, 7" left
+    cuts, _engr = faceplate_holes()                   # canonical layout, 7" left
     _emit(msp, cuts, ox=0, oy=ffl)
-    for e in engr:
-        _text(msp, e["u"], e["v"]+ffl, e["h"], e["s"], layer="SILK",
-              wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
+    # legends are NOT silkscreened on the metal -- they live on a printed adhesive overlay
+    # (dxf_overlay / vamp_overlay). Keeps the metal a plain cut+bend+powder part (cheap).
     for u in FRONT_SCREW_U:
-        _circle(msp, u, ffl/2.0, D_M4)                                     # front lip -> front wall
+        _circle(msp, u, ffl/2.0, D_M4)                                     # front lip -> front wall (horizontal)
     for u in (PW*0.18, PW*0.5, PW*0.82):
         _circle(msp, u, yr0 + rl/2.0, D_M4)                               # rear lap -> transition
-    _text(msp, 10, yr1+8, 8, f"VAMP LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws", "NOTE")
+    _text(msp, 10, yr1+8, 8, f"VAMP LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see vamp_overlay)", "NOTE")
     doc.saveas(path)
     return {"blank": (PW, yr1)}
+
+def dxf_overlay(path):
+    """PRINTED ADHESIVE TOP-PLATE OVERLAY -- replaces silkscreen. A polycarbonate/vinyl
+    graphic bonded to the faceplate: BLACK field, WHITE legends, apertures die-cut to match
+    the metal cutouts. Goes to a label/overlay printer, NOT the sheet-metal shop -- so the
+    metal stays a plain cut+bend+powder part and there is no per-screen silkscreen setup."""
+    doc = _doc(); msp = doc.modelspace()
+    _poly(msp, [(0, 0), (FP_W, 0), (FP_W, FP_V), (0, FP_V)], "CUT")     # overlay outline (top-plate face)
+    cuts, engr = faceplate_holes()
+    _emit(msp, cuts, ox=0, oy=0)                                        # die-cut apertures (match the metal)
+    for e in engr:
+        _text(msp, e["u"], e["v"], e["h"], e["s"], layer="SILK",       # WHITE legend on the print
+              wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
+    _text(msp, 10, FP_V + 8, 8, "VAMP TOP OVERLAY  printed adhesive (polycarbonate/vinyl); BLACK field + WHITE legend; die-cut apertures; bonded to the faceplate (no silkscreen on metal)", "NOTE")
+    doc.saveas(path); return {}
 
 def dxf_front(path):
     """FRONT panel: flat web + a small inward top ledge. The Top plate's front lip
@@ -700,12 +729,24 @@ def dxf_base(path):
     _poly(msp, [(BW, 0), (BW, BD)], "BEND", closed=False)             # right
     _poly(msp, [(0, BD+Hr), (BW, BD+Hr)], "BEND", closed=False)       # rear -> transition
 
-    # ---- corner bend-relief holes + welded butt seams ------------------------------
+    # ---- corner bend-relief holes + WELD-FREE riveted corners ----------------------
+    # The 4 vertical corners join via internal L-brackets (vamp_corner_bracket), pop-riveted
+    # through both walls -- NO welding, so the whole shell is instant-quote (cut+bend+powder).
     for (cxr, cyr) in ((0, 0), (BW, 0), (0, BD), (BW, BD)):
-        _circle(msp, cxr, cyr, 2*rrel)
-    for x in (0, BW):
-        _poly(msp, [(x, 0), (x, -Hf)], "WELD", closed=False)           # front corners
-        _poly(msp, [(x, BD), (x, BD+Hr)], "WELD", closed=False)        # rear corners
+        _circle(msp, cxr, cyr, 2*rrel)                                  # corner bend-relief
+    # Rivets are placed at the SAME heights (z) on BOTH faces of a corner so a single folded
+    # L-bracket lines up with all of them. z = height up the wall; RO = offset along the wall.
+    # Only the TALL rear corners get riveted L-brackets. The short 12 mm FRONT corners are
+    # already clamped top (lid front-lip screws into the front wall) + bottom (bottom-plate
+    # fold ties both walls), so they stay a plain butt+relief corner -- no bracket needed.
+    RV = D_M3; RO = CORNER_RO                  # 3.2 mm rivet clearance; offset from the corner
+    # heights z are measured from the BOTTOM-PLATE TOP (the bracket rests there), so add T
+    # to convert to a wall height above the fold line.
+    for sgn, xc in ((+1, 0.0), (-1, BW)):     # +1 left (side flap -x) | -1 right (side flap +x)
+        for z in CORNER_ZR_WALL:               # rear-wall leg (3 rivets)
+            _circle(msp, xc + sgn*RO, BD + T + z, RV)      # rear-wall face   (flat y = BD + T + z)
+        for z in CORNER_ZR_SIDE:               # side-wall leg (2 rivets, staggered)
+            _circle(msp, xc - sgn*(T + z), BD - RO, RV)    # side-wall face
 
     # ---- bottom features: vents + Pi/board M3 standoffs + rubber feet -------------
     _emit(msp, _bottom_vents_local(BW, BD))
@@ -740,9 +781,24 @@ def dxf_base(path):
         _circle(msp, BW*f, BD + Hr + Ht - LID_REAR_LAP*0.5, PEM_M4)    # lid-lap PEM on the transition
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
-          f"VAMP BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); weld the 4 corner seams; rear 2nd fold = transition",
+          f"VAMP BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition",
           "NOTE")
     doc.saveas(path); return {"blank": (BW + 2*pkh, BD + Hf + Hr + Ht)}
+
+def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
+    """Internal L-bracket that joins a vertical corner WITHOUT welding: one leg pop-rivets to
+    the rear wall, the other to the side wall. Folded 90 deg. Rivet holes MATCH the base corner
+    holes exactly (CORNER_RO from the fold; staggered heights per leg so no two rivets meet)."""
+    doc = _doc(); msp = doc.modelspace()
+    LEG = CORNER_LEG
+    _poly(msp, [(0, 0), (2*LEG, 0), (2*LEG, ht), (0, ht)], "CUT")
+    _poly(msp, [(LEG, 0), (LEG, ht)], "BEND", closed=False)             # 90 deg fold between the legs
+    for z in wall_zs:
+        _circle(msp, LEG - CORNER_RO, z, D_M3)                          # rear-wall leg
+    for z in side_zs:
+        _circle(msp, LEG + CORNER_RO, z, D_M3)                          # side-wall leg
+    _text(msp, 0, ht+6, 6, f"VAMP CORNER BRACKET ({tag})  2.0mm  x2  weld-free corner join; rivet to both walls", "NOTE")
+    doc.saveas(path); return {}
 
 def platform_foot_u(sw):
     """The two x-fractions of the foot-flange screws, as offsets from the shelf centre."""
@@ -802,10 +858,11 @@ def dxf_screen_bracket(path):
     clamps against. Two sizes noted."""
     doc = _doc(); msp = doc.modelspace()
     bl, bh = 60.0, 30.0
-    _poly(msp, [(0, -FL), (bl, -FL), (bl, bh), (0, bh)], "CUT")
+    bf = 24.0                       # PEM flange depth: M4 clinch ring sits >=9mm from the bend
+    _poly(msp, [(0, -bf), (bl, -bf), (bl, bh), (0, bh)], "CUT")
     _poly(msp, [(0, 0), (bl, 0)], "BEND", closed=False)
     for x in (15, bl-15):
-        _circle(msp, x, -FL/2.0, PEM_M4)
+        _circle(msp, x, -bf/2.0, PEM_M4)
         _circle(msp, x, bh/2.0, D_M4)
     _text(msp, 5, bh+6, 6, "VAMP SCREEN BRACKET  2.0mm  x4 (16in) + x4 (7in)", "NOTE")
     doc.saveas(path); return {}
@@ -966,7 +1023,7 @@ def report():
     P(f"  slot          : {FSW_SLOT_W:.0f}(u) x {FSW_SLOT_D:.0f}(v) mm  [PROVISIONAL]")
     P(f"  platform H    : front {platform_h(PEDAL_ROW1_V):.1f} / mid {platform_h(PEDAL_ROW2_V):.1f} mm "
       f"(foot-plate proud {FOOTPLATE_PROUD:+.0f} mm)  [PROVISIONAL]")
-    P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 16in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
+    P(f"Screens         : 7in {SMALL_W:.0f}x{SMALL_H:.0f} (left) | 15.6in {BIG_W:.0f}x{BIG_H:.0f} (right), tops aligned, from behind")
     P(f"Rear I/O        : 9V + btn + fuse + [pi: Pi USB/Ethernet block | nopi: 2xHDMI+2xUSB] + vents + earth")
     P(f"Ventilation     : free area {_vent_free_area(rear_holes())+_vent_free_area(_bottom_vents()):.0f} mm^2 (>= {VENT_FREE_AREA_MIN:.0f}), standoff {STANDOFF_H:.0f}mm")
     P("-"*68)
@@ -1153,15 +1210,18 @@ def dxf_ring_disc(path):
 
 DXF_PARTS = [
     ("vamp_faceplate",        dxf_faceplate),
+    ("vamp_overlay",          dxf_overlay),  # printed adhesive top-plate graphic (replaces silkscreen)
     ("vamp_base",             dxf_base),     # bottom + front/rear/side walls, ONE folded blank
     ("vamp_platform_front",   lambda p: dxf_platform(p, platform_h(PEDAL_ROW1_V), 8, "FRONT")),
     ("vamp_platform_mid",     lambda p: dxf_platform(p, platform_h(PEDAL_ROW2_V), 2, "MID (CLEAR/BANK)")),
     ("vamp_screen_bracket",   dxf_screen_bracket),
     ("vamp_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
+    ("vamp_corner_bracket_rear",  lambda p: dxf_corner_bracket(p, CORNER_HT, CORNER_ZR_WALL, CORNER_ZR_SIDE, "REAR x2")),
     ("vamp_rear_panel_pi",    lambda p: dxf_rear_panel(p, "pi")),    # swappable rear I/O
     ("vamp_rear_panel_nopi",  lambda p: dxf_rear_panel(p, "nopi")),
 ]
 NO_PDF = {"vamp_platform_front", "vamp_platform_mid", "vamp_ring_disc",
+          "vamp_corner_bracket_rear",
           "vamp_rear_panel_pi", "vamp_rear_panel_nopi"}   # minimal parts: DXF only
 
 def main(argv):
