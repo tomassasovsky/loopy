@@ -123,3 +123,15 @@ test/**/failures/
 /skidl*.log
 packages/loopy_engine/*.exe
 *.exe
+
+# --- local tooling / scratch (not part of the repo) ---
+.claude/
+.portfolio-output/
+
+# KiCad scratch + caches. Underscore-prefixed = scratch experiments; canonical
+# fab outputs live in hardware/kicad/fab/. Loose gerbers/caches are regenerated.
+hardware/kicad/_*
+hardware/kicad/fp-info-cache
+hardware/kicad/gerbers/
+hardware/kicad/*.gbr
+hardware/kicad/*.gbrjob
