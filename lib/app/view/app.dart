@@ -5,13 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:led_client/led_client.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/led/led.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
@@ -43,7 +41,6 @@ class App extends StatelessWidget {
     required this.sessionDirectory,
     this.pedalRepository,
     this.pedalSimulator,
-    this.ledRepository,
     this.displayCount,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
@@ -53,7 +50,7 @@ class App extends StatelessWidget {
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
 
-  /// The shared controller repository (MIDI/GPIO → looper actions).
+  /// The shared controller repository (MIDI → looper actions).
   final ControllerRepository controllerRepository;
 
   /// The MIDI input device repository (owns the foot-controller lifecycle). It
@@ -72,11 +69,6 @@ class App extends StatelessWidget {
   /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
   /// repository), so it is provided by value, not created here.
   final SimulatorPedalTransport? pedalSimulator;
-
-  /// The Raspberry Pi console's LED driver channel, or `null` off-Pi — a no-op
-  /// channel is substituted so the [LedCubit] always exists. Owned by the
-  /// [LedCubit], which disposes it.
-  final LedRepository? ledRepository;
 
   /// Reports the number of connected displays, for the dual-display console's
   /// single-display fallback. `null` (the default) disables the fallback
@@ -244,20 +236,6 @@ class App extends StatelessWidget {
                 pedal: pedalRepo,
                 looper: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
-          // Eager (not lazy): the LED cubit runs the boot-time driver health
-          // handshake and starts projecting transport state to the console's
-          // WS2812 driver at startup. Off-Pi it gets a no-op channel, no fault.
-          BlocProvider(
-            lazy: false,
-            create: (context) {
-              final cubit = LedCubit(
-                led: ledRepository ?? LedRepository(),
-                looper: context.read<LooperRepository>(),
               );
               unawaited(cubit.load());
               return cubit;
@@ -479,29 +457,6 @@ class _AppViewState extends State<_AppView> {
     }
   }
 
-  /// Shows a persistent banner when the console's LED driver does not answer
-  /// the boot-time health ping, so a missing/unflashed driver is a visible fault
-  /// rather than silent dark LEDs. Off-Pi the channel reports healthy, so this
-  /// never fires there.
-  void _showLedBanner(LedState state) {
-    final messenger = _messengerKey.currentState;
-    if (messenger == null || state.health != LedHealth.missing) return;
-    final l10n = _l10n;
-    messenger.showMaterialBanner(
-      MaterialBanner(
-        key: const Key('app_ledMissing_banner'),
-        content: Text(l10n.ledDriverMissingBanner),
-        leading: const Icon(Icons.lightbulb_outline),
-        actions: [
-          TextButton(
-            onPressed: messenger.clearMaterialBanners,
-            child: Text(l10n.dismiss),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Non-pointer signal that the console is waiting for its pinned audio
   /// interface to (re)appear at boot, after which it auto-starts the engine.
   /// The banner clears itself when recovery finishes (status returns to idle).
@@ -602,10 +557,6 @@ class _AppViewState extends State<_AppView> {
               previous.connection.connectivity !=
               current.connection.connectivity,
           listener: (_, state) => _showMidiConnectivityBanner(state),
-        ),
-        BlocListener<LedCubit, LedState>(
-          listenWhen: (previous, current) => previous.health != current.health,
-          listener: (_, state) => _showLedBanner(state),
         ),
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,

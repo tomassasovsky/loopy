@@ -7,15 +7,12 @@ enum ControllerSourceKind {
 
   /// A MIDI Control Change message.
   midiCc,
-
-  /// A Raspberry Pi GPIO pin edge.
-  gpio,
 }
 
 /// The value-agnostic identity of a control, used as a mapping key.
 ///
-/// A footswitch is identified by its source kind and number (note/CC/pin),
-/// independent of the momentary value (velocity / CC value / pin level).
+/// A footswitch is identified by its source kind and number (note/CC),
+/// independent of the momentary value (velocity / CC value).
 class MappingTrigger extends Equatable {
   /// Creates a [MappingTrigger].
   const MappingTrigger({required this.kind, required this.id});
@@ -23,7 +20,7 @@ class MappingTrigger extends Equatable {
   /// The source kind.
   final ControllerSourceKind kind;
 
-  /// The control number: MIDI note, CC number, or GPIO pin.
+  /// The control number: MIDI note or CC number.
   final int id;
 
   @override
@@ -45,10 +42,10 @@ class RawControllerInput extends Equatable {
   /// The source kind.
   final ControllerSourceKind kind;
 
-  /// The control number: MIDI note, CC number, or GPIO pin.
+  /// The control number: MIDI note or CC number.
   final int id;
 
-  /// The momentary value: note velocity, CC value, or pin level (`0`/`1`).
+  /// The momentary value: note velocity or CC value.
   final int value;
 
   /// The value-agnostic [MappingTrigger] identity of this input.

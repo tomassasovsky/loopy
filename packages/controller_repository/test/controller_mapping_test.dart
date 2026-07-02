@@ -45,84 +45,41 @@ void main() {
     });
   });
 
-  group('ControllerMapping.gpioDefaults', () {
-    final mapping = ControllerMapping.gpioDefaults();
-
-    test('binds GPIO footswitch pins to transport actions', () {
-      const press = RawControllerInput(
-        kind: ControllerSourceKind.gpio,
-        id: 17,
-        value: 1,
-      );
-      expect(
-        mapping.resolve(press),
-        const ControllerEvent(action: LooperAction.recordOverdub),
-      );
-    });
-
-    test('every entry is a GPIO trigger', () {
-      expect(
-        mapping.entries.every(
-          (e) => e.trigger.kind == ControllerSourceKind.gpio,
-        ),
-        isTrue,
-      );
-    });
-
-    test('covers the default transport actions plus the encoder press', () {
-      final actions = mapping.entries.map((e) => e.action).toSet();
-      // The four footswitches mirror the MIDI defaults...
-      expect(
-        actions,
-        containsAll(
-          ControllerMapping.defaults().entries.map((e) => e.action),
-        ),
-      );
-      // ...and the encoder push-switch adds a global play-all.
-      expect(actions, contains(LooperAction.playAll));
-    });
-
-    test('binds the encoder push-switch to play-all', () {
-      const press = RawControllerInput(
-        kind: ControllerSourceKind.gpio,
-        id: 26,
-        value: 1,
-      );
-      expect(
-        mapping.resolve(press),
-        const ControllerEvent(action: LooperAction.playAll),
-      );
-    });
-  });
-
   group('ControllerMapping.merge', () {
-    test('combines MIDI and GPIO defaults so both resolve', () {
-      final merged = ControllerMapping.defaults().merge(
-        ControllerMapping.gpioDefaults(),
-      );
+    // A second mapping bound to MIDI notes, layered over the CC defaults.
+    ControllerMapping customNotes() =>
+        const ControllerMapping(
+          name: 'custom',
+        ).withBinding(
+          const MappingTrigger(kind: ControllerSourceKind.midiNote, id: 36),
+          LooperAction.recordOverdub,
+        );
 
-      const midiPress = RawControllerInput(
+    test('combines two mappings so both resolve', () {
+      final merged = ControllerMapping.defaults().merge(customNotes());
+
+      const ccPress = RawControllerInput(
         kind: ControllerSourceKind.midiCc,
         id: 80,
         value: 127,
       );
-      const gpioPress = RawControllerInput(
-        kind: ControllerSourceKind.gpio,
-        id: 17,
-        value: 1,
+      const notePress = RawControllerInput(
+        kind: ControllerSourceKind.midiNote,
+        id: 36,
+        value: 127,
       );
       expect(
-        merged.resolve(midiPress),
+        merged.resolve(ccPress),
         const ControllerEvent(action: LooperAction.recordOverdub),
       );
       expect(
-        merged.resolve(gpioPress),
+        merged.resolve(notePress),
         const ControllerEvent(action: LooperAction.recordOverdub),
       );
     });
 
     test('other wins on a shared trigger', () {
-      const trigger = MappingTrigger(kind: ControllerSourceKind.gpio, id: 17);
+      const trigger = MappingTrigger(kind: ControllerSourceKind.midiCc, id: 80);
       final base = const ControllerMapping().withBinding(
         trigger,
         LooperAction.play,
@@ -133,8 +90,8 @@ void main() {
       );
 
       const press = RawControllerInput(
-        kind: ControllerSourceKind.gpio,
-        id: 17,
+        kind: ControllerSourceKind.midiCc,
+        id: 80,
         value: 1,
       );
       expect(
@@ -144,9 +101,7 @@ void main() {
     });
 
     test('keeps the receiver name', () {
-      final merged = ControllerMapping.defaults().merge(
-        ControllerMapping.gpioDefaults(),
-      );
+      final merged = ControllerMapping.defaults().merge(customNotes());
       expect(merged.name, ControllerMapping.defaults().name);
     });
 
@@ -190,8 +145,8 @@ void main() {
 
     test('adds a new entry for an unseen trigger', () {
       const trigger = MappingTrigger(
-        kind: ControllerSourceKind.gpio,
-        id: 17,
+        kind: ControllerSourceKind.midiNote,
+        id: 36,
       );
       final mapping = const ControllerMapping().withBinding(
         trigger,
@@ -199,8 +154,8 @@ void main() {
         channel: 1,
       );
       const press = RawControllerInput(
-        kind: ControllerSourceKind.gpio,
-        id: 17,
+        kind: ControllerSourceKind.midiNote,
+        id: 36,
         value: 1,
       );
       expect(

@@ -49,11 +49,11 @@ void main() {
     });
 
     test('merges inputs from multiple sources', () async {
-      final gpio = FakeControllerSource();
+      final second = FakeControllerSource();
       final repo = ControllerRepository(
-        sources: [source, gpio],
+        sources: [source, second],
         mapping: const ControllerMapping().withBinding(
-          const MappingTrigger(kind: ControllerSourceKind.gpio, id: 17),
+          const MappingTrigger(kind: ControllerSourceKind.midiNote, id: 36),
           LooperAction.stop,
           channel: 3,
         ),
@@ -62,7 +62,7 @@ void main() {
       final events = <ControllerEvent>[];
       repo.events.listen(events.add);
 
-      gpio.press(ControllerSourceKind.gpio, 17, value: 1);
+      second.press(ControllerSourceKind.midiNote, 36, value: 1);
       await Future<void>.delayed(Duration.zero);
 
       expect(events, [

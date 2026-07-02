@@ -6,7 +6,6 @@
     "deviceDisconnectedBanner": "{deviceName} desconectado — intentando reconectar…",
     "deviceReconnectedSnackbar": "{deviceName} reconectado",
     "dismiss": "Descartar",
-    "ledDriverMissingBanner": "El controlador de LED no responde: comprueba que esté conectado y con firmware.",
     "waveformWindowFailedBanner": "La pantalla de forma de onda no se abrió: comprueba la segunda pantalla.",
     "singleDisplayNotice": "Solo se detectó una pantalla: la pantalla de forma de onda no está disponible.",
     "audioRecoveryWaitingBanner": "Esperando la interfaz de audio: se iniciará automáticamente al reconectarse.",
