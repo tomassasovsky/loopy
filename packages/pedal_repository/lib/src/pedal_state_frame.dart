@@ -48,7 +48,7 @@ class PedalStateFrame extends Equatable {
     required this.globalColor,
     required this.trackLeds,
     required this.activeBank,
-    required this.armedTrack,
+    required this.selectedTrack,
     required this.mode,
     required this.loopLengthMicros,
     required this.clearFadeActive,
@@ -62,8 +62,8 @@ class PedalStateFrame extends Equatable {
          'activeBank must be 0 (A) or 1 (B)',
        ),
        assert(
-         armedTrack >= 0 && armedTrack < trackCount,
-         'armedTrack must be in 0..${trackCount - 1}',
+         selectedTrack >= 0 && selectedTrack < trackCount,
+         'selectedTrack must be in 0..${trackCount - 1}',
        ),
        assert(
          loopLengthMicros >= 0 && loopLengthMicros <= maxLoopLengthMicros,
@@ -78,7 +78,7 @@ class PedalStateFrame extends Equatable {
     globalColor: GlobalColor.off,
     trackLeds: List<PedalTrackLed>.filled(trackCount, PedalTrackLed.off),
     activeBank: 0,
-    armedTrack: 0,
+    selectedTrack: 0,
     mode: PedalMode.rec,
     loopLengthMicros: 0,
     clearFadeActive: false,
@@ -100,11 +100,11 @@ class PedalStateFrame extends Equatable {
   /// The active bank: `0` = A, `1` = B.
   final int activeBank;
 
-  /// The cursor / armed track index shown by the pedal, `0`..[trackCount] - 1.
+  /// The selected-track (cursor) index shown by the pedal, `0`..[trackCount]-1.
   ///
   /// In Rec mode this is the selected track; in Play mode the armed *set* is
   /// carried by [trackLeds] (green), and this stays the last cursor.
-  final int armedTrack;
+  final int selectedTrack;
 
   /// Which behavior set the footswitches drive (Rec vs Play).
   final PedalMode mode;
@@ -124,7 +124,7 @@ class PedalStateFrame extends Equatable {
     GlobalColor? globalColor,
     List<PedalTrackLed>? trackLeds,
     int? activeBank,
-    int? armedTrack,
+    int? selectedTrack,
     PedalMode? mode,
     int? loopLengthMicros,
     bool? clearFadeActive,
@@ -134,7 +134,7 @@ class PedalStateFrame extends Equatable {
       globalColor: globalColor ?? this.globalColor,
       trackLeds: trackLeds ?? this.trackLeds,
       activeBank: activeBank ?? this.activeBank,
-      armedTrack: armedTrack ?? this.armedTrack,
+      selectedTrack: selectedTrack ?? this.selectedTrack,
       mode: mode ?? this.mode,
       loopLengthMicros: loopLengthMicros ?? this.loopLengthMicros,
       clearFadeActive: clearFadeActive ?? this.clearFadeActive,
@@ -147,7 +147,7 @@ class PedalStateFrame extends Equatable {
     globalColor,
     trackLeds,
     activeBank,
-    armedTrack,
+    selectedTrack,
     mode,
     loopLengthMicros,
     clearFadeActive,
@@ -158,7 +158,7 @@ class PedalStateFrame extends Equatable {
   String toString() =>
       'PedalStateFrame(global: ${globalColor.name}, '
       'tracks: ${trackLeds.map((l) => l.name).join(",")}, '
-      'bank: $activeBank, armed: $armedTrack, '
+      'bank: $activeBank, selected: $selectedTrack, '
       'mode: ${mode.name}, loopUs: $loopLengthMicros, '
       'clearFade: $clearFadeActive, goodbye: $isGoodbye)';
 }

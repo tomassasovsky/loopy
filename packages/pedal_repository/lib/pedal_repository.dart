@@ -16,3 +16,4 @@ export 'src/pedal_mode.dart';
 export 'src/pedal_repository.dart';
 export 'src/pedal_state_frame.dart';
 export 'src/pedal_transport.dart';
+export 'src/simulator_pedal_transport.dart';

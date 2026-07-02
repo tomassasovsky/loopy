@@ -11,17 +11,19 @@ const Object _unsetBoundOutputId = Object();
 /// the pedal-facing overlay. Arming is modeled as **two distinct concepts**,
 /// one per [mode]:
 ///
-/// * Rec mode — [selectedTrack]: a single cursor (what Rec/Play, Stop, Undo and
-///   Redo act on).
+/// * Record mode — [selectedTrack]: a single cursor (what Rec/Play, Stop, Undo
+///   and Redo act on).
 /// * Play mode — [playArmed]: a *set* of channels selected to play (what sounds
 ///   when the transport starts, and what the green LEDs show).
 ///
-/// [PedalMode] itself lives in `pedal_repository` so the wire frame can carry
-/// it; loopy re-exports it through this cubit.
+/// [mode] is the system-wide [LooperMode] — every control surface toggles and
+/// reads this one field. The wire frame carries it as `PedalMode` (which lives
+/// in `pedal_repository` so the codec can encode it).
 class PedalState extends Equatable {
   /// Creates a [PedalState].
   const PedalState({
-    this.mode = PedalMode.rec,
+    this.mode = LooperMode.record,
+    this.defaultMode = LooperMode.record,
     this.selectedTrack = 0,
     this.playArmed = const {},
     this.activeBank = 0,
@@ -30,8 +32,12 @@ class PedalState extends Equatable {
     this.boundOutputId,
   });
 
-  /// The active behavior set (Rec vs Play).
-  final PedalMode mode;
+  /// The active behavior set (Record vs Play) — the system's one mode.
+  final LooperMode mode;
+
+  /// The persisted mode the system boots into. Setting it also applies it to
+  /// the live [mode].
+  final LooperMode defaultMode;
 
   /// Rec-mode cursor: the single selected track as an absolute channel
   /// (`0..7`). Rec/Play, Stop, Undo and Redo target it. Defaults to track 1
@@ -65,7 +71,8 @@ class PedalState extends Equatable {
 
   /// Returns a copy with the given fields replaced.
   PedalState copyWith({
-    PedalMode? mode,
+    LooperMode? mode,
+    LooperMode? defaultMode,
     int? selectedTrack,
     Set<int>? playArmed,
     int? activeBank,
@@ -75,6 +82,7 @@ class PedalState extends Equatable {
   }) {
     return PedalState(
       mode: mode ?? this.mode,
+      defaultMode: defaultMode ?? this.defaultMode,
       selectedTrack: selectedTrack ?? this.selectedTrack,
       playArmed: playArmed ?? this.playArmed,
       activeBank: activeBank ?? this.activeBank,
@@ -89,6 +97,7 @@ class PedalState extends Equatable {
   @override
   List<Object?> get props => [
     mode,
+    defaultMode,
     selectedTrack,
     playArmed,
     activeBank,

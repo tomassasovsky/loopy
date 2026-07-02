@@ -25,6 +25,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.wetRoute,
     required this.dryRoute,
     required this.lanePalette,
+    required this.ledOff,
+    required this.ledGreen,
+    required this.ledRed,
+    required this.ledAmber,
+    required this.ledBlue,
+    required this.ringGlow,
   });
 
   /// The neutral surface palette.
@@ -55,9 +61,28 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   /// The palette hue for [lane] (cycled past the palette length).
   Color laneColor(int lane) => lanePalette[lane % lanePalette.length];
 
+  /// Pedal LED palette — the on-screen pedal faceplate renders the firmware's
+  /// LED colors from these so they honor the high-contrast variant instead of
+  /// hardcoding hues. [ledOff] is an unlit dot; the rest map the pedal's
+  /// `PedalTrackLed` / `GlobalColor` semantics; [ringGlow] is the encoder ring's
+  /// ambient rim when idle.
+  final Color ledOff;
+  final Color ledGreen;
+  final Color ledRed;
+  final Color ledAmber;
+  final Color ledBlue;
+  final Color ringGlow;
+
   /// The display/body typeface — a geometric grotesque that gives the surfaces
   /// their instrument-panel character (bundled under `assets/fonts/`).
   static const String displayFont = 'Space Grotesk';
+
+  /// Bold Helvetica legend face from the VAMP printed overlay — pedal silk
+  /// labels and the main looper screen.
+  static const String legendFont = 'Helvetica';
+
+  /// Fallbacks when [legendFont] is unavailable on the host.
+  static const List<String> legendFontFallback = ['Arial', 'sans-serif'];
 
   /// The monospace typeface used for numerics, gate/section labels, and any
   /// "machine" readout (channel ids, dB values, FX names).
@@ -79,6 +104,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? wetRoute,
     Color? dryRoute,
     List<Color>? lanePalette,
+    Color? ledOff,
+    Color? ledGreen,
+    Color? ledRed,
+    Color? ledAmber,
+    Color? ledBlue,
+    Color? ringGlow,
   }) => SurfaceTheme(
     background: background ?? this.background,
     surface: surface ?? this.surface,
@@ -94,6 +125,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     wetRoute: wetRoute ?? this.wetRoute,
     dryRoute: dryRoute ?? this.dryRoute,
     lanePalette: lanePalette ?? this.lanePalette,
+    ledOff: ledOff ?? this.ledOff,
+    ledGreen: ledGreen ?? this.ledGreen,
+    ledRed: ledRed ?? this.ledRed,
+    ledAmber: ledAmber ?? this.ledAmber,
+    ledBlue: ledBlue ?? this.ledBlue,
+    ringGlow: ringGlow ?? this.ringGlow,
   );
 
   @override
@@ -114,6 +151,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       textTertiary: c(textTertiary, other.textTertiary),
       wetRoute: c(wetRoute, other.wetRoute),
       dryRoute: c(dryRoute, other.dryRoute),
+      ledOff: c(ledOff, other.ledOff),
+      ledGreen: c(ledGreen, other.ledGreen),
+      ledRed: c(ledRed, other.ledRed),
+      ledAmber: c(ledAmber, other.ledAmber),
+      ledBlue: c(ledBlue, other.ledBlue),
+      ringGlow: c(ringGlow, other.ringGlow),
       lanePalette: [
         for (var i = 0; i < lanePalette.length; i++)
           c(
@@ -157,6 +200,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       Color(0xFFFB923C), // orange
       Color(0xFF38BDF8), // sky
     ],
+    ledOff: Color(0xFF23232B),
+    ledGreen: Color(0xFF34D399),
+    ledRed: Color(0xFFEF4444),
+    ledAmber: Color(0xFFF59E0B),
+    ledBlue: Color(0xFF3B82F6),
+    ringGlow: Color(0xFF3A3A44),
   );
 
   /// High-contrast variant of [dark], selected automatically when the OS
@@ -188,6 +237,12 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       Color(0xFFFDBA74), // orange
       Color(0xFF7DD3FC), // sky
     ],
+    ledOff: Color(0xFF3A3A44),
+    ledGreen: Color(0xFF6EE7B7),
+    ledRed: Color(0xFFFF6B6B),
+    ledAmber: Color(0xFFFFC04D),
+    ledBlue: Color(0xFF6BA8FF),
+    ringGlow: Color(0xFF6B6D78),
   );
 }
 

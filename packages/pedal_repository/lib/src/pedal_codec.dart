@@ -76,7 +76,7 @@ abstract final class PedalCodec {
         (frame.isGoodbye ? 0x04 : 0);
     payload[1] = frame.globalColor.index;
     payload[2] = frame.activeBank;
-    payload[3] = frame.armedTrack;
+    payload[3] = frame.selectedTrack;
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
       payload[4 + i] = frame.trackLeds[i].index;
     }
@@ -142,10 +142,10 @@ abstract final class PedalCodec {
     final flags = payload[0];
     final colorIndex = payload[1];
     final activeBank = payload[2];
-    final armedTrack = payload[3];
+    final selectedTrack = payload[3];
     if (colorIndex >= GlobalColor.values.length) return null;
     if (activeBank > 1) return null;
-    if (armedTrack >= PedalStateFrame.trackCount) return null;
+    if (selectedTrack >= PedalStateFrame.trackCount) return null;
 
     final trackLeds = <PedalTrackLed>[];
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
@@ -164,7 +164,7 @@ abstract final class PedalCodec {
       globalColor: GlobalColor.values[colorIndex],
       trackLeds: trackLeds,
       activeBank: activeBank,
-      armedTrack: armedTrack,
+      selectedTrack: selectedTrack,
       mode: (flags & 0x01 != 0) ? PedalMode.play : PedalMode.rec,
       clearFadeActive: flags & 0x02 != 0,
       isGoodbye: flags & 0x04 != 0,

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/cubit/tracks_cubit.dart';
 
 /// Shows a dialog to rename track [channel] (current name [current]) and
-/// persists the result through [cubit]. Shared by the Big Picture grid and the
+/// persists the result through [cubit]. Shared by the Tracks grid and the
 /// settings page so the rename UX stays in one place.
 Future<void> showRenameTrackDialog({
   required BuildContext context,
-  required BigPictureCubit cubit,
+  required TracksCubit cubit,
   required int channel,
   required String current,
 }) async {

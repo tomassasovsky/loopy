@@ -9,7 +9,7 @@ void main() {
       PedalTrackLed.green,
     ),
     activeBank: 1,
-    armedTrack: 4,
+    selectedTrack: 4,
     mode: PedalMode.play,
     loopLengthMicros: 1000,
     clearFadeActive: true,
@@ -22,7 +22,7 @@ void main() {
       expect(blank.trackLeds, everyElement(PedalTrackLed.off));
       expect(blank.trackLeds, hasLength(PedalStateFrame.trackCount));
       expect(blank.activeBank, 0);
-      expect(blank.armedTrack, 0);
+      expect(blank.selectedTrack, 0);
       expect(blank.mode, PedalMode.rec);
       expect(blank.loopLengthMicros, 0);
       expect(blank.clearFadeActive, isFalse);
@@ -41,14 +41,14 @@ void main() {
     });
 
     test('frames differ when a field differs', () {
-      expect(sample(), isNot(sample().copyWith(armedTrack: 5)));
+      expect(sample(), isNot(sample().copyWith(selectedTrack: 5)));
     });
 
     test('toString surfaces the salient fields', () {
       final text = sample().toString();
       expect(text, contains('amber'));
       expect(text, contains('bank: 1'));
-      expect(text, contains('armed: 4'));
+      expect(text, contains('selected: 4'));
     });
   });
 
@@ -57,7 +57,7 @@ void main() {
       final updated = sample().copyWith(
         globalColor: GlobalColor.red,
         activeBank: 0,
-        armedTrack: 2,
+        selectedTrack: 2,
         mode: PedalMode.rec,
         loopLengthMicros: 50,
         clearFadeActive: false,
@@ -69,7 +69,7 @@ void main() {
       );
       expect(updated.globalColor, GlobalColor.red);
       expect(updated.activeBank, 0);
-      expect(updated.armedTrack, 2);
+      expect(updated.selectedTrack, 2);
       expect(updated.mode, PedalMode.rec);
       expect(updated.loopLengthMicros, 50);
       expect(updated.clearFadeActive, isFalse);
@@ -89,7 +89,7 @@ void main() {
           globalColor: GlobalColor.off,
           trackLeds: const [PedalTrackLed.off],
           activeBank: 0,
-          armedTrack: 0,
+          selectedTrack: 0,
           mode: PedalMode.rec,
           loopLengthMicros: 0,
           clearFadeActive: false,
@@ -107,11 +107,11 @@ void main() {
 
     test('rejects an out-of-range armed track', () {
       expect(
-        () => sample().copyWith(armedTrack: PedalStateFrame.trackCount),
+        () => sample().copyWith(selectedTrack: PedalStateFrame.trackCount),
         throwsA(isA<AssertionError>()),
       );
       expect(
-        () => sample().copyWith(armedTrack: -1),
+        () => sample().copyWith(selectedTrack: -1),
         throwsA(isA<AssertionError>()),
       );
     });
