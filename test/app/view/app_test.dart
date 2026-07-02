@@ -54,7 +54,11 @@ class _RecordingWindowService implements WaveformWindowService {
   }
 
   @override
-  void pushWaveform(Float32List samples, double progress) => pushCalls++;
+  void pushWaveform(
+    Float32List samples,
+    double progress,
+    String selectedTrack,
+  ) => pushCalls++;
 }
 
 void main() {
@@ -101,12 +105,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('renders the looper as the home page in big picture', (
+    testWidgets('renders the looper as the home page in tracks', (
       tester,
     ) async {
       await pumpApp(tester, NoopWaveformWindowService());
       expect(find.byType(LooperPage), findsOneWidget);
-      expect(find.byType(BigPictureView), findsOneWidget);
+      expect(find.byType(TracksView), findsOneWidget);
     });
 
     testWidgets('always lands on the looper — no first-run gate', (
@@ -130,7 +134,7 @@ void main() {
       expect(find.byType(LooperPage), findsOneWidget);
     });
 
-    testWidgets('opens the waveform window on launch in big picture', (
+    testWidgets('opens the waveform window on launch in tracks', (
       tester,
     ) async {
       final windowService = _RecordingWindowService();
@@ -163,16 +167,16 @@ void main() {
       expect(windowService.isOpen, isTrue);
 
       await tester.tap(
-        find.byKey(const Key('bigpicture_settings_secondaryTap')),
+        find.byKey(const Key('tracks_settings_secondaryTap')),
         buttons: kSecondaryButton,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(BigPictureSettingsPage), findsOneWidget);
+      expect(find.byType(SettingsPage), findsOneWidget);
 
-      // Disable the secondary waveform window; it closes (Big Picture is the
+      // Disable the secondary waveform window; it closes (Tracks is the
       // only mode now, so the window follows this enable toggle alone).
       await tester.tap(
-        find.byKey(const Key('bpSettings_waveformWindow_switch')),
+        find.byKey(const Key('settings_waveformWindow_switch')),
       );
       await tester.pumpAndSettle();
 
@@ -180,11 +184,11 @@ void main() {
 
       // Close the settings page so the global open-guard resets for the next
       // test (the toggle no longer navigates away on its own).
-      await tester.tap(find.byKey(const Key('bpSettings_close_button')));
+      await tester.tap(find.byKey(const Key('settings_close_button')));
       await tester.pumpAndSettle();
 
-      // The layout never swaps — Big Picture is the only mode.
-      expect(find.byType(BigPictureView), findsOneWidget);
+      // The layout never swaps — Tracks is the only mode.
+      expect(find.byType(TracksView), findsOneWidget);
     });
 
     testWidgets('the S key opens the settings page', (tester) async {
@@ -192,12 +196,12 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
       await tester.pumpAndSettle();
-      expect(find.byType(BigPictureSettingsPage), findsOneWidget);
+      expect(find.byType(SettingsPage), findsOneWidget);
 
       // Close it so the global open-guard resets for the next test.
-      await tester.tap(find.byKey(const Key('bpSettings_close_button')));
+      await tester.tap(find.byKey(const Key('settings_close_button')));
       await tester.pumpAndSettle();
-      expect(find.byType(BigPictureSettingsPage), findsNothing);
+      expect(find.byType(SettingsPage), findsNothing);
     });
 
     testWidgets('shows a disconnect banner for a lost pinned device, then '

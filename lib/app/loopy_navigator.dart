@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:loopy/looper/view/big_picture_settings_page.dart';
+import 'package:loopy/looper/view/settings_page.dart';
 
 /// The root navigator key, so settings can be opened from outside the widget
 /// tree (e.g. the macOS system menu bar) as well as from in-app gestures.
@@ -10,7 +10,7 @@ const String loopySettingsRouteName = 'loopy/settings';
 
 bool _settingsOpen = false;
 
-/// Pushes the [BigPictureSettingsPage] onto the root navigator, guarding
+/// Pushes the [SettingsPage] onto the root navigator, guarding
 /// against stacking duplicates from rapid triggers (menu + key + right-click).
 Future<void> openLoopySettings() async {
   final navigator = loopyNavigatorKey.currentState;
@@ -19,7 +19,7 @@ Future<void> openLoopySettings() async {
   try {
     await navigator.push(
       MaterialPageRoute<void>(
-        builder: (_) => const BigPictureSettingsPage(),
+        builder: (_) => const SettingsPage(),
         settings: const RouteSettings(name: loopySettingsRouteName),
       ),
     );

@@ -11,7 +11,11 @@ import 'package:window_manager/window_manager.dart';
 
 /// A loop waveform frame pushed from the main window: the loop peaks plus the
 /// playhead position.
-typedef WaveformFrame = ({Float32List samples, double progress});
+typedef WaveformFrame = ({
+  Float32List samples,
+  double progress,
+  String selectedTrack,
+});
 
 /// Entrypoint for the secondary waveform window — a separate Flutter engine
 /// spawned by `desktop_multi_window`. It owns no audio engine; the main window
@@ -22,7 +26,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
   final args = WaveformWindowArgs.parse(controller.arguments);
   final title = args.title ?? 'Loopy — Output';
   final frame = ValueNotifier<WaveformFrame>(
-    (samples: Float32List(0), progress: 0),
+    (samples: Float32List(0), progress: 0, selectedTrack: ''),
   );
 
   // Register the shared channel before any slow init so the main window can
@@ -36,6 +40,7 @@ Future<void> runWaveformWindow(WindowController controller) async {
           frame.value = (
             samples: _toFloat32List(map['samples']),
             progress: progress is num ? progress.toDouble() : 0.0,
+            selectedTrack: map['selectedTrack'] as String,
           );
         }
         return null;
@@ -105,7 +110,7 @@ class WaveformWindowApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.bigPicture,
+      theme: AppTheme.neon,
       home: LoopyWindowChromeShell(
         title: title,
         body: Padding(
@@ -113,6 +118,7 @@ class WaveformWindowApp extends StatelessWidget {
           child: ValueListenableBuilder<WaveformFrame>(
             valueListenable: frame,
             builder: (context, data, _) => WaveformView(
+              selectedTrack: data.selectedTrack,
               samples: data.samples,
               progress: data.progress,
               // This window has no Localizations ancestor, so resolve the label

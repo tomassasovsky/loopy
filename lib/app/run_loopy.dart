@@ -82,9 +82,12 @@ Future<void> runLoopy(
         : null,
   );
   // The bidirectional pedal reuses the MIDI source's single input capture and
-  // opens its own MIDI output for LED feedback; null when no MIDI backend, in
-  // which case the pedal cubit falls back to a no-op transport.
-  final pedalRepository = createNativePedalRepository(midiSource);
+  // opens its own MIDI output for LED feedback. The repository is wrapped in a
+  // SimulatorPedalTransport so the on-screen faceplate is always available (it
+  // decorates a no-op transport when there is no MIDI backend); the repo + sim
+  // share one transport graph.
+  final (repo: pedalRepository, sim: pedalSimulator) =
+      createSimAwarePedalRepository(midiSource);
   // The Raspberry Pi console's WS2812 LED driver link; null off-Pi (desktop,
   // CI), where the LED cubit falls back to a no-op channel.
   final ledRepository = createNativeLedChannel();
@@ -129,6 +132,7 @@ Future<void> runLoopy(
       controllerRepository: controllerRepository,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
+      pedalSimulator: pedalSimulator,
       ledRepository: ledRepository,
       displayCount: () =>
           WidgetsBinding.instance.platformDispatcher.displays.length,

@@ -13,7 +13,7 @@ AppLocalizations get _chromeL10n =>
 
 /// Whether Loopy uses a Flutter-drawn title bar instead of the native one.
 ///
-/// Enabled on Windows so the chrome matches the dark big-picture theme.
+/// Enabled on Windows so the chrome matches the dark tracks theme.
 bool get loopyUsesFlutterTitleBar =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
@@ -206,7 +206,7 @@ class LoopyWindowTitleBar extends StatefulWidget
   /// Called when the user hides the title bar.
   final VoidCallback? onHide;
 
-  /// Dark surface tone matching the big-picture theme (`#0D0D11`).
+  /// Dark surface tone matching the tracks theme (`#0D0D11`).
   static const barColor = Color(0xFF0D0D11);
 
   @override
