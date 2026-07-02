@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = "loopy_pedal_328p.ino"
+elf = "loopy_pedal_328p.ino.elf"
