@@ -761,6 +761,32 @@ void main() {
       await cubit.close();
     });
 
+    test('Clear LED lights while the footswitch is held and darkens on '
+        'release', () async {
+      final cubit = buildCubit();
+      await cubit.selectOutput(const PedalOutput(id: 'out', name: 'Pedal'));
+      looperStates.add(_stateWith(_emptyTracks()));
+      await pumpEventQueue();
+      transport.sent.clear();
+
+      // Press: the Clear LED bit is set.
+      transport.emit(0x90, PedalButton.clear.note, 100);
+      await pumpEventQueue();
+      expect(
+        PedalCodec.decodeFrame(transport.sent.last)?.clearFadeActive,
+        isTrue,
+      );
+
+      // Release (note-off): the bit clears again.
+      transport.emit(0x80, PedalButton.clear.note, 0);
+      await pumpEventQueue();
+      expect(
+        PedalCodec.decodeFrame(transport.sent.last)?.clearFadeActive,
+        isFalse,
+      );
+      await cubit.close();
+    });
+
     group('projection', () {
       test('pushes an encoded frame to the bound pedal', () async {
         final cubit = buildCubit();
