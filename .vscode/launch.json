@@ -29,6 +29,13 @@
       "type": "dart",
       "program": "lib/main_production.dart",
       "args": ["--flavor", "production", "--target", "lib/main_production.dart"]
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "vamp-viewer",
+      "url": "http://localhost:8765/viewer.html",
+      "preLaunchTask": "vamp-viewer-server"
     }
   ]
 }
