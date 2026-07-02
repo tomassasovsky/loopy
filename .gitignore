@@ -125,5 +125,17 @@ test/**/failures/
 packages/loopy_engine/*.exe
 *.exe
 
-# Transient portfolio export output
-/.portfolio-output/
+# --- local tooling / scratch (not part of the repo) ---
+# Ignore .claude/ contents (settings.local.json etc.) but TRACK the shared
+# launch config so the 3D viewer is one command for anyone who clones.
+.claude/*
+!.claude/launch.json
+.portfolio-output/
+
+# KiCad scratch + caches. Underscore-prefixed = scratch experiments; canonical
+# fab outputs live in hardware/kicad/fab/. Loose gerbers/caches are regenerated.
+hardware/kicad/_*
+hardware/kicad/fp-info-cache
+hardware/kicad/gerbers/
+hardware/kicad/*.gbr
+hardware/kicad/*.gbrjob
