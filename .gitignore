@@ -12,6 +12,7 @@ devtools_options.yaml
 .svn/
 .swiftpm/
 migrate_working_dir/
+.venv/
 
 # IntelliJ related
 *.iml
