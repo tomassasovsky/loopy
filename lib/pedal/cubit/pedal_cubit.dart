@@ -101,6 +101,10 @@ class PedalCubit extends Cubit<PedalState> {
   bool _undoArmed = false;
   bool _undoHandled = false;
 
+  // Whether the Clear footswitch is currently held down. Lights the Clear LED
+  // (the `clearFadeActive` frame bit) for as long as the button is pressed.
+  bool _clearHeld = false;
+
   // Latest looper snapshot + diff state for projection.
   LooperState? _looperState;
   PedalStateFrame? _lastFrame;
@@ -251,6 +255,7 @@ class PedalCubit extends Cubit<PedalState> {
         _onPress(button);
       case ButtonReleased(:final button):
         if (button == PedalButton.undo) _onUndoRelease();
+        if (button == PedalButton.clear) _onClearRelease();
       case EncoderDelta(:final delta):
         _onEncoder(delta);
     }
@@ -519,6 +524,8 @@ class PedalCubit extends Cubit<PedalState> {
 
   void _onClear() {
     _log('clear  [${_overlay(state)}]');
+    // Light the Clear LED while the footswitch is held (cleared on release).
+    _clearHeld = true;
     void clearAndArm(int channel) {
       _looper
         ..clear(channel: channel)
@@ -540,6 +547,14 @@ class PedalCubit extends Cubit<PedalState> {
         mode: LooperMode.record,
       ),
     );
+  }
+
+  /// Clear footswitch released: darken the Clear LED (the clear itself already
+  /// happened on press — this only ends the held-button light).
+  void _onClearRelease() {
+    if (!_clearHeld) return;
+    _clearHeld = false;
+    _pushProjected();
   }
 
   // --- Undo / encoder -------------------------------------------------------
@@ -736,8 +751,8 @@ class PedalCubit extends Cubit<PedalState> {
         0,
         PedalStateFrame.maxLoopLengthMicros,
       ),
-      // Clear is instantaneous now — there is no clear-fade overlay state.
-      clearFadeActive: false,
+      // Lit while the Clear footswitch is held (the clear itself is instant).
+      clearFadeActive: _clearHeld,
     );
   }
 
