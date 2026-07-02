@@ -8,9 +8,19 @@
 // thread. A richer host context (IHostApplication) is a follow-up — some
 // plugins refuse a null context; those simply fail to load here.
 
-#if defined(LOOPY_ENABLE_PLUGINS) && defined(__APPLE__)
+#if defined(LOOPY_ENABLE_PLUGINS) && (defined(__APPLE__) || defined(_WIN32))
 
+// The whole host class is portable C++ against pluginterfaces; only bundle
+// loading (openBundle) and the editor's platform view type differ per OS, each
+// isolated in a small #if below. macOS loads a CFBundle; Windows LoadLibrary's a
+// DLL. Everything between is byte-identical across the two platforms.
+#if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
+#elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
 
 #include <atomic>
 #include <cstdio>
@@ -53,9 +63,35 @@ using namespace Steinberg::Vst;
 
 namespace {
 
+#if defined(__APPLE__)
 typedef bool (*BundleEntryFunc)(CFBundleRef);
 typedef bool (*BundleExitFunc)();
 typedef IPluginFactory* (*GetFactoryFunc)();
+#elif defined(_WIN32)
+typedef bool(PLUGIN_API* InitDllFunc)();
+typedef bool(PLUGIN_API* ExitDllFunc)();
+typedef IPluginFactory*(PLUGIN_API* GetFactoryFunc)();
+
+// Converts a UTF-8 path (as carried on PluginDescriptor) to a wide string for
+// LoadLibraryExW.
+std::wstring widen(const std::string& utf8) {
+  if (utf8.empty()) return std::wstring();
+  const int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+  if (n <= 0) return std::wstring();
+  std::wstring out(static_cast<size_t>(n - 1), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, out.data(), n);
+  return out;
+}
+
+// SEH filter for the load guard: catch hardware faults (access violation,
+// illegal instruction, …) raised inside a misbehaving plugin's load path so it
+// fails gracefully instead of killing the host; let real C++ exceptions
+// (MSVC code 0xE06D7363) propagate normally.
+inline int loadSehFilter(unsigned long code) {
+  return code == 0xE06D7363ul ? EXCEPTION_CONTINUE_SEARCH
+                              : EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
 
 bool iidEq(const TUID a, const TUID& b) { return std::memcmp(a, b, 16) == 0; }
 
@@ -508,6 +544,27 @@ class Vst3Host final : public loopy::IPluginHost {
 
   loopy::LoadStatus load(const loopy::PluginDescriptor& desc, double sampleRate,
                          int maxBlock) override {
+#if defined(_WIN32)
+    // A third-party plugin can fault (access violation) inside its own
+    // createInstance/initialize on load — observed with a VST3 that derefs a
+    // failed handle (INVALID_HANDLE_VALUE, e.g. a missing model/resource file).
+    // SEH-guard the load so a misbehaving plugin yields a clean load failure
+    // instead of crashing the whole app (D-RT: documented best-effort, no
+    // watchdog). The discarded host's destructor (unload) frees what was set.
+    __try {
+      return loadImpl(desc, sampleRate, maxBlock);
+    } __except (loadSehFilter(GetExceptionCode())) {
+      LPV_LOG("load: structured exception in plugin — load failed\n");
+      crashed_ = true;  // unload() must not call back into the dead plugin
+      return loopy::LoadStatus::failed;
+    }
+#else
+    return loadImpl(desc, sampleRate, maxBlock);
+#endif
+  }
+
+  loopy::LoadStatus loadImpl(const loopy::PluginDescriptor& desc,
+                             double sampleRate, int maxBlock) {
     using loopy::LoadStatus;
     name_ = desc.name;  // for the editor window title
     LPV_LOG("load '%s' (id %s)\n", desc.path.c_str(), desc.id.c_str());
@@ -515,33 +572,53 @@ class Vst3Host final : public loopy::IPluginHost {
       LPV_LOG("  openBundle failed\n");
       return LoadStatus::failed;
     }
+    LPV_LOG("  openBundle ok\n");
 
     IPluginFactory* factory = getFactory_();
     if (!factory) return LoadStatus::failed;
     factory_ = factory;
+    LPV_LOG("  got factory\n");
+
+    // Hand the factory our host context BEFORE creating any instance. Plugins
+    // built on IPluginFactory3 (notably DPF-based ones — Dragonfly, AIDA-X, …)
+    // read this context during createInstance; without setHostContext they
+    // dereference an uninitialized pointer and crash. The SDK's own PlugProvider
+    // does this too. hostApp_ outlives every instance (it is a host member).
+    IPluginFactory3* factory3 = nullptr;
+    if (factory_->queryInterface(IPluginFactory3::iid,
+                                 reinterpret_cast<void**>(&factory3)) == kResultOk &&
+        factory3) {
+      factory3->setHostContext(static_cast<IHostApplication*>(&hostApp_));
+      factory3->release();
+      LPV_LOG("  setHostContext ok\n");
+    }
 
     TUID cid;
     if (!parseTuid(desc.id, cid)) return LoadStatus::failed;
 
     void* obj = nullptr;
-    // createInstance takes FIDString (const char*); a TUID is signed char[16],
-    // so reinterpret both the class id and IComponent's iid.
-    if (factory_->createInstance(
-            reinterpret_cast<FIDString>(cid),
-            reinterpret_cast<FIDString>(
-                static_cast<const TUID&>(IComponent::iid)),
-            &obj) != kResultOk ||
+    // createInstance takes FIDString (const char*) for the class id; cid is a
+    // local TUID array, reinterpret to match the signedness. The interface iid
+    // is passed as the FUID directly (FUID -> const TUID& -> const char*): the
+    // reinterpret-of-a-cast form miscompiled under MSVC into passing the iid
+    // BY VALUE, so the plugin dereferenced the iid bytes as a pointer and
+    // crashed. This direct form mirrors the SDK's own host and our queryInterface
+    // calls below.
+    if (factory_->createInstance(reinterpret_cast<FIDString>(cid),
+                                 IComponent::iid, &obj) != kResultOk ||
         !obj) {
       LPV_LOG("  createInstance(IComponent) failed\n");
       return LoadStatus::failed;
     }
     component_ = static_cast<IComponent*>(obj);
+    LPV_LOG("  IComponent created\n");
 
     // Pass a real host context — commercial plugins reject a null context.
     if (component_->initialize(&hostApp_) != kResultOk) {
       LPV_LOG("  component initialize failed\n");
       return LoadStatus::failed;
     }
+    LPV_LOG("  component initialized\n");
     if (component_->queryInterface(IAudioProcessor::iid,
                                    reinterpret_cast<void**>(&processor_)) !=
             kResultOk ||
@@ -551,6 +628,7 @@ class Vst3Host final : public loopy::IPluginHost {
     if (processor_->canProcessSampleSize(kSample32) != kResultOk) {
       return LoadStatus::failed;
     }
+    LPV_LOG("  got IAudioProcessor (sample32 ok)\n");
 
     // Topology guard (D-BUS): accept only a single main audio-in + audio-out
     // bus. Zero audio inputs is an instrument; more than one audio bus is a
@@ -562,6 +640,7 @@ class Vst3Host final : public loopy::IPluginHost {
               numIn, numOut);
       return LoadStatus::unsupportedTopology;
     }
+    LPV_LOG("  buses in=%d out=%d\n", numIn, numOut);
 
     // Request stereo-in/stereo-out; a mono-only effect is adapted (L duplicated
     // to R) in process(). The negotiated arrangement decides the channel count.
@@ -577,6 +656,8 @@ class Vst3Host final : public loopy::IPluginHost {
       return LoadStatus::unsupportedTopology;  // not a mono/stereo effect
     }
     channels_ = (chIn >= 2 && chOut >= 2) ? 2 : 1;
+    LPV_LOG("  arrangement chIn=%d chOut=%d -> channels=%d\n", chIn, chOut,
+            channels_);
 
     ProcessSetup setup;
     setup.processMode = kRealtime;
@@ -586,11 +667,13 @@ class Vst3Host final : public loopy::IPluginHost {
     if (processor_->setupProcessing(setup) != kResultOk) {
       return LoadStatus::failed;
     }
+    LPV_LOG("  setupProcessing ok\n");
 
     component_->activateBus(kAudio, kInput, 0, true);
     component_->activateBus(kAudio, kOutput, 0, true);
     if (component_->setActive(true) != kResultOk) return LoadStatus::failed;
     processor_->setProcessing(true);  // some plugins return notImplemented
+    LPV_LOG("  activated + processing\n");
 
     // Edit controller for parameter metadata + the editor view: the component
     // IS the controller for a single-component effect, otherwise a separate
@@ -604,11 +687,8 @@ class Vst3Host final : public loopy::IPluginHost {
       TUID ctrlCid;
       void* cobj = nullptr;
       if (component_->getControllerClassId(ctrlCid) == kResultOk &&
-          factory_->createInstance(
-              reinterpret_cast<FIDString>(ctrlCid),
-              reinterpret_cast<FIDString>(
-                  static_cast<const TUID&>(IEditController::iid)),
-              &cobj) == kResultOk) {
+          factory_->createInstance(reinterpret_cast<FIDString>(ctrlCid),
+                                   IEditController::iid, &cobj) == kResultOk) {
         controller_ = static_cast<IEditController*>(cobj);
         separateController = true;
       }
@@ -634,6 +714,10 @@ class Vst3Host final : public loopy::IPluginHost {
 
   void process(float* l, float* r, int n) override {
     if (!processor_) return;
+    if (firstProcess_) {  // one-shot: did the audio thread reach process()?
+      firstProcess_ = false;
+      LPV_LOG("process: first call n=%d channels=%d\n", n, channels_);
+    }
     // For a mono effect only channel 0 is fed; the output is duplicated L->R
     // below. For stereo both channels are live.
     Sample32* inCh[2] = {l, r};
@@ -758,8 +842,13 @@ class Vst3Host final : public loopy::IPluginHost {
       LPV_LOG("editorOpen: createView returned null (no GUI?)\n");
       return false;
     }
-    if (view->isPlatformTypeSupported(kPlatformTypeNSView) != kResultTrue) {
-      LPV_LOG("editorOpen: NSView platform type unsupported\n");
+#if defined(__APPLE__)
+    const FIDString platformType = kPlatformTypeNSView;
+#elif defined(_WIN32)
+    const FIDString platformType = kPlatformTypeHWND;
+#endif
+    if (view->isPlatformTypeSupported(platformType) != kResultTrue) {
+      LPV_LOG("editorOpen: platform view type unsupported\n");
       view->release();
       return false;
     }
@@ -776,8 +865,8 @@ class Vst3Host final : public loopy::IPluginHost {
     }
     frame_.window = window_;
     view->setFrame(&frame_);
-    void* nsView = lpw_window_content_view(window_);
-    if (view->attached(nsView, kPlatformTypeNSView) != kResultOk) {
+    void* parent = lpw_window_content_view(window_);
+    if (view->attached(parent, platformType) != kResultOk) {
       view->setFrame(nullptr);
       view->release();
       lpw_window_close(window_);
@@ -866,7 +955,12 @@ class Vst3Host final : public loopy::IPluginHost {
     window_ = nullptr;  // the shim owns the deferred free; just forget it
   }
 
+  // The plugin's binary is the only platform-specific load step. The scan stores
+  // the resolved loadable path on the descriptor (a Windows .vst3 bundle is
+  // resolved to its inner Contents\x86_64-win DLL there), so the host loads
+  // `path` directly on both platforms.
   bool openBundle(const std::string& path) {
+#if defined(__APPLE__)
     CFStringRef cfPath = CFStringCreateWithCString(
         kCFAllocatorDefault, path.c_str(), kCFStringEncodingUTF8);
     if (!cfPath) return false;
@@ -886,9 +980,40 @@ class Vst3Host final : public loopy::IPluginHost {
         CFBundleGetFunctionPointerForName(bundle_, CFSTR("bundleExit")));
     if (!getFactory_ || (entry && !entry(bundle_))) return false;
     return true;
+#elif defined(_WIN32)
+    const std::wstring wpath = widen(path);
+    dll_ = LoadLibraryExW(wpath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!dll_) return false;
+    auto initDll = reinterpret_cast<InitDllFunc>(GetProcAddress(dll_, "InitDll"));
+    getFactory_ =
+        reinterpret_cast<GetFactoryFunc>(GetProcAddress(dll_, "GetPluginFactory"));
+    exitDll_ = reinterpret_cast<ExitDllFunc>(GetProcAddress(dll_, "ExitDll"));
+    if (!getFactory_ || (initDll && !initDll())) return false;
+    return true;
+#endif
   }
 
   void unload() {
+#if defined(_WIN32)
+    if (crashed_) {
+      // A plugin that faulted mid-load left its module + factory in an unknown
+      // (possibly corrupt) state — calling back into it (release / ExitDll /
+      // FreeLibrary) crashes again. Deliberately forget every handle WITHOUT
+      // touching the plugin: the dead plugin's DLL stays mapped (a bounded,
+      // best-effort leak — D-RT) but the app survives. No editor can be open
+      // (the fault was during load, before any editor).
+      component_ = nullptr;
+      processor_ = nullptr;
+      controller_ = nullptr;
+      compCP_ = nullptr;
+      ctrlCP_ = nullptr;
+      factory_ = nullptr;
+      dll_ = nullptr;
+      exitDll_ = nullptr;
+      getFactory_ = nullptr;
+      return;
+    }
+#endif
     editorClose();  // D-WIN: never leak the editor window past the plugin
     if (compCP_ && ctrlCP_) {
       compCP_->disconnect(ctrlCP_);
@@ -922,21 +1047,37 @@ class Vst3Host final : public loopy::IPluginHost {
       factory_->release();
       factory_ = nullptr;
     }
+#if defined(__APPLE__)
     if (bundleExit_) bundleExit_();
     if (bundle_) {
       CFRelease(bundle_);
       bundle_ = nullptr;
     }
+#elif defined(_WIN32)
+    if (exitDll_) exitDll_();
+    if (dll_) {
+      FreeLibrary(dll_);
+      dll_ = nullptr;
+    }
+    getFactory_ = nullptr;
+#endif
   }
 
+#if defined(__APPLE__)
   CFBundleRef bundle_ = nullptr;
-  GetFactoryFunc getFactory_ = nullptr;
   BundleExitFunc bundleExit_ = nullptr;
+#elif defined(_WIN32)
+  HMODULE dll_ = nullptr;
+  ExitDllFunc exitDll_ = nullptr;
+#endif
+  GetFactoryFunc getFactory_ = nullptr;
   IPluginFactory* factory_ = nullptr;
   IComponent* component_ = nullptr;
   IAudioProcessor* processor_ = nullptr;
   IEditController* controller_ = nullptr;
   int32 channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
+  bool firstProcess_ = true;  // one-shot diagnostic trace gate (see process())
+  bool crashed_ = false;  // load SEH-faulted: unload() must not touch the plugin
   std::vector<float> outL_, outR_;
 
   // Params staged on the audio thread (queueParam) and drained into the SDK in
@@ -974,9 +1115,11 @@ IPluginHost* createVst3Host() { return new Vst3Host(); }
 
 #elif defined(LOOPY_ENABLE_PLUGINS)
 
+// Non-Apple, non-Windows plugin build: VST3 hosting lands with the Linux port
+// (part 9). Stub so the symbol resolves.
 #include "plugin_host.h"
 namespace loopy {
-IPluginHost* createVst3Host() { return nullptr; }  // ports: parts 8–9
+IPluginHost* createVst3Host() { return nullptr; }  // port: part 9
 }  // namespace loopy
 
 #endif

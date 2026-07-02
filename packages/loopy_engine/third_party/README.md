@@ -59,10 +59,13 @@ They **do not change** the existing platform license posture:
 - **macOS/Linux** ship the miniaudio backend (ASIO off), so the engine there
   carries only MIT third-party code for plugin hosting.
 
-The vendored VST3/CLAP headers are compiled into the engine only when
+The vendored VST3/CLAP SDKs are compiled into the engine only when
 `LOOPY_ENABLE_PLUGINS` is defined — ON by default for the macOS SPM/CocoaPods
-builds, OFF for the Windows/Linux CMake build (where the ports land in later
-parts of the stack).
+builds and for the **Windows** CMake build (part 8: `LoadLibrary`-based scan +
+host with an HWND editor window). It stays OFF for the **Linux** CMake build
+until the X11 port (part 9). The `LOOPY_ENABLE_PLUGINS` env override disables it
+for a non-plugin Windows build. The MIT VST3/CLAP code does not change the
+Windows GPLv3 posture (already GPLv3 via the ASIO SDK above).
 
 Do not edit the SDK sources in place — they are upstream drops. To upgrade,
 replace the folder(s) with a newer release and update the version(s) above.

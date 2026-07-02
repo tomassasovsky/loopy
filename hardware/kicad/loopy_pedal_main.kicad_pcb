@@ -758,7 +758,7 @@
 		(embedded_fonts no)
 		(model "${KIPRJMOD}/loopy.pretty/CONN-TH_DIN-504-M10.wrl"
 			(offset
-				(xyz 1 0.95 24)
+				(xyz 1 0.95 0)
 			)
 			(scale
 				(xyz 1 1 1)
@@ -1073,7 +1073,7 @@
 		(embedded_fonts no)
 		(model "${KIPRJMOD}/loopy.pretty/CONN-TH_DIN-504-M10.wrl"
 			(offset
-				(xyz 1 0.95 24)
+				(xyz 1 0.95 0)
 			)
 			(scale
 				(xyz 1 1 1)
@@ -3936,15 +3936,15 @@
 			(uuid "fcbd70f2-a056-400e-b5e9-7fa855f5d28f")
 		)
 		(embedded_fonts no)
-		(model "${KIPRJMOD}/loopy.pretty/sparkfun_pro_micro.wrl"
+		(model "${KIPRJMOD}/loopy.pretty/sparkfun_pro_micro.x3d"
 			(offset
-				(xyz 0 0 8.5)
+				(xyz 13.94 7.59 0)
 			)
 			(scale
-				(xyz 0.3937 0.3937 0.3937)
+				(xyz 1 1 1)
 			)
 			(rotate
-				(xyz 0 0 0)
+				(xyz 0 0 90)
 			)
 		)
 	)

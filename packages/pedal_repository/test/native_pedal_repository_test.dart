@@ -71,13 +71,6 @@ void main() {
             id: 7,
             value: 64,
           ),
-        )
-        ..add(
-          const RawControllerInput(
-            kind: ControllerSourceKind.gpio,
-            id: 1,
-            value: 1,
-          ),
         );
       await Future<void>.delayed(Duration.zero);
 

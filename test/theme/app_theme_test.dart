@@ -26,19 +26,19 @@ void main() {
     }
 
     test(
-      'bigPicture registers RoutingGraphTheme mapped from SurfaceTheme.dark',
+      'tracks registers RoutingGraphTheme mapped from SurfaceTheme.dark',
       () {
         expectRoutingGraphMatchesSurface(
-          AppTheme.bigPicture.extension<RoutingGraphTheme>(),
+          AppTheme.neon.extension<RoutingGraphTheme>(),
           SurfaceTheme.dark,
         );
       },
     );
 
     test(
-      'bigPictureHighContrast maps tokens from SurfaceTheme.highContrast',
+      'highContrast maps tokens from SurfaceTheme.highContrast',
       () {
-        final theme = AppTheme.bigPictureHighContrast;
+        final theme = AppTheme.highContrast;
         expect(
           theme.extension<SurfaceTheme>(),
           same(SurfaceTheme.highContrast),
@@ -76,9 +76,9 @@ void main() {
       expect(ratio(hc.line, hc.card), greaterThanOrEqualTo(3));
     });
 
-    test('bigPictureHighContrast registers a LooperTheme', () {
+    test('highContrast registers a LooperTheme', () {
       expect(
-        AppTheme.bigPictureHighContrast.extension<LooperTheme>(),
+        AppTheme.highContrast.extension<LooperTheme>(),
         isNotNull,
       );
     });

@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:pedal_repository/src/pedal_mode.dart';
 
 /// The render state of a single track LED on the pedal ring.
 ///
@@ -47,8 +48,8 @@ class PedalStateFrame extends Equatable {
     required this.globalColor,
     required this.trackLeds,
     required this.activeBank,
-    required this.armedTrack,
-    required this.playMode,
+    required this.selectedTrack,
+    required this.mode,
     required this.loopLengthMicros,
     required this.clearFadeActive,
     this.isGoodbye = false,
@@ -61,8 +62,8 @@ class PedalStateFrame extends Equatable {
          'activeBank must be 0 (A) or 1 (B)',
        ),
        assert(
-         armedTrack >= 0 && armedTrack < trackCount,
-         'armedTrack must be in 0..${trackCount - 1}',
+         selectedTrack >= 0 && selectedTrack < trackCount,
+         'selectedTrack must be in 0..${trackCount - 1}',
        ),
        assert(
          loopLengthMicros >= 0 && loopLengthMicros <= maxLoopLengthMicros,
@@ -77,8 +78,8 @@ class PedalStateFrame extends Equatable {
     globalColor: GlobalColor.off,
     trackLeds: List<PedalTrackLed>.filled(trackCount, PedalTrackLed.off),
     activeBank: 0,
-    armedTrack: 0,
-    playMode: false,
+    selectedTrack: 0,
+    mode: PedalMode.rec,
     loopLengthMicros: 0,
     clearFadeActive: false,
     isGoodbye: goodbye,
@@ -99,11 +100,14 @@ class PedalStateFrame extends Equatable {
   /// The active bank: `0` = A, `1` = B.
   final int activeBank;
 
-  /// The currently armed track index, `0`..[trackCount] - 1.
-  final int armedTrack;
+  /// The selected-track (cursor) index shown by the pedal, `0`..[trackCount]-1.
+  ///
+  /// In Rec mode this is the selected track; in Play mode the armed *set* is
+  /// carried by [trackLeds] (green), and this stays the last cursor.
+  final int selectedTrack;
 
-  /// Whether the pedal is in Play mode (`false` = Rec mode).
-  final bool playMode;
+  /// Which behavior set the footswitches drive (Rec vs Play).
+  final PedalMode mode;
 
   /// The active loop length in microseconds (`0` when there is no loop).
   final int loopLengthMicros;
@@ -120,8 +124,8 @@ class PedalStateFrame extends Equatable {
     GlobalColor? globalColor,
     List<PedalTrackLed>? trackLeds,
     int? activeBank,
-    int? armedTrack,
-    bool? playMode,
+    int? selectedTrack,
+    PedalMode? mode,
     int? loopLengthMicros,
     bool? clearFadeActive,
     bool? isGoodbye,
@@ -130,8 +134,8 @@ class PedalStateFrame extends Equatable {
       globalColor: globalColor ?? this.globalColor,
       trackLeds: trackLeds ?? this.trackLeds,
       activeBank: activeBank ?? this.activeBank,
-      armedTrack: armedTrack ?? this.armedTrack,
-      playMode: playMode ?? this.playMode,
+      selectedTrack: selectedTrack ?? this.selectedTrack,
+      mode: mode ?? this.mode,
       loopLengthMicros: loopLengthMicros ?? this.loopLengthMicros,
       clearFadeActive: clearFadeActive ?? this.clearFadeActive,
       isGoodbye: isGoodbye ?? this.isGoodbye,
@@ -143,8 +147,8 @@ class PedalStateFrame extends Equatable {
     globalColor,
     trackLeds,
     activeBank,
-    armedTrack,
-    playMode,
+    selectedTrack,
+    mode,
     loopLengthMicros,
     clearFadeActive,
     isGoodbye,
@@ -154,7 +158,7 @@ class PedalStateFrame extends Equatable {
   String toString() =>
       'PedalStateFrame(global: ${globalColor.name}, '
       'tracks: ${trackLeds.map((l) => l.name).join(",")}, '
-      'bank: $activeBank, armed: $armedTrack, '
-      'playMode: $playMode, loopUs: $loopLengthMicros, '
+      'bank: $activeBank, selected: $selectedTrack, '
+      'mode: ${mode.name}, loopUs: $loopLengthMicros, '
       'clearFade: $clearFadeActive, goodbye: $isGoodbye)';
 }

@@ -25,6 +25,11 @@ import '../../helpers/helpers.dart';
 class _MockMidiSource extends Mock implements MidiControllerSource {}
 
 class _RecordingWindowService implements WaveformWindowService {
+  _RecordingWindowService({this.openResult = true});
+
+  /// What [open] reports — `false` simulates a window that never readies.
+  final bool openResult;
+
   int openCalls = 0;
   int closeCalls = 0;
   int pushCalls = 0;
@@ -34,9 +39,10 @@ class _RecordingWindowService implements WaveformWindowService {
   bool get isOpen => _open;
 
   @override
-  Future<void> open({String title = 'Loopy — Output'}) async {
+  Future<bool> open({String title = 'Loopy — Output'}) async {
     openCalls++;
-    _open = true;
+    _open = openResult;
+    return openResult;
   }
 
   @override
@@ -46,7 +52,11 @@ class _RecordingWindowService implements WaveformWindowService {
   }
 
   @override
-  void pushWaveform(Float32List samples, double progress) => pushCalls++;
+  void pushWaveform(
+    Float32List samples,
+    double progress,
+    String selectedTrack,
+  ) => pushCalls++;
 }
 
 void main() {
@@ -93,12 +103,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('renders the looper as the home page in big picture', (
+    testWidgets('renders the looper as the home page in tracks', (
       tester,
     ) async {
       await pumpApp(tester, NoopWaveformWindowService());
       expect(find.byType(LooperPage), findsOneWidget);
-      expect(find.byType(BigPictureView), findsOneWidget);
+      expect(find.byType(TracksView), findsOneWidget);
     });
 
     testWidgets('always lands on the looper — no first-run gate', (
@@ -122,7 +132,7 @@ void main() {
       expect(find.byType(LooperPage), findsOneWidget);
     });
 
-    testWidgets('opens the waveform window on launch in big picture', (
+    testWidgets('opens the waveform window on launch in tracks', (
       tester,
     ) async {
       final windowService = _RecordingWindowService();
@@ -130,6 +140,11 @@ void main() {
 
       expect(windowService.openCalls, greaterThanOrEqualTo(1));
       expect(windowService.isOpen, isTrue);
+      // A successful open shows no failure banner.
+      expect(
+        find.byKey(const Key('app_waveformWindowFailed_banner')),
+        findsNothing,
+      );
     });
 
     testWidgets('does not open the waveform window when it is disabled', (
@@ -150,16 +165,16 @@ void main() {
       expect(windowService.isOpen, isTrue);
 
       await tester.tap(
-        find.byKey(const Key('bigpicture_settings_secondaryTap')),
+        find.byKey(const Key('tracks_settings_secondaryTap')),
         buttons: kSecondaryButton,
       );
       await tester.pumpAndSettle();
-      expect(find.byType(BigPictureSettingsPage), findsOneWidget);
+      expect(find.byType(SettingsPage), findsOneWidget);
 
-      // Disable the secondary waveform window; it closes (Big Picture is the
+      // Disable the secondary waveform window; it closes (Tracks is the
       // only mode now, so the window follows this enable toggle alone).
       await tester.tap(
-        find.byKey(const Key('bpSettings_waveformWindow_switch')),
+        find.byKey(const Key('settings_waveformWindow_switch')),
       );
       await tester.pumpAndSettle();
 
@@ -167,11 +182,11 @@ void main() {
 
       // Close the settings page so the global open-guard resets for the next
       // test (the toggle no longer navigates away on its own).
-      await tester.tap(find.byKey(const Key('bpSettings_close_button')));
+      await tester.tap(find.byKey(const Key('settings_close_button')));
       await tester.pumpAndSettle();
 
-      // The layout never swaps — Big Picture is the only mode.
-      expect(find.byType(BigPictureView), findsOneWidget);
+      // The layout never swaps — Tracks is the only mode.
+      expect(find.byType(TracksView), findsOneWidget);
     });
 
     testWidgets('the S key opens the settings page', (tester) async {
@@ -179,12 +194,12 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
       await tester.pumpAndSettle();
-      expect(find.byType(BigPictureSettingsPage), findsOneWidget);
+      expect(find.byType(SettingsPage), findsOneWidget);
 
       // Close it so the global open-guard resets for the next test.
-      await tester.tap(find.byKey(const Key('bpSettings_close_button')));
+      await tester.tap(find.byKey(const Key('settings_close_button')));
       await tester.pumpAndSettle();
-      expect(find.byType(BigPictureSettingsPage), findsNothing);
+      expect(find.byType(SettingsPage), findsNothing);
     });
 
     testWidgets('shows a disconnect banner for a lost pinned device, then '
@@ -313,6 +328,68 @@ void main() {
 
       // Flush the transient "reconnected" snackbar timer.
       await tester.pump(const Duration(seconds: 4));
+    });
+
+    testWidgets('shows a banner when the waveform window fails to open', (
+      tester,
+    ) async {
+      final windowService = _RecordingWindowService(openResult: false);
+      await pumpApp(tester, windowService);
+
+      expect(
+        find.byKey(const Key('app_waveformWindowFailed_banner')),
+        findsOneWidget,
+      );
+      // No frames are streamed to a window that never readied.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.pushCalls, 0);
+    });
+
+    testWidgets('shows a single-display notice and skips the waveform window '
+        'when only one display is present', (tester) async {
+      final windowService = _RecordingWindowService();
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: windowService,
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
+          displayCount: () => 1,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('app_singleDisplay_banner')), findsOneWidget);
+      expect(windowService.openCalls, 0);
+      // The push timer never started either.
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(windowService.pushCalls, 0);
+    });
+
+    testWidgets('shows the audio-recovery banner when booted with the pinned '
+        'device absent', (tester) async {
+      // The fake engine reports stopped with no devices, so the pinned config
+      // is absent and the recovery cubit waits (and would auto-start on
+      // arrival). pump (not pumpAndSettle) — the cubit holds a periodic poll.
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          sessionDirectory: () async => '.',
+          audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 10));
+
+      expect(find.byKey(const Key('app_audioRecovery_banner')), findsOneWidget);
     });
   });
 }

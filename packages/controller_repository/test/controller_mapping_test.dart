@@ -45,6 +45,76 @@ void main() {
     });
   });
 
+  group('ControllerMapping.merge', () {
+    // A second mapping bound to MIDI notes, layered over the CC defaults.
+    ControllerMapping customNotes() =>
+        const ControllerMapping(
+          name: 'custom',
+        ).withBinding(
+          const MappingTrigger(kind: ControllerSourceKind.midiNote, id: 36),
+          LooperAction.recordOverdub,
+        );
+
+    test('combines two mappings so both resolve', () {
+      final merged = ControllerMapping.defaults().merge(customNotes());
+
+      const ccPress = RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: 80,
+        value: 127,
+      );
+      const notePress = RawControllerInput(
+        kind: ControllerSourceKind.midiNote,
+        id: 36,
+        value: 127,
+      );
+      expect(
+        merged.resolve(ccPress),
+        const ControllerEvent(action: LooperAction.recordOverdub),
+      );
+      expect(
+        merged.resolve(notePress),
+        const ControllerEvent(action: LooperAction.recordOverdub),
+      );
+    });
+
+    test('other wins on a shared trigger', () {
+      const trigger = MappingTrigger(kind: ControllerSourceKind.midiCc, id: 80);
+      final base = const ControllerMapping().withBinding(
+        trigger,
+        LooperAction.play,
+      );
+      final other = const ControllerMapping().withBinding(
+        trigger,
+        LooperAction.clear,
+      );
+
+      const press = RawControllerInput(
+        kind: ControllerSourceKind.midiCc,
+        id: 80,
+        value: 1,
+      );
+      expect(
+        base.merge(other).resolve(press),
+        const ControllerEvent(action: LooperAction.clear),
+      );
+    });
+
+    test('keeps the receiver name', () {
+      final merged = ControllerMapping.defaults().merge(customNotes());
+      expect(merged.name, ControllerMapping.defaults().name);
+    });
+
+    test('merging an empty mapping is an identity on entries', () {
+      final base = ControllerMapping.defaults();
+      expect(base.merge(const ControllerMapping()).entries, base.entries);
+      expect(
+        const ControllerMapping().merge(base).entries,
+        base.entries,
+      );
+    });
+  });
+
   group('ControllerMapping.withBinding', () {
     test('replaces the entry for an existing trigger', () {
       const trigger = MappingTrigger(
@@ -75,8 +145,8 @@ void main() {
 
     test('adds a new entry for an unseen trigger', () {
       const trigger = MappingTrigger(
-        kind: ControllerSourceKind.gpio,
-        id: 17,
+        kind: ControllerSourceKind.midiNote,
+        id: 36,
       );
       final mapping = const ControllerMapping().withBinding(
         trigger,
@@ -84,8 +154,8 @@ void main() {
         channel: 1,
       );
       const press = RawControllerInput(
-        kind: ControllerSourceKind.gpio,
-        id: 17,
+        kind: ControllerSourceKind.midiNote,
+        id: 36,
         value: 1,
       );
       expect(

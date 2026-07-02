@@ -20,6 +20,18 @@
         }
     },
     "dismiss": "Dismiss",
+    "waveformWindowFailedBanner": "The waveform display didn't open — check the second screen.",
+    "@waveformWindowFailedBanner": {
+        "description": "Banner shown when the secondary waveform window fails to become ready."
+    },
+    "singleDisplayNotice": "Only one display detected — the waveform screen is unavailable.",
+    "@singleDisplayNotice": {
+        "description": "Notice shown on the dual-display console when only one display is connected."
+    },
+    "audioRecoveryWaitingBanner": "Waiting for the audio interface — it will start automatically when reconnected.",
+    "@audioRecoveryWaitingBanner": {
+        "description": "Banner shown when the console booted with its pinned audio interface absent and is waiting to auto-start it."
+    },
     "close": "Close",
     "mixdownExported": "Mixdown exported",
     "stemsExported": "Stems exported",
@@ -68,8 +80,8 @@
     "measuringLowercase": "measuring…",
     "noLoopback": "no loopback",
     "emDash": "—",
-    "performanceModeRec": "REC",
-    "performanceModePlay": "PLAY",
+    "looperModeRec": "REC",
+    "looperModePlay": "PLAY",
     "a11yUndone": "Undone",
     "a11yRedone": "Redone",
     "a11yModeRecord": "Record mode",
@@ -102,7 +114,7 @@
             }
         }
     },
-    "a11yModeToggle": "Performance mode {mode}, activate to switch",
+    "a11yModeToggle": "Looper mode {mode}, activate to switch",
     "@a11yModeToggle": {
         "placeholders": {
             "mode": {
@@ -185,8 +197,8 @@
     "settingsSectionAudio": "Audio",
     "settingsSectionTracks": "Tracks",
     "settingsKicker": "SETTINGS",
-    "bigPictureTitle": "Big Picture",
-    "bpSettingsViewIntro": "Switch layouts, tune performance defaults, and toggle the secondary output-waveform window.",
+    "settingsTitle": "Loopy",
+    "settingsViewIntro": "Switch layouts, tune looper defaults, and toggle the secondary output-waveform window.",
     "viewGroupLabel": "VIEW",
     "waveformWindowTitle": "Output waveform window",
     "waveformWindowSubtitle": "Open a second window showing the whole-loop output waveform",
@@ -194,8 +206,8 @@
     "highContrastSubtitle": "Force a brighter, higher-contrast palette. On desktop the OS contrast setting is not applied automatically.",
     "trackIndicatorsTitle": "Track indicators",
     "trackIndicatorsSubtitle": "Show a status light on each track",
-    "performanceGroupLabel": "PERFORMANCE",
-    "bpDefaultModeIntro": "Mode the Big Picture view starts in. Number keys select tracks; in Record mode R/P arm and play the selection, in Play mode they mute / unmute.",
+    "looperGroupLabel": "LOOPER",
+    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Play mode they mute / unmute.",
     "recordModeLabel": "Record",
     "recordModeSub": "Arm & capture",
     "playModeLabel": "Play",
@@ -299,7 +311,7 @@
     "signalReassignInput": "Change recorded input",
     "signalTooltip": "Signal flow (G)",
     "@signalTooltip": {
-      "description": "Tooltip for the performance-view button that opens the full-screen Signal surface."
+      "description": "Tooltip for the tracks-view button that opens the full-screen Signal surface."
     },
     "settingsTooltip": "Settings (S)",
     "@settingsTooltip": {
@@ -681,5 +693,52 @@
                 "type": "String"
             }
         }
-    }
+    },
+    "pedalSimPanelTitle": "Pedal",
+    "pedalSimExpandTooltip": "Show the on-screen pedal",
+    "pedalSimCollapseTooltip": "Hide the on-screen pedal",
+    "pedalSimFootswitchSemantics": "{control} footswitch",
+    "@pedalSimFootswitchSemantics": {
+        "description": "Accessibility label for an on-screen pedal footswitch.",
+        "placeholders": {
+            "control": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimTrackSemantics": "Track {number}, {state}",
+    "@pedalSimTrackSemantics": {
+        "description": "Accessibility label for an on-screen pedal track LED and its lit state.",
+        "placeholders": {
+            "number": {
+                "type": "int"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimLedOff": "off",
+    "pedalSimLedArmed": "armed",
+    "pedalSimLedRecording": "recording",
+    "pedalSimBankSemantics": "Bank {bank}",
+    "@pedalSimBankSemantics": {
+        "description": "Accessibility label for the on-screen pedal active bank.",
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimLoopLengthSemantics": "Loop length {value}",
+    "@pedalSimLoopLengthSemantics": {
+        "description": "Accessibility label for the on-screen pedal loop-length readout.",
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimEncoderSemantics": "Encoder, master volume",
+    "pedalSimNoLoop": "—"
 }

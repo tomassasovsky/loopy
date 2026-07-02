@@ -74,6 +74,23 @@ class ControllerMapping extends Equatable {
     return null;
   }
 
+  /// Returns a mapping combining this mapping's entries with [other]'s, with
+  /// [other] winning on any shared trigger. The result keeps this mapping's
+  /// [name] (not [other]'s), and assumes [other] has no internally duplicated
+  /// triggers (its entries are appended verbatim). Used to layer a custom
+  /// mapping over [ControllerMapping.defaults].
+  ControllerMapping merge(ControllerMapping other) {
+    final overridden = {for (final entry in other.entries) entry.trigger};
+    return ControllerMapping(
+      name: name,
+      entries: [
+        for (final entry in entries)
+          if (!overridden.contains(entry.trigger)) entry,
+        ...other.entries,
+      ],
+    );
+  }
+
   /// Returns a copy with the entry for [trigger] replaced (or added) so it maps
   /// to [action] on [channel]. Used by MIDI-learn.
   ControllerMapping withBinding(

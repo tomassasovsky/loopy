@@ -67,13 +67,14 @@ Future<void> runLoopy(
   // runs with no controller source. The waveform sub-window already returned
   // above, so it never opens MIDI.
   final midiSource = createNativeMidiSource();
-  final controllerRepository = ControllerRepository(
-    sources: [?midiSource],
-  );
+  final controllerRepository = ControllerRepository(sources: [?midiSource]);
   // The bidirectional pedal reuses the MIDI source's single input capture and
-  // opens its own MIDI output for LED feedback; null when no MIDI backend, in
-  // which case the pedal cubit falls back to a no-op transport.
-  final pedalRepository = createNativePedalRepository(midiSource);
+  // opens its own MIDI output for LED feedback. The repository is wrapped in a
+  // SimulatorPedalTransport so the on-screen faceplate is always available (it
+  // decorates a no-op transport when there is no MIDI backend); the repo + sim
+  // share one transport graph.
+  final (repo: pedalRepository, sim: pedalSimulator) =
+      createSimAwarePedalRepository(midiSource);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
@@ -95,6 +96,9 @@ Future<void> runLoopy(
   // auto-starts from the saved config or a first-run default and returns the
   // ASIO drivers enumerated at startup for the audio-setup picker cache.
   var asioDrivers = const <AudioDevice>[];
+  // The pinned config a boot auto-start couldn't open (interface unplugged at
+  // boot); the audio-recovery cubit auto-starts when it reappears.
+  EngineConfig? audioRecoveryConfig;
   if (startConfig != null) {
     looper.startEngine(startConfig);
   } else {
@@ -103,6 +107,7 @@ Future<void> runLoopy(
       settings: settings,
     );
     asioDrivers = result.asioDrivers;
+    audioRecoveryConfig = result.recoveryConfig;
   }
 
   await bootstrap(
@@ -111,6 +116,10 @@ Future<void> runLoopy(
       controllerRepository: controllerRepository,
       midiDeviceRepository: midiDeviceRepository,
       pedalRepository: pedalRepository,
+      pedalSimulator: pedalSimulator,
+      displayCount: () =>
+          WidgetsBinding.instance.platformDispatcher.displays.length,
+      audioRecoveryConfig: audioRecoveryConfig,
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: session,

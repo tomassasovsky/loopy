@@ -14,6 +14,7 @@
 
 # Layout pipeline scripts (use absolute local paths; not portable)
 _*.py
+_*.sh
 
 # Render / preview artifacts
 _*.png
@@ -35,3 +36,15 @@ fab/loopy_pi_main/
 # pi_assemble.py fetches the model on demand)
 _assembly.*
 _models/
+
+# Throwaway test boards / KiCad caches
+_*.kicad_pcb
+_*.kicad_pro
+fp-info-cache
+
+# Stray single-board gerber/drill exports in the kicad root (the committed
+# deliverable is fab/*.zip; these loose files are scratch from ad-hoc exports)
+/loopy_pedal_*-*.gbr
+/loopy_pedal_*-*.gbrjob
+/gerbers/
+*-drc.rpt

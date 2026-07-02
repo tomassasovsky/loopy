@@ -15,10 +15,19 @@ import 'package:settings_repository/settings_repository.dart'
 bool get platformAsioSelectable =>
     defaultTargetPlatform == TargetPlatform.windows;
 
-/// The outcome of [tryAutoStartEngine]: whether the engine came up, plus the
-/// ASIO drivers enumerated at startup so the audio-setup cubit can cache them
-/// for the picker (it cannot re-enumerate while ASIO holds the device — R1).
-typedef AutoStartResult = ({bool started, List<AudioDevice> asioDrivers});
+/// The outcome of [tryAutoStartEngine]: whether the engine came up, the ASIO
+/// drivers enumerated at startup so the audio-setup cubit can cache them for
+/// the picker (it cannot re-enumerate while ASIO holds the device — R1), and
+/// the config that was attempted when a *pinned* device could not be opened —
+/// handed to the audio-recovery cubit so the engine auto-starts when that
+/// device reappears (the in-repo supervisor only arms after a good start).
+/// `recoveryConfig` is null when the engine started, on first run, or for the
+/// system default (which is never auto-recovered).
+typedef AutoStartResult = ({
+  bool started,
+  List<AudioDevice> asioDrivers,
+  EngineConfig? recoveryConfig,
+});
 
 /// Loads the last-used audio configuration and starts the engine — from the
 /// saved config when one exists, otherwise from a sensible first-run default
@@ -43,7 +52,7 @@ Future<AutoStartResult> tryAutoStartEngine({
       settings: settings,
       asioDrivers: asioDrivers,
     );
-    return (started: started, asioDrivers: asioDrivers);
+    return (started: started, asioDrivers: asioDrivers, recoveryConfig: null);
   }
   // On Windows (ASIO-only) the engine always runs ASIO, and the driver is found
   // automatically: keep the saved one if it is still enumerated, otherwise fall
@@ -61,35 +70,44 @@ Future<AutoStartResult> tryAutoStartEngine({
       ? AudioSetupCubit.resolveAsioDriver(saved.asioDriver, asioDrivers)
       : saved.asioDriver;
   if (platformAsioSelectable && asioDriver.isEmpty) {
-    return (started: false, asioDrivers: asioDrivers);
+    return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
   }
 
   final loopback = repository.detectLoopback();
-  final result = repository.startEngine(
-    EngineConfig(
-      sampleRate: saved.sampleRate,
-      bufferFrames: saved.bufferFrames,
-      inputChannels: saved.inputChannels,
-      outputChannels: saved.outputChannels,
-      maxLoopFrames: saved.maxLoopMinutes <= 0
-          ? 0
-          : saved.maxLoopMinutes * 60 * saved.sampleRate,
-      // An explicitly chosen input device always wins: only auto-route capture
-      // to a detected loopback when no capture device was pinned (otherwise a
-      // ubiquitous "monitor" source — e.g. on PipeWire — would commandeer the
-      // capture path and ignore the saved interface).
-      useLoopbackCapture:
-          loopback.isAutoRoutable && saved.captureDeviceId.isEmpty,
-      playbackDeviceId: saved.playbackDeviceId,
-      captureDeviceId: saved.captureDeviceId,
-      // This config assembly is duplicated from the cubit's _engineConfig, so
-      // both must carry backend/asioDriver or an auto-start would diverge from
-      // an interactive start.
-      backend: backend,
-      asioDriver: asioDriver,
-    ),
+  final config = EngineConfig(
+    sampleRate: saved.sampleRate,
+    bufferFrames: saved.bufferFrames,
+    inputChannels: saved.inputChannels,
+    outputChannels: saved.outputChannels,
+    maxLoopFrames: saved.maxLoopMinutes <= 0
+        ? 0
+        : saved.maxLoopMinutes * 60 * saved.sampleRate,
+    // An explicitly chosen input device always wins: only auto-route capture
+    // to a detected loopback when no capture device was pinned (otherwise a
+    // ubiquitous "monitor" source — e.g. on PipeWire — would commandeer the
+    // capture path and ignore the saved interface).
+    useLoopbackCapture:
+        loopback.isAutoRoutable && saved.captureDeviceId.isEmpty,
+    playbackDeviceId: saved.playbackDeviceId,
+    captureDeviceId: saved.captureDeviceId,
+    // This config assembly is duplicated from the cubit's _engineConfig, so
+    // both must carry backend/asioDriver or an auto-start would diverge from
+    // an interactive start.
+    backend: backend,
+    asioDriver: asioDriver,
   );
-  if (!result.isOk) return (started: false, asioDrivers: asioDrivers);
+  final pinned =
+      config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
+  final result = repository.startEngine(config);
+  if (!result.isOk) {
+    // A pinned device that could not be opened (e.g. the interface is unplugged
+    // at boot) arms the recovery cubit to auto-start when it reappears.
+    return (
+      started: false,
+      asioDrivers: asioDrivers,
+      recoveryConfig: pinned ? config : null,
+    );
+  }
 
   // Restore latency compensation. The interactive flow does this in
   // AudioSetupCubit, but the cubit is not created on the auto-start path, so
@@ -192,7 +210,7 @@ Future<AutoStartResult> tryAutoStartEngine({
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell
   // creates and loads it on every launch), so they are not re-applied here.
-  return (started: true, asioDrivers: asioDrivers);
+  return (started: true, asioDrivers: asioDrivers, recoveryConfig: null);
 }
 
 /// Starts the engine on a first run (no saved config) and persists the chosen
