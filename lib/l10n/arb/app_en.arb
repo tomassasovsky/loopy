@@ -20,10 +20,6 @@
         }
     },
     "dismiss": "Dismiss",
-    "ledDriverMissingBanner": "LED driver not responding — check that it is connected and flashed.",
-    "@ledDriverMissingBanner": {
-        "description": "Banner shown when the Raspberry Pi console's WS2812 LED driver does not answer the boot-time health ping."
-    },
     "waveformWindowFailedBanner": "The waveform display didn't open — check the second screen.",
     "@waveformWindowFailedBanner": {
         "description": "Banner shown when the secondary waveform window fails to become ready."

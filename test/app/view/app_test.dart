@@ -6,7 +6,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:led_client/led_client.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
 import 'package:loopy/looper/looper.dart';
@@ -22,7 +21,6 @@ import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
-import '../../led/helpers/fake_led_transport.dart';
 
 class _MockMidiSource extends Mock implements MidiControllerSource {}
 
@@ -330,45 +328,6 @@ void main() {
 
       // Flush the transient "reconnected" snackbar timer.
       await tester.pump(const Duration(seconds: 4));
-    });
-
-    testWidgets('shows the LED-driver fault banner when the driver does not '
-        'answer the boot ping', (tester) async {
-      await tester.pumpWidget(
-        App(
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
-          ledRepository: LedRepository(FakeLedTransport(pingAck: false)),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('app_ledMissing_banner')), findsOneWidget);
-    });
-
-    testWidgets('shows no LED-driver banner when the driver answers', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        App(
-          repository: repository,
-          controllerRepository: controllerRepository,
-          midiDeviceRepository: midiDeviceRepository,
-          settings: settings,
-          waveformWindow: NoopWaveformWindowService(),
-          sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
-          ledRepository: LedRepository(FakeLedTransport()),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('app_ledMissing_banner')), findsNothing);
     });
 
     testWidgets('shows a banner when the waveform window fails to open', (

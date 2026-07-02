@@ -71,8 +71,6 @@ PedalTransport? _nativeTransport(
           ];
         case ControllerSourceKind.midiCc:
           return [(status: 0xB0, data1: raw.id, data2: raw.value)];
-        case ControllerSourceKind.gpio:
-          return const [];
       }
     });
     return transportFactory?.call(input) ?? NativePedalTransport(input: input);

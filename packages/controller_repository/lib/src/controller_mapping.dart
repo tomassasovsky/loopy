@@ -56,42 +56,6 @@ class ControllerMapping extends Equatable {
     );
   }
 
-  /// A built-in mapping for the Raspberry Pi floor console's footswitches,
-  /// mirroring the [ControllerMapping.defaults] transport actions on channel 0
-  /// but bound to GPIO pins (BCM offsets) instead of MIDI CCs. Seeded at
-  /// construction on the Pi so the console has working footswitches on first
-  /// boot with zero config.
-  factory ControllerMapping.gpioDefaults() {
-    const kind = ControllerSourceKind.gpio;
-    return const ControllerMapping(
-      name: 'GPIO defaults',
-      entries: [
-        MappingEntry(
-          trigger: MappingTrigger(kind: kind, id: 17),
-          action: LooperAction.recordOverdub,
-        ),
-        MappingEntry(
-          trigger: MappingTrigger(kind: kind, id: 27),
-          action: LooperAction.stop,
-        ),
-        MappingEntry(
-          trigger: MappingTrigger(kind: kind, id: 22),
-          action: LooperAction.undo,
-        ),
-        MappingEntry(
-          trigger: MappingTrigger(kind: kind, id: 23),
-          action: LooperAction.clear,
-        ),
-        // The rotary encoder's push-switch (its rotation is decoded separately
-        // and reserved in v1).
-        MappingEntry(
-          trigger: MappingTrigger(kind: kind, id: 26),
-          action: LooperAction.playAll,
-        ),
-      ],
-    );
-  }
-
   /// A human-readable mapping name.
   final String name;
 
@@ -113,12 +77,8 @@ class ControllerMapping extends Equatable {
   /// Returns a mapping combining this mapping's entries with [other]'s, with
   /// [other] winning on any shared trigger. The result keeps this mapping's
   /// [name] (not [other]'s), and assumes [other] has no internally duplicated
-  /// triggers (its entries are appended verbatim).
-  ///
-  /// Used to seed both [ControllerMapping.defaults] (MIDI) and
-  /// [ControllerMapping.gpioDefaults] (GPIO) on the console so footswitches and
-  /// a laptop MIDI pedal coexist; the two never
-  /// collide in practice since their triggers differ by [ControllerSourceKind].
+  /// triggers (its entries are appended verbatim). Used to layer a custom
+  /// mapping over [ControllerMapping.defaults].
   ControllerMapping merge(ControllerMapping other) {
     final overridden = {for (final entry in other.entries) entry.trigger};
     return ControllerMapping(

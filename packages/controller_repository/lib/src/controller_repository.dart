@@ -10,7 +10,7 @@ import 'package:controller_repository/src/looper_action.dart';
 /// emits hardware-agnostic [ControllerEvent]s. Also drives MIDI-learn capture.
 ///
 /// This is the single controller-truth boundary: the bloc subscribes to
-/// [events] and never touches MIDI/GPIO clients directly.
+/// [events] and never touches MIDI clients directly.
 class ControllerRepository {
   /// Creates a [ControllerRepository] over [sources], with an optional initial
   /// [mapping] (defaults to [ControllerMapping.defaults]).

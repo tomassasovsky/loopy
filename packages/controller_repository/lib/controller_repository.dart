@@ -1,4 +1,4 @@
-/// Hardware-agnostic controller abstraction: maps raw MIDI/GPIO inputs to
+/// Hardware-agnostic controller abstraction: maps raw MIDI inputs to
 /// looper actions, with MIDI-learn capture.
 library;
 
