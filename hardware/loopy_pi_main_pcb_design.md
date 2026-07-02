@@ -19,7 +19,7 @@ fine-pitch SMD, no hot-air needed — buildable with a basic iron.
 > is a **MIDI controller** (ATmega328P + ATmega16U2 USB-MIDI) that talks to loopy on a
 > PC. This board **deletes both ATmegas, the USB-device section, and all MIDI** — the Pi
 > *is* the computer and reads the footswitches directly over GPIO. USB-MIDI controllers
-> still work via the Pi's USB ports in software. The control front-end (footswitches,
+> still work via the Pi's USB ports in software. The control front end (footswitches,
 > encoder, WS2812 strips) is preserved so the **existing ring board mates unchanged**
 > (same 8-pin pinout, §7).
 
