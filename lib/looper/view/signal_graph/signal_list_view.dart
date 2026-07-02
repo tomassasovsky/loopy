@@ -7,7 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/big_picture_cubit.dart';
+import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/signal_graph/plugin_browser.dart';
 import 'package:loopy/looper/view/signal_graph/signal_dock.dart';
 import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
@@ -24,19 +24,19 @@ part 'signal_panes.dart';
 part 'signal_row_views.dart';
 
 /// Opens the unified **Signal** surface as a full-screen page from the
-/// performance flow. Re-provides the state objects it drives — [LooperBloc],
-/// [MonitorCubit], and [BigPictureCubit] — into the pushed route.
+/// tracks flow. Re-provides the state objects it drives — [LooperBloc],
+/// [MonitorCubit], and [TracksCubit] — into the pushed route.
 Future<void> showSignalPage(BuildContext context) {
   final bloc = context.read<LooperBloc>();
   final monitor = context.read<MonitorCubit>();
-  final bigPicture = context.read<BigPictureCubit>();
+  final tracks = context.read<TracksCubit>();
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => MultiBlocProvider(
         providers: [
           BlocProvider.value(value: bloc),
           BlocProvider.value(value: monitor),
-          BlocProvider.value(value: bigPicture),
+          BlocProvider.value(value: tracks),
         ],
         child: Scaffold(
           key: const Key('signal_page'),
@@ -58,10 +58,7 @@ Future<void> showSignalPage(BuildContext context) {
                       const _SignalChromeBar(),
                       Expanded(
                         child: SignalListView(
-                          trackNames: context
-                              .watch<BigPictureCubit>()
-                              .state
-                              .names,
+                          trackNames: context.watch<TracksCubit>().state.names,
                         ),
                       ),
                     ],
@@ -86,7 +83,7 @@ class SignalListView extends StatefulWidget {
   /// Creates a [SignalListView].
   const SignalListView({this.trackNames = const [], super.key});
 
-  /// Per-track display names (from `BigPictureCubit`); falls back to `Track N`
+  /// Per-track display names (from `TracksCubit`); falls back to `Track N`
   /// when absent or default.
   final List<String> trackNames;
 

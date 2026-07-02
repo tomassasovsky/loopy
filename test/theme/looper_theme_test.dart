@@ -3,6 +3,7 @@ import 'dart:math' show sqrt;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
+import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/theme/theme.dart';
 
 void main() {
@@ -47,20 +48,26 @@ void main() {
     test('meterColor picks the table for the current mode', () {
       // Record mode uses recordMeterColors; play mode uses playMeterColors.
       expect(
-        theme.meterColor(LooperMeterState.playing, playMode: false),
+        theme.meterColor(
+          LooperMeterState.playing,
+          mode: LooperMode.record,
+        ),
         const Color(0xFF00FF00),
       );
       expect(
-        theme.meterColor(LooperMeterState.playing, playMode: true),
+        theme.meterColor(LooperMeterState.playing, mode: LooperMode.play),
         const Color(0xFF0000FF),
       );
       // A state the active table omits resolves to transparent.
       expect(
-        theme.meterColor(LooperMeterState.stopped, playMode: false),
+        theme.meterColor(
+          LooperMeterState.stopped,
+          mode: LooperMode.record,
+        ),
         Colors.transparent,
       );
       expect(
-        theme.meterColor(LooperMeterState.muted, playMode: true),
+        theme.meterColor(LooperMeterState.muted, mode: LooperMode.play),
         Colors.transparent,
       );
     });
@@ -184,7 +191,7 @@ void main() {
             muted: true,
             hasContent: true,
             selected: true,
-            playMode: false,
+            mode: LooperMode.record,
           ),
           TrackIndicator.idle,
         );
@@ -199,7 +206,7 @@ void main() {
           muted: false,
           hasContent: false,
           selected: false,
-          playMode: true,
+          mode: LooperMode.play,
         ),
         TrackIndicator.record,
       );
@@ -209,7 +216,7 @@ void main() {
           muted: false,
           hasContent: true,
           selected: false,
-          playMode: true,
+          mode: LooperMode.play,
         ),
         TrackIndicator.record,
       );
@@ -220,7 +227,7 @@ void main() {
           muted: false,
           hasContent: true,
           selected: true,
-          playMode: false,
+          mode: LooperMode.record,
         ),
         TrackIndicator.play,
       );
@@ -230,14 +237,14 @@ void main() {
       // Regardless of selection or mode — it will sound on the next play-all,
       // so the indicator stays lit after a stop rather than going dark.
       for (final selected in [true, false]) {
-        for (final playMode in [true, false]) {
+        for (final mode in [LooperMode.play, LooperMode.record]) {
           expect(
             TrackIndicator.of(
               TrackState.stopped,
               muted: false,
               hasContent: true,
               selected: selected,
-              playMode: playMode,
+              mode: mode,
             ),
             TrackIndicator.play,
           );
@@ -255,7 +262,7 @@ void main() {
             muted: false,
             hasContent: false,
             selected: true,
-            playMode: false,
+            mode: LooperMode.record,
           ),
           TrackIndicator.record,
           reason: 'record mode arms red',
@@ -266,7 +273,7 @@ void main() {
             muted: false,
             hasContent: false,
             selected: true,
-            playMode: true,
+            mode: LooperMode.play,
           ),
           TrackIndicator.play,
           reason: 'play mode arms green',
@@ -276,14 +283,14 @@ void main() {
 
     test('empty/contentless + unselected is idle in either mode', () {
       for (final state in [TrackState.empty, TrackState.stopped]) {
-        for (final playMode in [true, false]) {
+        for (final mode in [LooperMode.play, LooperMode.record]) {
           expect(
             TrackIndicator.of(
               state,
               muted: false,
               hasContent: false,
               selected: false,
-              playMode: playMode,
+              mode: mode,
             ),
             TrackIndicator.idle,
           );
@@ -293,16 +300,16 @@ void main() {
   });
 
   test('AppTheme maps every meter state in both record and play modes', () {
-    final theme = AppTheme.bigPicture.extension<LooperTheme>()!;
+    final theme = AppTheme.neon.extension<LooperTheme>()!;
     for (final state in LooperMeterState.values) {
       expect(theme.recordMeterColors[state], isNotNull);
       expect(theme.playMeterColors[state], isNotNull);
     }
-    expect(AppTheme.bigPicture.useMaterial3, isTrue);
+    expect(AppTheme.neon.useMaterial3, isTrue);
   });
 
   test('both palettes map every indicator state, idle distinct from tile', () {
-    for (final data in [AppTheme.bigPicture, AppTheme.bigPictureHighContrast]) {
+    for (final data in [AppTheme.neon, AppTheme.highContrast]) {
       final theme = data.extension<LooperTheme>()!;
       for (final indicator in TrackIndicator.values) {
         expect(theme.indicatorColors[indicator], isNotNull);

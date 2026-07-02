@@ -9,7 +9,7 @@ void main() {
   testWidgets('WaveformView paints with the active theme', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.bigPicture,
+        theme: AppTheme.neon,
         home: Scaffold(
           body: WaveformView(
             samples: Float32List.fromList([0, 0.5, 1, 0.5, 0]),
@@ -26,7 +26,7 @@ void main() {
     final handle = tester.ensureSemantics();
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.bigPicture,
+        theme: AppTheme.neon,
         home: Scaffold(
           body: WaveformView(
             samples: Float32List.fromList([0, 0.5, 1]),
@@ -45,7 +45,11 @@ void main() {
 
   testWidgets('WaveformWindowApp renders the pushed frame', (tester) async {
     final frame = ValueNotifier<WaveformFrame>(
-      (samples: Float32List.fromList([0, 1, 0]), progress: 0.2),
+      (
+        samples: Float32List.fromList([0, 1, 0]),
+        progress: 0.2,
+        selectedTrack: '',
+      ),
     );
     addTearDown(frame.dispose);
 
@@ -54,7 +58,11 @@ void main() {
 
     expect(find.byType(WaveformView), findsOneWidget);
 
-    frame.value = (samples: Float32List.fromList([1, 0, 1, 0]), progress: 0.6);
+    frame.value = (
+      samples: Float32List.fromList([1, 0, 1, 0]),
+      progress: 0.6,
+      selectedTrack: '',
+    );
     await tester.pump();
     expect(find.byType(WaveformView), findsOneWidget);
   });

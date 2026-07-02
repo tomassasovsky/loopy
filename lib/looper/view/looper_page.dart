@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/big_picture_view.dart';
+import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -12,8 +12,8 @@ import 'package:settings_repository/settings_repository.dart';
 ///
 /// Provides a [LooperBloc] backed by the shared [LooperRepository] and a
 /// [SessionCubit] for save/load/export (backed by the shared
-/// [SessionRepository]), then renders the big-picture performance view. The
-/// `BigPictureCubit` is provided app-wide so the settings page can reach it.
+/// [SessionRepository]), then renders the Tracks view. The
+/// `TracksCubit` is provided app-wide so the settings page can reach it.
 class LooperPage extends StatelessWidget {
   /// Creates a [LooperPage].
   ///
@@ -41,7 +41,11 @@ class LooperPage extends StatelessWidget {
           ),
         ),
       ],
-      child: const BigPictureView(),
+      // While the on-screen pedal is the bound output, the Tracks view is
+      // reframed as the pedal top plate (with the TracksView embedded in
+      // its main screen); otherwise the faceplate renders the TracksView
+      // full-screen as usual. The gate lives in [PedalFaceplate].
+      child: const PedalFaceplate(),
     );
   }
 }

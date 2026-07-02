@@ -37,8 +37,8 @@
     "measuringLowercase": "midiendo…",
     "noLoopback": "sin loopback",
     "emDash": "—",
-    "performanceModeRec": "GRAB",
-    "performanceModePlay": "PLAY",
+    "looperModeRec": "GRAB",
+    "looperModePlay": "PLAY",
     "a11yUndone": "Deshecho",
     "a11yRedone": "Rehecho",
     "a11yModeRecord": "Modo grabación",
@@ -57,7 +57,7 @@
     "a11yShowTitleBar": "Mostrar barra de título",
     "a11yBankSelected": "Banco {bank}",
     "a11yBankTab": "Mostrar banco {bank}",
-    "a11yModeToggle": "Modo de actuación {mode}, activar para cambiar",
+    "a11yModeToggle": "Modo del looper {mode}, activar para cambiar",
     "a11yTrackTile": "{name}, {state}, activar para grabar",
     "a11yTrackTilePlay": "{name}, {state}, activar para silenciar o reactivar",
     "a11yRenameTrack": "Renombrar {name}",
@@ -78,8 +78,8 @@
     "settingsSectionAudio": "Audio",
     "settingsSectionTracks": "Pistas",
     "settingsKicker": "AJUSTES",
-    "bigPictureTitle": "Vista general",
-    "bpSettingsViewIntro": "Cambia diseños, ajusta valores predeterminados de rendimiento y activa la ventana secundaria de forma de onda de salida.",
+    "settingsTitle": "Loopy",
+    "settingsViewIntro": "Cambia diseños, ajusta los valores predeterminados del looper y activa la ventana secundaria de forma de onda de salida.",
     "viewGroupLabel": "VISTA",
     "waveformWindowTitle": "Ventana de forma de onda de salida",
     "waveformWindowSubtitle": "Abre una segunda ventana con la forma de onda de salida del bucle completo",
@@ -87,8 +87,8 @@
     "highContrastSubtitle": "Fuerza una paleta más brillante y de mayor contraste. En escritorio, el ajuste de contraste del sistema no se aplica automáticamente.",
     "trackIndicatorsTitle": "Indicadores de pista",
     "trackIndicatorsSubtitle": "Mostrar una luz de estado en cada pista",
-    "performanceGroupLabel": "RENDIMIENTO",
-    "bpDefaultModeIntro": "Modo en el que inicia la Vista general. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Reproducir silencian / activan sonido.",
+    "looperGroupLabel": "LOOPER",
+    "defaultModeIntro": "Modo en el que inicia el looper: lo que hace una pulsación de pista, desde el pedal, el teclado o la pantalla. Las teclas numéricas seleccionan pistas; en modo Grabar R/P arman y reproducen la selección, en modo Reproducir silencian / activan sonido.",
     "recordModeLabel": "Grabar",
     "recordModeSub": "Armar y capturar",
     "playModeLabel": "Reproducir",
@@ -599,5 +599,48 @@
                 "type": "String"
             }
         }
-    }
+    },
+    "pedalSimPanelTitle": "Pedal",
+    "pedalSimExpandTooltip": "Mostrar el pedal en pantalla",
+    "pedalSimCollapseTooltip": "Ocultar el pedal en pantalla",
+    "pedalSimFootswitchSemantics": "Pulsador {control}",
+    "@pedalSimFootswitchSemantics": {
+        "placeholders": {
+            "control": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimTrackSemantics": "Pista {number}, {state}",
+    "@pedalSimTrackSemantics": {
+        "placeholders": {
+            "number": {
+                "type": "int"
+            },
+            "state": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimLedOff": "apagado",
+    "pedalSimLedArmed": "armado",
+    "pedalSimLedRecording": "grabando",
+    "pedalSimBankSemantics": "Banco {bank}",
+    "@pedalSimBankSemantics": {
+        "placeholders": {
+            "bank": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimLoopLengthSemantics": "Duración del loop {value}",
+    "@pedalSimLoopLengthSemantics": {
+        "placeholders": {
+            "value": {
+                "type": "String"
+            }
+        }
+    },
+    "pedalSimEncoderSemantics": "Encoder, volumen general",
+    "pedalSimNoLoop": "—"
 }

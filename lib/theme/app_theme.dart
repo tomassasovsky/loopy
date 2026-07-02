@@ -83,11 +83,11 @@ const _hcIndicatorColors = <TrackIndicator, Color>{
   TrackIndicator.record: Color(0xFFFF5470),
 };
 
-/// Loopy's visual theme: a high-contrast neon-on-black **Big Picture** theme
-/// for the performance/visualizer windows.
+/// Loopy's visual themes — named for their palettes, not for any screen or
+/// mode they happen to dress.
 abstract final class AppTheme {
-  /// Neon-on-near-black performance theme (Chewie-Monsta vibe).
-  static ThemeData get bigPicture {
+  /// The default **Neon** theme: neon-on-near-black (Chewie-Monsta vibe).
+  static ThemeData get neon {
     const scheme = ColorScheme.dark(
       primary: Color(0xFFF3F4F7), // SurfaceTheme.dark.textPrimary
       secondary: Color(0xFF3B82F6), // SurfaceTheme.dark.accent
@@ -98,7 +98,7 @@ abstract final class AppTheme {
       scaffoldBackground: const Color(0xFF06060A),
       surface: SurfaceTheme.dark,
       looper: const LooperTheme(
-        tileBackground: Color(0xFF101019),
+        tileBackground: Colors.black,
         tileBorder: Color(0xFF22222E),
         waveformColor: Color(0xFF00E5FF),
         waveformBackground: Color(0xFF06060A),
@@ -110,11 +110,11 @@ abstract final class AppTheme {
     );
   }
 
-  /// High-contrast counterpart of [bigPicture], wired into
+  /// High-contrast counterpart of [neon], wired into
   /// `MaterialApp.highContrastTheme` so the OS high-contrast preference
   /// (macOS Increase Contrast / Windows High Contrast) swaps the palette for
   /// brighter text, tile borders, and meters (WCAG 1.4.3 / 1.4.11).
-  static ThemeData get bigPictureHighContrast {
+  static ThemeData get highContrast {
     const scheme = ColorScheme.highContrastDark(
       primary: Color(0xFFFFFFFF), // SurfaceTheme.highContrast.textPrimary
       secondary: Color(0xFF6BA8FF), // SurfaceTheme.highContrast.accent

@@ -14,6 +14,7 @@ class WaveformView extends StatelessWidget {
     this.progress = 0,
     this.color,
     this.semanticLabel,
+    this.selectedTrack,
     super.key,
   });
 
@@ -32,9 +33,13 @@ class WaveformView extends StatelessWidget {
   /// resolved string, since this widget can run in a window without l10n).
   final String? semanticLabel;
 
+  /// The name of the selected track.
+  final String? selectedTrack;
+
   @override
   Widget build(BuildContext context) {
     final looper = Theme.of(context).extension<LooperTheme>();
+    final theme = Theme.of(context);
     final paint = CustomPaint(
       key: const Key('waveform_view_paint'),
       painter: WaveformPainter(
@@ -44,11 +49,23 @@ class WaveformView extends StatelessWidget {
       ),
       size: Size.infinite,
     );
-    if (semanticLabel == null) return paint;
+    // if (semanticLabel == null) return paint;
     return Semantics(
       label: semanticLabel,
       value: '${(progress.clamp(0.0, 1.0) * 100).round()}%',
-      child: paint,
+      child: Stack(
+        children: [
+          paint,
+          if (selectedTrack != null)
+            Align(
+              alignment: Alignment.topCenter,
+              child: Text(
+                selectedTrack!,
+                style: theme.textTheme.bodySmall?.copyWith(color: Colors.white),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

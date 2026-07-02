@@ -13,7 +13,7 @@ import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// The audio controls embedded in the Big Picture settings "Audio" section,
+/// The audio controls embedded in the Tracks settings "Audio" section,
 /// driven by the shared [AudioSetupCubit]: pick the playback/capture device
 /// (applied live while running), see the live device/latency status, and
 /// re-run the round-trip latency measurement.

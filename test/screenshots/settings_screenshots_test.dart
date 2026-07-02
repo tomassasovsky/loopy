@@ -165,8 +165,8 @@ void main() {
           ],
           child: MultiBlocProvider(
             providers: [
-              BlocProvider<BigPictureCubit>.value(
-                value: BigPictureCubit(settings: settings),
+              BlocProvider<TracksCubit>.value(
+                value: TracksCubit(settings: settings),
               ),
               BlocProvider<WaveformWindowCubit>.value(
                 value: WaveformWindowCubit(settings: settings),
@@ -174,13 +174,9 @@ void main() {
               BlocProvider<HighContrastCubit>.value(
                 value: HighContrastCubit(settings: settings),
               ),
-              BlocProvider<TrackIndicatorsCubit>.value(
-                value: TrackIndicatorsCubit(settings: settings),
-              ),
               BlocProvider<MidiSetupCubit>.value(
                 value: MidiSetupCubit(repository: midi),
               ),
-              BlocProvider<BankCubit>.value(value: BankCubit()),
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
               BlocProvider<RefreshRateCubit>.value(
                 value: RefreshRateCubit(
@@ -208,7 +204,7 @@ void main() {
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
             ],
-            child: const BigPictureSettingsPage(),
+            child: const SettingsPage(),
           ),
         ),
       ),
@@ -216,24 +212,24 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('View section — performance defaults', (tester) async {
+  testWidgets('View section — tracks defaults', (tester) async {
     await pump(tester);
     // Reveal the PERFORMANCE group (default mode + refresh rate).
     await tester.scrollUntilVisible(
-      find.byKey(const Key('bpSettings_refreshRate_120')),
+      find.byKey(const Key('settings_refreshRate_120')),
       200,
       scrollable: find.byType(Scrollable).last,
     );
     await tester.pumpAndSettle();
     await expectLater(
-      find.byType(BigPictureSettingsPage),
-      matchesGoldenFile('goldens/settings_view_performance.png'),
+      find.byType(SettingsPage),
+      matchesGoldenFile('goldens/settings_view_tracks.png'),
     );
   }, skip: !hasScreenshotFonts);
 
   testWidgets('Audio section — recording', (tester) async {
     await pump(tester);
-    await tester.tap(find.byKey(const Key('bpSettings_tab_audio')));
+    await tester.tap(find.byKey(const Key('settings_tab_audio')));
     await tester.pumpAndSettle();
     // Reveal the RECORDING controls (quantize, rec/dub, sound-activated, and
     // the global default loop length).
@@ -244,7 +240,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     await expectLater(
-      find.byType(BigPictureSettingsPage),
+      find.byType(SettingsPage),
       matchesGoldenFile('goldens/settings_audio_recording.png'),
     );
   }, skip: !hasScreenshotFonts);
@@ -312,8 +308,8 @@ void main() {
               BlocProvider<LooperBloc>.value(value: bloc),
               BlocProvider<MonitorCubit>.value(value: monitor),
               BlocProvider<AudioSetupCubit>.value(value: audioSetup),
-              BlocProvider<BigPictureCubit>(
-                create: (_) => BigPictureCubit(settings: settings),
+              BlocProvider<TracksCubit>(
+                create: (_) => TracksCubit(settings: settings),
               ),
             ],
             child: Builder(

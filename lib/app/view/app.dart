@@ -42,6 +42,7 @@ class App extends StatelessWidget {
     required this.sessionRepository,
     required this.sessionDirectory,
     this.pedalRepository,
+    this.pedalSimulator,
     this.ledRepository,
     this.displayCount,
     this.audioRecoveryConfig,
@@ -65,6 +66,12 @@ class App extends StatelessWidget {
   /// cubit always exists and its settings picker shows an empty state. Owned by
   /// the [PedalCubit], which disposes it.
   final PedalRepository? pedalRepository;
+
+  /// The on-screen pedal simulator transport that [pedalRepository] is built
+  /// over, or `null` when none was built. The `PedalFaceplate` injects presses
+  /// and reads decoded frames from it. Disposed by the [PedalCubit] (via the
+  /// repository), so it is provided by value, not created here.
+  final SimulatorPedalTransport? pedalSimulator;
 
   /// The Raspberry Pi console's LED driver channel, or `null` off-Pi — a no-op
   /// channel is substituted so the [LedCubit] always exists. Owned by the
@@ -100,6 +107,15 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The pedal simulator and the pedal repository share one transport graph
+    // (the repository is built over the simulator), so the faceplate injects
+    // into and reads frames from the same object the cubit drives. The `??`
+    // short-circuits in production (both provided), so nothing is allocated on
+    // rebuild; the fallbacks only fire in tests.
+    final pedalSim =
+        pedalSimulator ??
+        SimulatorPedalTransport(inner: const NoopPedalTransport());
+    final pedalRepo = pedalRepository ?? PedalRepository(pedalSim);
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider.value(value: repository),
@@ -107,13 +123,14 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: midiDeviceRepository),
         RepositoryProvider.value(value: settings),
         RepositoryProvider.value(value: sessionRepository),
+        RepositoryProvider.value(value: pedalSim),
       ],
       child: MultiBlocProvider(
         providers: [
           // Provided app-wide (not just on the looper page) so the settings
           // route — pushed on the root navigator, above the looper page — can
           // drive routing edits through the bloc, mirroring the in-view routing
-          // controls. The BigPictureCubit below is hoisted for the same reason.
+          // controls. The TracksCubit below is hoisted for the same reason.
           BlocProvider(
             create: (context) => LooperBloc(
               repository: context.read<LooperRepository>(),
@@ -123,26 +140,16 @@ class App extends StatelessWidget {
           ),
           BlocProvider(
             create: (context) {
-              final cubit = BigPictureCubit(
+              final cubit = TracksCubit(
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
               return cubit;
             },
           ),
-          BlocProvider(create: (context) => BankCubit()),
           BlocProvider(
             create: (context) {
               final cubit = HighContrastCubit(
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(cubit.load());
-              return cubit;
-            },
-          ),
-          BlocProvider(
-            create: (context) {
-              final cubit = TrackIndicatorsCubit(
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
@@ -227,21 +234,16 @@ class App extends StatelessWidget {
           ),
           // Eager (not lazy): the pedal cubit auto-binds the saved output
           // device on launch and starts projecting LED frames, so it must be at
-          // startup. It drives the shared BankCubit on a bank toggle (loopy is
-          // the single source of truth for the active bank).
+          // startup. Its cursor is mirrored onto the shared TracksCubit by
+          // PedalCursorBridge (a presentation-layer BlocListener), so the two
+          // cubits stay decoupled.
           BlocProvider(
             lazy: false,
             create: (context) {
-              final bankCubit = context.read<BankCubit>();
-              final bigPicture = context.read<BigPictureCubit>();
               final cubit = PedalCubit(
-                pedal:
-                    pedalRepository ??
-                    PedalRepository(const NoopPedalTransport()),
+                pedal: pedalRepo,
                 looper: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
-                onBankSelected: bankCubit.selectBank,
-                onTrackSelected: bigPicture.select,
               );
               unawaited(cubit.load());
               return cubit;
@@ -277,10 +279,14 @@ class App extends StatelessWidget {
             },
           ),
         ],
-        child: _AppView(
-          waveformWindow: waveformWindow,
-          sessionDirectory: sessionDirectory,
-          displayCount: displayCount,
+        // Bridges the pedal's cursor onto the shared TracksCubit at the
+        // presentation layer (bloc-to-bloc communication via BlocListener).
+        child: PedalCursorBridge(
+          child: _AppView(
+            waveformWindow: waveformWindow,
+            sessionDirectory: sessionDirectory,
+            displayCount: displayCount,
+          ),
         ),
       ),
     );
@@ -288,7 +294,7 @@ class App extends StatelessWidget {
 }
 
 /// Builds the themed [MaterialApp], wires the macOS system menu, and opens /
-/// closes the secondary waveform window for big-picture mode.
+/// closes the secondary waveform window for tracks mode.
 class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
@@ -375,9 +381,11 @@ class _AppViewState extends State<_AppView> {
       _pushTimer ??= Timer.periodic(_waveformFrame, (_) {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
+        final tracks = context.read<TracksCubit>();
         widget.waveformWindow.pushWaveform(
           looper.readWaveform(),
           looper.state.transport.progress,
+          tracks.state.names[tracks.state.selectedChannel],
         );
       });
     } else {
@@ -611,9 +619,9 @@ class _AppViewState extends State<_AppView> {
         // highContrastTheme additionally honors the OS flag where Flutter
         // delivers it (iOS only).
         theme: context.watch<HighContrastCubit>().state
-            ? AppTheme.bigPictureHighContrast
-            : AppTheme.bigPicture,
-        highContrastTheme: AppTheme.bigPictureHighContrast,
+            ? AppTheme.highContrast
+            : AppTheme.neon,
+        highContrastTheme: AppTheme.highContrast,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: Builder(

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:pedal_repository/src/pedal_button.dart';
 import 'package:pedal_repository/src/pedal_event.dart';
+import 'package:pedal_repository/src/pedal_mode.dart';
 import 'package:pedal_repository/src/pedal_state_frame.dart';
 
 /// The wire codec shared by loopy and the pedal firmware.
@@ -24,14 +25,15 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 ///
 /// | byte  | meaning                                                  |
 /// |-------|----------------------------------------------------------|
-/// | 0     | flags: bit0 playMode, bit1 clearFadeActive, bit2 goodbye |
+/// | 0     | flags: bit0 mode, bit1 clearFadeActive, bit2 goodbye     |
 /// | 1     | [GlobalColor] index                                      |
 /// | 2     | active bank (0 = A, 1 = B)                               |
 /// | 3     | armed track (0..7)                                       |
 /// | 4..11 | [PedalTrackLed] index for tracks 0..7                    |
 /// | 12..15| loop length, microseconds, unsigned 32-bit little-endian |
 ///
-/// The checksum is the XOR of every packed payload byte, masked to 7 bits.
+/// The mode bit encodes [PedalMode]: `0` = rec, `1` = play. The checksum is the
+/// XOR of every packed payload byte, masked to 7 bits.
 abstract final class PedalCodec {
   /// MIDI SysEx start byte.
   static const sysExStart = 0xF0;
@@ -69,12 +71,12 @@ abstract final class PedalCodec {
   static Uint8List encodeFrame(PedalStateFrame frame) {
     final payload = Uint8List(_payloadLength);
     payload[0] =
-        (frame.playMode ? 0x01 : 0) |
+        (frame.mode == PedalMode.play ? 0x01 : 0) |
         (frame.clearFadeActive ? 0x02 : 0) |
         (frame.isGoodbye ? 0x04 : 0);
     payload[1] = frame.globalColor.index;
     payload[2] = frame.activeBank;
-    payload[3] = frame.armedTrack;
+    payload[3] = frame.selectedTrack;
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
       payload[4 + i] = frame.trackLeds[i].index;
     }
@@ -140,10 +142,10 @@ abstract final class PedalCodec {
     final flags = payload[0];
     final colorIndex = payload[1];
     final activeBank = payload[2];
-    final armedTrack = payload[3];
+    final selectedTrack = payload[3];
     if (colorIndex >= GlobalColor.values.length) return null;
     if (activeBank > 1) return null;
-    if (armedTrack >= PedalStateFrame.trackCount) return null;
+    if (selectedTrack >= PedalStateFrame.trackCount) return null;
 
     final trackLeds = <PedalTrackLed>[];
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
@@ -162,8 +164,8 @@ abstract final class PedalCodec {
       globalColor: GlobalColor.values[colorIndex],
       trackLeds: trackLeds,
       activeBank: activeBank,
-      armedTrack: armedTrack,
-      playMode: flags & 0x01 != 0,
+      selectedTrack: selectedTrack,
+      mode: (flags & 0x01 != 0) ? PedalMode.play : PedalMode.rec,
       clearFadeActive: flags & 0x02 != 0,
       isGoodbye: flags & 0x04 != 0,
       loopLengthMicros: loopLengthMicros,

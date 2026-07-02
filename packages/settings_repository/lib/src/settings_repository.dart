@@ -299,10 +299,10 @@ class SettingsRepository {
   Future<void> savePedalClearFadeMs(int ms) =>
       _store.setInt(_pedalClearFadeMsKey, ms);
 
-  static const String _showWaveformWindowKey = 'big_picture.waveform_window';
+  static const String _showWaveformWindowKey = 'ui.waveform_window';
 
-  /// Whether the secondary output-waveform window should open in big-picture
-  /// mode. Defaults to `true` when unset.
+  /// Whether the secondary output-waveform window should open. Defaults to
+  /// `true` when unset.
   Future<bool> loadShowWaveformWindow() async =>
       await _store.getBool(_showWaveformWindowKey) ?? true;
 
@@ -310,7 +310,7 @@ class SettingsRepository {
   Future<void> saveShowWaveformWindow({required bool value}) =>
       _store.setBool(_showWaveformWindowKey, value: value);
 
-  static const String _highContrastKey = 'big_picture.high_contrast';
+  static const String _highContrastKey = 'ui.high_contrast';
 
   /// Whether the manual high-contrast theme override is on. Defaults to
   /// `false`. Desktop platforms (macOS / Windows / Linux) do not deliver the OS
@@ -323,28 +323,28 @@ class SettingsRepository {
   Future<void> saveHighContrast({required bool value}) =>
       _store.setBool(_highContrastKey, value: value);
 
-  static const String _showTrackIndicatorsKey = 'big_picture.track_indicators';
+  static const String _showTrackIndicatorsKey = 'tracks.indicators';
 
-  /// Whether per-track status indicators show on the Big Picture tiles.
+  /// Whether per-track status indicators show on the Tracks-view tiles.
   /// Defaults to `true` when unset.
   Future<bool> loadShowTrackIndicators() async =>
       await _store.getBool(_showTrackIndicatorsKey) ?? true;
 
-  /// Saves whether per-track status indicators show on the Big Picture tiles.
+  /// Saves whether per-track status indicators show on the Tracks-view tiles.
   Future<void> saveShowTrackIndicators({required bool value}) =>
       _store.setBool(_showTrackIndicatorsKey, value: value);
 
-  static const String _defaultPerformanceModeKey = 'big_picture.default_mode';
+  static const String _defaultLooperModeKey = 'looper.default_mode';
 
-  /// Loads the persisted default Big Picture performance mode (an opaque token,
-  /// e.g. `'record'` / `'play'`), or `null` if unset. The presentation layer
-  /// maps the token to its mode enum.
-  Future<String?> loadDefaultPerformanceMode() =>
-      _store.getString(_defaultPerformanceModeKey);
+  /// Loads the persisted default looper mode (an opaque token, e.g.
+  /// `'record'` / `'play'`), or `null` if unset. The presentation layer maps
+  /// the token to its mode enum.
+  Future<String?> loadDefaultLooperMode() =>
+      _store.getString(_defaultLooperModeKey);
 
-  /// Saves the default Big Picture performance [mode] token.
-  Future<void> saveDefaultPerformanceMode(String mode) =>
-      _store.setString(_defaultPerformanceModeKey, mode);
+  /// Saves the default looper [mode] token.
+  Future<void> saveDefaultLooperMode(String mode) =>
+      _store.setString(_defaultLooperModeKey, mode);
 
   static const String _refreshHzKey = 'ui.refresh_hz';
 

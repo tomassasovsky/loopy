@@ -9,7 +9,7 @@ extension PumpApp on WidgetTester {
       MaterialApp(
         // The real app theme, so widgets resolving design tokens from
         // `Theme.of(context)` (LooperTheme, SurfaceTheme) work under test.
-        theme: AppTheme.bigPicture,
+        theme: AppTheme.neon,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: widget,
