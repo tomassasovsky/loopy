@@ -220,6 +220,24 @@
     "signalPluginCancelScan": "Cancelar",
     "signalAddEffect": "Añadir efecto",
     "signalAddPlugin": "Añadir plugin…",
+    "fxEditorInputTitle": "Entrada {number}",
+    "@fxEditorInputTitle": {
+        "placeholders": {
+            "number": { "type": "int" }
+        }
+    },
+    "fxEditorInputConsequence": "se graba en las nuevas tomas",
+    "fxEditorLaneConsequence": "moldea la reproducción, no destructivo",
+    "fxEditorChainIn": "ENT",
+    "fxEditorChainOut": "SAL",
+    "fxEditorEmptySelection": "Selecciona un bloque para editar sus controles.",
+    "fxEditorScopeGone": "Esta cadena ya no existe.",
+    "fxEditorEditBlock": "Editar {name}",
+    "@fxEditorEditBlock": {
+        "placeholders": {
+            "name": { "type": "String" }
+        }
+    },
     "startEngine": "Iniciar motor",
     "sampleRateGroup": "Frecuencia de muestreo",
     "bufferSizeGroup": "Tamaño del búfer",
