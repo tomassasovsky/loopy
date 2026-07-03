@@ -147,6 +147,11 @@ class _TopPlate extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     final bankBase = frame.activeBank * PedalState.tracksPerBank;
+    // Once the loop is cleared (activity off with nothing left to play) the
+    // ring animates fully dark: the hump makes one last pass in the off color
+    // and settles, instead of parking on a lit idle ring.
+    final ringCleared =
+        frame.globalColor == GlobalColor.off && frame.loopLengthMicros == 0;
     return LayoutBuilder(
       builder: (context, constraints) {
         final scale = math.min(
@@ -263,8 +268,11 @@ class _TopPlate extends StatelessWidget {
                   _ringOd,
                   _ringOd,
                   _Encoder(
-                    ringColor: _ringColor(surface, frame.globalColor),
+                    ringColor: ringCleared
+                        ? surface.ledOff
+                        : _ringColor(surface, frame.globalColor),
                     loopLengthMicros: frame.loopLengthMicros,
+                    cleared: ringCleared,
                     onTurn: sim.turn,
                   ),
                 ),
@@ -695,11 +703,16 @@ class _Encoder extends StatefulWidget {
   const _Encoder({
     required this.ringColor,
     required this.loopLengthMicros,
+    required this.cleared,
     required this.onTurn,
   });
 
   final Color ringColor;
   final int loopLengthMicros;
+
+  /// The loop was just cleared: the hump makes one last pass (at `_idleSweep`)
+  /// in the off color, so the ring animates to dark instead of parking lit.
+  final bool cleared;
   final void Function(int delta) onTurn;
 
   @override
@@ -709,6 +722,10 @@ class _Encoder extends StatefulWidget {
 class _EncoderState extends State<_Encoder>
     with SingleTickerProviderStateMixin {
   static const double _dragPerDetent = 6;
+
+  // Steady rotation used when there is no loop to time the sweep to (e.g. while
+  // the ring winds off after a clear). Matches the firmware's kRingMsPerRev.
+  static const Duration _idleSweep = Duration(milliseconds: 700);
 
   late final AnimationController _sweep;
 
@@ -726,14 +743,23 @@ class _EncoderState extends State<_Encoder>
   @override
   void didUpdateWidget(_Encoder oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.loopLengthMicros != widget.loopLengthMicros) _syncSweep();
+    if (oldWidget.loopLengthMicros != widget.loopLengthMicros ||
+        oldWidget.cleared != widget.cleared) {
+      _syncSweep();
+    }
   }
 
-  // One revolution per loop; parked when there is no loop.
+  // One revolution per loop; on clear the hump makes one last idle-rate pass
+  // and settles dark (a single forward pass, not a repeat, so it animates off
+  // rather than parking a lit ring — and still settles for pumpAndSettle);
+  // otherwise parked.
   void _syncSweep() {
     if (widget.loopLengthMicros > 0) {
       _sweep.duration = Duration(microseconds: widget.loopLengthMicros);
       if (!_sweep.isAnimating) unawaited(_sweep.repeat());
+    } else if (widget.cleared) {
+      _sweep.duration = _idleSweep;
+      unawaited(_sweep.forward());
     } else {
       _sweep
         ..stop()
@@ -809,7 +835,8 @@ class _EncoderState extends State<_Encoder>
                         key: const Key('pedalFaceplate_ring'),
                         painter: _LedRingPainter(
                           color: widget.ringColor,
-                          progress: widget.loopLengthMicros > 0
+                          progress:
+                              widget.loopLengthMicros > 0 || widget.cleared
                               ? _sweep.value
                               : null,
                         ),
