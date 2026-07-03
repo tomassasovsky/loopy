@@ -317,11 +317,13 @@ class PedalCubit extends Cubit<PedalState> {
 
   /// Play mode: Rec/Play toggles the whole armed set between playing and parked.
   void _playToggleTransport() {
-    if (_playIsPlaying()) {
-      _parkPlay();
-    } else {
-      _resumePlay();
-    }
+    final isPlaying = _playIsPlaying();
+    final isPlayingAllWithContent =
+        isPlaying &&
+        state.playArmed.length == _tracks.where((t) => t.hasContent).length;
+
+    if (isPlayingAllWithContent) return;
+    _resumePlay(allWithContent: !isPlayingAllWithContent && isPlaying);
   }
 
   // --- Track buttons --------------------------------------------------------
@@ -441,9 +443,11 @@ class PedalCubit extends Cubit<PedalState> {
   /// Resumes the armed set: unmutes and plays every armed track. With nothing
   /// armed (e.g. just after parking) it first arms every content track, so
   /// Rec/Play plays the whole loop set by default without arming each one.
-  void _resumePlay() {
+  void _resumePlay({
+    bool allWithContent = false,
+  }) {
     var armed = state.playArmed;
-    if (armed.isEmpty) {
+    if (armed.isEmpty || allWithContent) {
       armed = {
         for (final track in _tracks)
           if (_playable(track)) track.channel,
