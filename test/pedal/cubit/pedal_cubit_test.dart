@@ -478,19 +478,24 @@ void main() {
       },
     );
 
-    test('Rec/Play in Play mode freezes the armed set when playing', () async {
-      final cubit = buildCubit();
-      addTwoPlayingTracks();
-      await pumpEventQueue();
-      transport.emit(0x90, PedalButton.mode.note, 100); // auto-arms 0, 1
-      await pumpEventQueue();
+    test(
+      'Rec/Play in Play mode is a no-op when the whole content set is playing',
+      () async {
+        final cubit = buildCubit();
+        addTwoPlayingTracks();
+        await pumpEventQueue();
+        transport.emit(0x90, PedalButton.mode.note, 100); // auto-arms 0, 1
+        await pumpEventQueue();
 
-      transport.emit(0x90, PedalButton.recPlay.note, 100);
-      await pumpEventQueue();
-      verify(() => looper.stopTrack()).called(1);
-      verify(() => looper.stopTrack(channel: 1)).called(1);
-      await cubit.close();
-    });
+        transport.emit(0x90, PedalButton.recPlay.note, 100);
+        await pumpEventQueue();
+        // Both content tracks are already playing, so Rec/Play does nothing —
+        // it no longer parks (parking is Stop's job now).
+        verifyNever(() => looper.stopTrack());
+        verifyNever(() => looper.stopTrack(channel: 1));
+        await cubit.close();
+      },
+    );
 
     // Drives the reported scenario: record two loops, enter Play (auto-arms
     // both), then mute each — muting the last audible parks the transport and
