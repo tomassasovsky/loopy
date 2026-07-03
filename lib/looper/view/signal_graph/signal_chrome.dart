@@ -2,37 +2,6 @@ part of 'signal_list_view.dart';
 
 // --- Chrome --------------------------------------------------------------
 
-/// The top hint strip — a one-line "how to read this" tagline (trace + chips).
-class _SignalHintStrip extends StatelessWidget {
-  const _SignalHintStrip();
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    final l10n = context.l10n;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0B0B0F),
-        border: Border(bottom: BorderSide(color: surface.line)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.touch_app_outlined, size: 14, color: surface.textTertiary),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Text(
-              l10n.signalTraceHint,
-              style: signalMono(color: surface.textSecondary),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// The bottom legend — a quiet key for the row vocabulary (gate / snapshot /
 /// routing chip), like a patchbay's silk-screen.
 class _SignalLegend extends StatelessWidget {
@@ -47,7 +16,7 @@ class _SignalLegend extends StatelessWidget {
       children: [
         glyph,
         const SizedBox(width: 6),
-        Text(label, style: signalMono(color: surface.textTertiary, size: 10)),
+        Text(label, style: signalLabel(color: surface.textTertiary, size: 10)),
       ],
     );
     return Container(
@@ -62,15 +31,7 @@ class _SignalLegend extends StatelessWidget {
         runSpacing: 6,
         children: [
           item(
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: surface.accent,
-                boxShadow: signalGlow(surface.accent, blur: 7, spread: 0),
-              ),
-            ),
+            const SignalGateDot(on: true, size: 8),
             l10n.signalLegendLive,
           ),
           item(
@@ -125,7 +86,7 @@ class _SignalChromeBar extends StatelessWidget {
             icon: const Icon(Icons.chevron_left, size: 18),
             label: Text(
               l10n.close,
-              style: signalMono(color: surface.textSecondary),
+              style: signalLabel(color: surface.textSecondary),
             ),
             style: TextButton.styleFrom(
               foregroundColor: surface.textSecondary,
@@ -135,17 +96,16 @@ class _SignalChromeBar extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             l10n.signalTitle.toUpperCase(),
-            style: signalMono(
+            style: signalLabel(
               color: surface.textPrimary,
-              size: 13,
-              tracking: 4,
+              size: 14,
               weight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 12),
           Text(
             l10n.signalFlowSubtitle,
-            style: signalMono(color: surface.textTertiary),
+            style: signalLabel(color: surface.textTertiary),
           ),
         ],
       ),

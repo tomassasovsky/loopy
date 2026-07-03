@@ -3,10 +3,11 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/surface_theme.dart';
 
-/// The output-routing control on an input or take row (D6): one **lit chip per
-/// routed output**, each wearing that output's hue and removing the route on
-/// tap, plus a trailing **"+" picker** that opens a menu of all outputs as
-/// toggles — so a row never grows into a wide chip strip at 16 outputs.
+/// The output-routing control on an input or take row (D6): one **neutral chip
+/// per routed output** (`→ N`, removing the route on tap), plus a trailing
+/// **"+" picker** that opens a menu of all outputs as toggles — so a row never
+/// grows into a wide chip strip at 16 outputs. The chips read calmly; the
+/// output each targets is named by its number, not a hue.
 class SignalRoutingChips extends StatelessWidget {
   /// Creates a [SignalRoutingChips].
   const SignalRoutingChips({
@@ -46,7 +47,6 @@ class SignalRoutingChips extends StatelessWidget {
         for (final o in routes)
           _Chip(
             chipKey: Key('${keyPrefix}_chip_$o'),
-            color: outputColor(surface, o),
             label: l10n.outputChannelLabel(o + 1),
             semanticLabel: l10n.signalUnrouteOutput(o + 1),
             onTap: () => onToggle(o),
@@ -65,20 +65,19 @@ class SignalRoutingChips extends StatelessWidget {
 class _Chip extends StatelessWidget {
   const _Chip({
     required this.chipKey,
-    required this.color,
     required this.label,
     required this.semanticLabel,
     required this.onTap,
   });
 
   final Key chipKey;
-  final Color color;
   final String label;
   final String semanticLabel;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return Material(
       color: Colors.transparent,
       child: Tooltip(
@@ -93,20 +92,13 @@ class _Chip extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.14),
+                color: surface.cardHigh,
                 borderRadius: BorderRadius.circular(7),
-                border: Border.all(color: color.withValues(alpha: 0.55)),
+                border: Border.all(color: surface.line),
               ),
               child: Text(
                 '→ ${label.replaceAll(RegExp('[^0-9]'), '')}',
-                // mockup .chip: colour-mix(rc 88%, white) — a touch brighter.
-                style: signalMono(
-                  color: Color.alphaBlend(
-                    Colors.white.withValues(alpha: 0.14),
-                    color,
-                  ),
-                  size: 10,
-                ),
+                style: signalMono(color: surface.textSecondary, size: 10),
               ),
             ),
           ),
@@ -138,8 +130,8 @@ class _AddRouteButton extends StatelessWidget {
       key: buttonKey,
       tooltip: l10n.signalRouteTooltip,
       onSelected: onToggle,
-      color: kSignalMenu,
-      shape: signalMenuShape(),
+      color: surface.cardHigh,
+      shape: signalMenuShape(surface),
       elevation: 10,
       menuPadding: const EdgeInsets.symmetric(vertical: 5),
       position: PopupMenuPosition.under,
@@ -153,7 +145,7 @@ class _AddRouteButton extends StatelessWidget {
               l10n.signalRouteToOutput(o + 1),
               style: signalMono(
                 color: routes.contains(o)
-                    ? outputColor(surface, o)
+                    ? surface.accent
                     : surface.textPrimary,
                 size: 12,
               ),
@@ -166,7 +158,7 @@ class _AddRouteButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: kSignalLine2),
+          border: Border.all(color: surface.line),
         ),
         child: Text('+', style: signalMono(color: surface.textTertiary)),
       ),

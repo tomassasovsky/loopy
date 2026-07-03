@@ -321,7 +321,6 @@ class _DropSlot extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: surface.accent,
                     borderRadius: BorderRadius.circular(2),
-                    boxShadow: signalGlow(surface.accent, blur: 10, spread: 0),
                   ),
                 )
               : const SizedBox.shrink(),
@@ -372,7 +371,7 @@ class _DeviceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: surface.cardHigh,
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: kSignalLine2),
+        border: Border.all(color: surface.line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -398,8 +397,8 @@ class _DeviceCard extends StatelessWidget {
                       tooltip: l10n.a11yEffectType,
                       padding: EdgeInsets.zero,
                       onSelected: onSetType,
-                      color: kSignalMenu,
-                      shape: signalMenuShape(),
+                      color: surface.cardHigh,
+                      shape: signalMenuShape(surface),
                       elevation: 10,
                       menuPadding: const EdgeInsets.symmetric(vertical: 5),
                       position: PopupMenuPosition.under,
@@ -448,7 +447,6 @@ class _DeviceCard extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: signalMono(
                                 color: surface.textPrimary,
-                                tracking: 0.4,
                                 weight: FontWeight.w600,
                               ),
                             ),
@@ -644,7 +642,7 @@ class _PluginDeviceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: surface.cardHigh,
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: kSignalLine2),
+        border: Border.all(color: surface.line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -669,7 +667,6 @@ class _PluginDeviceCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: signalMono(
                         color: surface.textPrimary,
-                        tracking: 0.4,
                         weight: FontWeight.w600,
                       ),
                     ),
@@ -834,7 +831,6 @@ class _PluginPlaceholderCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: signalMono(
                       color: surface.textSecondary,
-                      tracking: 0.4,
                       weight: FontWeight.w600,
                     ),
                   ),
@@ -868,7 +864,7 @@ class _PluginPlaceholderCard extends StatelessWidget {
                         ? l10n.signalPluginUnsupported
                         : l10n.signalPluginUnavailable,
                     textAlign: TextAlign.center,
-                    style: signalMono(color: surface.textTertiary, size: 10),
+                    style: signalLabel(color: surface.textTertiary, size: 10),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
@@ -1278,9 +1274,9 @@ class _ModeSwitch extends StatelessWidget {
           width: _switchWidth,
           height: 36,
           decoration: BoxDecoration(
-            color: kSignalInset,
+            color: surface.surface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: kSignalLine2),
+            border: Border.all(color: surface.line),
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -1293,7 +1289,7 @@ class _ModeSwitch extends StatelessWidget {
                   onTap: () => onChanged(0),
                 ),
               ),
-              Container(height: 1, color: kSignalLine2),
+              Container(height: 1, color: surface.line),
               Expanded(
                 child: _ModeSegment(
                   text: optionHigh,
@@ -1308,7 +1304,7 @@ class _ModeSwitch extends StatelessWidget {
         const SizedBox(height: 7),
         Text(
           label.toUpperCase(),
-          style: signalMono(color: surface.textTertiary, size: 9, tracking: 1),
+          style: signalMono(color: surface.textTertiary, size: 9),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
@@ -1354,7 +1350,6 @@ class _ModeSegment extends StatelessWidget {
           style: signalMono(
             color: active ? color : surface.textTertiary,
             size: 8.5,
-            tracking: 0.2,
             weight: active ? FontWeight.w600 : FontWeight.w400,
           ),
         ),
@@ -1380,12 +1375,13 @@ class _AddDeviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final surface = context.surface;
     return Container(
       key: cardKey,
       width: 104,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: kSignalLine2),
+        border: Border.all(color: surface.line),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -1398,7 +1394,7 @@ class _AddDeviceCard extends StatelessWidget {
               onTap: onAddEffect,
             ),
           ),
-          Container(height: 1, color: kSignalLine2),
+          Container(height: 1, color: surface.line),
           Expanded(
             child: _AddDeviceButton(
               buttonKey: const Key('signalGraph_addPlugin'),
@@ -1447,7 +1443,7 @@ class _AddDeviceButton extends StatelessWidget {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: signalMono(color: tint, size: 9, tracking: 0.3),
+              style: signalMono(color: tint, size: 9),
             ),
           ],
         ),

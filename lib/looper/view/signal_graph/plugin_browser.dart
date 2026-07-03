@@ -145,14 +145,14 @@ class _PluginBrowserDialogState extends State<_PluginBrowserDialog> {
                   hintText: l10n.signalPluginBrowserSearchHint,
                   hintStyle: signalMono(color: surface.textTertiary, size: 12),
                   filled: true,
-                  fillColor: kSignalInset,
+                  fillColor: surface.surface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kSignalLine2),
+                    borderSide: BorderSide(color: surface.line),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: kSignalLine2),
+                    borderSide: BorderSide(color: surface.line),
                   ),
                 ),
               ),
@@ -258,7 +258,6 @@ class _PluginRow extends StatelessWidget {
                   style: signalMono(
                     color: surface.accent,
                     size: 8.5,
-                    tracking: 0.5,
                     weight: FontWeight.w600,
                   ),
                 ),

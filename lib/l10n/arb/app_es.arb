@@ -124,7 +124,6 @@
       "description": "Badge on a multi-lane track header counting its takes.",
       "placeholders": { "count": { "type": "int" } }
     },
-    "signalTraceHint": "Toca cualquier fila para trazar su señal — las filas conectadas se iluminan, el resto se atenúa. Toca un chip para enrutar.",
     "signalLegendLive": "entrada LIVE monitorizada",
     "signalLegendSnapshot": "instantánea de FX al grabar",
     "signalLegendChip": "chip = enrutado a esa salida",
@@ -192,7 +191,6 @@
     "signalThisTakeHint": "Una copia tomada al grabar. Editarla solo cambia este carril — el tono en vivo de la entrada y tus otras tomas no se tocan.",
     "signalLaneCleanHint": "Este carril graba su entrada limpia. Añade efectos para colorear solo esta toma.",
     "signalAddEffectTooltip": "Añadir efecto a esta toma",
-    "signalHint": "Toca una entrada para ajustar su tono (es lo que se graba). Toca un carril para enrutarlo. Toca una salida para activarla o desactivarla.",
     "inputMonitorLabel": "Monitor Ent {inputNumber}",
     "unmuteInputTooltip": "Activar sonido de la entrada",
     "muteInputTooltip": "Silenciar entrada",
