@@ -200,6 +200,46 @@ void main() {
       expect(border.top.color, SurfaceTheme.dark.ledRed);
     });
 
+    Color ringBorderColor(WidgetTester tester) =>
+        ((tester.widget<Container>(find.byKey(_encoderKey)).decoration!
+                        as BoxDecoration)
+                    .border!
+                as Border)
+            .top
+            .color;
+
+    testWidgets('the ring animates to off once the loop is cleared', (
+      tester,
+    ) async {
+      final (_, sim) = await pumpFaceplate(tester);
+
+      // Playing: the ring is lit in the activity colour.
+      sim.send(
+        PedalCodec.encodeFrame(
+          _frame(globalColor: GlobalColor.green, loopLengthMicros: 1000000),
+        ),
+      );
+      await tester.pump();
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledGreen);
+
+      // Cleared: activity off with no loop left — the ring goes dark (off).
+      sim.send(PedalCodec.encodeFrame(_frame()));
+      await tester.pump();
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ledOff);
+    });
+
+    testWidgets('a stop with a loop still loaded keeps the ring glow', (
+      tester,
+    ) async {
+      final (_, sim) = await pumpFaceplate(tester);
+
+      // Off but a loop remains (a Stop, not a Clear): the ring keeps its idle
+      // glow rather than going fully dark.
+      sim.send(PedalCodec.encodeFrame(_frame(loopLengthMicros: 1000000)));
+      await tester.pump();
+      expect(ringBorderColor(tester), SurfaceTheme.dark.ringGlow);
+    });
+
     testWidgets('the BANK LED lights on bank B', (tester) async {
       final (_, sim) = await pumpFaceplate(tester);
       Color bankColor() =>

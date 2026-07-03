@@ -186,10 +186,12 @@ static CRGB scaled(CRGB c, uint8_t level) {
 
 // A smooth brightness hump rotates around the ring: brightness =
 // 1 - (d/kRingWidth)^kRingShape, clamped to 0, where d is the circular distance
-// (in LEDs) from an advancing center. Independent of loop length. On stop the
-// ring FREEZES in place (the phase stops advancing) — it is never cleared and
-// never shows a blue idle dot. Tune: kRingMsPerRev (lower = faster), kRingWidth
-// (LEDs lit each side), kRingShape (2 = parabola, lower = pointier).
+// (in LEDs) from an advancing center. Independent of loop length. A Stop that
+// leaves a loop loaded FREEZES the ring in place (the phase stops advancing) so
+// the last playhead position stays lit; clearing the loop instead keeps the
+// hump advancing in the now-off color, so the ring animates to dark rather than
+// freezing a lit pixel. It never shows a blue idle dot. Tune: kRingMsPerRev
+// (lower = faster), kRingWidth (LEDs lit each side), kRingShape (2 = parabola).
 static const unsigned long kRingMsPerRev = 700;
 static const float kRingWidth = 5.5f;
 static const float kRingShape = 1.5f;
@@ -212,7 +214,10 @@ static void renderRing() {
     for (uint8_t i = 0; i < kRingCount; i++) g_leds[kRingStart + i] = CRGB::Black;
     return;
   }
-  if (!active) return; // idle / stopped: freeze the ring exactly as it is
+  // A Stop with a loop still loaded freezes the ring where it was. Once the
+  // loop is cleared (nothing left to play) fall through so the hump keeps
+  // advancing in the off color and the ring animates to dark.
+  if (!active && g_frame.loop_length_micros > 0) return;
   // Advance the center only while active, so a Stop leaves it where it was.
   g_ringPhase += (float)dt / (float)kRingMsPerRev * (float)kRingCount;
   while (g_ringPhase >= (float)kRingCount) g_ringPhase -= (float)kRingCount;
@@ -247,7 +252,7 @@ static void render() {
     g_leds[kModeLed] = (g_frame.global_color == PEDAL_GLOBAL_OFF)
                            ? CRGB::Green
                            : globalColor(g_frame.global_color);
-    g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Blue : CRGB::Black;
+    g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;
     g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;
   } else {
     g_leds[kModeLed] = CRGB::Black;
