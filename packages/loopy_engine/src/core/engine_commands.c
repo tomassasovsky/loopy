@@ -178,6 +178,11 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
     t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
     t->empty_len = len;
     le_mark_state_cmd(t, LE_TRACK_EMPTY);
+    le_track_set_len(t, 0); /* coherent snapshot before the audio thread
+                             * applies — a poll must never see EMPTY with a
+                             * stale nonzero length (mirrors the live-tap and
+                             * clear paths) */
+    store_i32(&t->a_multiple, 1);
     store_i32(&t->a_redo_depth, t->redo_count);
     break; /* empty now — further queued taps are no-ops */
   }

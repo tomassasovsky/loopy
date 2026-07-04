@@ -490,6 +490,52 @@ static void test_undo_queued_during_drain(void) {
   le_engine_destroy(e);
 }
 
+/* A queued undo that falls through to undo-to-empty must pre-zero the
+ * published length control-side (mirroring the live-tap and clear paths), so
+ * a snapshot poll can never pair EMPTY with a stale nonzero length — the
+ * audio thread's state flip and length zeroing are separate stores, and the
+ * UI's depths-sane invariant asserts on every poll. */
+static void test_queued_undo_to_empty_coherent_snapshot(void) {
+  printf("test_queued_undo_to_empty_coherent_snapshot\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out); /* one full pass -> 1.5 */
+  le_engine_record(e, 0);              /* punch out */
+  drain(e); /* state flips, but the punch envelope is still up */
+
+  /* Two taps while the layer is in flight: both queue. On the flush the
+   * first peels the dub layer, the second falls through to undo-to-empty. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s); /* the drain applies the queued taps */
+
+  /* UNDO_TO_EMPTY is posted but not yet applied by the audio thread: the
+   * published length must already read 0 (and the history must be fully on
+   * the redo side) so no poll can see EMPTY with the old length. */
+  CHECK(s.tracks[0].length_frames == 0);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 2);
+
+  drain(e); /* the audio thread applies the state flip */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].length_frames == 0);
+
+  /* The resurrect path is intact: redo reinstates base, then the dub. */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  check_content(e, 1.0f);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  check_content(e, 1.5f);
+
+  le_engine_destroy(e);
+}
+
 /* Undoing past the base layer empties the track for the pedal/UI while redo
  * keeps the whole history; the master grid deliberately survives (redo needs
  * it — Clear remains the full reset). */
@@ -5558,6 +5604,7 @@ int main(void) {
   test_per_pass_undo_layers();
   test_punch_out_mid_pass_drains();
   test_undo_queued_during_drain();
+  test_queued_undo_to_empty_coherent_snapshot();
   test_undo_to_empty_and_redo();
   test_record_after_undo_to_empty_clears_redo();
   test_clear_unmutes();
