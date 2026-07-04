@@ -285,7 +285,7 @@ class BankSwitch extends StatelessWidget {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final accent = theme.colorScheme.primary;
-    final overlay = context.read<ControlOverlayCubit>();
+    final intents = context.read<ControlIntents>();
 
     return Container(
       padding: const EdgeInsets.all(3),
@@ -305,7 +305,7 @@ class BankSwitch extends StatelessWidget {
               ),
               selected: i == active,
               borderRadius: 8,
-              onTap: () => overlay.browseBank(i),
+              onTap: () => intents.browseBank(i),
               child: AnimatedContainer(
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero

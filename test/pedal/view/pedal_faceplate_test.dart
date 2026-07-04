@@ -87,15 +87,17 @@ void main() {
     final settings = SettingsRepository(store: FakeKeyValueStore());
     // A real overlay + intents pair: presses decoded by the cubit land on the
     // same control layer the app wires (mode/cursor owned by the overlay).
-    final overlay = ControlOverlayCubit(looper: looper);
+    final store = ControlOverlay(looper: looper);
+    addTearDown(store.dispose);
+    final overlay = ControlOverlayCubit(overlay: store);
     addTearDown(overlay.close);
     final cubit = PedalCubit(
       pedal: PedalRepository(sim),
       looper: looper,
-      overlay: overlay,
+      overlay: store,
       intents: ControlIntents(
         looper: looper,
-        overlay: overlay,
+        overlay: store,
         settings: settings,
       ),
       settings: settings,

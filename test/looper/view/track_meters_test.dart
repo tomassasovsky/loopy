@@ -21,6 +21,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
+  late ControlOverlay store;
   late ControlOverlayCubit overlay;
 
   setUp(() {
@@ -32,7 +33,9 @@ void main() {
       () => looper.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     // The row reads the mode / cursor / bank from the shared control overlay.
-    overlay = ControlOverlayCubit(looper: looper);
+    store = ControlOverlay(looper: looper);
+    addTearDown(store.dispose);
+    overlay = ControlOverlayCubit(overlay: store);
     addTearDown(overlay.close);
   });
 
@@ -79,7 +82,7 @@ void main() {
 
   testWidgets('the selected track bar has a white border', (tester) async {
     seed(LooperState(tracks: [for (var i = 0; i < 4; i++) Track(channel: i)]));
-    overlay.selectTrack(1);
+    store.selectTrack(1);
     await pump(tester);
 
     expect(borderColor(tester, 1), Colors.white);

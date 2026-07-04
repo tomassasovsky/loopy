@@ -23,7 +23,7 @@
 library;
 
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/cubit/control_overlay_cubit.dart';
+import 'package:loopy/control/control_overlay.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 

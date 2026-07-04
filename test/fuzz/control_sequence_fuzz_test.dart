@@ -177,7 +177,7 @@ class _Harness {
     bloc = LooperBloc(repository: repo);
     sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
     pedalRepo = PedalRepository(sim);
-    overlay = ControlOverlayCubit(looper: repo);
+    overlay = ControlOverlay(looper: repo);
     intents = ControlIntents(
       looper: repo,
       overlay: overlay,
@@ -202,7 +202,7 @@ class _Harness {
   late final LooperBloc bloc;
   late final SimulatorPedalTransport sim;
   late final PedalRepository pedalRepo;
-  late final ControlOverlayCubit overlay;
+  late final ControlOverlay overlay;
   late final ControlIntents intents;
   late final PedalCubit cubit;
   final Set<PedalButton> _held = {};
@@ -238,7 +238,7 @@ class _Harness {
 
   void dispose(FakeAsync fa) {
     unawaited(cubit.close());
-    unawaited(overlay.close());
+    unawaited(overlay.dispose());
     unawaited(bloc.close());
     fa.flushMicrotasks();
     unawaited(repo.dispose());

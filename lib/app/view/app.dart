@@ -225,14 +225,22 @@ class App extends StatelessWidget {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          // Eager (not lazy): the control overlay is the ONE owner of stored
-          // user intent (mode / cursor / bank / play intent); every surface
-          // reads it and drives it through ControlIntents, so it must exist
-          // from startup.
+          // Eager (not lazy): the control overlay DOMAIN store is the ONE
+          // owner of stored user intent (mode / cursor / bank / play intent);
+          // every surface reads it and drives it through ControlIntents, so
+          // it must exist from startup. It lives at the domain layer — not in
+          // a cubit — so PedalCubit and ControlIntents can depend on it like
+          // a repository (no bloc-to-bloc dependency).
+          RepositoryProvider(
+            lazy: false,
+            create: (context) =>
+                ControlOverlay(looper: context.read<LooperRepository>()),
+          ),
+          // The read-only presentation mirror widgets `watch` for rebuilds.
           BlocProvider(
             lazy: false,
             create: (context) =>
-                ControlOverlayCubit(looper: context.read<LooperRepository>()),
+                ControlOverlayCubit(overlay: context.read<ControlOverlay>()),
           ),
           // The ONE intent interpreter every surface calls (pedal decode,
           // keyboard, on-screen chips) — command sequences cannot diverge.
@@ -242,7 +250,7 @@ class App extends StatelessWidget {
             create: (context) {
               final intents = ControlIntents(
                 looper: context.read<LooperRepository>(),
-                overlay: context.read<ControlOverlayCubit>(),
+                overlay: context.read<ControlOverlay>(),
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(intents.load()); // boot-default mode restore
@@ -259,7 +267,7 @@ class App extends StatelessWidget {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
                 looper: context.read<LooperRepository>(),
-                overlay: context.read<ControlOverlayCubit>(),
+                overlay: context.read<ControlOverlay>(),
                 intents: context.read<ControlIntents>(),
                 settings: context.read<SettingsRepository>(),
               );

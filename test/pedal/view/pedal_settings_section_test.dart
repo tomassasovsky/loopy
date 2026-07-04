@@ -30,15 +30,17 @@ void main() {
 
     PedalCubit cubitWith(FakePedalTransport transport) {
       final settings = SettingsRepository(store: FakeKeyValueStore());
-      final overlay = ControlOverlayCubit(looper: looper);
+      final store = ControlOverlay(looper: looper);
+      addTearDown(store.dispose);
+      final overlay = ControlOverlayCubit(overlay: store);
       addTearDown(overlay.close);
       return PedalCubit(
         pedal: PedalRepository(transport),
         looper: looper,
-        overlay: overlay,
+        overlay: store,
         intents: ControlIntents(
           looper: looper,
-          overlay: overlay,
+          overlay: store,
           settings: settings,
         ),
         settings: settings,

@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control_overlay.dart';
 import 'package:loopy/control/control_projection.dart';
-import 'package:loopy/control/cubit/control_overlay_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -10,7 +10,7 @@ import 'package:settings_repository/settings_repository.dart';
 /// footswitches and the keyboard/on-screen actions call the SAME methods, so
 /// the surfaces can never diverge in the command sequences they issue.
 ///
-/// Holds the [LooperRepository] for commands OUT; the overlay cubit gets
+/// Holds the [LooperRepository] for commands OUT; the overlay store gets
 /// engine truth through its own subscription (state IN), keeping it a pure
 /// inventory + reducer. Derived reads (the armed set, parked) come from the
 /// pure projections, never from stored state.
@@ -18,14 +18,14 @@ class ControlIntents {
   /// Creates a [ControlIntents] over the shared repositories and overlay.
   ControlIntents({
     required LooperRepository looper,
-    required ControlOverlayCubit overlay,
+    required ControlOverlay overlay,
     required SettingsRepository settings,
   }) : _looper = looper,
        _overlay = overlay,
        _settings = settings;
 
   final LooperRepository _looper;
-  final ControlOverlayCubit _overlay;
+  final ControlOverlay _overlay;
   final SettingsRepository _settings;
 
   // Encoder accumulator: the engine exposes no master-gain read-back, so the

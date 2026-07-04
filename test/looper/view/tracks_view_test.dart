@@ -29,6 +29,7 @@ class _MockSessionCubit extends MockCubit<SessionState>
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
+  late ControlOverlay store;
   late ControlOverlayCubit overlay;
   late ControlIntents intents;
   late LooperRepository repository;
@@ -61,11 +62,13 @@ void main() {
     ).thenReturn(EngineResult.ok);
     // A real overlay + intents pair: they own the system mode/cursor/bank the
     // view reads, and the M key / mode chip / number keys drive them.
-    overlay = ControlOverlayCubit(looper: repository);
+    store = ControlOverlay(looper: repository);
+    addTearDown(store.dispose);
+    overlay = ControlOverlayCubit(overlay: store);
     addTearDown(overlay.close);
     intents = ControlIntents(
       looper: repository,
-      overlay: overlay,
+      overlay: store,
       settings: settings,
     );
     session = _MockSessionCubit();
@@ -401,7 +404,7 @@ void main() {
     });
 
     testWidgets('the tile border is white only when selected', (tester) async {
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         const LooperState(
           tracks: [
@@ -515,7 +518,7 @@ void main() {
 
     testWidgets('play mode arms the selected empty tile green', (tester) async {
       intents.toggleMode(); // record -> play
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(const LooperState(tracks: [Track()])); // empty + selected
       await pump(tester);
 
@@ -563,7 +566,7 @@ void main() {
     testWidgets('only the selected tile arms (empty + selected)', (
       tester,
     ) async {
-      overlay.selectTrack(1);
+      store.selectTrack(1);
       seed(
         const LooperState(
           tracks: [Track(), Track(channel: 1), Track(channel: 2)],
@@ -590,7 +593,7 @@ void main() {
     testWidgets('selecting an off-bank channel reveals its bank', (
       tester,
     ) async {
-      overlay.selectTrack(5); // channel in bank B -> selection reveals bank B
+      store.selectTrack(5); // channel in bank B -> selection reveals bank B
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
@@ -607,7 +610,7 @@ void main() {
     });
 
     testWidgets('a bank switch reassigns the armed tile', (tester) async {
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
@@ -622,7 +625,7 @@ void main() {
       // Switch to bank B and select channel 4.
       await tester.tap(find.byKey(const Key('tracks_bank_1')));
       await tester.pumpAndSettle();
-      overlay.selectTrack(4);
+      store.selectTrack(4);
       await tester.pumpAndSettle();
 
       // The previously-armed tile is no longer in the tree; the newly-selected
@@ -1171,7 +1174,7 @@ void main() {
 
   group('per-track undo/redo', () {
     testWidgets('appear only on the selected column', (tester) async {
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         const LooperState(
           tracks: [
@@ -1190,7 +1193,7 @@ void main() {
     });
 
     testWidgets('undo dispatches for the selected channel', (tester) async {
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1205,7 +1208,7 @@ void main() {
     testWidgets('undo is disabled when the track has no content', (
       tester,
     ) async {
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
@@ -1218,7 +1221,7 @@ void main() {
     });
 
     testWidgets('redo is disabled with no redo history', (tester) async {
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1235,7 +1238,7 @@ void main() {
     });
 
     testWidgets('redo dispatches when a layer can be redone', (tester) async {
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         const LooperState(
           tracks: [
@@ -1251,7 +1254,7 @@ void main() {
 
     testWidgets('the tooltips name the macOS shortcut', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1267,7 +1270,7 @@ void main() {
 
     testWidgets('the tooltips use Ctrl off macOS', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      overlay.selectTrack(0);
+      store.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],

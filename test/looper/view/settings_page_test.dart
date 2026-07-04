@@ -32,6 +32,7 @@ void main() {
   late HighContrastCubit highContrast;
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
+  late ControlOverlay store;
   late ControlOverlayCubit overlay;
   late ControlIntents intents;
   late PedalCubit pedal;
@@ -67,18 +68,20 @@ void main() {
     ).thenAnswer((_) => const Stream<LooperState>.empty());
     // A real overlay + intents pair: they own the shared LooperMode whose
     // persisted default the View section edits.
-    overlay = ControlOverlayCubit(looper: repository);
+    store = ControlOverlay(looper: repository);
+    addTearDown(store.dispose);
+    overlay = ControlOverlayCubit(overlay: store);
     addTearDown(overlay.close);
     intents = ControlIntents(
       looper: repository,
-      overlay: overlay,
+      overlay: store,
       settings: settings,
     );
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.
     pedal = PedalCubit(
       pedal: PedalRepository(const NoopPedalTransport()),
       looper: repository,
-      overlay: overlay,
+      overlay: store,
       intents: intents,
       settings: settings,
       pollInterval: Duration.zero,

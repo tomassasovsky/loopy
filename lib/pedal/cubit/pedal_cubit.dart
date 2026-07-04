@@ -15,9 +15,10 @@ part 'pedal_state.dart';
 /// [PedalStateFrame] to the LEDs.
 ///
 /// This cubit stores NOTHING about looper or control state — the overlay
-/// (mode / cursor / bank / play intent) lives in [ControlOverlayCubit], the
-/// behavior in [ControlIntents] (shared verbatim with the keyboard and
-/// on-screen surfaces), and every LED is the pure projection
+/// (mode / cursor / bank / play intent) lives in the [ControlOverlay] DOMAIN
+/// store (never another cubit — no bloc-to-bloc dependency), the behavior in
+/// [ControlIntents] (shared verbatim with the keyboard and on-screen
+/// surfaces), and every LED is the pure projection
 /// `projectFrame(LooperState, overlay)`. What remains here is the pedal
 /// LINK: output binding + hotplug, press timing (the undo tap/long-press
 /// split, the held Clear LED), and the frame/loop-top wire push.
@@ -26,7 +27,7 @@ class PedalCubit extends Cubit<PedalState> {
   PedalCubit({
     required PedalRepository pedal,
     required LooperRepository looper,
-    required ControlOverlayCubit overlay,
+    required ControlOverlay overlay,
     required ControlIntents intents,
     required SettingsRepository settings,
     Duration pollInterval = const Duration(seconds: 2),
@@ -39,7 +40,7 @@ class PedalCubit extends Cubit<PedalState> {
     _eventsSub = _pedal.events.listen(_handleEvent);
     _statusSub = _pedal.statusChanges.listen(_onBindStatus);
     _looperSub = _looper.looperState.listen(_onLooperState);
-    _overlaySub = _overlay.stream.listen((_) => _pushProjected());
+    _overlay.addListener(_onOverlayChanged);
     // Seed the output set so the settings picker has it before the first poll.
     _syncOutputs();
     // Hotplug auto-reconnect for the bound output (mirrors MidiSetupCubit).
@@ -51,14 +52,13 @@ class PedalCubit extends Cubit<PedalState> {
 
   final PedalRepository _pedal;
   final LooperRepository _looper;
-  final ControlOverlayCubit _overlay;
+  final ControlOverlay _overlay;
   final ControlIntents _intents;
   final SettingsRepository _settings;
 
   late final StreamSubscription<PedalEvent> _eventsSub;
   late final StreamSubscription<PedalBindStatus> _statusSub;
   late final StreamSubscription<LooperState> _looperSub;
-  late final StreamSubscription<ControlOverlayState> _overlaySub;
 
   // Loaded settings (defaults until [load] resolves them).
   Duration _longPress = const Duration(milliseconds: 500);
@@ -262,6 +262,8 @@ class PedalCubit extends Cubit<PedalState> {
   // Outbound projection
   // ---------------------------------------------------------------------------
 
+  void _onOverlayChanged(ControlOverlayState _) => _pushProjected();
+
   void _onLooperState(LooperState looperState) {
     _looperState = looperState;
     _detectLoopTop(looperState);
@@ -310,10 +312,10 @@ class PedalCubit extends Cubit<PedalState> {
   Future<void> close() async {
     _undoTimer?.cancel();
     _pollTimer?.cancel();
+    _overlay.removeListener(_onOverlayChanged);
     await _eventsSub.cancel();
     await _statusSub.cancel();
     await _looperSub.cancel();
-    await _overlaySub.cancel();
     // Darken the pedal on shutdown (no-op when not bound), then release the
     // transport — the cubit is the pedal repository's sole owner.
     _pedal.pushState(PedalStateFrame.blank(goodbye: true));
