@@ -172,7 +172,10 @@ class TrackColumn extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           _TrackHistoryDots(
-            undoDepth: track.undoDepth,
+            // The base loop is not an engine undo layer (undo_depth counts
+            // retired overdub passes only), but it is undoable — undoing it
+            // clears the track — so count it as the first history entry.
+            undoDepth: track.undoDepth + (track.hasContent ? 1 : 0),
             redoDepth: track.redoDepth,
           ),
           const SizedBox(height: 10),
