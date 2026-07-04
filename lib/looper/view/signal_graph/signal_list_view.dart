@@ -8,8 +8,10 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/view/signal_graph/plugin_browser.dart';
-import 'package:loopy/looper/view/signal_graph/signal_dock.dart';
+import 'package:loopy/looper/view/fx_editor/fx_editor_page.dart';
+import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
+import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
+import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
 import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
 import 'package:loopy/looper/view/signal_graph/signal_rows.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
@@ -78,7 +80,8 @@ Future<void> showSignalPage(BuildContext context) {
 /// connects to what" comes from per-output colour + **tap-to-trace** (tap a row
 /// to light its connections across all panes and dim the rest). Tracks are
 /// grouped so a single-lane track is one row (no "Lane 1"); a multi-lane track
-/// nests its takes. A contextual dock edits the focused input / take.
+/// nests its takes. Each input/lane card carries its mix + a tappable FX
+/// summary that opens the dedicated editor; there is no bottom dock.
 class SignalListView extends StatefulWidget {
   /// Creates a [SignalListView].
   const SignalListView({this.trackNames = const [], super.key});
@@ -199,6 +202,15 @@ class _SignalListViewState extends State<SignalListView> {
                           enabled: !monitor.forInput(input).enabled,
                         ),
                       ),
+                      onEditFx: _editInputFx,
+                      onMuteToggled: (input) => unawaited(
+                        _monitor.setMute(
+                          input,
+                          muted: !monitor.forInput(input).muted,
+                        ),
+                      ),
+                      onVolumeChanged: (input, v) =>
+                          unawaited(_monitor.setVolume(input, v)),
                     ),
                     _TracksPane(
                       rows: rows,
@@ -218,6 +230,26 @@ class _SignalListViewState extends State<SignalListView> {
                           take.track,
                           take.laneIndex,
                           input,
+                        ),
+                      ),
+                      onEditFx: (take) =>
+                          _editLaneFx(take.track, take.laneIndex),
+                      onMuteToggled: (take) => _bloc.add(
+                        LooperLaneMuteToggled(take.track, take.laneIndex),
+                      ),
+                      onVolumeChanged: (take, v) => _bloc.add(
+                        LooperLaneVolumeChanged(take.track, take.laneIndex, v),
+                      ),
+                      onAddLane: (track) => _bloc.add(
+                        LooperLaneCountChanged(
+                          track,
+                          _laneCount(looper, track) + 1,
+                        ),
+                      ),
+                      onRemoveLane: (track) => _bloc.add(
+                        LooperLaneCountChanged(
+                          track,
+                          _laneCount(looper, track) - 1,
                         ),
                       ),
                     ),
@@ -246,193 +278,49 @@ class _SignalListViewState extends State<SignalListView> {
               ),
             ),
             const _SignalLegend(),
-            _SignalDock(
-              focusedInput: _focusedInput,
-              focusedTake: _focusedTake,
-              monitor: monitor,
-              looper: looper,
-              onClear: _clear,
-            ),
           ],
         ),
       ),
     );
   }
 
-  // Tapping a card only selects (opens its editor) + traces — it never changes
-  // what you hear. Monitoring is toggled deliberately on the gate pill.
+  // Tapping a card only traces its signal — it never changes what you hear.
+  // Monitoring is toggled deliberately on the gate dot; FX open in the editor.
   void _onTapInput(InputRow row) {
     if (row.excluded) return;
     _focusInput(row.input);
   }
-}
 
-/// The contextual bottom dock: the focused input's monitor controls, the
-/// selected take's snapshot editor, or a hint when nothing is focused. Reads
-/// [MonitorCubit] / [LooperBloc] from context and dispatches their edits, so
-/// the parent only hands it the current focus and an [onClear] for the actions
-/// that dismiss the dock (stopping an input, removing the last lane).
-class _SignalDock extends StatelessWidget {
-  const _SignalDock({
-    required this.focusedInput,
-    required this.focusedTake,
-    required this.monitor,
-    required this.looper,
-    required this.onClear,
-  });
+  int _laneCount(LooperState looper, int track) =>
+      track < looper.tracks.length ? looper.tracks[track].lanes.length : 1;
 
-  final int? focusedInput;
-  final ({int track, int lane})? focusedTake;
-  final MonitorState monitor;
-  final LooperState looper;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    final monitorCubit = context.read<MonitorCubit>();
-    final bloc = context.read<LooperBloc>();
-    // Read-only query for the live plugin knob readouts (the plugin's own
-    // value-to-text). A pure lookup, so the dock reads the repository directly.
-    final repo = context.read<LooperRepository>();
-
-    final fi = focusedInput;
-    if (fi != null && fi < looper.status.inputChannels) {
-      final m = monitor.forInput(fi);
-      return SignalInputDock(
-        input: fi,
-        monitor: m,
-        onMuteToggled: () =>
-            unawaited(monitorCubit.setMute(fi, muted: !m.muted)),
-        onVolumeChanged: (v) => unawaited(monitorCubit.setVolume(fi, v)),
-        onStop: () {
-          unawaited(monitorCubit.setEnabled(fi, enabled: false));
-          onClear();
-        },
-        onAddEffect: () => monitorCubit.addEffect(fi),
-        onAddPlugin: () => unawaited(_addMonitorPlugin(context, fi)),
-        onSetType: (i, t) => monitorCubit.setEffectType(fi, i, t),
-        onSetParam: (i, p, v) => monitorCubit.setEffectParam(fi, i, p, v),
-        onSetPluginParam: (i, id, v) =>
-            monitorCubit.setPluginParam(fi, i, id, v),
-        onOpenPluginEditor: (i) => monitorCubit.openPluginEditor(fi, i),
-        onRelinkPlugin: (i) => unawaited(_relinkMonitorPlugin(context, fi, i)),
-        onRemoveEffect: (i) => monitorCubit.removeEffect(fi, i),
-        onReorderEffect: (from, to) => monitorCubit.moveEffect(fi, from, to),
-        onFormatPluginValue: (i, id, v) => repo.monitorPluginParamText(
-          input: fi,
-          index: i,
-          paramId: id,
-          value: v,
+  /// Opens the FX editor for input [input]'s live-monitor chain.
+  void _editInputFx(int input) {
+    unawaited(
+      showFxEditorPage(
+        context,
+        scope: InputFxScope(
+          monitor: _monitor,
+          looper: _bloc,
+          repository: context.read<LooperRepository>(),
+          input: input,
         ),
-      );
-    }
-    final ft = focusedTake;
-    if (ft != null &&
-        ft.track < looper.tracks.length &&
-        ft.lane < looper.tracks[ft.track].lanes.length) {
-      final lane = looper.tracks[ft.track].lanes[ft.lane];
-      final laneCount = looper.tracks[ft.track].lanes.length;
-      return SignalLaneDock(
-        inputNumber: lane.inputChannel >= 0 ? lane.inputChannel + 1 : 0,
-        effects: lane.effects,
-        muted: lane.muted,
-        volume: lane.volume,
-        canAddLane: laneCount < kMaxLanes,
-        canRemoveLane: laneCount > 1 && ft.lane == laneCount - 1,
-        onAddLane: () =>
-            bloc.add(LooperLaneCountChanged(ft.track, laneCount + 1)),
-        onRemoveLane: () {
-          bloc.add(LooperLaneCountChanged(ft.track, laneCount - 1));
-          onClear();
-        },
-        onAddEffect: () => bloc.add(LooperLaneEffectAdded(ft.track, ft.lane)),
-        onAddPlugin: () =>
-            unawaited(_addLanePlugin(context, ft.track, ft.lane)),
-        onRemoveEffect: (i) =>
-            bloc.add(LooperLaneEffectRemoved(ft.track, ft.lane, i)),
-        onSetType: (i, t) =>
-            bloc.add(LooperLaneEffectTypeChanged(ft.track, ft.lane, i, t)),
-        onSetParam: (i, p, v) => bloc.add(
-          LooperLaneEffectParamChanged(ft.track, ft.lane, i, p, v),
-        ),
-        onSetPluginParam: (i, id, v) => bloc.add(
-          LooperLanePluginParamChanged(ft.track, ft.lane, i, id, v),
-        ),
-        onOpenPluginEditor: (i) =>
-            bloc.add(LooperLanePluginEditorOpened(ft.track, ft.lane, i)),
-        onRelinkPlugin: (i) =>
-            unawaited(_relinkLanePlugin(context, ft.track, ft.lane, i)),
-        onReorderEffect: (from, to) =>
-            bloc.add(LooperLaneEffectMoved(ft.track, ft.lane, from, to)),
-        onMuteToggled: () => bloc.add(LooperLaneMuteToggled(ft.track, ft.lane)),
-        onVolumeChanged: (v) =>
-            bloc.add(LooperLaneVolumeChanged(ft.track, ft.lane, v)),
-        onFormatPluginValue: (i, id, v) => repo.lanePluginParamText(
-          channel: ft.track,
-          lane: ft.lane,
-          index: i,
-          paramId: id,
-          value: v,
-        ),
-      );
-    }
-    // Nothing focused: the dock collapses rather than showing a how-to bar.
-    return const SizedBox.shrink();
+      ),
+    );
   }
 
-  PluginRef _refOf(PluginDescriptor d) =>
-      PluginRef(format: d.format, id: d.id, version: d.version);
-
-  /// Opens the plugin browser and inserts the chosen plugin into lane [lane].
-  Future<void> _addLanePlugin(
-    BuildContext context,
-    int track,
-    int lane,
-  ) async {
-    final bloc = context.read<LooperBloc>();
-    final descriptor = await showPluginBrowser(context);
-    if (descriptor != null) {
-      bloc.add(LooperLanePluginInserted(track, lane, _refOf(descriptor)));
-    }
-  }
-
-  /// Opens the plugin browser and inserts the chosen plugin into monitor
-  /// [input]'s chain.
-  Future<void> _addMonitorPlugin(BuildContext context, int input) async {
-    final cubit = context.read<MonitorCubit>();
-    final descriptor = await showPluginBrowser(context);
-    if (descriptor != null) {
-      cubit.insertPlugin(input, _refOf(descriptor));
-    }
-  }
-
-  /// Relinks an unavailable lane plugin (D-MISS) to a browser-chosen plugin,
-  /// keeping the preserved ref + opaque state.
-  Future<void> _relinkLanePlugin(
-    BuildContext context,
-    int track,
-    int lane,
-    int index,
-  ) async {
-    final bloc = context.read<LooperBloc>();
-    final descriptor = await showPluginBrowser(context);
-    if (descriptor != null) {
-      bloc.add(
-        LooperLanePluginRelinked(track, lane, index, _refOf(descriptor)),
-      );
-    }
-  }
-
-  /// Relinks an unavailable monitor plugin (D-MISS); see [_relinkLanePlugin].
-  Future<void> _relinkMonitorPlugin(
-    BuildContext context,
-    int input,
-    int index,
-  ) async {
-    final cubit = context.read<MonitorCubit>();
-    final descriptor = await showPluginBrowser(context);
-    if (descriptor != null) {
-      cubit.relinkPlugin(input, index, _refOf(descriptor));
-    }
+  /// Opens the FX editor for lane [lane] of track [track].
+  void _editLaneFx(int track, int lane) {
+    unawaited(
+      showFxEditorPage(
+        context,
+        scope: LaneFxScope(
+          looper: _bloc,
+          repository: context.read<LooperRepository>(),
+          track: track,
+          lane: lane,
+        ),
+      ),
+    );
   }
 }

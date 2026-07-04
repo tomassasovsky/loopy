@@ -15,7 +15,10 @@ class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
     implements LooperBloc {}
 
 void main() {
-  setUpAll(() => registerFallbackValue(const LooperRecordPressed(0)));
+  setUpAll(() {
+    registerFallbackValue(const LooperRecordPressed(0));
+    registerFallbackValue(const LooperLaneVolumeChanged(0, 0, 0));
+  });
 
   group('SignalListView', () {
     late LooperBloc bloc;
@@ -159,36 +162,147 @@ void main() {
       expect(find.text('Lane 2'), findsOneWidget);
     });
 
-    testWidgets('tapping an input card selects it without changing its gate', (
+    testWidgets('tapping an input card traces without changing its gate', (
       tester,
     ) async {
       seed(stateWith());
       await pump(tester);
       expect(monitor.state.forInput(0).enabled, isFalse);
 
+      bool anyDimmed() => tester
+          .widgetList<AnimatedOpacity>(find.byType(AnimatedOpacity))
+          .any((w) => w.opacity < 1);
+      expect(anyDimmed(), isFalse);
+
       await tester.tap(find.byKey(const Key('signalIn_0')));
       await tester.pumpAndSettle();
 
-      // Selected (its dock editor appears) but monitoring is untouched.
-      expect(find.byKey(const Key('signalGraph_stop')), findsOneWidget);
+      // Traced (unrelated rows dim) but monitoring is untouched.
+      expect(anyDimmed(), isTrue);
       expect(monitor.state.forInput(0).enabled, isFalse);
     });
 
-    testWidgets('focusing a take opens the lane dock', (tester) async {
-      seed(stateWith()); // single-lane track 0
+    testWidgets('the input FX summary opens the editor for that input', (
+      tester,
+    ) async {
+      seed(stateWith());
       await pump(tester);
-      // No lane dock until a take is focused.
-      expect(find.byKey(const Key('signalGraph_addLane')), findsNothing);
 
-      await tester.tap(find.byKey(const Key('signalTake_0_0')));
+      await tester.tap(find.byKey(const Key('signalInFx_0')));
       await tester.pumpAndSettle();
 
-      // The lane dock (its add-lane affordance + "this take" badge) appears.
-      expect(find.byKey(const Key('signalGraph_addLane')), findsOneWidget);
-      expect(
-        find.byKey(const Key('signalGraph_thisTakeBadge')),
-        findsOneWidget,
+      expect(find.byKey(const Key('fx_editor_page')), findsOneWidget);
+      expect(find.text('Input 1'), findsOneWidget);
+    });
+
+    testWidgets('the take FX summary opens the editor for that lane', (
+      tester,
+    ) async {
+      seed(stateWith());
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalTakeFx_0_0')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('fx_editor_page')), findsOneWidget);
+      // The editor opened for the lane scope (its header reads "Lane 1").
+      expect(find.text('Lane 1'), findsOneWidget);
+    });
+
+    testWidgets('a single-lane track carries an add-lane control', (
+      tester,
+    ) async {
+      seed(stateWith()); // single-lane track 0
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalGraph_addLane_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperLaneCountChanged(0, 2))).called(1);
+    });
+
+    testWidgets('the input card mute toggle mutes monitoring', (tester) async {
+      seed(stateWith());
+      await pump(tester);
+      expect(monitor.state.forInput(0).muted, isFalse);
+
+      await tester.tap(find.byKey(const Key('signalIn_0_mute')));
+      await tester.pumpAndSettle();
+      expect(monitor.state.forInput(0).muted, isTrue);
+    });
+
+    testWidgets('a take card mute toggle dispatches the lane mute', (
+      tester,
+    ) async {
+      seed(stateWith());
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalTake_0_0_mute')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperLaneMuteToggled(0, 0))).called(1);
+    });
+
+    testWidgets('dragging an input volume knob changes the volume', (
+      tester,
+    ) async {
+      seed(stateWith());
+      await pump(tester);
+      expect(monitor.state.forInput(0).volume, 1.0);
+
+      final knob = find.byKey(const Key('signalIn_0_volume'));
+      final gesture = await tester.startGesture(tester.getCenter(knob));
+      await tester.pump(const Duration(milliseconds: 20));
+      await gesture.moveBy(const Offset(0, 20));
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(monitor.state.forInput(0).volume, isNot(1.0));
+    });
+
+    testWidgets('dragging a take volume knob dispatches the lane volume', (
+      tester,
+    ) async {
+      seed(stateWith());
+      await pump(tester);
+
+      final knob = find.byKey(const Key('signalTake_0_0_volume'));
+      final gesture = await tester.startGesture(tester.getCenter(knob));
+      await tester.pump(const Duration(milliseconds: 20));
+      await gesture.moveBy(const Offset(0, 20));
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      // The event is keyed to the right (track, lane) — a swapped pair would
+      // fail this having-check.
+      verify(
+        () => bloc.add(
+          any(
+            that: isA<LooperLaneVolumeChanged>()
+                .having((e) => e.channel, 'channel', 0)
+                .having((e) => e.lane, 'lane', 0),
+          ),
+        ),
+      ).called(greaterThan(0));
+    });
+
+    testWidgets('a multi-lane track can add and remove lanes', (tester) async {
+      seed(
+        stateWith(
+          tracks: const [
+            Track(lanes: [Lane(), Lane()]),
+          ],
+        ),
       );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalGraph_removeLane_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperLaneCountChanged(0, 1))).called(1);
+
+      await tester.tap(find.byKey(const Key('signalGraph_addLane_0')));
+      await tester.pump();
+      verify(() => bloc.add(const LooperLaneCountChanged(0, 3))).called(1);
     });
 
     testWidgets('the gate dot toggles monitoring on and off', (tester) async {
@@ -337,23 +451,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(monitor.state.forInput(2).enabled, isFalse);
-      expect(find.byKey(const Key('signalGraph_stop')), findsNothing);
-    });
-
-    testWidgets('Stop disables monitoring and dismisses the dock', (
-      tester,
-    ) async {
-      seed(stateWith());
-      await pump(tester);
-      await tester.tap(find.byKey(const Key('signalInGate_0'))); // go live
-      await tester.tap(find.byKey(const Key('signalIn_0'))); // focus
-      await tester.pumpAndSettle();
-      expect(monitor.state.forInput(0).enabled, isTrue);
-
-      await tester.tap(find.byKey(const Key('signalGraph_stop')));
-      await tester.pumpAndSettle();
-      expect(monitor.state.forInput(0).enabled, isFalse);
-      expect(find.byKey(const Key('signalGraph_stop')), findsNothing);
     });
 
     testWidgets('an off input names its off state for a11y', (tester) async {
