@@ -6,6 +6,11 @@ date: 2026-07-04
 
 ## refactor: control-state robustness — Extensive
 
+> **Status (2026-07-04):** Phase 0 landed (3df7145) and Phase 1 landed
+> (e5a0e4c) — the fuzzer is green (60 seeds x 160 steps + 4-case corpus) and
+> the invariant spec asserts on every projection. Phase 2 executes next,
+> under the green fuzzer, in a fresh /build session (atomic PR).
+
 ## Overview
 
 Kill the "derived state went stale" bug class (the redo-didn't-relight-the-LED
