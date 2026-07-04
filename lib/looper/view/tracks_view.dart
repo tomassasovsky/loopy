@@ -38,7 +38,7 @@ class _TracksViewState extends State<TracksView> {
     final tracksState = context.watch<TracksCubit>().state;
     // Mode / cursor / bank are the shared control overlay — the single owner
     // every surface (keyboard, tiles, pedal) reads and writes.
-    final overlay = context.watch<ControlOverlayCubit>().state;
+    final overlay = context.watch<ControlCubit>().state;
     final mode = overlay.mode;
     final commands = TracksCommands(context);
     final tracks = [

@@ -23,7 +23,7 @@
 library;
 
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control_overlay.dart';
+import 'package:loopy/control/cubit/control_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
@@ -41,7 +41,7 @@ class ControlContext {
   final LooperState looper;
 
   /// The stored user intent (mode, cursor, bank, excluded, parkedResume).
-  final ControlOverlayState overlay;
+  final ControlState overlay;
 
   /// The projected LED frame (what the hardware pedal renders).
   final PedalStateFrame frame;
@@ -98,7 +98,7 @@ final List<ControlInvariant> controlInvariants = [
     final cursor = c.overlay.cursor;
     if (cursor < 0 || cursor >= 8) return 'cursor $cursor out of range';
     final bank = c.overlay.activeBank;
-    if (bank < 0 || bank >= ControlOverlayState.bankCount) {
+    if (bank < 0 || bank >= ControlState.bankCount) {
       return 'bank $bank out of range';
     }
     return null;

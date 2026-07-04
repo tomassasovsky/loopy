@@ -101,7 +101,7 @@ void main() {
           Track(channel: 1, state: TrackState.stopped, lengthFrames: 48000),
         ]),
       );
-      const overlay = ControlOverlayState(
+      const overlay = ControlState(
         mode: LooperMode.play,
         parkedResume: {1},
       );
@@ -121,7 +121,7 @@ void main() {
           ),
         ]),
       );
-      const overlay = ControlOverlayState(
+      const overlay = ControlState(
         mode: LooperMode.play,
         excluded: {1},
       );
@@ -142,7 +142,7 @@ void main() {
           ),
         ]),
       );
-      const overlay = ControlOverlayState(mode: LooperMode.play);
+      const overlay = ControlState(mode: LooperMode.play);
       expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.green);
       expect(projectTrackLed(looper, overlay, 1), PedalTrackLed.off);
       expect(projectTrackLed(looper, overlay, 2), PedalTrackLed.off);
@@ -155,7 +155,7 @@ void main() {
         ]),
         masterLengthFrames: 0,
       );
-      const overlay = ControlOverlayState(cursor: 1);
+      const overlay = ControlState(cursor: 1);
       expect(projectTrackLed(looper, overlay, 1), PedalTrackLed.red);
       expect(projectTrackLed(looper, overlay, 3), PedalTrackLed.red);
       expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.off);
@@ -165,7 +165,7 @@ void main() {
       // The original bug class, retired by derivation: an undone-to-empty
       // track (dark) that redo resurrects reads green off the very next
       // snapshot — nothing stored needs reconciling.
-      const overlay = ControlOverlayState(mode: LooperMode.play);
+      const overlay = ControlState(mode: LooperMode.play);
       final empty = _stateWith(
         _tracksWith(const [Track(redoDepth: 2)]),
       );
@@ -183,7 +183,7 @@ void main() {
   group('projectFrame', () {
     test('carries the overlay cursor / bank / mode onto the wire', () {
       final looper = _stateWith(_tracksWith(const []), masterLengthFrames: 0);
-      const overlay = ControlOverlayState(cursor: 5, activeBank: 1);
+      const overlay = ControlState(cursor: 5, activeBank: 1);
       final frame = projectFrame(looper, overlay);
       expect(frame.selectedTrack, 5);
       expect(frame.activeBank, 1);
@@ -192,7 +192,7 @@ void main() {
     });
 
     test('global color: recording red, overdub amber, playing green', () {
-      const overlay = ControlOverlayState();
+      const overlay = ControlState();
       expect(
         projectFrame(
           _stateWith(
@@ -245,7 +245,7 @@ void main() {
     });
 
     test('ring length renders only while something holds a loop', () {
-      const overlay = ControlOverlayState();
+      const overlay = ControlState();
       // A loop: one second at 48 kHz reads one million micros.
       final playing = projectFrame(
         _stateWith(
@@ -269,7 +269,7 @@ void main() {
     test('flags the held Clear footswitch', () {
       final frame = projectFrame(
         _stateWith(_tracksWith(const []), masterLengthFrames: 0),
-        const ControlOverlayState(),
+        const ControlState(),
         clearFadeActive: true,
       );
       expect(frame.clearFadeActive, isTrue);
@@ -281,7 +281,7 @@ void main() {
       expect(
         () => projectFrame(
           _stateWith(_tracksWith(const []), masterLengthFrames: 0),
-          const ControlOverlayState(parkedResume: {3}),
+          const ControlState(parkedResume: {3}),
         ),
         throwsA(isA<Error>()),
       );

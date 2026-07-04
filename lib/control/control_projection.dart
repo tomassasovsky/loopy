@@ -1,4 +1,4 @@
-/// The pure projections from `(LooperState × ControlOverlayState)` to
+/// The pure projections from `(LooperState × ControlState)` to
 /// everything the control surfaces render: the armed set, per-track LEDs, and
 /// the pedal wire frame. NOTHING here is stored — a projection cannot go
 /// stale, which retires the reconciliation bug class ("redo didn't relight
@@ -10,7 +10,7 @@
 library;
 
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control_overlay.dart';
+import 'package:loopy/control/cubit/control_cubit.dart';
 import 'package:loopy/control/invariants.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -42,7 +42,7 @@ bool isSounding(Track track) =>
 /// `parked ? parkedResume : sounding ∖ excluded`. A redo, an on-screen play,
 /// or any future engine state is reflected the moment the snapshot changes —
 /// there is no stored set to forget to update.
-Set<int> armedTracks(LooperState looper, ControlOverlayState overlay) {
+Set<int> armedTracks(LooperState looper, ControlState overlay) {
   if (isParked(looper)) return overlay.parkedResume;
   return {
     for (final t in looper.tracks)
@@ -57,7 +57,7 @@ Set<int> armedTracks(LooperState looper, ControlOverlayState overlay) {
 /// back). Record mode: the cursor and any capturing track read red.
 PedalTrackLed projectTrackLed(
   LooperState looper,
-  ControlOverlayState overlay,
+  ControlState overlay,
   int channel,
 ) {
   final track = channel >= 0 && channel < looper.tracks.length
@@ -81,7 +81,7 @@ PedalTrackLed projectTrackLed(
 /// pedal cubit diff-pushes the result, the simulator renders it.
 PedalStateFrame projectFrame(
   LooperState looper,
-  ControlOverlayState overlay, {
+  ControlState overlay, {
   bool clearFadeActive = false,
 }) {
   final leds = <PedalTrackLed>[

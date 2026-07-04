@@ -27,7 +27,7 @@ class TrackMeterRow extends StatelessWidget {
     final names = context.watch<TracksCubit>().state;
     // Mode / cursor / bank are the shared control overlay — this row sits on
     // the pedal's own screen, so it follows exactly what the footswitch sets.
-    final overlay = context.watch<ControlOverlayCubit>().state;
+    final overlay = context.watch<ControlCubit>().state;
     final mode = overlay.mode;
 
     return Row(

@@ -285,7 +285,7 @@ class BankSwitch extends StatelessWidget {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final accent = theme.colorScheme.primary;
-    final overlay = context.read<ControlOverlayCubit>();
+    final overlay = context.read<ControlCubit>();
 
     return Container(
       padding: const EdgeInsets.all(3),
@@ -297,7 +297,7 @@ class BankSwitch extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (var i = 0; i < ControlOverlayState.bankCount; i++)
+          for (var i = 0; i < ControlState.bankCount; i++)
             FocusableTapTarget(
               key: Key('tracks_bank_$i'),
               semanticLabel: context.l10n.a11yBankTab(

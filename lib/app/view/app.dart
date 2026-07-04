@@ -225,53 +225,34 @@ class App extends StatelessWidget {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          // Eager (not lazy): the control overlay DOMAIN store is the ONE
-          // owner of stored user intent (mode / cursor / bank / play intent);
-          // every surface reads it and drives it through ControlIntents, so
-          // it must exist from startup. It lives at the domain layer — not in
-          // a cubit — so PedalCubit and ControlIntents can depend on it like
-          // a repository (no bloc-to-bloc dependency).
-          RepositoryProvider(
-            lazy: false,
-            create: (context) =>
-                ControlOverlay(looper: context.read<LooperRepository>()),
-          ),
-          // The ONE intent interpreter every surface calls (pedal decode,
-          // keyboard, on-screen chips) — command sequences cannot diverge.
-          // Eager: it restores the boot-default mode.
-          RepositoryProvider(
-            lazy: false,
-            create: (context) {
-              final intents = ControlIntents(
-                looper: context.read<LooperRepository>(),
-                overlay: context.read<ControlOverlay>(),
-                settings: context.read<SettingsRepository>(),
-              );
-              unawaited(intents.load()); // boot-default mode restore
-              return intents;
-            },
-          ),
-          // The business-logic front widgets watch and act through:
-          // state mirrors the store, actions delegate to the interpreter.
+          // Eager (not lazy): the ONE control-surface interpreter and owner
+          // of stored user intent (mode / cursor / bank / play intent). The
+          // pedal's decoded footswitches reach it through PedalRepository's
+          // event stream and its projected LED frames leave through the same
+          // repository, so the keyboard, on-screen widgets, and the pedal
+          // share one cursor, one mode, one command path — with repositories
+          // composed at the bloc level, per the layered architecture.
           BlocProvider(
             lazy: false,
-            create: (context) => ControlOverlayCubit(
-              overlay: context.read<ControlOverlay>(),
-              intents: context.read<ControlIntents>(),
-            ),
+            create: (context) {
+              final cubit = ControlCubit(
+                looper: context.read<LooperRepository>(),
+                pedal: pedalRepo,
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load()); // boot-default mode restore
+              return cubit;
+            },
           ),
-          // Eager (not lazy): the pedal cubit auto-binds the saved output
-          // device on launch and starts projecting LED frames, so it must be
-          // at startup. It shares the overlay + intents with the keyboard and
-          // on-screen surfaces — one interpreter, one cursor, one mode.
+          // Eager (not lazy): the pedal LINK feature auto-binds the saved
+          // output device on launch and keeps it bound across hotplugs. It
+          // shares the PedalRepository with ControlCubit (binding here,
+          // events/frames there) — the cubits know nothing of each other.
           BlocProvider(
             lazy: false,
             create: (context) {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
-                looper: context.read<LooperRepository>(),
-                overlay: context.read<ControlOverlay>(),
-                intents: context.read<ControlIntents>(),
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
@@ -393,7 +374,7 @@ class _AppViewState extends State<_AppView> {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
         final tracks = context.read<TracksCubit>();
-        final cursor = context.read<ControlOverlayCubit>().state.cursor;
+        final cursor = context.read<ControlCubit>().state.cursor;
         widget.waveformWindow.pushWaveform(
           looper.readWaveform(),
           looper.state.transport.progress,

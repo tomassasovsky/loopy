@@ -121,7 +121,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final showIndicators = tracks.showIndicators;
     // The default mode is a looper-wide behavior default, owned by the shared
     // control overlay (the LooperMode's home), not a view preference.
-    final defaultMode = context.watch<ControlOverlayCubit>().state.defaultMode;
+    final defaultMode = context.watch<ControlCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
       Text(l10n.settingsViewIntro, style: setupBody),
@@ -162,8 +162,7 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 12),
       SetupOptionRow<LooperMode>(
         selected: defaultMode,
-        onSelected: (m) =>
-            context.read<ControlOverlayCubit>().setDefaultMode(m),
+        onSelected: (m) => context.read<ControlCubit>().setDefaultMode(m),
         options: [
           SetupOption(
             value: LooperMode.record,

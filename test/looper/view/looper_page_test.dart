@@ -57,20 +57,11 @@ void main() {
               // The Tracks view reads the shared control overlay + intents —
               // created by the providers (as in the app wiring) so disposal
               // happens with the tree, not in an awaited teardown.
-              RepositoryProvider<ControlOverlay>(
-                create: (_) => ControlOverlay(looper: repository),
-              ),
-              RepositoryProvider<ControlIntents>(
-                create: (context) => ControlIntents(
+              BlocProvider<ControlCubit>(
+                create: (_) => ControlCubit(
                   looper: repository,
-                  overlay: context.read<ControlOverlay>(),
+                  pedal: PedalRepository(const NoopPedalTransport()),
                   settings: settings,
-                ),
-              ),
-              BlocProvider<ControlOverlayCubit>(
-                create: (context) => ControlOverlayCubit(
-                  overlay: context.read<ControlOverlay>(),
-                  intents: context.read<ControlIntents>(),
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),

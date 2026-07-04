@@ -60,7 +60,7 @@ class TracksCommands {
   /// (tracks wiped and re-armed, mode back to record, cursor home) — and
   /// announces it.
   void clearAll() {
-    context.read<ControlOverlayCubit>().clearAll();
+    context.read<ControlCubit>().clearAll();
     _announce(context.l10n.a11yAllCleared);
   }
 
@@ -91,10 +91,10 @@ class TracksCommands {
         tracks[channel].isCapturing;
   }
 
-  /// Toggles the system record/play mode (the same [ControlIntents] call the
-  /// pedal footswitch makes) and announces the mode it landed on.
+  /// Toggles the system record/play mode (the same [ControlCubit] method the
+  /// pedal footswitch drives) and announces the mode it landed on.
   void toggleMode() {
-    final overlay = context.read<ControlOverlayCubit>()..toggleMode();
+    final overlay = context.read<ControlCubit>()..toggleMode();
     _announce(
       overlay.state.mode == LooperMode.record
           ? context.l10n.a11yModeRecord
@@ -133,7 +133,7 @@ class TracksCommands {
     if (key == LogicalKeyboardKey.tab) return KeyEventResult.ignored;
     final keyboard = HardwareKeyboard.instance;
     final bloc = context.read<LooperBloc>();
-    final overlay = context.read<ControlOverlayCubit>();
+    final overlay = context.read<ControlCubit>();
     final mode = overlay.state.mode;
     final l10n = context.l10n;
     final selected = overlay.state.cursor;

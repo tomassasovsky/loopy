@@ -9,6 +9,7 @@ import 'package:loopy/looper/looper.dart';
 import 'package:loopy/looper/view/track_meters.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -21,8 +22,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
-  late ControlOverlay store;
-  late ControlOverlayCubit overlay;
+  late ControlCubit control;
 
   setUp(() {
     final settings = SettingsRepository(store: FakeKeyValueStore());
@@ -32,18 +32,15 @@ void main() {
     when(
       () => looper.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    // The row reads the mode / cursor / bank from the shared control overlay.
-    store = ControlOverlay(looper: looper);
-    addTearDown(store.dispose);
-    overlay = ControlOverlayCubit(
-      overlay: store,
-      intents: ControlIntents(
-        looper: looper,
-        overlay: store,
-        settings: SettingsRepository(store: FakeKeyValueStore()),
-      ),
+    // The row reads the mode / cursor / bank from the shared control cubit.
+    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    addTearDown(pedalRepo.dispose);
+    control = ControlCubit(
+      looper: looper,
+      pedal: pedalRepo,
+      settings: settings,
     );
-    addTearDown(overlay.close);
+    addTearDown(control.close);
   });
 
   void seed(LooperState state) {
@@ -60,7 +57,7 @@ void main() {
         providers: [
           BlocProvider<LooperBloc>.value(value: bloc),
           BlocProvider<TracksCubit>.value(value: tracks),
-          BlocProvider<ControlOverlayCubit>.value(value: overlay),
+          BlocProvider<ControlCubit>.value(value: control),
         ],
         child: const Scaffold(body: TrackMeterRow()),
       ),
@@ -89,7 +86,7 @@ void main() {
 
   testWidgets('the selected track bar has a white border', (tester) async {
     seed(LooperState(tracks: [for (var i = 0; i < 4; i++) Track(channel: i)]));
-    store.selectTrack(1);
+    control.selectTrack(1);
     await pump(tester);
 
     expect(borderColor(tester, 1), Colors.white);

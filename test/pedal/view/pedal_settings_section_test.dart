@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/control/control.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
@@ -30,20 +29,8 @@ void main() {
 
     PedalCubit cubitWith(FakePedalTransport transport) {
       final settings = SettingsRepository(store: FakeKeyValueStore());
-      final store = ControlOverlay(looper: looper);
-      addTearDown(store.dispose);
-      final intents = ControlIntents(
-        looper: looper,
-        overlay: store,
-        settings: settings,
-      );
-      final overlay = ControlOverlayCubit(overlay: store, intents: intents);
-      addTearDown(overlay.close);
       return PedalCubit(
         pedal: PedalRepository(transport),
-        looper: looper,
-        overlay: store,
-        intents: intents,
         settings: settings,
         pollInterval: Duration.zero, // no hotplug timer in widget tests
       );

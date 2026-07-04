@@ -147,7 +147,7 @@ class _TopPlate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final bankBase = frame.activeBank * ControlOverlayState.tracksPerBank;
+    final bankBase = frame.activeBank * ControlState.tracksPerBank;
     // Once the loop is cleared (activity off with nothing left to play) the
     // ring animates fully dark: the hump makes one last pass in the off color
     // and settles, instead of parking on a lit idle ring.
@@ -315,7 +315,7 @@ class _TopPlate extends StatelessWidget {
                 ...silkLabels('STOP', _pedalU(1), _row1V),
                 ...silkLabels('UNDO', _pedalU(2), _row1V),
                 ...silkLabels('MODE', _pedalU(3), _row1V),
-                for (var t = 0; t < ControlOverlayState.tracksPerBank; t++)
+                for (var t = 0; t < ControlState.tracksPerBank; t++)
                   footswitch(
                     _trackButtons[t],
                     '${bankBase + t + 1}',
@@ -327,7 +327,7 @@ class _TopPlate extends StatelessWidget {
                 // on the plate. The four track LEDs come from the frame; BANK
                 // lights on bank B and CLEAR lights while there is activity to
                 // clear.
-                for (var t = 0; t < ControlOverlayState.tracksPerBank; t++)
+                for (var t = 0; t < ControlState.tracksPerBank; t++)
                   box(
                     _pedalU(4 + t),
                     _row1V + _slotD / 2 + _ledBehind,
@@ -561,7 +561,7 @@ class _ScreenWaveformState extends State<_ScreenWaveform> {
       _samples = looper.readWaveform();
       _progress = looper.state.transport.progress;
       _selectedTrack = tracks.state.nameOf(
-        context.read<ControlOverlayCubit>().state.cursor,
+        context.read<ControlCubit>().state.cursor,
       );
     });
   }

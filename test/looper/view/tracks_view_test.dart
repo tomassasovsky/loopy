@@ -13,6 +13,7 @@ import 'package:loopy/looper/looper.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:settings_repository/settings_repository.dart';
 
@@ -29,9 +30,7 @@ class _MockSessionCubit extends MockCubit<SessionState>
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
-  late ControlOverlay store;
-  late ControlOverlayCubit overlay;
-  late ControlIntents intents;
+  late ControlCubit control;
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
@@ -60,17 +59,16 @@ void main() {
         channel: any(named: 'channel'),
       ),
     ).thenReturn(EngineResult.ok);
-    // A real overlay + intents pair: they own the system mode/cursor/bank the
-    // view reads, and the M key / mode chip / number keys drive them.
-    store = ControlOverlay(looper: repository);
-    addTearDown(store.dispose);
-    intents = ControlIntents(
+    // The real control cubit: it owns the system mode/cursor/bank the view
+    // reads, and the M key / mode chip / number keys drive it.
+    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    addTearDown(pedalRepo.dispose);
+    control = ControlCubit(
       looper: repository,
-      overlay: store,
+      pedal: pedalRepo,
       settings: settings,
     );
-    overlay = ControlOverlayCubit(overlay: store, intents: intents);
-    addTearDown(overlay.close);
+    addTearDown(control.close);
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
     when(() => session.saveSession()).thenAnswer((_) async {});
@@ -95,13 +93,12 @@ void main() {
       home: MultiRepositoryProvider(
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
-          RepositoryProvider<ControlIntents>.value(value: intents),
         ],
         child: MultiBlocProvider(
           providers: [
             BlocProvider<LooperBloc>.value(value: bloc),
             BlocProvider<TracksCubit>.value(value: tracks),
-            BlocProvider<ControlOverlayCubit>.value(value: overlay),
+            BlocProvider<ControlCubit>.value(value: control),
             BlocProvider<SessionCubit>.value(value: session),
           ],
           child: const TracksView(),
@@ -151,7 +148,7 @@ void main() {
   testWidgets('tapping a tile mutes/unmutes that channel in play mode', (
     tester,
   ) async {
-    intents.toggleMode(); // record -> play
+    control.toggleMode(); // record -> play
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
@@ -160,7 +157,7 @@ void main() {
     verify(() => bloc.add(const LooperMuteToggled(1))).called(1);
     verifyNever(() => bloc.add(const LooperRecordPressed(1)));
     // The tap also selects the tapped channel.
-    expect(overlay.state.cursor, 1);
+    expect(control.state.cursor, 1);
   });
 
   testWidgets('long-pressing a tile stops that channel', (tester) async {
@@ -192,11 +189,11 @@ void main() {
     testWidgets('M toggles the tracks mode', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      expect(overlay.state.mode, LooperMode.record);
+      expect(control.state.mode, LooperMode.record);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
       await tester.pump();
-      expect(overlay.state.mode, LooperMode.play);
+      expect(control.state.mode, LooperMode.play);
     });
 
     testWidgets('a number key selects that track', (tester) async {
@@ -205,7 +202,7 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
       await tester.pump();
-      expect(overlay.state.cursor, 1);
+      expect(control.state.cursor, 1);
     });
 
     testWidgets('record mode: R records the selected track', (tester) async {
@@ -225,7 +222,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.keyM); // -> play mode
       await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
       await tester.pump();
-      expect(overlay.state.cursor, 0);
+      expect(control.state.cursor, 0);
       verify(() => bloc.add(const LooperMuteToggled(0))).called(1);
     });
 
@@ -381,7 +378,7 @@ void main() {
     });
 
     testWidgets('play mode uses the play-mode meter table', (tester) async {
-      intents.toggleMode(); // record -> play
+      control.toggleMode(); // record -> play
       seed(const LooperState(tracks: [Track(state: TrackState.playing)]));
       await pump(tester);
       expect(
@@ -404,7 +401,7 @@ void main() {
     });
 
     testWidgets('the tile border is white only when selected', (tester) async {
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         const LooperState(
           tracks: [
@@ -517,8 +514,9 @@ void main() {
     });
 
     testWidgets('play mode arms the selected empty tile green', (tester) async {
-      intents.toggleMode(); // record -> play
-      store.selectTrack(0);
+      control
+        ..toggleMode() // record -> play
+        ..selectTrack(0);
       seed(const LooperState(tracks: [Track()])); // empty + selected
       await pump(tester);
 
@@ -566,7 +564,7 @@ void main() {
     testWidgets('only the selected tile arms (empty + selected)', (
       tester,
     ) async {
-      store.selectTrack(1);
+      control.selectTrack(1);
       seed(
         const LooperState(
           tracks: [Track(), Track(channel: 1), Track(channel: 2)],
@@ -593,7 +591,7 @@ void main() {
     testWidgets('selecting an off-bank channel reveals its bank', (
       tester,
     ) async {
-      store.selectTrack(5); // channel in bank B -> selection reveals bank B
+      control.selectTrack(5); // channel in bank B -> selection reveals bank B
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
@@ -610,7 +608,7 @@ void main() {
     });
 
     testWidgets('a bank switch reassigns the armed tile', (tester) async {
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         LooperState(tracks: [for (var i = 0; i < 8; i++) Track(channel: i)]),
       );
@@ -625,7 +623,7 @@ void main() {
       // Switch to bank B and select channel 4.
       await tester.tap(find.byKey(const Key('tracks_bank_1')));
       await tester.pumpAndSettle();
-      store.selectTrack(4);
+      control.selectTrack(4);
       await tester.pumpAndSettle();
 
       // The previously-armed tile is no longer in the tree; the newly-selected
@@ -1174,7 +1172,7 @@ void main() {
 
   group('per-track undo/redo', () {
     testWidgets('appear only on the selected column', (tester) async {
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         const LooperState(
           tracks: [
@@ -1193,7 +1191,7 @@ void main() {
     });
 
     testWidgets('undo dispatches for the selected channel', (tester) async {
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1208,7 +1206,7 @@ void main() {
     testWidgets('undo is disabled when the track has no content', (
       tester,
     ) async {
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
 
@@ -1221,7 +1219,7 @@ void main() {
     });
 
     testWidgets('redo is disabled with no redo history', (tester) async {
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1238,7 +1236,7 @@ void main() {
     });
 
     testWidgets('redo dispatches when a layer can be redone', (tester) async {
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         const LooperState(
           tracks: [
@@ -1254,7 +1252,7 @@ void main() {
 
     testWidgets('the tooltips name the macOS shortcut', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],
@@ -1270,7 +1268,7 @@ void main() {
 
     testWidgets('the tooltips use Ctrl off macOS', (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      store.selectTrack(0);
+      control.selectTrack(0);
       seed(
         const LooperState(
           tracks: [Track(lengthFrames: 100, state: TrackState.stopped)],

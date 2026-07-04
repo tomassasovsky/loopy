@@ -85,26 +85,22 @@ void main() {
   }) async {
     final sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
     final settings = SettingsRepository(store: FakeKeyValueStore());
-    // A real overlay + intents pair: presses decoded by the cubit land on the
-    // same control layer the app wires (mode/cursor owned by the overlay).
-    final store = ControlOverlay(looper: looper);
-    addTearDown(store.dispose);
-    final intents = ControlIntents(
+    // The real control cubit: presses injected into the simulator decode
+    // through the shared PedalRepository into the same control layer the app
+    // wires (mode/cursor owned by ControlCubit).
+    final pedalRepo = PedalRepository(sim);
+    final control = ControlCubit(
       looper: looper,
-      overlay: store,
+      pedal: pedalRepo,
       settings: settings,
     );
-    final overlay = ControlOverlayCubit(overlay: store, intents: intents);
-    addTearDown(overlay.close);
+    addTearDown(control.close);
     final cubit = PedalCubit(
-      pedal: PedalRepository(sim),
-      looper: looper,
-      overlay: store,
-      intents: intents,
+      pedal: pedalRepo,
       settings: settings,
       pollInterval: Duration.zero,
     );
-    addTearDown(cubit.close);
+    addTearDown(cubit.close); // disposes pedalRepo (the lifecycle owner)
     await tester.pumpWidget(
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -112,8 +108,11 @@ void main() {
         theme: ThemeData(extensions: const [SurfaceTheme.dark]),
         home: RepositoryProvider<SimulatorPedalTransport>.value(
           value: sim,
-          child: BlocProvider.value(
-            value: cubit,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider.value(value: cubit),
+              BlocProvider.value(value: control),
+            ],
             child: const Scaffold(
               body: PedalFaceplate(
                 mainScreen: SizedBox(key: _mainScreenKey),
