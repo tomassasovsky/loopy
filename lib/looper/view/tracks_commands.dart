@@ -6,12 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/window/window_chrome.dart';
 
@@ -57,9 +56,11 @@ class TracksCommands {
     );
   }
 
-  /// Clears every track and announces it.
+  /// Clears every track — the same whole-rig reset the pedal's CLEAR makes
+  /// (tracks wiped and re-armed, mode back to record, cursor home) — and
+  /// announces it.
   void clearAll() {
-    context.read<LooperBloc>().add(const LooperClearAllPressed());
+    context.read<ControlIntents>().clearAll();
     _announce(context.l10n.a11yAllCleared);
   }
 
@@ -90,12 +91,12 @@ class TracksCommands {
         tracks[channel].isCapturing;
   }
 
-  /// Toggles the system record/play mode (shared with the pedal) and
-  /// announces the mode it landed on.
+  /// Toggles the system record/play mode (the same [ControlIntents] call the
+  /// pedal footswitch makes) and announces the mode it landed on.
   void toggleMode() {
-    final pedal = context.read<PedalCubit>()..toggleMode();
+    context.read<ControlIntents>().toggleMode();
     _announce(
-      pedal.state.mode == LooperMode.record
+      context.read<ControlOverlayCubit>().state.mode == LooperMode.record
           ? context.l10n.a11yModeRecord
           : context.l10n.a11yModePlay,
     );
@@ -132,10 +133,11 @@ class TracksCommands {
     if (key == LogicalKeyboardKey.tab) return KeyEventResult.ignored;
     final keyboard = HardwareKeyboard.instance;
     final bloc = context.read<LooperBloc>();
-    final tracks = context.read<TracksCubit>();
-    final mode = context.read<PedalCubit>().state.mode;
+    final overlay = context.read<ControlOverlayCubit>();
+    final intents = context.read<ControlIntents>();
+    final mode = overlay.state.mode;
     final l10n = context.l10n;
-    final selected = tracks.state.selectedChannel;
+    final selected = overlay.state.cursor;
 
     if (keyboard.isMetaPressed || keyboard.isControlPressed) {
       if (key == LogicalKeyboardKey.keyZ) {
@@ -185,9 +187,10 @@ class TracksCommands {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyB) {
-      final nextBank = tracks.state.activeBank == 0 ? 1 : 0;
-      // Selecting the other bank's first track moves the cursor and reveals it.
-      tracks.select(nextBank * TracksState.tracksPerBank);
+      final nextBank = overlay.state.activeBank == 0 ? 1 : 0;
+      // Selecting the other bank's first track moves the cursor and reveals
+      // it — the pedal BANK footswitch semantics, via the same intent.
+      intents.toggleBankWithCursor();
       _announce(l10n.a11yBankSelected(String.fromCharCode(0x41 + nextBank)));
       return KeyEventResult.handled;
     }
@@ -204,7 +207,7 @@ class TracksCommands {
     if (digit != null) {
       final channel = digit - 1;
       if (channel <= 7) {
-        tracks.select(channel); // moves the cursor and reveals its bank
+        intents.selectTrack(channel); // moves the cursor and reveals its bank
         if (mode == LooperMode.play) {
           bloc.add(LooperMuteToggled(channel));
         }

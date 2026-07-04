@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
@@ -148,7 +149,7 @@ class TrackColumn extends StatelessWidget {
               selected: selected,
               borderRadius: 8,
               onTap: () {
-                context.read<TracksCubit>().select(track.channel);
+                context.read<ControlOverlayCubit>().selectTrack(track.channel);
                 bloc.add(
                   playMode
                       ? LooperMuteToggled(track.channel)

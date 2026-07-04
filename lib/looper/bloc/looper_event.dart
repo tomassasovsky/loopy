@@ -360,12 +360,6 @@ final class LooperStopAllPressed extends LooperEvent {
   const LooperStopAllPressed();
 }
 
-/// Clear every track that has content.
-final class LooperClearAllPressed extends LooperEvent {
-  /// Creates a [LooperClearAllPressed].
-  const LooperClearAllPressed();
-}
-
 /// Toggles the structural output gate for hardware [output] to [enabled]: a
 /// disabled output is removed as a routing target (its lane/monitor masks are
 /// preserved) and re-enabling restores them.
