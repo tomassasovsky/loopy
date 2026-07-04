@@ -3,6 +3,7 @@ import 'package:controller_repository/controller_repository.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:mocktail/mocktail.dart';
@@ -52,6 +53,19 @@ void main() {
             providers: [
               BlocProvider<TracksCubit>(
                 create: (_) => TracksCubit(settings: settings),
+              ),
+              // The Tracks view reads the shared control overlay + intents —
+              // created by the providers (as in the app wiring) so disposal
+              // happens with the tree, not in an awaited teardown.
+              BlocProvider<ControlOverlayCubit>(
+                create: (_) => ControlOverlayCubit(looper: repository),
+              ),
+              RepositoryProvider<ControlIntents>(
+                create: (context) => ControlIntents(
+                  looper: repository,
+                  overlay: context.read<ControlOverlayCubit>(),
+                  settings: settings,
+                ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
             ],

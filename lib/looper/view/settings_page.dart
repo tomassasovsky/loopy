@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -119,9 +119,9 @@ class _SettingsPageState extends State<SettingsPage> {
     final highContrast = context.watch<HighContrastCubit>().state;
     final tracks = context.watch<TracksCubit>().state;
     final showIndicators = tracks.showIndicators;
-    // The default mode is a looper-wide behavior default, owned by PedalCubit
-    // (the shared LooperMode's home), not a view preference.
-    final defaultMode = context.watch<PedalCubit>().state.defaultMode;
+    // The default mode is a looper-wide behavior default, owned by the shared
+    // control overlay (the LooperMode's home), not a view preference.
+    final defaultMode = context.watch<ControlOverlayCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
       Text(l10n.settingsViewIntro, style: setupBody),
@@ -163,7 +163,7 @@ class _SettingsPageState extends State<SettingsPage> {
       SetupOptionRow<LooperMode>(
         selected: defaultMode,
         onSelected: (m) => unawaited(
-          context.read<PedalCubit>().setDefaultMode(m),
+          context.read<ControlIntents>().setDefaultMode(m),
         ),
         options: [
           SetupOption(

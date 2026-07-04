@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/session/session.dart';
@@ -285,7 +285,7 @@ class BankSwitch extends StatelessWidget {
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
     final accent = theme.colorScheme.primary;
-    final cubit = context.read<TracksCubit>();
+    final overlay = context.read<ControlOverlayCubit>();
 
     return Container(
       padding: const EdgeInsets.all(3),
@@ -297,7 +297,7 @@ class BankSwitch extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (var i = 0; i < TracksState.bankCountMax; i++)
+          for (var i = 0; i < ControlOverlayState.bankCount; i++)
             FocusableTapTarget(
               key: Key('tracks_bank_$i'),
               semanticLabel: context.l10n.a11yBankTab(
@@ -305,7 +305,7 @@ class BankSwitch extends StatelessWidget {
               ),
               selected: i == active,
               borderRadius: 8,
-              onTap: () => cubit.selectBank(i),
+              onTap: () => overlay.browseBank(i),
               child: AnimatedContainer(
                 duration: MediaQuery.disableAnimationsOf(context)
                     ? Duration.zero

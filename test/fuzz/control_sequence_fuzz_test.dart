@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy_engine/loopy_engine.dart' hide EngineConfig;
 import 'package:pedal_repository/pedal_repository.dart';
@@ -18,13 +17,14 @@ import 'package:settings_repository/settings_repository.dart';
 import '../helpers/fake_key_value_store.dart';
 
 /// The control-sequence fuzzer: the REAL native engine (device-free pump) +
-/// the real LooperRepository, LooperBloc, PedalCubit and TracksCubit, driven
-/// by seeded random event sequences across every surface — pedal MIDI through
-/// the simulator transport (round-tripping the real wire codec), bloc events,
-/// cursor moves, mode toggles, engine time (including 0-frame pumps that hit
-/// the drain/queued-undo windows), and explicit poll ticks so snapshot-lag
-/// races are reachable. After every step the harness settles and checks the
-/// control-surface invariant spec (lib/control/invariants.dart).
+/// the real LooperRepository, LooperBloc, ControlOverlayCubit, ControlIntents
+/// and PedalCubit, driven by seeded random event sequences across every
+/// surface — pedal MIDI through the simulator transport (round-tripping the
+/// real wire codec), bloc events, cursor moves, mode toggles, engine time
+/// (including 0-frame pumps that hit the drain/queued-undo windows), and
+/// explicit poll ticks so snapshot-lag races are reachable. After every step
+/// the harness settles and checks the control-surface invariant spec
+/// (lib/control/invariants.dart).
 ///
 /// On failure: the seed and a shrunk, replayable action list are printed —
 /// paste the sequence into the corpus below as a permanent regression test.
@@ -177,30 +177,20 @@ class _Harness {
     bloc = LooperBloc(repository: repo);
     sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
     pedalRepo = PedalRepository(sim);
+    overlay = ControlOverlayCubit(looper: repo);
+    intents = ControlIntents(
+      looper: repo,
+      overlay: overlay,
+      settings: settings,
+    );
     cubit = PedalCubit(
       pedal: pedalRepo,
       looper: repo,
+      overlay: overlay,
+      intents: intents,
       settings: settings,
       pollInterval: Duration.zero,
     );
-    tracks = TracksCubit(settings: settings);
-    // The PedalCursorBridge is a widget; mirror the cursor both ways here the
-    // same way it does (equal-state emits settle the ping-pong immediately).
-    _subs
-      ..add(
-        cubit.stream.listen((s) {
-          if (s.selectedTrack != tracks.state.selectedChannel) {
-            tracks.select(s.selectedTrack);
-          }
-        }),
-      )
-      ..add(
-        tracks.stream.listen((s) {
-          if (s.selectedChannel != cubit.state.selectedTrack) {
-            cubit.selectTrack(s.selectedChannel);
-          }
-        }),
-      );
     pedalRepo.bind(kSimulatorOutputId); // LED frames round-trip the codec
     settle(fa);
   }
@@ -212,9 +202,9 @@ class _Harness {
   late final LooperBloc bloc;
   late final SimulatorPedalTransport sim;
   late final PedalRepository pedalRepo;
+  late final ControlOverlayCubit overlay;
+  late final ControlIntents intents;
   late final PedalCubit cubit;
-  late final TracksCubit tracks;
-  final List<StreamSubscription<Object?>> _subs = [];
   final Set<PedalButton> _held = {};
 
   LooperState get looper => repo.state;
@@ -222,8 +212,7 @@ class _Harness {
 
   ControlContext get context => ControlContext(
     looper: looper,
-    pedal: cubit.state,
-    tracks: tracks.state,
+    overlay: overlay.state,
     frame: frame,
   );
 
@@ -248,11 +237,8 @@ class _Harness {
   }
 
   void dispose(FakeAsync fa) {
-    for (final s in _subs) {
-      unawaited(s.cancel());
-    }
     unawaited(cubit.close());
-    unawaited(tracks.close());
+    unawaited(overlay.close());
     unawaited(bloc.close());
     fa.flushMicrotasks();
     unawaited(repo.dispose());
@@ -276,8 +262,6 @@ void _inHarness(void Function(_Harness h, FakeAsync fa) body) {
 
 // ---------------------------------------------------------------------------
 // Actions: the fuzz alphabet. Every action is replayable and printable.
-// (Deliberate-disarm APIs are intentionally absent — see the fuzzOnly note in
-// lib/control/invariants.dart.)
 // ---------------------------------------------------------------------------
 
 sealed class _FuzzAction {
@@ -370,7 +354,8 @@ class _Bloc extends _FuzzAction {
       case 'mute':
         h.bloc.add(LooperMuteToggled(channel));
       case 'clearAll':
-        h.bloc.add(const LooperClearAllPressed());
+        // The on-screen clear-all path IS the unified intent now.
+        h.intents.clearAll();
     }
   }
 
@@ -382,7 +367,7 @@ class _Select extends _FuzzAction {
   const _Select(this.channel);
   final int channel;
   @override
-  void apply(_Harness h, FakeAsync fa) => h.tracks.select(channel);
+  void apply(_Harness h, FakeAsync fa) => h.intents.selectTrack(channel);
   @override
   String describe() => '_Select($channel)';
 }
@@ -390,7 +375,7 @@ class _Select extends _FuzzAction {
 class _ToggleMode extends _FuzzAction {
   const _ToggleMode();
   @override
-  void apply(_Harness h, FakeAsync fa) => h.cubit.toggleMode();
+  void apply(_Harness h, FakeAsync fa) => h.intents.toggleMode();
   @override
   String describe() => '_ToggleMode()';
 }

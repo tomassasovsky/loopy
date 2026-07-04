@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
@@ -27,12 +28,23 @@ void main() {
       ).thenAnswer((_) => const Stream<LooperState>.empty());
     });
 
-    PedalCubit cubitWith(FakePedalTransport transport) => PedalCubit(
-      pedal: PedalRepository(transport),
-      looper: looper,
-      settings: SettingsRepository(store: FakeKeyValueStore()),
-      pollInterval: Duration.zero, // no hotplug timer in widget tests
-    );
+    PedalCubit cubitWith(FakePedalTransport transport) {
+      final settings = SettingsRepository(store: FakeKeyValueStore());
+      final overlay = ControlOverlayCubit(looper: looper);
+      addTearDown(overlay.close);
+      return PedalCubit(
+        pedal: PedalRepository(transport),
+        looper: looper,
+        overlay: overlay,
+        intents: ControlIntents(
+          looper: looper,
+          overlay: overlay,
+          settings: settings,
+        ),
+        settings: settings,
+        pollInterval: Duration.zero, // no hotplug timer in widget tests
+      );
+    }
 
     Future<void> pumpSection(WidgetTester tester, PedalCubit cubit) =>
         tester.pumpApp(

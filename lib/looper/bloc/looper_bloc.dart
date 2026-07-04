@@ -265,14 +265,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _repository.stopTrack(channel: track.channel);
       }
     });
-    on<LooperClearAllPressed>((_, _) {
-      // Undone-to-empty tracks (canRedo) are cleared too: only clear wipes
-      // their resurrect path, and the master grid resets when everything is
-      // empty — a surviving redo would reinstate a loop into a dead grid.
-      for (final track in state.tracks) {
-        if (track.hasContent || track.canRedo) _clearAndArm(track.channel);
-      }
-    });
     on<LooperOutputEnabledToggled>((event, _) {
       _repository.setOutputEnabled(
         output: event.output,

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
@@ -31,6 +32,8 @@ void main() {
   late HighContrastCubit highContrast;
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
+  late ControlOverlayCubit overlay;
+  late ControlIntents intents;
   late PedalCubit pedal;
   late RefreshRateCubit refreshRate;
   late QuantizeCubit quantize;
@@ -62,11 +65,21 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    // A real PedalCubit over a no-op transport: it owns the shared LooperMode
-    // whose persisted default the View section edits.
+    // A real overlay + intents pair: they own the shared LooperMode whose
+    // persisted default the View section edits.
+    overlay = ControlOverlayCubit(looper: repository);
+    addTearDown(overlay.close);
+    intents = ControlIntents(
+      looper: repository,
+      overlay: overlay,
+      settings: settings,
+    );
+    // The Audio tab embeds the pedal output picker, driven by PedalCubit.
     pedal = PedalCubit(
       pedal: PedalRepository(const NoopPedalTransport()),
       looper: repository,
+      overlay: overlay,
+      intents: intents,
       settings: settings,
       pollInterval: Duration.zero,
     );
@@ -104,6 +117,7 @@ void main() {
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<SettingsRepository>.value(value: settings),
+          RepositoryProvider<ControlIntents>.value(value: intents),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -112,6 +126,7 @@ void main() {
             BlocProvider<HighContrastCubit>.value(value: highContrast),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
+            BlocProvider<ControlOverlayCubit>.value(value: overlay),
             BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
@@ -197,15 +212,15 @@ void main() {
     tester,
   ) async {
     await pump(tester);
-    expect(pedal.state.defaultMode, LooperMode.record);
+    expect(overlay.state.defaultMode, LooperMode.record);
 
     final play = find.byKey(const Key('settings_defaultMode_play'));
     await tester.ensureVisible(play);
     await tester.tap(play);
     await tester.pumpAndSettle();
 
-    expect(pedal.state.defaultMode, LooperMode.play);
-    expect(pedal.state.mode, LooperMode.play);
+    expect(overlay.state.defaultMode, LooperMode.play);
+    expect(overlay.state.mode, LooperMode.play);
     expect(
       await settings.loadDefaultLooperMode(),
       LooperMode.play.token,
@@ -295,6 +310,7 @@ void main() {
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<SettingsRepository>.value(value: settings),
+          RepositoryProvider<ControlIntents>.value(value: intents),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -303,6 +319,7 @@ void main() {
             BlocProvider<HighContrastCubit>.value(value: highContrast),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
+            BlocProvider<ControlOverlayCubit>.value(value: overlay),
             BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),

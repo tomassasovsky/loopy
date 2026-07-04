@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
@@ -224,17 +225,42 @@ class App extends StatelessWidget {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
+          // Eager (not lazy): the control overlay is the ONE owner of stored
+          // user intent (mode / cursor / bank / play intent); every surface
+          // reads it and drives it through ControlIntents, so it must exist
+          // from startup.
+          BlocProvider(
+            lazy: false,
+            create: (context) =>
+                ControlOverlayCubit(looper: context.read<LooperRepository>()),
+          ),
+          // The ONE intent interpreter every surface calls (pedal decode,
+          // keyboard, on-screen chips) — command sequences cannot diverge.
+          // Eager: it restores the boot-default mode.
+          RepositoryProvider(
+            lazy: false,
+            create: (context) {
+              final intents = ControlIntents(
+                looper: context.read<LooperRepository>(),
+                overlay: context.read<ControlOverlayCubit>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(intents.load()); // boot-default mode restore
+              return intents;
+            },
+          ),
           // Eager (not lazy): the pedal cubit auto-binds the saved output
-          // device on launch and starts projecting LED frames, so it must be at
-          // startup. Its cursor is mirrored onto the shared TracksCubit by
-          // PedalCursorBridge (a presentation-layer BlocListener), so the two
-          // cubits stay decoupled.
+          // device on launch and starts projecting LED frames, so it must be
+          // at startup. It shares the overlay + intents with the keyboard and
+          // on-screen surfaces — one interpreter, one cursor, one mode.
           BlocProvider(
             lazy: false,
             create: (context) {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
                 looper: context.read<LooperRepository>(),
+                overlay: context.read<ControlOverlayCubit>(),
+                intents: context.read<ControlIntents>(),
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
@@ -257,14 +283,10 @@ class App extends StatelessWidget {
             },
           ),
         ],
-        // Bridges the pedal's cursor onto the shared TracksCubit at the
-        // presentation layer (bloc-to-bloc communication via BlocListener).
-        child: PedalCursorBridge(
-          child: _AppView(
-            waveformWindow: waveformWindow,
-            sessionDirectory: sessionDirectory,
-            displayCount: displayCount,
-          ),
+        child: _AppView(
+          waveformWindow: waveformWindow,
+          sessionDirectory: sessionDirectory,
+          displayCount: displayCount,
         ),
       ),
     );
@@ -360,10 +382,11 @@ class _AppViewState extends State<_AppView> {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
         final tracks = context.read<TracksCubit>();
+        final cursor = context.read<ControlOverlayCubit>().state.cursor;
         widget.waveformWindow.pushWaveform(
           looper.readWaveform(),
           looper.state.transport.progress,
-          tracks.state.names[tracks.state.selectedChannel],
+          tracks.state.nameOf(cursor),
         );
       });
     } else {
