@@ -57,13 +57,18 @@ void main() {
               // The Tracks view reads the shared control overlay + intents —
               // created by the providers (as in the app wiring) so disposal
               // happens with the tree, not in an awaited teardown.
+              RepositoryProvider<ControlOverlay>(
+                create: (_) => ControlOverlay(looper: repository),
+              ),
               BlocProvider<ControlOverlayCubit>(
-                create: (_) => ControlOverlayCubit(looper: repository),
+                create: (context) => ControlOverlayCubit(
+                  overlay: context.read<ControlOverlay>(),
+                ),
               ),
               RepositoryProvider<ControlIntents>(
                 create: (context) => ControlIntents(
                   looper: repository,
-                  overlay: context.read<ControlOverlayCubit>(),
+                  overlay: context.read<ControlOverlay>(),
                   settings: settings,
                 ),
               ),

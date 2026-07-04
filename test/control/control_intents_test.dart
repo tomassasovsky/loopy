@@ -33,7 +33,7 @@ void main() {
     late _MockLooperRepository looper;
     late StreamController<LooperState> looperStates;
     late SettingsRepository settings;
-    late ControlOverlayCubit overlay;
+    late ControlOverlay overlay;
     late ControlIntents intents;
 
     /// Publishes [tracks] as engine truth: both the pull (`looper.state`) and
@@ -67,7 +67,7 @@ void main() {
       ).thenReturn(EngineResult.ok);
       when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
 
-      overlay = ControlOverlayCubit(looper: looper);
+      overlay = ControlOverlay(looper: looper);
       intents = ControlIntents(
         looper: looper,
         overlay: overlay,
@@ -77,7 +77,7 @@ void main() {
     });
 
     tearDown(() async {
-      await overlay.close();
+      await overlay.dispose();
       await looperStates.close();
     });
 
