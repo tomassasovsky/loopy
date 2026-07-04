@@ -32,9 +32,8 @@ void main() {
   late HighContrastCubit highContrast;
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
-  late ControlOverlay store;
-  late ControlOverlayCubit overlay;
-  late ControlIntents intents;
+  late PedalRepository pedalRepo;
+  late ControlCubit control;
   late PedalCubit pedal;
   late RefreshRateCubit refreshRate;
   late QuantizeCubit quantize;
@@ -66,27 +65,22 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    // A real overlay + intents pair: they own the shared LooperMode whose
-    // persisted default the View section edits.
-    store = ControlOverlay(looper: repository);
-    addTearDown(store.dispose);
-    intents = ControlIntents(
+    // The real control cubit: it owns the shared LooperMode whose persisted
+    // default the View section edits.
+    pedalRepo = PedalRepository(const NoopPedalTransport());
+    control = ControlCubit(
       looper: repository,
-      overlay: store,
+      pedal: pedalRepo,
       settings: settings,
     );
-    overlay = ControlOverlayCubit(overlay: store, intents: intents);
-    addTearDown(overlay.close);
+    addTearDown(control.close);
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.
     pedal = PedalCubit(
-      pedal: PedalRepository(const NoopPedalTransport()),
-      looper: repository,
-      overlay: store,
-      intents: intents,
+      pedal: pedalRepo,
       settings: settings,
       pollInterval: Duration.zero,
     );
-    addTearDown(pedal.close);
+    addTearDown(pedal.close); // disposes pedalRepo (the lifecycle owner)
     refreshRate = RefreshRateCubit(repository: repository, settings: settings);
     quantize = QuantizeCubit(repository: repository, settings: settings);
     monitor = MonitorCubit(repository: repository, settings: settings);
@@ -120,7 +114,6 @@ void main() {
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<SettingsRepository>.value(value: settings),
-          RepositoryProvider<ControlIntents>.value(value: intents),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -129,7 +122,7 @@ void main() {
             BlocProvider<HighContrastCubit>.value(value: highContrast),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
-            BlocProvider<ControlOverlayCubit>.value(value: overlay),
+            BlocProvider<ControlCubit>.value(value: control),
             BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),
@@ -215,15 +208,15 @@ void main() {
     tester,
   ) async {
     await pump(tester);
-    expect(overlay.state.defaultMode, LooperMode.record);
+    expect(control.state.defaultMode, LooperMode.record);
 
     final play = find.byKey(const Key('settings_defaultMode_play'));
     await tester.ensureVisible(play);
     await tester.tap(play);
     await tester.pumpAndSettle();
 
-    expect(overlay.state.defaultMode, LooperMode.play);
-    expect(overlay.state.mode, LooperMode.play);
+    expect(control.state.defaultMode, LooperMode.play);
+    expect(control.state.mode, LooperMode.play);
     expect(
       await settings.loadDefaultLooperMode(),
       LooperMode.play.token,
@@ -313,7 +306,6 @@ void main() {
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
           RepositoryProvider<SettingsRepository>.value(value: settings),
-          RepositoryProvider<ControlIntents>.value(value: intents),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -322,7 +314,7 @@ void main() {
             BlocProvider<HighContrastCubit>.value(value: highContrast),
             BlocProvider<AudioSetupCubit>.value(value: audioSetup),
             BlocProvider<MidiSetupCubit>.value(value: midiSetup),
-            BlocProvider<ControlOverlayCubit>.value(value: overlay),
+            BlocProvider<ControlCubit>.value(value: control),
             BlocProvider<PedalCubit>.value(value: pedal),
             BlocProvider<RefreshRateCubit>.value(value: refreshRate),
             BlocProvider<QuantizeCubit>.value(value: quantize),

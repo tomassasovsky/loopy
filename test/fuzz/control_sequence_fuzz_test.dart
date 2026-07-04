@@ -177,17 +177,13 @@ class _Harness {
     bloc = LooperBloc(repository: repo);
     sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
     pedalRepo = PedalRepository(sim);
-    overlay = ControlOverlay(looper: repo);
-    intents = ControlIntents(
+    control = ControlCubit(
       looper: repo,
-      overlay: overlay,
+      pedal: pedalRepo,
       settings: settings,
     );
     cubit = PedalCubit(
       pedal: pedalRepo,
-      looper: repo,
-      overlay: overlay,
-      intents: intents,
       settings: settings,
       pollInterval: Duration.zero,
     );
@@ -202,8 +198,7 @@ class _Harness {
   late final LooperBloc bloc;
   late final SimulatorPedalTransport sim;
   late final PedalRepository pedalRepo;
-  late final ControlOverlay overlay;
-  late final ControlIntents intents;
+  late final ControlCubit control;
   late final PedalCubit cubit;
   final Set<PedalButton> _held = {};
 
@@ -212,7 +207,7 @@ class _Harness {
 
   ControlContext get context => ControlContext(
     looper: looper,
-    overlay: overlay.state,
+    overlay: control.state,
     frame: frame,
   );
 
@@ -237,8 +232,8 @@ class _Harness {
   }
 
   void dispose(FakeAsync fa) {
+    unawaited(control.close());
     unawaited(cubit.close());
-    unawaited(overlay.dispose());
     unawaited(bloc.close());
     fa.flushMicrotasks();
     unawaited(repo.dispose());
@@ -355,7 +350,7 @@ class _Bloc extends _FuzzAction {
         h.bloc.add(LooperMuteToggled(channel));
       case 'clearAll':
         // The on-screen clear-all path IS the unified intent now.
-        h.intents.clearAll();
+        h.control.clearAll();
     }
   }
 
@@ -367,7 +362,7 @@ class _Select extends _FuzzAction {
   const _Select(this.channel);
   final int channel;
   @override
-  void apply(_Harness h, FakeAsync fa) => h.intents.selectTrack(channel);
+  void apply(_Harness h, FakeAsync fa) => h.control.selectTrack(channel);
   @override
   String describe() => '_Select($channel)';
 }
@@ -375,7 +370,7 @@ class _Select extends _FuzzAction {
 class _ToggleMode extends _FuzzAction {
   const _ToggleMode();
   @override
-  void apply(_Harness h, FakeAsync fa) => h.intents.toggleMode();
+  void apply(_Harness h, FakeAsync fa) => h.control.toggleMode();
   @override
   String describe() => '_ToggleMode()';
 }

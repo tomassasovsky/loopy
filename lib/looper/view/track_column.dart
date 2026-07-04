@@ -149,7 +149,7 @@ class TrackColumn extends StatelessWidget {
               selected: selected,
               borderRadius: 8,
               onTap: () {
-                context.read<ControlOverlayCubit>().selectTrack(track.channel);
+                context.read<ControlCubit>().selectTrack(track.channel);
                 bloc.add(
                   playMode
                       ? LooperMuteToggled(track.channel)
