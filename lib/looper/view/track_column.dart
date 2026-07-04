@@ -165,6 +165,11 @@ class TrackColumn extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 5),
+          _TrackHistoryDots(
+            undoDepth: track.undoDepth,
+            redoDepth: track.redoDepth,
+          ),
           const SizedBox(height: 10),
           FocusableTapTarget(
             key: Key('tracks_name_${track.channel}'),
@@ -203,6 +208,79 @@ class TrackColumn extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A single-line, paged undo/redo history for a track.
+///
+/// History entries are laid out over pages of exactly [_slotsPerPage] dots.
+/// The page-turn chevrons live in fixed gutters outside the dot row (invisible
+/// when there is no adjacent page), so they never take a slot and the dots
+/// never shift sideways. Only the page holding the current position is shown:
+/// bright dots are undoable layers, grey dots are redoable ones, and faint
+/// dots are unused slots — so the white/grey boundary marks where you are.
+class _TrackHistoryDots extends StatelessWidget {
+  const _TrackHistoryDots({
+    required this.undoDepth,
+    required this.redoDepth,
+  });
+
+  final int undoDepth;
+
+  final int redoDepth;
+
+  static const _slotsPerPage = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = undoDepth + redoDepth;
+    if (total == 0) return const SizedBox.shrink();
+
+    final pageCount = (total + _slotsPerPage - 1) ~/ _slotsPerPage;
+    // Show the page holding the newest undoable layer (0-based item index),
+    // or the first page when there is nothing left to undo.
+    final current = undoDepth == 0 ? 0 : undoDepth - 1;
+    final page = current ~/ _slotsPerPage;
+    final start = page * _slotsPerPage;
+
+    Color slotColor(int item) {
+      if (item < undoDepth) return Colors.white;
+      if (item < total) return Colors.grey;
+      return Colors.white12;
+    }
+
+    Widget gutter(IconData icon, {required bool visible}) => Visibility(
+      visible: visible,
+      maintainSize: true,
+      maintainAnimation: true,
+      maintainState: true,
+      child: Icon(icon, size: 12, color: Colors.white70),
+    );
+
+    return SizedBox(
+      height: 12,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: [
+            gutter(Icons.chevron_left, visible: page > 0),
+            for (var i = 0; i < _slotsPerPage; i++)
+              SizedBox.square(
+                dimension: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: slotColor(start + i),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            gutter(Icons.chevron_right, visible: page < pageCount - 1),
+          ],
+        ),
       ),
     );
   }
