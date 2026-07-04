@@ -330,8 +330,7 @@ class PedalCubit extends Cubit<PedalState> {
       (t) =>
           state.playArmed.contains(t.channel) &&
           !t.muted &&
-          (t.state == TrackState.playing ||
-              t.state == TrackState.overdubbing),
+          (t.state == TrackState.playing || t.state == TrackState.overdubbing),
     );
     final isPlayingAllWithContent =
         isPlaying &&
@@ -724,8 +723,7 @@ class PedalCubit extends Cubit<PedalState> {
       for (final channel in state.playArmed)
         if (_playable(_trackAtIn(looperState, channel))) channel,
       for (final track in looperState.tracks)
-        if (_sounding(track) &&
-            !_sounding(_trackAtIn(previous, track.channel)))
+        if (_sounding(track) && !_sounding(_trackAtIn(previous, track.channel)))
           track.channel,
     };
     if (reconciled.length != state.playArmed.length ||

@@ -418,8 +418,7 @@ class _Elapse extends _FuzzAction {
   const _Elapse(this.ms);
   final int ms;
   @override
-  void apply(_Harness h, FakeAsync fa) =>
-      fa.elapse(Duration(milliseconds: ms));
+  void apply(_Harness h, FakeAsync fa) => fa.elapse(Duration(milliseconds: ms));
   @override
   String describe() => '_Elapse($ms)';
 }
@@ -462,16 +461,19 @@ List<_FuzzAction> _generate(int seed, int steps) {
       < 42 => _Release(buttons[rng.next(buttons.length)]),
       < 46 => const _LongPressUndo(),
       < 50 => _Encoder(rng.next(17) - 8),
-      < 68 => _Bloc(const [
-        'record',
-        'stop',
-        'play',
-        'clear',
-        'undo',
-        'redo',
-        'mute',
-        'clearAll',
-      ][rng.next(8)], rng.next(8)),
+      < 68 => _Bloc(
+        const [
+          'record',
+          'stop',
+          'play',
+          'clear',
+          'undo',
+          'redo',
+          'mute',
+          'clearAll',
+        ][rng.next(8)],
+        rng.next(8),
+      ),
       < 74 => _Select(rng.next(8)),
       < 78 => const _ToggleMode(),
       < 90 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),

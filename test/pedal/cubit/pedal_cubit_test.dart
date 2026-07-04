@@ -933,50 +933,52 @@ void main() {
         await cubit.close();
       });
 
-      test('undo-to-empty darkens the LED and redo relights it in Play mode',
-          () async {
-        final cubit = buildCubit();
-        looperStates.add(
-          _stateWith([
-            const Track(state: TrackState.playing, lengthFrames: 48000),
-            for (var i = 1; i < 8; i++) Track(channel: i),
-          ]),
-        );
-        await pumpEventQueue();
-        cubit.toggleMode(); // -> Play, auto-arms track 0
-        await pumpEventQueue();
-        expect(cubit.trackLedFor(0), PedalTrackLed.green);
+      test(
+        'undo-to-empty darkens the LED and redo relights it in Play mode',
+        () async {
+          final cubit = buildCubit();
+          looperStates.add(
+            _stateWith([
+              const Track(state: TrackState.playing, lengthFrames: 48000),
+              for (var i = 1; i < 8; i++) Track(channel: i),
+            ]),
+          );
+          await pumpEventQueue();
+          cubit.toggleMode(); // -> Play, auto-arms track 0
+          await pumpEventQueue();
+          expect(cubit.trackLedFor(0), PedalTrackLed.green);
 
-        // Undo past the base layer: the track empties (redo keeps the whole
-        // history) and the armed set prunes it -> LED dark. The master grid
-        // survives engine-side, so masterLengthFrames stays nonzero.
-        looperStates.add(
-          _stateWith([
-            const Track(redoDepth: 2),
-            for (var i = 1; i < 8; i++) Track(channel: i),
-          ]),
-        );
-        await pumpEventQueue();
-        expect(cubit.state.playArmed, isEmpty);
-        expect(cubit.trackLedFor(0), PedalTrackLed.off);
+          // Undo past the base layer: the track empties (redo keeps the whole
+          // history) and the armed set prunes it -> LED dark. The master grid
+          // survives engine-side, so masterLengthFrames stays nonzero.
+          looperStates.add(
+            _stateWith([
+              const Track(redoDepth: 2),
+              for (var i = 1; i < 8; i++) Track(channel: i),
+            ]),
+          );
+          await pumpEventQueue();
+          expect(cubit.state.playArmed, isEmpty);
+          expect(cubit.trackLedFor(0), PedalTrackLed.off);
 
-        // Redo reinstates it (engine: EMPTY -> PLAYING): the reconciler
-        // re-arms the track and the LED turns green again.
-        looperStates.add(
-          _stateWith([
-            const Track(
-              state: TrackState.playing,
-              lengthFrames: 48000,
-              redoDepth: 1,
-            ),
-            for (var i = 1; i < 8; i++) Track(channel: i),
-          ]),
-        );
-        await pumpEventQueue();
-        expect(cubit.state.playArmed, contains(0));
-        expect(cubit.trackLedFor(0), PedalTrackLed.green);
-        await cubit.close();
-      });
+          // Redo reinstates it (engine: EMPTY -> PLAYING): the reconciler
+          // re-arms the track and the LED turns green again.
+          looperStates.add(
+            _stateWith([
+              const Track(
+                state: TrackState.playing,
+                lengthFrames: 48000,
+                redoDepth: 1,
+              ),
+              for (var i = 1; i < 8; i++) Track(channel: i),
+            ]),
+          );
+          await pumpEventQueue();
+          expect(cubit.state.playArmed, contains(0));
+          expect(cubit.trackLedFor(0), PedalTrackLed.green);
+          await cubit.close();
+        },
+      );
 
       test('a deliberate disarm of a still-playing track is respected — the '
           'reconciler only arms on the transition into sounding', () async {

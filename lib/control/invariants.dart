@@ -165,21 +165,26 @@ final List<ControlInvariant> controlInvariants = [
   // (togglePlayArm), so there a sounding track outside the armed set is
   // always a reconciliation bug; at projection time a deliberate disarm is
   // legitimate and indistinguishable until phase 2's excluded-set.
-  ControlInvariant('sounding-armed-and-green', (c) {
-    if (c.pedal.mode != LooperMode.play) return null;
-    for (final t in c.looper.tracks) {
-      if (!_sounding(t)) continue;
-      if (!c.pedal.playArmed.contains(t.channel)) {
-        return 'sounding track ${t.channel} is not armed';
+  ControlInvariant(
+    'sounding-armed-and-green',
+    (c) {
+      if (c.pedal.mode != LooperMode.play) return null;
+      for (final t in c.looper.tracks) {
+        if (!_sounding(t)) continue;
+        if (!c.pedal.playArmed.contains(t.channel)) {
+          return 'sounding track ${t.channel} is not armed';
+        }
+        if (t.channel < c.frame.trackLeds.length &&
+            c.frame.trackLeds[t.channel] != PedalTrackLed.green) {
+          return 'sounding track ${t.channel} LED is '
+              '${c.frame.trackLeds[t.channel]}, not green';
+        }
       }
-      if (t.channel < c.frame.trackLeds.length &&
-          c.frame.trackLeds[t.channel] != PedalTrackLed.green) {
-        return 'sounding track ${t.channel} LED is '
-            '${c.frame.trackLeds[t.channel]}, not green';
-      }
-    }
-    return null;
-  }, pin: true, fuzzOnly: true),
+      return null;
+    },
+    pin: true,
+    fuzzOnly: true,
+  ),
   ControlInvariant('capturing-red-in-rec', (c) {
     if (c.pedal.mode != LooperMode.record) return null;
     for (final t in c.looper.tracks) {
