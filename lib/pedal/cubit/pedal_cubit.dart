@@ -4,6 +4,7 @@ import 'dart:developer' as dev;
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -96,10 +97,13 @@ class PedalCubit extends Cubit<PedalState> {
   static const double _encoderStep = 1 / 64;
   double _masterGain = 1;
 
-  // Undo press/release timing (tap = undo, long-press = redo).
+  // Undo press/release timing (tap = undo, long-press = redo). The target
+  // channel is LATCHED at press time: an on-screen click mid-hold must not
+  // retarget the action the foot already committed to.
   Timer? _undoTimer;
   bool _undoArmed = false;
   bool _undoHandled = false;
+  int _undoChannel = 0;
 
   // Whether the Clear footswitch is currently held down. Lights the Clear LED
   // (the `clearFadeActive` frame bit) for as long as the button is pressed.
@@ -588,11 +592,12 @@ class PedalCubit extends Cubit<PedalState> {
   void _armUndo() {
     _undoArmed = true;
     _undoHandled = false;
+    _undoChannel = state.selectedTrack; // latch the target at press
     _undoTimer?.cancel();
     _undoTimer = Timer(_longPress, () {
       _undoHandled = true; // long-press = redo
-      _log('redo ch=${state.selectedTrack}  (long-press)');
-      _looper.redo(channel: state.selectedTrack);
+      _log('redo ch=$_undoChannel  (long-press)');
+      _looper.redo(channel: _undoChannel);
     });
   }
 
@@ -602,11 +607,11 @@ class PedalCubit extends Cubit<PedalState> {
     _undoTimer?.cancel();
     _undoTimer = null;
     if (!_undoHandled) {
-      _log('undo ch=${state.selectedTrack}  (tap)');
+      _log('undo ch=$_undoChannel  (tap)');
       // Per-layer undo all the way down: each tap peels one overdub pass, and
       // undoing past the base recording empties the track while keeping redo
       // able to reinstate it layer by layer (long-press). Never a clear.
-      _looper.undo(channel: state.selectedTrack);
+      _looper.undo(channel: _undoChannel);
     }
   }
 
@@ -765,6 +770,15 @@ class PedalCubit extends Cubit<PedalState> {
     final looperState = _looperState;
     if (looperState == null) return;
     final frame = _projectFrame(looperState, state);
+    // The control-surface invariant spec (lib/control/invariants.dart) runs
+    // on every projection in debug builds — the same predicates the sequence
+    // fuzzer checks. assert() only: zero release-mode cost.
+    assert(
+      debugControlInvariantsHold(
+        ControlContext(looper: looperState, pedal: state, frame: frame),
+      ),
+      'control-surface invariants must hold at projection time',
+    );
     if (frame == _lastFrame) return; // diff: only push on change
     _lastFrame = frame;
     _pedal.pushState(frame);
