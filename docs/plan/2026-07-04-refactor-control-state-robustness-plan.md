@@ -60,7 +60,7 @@ still writing it.
                        engine truth (polled snapshot)
   LooperRepository ──────────────► LooperState ────────┐
                                                        │  pure functions
-  ControlOverlayCubit ───────────► ControlOverlay ─────┤  (lib/control/projection.dart)
+  ControlOverlayCubit ───────────► ControlOverlay ─────┤  (lib/control/control_projection.dart)
    mode · defaultMode · cursor ·                       │
    bank · excluded · parkedResume                      ├─► armed = parked ? parkedResume
    (closed inventory, each bit has                     │            : sounding ∖ excluded
@@ -117,22 +117,15 @@ these written down):
       `le_engine_import_track`, and `le_engine_set_lane_count` (a fresh
       defining/new-track capture writes up to the cap; undo can have swapped a
       len-sized snapshot slot into `a_live`).
-- [ ] Byte-budget eviction: `LE_UNDO_BYTE_BUDGET` (#define, default 256 MB per
-      track) checked in `track_acquire_slot` — evict oldest undo layers (and
-      FREE their buffers) until under budget; count cap (256) remains.
-- [ ] Free-on-clear with ack discipline: buffers of non-live, non-outstanding
-      slots are freed by the control thread **only after** the CLEAR is acked
-      (`a_state_acks`) — a deferred free list drained in
-      `le_engine_drain_events`, so the audio thread can never touch a freed
-      shadow. Same discipline for budget eviction of a just-reclaimed slot.
-- [ ] Surface starvation: publish `a_undo_starved` (snapshot field) set when a
-      shadow post is skipped for OOM/budget; clear on the next successful
-      post. Dart: `Track.undoStarved` (no UI yet — exposed for the fuzzer and
-      a later badge).
-- [ ] C tests: slot reuse across lengths (small→large realloc), live-buffer
-      invariant on record-after-undo, budget eviction frees bytes (track via a
-      test hook counting allocated bytes), free-after-ack ordering, starvation
-      flag round-trip. Existing suite stays green.
+- [ ] **Deliberately NOT in scope** (YAGNI per simplicity review): byte-budget
+      eviction, ack-gated free lists, and an `a_undo_starved` flag. Quantized
+      allocation makes layer cost proportional to actual loop length, the
+      256-slot count cap bounds the rest, and calloc failure already degrades
+      gracefully (shadow posting stops; audio unharmed). Revisit only if
+      profiling shows real pressure — parked in Future Considerations.
+- [ ] C tests: slot reuse across lengths (small→large regrow), live-buffer
+      invariant on record-after-undo, quantized-size accounting via a test
+      hook. Existing suite stays green.
 
 **0b. Export vs fade tail** (engine_snapshot.c / session_repository)
 
@@ -147,9 +140,9 @@ these written down):
 - [ ] Dart tests: capture waits out a simulated in-flight flag; timeout
       throws. C test: export pumped through the `a_layer_in_flight` window
       matches the post-drain buffer exactly.
-- [ ] Eviction spec: per-track oldest-first, always keep ≥ 1 layer; note that
-      eviction shrinks `undoDepth` without user action (the fuzzer's depth
-      invariants must whitelist it).
+- [ ] Note for the fuzzer's depth invariants: the EXISTING count-cap eviction
+      (oldest-first at 256 slots) shrinks `undoDepth` without user action —
+      whitelist it.
 
 Success criteria: native + Dart suites green; a 2 s loop's undo layer costs
 ~2 s of floats, not 30 s; recording after deep undo still captures at full
@@ -161,15 +154,27 @@ cap.
 
 - [ ] Export `le_engine_configure` + `le_engine_process` with `LE_EXPORT` in
       loopy_engine_api.h (documented "test pump — not part of the app
-      surface"); `dart run ffigen` regen (packages/loopy_engine/ffigen.yaml).
+      surface"); regen per the documented two-step workflow
+      (`dart run ffigen --config ffigen.yaml` THEN
+      `dart format lib/src/generated/loopy_engine_bindings.dart` — skipping
+      the format rewrites the whole file and hides the real diff). Same
+      workflow applies to phase 0b's snapshot-field regen.
 - [ ] `PumpedNativeEngine implements AudioEngine`
-      (packages/loopy_engine/lib/src/testing/pumped_native_engine.dart,
-      exported as `package:loopy_engine/testing.dart`): `start()` →
+      (packages/loopy_engine/lib/src/pumped_native_engine.dart, exported from
+      the MAIN barrel like the existing `MockAudioEngine` precedent — no new
+      testing.dart sub-library): `start()` →
       `le_engine_configure` only (no device); `pump({int frames, double
       input})` → `le_engine_process` with a deterministic input block;
-      `snapshot()` reuses NativeAudioEngine's marshalling. Loads the same
-      built DLL the app uses (document per-OS lookup; CI reuses the
-      native-tests job's build).
+      `snapshot()` reuses NativeAudioEngine's marshalling. Library loading:
+      REUSE NativeAudioEngine's existing DynamicLibrary lookup, adding one
+      `LOOPY_ENGINE_LIB` environment override checked first (tests/CI point
+      it at an explicitly built lib).
+- [ ] Test-lib build (pinned, no "or"): a small script
+      `packages/loopy_engine/tool/build_test_lib.sh` compiling the same
+      engine source list as run_native_tests.sh into a shared lib
+      (`-shared -fPIC`, per-OS extension) at a known path. Locally it's
+      one command; in CI the app-test job runs it and exports
+      `LOOPY_ENGINE_LIB` before `flutter test`.
 
 - [ ] Latch the undo long-press target at PRESS time (pedal_cubit.dart:592
       fires redo against `state.selectedTrack` at timer fire — an on-screen
@@ -182,8 +187,13 @@ cap.
 
 **The spec**
 
-- [ ] `test/fuzz/invariants.dart`: `List<ControlInvariant>` of named
-      predicates over `(LooperState, PedalState, TracksState, PedalStateFrame)`.
+- [ ] `lib/control/invariants.dart` (NOT under test/ — lib code cannot import
+      test/, and the debug asserts live in lib; exported from the
+      `lib/control/control.dart` feature barrel): `List<ControlInvariant>` of
+      named predicates over
+      `(LooperState, PedalState, TracksState, PedalStateFrame)` — the
+      signature grows a `ControlOverlay` parameter in phase 2 when PedalState
+      loses mode/cursor/bank.
       Each invariant is tagged **timeless** (must survive phase 2) or
       **current-behavior pin** (phase 2 replaces it with a pre-written
       successor — written NOW, so the refactor's expected diffs are explicit,
@@ -208,6 +218,8 @@ cap.
       - queued-undo eventually applies (bounded pumps)
 - [ ] Debug-assert hook: `assert(checkControlInvariants(...))` at
       `PedalCubit._pushProjected` (moves into the pure projection in phase 2).
+      `assert(...)` only — zero release-mode cost by construction; no runtime
+      flag, no alternative gating.
 
 **The fuzzer**
 
@@ -239,11 +251,21 @@ cap.
       Validation task: revert each fix locally once and confirm its corpus
       case goes red — the net must not be tautological.
 - [ ] CI: the full-stack fuzzer imports app cubits, so it MUST run under
-      `flutter test` (a pure-Dart package job cannot — LooperBloc/PedalCubit
-      are app-level). Explicit task: build the engine shared lib in the app
-      test job (reuse the native-tests job's compile line or a small CMake
-      invocation) and plumb its path to `PumpedNativeEngine`. Budget: ≤ 2 min
-      (≈50 seeds × 200 steps).
+      `flutter test` — but the app test job is the reusable
+      `very_good_workflows/flutter_package.yml` (no pre-steps injectable),
+      and a DLL-requiring test would redden it. Follow the repo's OWN
+      precedent (`test/screenshots/` + dart_test.yaml): declare a `fuzz` tag,
+      self-skip with a clear message when `LOOPY_ENGINE_LIB` is unset (plain
+      local `flutter test` stays green), and add a bespoke `fuzz` job to
+      .github/workflows/main.yaml: checkout → `tool/build_test_lib.sh` →
+      `flutter test --tags fuzz` with the env exported. Because fuzz tests
+      are outside the coverage job, `lib/control/*` must clear the 90%
+      min_coverage gate from its UNIT tests alone (projection, overlay
+      reducer, ControlIntents — all directly tested in test/control/).
+      Budget: ≤ 2 min (≈50 seeds × 200 steps).
+- [ ] `fake_async` added as a dev_dependency (it resolves transitively via
+      flutter_test, but `depend_on_referenced_packages` requires the explicit
+      declaration).
 
 Success criteria: fuzzer green on current `master`+phase-0 code across ≥5k
 random cases locally; every red it finds first is triaged (fix or documented
@@ -251,14 +273,20 @@ expectation) before phase 2 starts.
 
 #### Phase 2: derive, don't accumulate (PR 3) — ~2–3 days
 
-- [ ] `lib/control/cubit/control_overlay_cubit.dart` + state: the closed
-      inventory {mode, defaultMode, cursor, activeBank, excluded,
-      parkedResume} with the brainstorm's invalidation table implemented in
-      ONE reducer over `(overlay, LooperState)` — the only place stored intent
-      changes in response to engine truth (e.g. excluded/parkedResume entries
-      drop when their track empties; cursor clamps).
+- [ ] `lib/control/cubit/control_overlay_cubit.dart` +
+      `control_overlay_state.dart` (part-file Equatable state, same pattern
+      as pedal_state.dart incl. the copyWith sentinel): the closed inventory
+      {mode, defaultMode, cursor, activeBank, excluded, parkedResume} with
+      the brainstorm's invalidation table implemented in ONE reducer over
+      `(overlay, LooperState)` — the only place stored intent changes in
+      response to engine truth (e.g. excluded/parkedResume entries drop when
+      their track empties; cursor clamps).
       Boot restore of `defaultMode` moves here from `PedalCubit._restore`.
-- [ ] `lib/control/projection.dart` (pure, top-level):
+      New feature barrel `lib/control/control.dart` (house-style library
+      doc); the bridge deletion also removes its export from
+      lib/pedal/pedal.dart. Unit tests mirror in test/control/.
+- [ ] `lib/control/control_projection.dart` (pure, top-level; filename
+      matches its exports repo-wide):
       `Set<int> armedTracks(LooperState, ControlOverlay)`,
       `PedalTrackLed ledFor(...)`, `PedalStateFrame projectFrame(...)` —
       logic lifted from PedalCubit `_ledFor`/`_projectFrame`/reconciler,
@@ -268,9 +296,15 @@ expectation) before phase 2 starts.
       surfaces call (park, resume, mode entry incl. finalize-captures,
       clear-all, track press semantics): pedal decode and keyboard/screen
       paths invoke the SAME methods, so command sequences cannot diverge.
-      It holds the LooperRepository reference; the overlay cubit stays a pure
-      inventory + reducer (no engine access). Metamorphic fuzz invariant:
-      pedal Rec/Play ≡ keyboard `R` on the same state.
+      Wiring (pinned): ControlIntents holds the LooperRepository reference
+      for COMMANDS OUT; the overlay cubit owns its OWN subscription to
+      `LooperRepository.looperState` for STATE IN (its reducer applies the
+      invalidation table per snapshot). State flows in via the subscription,
+      commands flow out via intents — structurally no second command path.
+      Stretch (optional, not a gate): metamorphic fuzz invariant
+      "pedal Rec/Play ≡ keyboard `R` on the same state" — only if the
+      fuzzer's replay makes it cheap; skip rather than build a
+      state-clone framework for it.
 - [ ] `PedalCubit` slims to: transport bind/hotplug/output picker, MIDI event
       decode → ControlIntents calls, frame diff-push of
       `projectFrame(latest LooperState, latest overlay)` — re-pushed on
@@ -281,19 +315,26 @@ expectation) before phase 2 starts.
       `_sounding` edge logic, `mode/selectedTrack/activeBank` fields.
       `setDefaultMode` + `_setMode`/`_enterPlayMode` migrate TOGETHER (the
       settings-page picker's live-apply side effect must never straddle the
-      split). Dead-API sweep: `selectBank`/`togglePlayArm` have no lib/
-      callers — wire to the overlay or delete.
+      split). Dead-API sweep — class-qualified to avoid a wrong deletion:
+      **PedalCubit**.selectBank / **PedalCubit**.togglePlayArm have no lib/
+      callers (wire to the overlay or delete); **TracksCubit**.selectBank IS
+      live (tracks_chrome.dart:308, the bank-browse flow) and migrates to the
+      overlay's bank field.
 - [ ] `TracksCubit` drops `selectedChannel`/`activeBank` (keeps
       names/showIndicators); `PedalCursorBridge` deleted; provider wiring in
       lib/app + lib/looper/view/looper_page.dart adds the overlay cubit.
       **Atomicity**: ownership move + ALL consumer migrations + bridge
       deletion land in one PR — any window with two live cursors (or two
       modes) reintroduces the exact divergence bug the bridge patched.
-- [ ] Consumer migration (compile-driven, all reads become overlay reads):
+- [ ] Consumer migration (all reads become overlay reads):
       lib/looper/view/tracks_view.dart:40, track_meters.dart:30,
       tracks_commands.dart:96/136 (+ digit-key select), track_column.dart
-      taps, settings_page.dart:124/166 (defaultMode), pedal_faceplate.dart
-      (unchanged — reads the frame), simulator path unchanged.
+      taps, tracks_chrome.dart:308 (bank browse), settings_page.dart:124/166
+      (defaultMode), pedal_faceplate.dart (unchanged — reads the frame),
+      simulator path unchanged. FINAL STEP: a grep-driven sweep for
+      `TracksCubit`/`PedalCubit` state reads (`selectedChannel|activeBank|
+      \.mode|playArmed|selectedTrack`) — the hand-curated list above is a
+      starting point, not the completeness proof.
 - [ ] Behavior parity: every UX flow pinned by phase 1 stays green —
       mode-entry auto-arm, park/resume subset, mute-last-parks-all, bank
       switching, clear-all reset, hotplug re-push, undo-to-empty/redo LED
@@ -331,7 +372,8 @@ rejected (staleness stays possible, or layering breaks).
 - [ ] Fuzz job ≤ 2 min in CI; deterministic (seed-replayable) failures only
 - [ ] Undo memory: layer cost proportional to loop length; budget eviction
       exercised in tests; RT budget unchanged (no new audio-thread work)
-- [ ] No new dependencies (hand-rolled PRNG/shrinker)
+- [ ] No new framework dependencies (hand-rolled PRNG/shrinker);
+      `fake_async` declared as a dev_dependency
 
 ### Quality Gates
 
