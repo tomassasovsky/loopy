@@ -377,10 +377,12 @@ static void handle_record(le_engine* e, int32_t ch) {
          * current loop phase — no waiting for the loop top. record_pos seeds to
          * the master position and start_iter to the current iteration, so it
          * stays equal to (loop_iteration - start_iter)*base + position; buffer
-         * writes are therefore phase-locked to the master and the slice before
-         * the press in this first segment stays silent (the live buffer was
-         * zeroed on the control thread). Spans one or more base loops, rounded
-         * up on stop — or exactly K with a fixed multiple (auto-finalized). */
+         * writes are therefore phase-locked to the master. Spans one or more
+         * base loops, rounded up on stop — or exactly K with a fixed multiple
+         * (auto-finalized), where the write head wraps into K*base so a
+         * mid-loop take keeps the audio played past the loop top. The slice
+         * before the press stays silent (zeroed on the control thread) until
+         * a fixed-multiple take wraps around and fills it. */
         t->record_pos = e->clock.position;
         t->record_start = t->record_pos;
         t->start_iter = e->loop_iteration;
@@ -1401,6 +1403,33 @@ static inline void mix_tracks_frame(
      * an old pass drains). The first backed-up write latches the pass's start
      * point for the drain walk. */
     le_track* tr = &e->tracks[t];
+
+    /* Recording write head for this frame, shared by every lane (or -1 when
+     * nothing may be written). The defining track writes linearly. A new
+     * track over the master is phase-locked (record_pos == segment*base +
+     * position) and latency-compensated by dropping the first `offset`
+     * frames so it aligns with what the player heard. With a fixed multiple
+     * the final length (K*base) is already known, so the head wraps into it:
+     * audio captured past the loop top lands at its heard phase instead of
+     * beyond the final length, where finalize would silently orphan it (a
+     * mid-loop take used to lose everything recorded after the top). Auto
+     * (K == 0) stays linear — finalize rounds the length up instead, so
+     * nothing is dropped. A negative head (capture inside the latency window
+     * of a press near the top) stays dropped: the pre-press slice is silent
+     * by design. */
+    int32_t rec_w = -1;
+    if (st[t] == LE_TRACK_RECORDING) {
+      if (e->clock.length == 0) {
+        rec_w = tr->record_pos;
+      } else {
+        rec_w = tr->record_pos - offset;
+        const int32_t k = le_effective_multiple(e, t);
+        const int32_t known_len = k >= 1 ? k * e->clock.length : 0;
+        if (known_len > 0 && rec_w >= known_len) rec_w %= known_len;
+      }
+      if (rec_w >= e->max_loop_frames) rec_w = -1;
+    }
+
     const int dub_writes =
         (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) &&
         od_gain > 0.0f && e->clock.length > 0;
@@ -1436,20 +1465,7 @@ static inline void mix_tracks_frame(
 
       float loopsample = 0.0f;
       if (st[t] == LE_TRACK_RECORDING) {
-        if (e->clock.length == 0) {
-          /* defining track: no reference loop yet, so no compensation */
-          if (e->tracks[t].record_pos < e->max_loop_frames) {
-            lbuf[e->tracks[t].record_pos] = insample;
-          }
-        } else {
-          /* new track: phase-locked shared write head (record_pos ==
-           * segment*base + position), latency-compensated by dropping the first
-           * `offset` frames so it aligns with what the player heard. */
-          const int32_t w = e->tracks[t].record_pos - offset;
-          if (w >= 0 && w < e->max_loop_frames) {
-            lbuf[w] = insample;
-          }
-        }
+        if (rec_w >= 0) lbuf[rec_w] = insample;
       } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
         /* Mix the existing loop (read before write). Layer the live input at the
          * compensated position, scaled by the punch envelope so it ramps in on

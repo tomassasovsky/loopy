@@ -1615,6 +1615,39 @@ void main() {
       );
     });
 
+    test('record keeps a staged lane chain when the input monitor chain is '
+        'empty (dry monitor never wipes lane FX)', () {
+      // Track 0 is EMPTY, so record is a fresh capture; input 0's monitor
+      // chain is clean. The lane's own (staged / persistence-restored) chain
+      // must survive the snapshot instead of being cleared.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..record();
+
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.reverb,
+      );
+    });
+
     test('record captures the monitor plugin state onto the lane (D-P1)', () {
       engine
         ..nextState = Uint8List.fromList([1, 2, 3, 4])
