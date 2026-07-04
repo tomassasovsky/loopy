@@ -39,6 +39,7 @@ class SessionRepository {
   /// writing the manifest, per-track stems, and a mixdown. Returns the saved
   /// [Session] manifest.
   Future<Session> save(String directory) async {
+    await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
 
@@ -110,9 +111,14 @@ class SessionRepository {
         throw StateError('failed to import ${track.stem}: ${result.name}');
       }
     }
-    final committed = _engine.commitSession(session.baseLengthFrames);
-    if (!committed.isOk) {
-      throw StateError('failed to start the session: ${committed.name}');
+    // An empty session (or a legacy save carrying a ghost grid with no
+    // tracks) establishes no master: the cleared engine stays free to define
+    // a fresh loop length.
+    if (session.tracks.isNotEmpty && session.baseLengthFrames > 0) {
+      final committed = _engine.commitSession(session.baseLengthFrames);
+      if (!committed.isOk) {
+        throw StateError('failed to start the session: ${committed.name}');
+      }
     }
 
     // Session stems are lane-0-only for now (full multi-lane stems are a
@@ -127,6 +133,7 @@ class SessionRepository {
 
   /// Exports a single mixed-down WAV of the current session to [path].
   Future<void> exportMixdown(String path) async {
+    await _awaitLayersSettled();
     final captured = _capture();
     final mix = _mixdown(captured);
     await File(path).writeAsBytes(
@@ -140,6 +147,7 @@ class SessionRepository {
 
   /// Exports each track's loop as a separate stem WAV in [directory].
   Future<void> exportStems(String directory) async {
+    await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
     for (final track in captured.tracks) {
@@ -193,7 +201,13 @@ class SessionRepository {
     return Session(
       sampleRate: snapshot.sampleRate,
       channels: 1,
-      baseLengthFrames: snapshot.masterLengthFrames,
+      // The engine keeps the master grid alive after the last track is undone
+      // to empty (redo needs it), but a session with zero tracks must not
+      // persist that ghost tempo — loading it would re-establish a grid with
+      // no content, silently locking the next recording's length.
+      baseLengthFrames: captured.tracks.isEmpty
+          ? 0
+          : snapshot.masterLengthFrames,
       tracks: captured.tracks,
     );
   }
@@ -240,6 +254,21 @@ class SessionRepository {
       await Future<void>.delayed(_clearPollInterval);
     }
     return false;
+  }
+
+  /// Waits until no track has an overdub undo layer in flight (the punch-out
+  /// fade tail / drain window, ~tens of ms): exporting during it would copy a
+  /// buffer the audio thread is still writing, losing the tail. Throws on
+  /// timeout rather than silently exporting a mid-fade stem.
+  Future<void> _awaitLayersSettled() async {
+    for (var attempt = 0; attempt < _clearPollAttempts; attempt++) {
+      final snapshot = _engine.snapshot();
+      if (snapshot.tracks.every((t) => !t.layerInFlight)) return;
+      await Future<void>.delayed(_clearPollInterval);
+    }
+    throw StateError(
+      'an overdub layer never settled — cannot export a stable capture',
+    );
   }
 }
 

@@ -42,6 +42,49 @@ void main() {
     expect(session.tracks[1].multiple, 2);
   });
 
+  test('save waits out an in-flight overdub layer before capturing', () async {
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..layerInFlightPolls = 2; // the punch-tail/drain window, then settled
+    final dir = '${tempDir.path}/sess';
+
+    final session = await repoFor(engine).save(dir);
+
+    expect(session.tracks, hasLength(1)); // captured AFTER the settle
+    expect(engine.layerInFlightPolls, 0); // the wait actually consumed polls
+  });
+
+  test('save throws when an overdub layer never settles', () async {
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..layerInFlightPolls = 1 << 30; // never settles within the attempts
+    final dir = '${tempDir.path}/sess';
+
+    await expectLater(repoFor(engine).save(dir), throwsStateError);
+  });
+
+  test(
+    'saving an all-empty looper persists no ghost grid, and loading an '
+    'empty session establishes no master',
+    () async {
+      // The engine keeps the master grid after the last track is undone to
+      // empty (redo needs it live) — but a zero-track session must not carry
+      // that ghost tempo to disk.
+      final engine = FakeSessionEngine()..masterLength = 48000;
+      final dir = '${tempDir.path}/sess';
+
+      final session = await repoFor(engine).save(dir);
+      expect(session.baseLengthFrames, 0);
+      expect(session.tracks, isEmpty);
+
+      // Loading it into a fresh engine leaves the grid unset: the next
+      // recording is free to define its own loop length.
+      final target = FakeSessionEngine();
+      await repoFor(target).load(dir);
+      expect(target.masterLength, 0);
+    },
+  );
+
   test('save then load reproduces the engine state', () async {
     final source = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))

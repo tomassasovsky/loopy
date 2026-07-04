@@ -24,6 +24,8 @@ class Track extends Equatable {
     this.multiple = 1,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
+    this.layerInFlight = false,
+    this.pending = false,
     this.lanes = const [],
   });
 
@@ -56,6 +58,13 @@ class Track extends Equatable {
 
   /// Available redo steps.
   final int redoDepth;
+
+  /// Whether an overdub undo layer is still being captured or drained (the
+  /// punch-tail window). Session capture waits this out before exporting.
+  final bool layerInFlight;
+
+  /// Whether a quantized/signal-triggered record arm is waiting to fire.
+  final bool pending;
 
   /// Track length in whole base loops (`>= 1`); `> 1` for a loop multiple.
   final int multiple;
@@ -103,6 +112,8 @@ class Track extends Equatable {
     multiple,
     inputMask,
     outputMask,
+    layerInFlight,
+    pending,
     lanes,
   ];
 }

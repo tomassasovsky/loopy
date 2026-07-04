@@ -32,7 +32,8 @@ export 'src/engine_snapshot.dart'
         kMaxLanes;
 export 'src/loopback_info.dart' show LoopbackInfo, LoopbackKind;
 export 'src/mock_audio_engine.dart' show MockAudioEngine, MockPluginSlotHandle;
-export 'src/native_audio_engine.dart' show NativeAudioEngine;
+export 'src/native_audio_engine.dart'
+    show NativeAudioEngine, PumpedNativeEngine;
 export 'src/plugin_descriptor.dart'
     show
         PluginDescriptor,

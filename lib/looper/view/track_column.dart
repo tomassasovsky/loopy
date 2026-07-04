@@ -114,9 +114,12 @@ class TrackColumn extends StatelessWidget {
                   iconSize: 18,
                   color: Colors.white70,
                   icon: const Icon(Icons.undo),
-                  // Mirrors the `U` key: enabled whenever the track holds
-                  // content, since undo also clears a lone base loop.
-                  onPressed: track.hasContent
+                  // Mirrors the `U` key: enabled whenever there is a layer to
+                  // peel — stacked overdub passes, or the base recording
+                  // itself (undoing it empties the track, redo-ably) — but not
+                  // mid-capture, when the engine rejects undo.
+                  onPressed:
+                      (track.hasContent || track.canUndo) && !track.isCapturing
                       ? () => onUndo(track.channel)
                       : null,
                 ),
@@ -127,7 +130,9 @@ class TrackColumn extends StatelessWidget {
                   iconSize: 18,
                   color: Colors.white70,
                   icon: const Icon(Icons.redo),
-                  onPressed: track.canRedo ? () => onRedo(track.channel) : null,
+                  onPressed: track.canRedo && !track.isCapturing
+                      ? () => onRedo(track.channel)
+                      : null,
                 ),
               ],
             ],

@@ -42,6 +42,9 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->output_mask =
       atomic_load_explicit(&l0->a_output_mask, memory_order_relaxed);
   out->lane_count = le_lanes_active(tr);
+  out->layer_in_flight =
+      atomic_load_explicit(&tr->a_layer_in_flight, memory_order_acquire);
+  out->pending = load_i32(&tr->a_pending);
 }
 
 /* Max added latency (frames) across every active octaver in any record-route or
@@ -83,6 +86,9 @@ static int32_t le_max_fx_latency(le_engine* engine) {
 
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
+  /* Collect retired per-pass undo layers (and replenish shadow spares) on the
+   * UI's poll cadence, so undo depths stay fresh and queued undo taps apply. */
+  le_engine_drain_events(engine);
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->device_present =
       atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
@@ -132,6 +138,8 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->input_mask = 0x1u;
     out->output_mask = 0x3u;
     out->lane_count = 1;
+    out->layer_in_flight = 0;
+    out->pending = 0;
     return;
   }
   le_fill_track_snapshot(&engine->tracks[channel], 1, out);

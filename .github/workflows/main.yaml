@@ -112,6 +112,32 @@ jobs:
       - name: Build + run native engine/MIDI tests
         run: bash packages/loopy_engine/src/test/run_native_tests.sh
 
+  # The control-sequence fuzzer: the REAL native engine (device-free pump) +
+  # the real repository/bloc/cubits, driven by seeded random event sequences
+  # and checked against the control-surface invariant spec
+  # (lib/control/invariants.dart) after every settled step. Runs as its own
+  # job because the reusable flutter_package test job can't build the engine
+  # library first; the fuzz tests self-skip without LOOPY_ENGINE_LIB, keeping
+  # plain `flutter test` green everywhere. Failures print a seed + a shrunk
+  # replayable repro to paste into the corpus.
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build the engine test library
+        run: echo "LOOPY_ENGINE_LIB=$(bash packages/loopy_engine/tool/build_test_lib.sh)" >> "$GITHUB_ENV"
+      - name: Run the control-sequence fuzzer
+        run: |
+          flutter pub get
+          flutter test --tags fuzz
+
   # Compile-only macOS guard. macOS/iOS build the engine through the CocoaPods
   # podspec's per-file forwarders (macos/Classes/), NOT CMake, so a new native TU
   # can break the macOS link unless a forwarder is added — building here catches

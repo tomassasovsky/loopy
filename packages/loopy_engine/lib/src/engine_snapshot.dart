@@ -172,6 +172,8 @@ class TrackSnapshot {
     this.multiple = 1,
     this.inputMask = 0x1,
     this.outputMask = 0x3,
+    this.layerInFlight = false,
+    this.pending = false,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -188,6 +190,8 @@ class TrackSnapshot {
       multiple = 1,
       inputMask = 0x1,
       outputMask = 0x3,
+      layerInFlight = false,
+      pending = false,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -210,6 +214,8 @@ class TrackSnapshot {
     multiple: native.multiple,
     inputMask: native.input_mask,
     outputMask: native.output_mask,
+    layerInFlight: native.layer_in_flight != 0,
+    pending: native.pending != 0,
     lanes: lanes,
   );
 
@@ -233,6 +239,13 @@ class TrackSnapshot {
 
   /// Available redo steps.
   final int redoDepth;
+
+  /// Whether an overdub undo layer is still being captured or drained (the
+  /// punch-tail window). Session capture waits this out before exporting.
+  final bool layerInFlight;
+
+  /// Whether a quantized/signal-triggered record arm is waiting to fire.
+  final bool pending;
 
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
@@ -274,6 +287,8 @@ class TrackSnapshot {
           peak == other.peak &&
           inputMask == other.inputMask &&
           outputMask == other.outputMask &&
+          layerInFlight == other.layerInFlight &&
+          pending == other.pending &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -289,6 +304,8 @@ class TrackSnapshot {
     peak,
     inputMask,
     outputMask,
+    layerInFlight,
+    pending,
     Object.hashAll(lanes),
   );
 }
