@@ -1736,6 +1736,53 @@ static void test_new_track_records_mid_loop(void) {
   le_engine_destroy(e);
 }
 
+/* A fixed-multiple take that starts mid-loop wraps its write head into the
+ * known final length (K*base): audio played after the loop top lands at its
+ * heard phase at the head of the loop, instead of past K*base where finalize
+ * would silently orphan it (recording a full base loop from mid-phase used to
+ * play back only the pre-wrap half). */
+static void test_fixed_multiple_mid_loop_take_keeps_wrap(void) {
+  printf("test_fixed_multiple_mid_loop_take_keeps_wrap\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Base loop (1.0), muted so track 1 is observed alone; force ×1 takes. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize */
+  drain(e);
+  le_engine_set_track_mute(e, 0, 1);
+  CHECK(le_engine_set_default_multiple(e, 1) == LE_OK);
+  drain(e);
+
+  /* From mid-loop (pos 2), record exactly one base loop on track 1: 2.0 for
+   * the pre-wrap half (pos 2,3), 3.0 past the loop top (pos 0,1). The forced
+   * ×1 auto-finalizes at K*base and continues into overdub. */
+  process_const(e, 0.0f, LOOP_N / 2, out);
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, LOOP_N / 2, out);
+  process_const(e, 3.0f, LOOP_N / 2, out);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[1].multiple == 1);
+  CHECK(s.tracks[1].length_frames == LOOP_N);
+  le_engine_record(e, 1); /* punch out -> PLAYING */
+  drain(e);
+
+  /* Align to the loop top, then read one loop: the wrapped half (3.0) at the
+   * head, the pre-wrap half (2.0) at the tail — nothing lost. */
+  process_const(e, 0.0f, LOOP_N / 2, out); /* pos 2,3 -> top */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) {
+    const float want = i < LOOP_N / 2 ? 3.0f : 2.0f;
+    CHECK(fabsf(out[i] - want) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
 /* The transport must not free-run in silence: once every track is stopped the
  * master position holds at the top, and the next play starts from there. */
 static void test_transport_resets_when_all_stopped(void) {
@@ -3248,6 +3295,61 @@ static void test_record_snapshot_is_rt_safe(void) {
   drain(e);
   for (int k = 0; k < 4; ++k) le_engine_process(e, out, in, LOOP_N);
   CHECK(le_engine_snapshot_copy_count_for_test(e) == 1);
+
+  le_engine_destroy(e);
+}
+
+/* Staged lane FX survive a fresh take when nothing is monitored: with a clean
+ * input chain, snapshot-on-record keeps the lane's own chain (it used to wipe
+ * it, so persistence-restored track FX vanished on the first record). A
+ * monitored chain still overwrites the staged one (D2: the take sounds like
+ * what was monitored). */
+static void test_record_keeps_staged_lane_fx_when_monitor_clean(void) {
+  printf("test_record_keeps_staged_lane_fx_when_monitor_clean\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  /* Stage a unity drive on empty track 0's lane 0; input 0's monitor chain
+   * stays clean. */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f); /* unity level */
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  drain(e);
+
+  /* Record a take: the staged chain survives the snapshot and colours
+   * playback — tanh drive on the recorded 0.5. */
+  le_engine_record(e, 0);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i] - tanhf(0.5f)) < 1e-5f);
+  }
+
+  /* A monitored chain still overwrites a staged one (D2). Clear the take,
+   * stage a hot drive, and monitor input 0 through a unity drive: the new
+   * take plays the monitored unity chain, not the staged hot one. */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 1.0f); /* hot pre-gain */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f);
+  le_engine_set_lane_fx_count(e, 0, 0, 1);
+  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f); /* 1x pre-gain */
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f); /* unity level */
+  le_engine_set_monitor_input_fx_count(e, 0, 1);
+  drain(e);
+  le_engine_record(e, 0);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i] - tanhf(0.5f)) < 1e-5f);
+  }
 
   le_engine_destroy(e);
 }
@@ -5582,6 +5684,7 @@ int main(void) {
   test_record_snapshots_input_fx();
   test_snapshot_is_independent_of_later_input_edits();
   test_record_snapshot_is_rt_safe();
+  test_record_keeps_staged_lane_fx_when_monitor_clean();
   test_output_disabled_is_silent_routes_preserved();
   test_reenable_restores_audio();
   test_gate_beyond_channel_count_ignored();
@@ -5640,6 +5743,7 @@ int main(void) {
   test_loop_multiple_records_two_loops();
   test_loop_multiple_rounds_up_partial();
   test_new_track_records_mid_loop();
+  test_fixed_multiple_mid_loop_take_keeps_wrap();
   test_transport_resets_when_all_stopped();
   test_transport_runs_until_last_track_stops();
   test_routing_input_mask();
