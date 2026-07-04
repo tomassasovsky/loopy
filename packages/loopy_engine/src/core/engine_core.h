@@ -80,6 +80,15 @@ int32_t le_push_cmd(le_engine* engine, le_command cmd);
  * engine.c as le_monitor_input_reset.) */
 void le_lane_reset(le_lane* ln, int32_t input_channel);
 
+/* Ensures lane [ln]'s pool slot [slot] holds a buffer of >= [frames] frames
+ * (control thread only; the caller guarantees the audio thread is not reading
+ * the slot's CONTENT — an EMPTY track's live slot, or a slot outside
+ * live/stacks/outstanding). Growth replaces the buffer (free + fresh calloc);
+ * no content survives a regrow by design — snapshots are always written whole
+ * before use. Returns 1 on success, 0 on allocation failure (the slot is left
+ * unallocated). Defined in engine.c. */
+int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
+
 /* Drains the audio->control event ring (retired per-pass undo layers) into the
  * per-track undo stacks, replenishes shadow-slot spares, and applies any undo
  * taps that were queued while a layer was in flight. Control thread only;

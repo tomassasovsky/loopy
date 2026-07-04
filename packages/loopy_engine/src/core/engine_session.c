@@ -65,6 +65,12 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   le_lane* ln = &t->lanes[0];
   const int live = load_i32(&ln->a_live);
   if (ln->pool[live] == NULL) return LE_ERR_INVALID;
+  /* The import target must hold the full cap (a later capture over it can
+   * grow to max_loop_frames, and the tail is zeroed to the cap below); undo
+   * may have left a quantized snapshot slot live. Track is EMPTY: safe. */
+  if (!le_lane_ensure_slot(ln, live, engine->max_loop_frames)) {
+    return LE_ERR_INVALID;
+  }
   const size_t span = (size_t)frames;
   const size_t cap = (size_t)engine->max_loop_frames;
   memcpy(ln->pool[live], pcm, span * sizeof(float));

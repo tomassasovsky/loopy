@@ -69,6 +69,20 @@ void le_track_set_len(le_track* t, int32_t len) {
   for (int32_t l = 0; l < n; ++l) store_i32(&t->lanes[l].a_len, len);
 }
 
+/* Ensures a pool slot holds >= [frames] frames (control thread; declared in
+ * engine_core.h). Undo layers are quantized to the loop length, so a reused
+ * slot may need to grow before serving a longer track — or to the full
+ * max_loop_frames before becoming a recording target. Replaces rather than
+ * preserves: every consumer writes the slot whole before it is read. */
+int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
+  if (frames <= 0) return 0;
+  if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) return 1;
+  free(ln->pool[slot]);
+  ln->pool[slot] = (float*)calloc((size_t)frames, sizeof(float));
+  ln->pool_cap[slot] = ln->pool[slot] != NULL ? frames : 0;
+  return ln->pool[slot] != NULL;
+}
+
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
  * collapse a legacy track input bitmask into lane 0's single input channel. */
 int32_t le_mask_to_channel(uint32_t mask) {
@@ -176,7 +190,6 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   if (max_loop_frames <= 0) max_loop_frames = sample_rate * 30;
 
   /* Lane buffers are mono: one input channel in, routed out via the mask. */
-  const size_t samples = (size_t)max_loop_frames;
   engine->track_count = LE_MAX_TRACKS;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -225,16 +238,19 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
       for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         free(ln->pool[i]);
         ln->pool[i] = NULL;
+        ln->pool_cap[i] = 0;
       }
       /* Lane l defaults to recording hardware input channel l; lane 0 thus
        * records input 0 and plays 0 + 1, preserving the prior single-track
        * stereo behaviour. */
       le_lane_reset(ln, l);
     }
-    /* Only lane 0 is active by default; allocate its live buffer now (further
-     * lanes' buffers and all undo snapshots allocate lazily). */
-    tr->lanes[0].pool[0] = (float*)calloc(samples, sizeof(float));
-    if (tr->lanes[0].pool[0] == NULL) return LE_ERR_INVALID;
+    /* Only lane 0 is active by default; allocate its live buffer now at the
+     * full recording cap (further lanes' buffers and all undo snapshots
+     * allocate lazily, undo layers at the loop-length quantum). */
+    if (!le_lane_ensure_slot(&tr->lanes[0], 0, max_loop_frames)) {
+      return LE_ERR_INVALID;
+    }
   }
 
   engine->sample_rate = sample_rate;
@@ -343,6 +359,19 @@ int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
   if (lane < 0 || lane >= LE_MAX_LANES) return 0;
   le_lane* ln = &engine->tracks[channel].lanes[lane];
   return ln->pool[load_i32(&ln->a_live)] != NULL ? 1 : 0;
+}
+
+int32_t le_engine_lane_slot_cap_for_test(le_engine* engine, int32_t channel,
+                                         int32_t lane, int32_t slot) {
+  if (engine == NULL) return -1;
+  if (channel < 0 || channel >= engine->track_count) return -1;
+  if (lane < 0 || lane >= LE_MAX_LANES) return -1;
+  if (slot < 0) {
+    /* slot < 0 selects the lane's LIVE slot. */
+    slot = load_i32(&engine->tracks[channel].lanes[lane].a_live);
+  }
+  if (slot >= LE_POOL_SLOTS) return -1;
+  return engine->tracks[channel].lanes[lane].pool_cap[slot];
 }
 
 void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,

@@ -890,6 +890,102 @@ static void test_repunch_during_drain_restarts_capture(void) {
   le_engine_destroy(e);
 }
 
+/* Pumps [frames] frames of constant [value] in <= 64-frame blocks. */
+static void pump_frames(le_engine* e, float value, int frames) {
+  float out[64];
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    process_const(e, value, n, out);
+    frames -= n;
+  }
+}
+
+/* Undo layers are sized to the loop length rounded to LE_LAYER_QUANTUM — a
+ * tiny loop's layer costs one quantum, not the recording cap — while the live
+ * slot of a fresh capture always regrows to the full cap (undo can leave a
+ * quantized snapshot slot live). */
+static void test_undo_layers_quantized_and_live_regrows(void) {
+  printf("test_undo_layers_quantized_and_live_regrows\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 200000; /* > LE_LAYER_QUANTUM so sizes are observable */
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+  float pcm[LOOP_N];
+
+  /* Tiny base loop + one dub pass -> one retired quantum-sized layer. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) == cap); /* live = cap */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  /* Undo swaps the quantized snapshot slot live: content correct, size is one
+   * quantum (not the cap). */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) == LE_LAYER_QUANTUM);
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+
+  /* Undo to empty, record fresh: the capture target regrows to the cap. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) == cap);
+
+  le_engine_destroy(e);
+}
+
+/* A slot reused for a LONGER loop regrows: a loop spanning more than one
+ * quantum gets a two-quantum layer. */
+static void test_undo_layer_slot_regrows_for_longer_loop(void) {
+  printf("test_undo_layer_slot_regrows_for_longer_loop\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 200000;
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+
+  /* Base loop longer than one quantum (50k > 48k). The defining finalize
+   * defers ~10 ms for the seam crossfade — pump the overlap to complete it. */
+  const int32_t len = LE_LAYER_QUANTUM + 2000;
+  le_engine_record(e, 0);
+  pump_frames(e, 1.0f, len);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 1.0f, 600); /* crossfade overlap -> auto-finalize */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == len);
+
+  /* One full dub pass; at this loop size the punch fade is engaged, so the
+   * post-punch-out tail commits a second sliver layer after the drain. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_frames(e, 0.5f, len);
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  pump_frames(e, 0.0f, 600); /* fade tail decays; the drain completes */
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 2); /* the pass + the punch-tail sliver */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) ==
+        2 * LE_LAYER_QUANTUM);
+
+  le_engine_destroy(e);
+}
+
 /* Depth beyond the pool cap evicts the OLDEST layer and keeps running: a very
  * long dub session stays stable and the newest layers stay undoable. */
 static void test_undo_pool_eviction(void) {
@@ -5471,6 +5567,8 @@ int main(void) {
   test_redo_from_empty_unmutes();
   test_undo_to_empty_cancels_pending_arm();
   test_configure_drops_stale_commands();
+  test_undo_layers_quantized_and_live_regrows();
+  test_undo_layer_slot_regrows_for_longer_loop();
   test_fresh_record_after_undo_to_empty_redefines_grid();
   test_grid_kept_when_sibling_redo_alive();
   test_quantize_acts_immediately_when_transport_held();

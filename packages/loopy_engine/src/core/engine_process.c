@@ -203,6 +203,21 @@ static void le_dub_try_retire(le_engine* e, le_track* t) {
   if (le_ring_push(&e->evt_ring, evt)) t->dub_retire_slot = -1;
 }
 
+/* Drops the track's armed shadow slots (audio thread) — a fresh capture or a
+ * redo-from-empty may change the loop length, and a leftover slot could be
+ * sized for the OLD length (undo layers are loop-length-quantized). The
+ * control side reclaimed `outstanding` when it posted the triggering command,
+ * so the slots return to the pool cleanly; correctly-sized replacements arrive
+ * via the poll-driven replenish once a dub session runs. */
+static void le_dub_drop_armed(le_track* t) {
+  t->dub_slot = -1;
+  t->dub_spare = -1;
+  t->dub_retire_slot = -1;
+  t->dub_count = -1;
+  t->dub_phase = 0;
+  t->dub_draining = 0;
+}
+
 /* Pass boundary (dub_phase wrapped): hand a complete shadow to the retire
  * queue and arm the pre-posted spare for the next pass. With the retire queue
  * still occupied (evt ring full) the complete shadow stays frozen — writes
@@ -345,6 +360,10 @@ static void handle_record(le_engine* e, int32_t ch) {
   le_track* t = &e->tracks[ch];
   switch (load_i32(&t->a_state)) {
     case LE_TRACK_EMPTY:
+      /* A fresh capture may define a new loop length: leftover armed shadow
+       * slots (sized for the previous loop) are dropped; control reclaimed
+       * them when it posted this command/arm. */
+      le_dub_drop_armed(t);
       /* First record overall (no master yet) defines the master loop; otherwise
        * the new track records freely from the loop top. Both are RECORDING,
        * distinguished by clock.length. */
@@ -631,6 +650,9 @@ static void apply_command(le_engine* e, const le_command* cmd) {
       if (!valid_channel(e, ch)) break;
       le_track* t = &e->tracks[ch];
       if (load_i32(&t->a_state) == LE_TRACK_EMPTY && len > 0) {
+        /* The restored loop may differ in length from whatever the leftover
+         * armed shadows were sized for — drop them (control reclaimed). */
+        le_dub_drop_armed(t);
         const int32_t base = e->clock.length > 0 ? e->clock.length : len;
         int32_t k = len / base;
         if (k < 1) k = 1;

@@ -81,17 +81,25 @@ static int track_acquire_slot(le_track* t) {
  * the fx delay-line pattern. */
 static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
-  const size_t cap = (size_t)engine->max_loop_frames;
   const int32_t lanes = le_lanes_active(t);
+  /* Undo layers are sized to the loop length rounded to LE_LAYER_QUANTUM — a
+   * 2 s loop's layer costs ~2 s of floats, not the recording cap. An
+   * EMPTY-start post (rec/dub, fixed multiple — final length unknown until
+   * finalize) still sizes at the full cap. */
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  int32_t want = engine->max_loop_frames;
+  if (len > 0) {
+    want =
+        ((len + LE_LAYER_QUANTUM - 1) / LE_LAYER_QUANTUM) * LE_LAYER_QUANTUM;
+    if (want > engine->max_loop_frames) want = engine->max_loop_frames;
+  }
   while (t->outstanding_count < LE_DUB_SHADOWS) {
     const int slot = track_acquire_slot(t);
     if (slot < 0) return; /* pool exhausted beyond eviction: skip boundaries */
     int ok = 1;
     for (int32_t l = 0; l < lanes; ++l) {
-      le_lane* ln = &t->lanes[l];
-      if (ln->pool[slot] == NULL) {
-        ln->pool[slot] = (float*)calloc(cap, sizeof(float));
-        if (ln->pool[slot] == NULL) ok = 0; /* OOM: do not post a torn slot */
+      if (!le_lane_ensure_slot(&t->lanes[l], slot, want)) {
+        ok = 0; /* OOM: do not post a torn slot */
       }
     }
     if (!ok) return;
@@ -211,13 +219,21 @@ void le_engine_drain_events(le_engine* engine) {
    * thread pushes the final retire event BEFORE clearing the flag (the push is
    * the release), so after an acquire-load reads 0 one more pop pass is
    * guaranteed to see that event — then the stack is complete and the queued
-   * taps peel the layers the user asked for. */
+   * taps peel the layers the user asked for.
+   *
+   * The same sweep replenishes shadow slots for any in-flight session that is
+   * short (a capture that ran straight into overdub — rec/dub, fixed
+   * multiple — starts with none; the length is known by now, so the slots are
+   * loop-length-sized). */
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     le_track* t = &engine->tracks[ch];
-    if (t->queued_undo <= 0) continue;
-    if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
-      continue; /* still capturing/draining: keep waiting */
+    const int in_flight =
+        atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire);
+    if (in_flight && t->outstanding_count < LE_DUB_SHADOWS) {
+      le_post_dub_shadows(engine, ch);
     }
+    if (t->queued_undo <= 0) continue;
+    if (in_flight) continue; /* still capturing/draining: keep waiting */
     while (le_ring_pop(&engine->evt_ring, &evt)) {
       if (evt.code == LE_EVT_LAYER_RETIRED) le_handle_retired(engine, &evt);
     }
@@ -236,7 +252,14 @@ static void le_prepare_new_capture(le_engine* engine, le_track* t) {
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &t->lanes[l];
     const int live = load_i32(&ln->a_live);
-    if (ln->pool[live] != NULL) memset(ln->pool[live], 0, n * sizeof(float));
+    /* A recording target must hold the full cap: undo may have swapped a
+     * loop-length-quantized snapshot slot into a_live. Grow-only-if-allocated:
+     * a never-used lane stays lazily NULL (the audio thread's null guard
+     * plays/records it as silence, unchanged). The track is EMPTY, so the
+     * audio thread never dereferences the slot while it regrows. */
+    if (ln->pool[live] == NULL) continue;
+    if (!le_lane_ensure_slot(ln, live, engine->max_loop_frames)) continue;
+    memset(ln->pool[live], 0, n * sizeof(float));
   }
 }
 
@@ -328,20 +351,41 @@ static int le_grid_still_needed(le_engine* engine, int32_t channel) {
  * undone-to-empty resurrect length), cancels queued undo taps, and unmutes
  * every active lane so the new recording is always audible — a Stop-muted or
  * cleared track never records into silence. The mute commands ride the ring so
- * they order before the record/arm command that follows. Shadow slots are
- * posted unconditionally: rec/dub and a fixed/grow-to-cap multiple can carry
- * this capture straight into overdub on the audio thread, which control cannot
- * always predict. */
+ * they order before the record/arm command that follows.
+ *
+ * NO shadow slots are posted here: the loop length is unknown until finalize,
+ * so a slot allocated now would have to be recording-cap-sized — defeating the
+ * loop-length quantization. Instead the capture start DROPS any leftover armed
+ * slots audio-side (handle_record's EMPTY case; they may be sized for a
+ * previous, shorter loop) and `outstanding` is reclaimed here — safe because
+ * an EMPTY track can have no layer in flight, hence no retire events to
+ * mis-attribute, and nothing re-posts this track's slots until content exists.
+ * A capture that runs straight into overdub (rec/dub, fixed multiple) gets its
+ * correctly-sized slots from the poll-driven replenish in
+ * le_engine_drain_events once the length is known; its first pass goes
+ * un-backed and merges into the next boundary — coherent, never torn. */
 static void le_begin_empty_capture(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   le_clear_redo(t);
   t->queued_undo = 0;
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {
+    /* A fresh capture can grow to the recording cap, but undo may have left a
+     * loop-length-quantized snapshot slot live — regrow it first
+     * (grow-only-if-allocated: never-used lanes stay lazily NULL). Safe here:
+     * the track is (effectively) EMPTY, so the audio thread reads the pointer
+     * but never dereferences it, and the RECORD/ARM command that changes that
+     * is only pushed after this returns (ring FIFO). Same pattern as
+     * le_engine_set_lane_count's live-lane allocation. */
+    le_lane* ln = &t->lanes[l];
+    const int live = load_i32(&ln->a_live);
+    if (ln->pool[live] != NULL) {
+      le_lane_ensure_slot(ln, live, engine->max_loop_frames);
+    }
     le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_MUTE,
                                      .lanef = {channel, l, 0.0f}});
   }
-  le_post_dub_shadows(engine, channel);
+  t->outstanding_count = 0; /* reclaim; audio drops its armed slots at start */
 }
 
 /* One-time bookkeeping for an overdub punch-in (or arm) over existing content
@@ -583,6 +627,10 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     const int32_t next = t->redo_stack[--t->redo_count];
     for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
     t->empty_len = 0;
+    /* Leftover armed shadows may be sized for a different loop; the audio
+     * thread drops them when the command applies. Same no-in-flight argument
+     * as the record-from-empty reclaim. */
+    t->outstanding_count = 0;
     le_mark_state_cmd(t, LE_TRACK_PLAYING);
     le_track_set_len(t, len);
     store_i32(&t->a_redo_depth, t->redo_count);
@@ -900,12 +948,10 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
     for (int32_t l = old; l < count; ++l) {
       le_lane* ln = &t->lanes[l];
       le_lane_reset(ln, l); /* defaults to recording hardware input channel l */
-      if (ln->pool[0] == NULL) {
-        ln->pool[0] = (float*)calloc(cap, sizeof(float));
-        if (ln->pool[0] == NULL) return LE_ERR_INVALID;
-      } else {
-        memset(ln->pool[0], 0, cap * sizeof(float));
+      if (!le_lane_ensure_slot(ln, 0, engine->max_loop_frames)) {
+        return LE_ERR_INVALID;
       }
+      memset(ln->pool[0], 0, cap * sizeof(float));
     }
   }
   t->lane_count = count;

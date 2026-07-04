@@ -45,6 +45,15 @@ extern "C" {
  * sized by this (2 KB per lane), not audio. */
 #define LE_POOL_SLOTS 256
 
+/* Undo-layer buffers are sized to the track's ACTUAL loop length rounded up to
+ * this quantum (frames), not to max_loop_frames — a 2 s loop's undo layer
+ * costs ~2 s of floats, not the 30 s (or 8 min) cap. The quantum keeps slot
+ * reuse across small length changes allocation-free. The LIVE buffer of a
+ * recording track is the exception: a fresh capture can grow to the cap, so
+ * every path that starts a recording first regrows the live slot to
+ * max_loop_frames (see le_lane_ensure_slot). */
+#define LE_LAYER_QUANTUM 48000
+
 /* SAMPLES of live->shadow copy per track per le_engine_process call while a
  * partially backed-up overdub layer drains after punch-out. The per-track
  * budget is divided by the track's active lane count (the copy runs per
@@ -154,6 +163,10 @@ typedef struct le_lane {
   _Atomic int32_t a_muted;         /* per-lane mute */
 
   float* pool[LE_POOL_SLOTS]; /* lazily allocated loop buffers */
+  int32_t pool_cap[LE_POOL_SLOTS]; /* allocated frames per slot (0 = none).
+                                    * Undo layers are quantized to the track's
+                                    * length; only a recording live slot needs
+                                    * the full max_loop_frames. */
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
   _Atomic int32_t a_len;      /* recorded length (== the track's length) */
   _Atomic uint32_t a_rms_bits;

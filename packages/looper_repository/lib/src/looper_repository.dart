@@ -369,6 +369,8 @@ class LooperRepository {
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
           redoDepth: s.tracks[i].redoDepth,
+          layerInFlight: s.tracks[i].layerInFlight,
+          pending: s.tracks[i].pending,
           multiple: s.tracks[i].multiple,
           inputMask: s.tracks[i].inputMask,
           outputMask: s.tracks[i].outputMask,

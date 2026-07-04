@@ -42,6 +42,9 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->output_mask =
       atomic_load_explicit(&l0->a_output_mask, memory_order_relaxed);
   out->lane_count = le_lanes_active(tr);
+  out->layer_in_flight =
+      atomic_load_explicit(&tr->a_layer_in_flight, memory_order_acquire);
+  out->pending = load_i32(&tr->a_pending);
 }
 
 /* Max added latency (frames) across every active octaver in any record-route or
@@ -135,6 +138,8 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->input_mask = 0x1u;
     out->output_mask = 0x3u;
     out->lane_count = 1;
+    out->layer_in_flight = 0;
+    out->pending = 0;
     return;
   }
   le_fill_track_snapshot(&engine->tracks[channel], 1, out);

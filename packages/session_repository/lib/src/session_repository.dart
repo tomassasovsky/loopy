@@ -39,6 +39,7 @@ class SessionRepository {
   /// writing the manifest, per-track stems, and a mixdown. Returns the saved
   /// [Session] manifest.
   Future<Session> save(String directory) async {
+    await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
 
@@ -132,6 +133,7 @@ class SessionRepository {
 
   /// Exports a single mixed-down WAV of the current session to [path].
   Future<void> exportMixdown(String path) async {
+    await _awaitLayersSettled();
     final captured = _capture();
     final mix = _mixdown(captured);
     await File(path).writeAsBytes(
@@ -145,6 +147,7 @@ class SessionRepository {
 
   /// Exports each track's loop as a separate stem WAV in [directory].
   Future<void> exportStems(String directory) async {
+    await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
     for (final track in captured.tracks) {
@@ -251,6 +254,21 @@ class SessionRepository {
       await Future<void>.delayed(_clearPollInterval);
     }
     return false;
+  }
+
+  /// Waits until no track has an overdub undo layer in flight (the punch-out
+  /// fade tail / drain window, ~tens of ms): exporting during it would copy a
+  /// buffer the audio thread is still writing, losing the tail. Throws on
+  /// timeout rather than silently exporting a mid-fade stem.
+  Future<void> _awaitLayersSettled() async {
+    for (var attempt = 0; attempt < _clearPollAttempts; attempt++) {
+      final snapshot = _engine.snapshot();
+      if (snapshot.tracks.every((t) => !t.layerInFlight)) return;
+      await Future<void>.delayed(_clearPollInterval);
+    }
+    throw StateError(
+      'an overdub layer never settled — cannot export a stable capture',
+    );
   }
 }
 
