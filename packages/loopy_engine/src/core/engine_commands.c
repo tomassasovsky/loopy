@@ -4,10 +4,16 @@
  * THREAD OWNERSHIP: control thread (the Dart-facing FFI setters). Almost every
  * function here validates its arguments and posts a command into the SPSC ring
  * (le_push) for the audio thread to apply; the exceptions do control-thread work
- * the audio thread is guaranteed not to race — taking the pre-overdub undo
- * snapshot (le_push_overdub_snapshot copies a read-only buffer), the O(1) undo/redo
- * buffer-index swaps, the quantize/auto-record arm bookkeeping, and the lazy
- * effect-buffer / lane allocation in le_fx_prepare_entry / le_engine_set_lane_count.
+ * the audio thread is guaranteed not to race — the O(1) undo/redo buffer-index
+ * swaps, the shadow-slot supply + retired-layer collection (le_engine_drain_events),
+ * the quantize/auto-record arm bookkeeping, and the lazy effect-buffer / lane
+ * allocation in le_fx_prepare_entry / le_engine_set_lane_count.
+ *
+ * Undo layers are captured PER OVERDUB PASS on the audio thread (backup-on-write
+ * into a pre-posted shadow slot — see engine_process.c); completed layers come
+ * back through the evt_ring and are pushed onto the control-side stacks here.
+ * Control mutations follow push-then-mutate: state is only changed after the
+ * matching ring command was accepted, so a full ring never desyncs the two sides.
  *
  * Split verbatim out of engine.c (S1) behind the unchanged ABI. Shared helpers
  * (le_push, valid_channel, le_lanes_active, le_lane_reset)
@@ -24,16 +30,17 @@
 #include "engine_private.h"
 #include "loopy_engine_api.h"
 
-/* Returns a pool slot INDEX that is neither the (shared) live index nor
- * referenced by either undo/redo stack. The same index names the snapshot in
- * every lane — the undo span is lockstep across lanes — so this works on the
- * track-level stacks plus lane 0's live index (all lanes share it). If the pool
- * is full, evicts the oldest undo entry and reuses its slot. Returns -1 only if
- * nothing can be freed. Allocation of the slot's buffer happens per lane in
- * le_push_overdub_snapshot. */
+/* Returns a pool slot INDEX that is neither the (shared) live index, nor
+ * referenced by either undo/redo stack, nor posted to the audio thread as a
+ * shadow (outstanding). The same index names the snapshot in every lane — the
+ * undo span is lockstep across lanes — so this works on the track-level stacks
+ * plus lane 0's live index (all lanes share it). If the pool is full, evicts
+ * the oldest undo entry and reuses its slot (never an audio-held one). Returns
+ * -1 only if nothing can be freed. Allocation of the slot's buffers happens per
+ * lane in le_post_dub_shadows. */
 static int track_acquire_slot(le_track* t) {
   const int live = load_i32(&t->lanes[0].a_live);
-  for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+  for (int i = 0; i < LE_POOL_SLOTS; ++i) {
     if (i == live) continue;
     int used = 0;
     for (int k = 0; k < t->undo_count && !used; ++k) {
@@ -41,6 +48,9 @@ static int track_acquire_slot(le_track* t) {
     }
     for (int k = 0; k < t->redo_count && !used; ++k) {
       if (t->redo_stack[k] == i) used = 1;
+    }
+    for (int k = 0; k < t->outstanding_count && !used; ++k) {
+      if (t->outstanding_slots[k] == i) used = 1;
     }
     if (!used) return i;
   }
@@ -51,9 +61,168 @@ static int track_acquire_slot(le_track* t) {
       t->undo_stack[k - 1] = t->undo_stack[k];
     }
     t->undo_count--;
+    store_i32(&t->a_undo_depth, t->undo_count);
     return slot;
   }
   return -1;
+}
+
+/* How many shadow slots control keeps posted to the audio thread per capturing
+ * track: the armed one plus one spare, so a pass boundary can rotate without
+ * waiting a control round-trip. */
+#define LE_DUB_SHADOWS 2
+
+/* Tops the track's posted shadow slots up to LE_DUB_SHADOWS (control thread):
+ * acquires a free pool slot, lazily allocates its buffer on every active lane,
+ * and posts it via LE_CMD_DUB_SHADOW. Push-then-mutate: the slot only becomes
+ * `outstanding` once the ring accepted the command (a lazily allocated buffer
+ * stays in the pool either way). The audio thread arms the slot as its next
+ * shadow; the ring's release/acquire publishes the fresh buffers, exactly like
+ * the fx delay-line pattern. */
+static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
+  le_track* t = &engine->tracks[channel];
+  const size_t cap = (size_t)engine->max_loop_frames;
+  const int32_t lanes = le_lanes_active(t);
+  while (t->outstanding_count < LE_DUB_SHADOWS) {
+    const int slot = track_acquire_slot(t);
+    if (slot < 0) return; /* pool exhausted beyond eviction: skip boundaries */
+    int ok = 1;
+    for (int32_t l = 0; l < lanes; ++l) {
+      le_lane* ln = &t->lanes[l];
+      if (ln->pool[slot] == NULL) {
+        ln->pool[slot] = (float*)calloc(cap, sizeof(float));
+        if (ln->pool[slot] == NULL) ok = 0; /* OOM: do not post a torn slot */
+      }
+    }
+    if (!ok) return;
+    if (le_push_cmd(engine, (le_command){.code = LE_CMD_DUB_SHADOW,
+                                         .lanei = {channel, 0, slot}}) !=
+        LE_OK) {
+      return; /* ring full: try again on the next drain/press */
+    }
+    t->outstanding_slots[t->outstanding_count++] = slot;
+  }
+}
+
+/* One undo step on a track that has stacked layers (control thread): swap the
+ * live pool index back to the top undo snapshot and push the previous live onto
+ * the redo stack — every active lane in lockstep (the one undo span). The
+ * caller has verified the track is not capturing and no layer is in flight. */
+static void le_undo_swap(le_track* t) {
+  const int32_t prev = t->undo_stack[--t->undo_count];
+  const int32_t lanes = le_lanes_active(t);
+  t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
+  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
+  store_i32(&t->a_undo_depth, t->undo_count);
+  store_i32(&t->a_redo_depth, t->redo_count);
+}
+
+/* Clears a track's redo history (control thread) — a fresh action (punch-in,
+ * new recording, session import) invalidates the resurrect path, including the
+ * undone-to-empty length. */
+static void le_clear_redo(le_track* t) {
+  t->redo_count = 0;
+  t->empty_len = 0;
+  store_i32(&t->a_redo_depth, 0);
+}
+
+/* The track's effective state for control-side decisions: the target of a
+ * posted-but-unapplied state-flip command (UNDO_TO_EMPTY / REDO_FROM_EMPTY /
+ * CLEAR), or the published a_state once everything posted has been acked.
+ * Ring FIFO makes this deterministic — no observation race. */
+static int32_t le_effective_state(le_track* t) {
+  /* Acquire pairs with the audio thread's release on the ack bump, so once the
+   * counters match, the a_state store that preceded the ack is visible. */
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return t->pending_target;
+  }
+  return load_i32(&t->a_state);
+}
+
+/* Marks a successfully posted state-flip command (control thread). */
+static void le_mark_state_cmd(le_track* t, int32_t target) {
+  t->state_cmds_posted++;
+  t->pending_target = target;
+}
+
+/* Defined below with the quantize machinery; needed by the undo-to-empty
+ * paths so a pending arm can't fire a surprise recording on an emptied track. */
+static void le_cancel_arm(le_engine* engine, int32_t channel);
+
+/* Applies undo taps that were queued while a layer was in flight (control
+ * thread, called from the event drain once the flight flag cleared). Each
+ * queued tap peels one layer; past the last stacked layer it falls through to
+ * the undo-to-empty path exactly like a live tap would. */
+static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
+  le_track* t = &engine->tracks[channel];
+  while (t->queued_undo > 0) {
+    t->queued_undo--;
+    if (t->undo_count > 0) {
+      le_undo_swap(t);
+      continue;
+    }
+    const int32_t st = le_effective_state(t);
+    const int32_t len = load_i32(&t->lanes[0].a_len);
+    if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || len <= 0) break;
+    if (le_push(engine, LE_CMD_UNDO_TO_EMPTY, channel, 0.0f) != LE_OK) break;
+    le_cancel_arm(engine, channel);
+    t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
+    t->empty_len = len;
+    le_mark_state_cmd(t, LE_TRACK_EMPTY);
+    store_i32(&t->a_redo_depth, t->redo_count);
+    break; /* empty now — further queued taps are no-ops */
+  }
+  t->queued_undo = 0;
+}
+
+/* Handles one retired-layer event (control thread): returns the slot from the
+ * audio thread's hands (`outstanding`) onto the undo stack, and replenishes the
+ * spare while the dub session keeps running. */
+static void le_handle_retired(le_engine* engine, const le_command* evt) {
+  const int32_t ch = evt->evt.channel;
+  if (ch < 0 || ch >= engine->track_count) return;
+  le_track* t = &engine->tracks[ch];
+  if (evt->evt.generation != t->dub_generation) {
+    return; /* pre-clear era: the slot was already reclaimed by the clear */
+  }
+  for (int k = 0; k < t->outstanding_count; ++k) {
+    if (t->outstanding_slots[k] == evt->evt.slot) {
+      t->outstanding_slots[k] = t->outstanding_slots[--t->outstanding_count];
+      break;
+    }
+  }
+  if (t->undo_count < LE_POOL_SLOTS) {
+    t->undo_stack[t->undo_count++] = evt->evt.slot;
+    store_i32(&t->a_undo_depth, t->undo_count);
+  }
+  if (load_i32(&t->a_layer_in_flight)) {
+    le_post_dub_shadows(engine, ch); /* the dub continues: keep 2 posted */
+  }
+}
+
+void le_engine_drain_events(le_engine* engine) {
+  if (engine == NULL) return;
+  le_command evt;
+  while (le_ring_pop(&engine->evt_ring, &evt)) {
+    if (evt.code == LE_EVT_LAYER_RETIRED) le_handle_retired(engine, &evt);
+  }
+  /* Queued undo taps apply once their track's flight flag clears. The audio
+   * thread pushes the final retire event BEFORE clearing the flag (the push is
+   * the release), so after an acquire-load reads 0 one more pop pass is
+   * guaranteed to see that event — then the stack is complete and the queued
+   * taps peel the layers the user asked for. */
+  for (int32_t ch = 0; ch < engine->track_count; ++ch) {
+    le_track* t = &engine->tracks[ch];
+    if (t->queued_undo <= 0) continue;
+    if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+      continue; /* still capturing/draining: keep waiting */
+    }
+    while (le_ring_pop(&engine->evt_ring, &evt)) {
+      if (evt.code == LE_EVT_LAYER_RETIRED) le_handle_retired(engine, &evt);
+    }
+    le_apply_queued_undo(engine, ch);
+  }
 }
 
 /* Zeroes every active lane's live buffer (control thread) before a fresh capture
@@ -71,45 +240,6 @@ static void le_prepare_new_capture(le_engine* engine, le_track* t) {
   }
 }
 
-/* Snapshots a track's pre-overdub content onto the one undo span (control
- * thread), clearing redo history; the audio thread treats the live buffers as
- * read-only at this point. The same slot index holds the snapshot in every
- * active lane (lockstep), each lane's buffer lazily allocated here. [len] is the
- * track's current length (k * base). */
-static void le_push_overdub_snapshot(le_engine* engine, le_track* t,
-                                     int32_t len) {
-  t->redo_count = 0;
-  const int slot = track_acquire_slot(t);
-  if (slot >= 0) {
-    const size_t n = (size_t)len;                          /* mono */
-    const size_t cap = (size_t)engine->max_loop_frames;
-    const int32_t lanes = le_lanes_active(t);
-    for (int32_t l = 0; l < lanes; ++l) {
-      le_lane* ln = &t->lanes[l];
-      const int live = load_i32(&ln->a_live);
-      if (ln->pool[live] == NULL) continue; /* lane has no content yet */
-      if (ln->pool[slot] == NULL) {
-        ln->pool[slot] = (float*)calloc(cap, sizeof(float));
-        if (ln->pool[slot] == NULL) continue; /* OOM: skip this lane */
-      }
-      memcpy(ln->pool[slot], ln->pool[live], n * sizeof(float));
-    }
-    t->undo_stack[t->undo_count++] = slot;
-    store_i32(&t->a_undo_depth, t->undo_count);
-  }
-  store_i32(&t->a_redo_depth, 0);
-}
-
-/* Reverses the most recent undo layer pushed by le_push_overdub_snapshot, used
- * when a pending quantized overdub is cancelled. The freed slot returns to the
- * pool; redo history was already cleared (a new action clears it). */
-static void le_pop_overdub_snapshot(le_track* t) {
-  if (t->undo_count > 0) {
-    t->undo_count--;
-    store_i32(&t->a_undo_depth, t->undo_count);
-  }
-}
-
 /* The effective quantize state for [channel]: its per-track override, or the
  * global default when the track inherits (override < 0). */
 static int le_effective_quantize(const le_engine* engine, int32_t channel) {
@@ -117,16 +247,13 @@ static int le_effective_quantize(const le_engine* engine, int32_t channel) {
   return ov < 0 ? engine->quantize : ov;
 }
 
-/* Cancels a pending quantized arm (control thread): disarms, reverses any
- * pre-overdub snapshot, and tells the audio thread to clear the pending flag.
- * No-op when the track is not armed. */
+/* Cancels a pending quantized arm (control thread): disarms and tells the
+ * audio thread to clear the pending flag. Arming creates no undo layer (layers
+ * are captured per pass once the overdub actually runs), so there is nothing
+ * to reverse. No-op when the track is not armed. */
 static void le_cancel_arm(le_engine* engine, int32_t channel) {
   if (!engine->armed[channel]) return;
   engine->armed[channel] = 0;
-  if (engine->arm_snapshotted[channel]) {
-    le_pop_overdub_snapshot(&engine->tracks[channel]);
-    engine->arm_snapshotted[channel] = 0;
-  }
   le_push(engine, LE_CMD_DISARM, channel, 0.0f);
 }
 
@@ -165,17 +292,98 @@ static void le_snapshot_input_fx_to_lanes(le_engine* engine, le_track* t) {
   engine->snapshot_copy_count++;
 }
 
+/* Whether any track is driving the loop clock (playing or capturing). A
+ * quantized action can only fire at a loop top if the transport is actually
+ * ticking — with everything parked or empty the clock is HELD at the top
+ * (advance_transport_frame's idle branch), so a deferred action would wait
+ * forever. Callers act immediately instead: the held position IS the top. */
+static int le_transport_active(le_engine* engine) {
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    const int32_t st = le_effective_state(&engine->tracks[c]);
+    if (st == LE_TRACK_PLAYING || st == LE_TRACK_RECORDING ||
+        st == LE_TRACK_OVERDUBBING) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+/* Whether the kept master grid is still needed by any track OTHER than
+ * [channel]: content (or a pending length), an undo history, or an
+ * undone-to-empty redo history that would resurrect onto that grid. When
+ * nothing needs it, a fresh recording is free to redefine the tempo. */
+static int le_grid_still_needed(le_engine* engine, int32_t channel) {
+  for (int32_t c = 0; c < engine->track_count; ++c) {
+    le_track* o = &engine->tracks[c];
+    if (c == channel) continue;
+    if (le_effective_state(o) != LE_TRACK_EMPTY) return 1;
+    if (load_i32(&o->lanes[0].a_len) > 0) return 1;
+    if (o->undo_count > 0 || o->redo_count > 0 || o->empty_len > 0) return 1;
+  }
+  return 0;
+}
+
+/* One-time bookkeeping for a capture starting (or arming) on an EMPTY track
+ * (control thread): a fresh take invalidates redo history (including the
+ * undone-to-empty resurrect length), cancels queued undo taps, and unmutes
+ * every active lane so the new recording is always audible — a Stop-muted or
+ * cleared track never records into silence. The mute commands ride the ring so
+ * they order before the record/arm command that follows. Shadow slots are
+ * posted unconditionally: rec/dub and a fixed/grow-to-cap multiple can carry
+ * this capture straight into overdub on the audio thread, which control cannot
+ * always predict. */
+static void le_begin_empty_capture(le_engine* engine, int32_t channel) {
+  le_track* t = &engine->tracks[channel];
+  le_clear_redo(t);
+  t->queued_undo = 0;
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < lanes; ++l) {
+    le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_MUTE,
+                                     .lanef = {channel, l, 0.0f}});
+  }
+  le_post_dub_shadows(engine, channel);
+}
+
+/* One-time bookkeeping for an overdub punch-in (or arm) over existing content
+ * (control thread): invalidates redo, cancels queued undo taps, and supplies
+ * the audio thread's shadow slots for per-pass layer capture. No snapshot is
+ * copied here — the first pass's backup-on-write captures the pre-dub content
+ * incrementally on the audio thread. */
+static void le_begin_punch_in(le_engine* engine, int32_t channel) {
+  le_track* t = &engine->tracks[channel];
+  le_clear_redo(t);
+  t->queued_undo = 0;
+  le_post_dub_shadows(engine, channel);
+}
+
 int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
-  const int32_t st = load_i32(&t->a_state);
-  /* The track's length (k * base) — all lanes share it, so lane 0 is canonical. */
+  const int32_t st = le_effective_state(t);
+  /* The track's length (k * base) — all lanes share it, so lane 0 is canonical.
+   * Kept coherent with the effective state: the undo-to-empty / redo-from-empty
+   * paths store it control-side when they post. */
   const int32_t len = load_i32(&t->lanes[0].a_len);
-  const int has_master = load_i32(&engine->a_master_len) > 0;
+  int has_master = load_i32(&engine->a_master_len) > 0;
+
+  /* A fresh take on an otherwise-empty looper redefines the grid. Undo-to-
+   * empty deliberately keeps the master (redo needs it), but once the user
+   * records fresh — invalidating this track's redo — a ghost grid would lock
+   * the new loop to the dead tempo (and a quantized press would arm for a
+   * loop top the held clock never reaches). An internal clear resets the
+   * master through handle_clear's all-empty path, making this the defining
+   * recording — unless a sibling still needs the grid (content, undo, or an
+   * undone-to-empty redo that resurrects onto it). */
+  if (st == LE_TRACK_EMPTY && has_master &&
+      !le_grid_still_needed(engine, channel) &&
+      le_engine_clear(engine, channel) == LE_OK) {
+    has_master = 0; /* the CLEAR ahead of us in the ring resets the grid */
+  }
 
   /* Snapshot-on-record (D2/D3): a track first leaving EMPTY deep-copies each
    * lane's recorded-input monitor chain onto the lane, so the take plays back
@@ -200,52 +408,51 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
       return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
     }
     engine->armed[channel] = 1;
-    engine->arm_snapshotted[channel] = 0;
     engine->armed_trigger[channel] = 1; /* input-level trigger */
+    le_begin_empty_capture(engine, channel);
     le_prepare_new_capture(engine, t);
     return le_push(engine, LE_CMD_ARM, channel, 1.0f);
   }
 
   /* Quantized: defer the action to the next base-loop top instead of acting on
    * the press, so captures align to the grid. The defining recording (no master
-   * yet) always acts immediately — it sets the grid. Per-track overrides win
-   * over the global default. */
-  if (le_effective_quantize(engine, channel) && has_master) {
+   * yet) always acts immediately — it sets the grid. So does a press while the
+   * transport is held (everything parked/empty): the clock never ticks then, a
+   * deferred arm would deadlock, and the held position IS the loop top, so
+   * immediate is on-grid by definition. Per-track overrides win over the
+   * global default. */
+  if (le_effective_quantize(engine, channel) && has_master &&
+      le_transport_active(engine)) {
     /* If we armed this track but the boundary already fired it, the arm is
      * spent (published a_pending cleared); fall through to a fresh decision on
      * the now-current state. */
     if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
       engine->armed[channel] = 0;
-      engine->arm_snapshotted[channel] = 0;
     }
     if (engine->armed[channel]) {
       /* Second press before the boundary cancels the pending action. */
       engine->armed[channel] = 0;
-      if (engine->arm_snapshotted[channel]) {
-        le_pop_overdub_snapshot(t);
-        engine->arm_snapshotted[channel] = 0;
-      }
       return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
     }
     /* Arm: do the one-time prep an immediate record would, then defer. */
     engine->armed[channel] = 1;
-    engine->arm_snapshotted[channel] = 0;
     engine->armed_trigger[channel] = 0; /* loop-top trigger */
     if (st == LE_TRACK_EMPTY) {
+      le_begin_empty_capture(engine, channel);
       le_prepare_new_capture(engine, t);
     } else if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
-      le_push_overdub_snapshot(engine, t, len);
-      engine->arm_snapshotted[channel] = 1;
+      le_begin_punch_in(engine, channel);
     }
     return le_push(engine, LE_CMD_ARM, channel, 0.0f);
   }
 
   /* Immediate (quantize off, or the defining recording). */
-  if (st == LE_TRACK_EMPTY && has_master) {
-    le_prepare_new_capture(engine, t);
+  if (st == LE_TRACK_EMPTY) {
+    le_begin_empty_capture(engine, channel);
+    if (has_master) le_prepare_new_capture(engine, t);
   }
   if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
-    le_push_overdub_snapshot(engine, t, len);
+    le_begin_punch_in(engine, channel);
   }
   return le_push(engine, LE_CMD_RECORD, channel, 0.0f);
 }
@@ -257,39 +464,81 @@ int32_t le_engine_play(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_PLAY, channel, 0.0f);
 }
 int32_t le_engine_clear(le_engine* engine, int32_t channel) {
-  if (engine != NULL && channel >= 0 && channel < engine->track_count) {
-    le_track* t = &engine->tracks[channel];
-    t->undo_count = 0;
-    t->redo_count = 0;
-    store_i32(&t->a_undo_depth, 0);
-    store_i32(&t->a_redo_depth, 0);
-    engine->armed[channel] = 0;
-    engine->arm_snapshotted[channel] = 0;
+  if (engine == NULL || channel < 0 || channel >= engine->track_count) {
+    return le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
   }
-  return le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
+  le_engine_drain_events(engine);
+  le_track* t = &engine->tracks[channel];
+  /* Push-then-mutate: only a clear the audio thread will actually apply may
+   * reset the control-side bookkeeping (and bump the generation the audio
+   * thread mirrors in handle_clear — one bump per applied CLEAR keeps the two
+   * counters equal without sharing a variable). */
+  const int32_t rc = le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
+  if (rc != LE_OK) return rc;
+  t->undo_count = 0;
+  le_clear_redo(t);
+  store_i32(&t->a_undo_depth, 0);
+  /* Reclaim every shadow slot the audio thread holds: it drops them when the
+   * CLEAR applies, and any later re-post travels the command ring behind that
+   * CLEAR, so a reclaimed slot can never be armed twice. The generation bump
+   * makes any still-in-ring retire event from before the clear stale. */
+  t->outstanding_count = 0;
+  t->queued_undo = 0;
+  t->dub_generation++;
+  le_mark_state_cmd(t, LE_TRACK_EMPTY);
+  le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
+  engine->armed[channel] = 0;
+  return LE_OK;
 }
 
-/* Undo/redo run entirely on the control thread: they swap the live pool index
- * (atomic; the audio thread's only window into the buffers) on EVERY active lane
- * in lockstep, so the one undo span moves all lanes together. Allowed only when
- * the track is not capturing, so the audio thread sees a stable a_live. */
+/* Undo/redo run on the control thread: they swap the live pool index (atomic;
+ * the audio thread's only window into the buffers) on EVERY active lane in
+ * lockstep, so the one undo span moves all lanes together. Allowed only when
+ * the track is not capturing AND no layer is in flight (tail/drain still
+ * writing), so the audio thread sees a stable a_live — an undo tapped during
+ * that window is queued and applied when the layer retires, never lost. */
 int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
-  const int32_t st = load_i32(&t->a_state);
+  const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
     return LE_ERR_INVALID;
   }
-  if (t->undo_count == 0) return LE_ERR_INVALID;
-  const int32_t prev = t->undo_stack[--t->undo_count];
-  const int32_t lanes = le_lanes_active(t);
+  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    t->queued_undo++; /* applied on retire — see le_engine_drain_events */
+    return LE_OK;
+  }
+  /* The flight flag cleared: its final retire event was pushed before the
+   * clear, so one more drain is guaranteed to have it on the stack. */
+  le_engine_drain_events(engine);
+  if (t->undo_count > 0) {
+    le_undo_swap(t);
+    return LE_OK;
+  }
+  /* No stacked layers left: undoing the base recording itself empties the
+   * track (pedal/UI see no content) while the redo stack keeps the live slot,
+   * so redo can reinstate it layer by layer. The master grid is deliberately
+   * kept — redo needs it, and a full reset stays Clear's job. */
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || len <= 0) {
+    return LE_ERR_INVALID;
+  }
+  if (le_push(engine, LE_CMD_UNDO_TO_EMPTY, channel, 0.0f) != LE_OK) {
+    return LE_ERR_INVALID;
+  }
+  /* An emptied track must not have a quantized/auto-record arm still pending —
+   * it would fire a surprise fresh recording at the next loop top. */
+  le_cancel_arm(engine, channel);
   t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
-  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
-  store_i32(&t->a_undo_depth, t->undo_count);
+  t->empty_len = len;
+  le_mark_state_cmd(t, LE_TRACK_EMPTY);
+  le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
+  store_i32(&t->a_multiple, 1);
   store_i32(&t->a_redo_depth, t->redo_count);
   return LE_OK;
 }
@@ -300,12 +549,45 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  le_engine_drain_events(engine);
   le_track* t = &engine->tracks[channel];
-  const int32_t st = load_i32(&t->a_state);
+  const int32_t st = le_effective_state(t);
   if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING) {
     return LE_ERR_INVALID;
   }
+  if (atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    return LE_ERR_INVALID; /* a fresh dub is in flight: nothing to redo */
+  }
   if (t->redo_count == 0) return LE_ERR_INVALID;
+  if (st == LE_TRACK_EMPTY) {
+    /* Reinstate an undone-to-empty track: the redo-top slot is its base
+     * content. The audio thread restores state/len/multiple on apply; the
+     * length is stored control-side too so snapshots (and a racing record
+     * press) are coherent immediately. */
+    const int32_t len = t->empty_len;
+    if (len <= 0) return LE_ERR_INVALID;
+    /* Resurrection is always audible: a leftover Stop-mute would otherwise
+     * bring the track back playing-but-silent (dark LED, no sound). Mirrors
+     * the record-from-empty rule; the unmutes ride the ring ahead of the
+     * state flip. */
+    const int32_t lanes = le_lanes_active(t);
+    for (int32_t l = 0; l < lanes; ++l) {
+      le_push_cmd(engine, (le_command){.code = LE_CMD_SET_LANE_MUTE,
+                                       .lanef = {channel, l, 0.0f}});
+    }
+    if (le_push_cmd(engine, (le_command){.code = LE_CMD_REDO_FROM_EMPTY,
+                                         .lanei = {channel, 0, len}}) !=
+        LE_OK) {
+      return LE_ERR_INVALID;
+    }
+    const int32_t next = t->redo_stack[--t->redo_count];
+    for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
+    t->empty_len = 0;
+    le_mark_state_cmd(t, LE_TRACK_PLAYING);
+    le_track_set_len(t, len);
+    store_i32(&t->a_redo_depth, t->redo_count);
+    return LE_OK;
+  }
   const int32_t next = t->redo_stack[--t->redo_count];
   const int32_t lanes = le_lanes_active(t);
   t->undo_stack[t->undo_count++] = load_i32(&t->lanes[0].a_live);
@@ -599,6 +881,16 @@ int32_t le_engine_set_lane_count(le_engine* engine, int32_t channel,
   if (count < 1) count = 1;
   if (count > LE_MAX_LANES) count = LE_MAX_LANES;
   le_track* t = &engine->tracks[channel];
+  /* Growing lanes mid-capture would leave the new lanes without buffers in
+   * the armed shadow slot (a later undo would swap their a_live to NULL —
+   * silencing them) and races the audio thread's shared write head. Reject
+   * while the track captures or a layer is still in flight; the caller
+   * retries trivially once the take settles. */
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING ||
+      atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire)) {
+    return LE_ERR_INVALID;
+  }
   const int32_t old = le_lanes_active(t);
   /* Lazily allocate the live buffer of each newly activated lane on this
    * (control) thread, before the audio thread reads it, and reset the lane to a

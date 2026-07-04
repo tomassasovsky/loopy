@@ -83,6 +83,9 @@ static int32_t le_max_fx_latency(le_engine* engine) {
 
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
+  /* Collect retired per-pass undo layers (and replenish shadow spares) on the
+   * UI's poll cadence, so undo depths stay fresh and queued undo taps apply. */
+  le_engine_drain_events(engine);
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->device_present =
       atomic_load_explicit(&engine->a_device_present, memory_order_acquire);

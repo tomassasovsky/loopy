@@ -318,8 +318,20 @@ class PedalCubit extends Cubit<PedalState> {
   /// Play mode: Rec/Play toggles the whole armed set between playing and parked.
   void _playToggleTransport() {
     final isPlaying = _playIsPlaying();
+    // An armed set can be running yet fully silent (every track muted from the
+    // keyboard/screen, which never parks). A dead early-return there would
+    // leave Rec/Play unresponsive in silence — fall through to _resumePlay,
+    // which unmutes and plays the set.
+    final anyAudible = _tracks.any(
+      (t) =>
+          state.playArmed.contains(t.channel) &&
+          !t.muted &&
+          (t.state == TrackState.playing ||
+              t.state == TrackState.overdubbing),
+    );
     final isPlayingAllWithContent =
         isPlaying &&
+        anyAudible &&
         state.playArmed.length == _tracks.where((t) => t.hasContent).length;
 
     if (isPlayingAllWithContent) return;
@@ -429,9 +441,12 @@ class PedalCubit extends Cubit<PedalState> {
   // --- Play-transport helpers ----------------------------------------------
 
   /// True when the Play transport is running (any armed track's playhead is
-  /// advancing — a muted-but-playing track still counts as running).
-  bool _playIsPlaying() =>
-      state.playArmed.any((c) => _trackAt(c)?.state == TrackState.playing);
+  /// advancing — a muted-but-playing track still counts as running, and an
+  /// overdubbing track is running by definition).
+  bool _playIsPlaying() => state.playArmed.any((c) {
+    final st = _trackAt(c)?.state;
+    return st == TrackState.playing || st == TrackState.overdubbing;
+  });
 
   /// Parks the armed set: freezes every armed track's playhead.
   void _parkPlay() {
@@ -534,12 +549,19 @@ class PedalCubit extends Cubit<PedalState> {
       _looper
         ..clear(channel: channel)
         ..setMute(muted: false, channel: channel);
-
-      unawaited(_settings.saveLaneMute(channel, 0, muted: false));
+      // Persist the unmute per lane (the engine unmutes every lane on clear),
+      // so a cleared track stays audible across a restart.
+      final lanes = _trackAt(channel)?.lanes.length ?? 1;
+      for (var lane = 0; lane < (lanes < 1 ? 1 : lanes); lane++) {
+        unawaited(_settings.saveLaneMute(channel, lane, muted: false));
+      }
     }
 
+    // Undone-to-empty tracks (canRedo) must be cleared too: only clear wipes
+    // their resurrect path, and the master grid resets when everything is
+    // empty — a surviving redo would reinstate a loop into a dead grid.
     for (final track in _tracks) {
-      if (track.hasContent) clearAndArm(track.channel);
+      if (track.hasContent || track.canRedo) clearAndArm(track.channel);
     }
 
     _selectTrack(0);
@@ -581,7 +603,10 @@ class PedalCubit extends Cubit<PedalState> {
     _undoTimer = null;
     if (!_undoHandled) {
       _log('undo ch=${state.selectedTrack}  (tap)');
-      _looper.undo(channel: state.selectedTrack); // tap = undo
+      // Per-layer undo all the way down: each tap peels one overdub pass, and
+      // undoing past the base recording empties the track while keeping redo
+      // able to reinstate it layer by layer (long-press). Never a clear.
+      _looper.undo(channel: state.selectedTrack);
     }
   }
 
@@ -593,10 +618,16 @@ class PedalCubit extends Cubit<PedalState> {
 
   // --- Overlay mutations ----------------------------------------------------
 
-  /// Selects [channel] as the Rec cursor. The presentation bridge mirrors it
+  /// Selects [channel] as the Rec cursor, following it into its bank (an
+  /// on-screen selection can land in the other bank; the pedal's bank LED and
+  /// track buttons must track the cursor). The presentation bridge mirrors it
   /// onto loopy's on-screen selection.
-  void _selectTrack(int channel) =>
-      _emitPedal(state.copyWith(selectedTrack: channel));
+  void _selectTrack(int channel) => _emitPedal(
+    state.copyWith(
+      selectedTrack: channel,
+      activeBank: channel ~/ PedalState.tracksPerBank,
+    ),
+  );
 
   void _setPlayArmed(Set<int> armed) =>
       _emitPedal(state.copyWith(playArmed: armed));
@@ -658,18 +689,43 @@ class PedalCubit extends Cubit<PedalState> {
   // Outbound projection
   // ---------------------------------------------------------------------------
 
+  /// Whether [track] is actually sounding in the mix: playing or overdubbing
+  /// recorded content, unmuted. Mute matters here: park-by-mute deliberately
+  /// empties the armed set while the stop commands are still in flight, and a
+  /// muted track must not re-arm through that window — while an unmute of a
+  /// still-playing track IS a fresh sounding edge and re-arms it.
+  static bool _sounding(Track? track) =>
+      track != null &&
+      track.hasContent &&
+      !track.muted &&
+      (track.state == TrackState.playing ||
+          track.state == TrackState.overdubbing);
+
   void _onLooperState(LooperState looperState) {
+    final previous = _looperState;
     _looperState = looperState;
     _logTracks(looperState);
-    // Reconcile the armed set against looper truth: drop any channel that is no
-    // longer a real (or finalizing) loop — e.g. cleared from the on-screen UI —
-    // so a stale green LED can't linger and the transport helpers can't act on
-    // an empty channel. (loopy is the single source of truth.)
-    final pruned = state.playArmed
-        .where((c) => _playable(_trackAtIn(looperState, c)))
-        .toSet();
-    if (pruned.length != state.playArmed.length) {
-      emit(state.copyWith(playArmed: pruned));
+    // Reconcile the armed set against looper truth in BOTH directions (loopy
+    // is the single source of truth):
+    //  - drop any channel that no longer holds (or is finishing) a loop —
+    //    cleared or undone-to-empty tracks can't linger green or be acted on;
+    //  - arm any track that just STARTED sounding — a redo that reinstates an
+    //    undone-to-empty track, or an on-screen play press, re-enters the mix
+    //    and the pedal must show and control it again. Edge-triggered on the
+    //    transition, so a deliberate on-screen disarm of a still-playing track
+    //    is respected rather than fought every poll; parked (stopped) tracks
+    //    keep their existing membership only.
+    final reconciled = <int>{
+      for (final channel in state.playArmed)
+        if (_playable(_trackAtIn(looperState, channel))) channel,
+      for (final track in looperState.tracks)
+        if (_sounding(track) &&
+            !_sounding(_trackAtIn(previous, track.channel)))
+          track.channel,
+    };
+    if (reconciled.length != state.playArmed.length ||
+        !reconciled.containsAll(state.playArmed)) {
+      emit(state.copyWith(playArmed: reconciled));
     }
     _detectLoopTop(looperState);
     _pushProjected();
@@ -741,7 +797,11 @@ class PedalCubit extends Cubit<PedalState> {
         ? GlobalColor.green
         : GlobalColor.off;
     final sampleRate = s.status.sampleRate;
-    final lengthMicros = sampleRate > 0
+    // The engine keeps the master grid alive after undo-to-empty (redo needs
+    // it), but a pedal with no loops anywhere must not keep its ring lit and
+    // sweeping — render the length only while something holds or captures one.
+    final anyLoop = s.tracks.any((t) => t.hasContent || t.isCapturing);
+    final lengthMicros = sampleRate > 0 && anyLoop
         ? (s.transport.masterLengthFrames * 1000000 / sampleRate).round()
         : 0;
     return PedalStateFrame(

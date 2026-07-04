@@ -246,7 +246,8 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperUndoPressed clears a track that has only its base loop',
+    'LooperUndoPressed on a base-loop track undoes (never clears): the '
+    'engine empties it redo-ably',
     build: buildBloc,
     seed: () => const LooperState(
       tracks: [
@@ -256,8 +257,8 @@ void main() {
     ),
     act: (bloc) => bloc.add(const LooperUndoPressed(1)),
     verify: (_) {
-      verify(() => repository.clear(channel: 1)).called(1);
-      verifyNever(() => repository.undo(channel: any(named: 'channel')));
+      verify(() => repository.undo(channel: 1)).called(1);
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
     },
   );
 
@@ -305,7 +306,8 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperUndoPressed that clears a base-loop track also re-arms it',
+    'LooperUndoPressed on a muted base-loop track still undoes — the mute '
+    'is untouched (undo/redo are exact inverses)',
     build: buildBloc,
     seed: () => const LooperState(
       tracks: [
@@ -320,8 +322,14 @@ void main() {
     ),
     act: (bloc) => bloc.add(const LooperUndoPressed(1)),
     verify: (_) {
-      verify(() => repository.clear(channel: 1)).called(1);
-      verify(() => repository.setMute(muted: false, channel: 1)).called(1);
+      verify(() => repository.undo(channel: 1)).called(1);
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
+      verifyNever(
+        () => repository.setMute(
+          muted: any(named: 'muted'),
+          channel: any(named: 'channel'),
+        ),
+      );
     },
   );
 

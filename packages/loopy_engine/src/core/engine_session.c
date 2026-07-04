@@ -44,11 +44,24 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   if (frames <= 0) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   /* Importing targets an empty track: its buffers are not read by the audio
-   * thread, so the control thread can fill lane 0 directly. */
+   * thread, so the control thread can fill lane 0 directly. An undone-to-empty
+   * track qualifies, but its redo stack must go first — the live buffer being
+   * overwritten IS the redo-top snapshot, so advertising canRedo afterwards
+   * would resurrect the imported content, not the undone take. */
   if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
+  /* A posted-but-unapplied state flip (undo-to-empty / redo-from-empty /
+   * clear) makes the raw EMPTY reading unreliable — reject rather than race
+   * the command; session loads retry trivially. */
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return LE_ERR_INVALID;
+  }
   /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
    * so a corrupted/foreign loop fails loudly instead of loading clipped. */
   if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
+  t->redo_count = 0;
+  t->empty_len = 0;
+  store_i32(&t->a_redo_depth, 0);
   le_lane* ln = &t->lanes[0];
   const int live = load_i32(&ln->a_live);
   if (ln->pool[live] == NULL) return LE_ERR_INVALID;

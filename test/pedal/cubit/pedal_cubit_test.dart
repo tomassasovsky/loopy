@@ -735,6 +735,29 @@ void main() {
       await cubit.close();
     });
 
+    test('Undo tap on a base-loop track undoes — never clears (the engine '
+        'empties it redo-ably)', () async {
+      final cubit = buildCubit();
+      // A single-multiple recorded loop on the selected track: the old
+      // behavior cleared it (losing redo); per-layer undo must undo.
+      looperStates.add(
+        _stateWith([
+          const Track(state: TrackState.playing, lengthFrames: 48000),
+          for (var i = 1; i < 8; i++) Track(channel: i),
+        ]),
+      );
+      await pumpEventQueue();
+
+      transport
+        ..emit(0x90, PedalButton.undo.note, 100) // press
+        ..emit(0x80, PedalButton.undo.note, 0); // quick release == tap
+      await pumpEventQueue();
+
+      verify(() => looper.undo()).called(1);
+      verifyNever(() => looper.clear(channel: any(named: 'channel')));
+      await cubit.close();
+    });
+
     test('Clear wipes each recorded track and unmutes it', () async {
       final cubit = buildCubit();
       // Two recorded loops (ch0 muted), the rest empty.
@@ -910,10 +933,127 @@ void main() {
         await cubit.close();
       });
 
+      test('undo-to-empty darkens the LED and redo relights it in Play mode',
+          () async {
+        final cubit = buildCubit();
+        looperStates.add(
+          _stateWith([
+            const Track(state: TrackState.playing, lengthFrames: 48000),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+        cubit.toggleMode(); // -> Play, auto-arms track 0
+        await pumpEventQueue();
+        expect(cubit.trackLedFor(0), PedalTrackLed.green);
+
+        // Undo past the base layer: the track empties (redo keeps the whole
+        // history) and the armed set prunes it -> LED dark. The master grid
+        // survives engine-side, so masterLengthFrames stays nonzero.
+        looperStates.add(
+          _stateWith([
+            const Track(redoDepth: 2),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+        expect(cubit.state.playArmed, isEmpty);
+        expect(cubit.trackLedFor(0), PedalTrackLed.off);
+
+        // Redo reinstates it (engine: EMPTY -> PLAYING): the reconciler
+        // re-arms the track and the LED turns green again.
+        looperStates.add(
+          _stateWith([
+            const Track(
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              redoDepth: 1,
+            ),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+        expect(cubit.state.playArmed, contains(0));
+        expect(cubit.trackLedFor(0), PedalTrackLed.green);
+        await cubit.close();
+      });
+
+      test('a deliberate disarm of a still-playing track is respected — the '
+          'reconciler only arms on the transition into sounding', () async {
+        final cubit = buildCubit();
+        final playing = _stateWith([
+          const Track(state: TrackState.playing, lengthFrames: 48000),
+          for (var i = 1; i < 8; i++) Track(channel: i),
+        ]);
+        looperStates.add(playing);
+        await pumpEventQueue();
+        cubit.toggleMode(); // -> Play, auto-arms track 0
+        await pumpEventQueue();
+
+        cubit.togglePlayArm(0); // on-screen disarm while it keeps playing
+        expect(cubit.trackLedFor(0), PedalTrackLed.off);
+
+        // The next looper poll must not re-arm it: no sounding transition.
+        looperStates.add(playing);
+        await pumpEventQueue();
+        expect(cubit.state.playArmed, isNot(contains(0)));
+        expect(cubit.trackLedFor(0), PedalTrackLed.off);
+        await cubit.close();
+      });
+
+      test('a muted playing track does not auto-arm, so park-by-mute stays '
+          'parked; unmuting it is a sounding edge that re-arms it', () async {
+        final cubit = buildCubit();
+        looperStates.add(_stateWith(_emptyTracks()));
+        await pumpEventQueue();
+        cubit.toggleMode(); // -> Play (nothing armed yet)
+        await pumpEventQueue();
+
+        // A muted-but-playing track (the park-by-mute in-flight window, or a
+        // keyboard mute) must not slip into the armed set.
+        looperStates.add(
+          _stateWith([
+            const Track(
+              state: TrackState.playing,
+              lengthFrames: 48000,
+              muted: true,
+            ),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+        expect(cubit.state.playArmed, isNot(contains(0)));
+        expect(cubit.trackLedFor(0), PedalTrackLed.off);
+
+        // Unmuting it (e.g. from the screen) IS a fresh sounding transition:
+        // the track re-enters pedal control and reads green.
+        looperStates.add(
+          _stateWith([
+            const Track(state: TrackState.playing, lengthFrames: 48000),
+            for (var i = 1; i < 8; i++) Track(channel: i),
+          ]),
+        );
+        await pumpEventQueue();
+        expect(cubit.state.playArmed, contains(0));
+        expect(cubit.trackLedFor(0), PedalTrackLed.green);
+        await cubit.close();
+      });
+
       test('selectBank updates armed track to the bank base channel', () async {
         final cubit = buildCubit()..selectBank(1);
         expect(cubit.state.activeBank, 1);
         expect(cubit.state.selectedTrack, 4);
+        await cubit.close();
+      });
+
+      test('selectTrack follows the cursor into its bank', () async {
+        final cubit = buildCubit()..selectTrack(5); // bank B channel
+        expect(cubit.state.selectedTrack, 5);
+        expect(cubit.state.activeBank, 1);
+
+        cubit.selectTrack(2); // back to bank A
+        expect(cubit.state.selectedTrack, 2);
+        expect(cubit.state.activeBank, 0);
         await cubit.close();
       });
     });

@@ -80,6 +80,13 @@ int32_t le_push_cmd(le_engine* engine, le_command cmd);
  * engine.c as le_monitor_input_reset.) */
 void le_lane_reset(le_lane* ln, int32_t input_channel);
 
+/* Drains the audio->control event ring (retired per-pass undo layers) into the
+ * per-track undo stacks, replenishes shadow-slot spares, and applies any undo
+ * taps that were queued while a layer was in flight. Control thread only;
+ * called at the top of le_engine_get_snapshot and of the transport entry
+ * points. Defined in engine_commands.c. */
+void le_engine_drain_events(le_engine* engine);
+
 #ifdef __cplusplus
 }
 #endif

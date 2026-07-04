@@ -566,8 +566,19 @@ class LooperRepository {
         channel < snapshot.tracks.length &&
         snapshot.tracks[channel].state == TrackState.empty) {
       _snapshotMonitorChainsOntoLanes(channel);
+      // The engine unmutes every lane on a record-from-empty (a fresh take is
+      // always audible); forget the remembered mutes too, or a device
+      // reconnect would replay them and silence the take mid-performance.
+      _forgetLaneMutes(channel);
     }
     return _engine.record(channel: channel);
+  }
+
+  /// Drops the remembered per-lane mutes for [channel] — used when the engine
+  /// itself force-unmutes (clear, record-from-empty, redo-from-empty), so the
+  /// restart replay can't resurrect a stale mute over an audible track.
+  void _forgetLaneMutes(int channel) {
+    _laneMute.removeWhere((key, _) => key.$1 == channel);
   }
 
   /// Copies each active lane's recorded-input monitor chain onto the lane's own
@@ -626,14 +637,28 @@ class LooperRepository {
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0}) => _engine.play(channel: channel);
 
-  /// Erases track [channel] (resets the master if all tracks empty).
-  EngineResult clear({int channel = 0}) => _engine.clear(channel: channel);
+  /// Erases track [channel] (resets the master if all tracks empty). The
+  /// engine unmutes every lane; the remembered mutes are forgotten to match.
+  EngineResult clear({int channel = 0}) {
+    _forgetLaneMutes(channel);
+    return _engine.clear(channel: channel);
+  }
 
   /// Removes the most recent overdub layer on track [channel].
   EngineResult undo({int channel = 0}) => _engine.undo(channel: channel);
 
   /// Re-applies the most recently undone overdub layer on track [channel].
-  EngineResult redo({int channel = 0}) => _engine.redo(channel: channel);
+  /// A redo that resurrects an undone-to-empty track comes back unmuted
+  /// engine-side; the remembered mutes are forgotten to match.
+  EngineResult redo({int channel = 0}) {
+    final snapshot = _engine.snapshot();
+    if (channel >= 0 &&
+        channel < snapshot.tracks.length &&
+        snapshot.tracks[channel].state == TrackState.empty) {
+      _forgetLaneMutes(channel);
+    }
+    return _engine.redo(channel: channel);
+  }
 
   /// Sets track [channel]'s playback gain (`0..1`). Convenience for lane 0.
   EngineResult setVolume(double volume, {int channel = 0}) =>

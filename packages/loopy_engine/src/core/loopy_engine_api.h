@@ -157,6 +157,20 @@ typedef enum le_command_code {
                                    * A disabled output is skipped in the mix
                                    * fan-out regardless of any lane/monitor mask
                                    * pointing at it; masks are untouched. */
+  LE_CMD_DUB_SHADOW = 38, /* supply a shadow pool slot for per-pass overdub
+                           * layer capture. lanei arm: channel, value = slot
+                           * (lane unused). Lane buffers are allocated by the
+                           * control thread before the push. */
+  LE_CMD_UNDO_TO_EMPTY = 39,   /* undo past the base layer: track to EMPTY,
+                                * len 0, master grid kept. arg_i = track. */
+  LE_CMD_REDO_FROM_EMPTY = 40, /* reinstate an undone-to-empty track. lanei
+                                * arm: channel, value = restored length. The
+                                * control thread already swapped a_live. */
+
+  /* Event codes (audio thread -> control thread, on the engine's evt_ring —
+   * the reverse SPSC direction; numbered apart from the commands for clarity). */
+  LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
+                               * channel, slot, generation. */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)

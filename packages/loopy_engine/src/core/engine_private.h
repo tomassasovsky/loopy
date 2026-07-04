@@ -38,10 +38,21 @@ extern "C" {
 
 #define LE_RING_CAPACITY 256u
 
-/* Per-track buffer pool size: one live buffer plus up to LE_UNDO_SLOTS-1 undo/
- * redo snapshots. Buffers are allocated lazily, so memory grows only as deep as
- * the user actually overdubs. */
-#define LE_UNDO_SLOTS 8
+/* Per-track buffer pool size: one live buffer plus up to LE_POOL_SLOTS-1 undo/
+ * redo layers (one per overdub pass). Buffers are allocated lazily, so memory
+ * grows only as deep as the user actually overdubs; past the cap the oldest
+ * undo layer is evicted and its slot recycled. Only the slot POINTER tables are
+ * sized by this (2 KB per lane), not audio. */
+#define LE_POOL_SLOTS 256
+
+/* SAMPLES of live->shadow copy per track per le_engine_process call while a
+ * partially backed-up overdub layer drains after punch-out. The per-track
+ * budget is divided by the track's active lane count (the copy runs per
+ * lane), so one draining track costs <= 128 KB of memcpy per callback
+ * regardless of lanes; even all 8 tracks draining at once stay ~1 MB/block
+ * (~0.1-0.5 ms — bounded on the Pi appliance target). A 30 s mono loop
+ * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
+#define LE_DRAIN_CHUNK 32768
 
 /* One looper track.
  *
@@ -142,7 +153,7 @@ typedef struct le_lane {
   _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
   _Atomic int32_t a_muted;         /* per-lane mute */
 
-  float* pool[LE_UNDO_SLOTS]; /* lazily allocated loop buffers */
+  float* pool[LE_POOL_SLOTS]; /* lazily allocated loop buffers */
   _Atomic int32_t a_live;     /* pool index the audio thread plays/records */
   _Atomic int32_t a_len;      /* recorded length (== the track's length) */
   _Atomic uint32_t a_rms_bits;
@@ -195,11 +206,70 @@ typedef struct le_track {
                        * command (set before the first record into a new lane). */
 
   /* Control-thread-owned undo/redo stacks of pool indices, shared by all lanes
-   * (the same slot index names the snapshot in every lane). */
-  int32_t undo_stack[LE_UNDO_SLOTS];
+   * (the same slot index names the snapshot in every lane). Layers arrive on the
+   * undo stack via LE_EVT_LAYER_RETIRED events the audio thread emits at each
+   * completed overdub pass (see the dub_* capture state below). */
+  int32_t undo_stack[LE_POOL_SLOTS];
   int undo_count;
-  int32_t redo_stack[LE_UNDO_SLOTS];
+  int32_t redo_stack[LE_POOL_SLOTS];
   int redo_count;
+
+  /* ---- per-pass layer capture (audio-thread-local unless noted) ----
+   *
+   * While the track overdubs, each in-place write first saves the pre-value
+   * into the armed shadow slot (`dub_slot`, same index on every lane —
+   * lockstep). The write trajectory visits each of the track's len positions
+   * exactly once per len frames, so dub_count == dub_len means the shadow holds
+   * a complete pre-pass image: it is retired to the control thread (which
+   * pushes it onto the undo stack) and the pre-posted spare takes over — one
+   * undo layer per pass. A punch-out mid-pass drains the uncovered remainder
+   * live->shadow in bounded chunks (live is stable then), then retires. */
+  int32_t dub_slot;  /* armed shadow pool slot (-1 = none) */
+  int32_t dub_spare; /* next shadow, pre-posted by control (-1 = none) */
+  int32_t dub_count; /* frames backed up into dub_slot this pass; -1 = armed
+                      * but unstarted (the first write latches the start point,
+                      * so no entry path needs position math). Reaching dub_len
+                      * freezes the complete image until it can be retired. */
+  int32_t dub_phase; /* frames written since the last pass boundary; wraps at
+                      * dub_len — the rotation point (hand off + arm spare) */
+  int32_t dub_len;   /* pass length (track len), latched at session start */
+  int32_t dub_offset; /* record offset latched for the whole dub session, so a
+                       * mid-dub offset change cannot tear the trajectory */
+  int32_t dub_start_vpos; /* trajectory point (base-loop position + segment) */
+  int32_t dub_start_vseg; /* of the pass's first backed-up write */
+  int32_t dub_vpos; /* drain cursor: the NEXT position to complete, walking */
+  int32_t dub_vseg; /* the remaining trajectory from start + count */
+  int32_t dub_draining;       /* post-punch-out bulk completion in progress */
+  int32_t dub_retire_slot;    /* retired slot awaiting evt-ring space (-1 none) */
+  uint32_t dub_gen_audio; /* audio-side mirror of dub_generation: both sides
+                           * bump exactly once per applied CLEAR, so they agree
+                           * without sharing a variable */
+  /* 1 from OVERDUBBING entry until every captured layer has been retired
+   * (through tail + drain). Audio stores it; control reads it (acquire after
+   * draining the event ring) to queue undo instead of swapping a_live while
+   * the audio thread still writes/reads the live buffers. The retire event is
+   * pushed BEFORE this clears, so a control thread that drained the ring and
+   * still sees 0 knows the undo stack is complete. */
+  _Atomic int32_t a_layer_in_flight;
+
+  /* ---- control-thread-owned undo bookkeeping ---- */
+  int32_t outstanding_slots[4]; /* shadow slots posted, not yet retired */
+  int outstanding_count;
+  int queued_undo;   /* undo taps deferred until the in-flight layer retires */
+  int32_t empty_len; /* len to restore on redo-from-empty (0 = none) */
+  /* Posted-but-unapplied state-flip accounting. UNDO_TO_EMPTY /
+   * REDO_FROM_EMPTY / CLEAR change a_state on the audio thread; until they
+   * apply, control-side decisions (a record press racing a redo would memset
+   * the very buffer redo just made live) must see the POSTED target, not the
+   * stale a_state. The audio thread bumps a_state_acks once per applied
+   * command; while state_cmds_posted > a_state_acks the effective state is
+   * pending_target. Deterministic (ring FIFO), no observation races. */
+  int state_cmds_posted;   /* control: state-flip commands pushed */
+  int32_t pending_target;  /* control: the last posted command's end state */
+  _Atomic int32_t a_state_acks; /* audio: state-flip commands applied */
+  uint32_t dub_generation; /* bumped on clear; audio mirrors it in handle_clear
+                            * and tags retire events, so a stale event from
+                            * before a clear is dropped, never re-pushed */
 
   _Atomic int32_t a_state;
   _Atomic int32_t a_undo_depth; /* published undo_count */
@@ -331,6 +401,14 @@ struct le_engine {
   le_ring ring;
   le_command ring_storage[LE_RING_CAPACITY];
 
+  /* Event ring: the reverse direction (audio thread = producer, control thread
+   * = consumer), carrying LE_EVT_LAYER_RETIRED — the pool slot of a completed
+   * overdub-pass snapshot for the control thread to push onto that track's undo
+   * stack. Same SPSC ring type; the roles are simply swapped. Drained at the
+   * top of le_engine_get_snapshot (the UI poll) and of the transport calls. */
+  le_ring evt_ring;
+  le_command evt_storage[LE_RING_CAPACITY];
+
   /* Configuration. */
   int sample_rate;
   int in_channels;  /* hardware capture channels */
@@ -345,14 +423,13 @@ struct le_engine {
   /* Quantized recording (control-thread-owned). When `quantize` is set, a record
    * press over an existing master arms `armed[ch]` (and does the one-time prep
    * an immediate record would) instead of acting now; the audio thread fires it
-   * at the next loop top. `arm_snapshotted[ch]` records whether the arm pushed a
-   * pre-overdub undo layer, so a cancel can reverse it. */
+   * at the next loop top. Arming creates no undo layer (layers are captured
+   * per pass on the audio thread), so cancelling is a plain disarm. */
   int quantize; /* global default */
   /* Per-track quantize override: -1 inherit the global default, 0 force off,
    * 1 force on. The effective value drives le_engine_record's arm decision. */
   int track_quantize[LE_MAX_TRACKS];
   int armed[LE_MAX_TRACKS];
-  int arm_snapshotted[LE_MAX_TRACKS];
   /* What each arm is waiting for: 0 = loop top (quantize), 1 = input level
    * (auto-record). Lets toggling one feature cancel only its own arms. */
   int armed_trigger[LE_MAX_TRACKS];

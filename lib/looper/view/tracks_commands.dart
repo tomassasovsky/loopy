@@ -63,17 +63,31 @@ class TracksCommands {
     _announce(context.l10n.a11yAllCleared);
   }
 
-  /// Undoes the latest layer on [channel] (the bloc clears a lone base loop)
-  /// and announces it.
+  /// Undoes the latest overdub pass on [channel] (past the base recording the
+  /// track empties, redo-ably) and announces it. Skipped while the track is
+  /// actively capturing — the engine rejects it then, and a screen reader must
+  /// never hear "Undone" for a no-op. (An undo tapped in the brief
+  /// post-punch-out window is queued engine-side and DOES apply, so it
+  /// announces normally.)
   void undo(int channel) {
+    if (_isCapturing(channel)) return;
     context.read<LooperBloc>().add(LooperUndoPressed(channel));
     _announce(context.l10n.a11yUndone);
   }
 
-  /// Redoes the last undone layer on [channel] and announces it.
+  /// Redoes the last undone layer on [channel] and announces it (skipped, like
+  /// [undo], while the track is actively capturing).
   void redo(int channel) {
+    if (_isCapturing(channel)) return;
     context.read<LooperBloc>().add(LooperRedoPressed(channel));
     _announce(context.l10n.a11yRedone);
+  }
+
+  bool _isCapturing(int channel) {
+    final tracks = context.read<LooperBloc>().state.tracks;
+    return channel >= 0 &&
+        channel < tracks.length &&
+        tracks[channel].isCapturing;
   }
 
   /// Toggles the system record/play mode (shared with the pedal) and
@@ -177,8 +191,8 @@ class TracksCommands {
       _announce(l10n.a11yBankSelected(String.fromCharCode(0x41 + nextBank)));
       return KeyEventResult.handled;
     }
-    // `U` undoes the latest overdub layer; on a track that holds only its base
-    // loop (nothing to undo) it clears the track instead. The bloc decides.
+    // `U` undoes the latest overdub pass; past the base recording the track
+    // empties (redo can reinstate it layer by layer).
     if (key == LogicalKeyboardKey.keyU) {
       undo(selected);
       return KeyEventResult.handled;

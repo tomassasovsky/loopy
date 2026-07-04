@@ -36,16 +36,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (event, _) => _repository.play(channel: event.channel),
     );
     on<LooperClearPressed>((event, _) => _clearAndArm(event.channel));
-    on<LooperUndoPressed>((event, _) {
-      // A track with content but no overdub layers has nothing to undo; undo
-      // would be a no-op. Treat U there as "clear this track" so a single press
-      // discards the lone base loop instead of doing nothing.
-      if (_hasOnlyBaseLoop(event.channel)) {
-        _clearAndArm(event.channel);
-      } else {
-        _repository.undo(channel: event.channel);
-      }
-    });
+    on<LooperUndoPressed>(
+      // Undo is per-layer all the way down: the engine peels one overdub pass
+      // per press, and undoing past the base recording empties the track while
+      // keeping the redo history, so redo can reinstate it layer by layer.
+      (event, _) => _repository.undo(channel: event.channel),
+    );
     on<LooperRedoPressed>(
       (event, _) => _repository.redo(channel: event.channel),
     );
@@ -270,8 +266,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       }
     });
     on<LooperClearAllPressed>((_, _) {
+      // Undone-to-empty tracks (canRedo) are cleared too: only clear wipes
+      // their resurrect path, and the master grid resets when everything is
+      // empty — a surviving redo would reinstate a loop into a dead grid.
       for (final track in state.tracks) {
-        if (track.hasContent) _clearAndArm(track.channel);
+        if (track.hasContent || track.canRedo) _clearAndArm(track.channel);
       }
     });
     on<LooperOutputEnabledToggled>((event, _) {
@@ -310,22 +309,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   /// Clears track [channel] and returns it to its default armed-to-play state:
   /// unmuted. A cleared track should be ready to sound again on the next
-  /// record/play rather than staying silently muted, and the unmute is
-  /// persisted so it survives a restart. Shared by every clear path (per-track,
-  /// clear-all, and the undo that empties a track holding only its base loop).
+  /// record/play rather than staying silently muted (the engine also unmutes
+  /// every lane on clear), and the unmute is persisted per lane so it survives
+  /// a restart. Shared by every clear path (per-track and clear-all).
   void _clearAndArm(int channel) {
     _repository
       ..clear(channel: channel)
       ..setMute(muted: false, channel: channel);
-    unawaited(_settings?.saveLaneMute(channel, 0, muted: false));
-  }
-
-  /// Whether [channel] holds a single recorded loop with no overdub layers to
-  /// undo — the case where `U` clears the track instead of removing a layer.
-  bool _hasOnlyBaseLoop(int channel) {
-    if (channel < 0 || channel >= state.tracks.length) return false;
-    final track = state.tracks[channel];
-    return track.hasContent && !track.canUndo;
+    final lanes = channel >= 0 && channel < state.tracks.length
+        ? state.tracks[channel].lanes.length
+        : 1;
+    for (var lane = 0; lane < (lanes < 1 ? 1 : lanes); lane++) {
+      unawaited(_settings?.saveLaneMute(channel, lane, muted: false));
+    }
   }
 
   bool _laneMuted(int channel, int lane) {

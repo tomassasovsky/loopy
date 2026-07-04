@@ -110,9 +110,14 @@ class SessionRepository {
         throw StateError('failed to import ${track.stem}: ${result.name}');
       }
     }
-    final committed = _engine.commitSession(session.baseLengthFrames);
-    if (!committed.isOk) {
-      throw StateError('failed to start the session: ${committed.name}');
+    // An empty session (or a legacy save carrying a ghost grid with no
+    // tracks) establishes no master: the cleared engine stays free to define
+    // a fresh loop length.
+    if (session.tracks.isNotEmpty && session.baseLengthFrames > 0) {
+      final committed = _engine.commitSession(session.baseLengthFrames);
+      if (!committed.isOk) {
+        throw StateError('failed to start the session: ${committed.name}');
+      }
     }
 
     // Session stems are lane-0-only for now (full multi-lane stems are a
@@ -193,7 +198,13 @@ class SessionRepository {
     return Session(
       sampleRate: snapshot.sampleRate,
       channels: 1,
-      baseLengthFrames: snapshot.masterLengthFrames,
+      // The engine keeps the master grid alive after the last track is undone
+      // to empty (redo needs it), but a session with zero tracks must not
+      // persist that ghost tempo — loading it would re-establish a grid with
+      // no content, silently locking the next recording's length.
+      baseLengthFrames: captured.tracks.isEmpty
+          ? 0
+          : snapshot.masterLengthFrames,
       tracks: captured.tracks,
     );
   }
