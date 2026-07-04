@@ -32,17 +32,18 @@ void main() {
       final settings = SettingsRepository(store: FakeKeyValueStore());
       final store = ControlOverlay(looper: looper);
       addTearDown(store.dispose);
-      final overlay = ControlOverlayCubit(overlay: store);
+      final intents = ControlIntents(
+        looper: looper,
+        overlay: store,
+        settings: settings,
+      );
+      final overlay = ControlOverlayCubit(overlay: store, intents: intents);
       addTearDown(overlay.close);
       return PedalCubit(
         pedal: PedalRepository(transport),
         looper: looper,
         overlay: store,
-        intents: ControlIntents(
-          looper: looper,
-          overlay: store,
-          settings: settings,
-        ),
+        intents: intents,
         settings: settings,
         pollInterval: Duration.zero, // no hotplug timer in widget tests
       );

@@ -236,12 +236,6 @@ class App extends StatelessWidget {
             create: (context) =>
                 ControlOverlay(looper: context.read<LooperRepository>()),
           ),
-          // The read-only presentation mirror widgets `watch` for rebuilds.
-          BlocProvider(
-            lazy: false,
-            create: (context) =>
-                ControlOverlayCubit(overlay: context.read<ControlOverlay>()),
-          ),
           // The ONE intent interpreter every surface calls (pedal decode,
           // keyboard, on-screen chips) — command sequences cannot diverge.
           // Eager: it restores the boot-default mode.
@@ -256,6 +250,15 @@ class App extends StatelessWidget {
               unawaited(intents.load()); // boot-default mode restore
               return intents;
             },
+          ),
+          // The business-logic front widgets watch and act through:
+          // state mirrors the store, actions delegate to the interpreter.
+          BlocProvider(
+            lazy: false,
+            create: (context) => ControlOverlayCubit(
+              overlay: context.read<ControlOverlay>(),
+              intents: context.read<ControlIntents>(),
+            ),
           ),
           // Eager (not lazy): the pedal cubit auto-binds the saved output
           // device on launch and starts projecting LED frames, so it must be

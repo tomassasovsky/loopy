@@ -70,13 +70,13 @@ void main() {
     // persisted default the View section edits.
     store = ControlOverlay(looper: repository);
     addTearDown(store.dispose);
-    overlay = ControlOverlayCubit(overlay: store);
-    addTearDown(overlay.close);
     intents = ControlIntents(
       looper: repository,
       overlay: store,
       settings: settings,
     );
+    overlay = ControlOverlayCubit(overlay: store, intents: intents);
+    addTearDown(overlay.close);
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.
     pedal = PedalCubit(
       pedal: PedalRepository(const NoopPedalTransport()),

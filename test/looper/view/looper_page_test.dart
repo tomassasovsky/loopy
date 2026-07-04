@@ -60,16 +60,17 @@ void main() {
               RepositoryProvider<ControlOverlay>(
                 create: (_) => ControlOverlay(looper: repository),
               ),
-              BlocProvider<ControlOverlayCubit>(
-                create: (context) => ControlOverlayCubit(
-                  overlay: context.read<ControlOverlay>(),
-                ),
-              ),
               RepositoryProvider<ControlIntents>(
                 create: (context) => ControlIntents(
                   looper: repository,
                   overlay: context.read<ControlOverlay>(),
                   settings: settings,
+                ),
+              ),
+              BlocProvider<ControlOverlayCubit>(
+                create: (context) => ControlOverlayCubit(
+                  overlay: context.read<ControlOverlay>(),
+                  intents: context.read<ControlIntents>(),
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),

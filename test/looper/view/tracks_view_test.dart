@@ -64,13 +64,13 @@ void main() {
     // view reads, and the M key / mode chip / number keys drive them.
     store = ControlOverlay(looper: repository);
     addTearDown(store.dispose);
-    overlay = ControlOverlayCubit(overlay: store);
-    addTearDown(overlay.close);
     intents = ControlIntents(
       looper: repository,
       overlay: store,
       settings: settings,
     );
+    overlay = ControlOverlayCubit(overlay: store, intents: intents);
+    addTearDown(overlay.close);
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
     when(() => session.saveSession()).thenAnswer((_) async {});
