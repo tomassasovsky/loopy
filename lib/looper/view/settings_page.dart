@@ -162,9 +162,8 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 12),
       SetupOptionRow<LooperMode>(
         selected: defaultMode,
-        onSelected: (m) => unawaited(
-          context.read<ControlIntents>().setDefaultMode(m),
-        ),
+        onSelected: (m) =>
+            context.read<ControlOverlayCubit>().setDefaultMode(m),
         options: [
           SetupOption(
             value: LooperMode.record,

@@ -60,7 +60,7 @@ class TracksCommands {
   /// (tracks wiped and re-armed, mode back to record, cursor home) — and
   /// announces it.
   void clearAll() {
-    context.read<ControlIntents>().clearAll();
+    context.read<ControlOverlayCubit>().clearAll();
     _announce(context.l10n.a11yAllCleared);
   }
 
@@ -94,9 +94,9 @@ class TracksCommands {
   /// Toggles the system record/play mode (the same [ControlIntents] call the
   /// pedal footswitch makes) and announces the mode it landed on.
   void toggleMode() {
-    context.read<ControlIntents>().toggleMode();
+    final overlay = context.read<ControlOverlayCubit>()..toggleMode();
     _announce(
-      context.read<ControlOverlayCubit>().state.mode == LooperMode.record
+      overlay.state.mode == LooperMode.record
           ? context.l10n.a11yModeRecord
           : context.l10n.a11yModePlay,
     );
@@ -134,7 +134,6 @@ class TracksCommands {
     final keyboard = HardwareKeyboard.instance;
     final bloc = context.read<LooperBloc>();
     final overlay = context.read<ControlOverlayCubit>();
-    final intents = context.read<ControlIntents>();
     final mode = overlay.state.mode;
     final l10n = context.l10n;
     final selected = overlay.state.cursor;
@@ -190,7 +189,7 @@ class TracksCommands {
       final nextBank = overlay.state.activeBank == 0 ? 1 : 0;
       // Selecting the other bank's first track moves the cursor and reveals
       // it — the pedal BANK footswitch semantics, via the same intent.
-      intents.toggleBankWithCursor();
+      overlay.toggleBankWithCursor();
       _announce(l10n.a11yBankSelected(String.fromCharCode(0x41 + nextBank)));
       return KeyEventResult.handled;
     }
@@ -207,7 +206,7 @@ class TracksCommands {
     if (digit != null) {
       final channel = digit - 1;
       if (channel <= 7) {
-        intents.selectTrack(channel); // moves the cursor and reveals its bank
+        overlay.selectTrack(channel); // moves the cursor and reveals its bank
         if (mode == LooperMode.play) {
           bloc.add(LooperMuteToggled(channel));
         }

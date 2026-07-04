@@ -89,17 +89,18 @@ void main() {
     // same control layer the app wires (mode/cursor owned by the overlay).
     final store = ControlOverlay(looper: looper);
     addTearDown(store.dispose);
-    final overlay = ControlOverlayCubit(overlay: store);
+    final intents = ControlIntents(
+      looper: looper,
+      overlay: store,
+      settings: settings,
+    );
+    final overlay = ControlOverlayCubit(overlay: store, intents: intents);
     addTearDown(overlay.close);
     final cubit = PedalCubit(
       pedal: PedalRepository(sim),
       looper: looper,
       overlay: store,
-      intents: ControlIntents(
-        looper: looper,
-        overlay: store,
-        settings: settings,
-      ),
+      intents: intents,
       settings: settings,
       pollInterval: Duration.zero,
     );

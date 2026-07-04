@@ -35,7 +35,14 @@ void main() {
     // The row reads the mode / cursor / bank from the shared control overlay.
     store = ControlOverlay(looper: looper);
     addTearDown(store.dispose);
-    overlay = ControlOverlayCubit(overlay: store);
+    overlay = ControlOverlayCubit(
+      overlay: store,
+      intents: ControlIntents(
+        looper: looper,
+        overlay: store,
+        settings: SettingsRepository(store: FakeKeyValueStore()),
+      ),
+    );
     addTearDown(overlay.close);
   });
 

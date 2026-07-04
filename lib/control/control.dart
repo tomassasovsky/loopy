@@ -4,10 +4,12 @@
 /// - `ControlOverlay` (a DOMAIN store, not a cubit) owns the closed
 ///   stored-intent inventory (mode, cursor, bank, excluded, parkedResume) —
 ///   the only control state that is not derivable from engine truth, each
-///   bit with a written invalidation rule. `ControlOverlayCubit` is its
-///   read-only presentation mirror, so no cubit depends on another cubit.
-/// - `ControlIntents` is the one interpreter every surface (pedal decode,
-///   keyboard, on-screen) calls, so command sequences can never diverge.
+///   bit with a written invalidation rule.
+/// - `ControlIntents` is the one interpreter every surface reaches (the
+///   pedal via `PedalCubit`'s decode, the keyboard and on-screen widgets via
+///   `ControlOverlayCubit`'s delegating actions), so command sequences can
+///   never diverge. Widgets never touch the domain layer directly, and no
+///   cubit depends on another cubit — both connect through the store.
 /// - `control_projection.dart` computes everything else (armed set, LEDs,
 ///   the pedal frame) as pure functions of `(LooperState × overlay)` —
 ///   derived state cannot go stale.
