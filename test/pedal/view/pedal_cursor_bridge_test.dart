@@ -46,4 +46,36 @@ void main() {
       expect(tracks.state.activeBank, 1);
     },
   );
+
+  testWidgets(
+    'mirrors the on-screen selection back onto the pedal cursor, so pedal '
+    'UNDO/Rec-Play/STOP act on the track the user is looking at',
+    (tester) async {
+      final pedal = _MockPedalCubit();
+      final states = StreamController<PedalState>.broadcast();
+      when(() => pedal.state).thenReturn(const PedalState());
+      whenListen(pedal, states.stream, initialState: const PedalState());
+      final tracks = TracksCubit(
+        settings: SettingsRepository(store: FakeKeyValueStore()),
+      );
+      addTearDown(states.close);
+      addTearDown(tracks.close);
+
+      await tester.pumpWidget(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider<PedalCubit>.value(value: pedal),
+            BlocProvider<TracksCubit>.value(value: tracks),
+          ],
+          child: const PedalCursorBridge(child: SizedBox()),
+        ),
+      );
+
+      // The user clicks track 6 on screen (digit key / tile tap).
+      tracks.select(6);
+      await tester.pump();
+
+      verify(() => pedal.selectTrack(6)).called(1);
+    },
+  );
 }

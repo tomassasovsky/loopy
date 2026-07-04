@@ -23,6 +23,7 @@
 #include <wchar.h>
 
 #include "engine_internal.h"
+#include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
@@ -258,11 +259,13 @@ static void test_looper_overdub_and_undo(void) {
 
   /* Overdub one loop of +0.5. The live input is not folded into the monitored
    * output (latency-compensated model), so during the pass the existing loop
-   * (1.0) is heard while the +0.5 lands in the buffer for the next pass. */
-  CHECK(le_engine_record(e, 0) == LE_OK); /* snapshot taken, -> OVERDUBBING */
+   * (1.0) is heard while the +0.5 lands in the buffer for the next pass. The
+   * undo layer is captured incrementally on the audio thread (backup-on-write)
+   * and retires when the pass completes — no depth yet at punch-in. */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* -> OVERDUBBING */
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].undo_depth == 0); /* layer not complete yet */
   process_const(e, 0.5f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
 
@@ -270,10 +273,12 @@ static void test_looper_overdub_and_undo(void) {
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].undo_depth == 1); /* the completed pass retired */
 
   /* The recorded layer now plays back: 1.0 + 0.5 == 1.5. */
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  drain(e); /* punch envelope quiet: the capture session winds down */
 
   /* Undo immediately swaps back to the pre-overdub content (1.0). */
   CHECK(le_engine_undo(e, 0) == LE_OK);
@@ -317,6 +322,7 @@ static void test_looper_multilevel_undo(void) {
   CHECK(s.tracks[0].undo_depth == 2);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+  drain(e); /* punch envelope quiet: the capture session winds down */
 
   /* Undo twice: 2.0 -> 1.5 -> 1.0. */
   le_engine_undo(e, 0);
@@ -339,6 +345,676 @@ static void test_looper_multilevel_undo(void) {
   CHECK(s.tracks[0].undo_depth == 1);
   process_const(e, 0.0f, LOOP_N, out);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.25f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* ---- per-pass layer capture ----
+ *
+ * The audio thread backs up each overdub write's pre-value into a pre-posted
+ * shadow slot; a completed pass retires through the evt_ring as one undo
+ * layer. These tests drive that machinery end to end: multi-pass dubs, the
+ * post-punch-out drain, queued undo, spare starvation, undo past the base
+ * layer, and the redo-from-empty resurrection. Content is asserted through
+ * le_engine_export_track (the raw live buffer), which is playhead-agnostic. */
+
+/* Records a LOOP_N base loop of `value` on track 0 and leaves it PLAYING at
+ * the loop top with the command ring drained. */
+static void record_base_loop(le_engine* e, float value) {
+  float out[64];
+  le_engine_record(e, 0);
+  process_const(e, value, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+}
+
+/* Winds a punched-out capture session down: one frame settles the punch
+ * envelope, the block update then drains/retires the in-flight layer. */
+static void settle_dub(le_engine* e) {
+  float out[64];
+  process_const(e, 0.0f, 1, out);
+  drain(e);
+  drain(e);
+}
+
+/* Exports track 0 and checks every frame equals `want`. */
+static void check_content(le_engine* e, float want) {
+  float pcm[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - want) < 1e-6f);
+}
+
+/* One continuous overdub held across three passes yields three undo layers —
+ * undo peels one PASS at a time, not the whole press session. */
+static void test_per_pass_undo_layers(void) {
+  printf("test_per_pass_undo_layers\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in, hold across 3 passes */
+  for (int pass = 0; pass < 3; ++pass) {
+    process_const(e, 0.5f, LOOP_N, out);
+    /* The poll tick: collects the retired pass and replenishes the spare. */
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].undo_depth == pass + 1);
+  }
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 3);
+  check_content(e, 2.5f);
+
+  /* Peel one pass per undo: 2.5 -> 2.0 -> 1.5 -> 1.0. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 2.0f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.5f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 3);
+
+  /* Redo climbs back layer by layer. */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  check_content(e, 1.5f);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  check_content(e, 2.5f);
+
+  le_engine_destroy(e);
+}
+
+/* A punch-out mid-pass leaves live authoritative; the uncovered remainder of
+ * the layer drains live -> shadow and the partial pass undoes alone. */
+static void test_punch_out_mid_pass_drains(void) {
+  printf("test_punch_out_mid_pass_drains\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in at the loop top */
+  process_const(e, 0.5f, 2, out);         /* half a pass: positions 0,1 */
+  le_engine_record(e, 0);                 /* punch out mid-pass */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  /* Live holds the partial dub; undo restores the full pre-dub loop. */
+  float pcm[LOOP_N];
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  CHECK(fabsf(pcm[0] - 1.5f) < 1e-6f);
+  CHECK(fabsf(pcm[1] - 1.5f) < 1e-6f);
+  CHECK(fabsf(pcm[2] - 1.0f) < 1e-6f);
+  CHECK(fabsf(pcm[3] - 1.0f) < 1e-6f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f);
+
+  /* Redo restores the partial dub exactly. */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  CHECK(fabsf(pcm[0] - 1.5f) < 1e-6f);
+  CHECK(fabsf(pcm[2] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* An undo tapped while the punched-out layer is still in flight (fade tail /
+ * drain) is queued — never rejected, never lost — and applies as soon as the
+ * layer retires. */
+static void test_undo_queued_during_drain(void) {
+  printf("test_undo_queued_during_drain\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out); /* one full pass -> 1.5 */
+  le_engine_record(e, 0);              /* punch out */
+  drain(e); /* state flips, but the punch envelope is still up */
+
+  /* The immediate tap: the session has not wound down yet, so it queues. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s); /* the drain applies the queued tap */
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 1);
+  check_content(e, 1.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Undoing past the base layer empties the track for the pedal/UI while redo
+ * keeps the whole history; the master grid deliberately survives (redo needs
+ * it — Clear remains the full reset). */
+static void test_undo_to_empty_and_redo(void) {
+  printf("test_undo_to_empty_and_redo\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  settle_dub(e);
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* 1.5 -> 1.0 */
+  check_content(e, 1.0f);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* past the base layer -> EMPTY */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].length_frames == 0);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 2);
+  CHECK(s.master_length_frames == LOOP_N); /* the grid survives */
+
+  /* A third undo on the empty track is a no-op. */
+  CHECK(le_engine_undo(e, 0) == LE_ERR_INVALID);
+
+  /* Redo reinstates layer by layer: base first, then the dub. */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+  CHECK(s.tracks[0].redo_depth == 1);
+  check_content(e, 1.0f);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  check_content(e, 1.5f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].redo_depth == 0);
+
+  le_engine_destroy(e);
+}
+
+/* A fresh recording on an undone-to-empty track invalidates the resurrect
+ * path: redo history clears, and the new take records against the kept grid. */
+static void test_record_after_undo_to_empty_clears_redo(void) {
+  printf("test_record_after_undo_to_empty_clears_redo\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* no layers -> undo-to-empty */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].redo_depth == 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* fresh take over the kept grid */
+  process_const(e, 2.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].redo_depth == 0); /* resurrection invalidated */
+  CHECK(le_engine_redo(e, 0) == LE_ERR_INVALID);
+  check_content(e, 2.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Clear resets the track to its default armed-to-play state: unmuted (a
+ * leftover Stop-mute never silences the next take) with all capture state
+ * dropped. */
+static void test_clear_unmutes(void) {
+  printf("test_clear_unmutes\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  le_engine_set_track_mute(e, 0, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].muted == 1);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].muted == 0); /* cleared -> unmuted */
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 0);
+  CHECK(s.master_length_frames == 0); /* all tracks empty: full reset */
+
+  le_engine_destroy(e);
+}
+
+/* Recording into an EMPTY track unmutes it — covers the record-after-undo-to-
+ * empty path, where undo itself must NOT touch mute (undo/redo stay exact
+ * inverses). */
+static void test_record_from_empty_unmutes(void) {
+  printf("test_record_from_empty_unmutes\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  le_engine_set_track_mute(e, 0, 1);
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* undo-to-empty keeps the mute */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].muted == 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* fresh take: always audible */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[0].muted == 0);
+
+  le_engine_destroy(e);
+}
+
+/* With the control thread stalled (no event drains), the shadow supply runs
+ * dry after two passes; later passes merge coherently into the last layer —
+ * undo never restores a torn image that never existed. */
+static void test_spare_starvation_merges_passes(void) {
+  printf("test_spare_starvation_merges_passes\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  /* Five back-to-back passes with NO control-thread activity in between: the
+   * two posted shadows capture passes 1 and 2; passes 3..5 run un-backed and
+   * merge into the pass-2 layer. */
+  for (int pass = 0; pass < 5; ++pass) {
+    process_const(e, 0.5f, LOOP_N, out);
+  }
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 2);
+  check_content(e, 3.5f); /* 1.0 + 5 x 0.5 */
+
+  /* Undo restores states that actually existed at pass starts. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.5f); /* pre-pass-2 (passes 2..5 merged) */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f);
+
+  le_engine_destroy(e);
+}
+
+/* A record-offset change mid-dub cannot tear the layer: the write trajectory
+ * is latched per session, so the pass still covers every position exactly
+ * once and undo restores the pre-dub loop bit-exactly. */
+static void test_offset_latched_across_dub(void) {
+  printf("test_offset_latched_across_dub\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_record_offset(e, 1) == LE_OK);
+  drain(e);
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in with offset 1 */
+  process_const(e, 0.5f, 2, out);
+  CHECK(le_engine_set_record_offset(e, 0) == LE_OK); /* mid-dub change */
+  process_const(e, 0.5f, 2, out); /* completes the pass on the latched 1 */
+  le_engine_record(e, 0);         /* punch out */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  check_content(e, 1.5f); /* every position got exactly one +0.5 write */
+
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f); /* bit-exact pre-dub restore, no tear */
+
+  le_engine_destroy(e);
+}
+
+/* Redo-from-empty is always audible: a leftover Stop-mute clears when the
+ * track is reinstated (mirroring record-from-empty), so a resurrected loop
+ * can never come back playing-but-silent. */
+static void test_redo_from_empty_unmutes(void) {
+  printf("test_redo_from_empty_unmutes\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  le_engine_set_track_mute(e, 0, 1);
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* to empty; undo never touches mute */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].muted == 1);
+
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].muted == 0); /* resurrection is audible */
+  check_content(e, 1.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Undo past the base layer cancels a pending quantized arm: the emptied track
+ * must not fire a surprise fresh recording at the next loop top (another
+ * track keeps the transport running across the wrap). */
+static void test_undo_to_empty_cancels_pending_arm(void) {
+  printf("test_undo_to_empty_cancels_pending_arm\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* track 0: the base loop (defines the master) */
+  /* Track 1 plays too, so the loop clock keeps running once track 0 empties. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.25f, LOOP_N, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+
+  le_engine_set_quantize(e, 1);
+  process_const(e, 0.0f, 1, out);         /* move off the loop top */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* arm a quantized overdub on 0 */
+  drain(e);
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* no layers -> undo-to-empty */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* Cross the loop top twice: the cancelled arm must not fire anything. */
+  process_const(e, 0.0f, 2 * LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].length_frames == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* the clock really ran */
+
+  le_engine_destroy(e);
+}
+
+/* Commands pushed while the device is stopped/lost must NOT replay onto the
+ * next configuration — le_engine_configure re-initialises the command ring, so
+ * a reconnect can't fire a surprise recording from a stale press. */
+static void test_configure_drops_stale_commands(void) {
+  printf("test_configure_drops_stale_commands\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* A press with no audio callbacks running: it sits in the ring. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  /* Device-loss recovery path: reconfigure, then audio resumes. */
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  process_const(e, 0.0f, LOOP_N, out);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY); /* no surprise recording */
+
+  le_engine_destroy(e);
+}
+
+/* A fresh recording on an otherwise-empty looper redefines the master grid:
+ * the grid kept for redo must not lock the new take to the dead tempo once
+ * redo has been invalidated. */
+static void test_fresh_record_after_undo_to_empty_redefines_grid(void) {
+  printf("test_fresh_record_after_undo_to_empty_redefines_grid\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* master = LOOP_N */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* to empty; grid kept for redo */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N);
+
+  /* Fresh take, deliberately LONGER than the old grid: it must define a new
+   * master of exactly its own length, not round to the ghost tempo. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 2.0f, LOOP_N + 2, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize the defining master */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N + 2);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == LOOP_N + 2);
+  CHECK(s.tracks[0].redo_depth == 0);
+
+  le_engine_destroy(e);
+}
+
+/* The ghost grid IS kept when a sibling still needs it: an undone-to-empty
+ * track's redo resurrects onto that tempo, so a fresh take elsewhere stays
+ * grid-locked. */
+static void test_grid_kept_when_sibling_redo_alive(void) {
+  printf("test_grid_kept_when_sibling_redo_alive\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* track 0: master = LOOP_N */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* track 0 empty, redo alive */
+  drain(e);
+
+  /* Record on track 1: track 0's redo still needs the grid, so this take is
+   * phase-locked and rounds up to the kept base. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 2.0f, 2, out); /* under one base loop */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  process_const(e, 0.0f, 1, out); /* settle the finalize */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N); /* grid survived */
+  CHECK(s.tracks[1].length_frames == LOOP_N); /* rounded to the kept base */
+  CHECK(s.tracks[0].redo_depth == 1); /* resurrection still possible */
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+
+  le_engine_destroy(e);
+}
+
+/* A quantized record press while the transport is held (everything parked)
+ * acts immediately instead of arming for a loop top the held clock never
+ * reaches. */
+static void test_quantize_acts_immediately_when_transport_held(void) {
+  printf("test_quantize_acts_immediately_when_transport_held\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK); /* park: clock holds at top */
+  drain(e);
+  CHECK(le_engine_set_quantize(e, 1) == LE_OK);
+
+  CHECK(le_engine_record(e, 1) == LE_OK); /* would deadlock if it armed */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* acted immediately */
+
+  le_engine_destroy(e);
+}
+
+/* A quick re-punch after a mid-pass punch-out (the drain window) restarts the
+ * layer capture on the same slot instead of resuming gapped coverage — undo
+ * must never restore a torn snapshot contaminated by the second dub. */
+static void test_repunch_during_drain_restarts_capture(void) {
+  printf("test_repunch_during_drain_restarts_capture\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+  float pcm[LOOP_N];
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in at the loop top */
+  process_const(e, 0.5f, 2, out);         /* partial pass: positions 0,1 */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out mid-pass */
+  drain(e);
+  process_const(e, 0.0f, 1, out); /* punch envelope decays; drain pending */
+
+  /* Re-punch inside the drain window and dub one full pass. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1); /* one coherent layer (P1a merged) */
+
+  /* Live holds both dubs; positions 0,1 got both, 2,3 only the second. */
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  CHECK(fabsf(pcm[0] - 2.0f) < 1e-6f);
+  CHECK(fabsf(pcm[2] - 1.5f) < 1e-6f);
+
+  /* Undo restores exactly the pre-re-punch state: the partial first dub is
+   * intact and NOT contaminated by second-dub fragments. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  CHECK(fabsf(pcm[0] - 1.5f) < 1e-6f);
+  CHECK(fabsf(pcm[1] - 1.5f) < 1e-6f);
+  CHECK(fabsf(pcm[2] - 1.0f) < 1e-6f);
+  CHECK(fabsf(pcm[3] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Pumps [frames] frames of constant [value] in <= 64-frame blocks. */
+static void pump_frames(le_engine* e, float value, int frames) {
+  float out[64];
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    process_const(e, value, n, out);
+    frames -= n;
+  }
+}
+
+/* Undo layers are sized to the loop length rounded to LE_LAYER_QUANTUM — a
+ * tiny loop's layer costs one quantum, not the recording cap — while the live
+ * slot of a fresh capture always regrows to the full cap (undo can leave a
+ * quantized snapshot slot live). */
+static void test_undo_layers_quantized_and_live_regrows(void) {
+  printf("test_undo_layers_quantized_and_live_regrows\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 200000; /* > LE_LAYER_QUANTUM so sizes are observable */
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+  float pcm[LOOP_N];
+
+  /* Tiny base loop + one dub pass -> one retired quantum-sized layer. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) == cap); /* live = cap */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  /* Undo swaps the quantized snapshot slot live: content correct, size is one
+   * quantum (not the cap). */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) == LE_LAYER_QUANTUM);
+  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+
+  /* Undo to empty, record fresh: the capture target regrows to the cap. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) == cap);
+
+  le_engine_destroy(e);
+}
+
+/* A slot reused for a LONGER loop regrows: a loop spanning more than one
+ * quantum gets a two-quantum layer. */
+static void test_undo_layer_slot_regrows_for_longer_loop(void) {
+  printf("test_undo_layer_slot_regrows_for_longer_loop\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 200000;
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+
+  /* Base loop longer than one quantum (50k > 48k). The defining finalize
+   * defers ~10 ms for the seam crossfade — pump the overlap to complete it. */
+  const int32_t len = LE_LAYER_QUANTUM + 2000;
+  le_engine_record(e, 0);
+  pump_frames(e, 1.0f, len);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 1.0f, 600); /* crossfade overlap -> auto-finalize */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == len);
+
+  /* One full dub pass; at this loop size the punch fade is engaged, so the
+   * post-punch-out tail commits a second sliver layer after the drain. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_frames(e, 0.5f, len);
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  pump_frames(e, 0.0f, 600); /* fade tail decays; the drain completes */
+  drain(e);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 2); /* the pass + the punch-tail sliver */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) ==
+        2 * LE_LAYER_QUANTUM);
+
+  le_engine_destroy(e);
+}
+
+/* Depth beyond the pool cap evicts the OLDEST layer and keeps running: a very
+ * long dub session stays stable and the newest layers stay undoable. */
+static void test_undo_pool_eviction(void) {
+  printf("test_undo_pool_eviction\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  /* More passes than the pool holds; the poll tick between passes collects
+   * retires and replenishes spares, exactly like the UI does. */
+  const int passes = LE_POOL_SLOTS + 10;
+  for (int pass = 0; pass < passes; ++pass) {
+    process_const(e, 0.5f, LOOP_N, out);
+    le_engine_get_snapshot(e, &s);
+  }
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  /* Depth is capped (pool minus live + posted shadows), the engine is sane,
+   * and the newest layer still undoes correctly. */
+  CHECK(s.tracks[0].undo_depth >= LE_POOL_SLOTS - 6);
+  CHECK(s.tracks[0].undo_depth <= LE_POOL_SLOTS - 1);
+  const float top = 1.0f + 0.5f * (float)passes;
+  check_content(e, top);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, top - 0.5f);
 
   le_engine_destroy(e);
 }
@@ -1962,10 +2638,11 @@ static void test_quantize_defining_track_is_immediate(void) {
   le_engine_destroy(e);
 }
 
-/* An armed overdub takes its pre-overdub undo snapshot at arm time; cancelling
- * it reverses that snapshot, leaving no phantom undo layer. */
-static void test_quantize_overdub_arm_disarm_reverses_undo(void) {
-  printf("test_quantize_overdub_arm_disarm_reverses_undo\n");
+/* Arming an overdub creates no undo layer (layers are captured per pass once
+ * the overdub actually runs), so an arm/disarm round trip leaves the undo
+ * stack untouched — no phantom layer to reverse. */
+static void test_quantize_overdub_arm_disarm_no_phantom_layer(void) {
+  printf("test_quantize_overdub_arm_disarm_no_phantom_layer\n");
   le_engine* e = make_configured_engine();
   float out[64];
   le_snapshot s;
@@ -1974,13 +2651,13 @@ static void test_quantize_overdub_arm_disarm_reverses_undo(void) {
   le_engine_set_quantize(e, 1);
   process_const(e, 0.0f, 1, out); /* pos -> 1 */
 
-  le_engine_record(e, 0); /* arm overdub: snapshot pushed */
+  le_engine_record(e, 0); /* arm overdub: no snapshot, no layer */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* armed, not overdubbing */
-  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].undo_depth == 0);
 
-  le_engine_record(e, 0); /* second press -> disarm -> reverse snapshot */
+  le_engine_record(e, 0); /* second press -> disarm */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
@@ -3619,10 +4296,10 @@ static void test_undo_across_lanes(void) {
     CHECK(fabsf(out[i * 2 + 1] - 2.0f) < 1e-6f);
   }
 
-  /* Overdub +0.25 on input 0, +0.5 on input 1: lane0 -> 1.25, lane1 -> 2.5. */
-  CHECK(le_engine_record(e, 0) == LE_OK); /* -> OVERDUBBING (snapshot taken) */
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].undo_depth == 1);
+  /* Overdub +0.25 on input 0, +0.5 on input 1: lane0 -> 1.25, lane1 -> 2.5.
+   * The layer is captured per pass on the audio thread and retires when the
+   * pass completes. */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* -> OVERDUBBING */
   float in[2 * LOOP_N];
   for (int i = 0; i < LOOP_N; ++i) {
     in[i * 2 + 0] = 0.25f;
@@ -3631,11 +4308,14 @@ static void test_undo_across_lanes(void) {
   le_engine_process(e, out, in, LOOP_N);
   le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
   drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1); /* the completed pass retired */
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - 1.25f) < 1e-6f);
     CHECK(fabsf(out[i * 2 + 1] - 2.5f) < 1e-6f);
   }
+  drain(e); /* punch envelope quiet: the capture session winds down */
 
   /* Undo reverts BOTH lanes' last pass at once, each back to its own value. */
   CHECK(le_engine_undo(e, 0) == LE_OK);
@@ -3833,9 +4513,9 @@ static void test_lane_count_shrink_then_regrow(void) {
   le_engine_destroy(e);
 }
 
-/* A quantized overdub on a multi-lane track takes its pre-overdub snapshot
- * across ALL active lanes at arm time, fires on the grid, and a later undo
- * reverts every lane in lockstep. */
+/* A quantized overdub on a multi-lane track fires on the grid, its layer is
+ * captured per pass across ALL active lanes (one shared undo span), and a
+ * later undo reverts every lane in lockstep. */
 static void test_multi_lane_quantize_overdub_arm(void) {
   printf("test_multi_lane_quantize_overdub_arm\n");
   le_engine* e = make_two_lane_engine();
@@ -3848,14 +4528,14 @@ static void test_multi_lane_quantize_overdub_arm(void) {
   record_two_lane(e, 1.0f, 2.0f); /* master LOOP_N; lane0=1.0, lane1=2.0 */
   CHECK(le_engine_set_quantize(e, 1) == LE_OK);
 
-  /* Move off the loop top, then arm the overdub: the snapshot is pushed now,
-   * across both lanes (one shared undo span). */
+  /* Move off the loop top, then arm the overdub: arming creates no layer (the
+   * pass captures itself once the overdub runs). */
   le_engine_process(e, out, zin, 1); /* pos -> 1 */
   CHECK(le_engine_record(e, 0) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* armed, not overdubbing yet */
-  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].undo_depth == 0);
 
   /* pos 1 -> 2 -> 3 -> wrap: the overdub fires at the loop top. */
   le_engine_process(e, out, zin, 3);
@@ -3869,15 +4549,27 @@ static void test_multi_lane_quantize_overdub_arm(void) {
     in[i * 2 + 1] = 0.5f;
   }
   le_engine_process(e, out, in, LOOP_N);
-  le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
+  le_engine_record(e, 0); /* punch-out press — quantized: fires at the wrap */
   drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1); /* the completed dub pass retired */
+  /* While the quantized punch-out waits for the loop top the overdub keeps
+   * running one more (silent-input) pass — itself a completed layer under
+   * per-pass undo. The wrap then flips the track back to PLAYING. */
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
     CHECK(fabsf(out[i * 2 + 0] - 1.25f) < 1e-6f);
     CHECK(fabsf(out[i * 2 + 1] - 2.5f) < 1e-6f);
   }
+  le_engine_process(e, out, zin, 1); /* settle the punch envelope */
+  drain(e); /* punch envelope quiet: the capture session winds down */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].undo_depth == 2);
 
-  /* Undo reverts both lanes' quantized overdub at once. */
+  /* Undo peels the silent waiting pass (no audible change), then the dub —
+   * both lanes reverted at once each step (the one shared undo span). */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
@@ -4850,7 +5542,7 @@ int main(void) {
   test_quantize_start_and_finalize_on_grid();
   test_quantize_second_press_disarms();
   test_quantize_defining_track_is_immediate();
-  test_quantize_overdub_arm_disarm_reverses_undo();
+  test_quantize_overdub_arm_disarm_no_phantom_layer();
   test_quantize_overdub_fires_on_grid();
   test_ring_init_rejects_bad_capacity();
   test_ring_push_pop_fifo();
@@ -4863,6 +5555,25 @@ int main(void) {
   test_dry_recording_invariant();
   test_looper_overdub_and_undo();
   test_looper_multilevel_undo();
+  test_per_pass_undo_layers();
+  test_punch_out_mid_pass_drains();
+  test_undo_queued_during_drain();
+  test_undo_to_empty_and_redo();
+  test_record_after_undo_to_empty_clears_redo();
+  test_clear_unmutes();
+  test_record_from_empty_unmutes();
+  test_spare_starvation_merges_passes();
+  test_offset_latched_across_dub();
+  test_redo_from_empty_unmutes();
+  test_undo_to_empty_cancels_pending_arm();
+  test_configure_drops_stale_commands();
+  test_undo_layers_quantized_and_live_regrows();
+  test_undo_layer_slot_regrows_for_longer_loop();
+  test_fresh_record_after_undo_to_empty_redefines_grid();
+  test_grid_kept_when_sibling_redo_alive();
+  test_quantize_acts_immediately_when_transport_held();
+  test_repunch_during_drain_restarts_capture();
+  test_undo_pool_eviction();
   test_looper_volume_and_mute();
   test_master_gain_scales_output();
   test_master_gain_rejects_null();

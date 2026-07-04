@@ -157,6 +157,20 @@ typedef enum le_command_code {
                                    * A disabled output is skipped in the mix
                                    * fan-out regardless of any lane/monitor mask
                                    * pointing at it; masks are untouched. */
+  LE_CMD_DUB_SHADOW = 38, /* supply a shadow pool slot for per-pass overdub
+                           * layer capture. lanei arm: channel, value = slot
+                           * (lane unused). Lane buffers are allocated by the
+                           * control thread before the push. */
+  LE_CMD_UNDO_TO_EMPTY = 39,   /* undo past the base layer: track to EMPTY,
+                                * len 0, master grid kept. arg_i = track. */
+  LE_CMD_REDO_FROM_EMPTY = 40, /* reinstate an undone-to-empty track. lanei
+                                * arm: channel, value = restored length. The
+                                * control thread already swapped a_live. */
+
+  /* Event codes (audio thread -> control thread, on the engine's evt_ring —
+   * the reverse SPSC direction; numbered apart from the commands for clarity). */
+  LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
+                               * channel, slot, generation. */
 } le_command_code;
 
 /* Per-lane / per-monitor-input effects: each lane (and each live monitor input)
@@ -323,6 +337,10 @@ typedef struct le_track_snapshot {
                           * when lane 0 records no input) */
   uint32_t output_mask;  /* lane 0 output mask */
   int32_t lane_count;    /* number of active lanes (1..LE_MAX_LANES) */
+  int32_t layer_in_flight; /* 0/1: an overdub undo layer is still being
+                            * captured/drained (punch tail window). Session
+                            * capture waits this out before exporting. */
+  int32_t pending;         /* 0/1: a quantized/signal arm is waiting to fire */
 } le_track_snapshot;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -662,6 +680,30 @@ LE_EXPORT int32_t le_engine_start(le_engine* engine, const le_config* config);
 
 /* Stops and closes the device. Returns LE_OK or an le_result error. */
 LE_EXPORT int32_t le_engine_stop(le_engine* engine);
+
+/* ---- device-free test pump ----
+ *
+ * The two calls a test harness needs to drive the engine deterministically
+ * with NO audio device: configure the tracks/buffers, then pump blocks through
+ * the same block processor the real device callback runs. Exactly how the
+ * native test suite (src/test/test_engine_core.c) exercises the engine; the
+ * Dart sequence fuzzer uses these through the generated bindings. NOT part of
+ * the app's runtime surface — the app always goes through le_engine_start. */
+
+/* Allocates/resets the track buffers and marks the engine configured, without
+ * opening a device. `max_loop_frames <= 0` selects the default (30 s). */
+LE_EXPORT int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
+                                      int32_t input_channels,
+                                      int32_t output_channels,
+                                      int32_t max_loop_frames);
+
+/* Processes one block exactly like the device callback: drains the command
+ * ring, records/mixes `frames` frames from `input` (interleaved f32, may be
+ * NULL for silence) into `output`, advances the transport, publishes
+ * metering/undo events. frames == 0 still drains rings and advances the
+ * per-block maintenance (the test suites' `drain` idiom). */
+LE_EXPORT void le_engine_process(le_engine* engine, float* output,
+                                 const float* input, uint32_t frames);
 
 /* Copies the current state snapshot into *out. No-op if either pointer is NULL.
  */

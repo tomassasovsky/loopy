@@ -23,6 +23,11 @@ class FakeSessionEngine implements AudioEngine {
   final List<_FakeTrack> _tracks = List.generate(4, (_) => _FakeTrack());
   int masterLength = 0;
 
+  /// While > 0, every snapshot reports track 0's undo layer as in flight and
+  /// decrements — simulating the punch-out fade-tail/drain window a capture
+  /// must wait out.
+  int layerInFlightPolls = 0;
+
   /// Seeds a playing track with [pcm] and sets the base loop length from it.
   /// Seed consistent tracks (same base) — the last call wins.
   void seedTrack(
@@ -57,7 +62,7 @@ class FakeSessionEngine implements AudioEngine {
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
     tracks: [
-      for (final t in _tracks)
+      for (final (i, t) in _tracks.indexed)
         TrackSnapshot(
           state: t.state,
           volume: t.volume,
@@ -67,9 +72,16 @@ class FakeSessionEngine implements AudioEngine {
           rms: 0,
           peak: 0,
           multiple: t.multiple,
+          layerInFlight: i == 0 && _consumeInFlightPoll(),
         ),
     ],
   );
+
+  bool _consumeInFlightPoll() {
+    if (layerInFlightPolls <= 0) return false;
+    layerInFlightPolls--;
+    return true;
+  }
 
   @override
   Float32List exportTrack(int channel) =>

@@ -25,7 +25,16 @@ import 'package:meta/meta.dart';
 /// linker keeps them. See macos/loopy_engine/Package.swift.
 ///
 /// On Linux/Windows the engine is a separate shared library opened by name.
+///
+/// A `LOOPY_ENGINE_LIB` environment variable overrides the lookup with an
+/// explicit path on every platform — how the device-free test suites (the
+/// sequence fuzzer via [PumpedNativeEngine]) point at a freshly built library
+/// outside an app bundle.
 DynamicLibrary _openLibrary() {
+  final override = Platform.environment['LOOPY_ENGINE_LIB'];
+  if (override != null && override.isNotEmpty) {
+    return DynamicLibrary.open(override);
+  }
   if (Platform.isMacOS || Platform.isIOS) {
     return DynamicLibrary.process();
   }
@@ -960,6 +969,100 @@ class NativeAudioEngine implements AudioEngine {
       ..free(_trackPtr)
       ..free(_lanePtr)
       ..free(_vizPtr);
+  }
+}
+
+/// A device-free [NativeAudioEngine] for deterministic tests.
+///
+/// [start] only CONFIGURES the native engine — no audio device is opened —
+/// and [pump] drives the same block processor the real device callback runs
+/// (`le_engine_process`), exactly like the native test suite pumps it. Every
+/// other call (record/undo/effects/snapshot/…) is the production FFI path on
+/// the same handle, so a test harness exercises the real engine end to end
+/// with fully controlled time. Lives here (not a test helper file) because it
+/// needs the engine handle/bindings the production class keeps private —
+/// exported from the package barrel like the mock engine.
+class PumpedNativeEngine extends NativeAudioEngine {
+  /// Creates a [PumpedNativeEngine]; see [NativeAudioEngine.new] for
+  /// [bindings]. The library lookup honours the `LOOPY_ENGINE_LIB`
+  /// environment override, which is how test runs point at a freshly built
+  /// engine library.
+  PumpedNativeEngine({super.bindings});
+
+  int _sampleRate = 48000;
+
+  /// Configures the engine (tracks/buffers/sample rate) WITHOUT opening a
+  /// device. The engine is then fully drivable via [pump].
+  @override
+  EngineResult start(EngineConfig config) {
+    _checkAlive();
+    _sampleRate = config.sampleRate > 0 ? config.sampleRate : 48000;
+    return EngineResult.fromCode(
+      _bindings.le_engine_configure(
+        _engine,
+        _sampleRate,
+        config.inputChannels > 0 ? config.inputChannels : 1,
+        config.outputChannels > 0 ? config.outputChannels : 1,
+        config.maxLoopFrames,
+      ),
+    );
+  }
+
+  /// No device to stop; the configuration (and all content) stays live.
+  @override
+  EngineResult stop() => EngineResult.ok;
+
+  /// Processes [frames] frames of constant [input] through the engine's block
+  /// processor — the audio callback, minus the device. `frames == 0` still
+  /// drains the command/event rings and advances per-block maintenance (the
+  /// native suites' `drain` idiom).
+  void pump({int frames = 512, double input = 0}) {
+    _checkAlive();
+    if (frames < 0) return;
+    final inPtr = calloc<Float>(frames == 0 ? 1 : frames);
+    final outPtr = calloc<Float>(frames == 0 ? 1 : frames);
+    try {
+      for (var i = 0; i < frames; i++) {
+        inPtr[i] = input;
+      }
+      _bindings.le_engine_process(_engine, outPtr, inPtr, frames);
+    } finally {
+      calloc
+        ..free(inPtr)
+        ..free(outPtr);
+    }
+  }
+
+  /// The pump reports a live, present "device": without this the repository's
+  /// reconnect supervisor would read the never-started engine as a lost
+  /// device and stop/start it mid-test, resetting every track.
+  @override
+  EngineSnapshot snapshot() {
+    final s = super.snapshot();
+    return EngineSnapshot(
+      isRunning: true,
+      devicePresent: true,
+      sampleRate: s.sampleRate > 0 ? s.sampleRate : _sampleRate,
+      bufferFrames: s.bufferFrames,
+      framesProcessed: s.framesProcessed,
+      xrunCount: s.xrunCount,
+      inputRms: s.inputRms,
+      inputPeak: s.inputPeak,
+      outputRms: s.outputRms,
+      latencyState: s.latencyState,
+      measuredLatencyMs: s.measuredLatencyMs,
+      inputChannels: s.inputChannels,
+      outputChannels: s.outputChannels,
+      excludedInputMask: s.excludedInputMask,
+      outputEnabledMask: s.outputEnabledMask,
+      masterLengthFrames: s.masterLengthFrames,
+      masterPositionFrames: s.masterPositionFrames,
+      recordOffsetFrames: s.recordOffsetFrames,
+      fxAddedLatencyFrames: s.fxAddedLatencyFrames,
+      masterGain: s.masterGain,
+      activeBackend: s.activeBackend,
+      tracks: s.tracks,
+    );
   }
 }
 
