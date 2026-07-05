@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/track_column.dart';
 import 'package:loopy/looper/view/tracks_chrome.dart';
 import 'package:loopy/looper/view/tracks_commands.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 
@@ -36,12 +36,14 @@ class _TracksViewState extends State<TracksView> {
     final l10n = context.l10n;
     final state = context.watch<LooperBloc>().state;
     final tracksState = context.watch<TracksCubit>().state;
-    // The record/play mode is the system-wide LooperMode owned by PedalCubit.
-    final mode = context.watch<PedalCubit>().state.mode;
+    // Mode / cursor / bank are the shared control overlay — the single owner
+    // every surface (keyboard, tiles, pedal) reads and writes.
+    final overlay = context.watch<ControlCubit>().state;
+    final mode = overlay.mode;
     final commands = TracksCommands(context);
     final tracks = [
       for (final track in state.tracks)
-        if (tracksState.bankContains(track.channel)) track,
+        if (overlay.bankContains(track.channel)) track,
     ];
     final anyActive = commands.anyActive(state);
     // Both global transport buttons are no-ops with no recorded audio or a
@@ -82,7 +84,7 @@ class _TracksViewState extends State<TracksView> {
                     children: [
                       TracksToolbar(
                         mode: mode,
-                        activeBank: tracksState.activeBank,
+                        activeBank: overlay.activeBank,
                         anyActive: anyActive,
                         playStopEnabled: playStopEnabled,
                         transportEnabled: transportEnabled,
@@ -116,9 +118,7 @@ class _TracksViewState extends State<TracksView> {
                                         tracksState.nameOf(track.channel),
                                         track.channel,
                                       ),
-                                      selected:
-                                          track.channel ==
-                                          tracksState.selectedChannel,
+                                      selected: track.channel == overlay.cursor,
                                       mode: mode,
                                       onUndo: commands.undo,
                                       onRedo: commands.redo,

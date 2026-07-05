@@ -805,6 +805,79 @@ class LoopyEngineBindings {
   late final _le_engine_stop = _le_engine_stopPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
+  /// Allocates/resets the track buffers and marks the engine configured, without
+  /// opening a device. `max_loop_frames <= 0` selects the default (30 s).
+  int le_engine_configure(
+    ffi.Pointer<le_engine> engine,
+    int sample_rate,
+    int input_channels,
+    int output_channels,
+    int max_loop_frames,
+  ) {
+    return _le_engine_configure(
+      engine,
+      sample_rate,
+      input_channels,
+      output_channels,
+      max_loop_frames,
+    );
+  }
+
+  late final _le_engine_configurePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_configure');
+  late final _le_engine_configure = _le_engine_configurePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int, int)>();
+
+  /// Processes one block exactly like the device callback: drains the command
+  /// ring, records/mixes `frames` frames from `input` (interleaved f32, may be
+  /// NULL for silence) into `output`, advances the transport, publishes
+  /// metering/undo events. frames == 0 still drains rings and advances the
+  /// per-block maintenance (the test suites' `drain` idiom).
+  void le_engine_process(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Float> output,
+    ffi.Pointer<ffi.Float> input,
+    int frames,
+  ) {
+    return _le_engine_process(
+      engine,
+      output,
+      input,
+      frames,
+    );
+  }
+
+  late final _le_engine_processPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<ffi.Float>,
+            ffi.Pointer<ffi.Float>,
+            ffi.Uint32,
+          )
+        >
+      >('le_engine_process');
+  late final _le_engine_process = _le_engine_processPtr
+      .asFunction<
+        void Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<ffi.Float>,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
   /// Copies the current state snapshot into *out. No-op if either pointer is NULL.
   void le_engine_get_snapshot(
     ffi.Pointer<le_engine> engine,
@@ -1945,6 +2018,58 @@ class LoopyEngineBindings {
   late final _le_engine_set_output_enabled = _le_engine_set_output_enabledPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
+  /// An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
+  /// for each of the a_fx_count active entries, its type, plus (for a built-in) its
+  /// LE_FX_PARAMS float parameter bits — a plugin entry contributes its type only
+  /// (its params live in the plugin host, not a_fx_param). The empty chain hashes
+  /// to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
+  /// Dart repository owns the chain and computes the identical hash over its cache,
+  /// so a debug assert / the sequence fuzzer can catch a cache-vs-engine divergence
+  /// without the engine ever narrating the chain back. Scanned on the control thread
+  /// off the published a_fx_* atomics (the race-free seam, like le_max_fx_latency);
+  /// the audio thread never reads it. Out-of-range args return 0.
+  int le_engine_lane_fx_fingerprint(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+  ) {
+    return _le_engine_lane_fx_fingerprint(
+      engine,
+      channel,
+      lane,
+    );
+  }
+
+  late final _le_engine_lane_fx_fingerprintPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint64 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_lane_fx_fingerprint');
+  late final _le_engine_lane_fx_fingerprint = _le_engine_lane_fx_fingerprintPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_monitor_fx_fingerprint(
+    ffi.Pointer<le_engine> engine,
+    int input,
+  ) {
+    return _le_engine_monitor_fx_fingerprint(
+      engine,
+      input,
+    );
+  }
+
+  late final _le_engine_monitor_fx_fingerprintPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint64 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_monitor_fx_fingerprint');
+  late final _le_engine_monitor_fx_fingerprint =
+      _le_engine_monitor_fx_fingerprintPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
   /// returns the number of frames written (the track length, clamped to
   /// `max_frames`), or 0 on a bad argument / empty track. Reads the live buffer —
@@ -2529,7 +2654,26 @@ enum le_command_code {
   /// A disabled output is skipped in the mix
   /// fan-out regardless of any lane/monitor mask
   /// pointing at it; masks are untouched.
-  LE_CMD_SET_OUTPUT_ENABLED(37);
+  LE_CMD_SET_OUTPUT_ENABLED(37),
+
+  /// supply a shadow pool slot for per-pass overdub
+  /// layer capture. lanei arm: channel, value = slot
+  /// (lane unused). Lane buffers are allocated by the
+  /// control thread before the push.
+  LE_CMD_DUB_SHADOW(38),
+
+  /// undo past the base layer: track to EMPTY,
+  /// len 0, master grid kept. arg_i = track.
+  LE_CMD_UNDO_TO_EMPTY(39),
+
+  /// reinstate an undone-to-empty track. lanei
+  /// arm: channel, value = restored length. The
+  /// control thread already swapped a_live.
+  LE_CMD_REDO_FROM_EMPTY(40),
+
+  /// a completed overdub-pass snapshot. evt arm:
+  /// channel, slot, generation.
+  LE_EVT_LAYER_RETIRED(100);
 
   final int value;
   const le_command_code(this.value);
@@ -2564,6 +2708,10 @@ enum le_command_code {
     35 => LE_CMD_SET_MONITOR_INPUT_MUTE,
     36 => LE_CMD_SET_MASTER_GAIN,
     37 => LE_CMD_SET_OUTPUT_ENABLED,
+    38 => LE_CMD_DUB_SHADOW,
+    39 => LE_CMD_UNDO_TO_EMPTY,
+    40 => LE_CMD_REDO_FROM_EMPTY,
+    100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
 }
@@ -2750,6 +2898,16 @@ final class le_track_snapshot extends ffi.Struct {
   /// number of active lanes (1..LE_MAX_LANES)
   @ffi.Int32()
   external int lane_count;
+
+  /// 0/1: an overdub undo layer is still being
+  /// captured/drained (punch tail window). Session
+  /// capture waits this out before exporting.
+  @ffi.Int32()
+  external int layer_in_flight;
+
+  /// 0/1: a quantized/signal arm is waiting to fire
+  @ffi.Int32()
+  external int pending;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by

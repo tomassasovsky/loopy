@@ -42,6 +42,9 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->output_mask =
       atomic_load_explicit(&l0->a_output_mask, memory_order_relaxed);
   out->lane_count = le_lanes_active(tr);
+  out->layer_in_flight =
+      atomic_load_explicit(&tr->a_layer_in_flight, memory_order_acquire);
+  out->pending = load_i32(&tr->a_pending);
 }
 
 /* Max added latency (frames) across every active octaver in any record-route or
@@ -81,8 +84,61 @@ static int32_t le_max_fx_latency(le_engine* engine) {
   return max_lat;
 }
 
+/* FNV-1a mix of one 32-bit value, byte by byte in little-endian order so the
+ * hash is endianness-independent (both this and the Dart mirror process the
+ * value's low byte first). */
+static uint64_t le_fx_fp_u32(uint64_t h, uint32_t v) {
+  for (int b = 0; b < 4; ++b) {
+    h ^= (uint8_t)(v >> (8 * b));
+    h *= 0x100000001b3ULL;
+  }
+  return h;
+}
+
+/* Order-sensitive fingerprint of a published fx chain (a_fx_count active of the
+ * a_fx_type / a_fx_param arrays). Built-ins fold in their type + LE_FX_PARAMS
+ * float-bit params; a plugin entry (LE_FX_PLUGIN) folds in its type only. The
+ * Dart repository computes the identical hash over its cache. */
+static uint64_t le_fx_chain_fingerprint(
+    _Atomic int32_t* a_count, _Atomic int32_t* a_type,
+    _Atomic uint32_t (*a_param)[LE_FX_PARAMS]) {
+  uint64_t h = 0xcbf29ce484222325ULL; /* FNV-1a 64-bit offset basis */
+  int32_t n = load_i32(a_count);
+  if (n < 0) n = 0;
+  if (n > LE_FX_MAX) n = LE_FX_MAX;
+  for (int32_t i = 0; i < n; ++i) {
+    const int32_t type = load_i32(&a_type[i]);
+    h = le_fx_fp_u32(h, (uint32_t)type);
+    if (type == LE_FX_PLUGIN) continue; /* plugin params live in the host */
+    for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
+      h = le_fx_fp_u32(
+          h, atomic_load_explicit(&a_param[i][p], memory_order_relaxed));
+    }
+  }
+  return h;
+}
+
+uint64_t le_engine_lane_fx_fingerprint(le_engine* engine, int32_t channel,
+                                       int32_t lane) {
+  if (engine == NULL || channel < 0 || channel >= engine->track_count ||
+      lane < 0 || lane >= LE_MAX_LANES) {
+    return 0;
+  }
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  return le_fx_chain_fingerprint(&ln->a_fx_count, ln->a_fx_type, ln->a_fx_param);
+}
+
+uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine, int32_t input) {
+  if (engine == NULL || input < 0 || input >= LE_MAX_INPUTS) return 0;
+  le_monitor_input* m = &engine->monitors[input];
+  return le_fx_chain_fingerprint(&m->a_fx_count, m->a_fx_type, m->a_fx_param);
+}
+
 void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   if (engine == NULL || out == NULL) return;
+  /* Collect retired per-pass undo layers (and replenish shadow spares) on the
+   * UI's poll cadence, so undo depths stay fresh and queued undo taps apply. */
+  le_engine_drain_events(engine);
   out->running = atomic_load_explicit(&engine->a_running, memory_order_acquire);
   out->device_present =
       atomic_load_explicit(&engine->a_device_present, memory_order_acquire);
@@ -132,6 +188,8 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->input_mask = 0x1u;
     out->output_mask = 0x3u;
     out->lane_count = 1;
+    out->layer_in_flight = 0;
+    out->pending = 0;
     return;
   }
   le_fill_track_snapshot(&engine->tracks[channel], 1, out);

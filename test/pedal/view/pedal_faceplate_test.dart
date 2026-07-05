@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/surface_theme.dart';
@@ -52,6 +53,7 @@ void main() {
     looper = _MockLooperRepository();
     looperStates = StreamController<LooperState>.broadcast();
     when(() => looper.looperState).thenAnswer((_) => looperStates.stream);
+    when(() => looper.state).thenReturn(const LooperState());
     for (final stub in [
       () => looper.record(channel: any(named: 'channel')),
       () => looper.play(channel: any(named: 'channel')),
@@ -82,13 +84,23 @@ void main() {
     bool bind = true,
   }) async {
     final sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
-    final cubit = PedalCubit(
-      pedal: PedalRepository(sim),
+    final settings = SettingsRepository(store: FakeKeyValueStore());
+    // The real control cubit: presses injected into the simulator decode
+    // through the shared PedalRepository into the same control layer the app
+    // wires (mode/cursor owned by ControlCubit).
+    final pedalRepo = PedalRepository(sim);
+    final control = ControlCubit(
       looper: looper,
-      settings: SettingsRepository(store: FakeKeyValueStore()),
+      pedal: pedalRepo,
+      settings: settings,
+    );
+    addTearDown(control.close);
+    final cubit = PedalCubit(
+      pedal: pedalRepo,
+      settings: settings,
       pollInterval: Duration.zero,
     );
-    addTearDown(cubit.close);
+    addTearDown(cubit.close); // disposes pedalRepo (the lifecycle owner)
     await tester.pumpWidget(
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -96,8 +108,11 @@ void main() {
         theme: ThemeData(extensions: const [SurfaceTheme.dark]),
         home: RepositoryProvider<SimulatorPedalTransport>.value(
           value: sim,
-          child: BlocProvider.value(
-            value: cubit,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider.value(value: cubit),
+              BlocProvider.value(value: control),
+            ],
             child: const Scaffold(
               body: PedalFaceplate(
                 mainScreen: SizedBox(key: _mainScreenKey),
