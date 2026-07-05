@@ -77,7 +77,25 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
     NSString* t = [NSString stringWithUTF8String:title];
     if (t) [window setTitle:t];
   }
-  [window center];
+  // SPIKE (Option A): anchor the editor as a centered popup OVER the Loopy
+  // window instead of floating at screen-centre. At open time the editor is not
+  // yet key, so NSApp.mainWindow is the Flutter (host) window. Attaching the
+  // editor as a child window keeps it centred-over + above Loopy and moving
+  // with it — the "popup inside the app" feel. NOTE (D-WIN): the header records
+  // that child-windowing Flutter's window was previously avoided; this spike
+  // deliberately exercises it. Falls back to screen-centre when there is no
+  // host window (e.g. the native probe / headless harness).
+  NSWindow* parent = [NSApp mainWindow] ?: [NSApp keyWindow];
+  if (parent && parent != window) {
+    const NSRect pf = [parent frame];
+    NSRect wf = [window frame];
+    wf.origin = NSMakePoint(pf.origin.x + (pf.size.width - wf.size.width) / 2.0,
+                            pf.origin.y + (pf.size.height - wf.size.height) / 2.0);
+    [window setFrame:wf display:NO];
+    [parent addChildWindow:window ordered:NSWindowAbove];
+  } else {
+    [window center];
+  }
 
   // A plain content view is the plugin's attach parent.
   NSView* content = [[NSView alloc] initWithFrame:frame];
