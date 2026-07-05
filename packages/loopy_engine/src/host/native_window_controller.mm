@@ -36,9 +36,10 @@ struct lpw_window;
 // (LOOPY_EDITOR_EMBED=1) there is no window: [embedded] is the container NSView
 // added as a subview of the Loopy window, and [window]/[delegate] are null.
 struct lpw_window {
-  CFTypeRef window;    // NSWindow*
-  CFTypeRef delegate;  // LpwWindowDelegate*
-  CFTypeRef embedded;  // NSView* (embed spike only)
+  CFTypeRef window;     // NSWindow*
+  CFTypeRef delegate;   // LpwWindowDelegate* or LpwCloseTarget* (embed)
+  CFTypeRef embedded;   // NSView* scrim backdrop (embed mode)
+  CFTypeRef container;  // NSView* the plugin attaches to (embed mode)
 };
 
 @implementation LpwWindowDelegate
@@ -56,6 +57,32 @@ struct lpw_window {
   });
 }
 @end
+
+// Close-button target for the embedded popup — mirrors the window delegate's
+// user-close path: fire on_close (host detaches the plugin) then defer the free.
+@interface LpwCloseTarget : NSObject {
+ @public
+  lpw_close_cb cb;
+  void* ctx;
+  bool suppress;
+  lpw_window* handle;
+}
+- (void)onClose:(id)sender;
+@end
+
+@implementation LpwCloseTarget
+- (void)onClose:(id)sender {
+  (void)sender;
+  if (suppress) return;
+  suppress = true;
+  if (cb) cb(ctx);  // host detaches the plugin view now
+  lpw_window* h = handle;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    lpw_window_close(h);
+  });
+}
+@end
+
 
 extern "C" {
 
@@ -77,22 +104,58 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
   // view) instead of a top-level window. Answers "does a plugin editor render
   // when embedded in the app's window at all?" — the make-or-break for a real
   // AppKitView platform-view embed. No titlebar/close (the host drives close).
+  // Default: embed the editor INSIDE the Loopy window. LOOPY_EDITOR_EMBED=0
+  // forces the old top-level window (fallback / debugging).
   const char* embedEnv = std::getenv("LOOPY_EDITOR_EMBED");
-  const bool embed = embedEnv && embedEnv[0] == '1';
+  const bool embed = !(embedEnv && embedEnv[0] == '0');
   NSWindow* host = [NSApp mainWindow] ?: [NSApp keyWindow];
   if (embed && host) {
     NSView* root = [host contentView];
-    NSView* container = [[NSView alloc] initWithFrame:frame];
+    const NSRect rb = [root bounds];
+
+    // Full-window scrim so the embedded editor reads as a modal popup and eats
+    // clicks to the app behind it.
+    NSView* backdrop = [[NSView alloc] initWithFrame:rb];
+    [backdrop setWantsLayer:YES];
+    backdrop.layer.backgroundColor =
+        [[NSColor colorWithCalibratedWhite:0 alpha:0.5] CGColor];
+    [backdrop setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+
+    // The plugin's attach parent — a centred, rounded panel. Tagged so the
+    // accessors below can find it under the backdrop.
+    NSView* container =
+        [[NSView alloc] initWithFrame:lpw_center_in(root, width, height)];
     [container setWantsLayer:YES];
-    [container setFrame:lpw_center_in(root, width, height)];
+    container.layer.backgroundColor =
+        [[NSColor colorWithCalibratedWhite:0.09 alpha:1] CGColor];
+    container.layer.cornerRadius = 6;
+    container.layer.masksToBounds = YES;
     [container setAutoresizingMask:NSViewMinXMargin | NSViewMaxXMargin |
                                    NSViewMinYMargin | NSViewMaxYMargin];
-    [root addSubview:container];
+    [backdrop addSubview:container];
+
+    // A close button pinned to the scrim's top-right (kept out of the plugin's
+    // own rect so it never overlaps a plugin control).
+    LpwCloseTarget* target = [[LpwCloseTarget alloc] init];
+    target->cb = on_close;
+    target->ctx = ctx;
+    target->suppress = false;
+    NSButton* close = [NSButton buttonWithTitle:@"✕"
+                                         target:target
+                                         action:@selector(onClose:)];
+    [close setBezelStyle:NSBezelStyleCircular];
+    [close setFrame:NSMakeRect(rb.size.width - 40, rb.size.height - 40, 28, 28)];
+    [close setAutoresizingMask:NSViewMinXMargin | NSViewMinYMargin];
+    [backdrop addSubview:close];
+
+    [root addSubview:backdrop];
+
     lpw_window* h = static_cast<lpw_window*>(std::calloc(1, sizeof(lpw_window)));
     if (!h) return nullptr;
-    h->embedded = CFBridgingRetain(container);
-    (void)on_close;  // no user-initiated close in embed mode
-    (void)ctx;
+    h->embedded = CFBridgingRetain(backdrop);   // handle owns +1
+    h->container = CFBridgingRetain(container);  // handle owns +1
+    h->delegate = CFBridgingRetain(target);     // handle owns +1
+    target->handle = h;                          // for the deferred free
     return h;
   }
 
@@ -156,9 +219,10 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
 
 void* lpw_window_content_view(lpw_window* window) {
   if (!window) return nullptr;
-  if (window->embedded) {
-    NSView* v = (__bridge NSView*)window->embedded;
-    return (__bridge void*)v;
+  if (window->container) {
+    // The plugin attaches to the centred container, not the scrim backdrop.
+    NSView* container = (__bridge NSView*)window->container;
+    return (__bridge void*)container;
   }
   if (!window->window) return nullptr;
   NSWindow* w = (__bridge NSWindow*)window->window;
@@ -167,11 +231,11 @@ void* lpw_window_content_view(lpw_window* window) {
 
 void lpw_window_resize(lpw_window* window, int32_t width, int32_t height) {
   if (!window || width <= 0 || height <= 0) return;
-  if (window->embedded) {
-    NSView* v = (__bridge NSView*)window->embedded;
-    NSView* super = [v superview];
-    [v setFrame:super ? lpw_center_in(super, width, height)
-                      : NSMakeRect(0, 0, width, height)];
+  if (window->container) {
+    // Grow the centred container (the scrim backdrop stays full-window).
+    NSView* container = (__bridge NSView*)window->container;
+    NSView* backdrop = [container superview];
+    if (backdrop) [container setFrame:lpw_center_in(backdrop, width, height)];
     return;
   }
   if (!window->window) return;
@@ -197,10 +261,23 @@ void lpw_window_show(lpw_window* window) {
 void lpw_window_close(lpw_window* window) {
   if (!window) return;
   if (window->embedded) {
-    NSView* v = (__bridge NSView*)window->embedded;
-    [v removeFromSuperview];
+    // Suppress a re-entrant close-button action while we tear down.
+    if (window->delegate) {
+      LpwCloseTarget* t = (__bridge LpwCloseTarget*)window->delegate;
+      t->suppress = true;
+    }
+    NSView* backdrop = (__bridge NSView*)window->embedded;
+    [backdrop removeFromSuperview];  // drops the container + close button too
     CFBridgingRelease(window->embedded);  // drops the handle's +1
     window->embedded = nullptr;
+    if (window->container) {
+      CFBridgingRelease(window->container);  // drops the handle's +1
+      window->container = nullptr;
+    }
+    if (window->delegate) {
+      CFBridgingRelease(window->delegate);  // drops the handle's +1
+      window->delegate = nullptr;
+    }
     std::free(window);
     return;
   }
