@@ -131,6 +131,29 @@ RECT centredFrameRect(int width, int height, DWORD style) {
   return out;
 }
 
+// The process's Flutter top-level window, or null. Used as the editor window's
+// OWNER so the editor is an overlay of the app (no separate taskbar button;
+// floats above the app and minimizes / restores with it) — the Windows analogue
+// of a macOS app window, rather than a detached top-level window.
+BOOL CALLBACK findAppWindowProc(HWND hwnd, LPARAM lparam) {
+  DWORD pid = 0;
+  GetWindowThreadProcessId(hwnd, &pid);
+  if (pid != GetCurrentProcessId()) return TRUE;  // keep scanning
+  wchar_t cls[64] = {};
+  GetClassNameW(hwnd, cls, 64);
+  if (lstrcmpW(cls, L"FLUTTER_RUNNER_WIN32_WINDOW") == 0) {
+    *reinterpret_cast<HWND*>(lparam) = hwnd;
+    return FALSE;  // found it; stop
+  }
+  return TRUE;
+}
+
+HWND findAppWindow() {
+  HWND found = nullptr;
+  EnumWindows(findAppWindowProc, reinterpret_cast<LPARAM>(&found));
+  return found;
+}
+
 }  // namespace
 
 extern "C" {
@@ -145,10 +168,13 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
   const RECT frame = centredFrameRect(width, height, style);
   const std::wstring wtitle = title ? widen(title) : std::wstring();
 
+  // Owned by the app's Flutter window (when found): an overlay of the app, not
+  // a detached top-level window with its own taskbar button.
+  HWND owner = findAppWindow();
   HWND top = CreateWindowExW(
       0, kWindowClass, wtitle.empty() ? L"Plugin Editor" : wtitle.c_str(), style,
       frame.left, frame.top, frame.right - frame.left, frame.bottom - frame.top,
-      nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+      owner, nullptr, GetModuleHandleW(nullptr), nullptr);
   if (!top) return nullptr;
 
   // A plain child fills the client area as the plugin's attach parent. WS_CLIPCHILDREN
