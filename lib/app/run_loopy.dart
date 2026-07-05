@@ -56,7 +56,10 @@ Future<void> runLoopy(
   if (repository == null || sessionRepository == null) {
     final engine = createNativeAudioEngine();
     looper = LooperRepository(engine: engine);
-    session = SessionRepository(engine: engine);
+    session = SessionRepository(
+      engine: engine,
+      sessionsRoot: defaultSessionsRoot,
+    );
   } else {
     looper = repository;
     session = sessionRepository;
@@ -123,7 +126,7 @@ Future<void> runLoopy(
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: session,
-      sessionDirectory: defaultSessionDirectory,
+      exportDirectory: defaultExportDirectory,
       initialAsioDrivers: asioDrivers,
     ),
   );

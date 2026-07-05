@@ -17,11 +17,13 @@ import 'package:settings_repository/settings_repository.dart';
 class LooperPage extends StatelessWidget {
   /// Creates a [LooperPage].
   ///
-  /// [sessionDirectory] resolves the on-disk session bundle directory.
-  const LooperPage({required this.sessionDirectory, super.key});
+  /// [exportDirectory] resolves the directory a mixdown / stems export is
+  /// written to. Named sessions live under the repository's own catalog root.
+  const LooperPage({required this.exportDirectory, super.key});
 
-  /// Resolves the session bundle directory (e.g. the app documents folder).
-  final Future<String> Function() sessionDirectory;
+  /// Resolves the mixdown / stems export directory (a sibling of the named
+  /// sessions catalog under the app documents folder).
+  final Future<String> Function() exportDirectory;
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +40,7 @@ class LooperPage extends StatelessWidget {
           create: (context) => SessionCubit(
             repository: context.read<SessionRepository>(),
             looper: context.read<LooperRepository>(),
-            directory: sessionDirectory,
+            exportDirectory: exportDirectory,
           ),
         ),
       ],

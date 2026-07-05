@@ -151,6 +151,12 @@ class TracksCommands {
         redo(selected);
         return KeyEventResult.handled;
       }
+      // Cmd/Ctrl+S writes back to the open session (falls back to Save-As via
+      // the view's session listener when nothing is open).
+      if (key == LogicalKeyboardKey.keyS) {
+        unawaited(context.read<SessionCubit>().save());
+        return KeyEventResult.handled;
+      }
       return KeyEventResult.ignored; // let OS / menu shortcuts through
     }
 
@@ -252,6 +258,19 @@ class TracksCommands {
     }
     return null;
   }
+}
+
+/// Reacts to a settled [SessionCubit] transition: a quick Save with no open
+/// session asks the cubit to request Save-As, which surfaces here as
+/// [SessionOutcome.saveAsRequested] — open the name dialog. Every other
+/// settled outcome flows to [showSessionOutcome]'s SnackBar. Wired as the
+/// `TracksView`'s session [BlocListener].
+void onSessionState(BuildContext context, SessionState state) {
+  if (state.outcome == SessionOutcome.saveAsRequested) {
+    unawaited(promptSaveAs(context));
+    return;
+  }
+  showSessionOutcome(context, state);
 }
 
 /// Shows a transient SnackBar surfacing the last session action's outcome —

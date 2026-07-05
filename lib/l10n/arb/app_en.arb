@@ -35,14 +35,41 @@
     "close": "Close",
     "mixdownExported": "Mixdown exported",
     "stemsExported": "Stems exported",
-    "saveSession": "Save session",
-    "loadSession": "Load session",
     "exportMixdown": "Export mixdown",
     "exportStems": "Export stems",
     "sessionMenuTooltip": "Session",
     "a11ySessionMenu": "Session menu",
     "sessionSaved": "Session saved",
     "sessionLoaded": "Session loaded",
+    "sessionSave": "Save",
+    "sessionManage": "Sessions…",
+    "sessionSaveAs": "Save as…",
+    "sessionRename": "Rename",
+    "sessionDelete": "Delete",
+    "sessionUnsaved": "Unsaved",
+    "sessionsManagerTitle": "Sessions",
+    "sessionsEmpty": "No saved sessions yet. Use “Save as…” to create one.",
+    "sessionNewTitle": "Save as new session",
+    "sessionRenameTitle": "Rename session",
+    "sessionNameHint": "Session name",
+    "sessionNameInvalid": "Enter a valid session name.",
+    "sessionNameDuplicate": "A session named “{name}” already exists.",
+    "@sessionNameDuplicate": {
+        "placeholders": { "name": { "type": "String" } }
+    },
+    "sessionDeleteConfirmTitle": "Delete “{name}”?",
+    "@sessionDeleteConfirmTitle": {
+        "placeholders": { "name": { "type": "String" } }
+    },
+    "sessionDeleteConfirmBody": "This permanently deletes the saved session. The current rig keeps playing.",
+    "a11ySessionRename": "Rename session {name}",
+    "@a11ySessionRename": {
+        "placeholders": { "name": { "type": "String" } }
+    },
+    "a11ySessionDelete": "Delete session {name}",
+    "@a11ySessionDelete": {
+        "placeholders": { "name": { "type": "String" } }
+    },
     "sessionErrorSampleRate": "Couldn't load the session — it was recorded at a different sample rate than the current device. Reopen the device at the session's sample rate, then try again.",
     "sessionErrorUnsupportedVersion": "Couldn't load the session — it was saved by a newer version of Loopy. Update the app, then try again.",
     "sessionErrorGeneric": "Session action failed: {details}",
