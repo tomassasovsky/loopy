@@ -109,18 +109,38 @@ class _SignalListViewState extends State<SignalListView> {
   bool get _anyFocus =>
       _focusedInput != null || _focusedTake != null || _tracedOutput != null;
 
+  // Selecting an input / take card opens the FX dock on that chain (and closes
+  // it when the same card is tapped again); outputs carry no FX, so tracing one
+  // closes the dock.
   void _focusInput(int c) => setState(() {
     final same = _focusedInput == c;
     _focusedInput = same ? null : c;
     _focusedTake = null;
     _tracedOutput = null;
+    _editedScope = same
+        ? null
+        : InputFxScope(
+            monitor: _monitor,
+            looper: _bloc,
+            repository: context.read<LooperRepository>(),
+            input: c,
+          );
   });
 
   void _focusTake(TakeRow take) => setState(() {
-    final same = _focusedTake == (track: take.track, lane: take.laneIndex);
-    _focusedTake = same ? null : (track: take.track, lane: take.laneIndex);
+    final key = (track: take.track, lane: take.laneIndex);
+    final same = _focusedTake == key;
+    _focusedTake = same ? null : key;
     _focusedInput = null;
     _tracedOutput = null;
+    _editedScope = same
+        ? null
+        : LaneFxScope(
+            looper: _bloc,
+            repository: context.read<LooperRepository>(),
+            track: take.track,
+            lane: take.laneIndex,
+          );
   });
 
   void _traceOutput(int o) => setState(() {
@@ -128,12 +148,14 @@ class _SignalListViewState extends State<SignalListView> {
     _tracedOutput = same ? null : o;
     _focusedInput = null;
     _focusedTake = null;
+    _editedScope = null;
   });
 
   void _clear() => setState(() {
     _focusedInput = null;
     _focusedTake = null;
     _tracedOutput = null;
+    _editedScope = null;
   });
 
   /// The lit-tag set, **recomputed from current rows each build** so editing a
