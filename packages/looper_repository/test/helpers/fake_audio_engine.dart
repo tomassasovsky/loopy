@@ -412,6 +412,18 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Overridable fingerprints so a test can drive the divergence-detection path
+  /// without a real engine; default to the empty-chain basis.
+  int laneFingerprint = FxFingerprint.offset;
+  int monitorFingerprint = FxFingerprint.offset;
+
+  @override
+  int laneFxFingerprint({required int channel, required int lane}) =>
+      laneFingerprint;
+
+  @override
+  int monitorFxFingerprint({required int input}) => monitorFingerprint;
+
   /// Per-output structural gate passed to [setOutputEnabled].
   final Map<int, bool> outputEnabled = {};
 
@@ -428,15 +440,35 @@ class FakeAudioEngine implements AudioEngine {
     return Float32List(0);
   }
 
+  /// PCM passed to [importTrack], keyed by channel.
+  final Map<int, Float32List> importedTracks = {};
+
+  /// Result returned by [importTrack] once any [importFailCountdown] is spent.
+  EngineResult importResult = EngineResult.ok;
+
+  /// If `> 0`, [importTrack] returns [EngineResult.invalid] this many times
+  /// (decrementing) before honoring [importResult] — exercises the
+  /// posted-clear ack retry in `applySession`.
+  int importFailCountdown = 0;
+
   @override
   EngineResult importTrack(int channel, Float32List pcm) {
     calls.add('importTrack');
-    return EngineResult.ok;
+    if (importFailCountdown > 0) {
+      importFailCountdown--;
+      return EngineResult.invalid;
+    }
+    if (importResult.isOk) importedTracks[channel] = pcm;
+    return importResult;
   }
+
+  /// Base frames passed to the last [commitSession].
+  int? committedBaseFrames;
 
   @override
   EngineResult commitSession(int baseFrames) {
     calls.add('commitSession');
+    committedBaseFrames = baseFrames;
     return EngineResult.ok;
   }
 

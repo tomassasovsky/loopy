@@ -4,6 +4,5 @@
 library;
 
 export 'cubit/pedal_cubit.dart';
-export 'view/pedal_cursor_bridge.dart';
 export 'view/pedal_faceplate.dart';
 export 'view/pedal_settings_section.dart';

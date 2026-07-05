@@ -152,6 +152,16 @@ void main() {
       );
     });
 
+    test('loading is a distinct, copyable, equality-bearing flag (F5)', () {
+      const base = PluginEffect(ref: ref);
+      expect(base.loading, isFalse);
+      final loading = base.copyWith(loading: true);
+      expect(loading.loading, isTrue);
+      expect(loading, isNot(base));
+      // Clearing it (a resolved bind) restores equality.
+      expect(loading.copyWith(loading: false), base);
+    });
+
     test('PluginRef equality includes format, id, and version', () {
       expect(
         ref,
@@ -261,5 +271,65 @@ void main() {
         expect(encodeTrackEffects([withMeta]), encodeTrackEffects([base]));
       },
     );
+  });
+
+  group('trackChainFingerprint', () {
+    const ref = PluginRef(format: PluginFormat.clap, id: 'p');
+
+    test('an empty chain hashes to the FNV offset basis', () {
+      expect(trackChainFingerprint(const []), engine.FxFingerprint.offset);
+    });
+
+    test('is deterministic for the same chain', () {
+      final a = [BuiltInEffect(type: TrackEffectType.drive)];
+      final b = [BuiltInEffect(type: TrackEffectType.drive)];
+      expect(trackChainFingerprint(a), trackChainFingerprint(b));
+    });
+
+    test('is order-sensitive', () {
+      final ab = [
+        BuiltInEffect(type: TrackEffectType.drive),
+        BuiltInEffect(type: TrackEffectType.reverb),
+      ];
+      expect(
+        trackChainFingerprint(ab),
+        isNot(trackChainFingerprint(ab.reversed.toList())),
+      );
+    });
+
+    test('reflects a parameter change', () {
+      final a = [
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          params: const [0.3, 0, 0, 0],
+        ),
+      ];
+      final b = [
+        BuiltInEffect(
+          type: TrackEffectType.delay,
+          params: const [0.9, 0, 0, 0],
+        ),
+      ];
+      expect(trackChainFingerprint(a), isNot(trackChainFingerprint(b)));
+    });
+
+    test('a plugin entry folds in its type only (not host-owned params)', () {
+      // Two plugins with different paramValues fingerprint the same — the
+      // engine stores no plugin params in a_fx_param, so the fingerprint must
+      // not either (it would never match the engine otherwise).
+      final a = [
+        const PluginEffect(ref: ref, paramValues: {1: 0.2}),
+      ];
+      final b = [
+        const PluginEffect(ref: ref, paramValues: {1: 0.8}),
+      ];
+      expect(trackChainFingerprint(a), trackChainFingerprint(b));
+      // But a plugin differs from a built-in.
+      final builtIn = [BuiltInEffect(type: TrackEffectType.drive)];
+      expect(
+        trackChainFingerprint(a),
+        isNot(trackChainFingerprint(builtIn)),
+      );
+    });
   });
 }

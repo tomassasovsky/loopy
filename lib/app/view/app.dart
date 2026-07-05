@@ -9,6 +9,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
@@ -224,17 +225,34 @@ class App extends StatelessWidget {
               repository: context.read<MidiDeviceRepository>(),
             ),
           ),
-          // Eager (not lazy): the pedal cubit auto-binds the saved output
-          // device on launch and starts projecting LED frames, so it must be at
-          // startup. Its cursor is mirrored onto the shared TracksCubit by
-          // PedalCursorBridge (a presentation-layer BlocListener), so the two
-          // cubits stay decoupled.
+          // Eager (not lazy): the ONE control-surface interpreter and owner
+          // of stored user intent (mode / cursor / bank / play intent). The
+          // pedal's decoded footswitches reach it through PedalRepository's
+          // event stream and its projected LED frames leave through the same
+          // repository, so the keyboard, on-screen widgets, and the pedal
+          // share one cursor, one mode, one command path — with repositories
+          // composed at the bloc level, per the layered architecture.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = ControlCubit(
+                looper: context.read<LooperRepository>(),
+                pedal: pedalRepo,
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load()); // boot-default mode restore
+              return cubit;
+            },
+          ),
+          // Eager (not lazy): the pedal LINK feature auto-binds the saved
+          // output device on launch and keeps it bound across hotplugs. It
+          // shares the PedalRepository with ControlCubit (binding here,
+          // events/frames there) — the cubits know nothing of each other.
           BlocProvider(
             lazy: false,
             create: (context) {
               final cubit = PedalCubit(
                 pedal: pedalRepo,
-                looper: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
               );
               unawaited(cubit.load());
@@ -257,14 +275,10 @@ class App extends StatelessWidget {
             },
           ),
         ],
-        // Bridges the pedal's cursor onto the shared TracksCubit at the
-        // presentation layer (bloc-to-bloc communication via BlocListener).
-        child: PedalCursorBridge(
-          child: _AppView(
-            waveformWindow: waveformWindow,
-            sessionDirectory: sessionDirectory,
-            displayCount: displayCount,
-          ),
+        child: _AppView(
+          waveformWindow: waveformWindow,
+          sessionDirectory: sessionDirectory,
+          displayCount: displayCount,
         ),
       ),
     );
@@ -360,10 +374,11 @@ class _AppViewState extends State<_AppView> {
         if (!mounted) return;
         final looper = context.read<LooperRepository>();
         final tracks = context.read<TracksCubit>();
+        final cursor = context.read<ControlCubit>().state.cursor;
         widget.waveformWindow.pushWaveform(
           looper.readWaveform(),
           looper.state.transport.progress,
-          tracks.state.names[tracks.state.selectedChannel],
+          tracks.state.nameOf(cursor),
         );
       });
     } else {

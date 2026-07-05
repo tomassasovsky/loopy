@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
@@ -114,9 +115,12 @@ class TrackColumn extends StatelessWidget {
                   iconSize: 18,
                   color: Colors.white70,
                   icon: const Icon(Icons.undo),
-                  // Mirrors the `U` key: enabled whenever the track holds
-                  // content, since undo also clears a lone base loop.
-                  onPressed: track.hasContent
+                  // Mirrors the `U` key: enabled whenever there is a layer to
+                  // peel — stacked overdub passes, or the base recording
+                  // itself (undoing it empties the track, redo-ably) — but not
+                  // mid-capture, when the engine rejects undo.
+                  onPressed:
+                      (track.hasContent || track.canUndo) && !track.isCapturing
                       ? () => onUndo(track.channel)
                       : null,
                 ),
@@ -127,7 +131,9 @@ class TrackColumn extends StatelessWidget {
                   iconSize: 18,
                   color: Colors.white70,
                   icon: const Icon(Icons.redo),
-                  onPressed: track.canRedo ? () => onRedo(track.channel) : null,
+                  onPressed: track.canRedo && !track.isCapturing
+                      ? () => onRedo(track.channel)
+                      : null,
                 ),
               ],
             ],
@@ -143,7 +149,7 @@ class TrackColumn extends StatelessWidget {
               selected: selected,
               borderRadius: 8,
               onTap: () {
-                context.read<TracksCubit>().select(track.channel);
+                context.read<ControlCubit>().selectTrack(track.channel);
                 bloc.add(
                   playMode
                       ? LooperMuteToggled(track.channel)
@@ -164,6 +170,14 @@ class TrackColumn extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+          const SizedBox(height: 5),
+          _TrackHistoryDots(
+            // The base loop is not an engine undo layer (undo_depth counts
+            // retired overdub passes only), but it is undoable — undoing it
+            // clears the track — so count it as the first history entry.
+            undoDepth: track.undoDepth + (track.hasContent ? 1 : 0),
+            redoDepth: track.redoDepth,
           ),
           const SizedBox(height: 10),
           FocusableTapTarget(
@@ -203,6 +217,79 @@ class TrackColumn extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A single-line, paged undo/redo history for a track.
+///
+/// History entries are laid out over pages of exactly [_slotsPerPage] dots.
+/// The page-turn chevrons live in fixed gutters outside the dot row (invisible
+/// when there is no adjacent page), so they never take a slot and the dots
+/// never shift sideways. Only the page holding the current position is shown:
+/// bright dots are undoable layers, grey dots are redoable ones, and faint
+/// dots are unused slots — so the white/grey boundary marks where you are.
+class _TrackHistoryDots extends StatelessWidget {
+  const _TrackHistoryDots({
+    required this.undoDepth,
+    required this.redoDepth,
+  });
+
+  final int undoDepth;
+
+  final int redoDepth;
+
+  static const _slotsPerPage = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = undoDepth + redoDepth;
+    if (total == 0) return const SizedBox.shrink();
+
+    final pageCount = (total + _slotsPerPage - 1) ~/ _slotsPerPage;
+    // Show the page holding the newest undoable layer (0-based item index),
+    // or the first page when there is nothing left to undo.
+    final current = undoDepth == 0 ? 0 : undoDepth - 1;
+    final page = current ~/ _slotsPerPage;
+    final start = page * _slotsPerPage;
+
+    Color slotColor(int item) {
+      if (item < undoDepth) return Colors.white;
+      if (item < total) return Colors.grey;
+      return Colors.white12;
+    }
+
+    Widget gutter(IconData icon, {required bool visible}) => Visibility(
+      visible: visible,
+      maintainSize: true,
+      maintainAnimation: true,
+      maintainState: true,
+      child: Icon(icon, size: 12, color: Colors.white70),
+    );
+
+    return SizedBox(
+      height: 12,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          spacing: 4,
+          children: [
+            gutter(Icons.chevron_left, visible: page > 0),
+            for (var i = 0; i < _slotsPerPage; i++)
+              SizedBox.square(
+                dimension: 8,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: slotColor(start + i),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            gutter(Icons.chevron_right, visible: page < pageCount - 1),
+          ],
+        ),
       ),
     );
   }

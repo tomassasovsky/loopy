@@ -6,12 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/window/window_chrome.dart';
 
@@ -57,31 +56,47 @@ class TracksCommands {
     );
   }
 
-  /// Clears every track and announces it.
+  /// Clears every track — the same whole-rig reset the pedal's CLEAR makes
+  /// (tracks wiped and re-armed, mode back to record, cursor home) — and
+  /// announces it.
   void clearAll() {
-    context.read<LooperBloc>().add(const LooperClearAllPressed());
+    context.read<ControlCubit>().clearAll();
     _announce(context.l10n.a11yAllCleared);
   }
 
-  /// Undoes the latest layer on [channel] (the bloc clears a lone base loop)
-  /// and announces it.
+  /// Undoes the latest overdub pass on [channel] (past the base recording the
+  /// track empties, redo-ably) and announces it. Skipped while the track is
+  /// actively capturing — the engine rejects it then, and a screen reader must
+  /// never hear "Undone" for a no-op. (An undo tapped in the brief
+  /// post-punch-out window is queued engine-side and DOES apply, so it
+  /// announces normally.)
   void undo(int channel) {
+    if (_isCapturing(channel)) return;
     context.read<LooperBloc>().add(LooperUndoPressed(channel));
     _announce(context.l10n.a11yUndone);
   }
 
-  /// Redoes the last undone layer on [channel] and announces it.
+  /// Redoes the last undone layer on [channel] and announces it (skipped, like
+  /// [undo], while the track is actively capturing).
   void redo(int channel) {
+    if (_isCapturing(channel)) return;
     context.read<LooperBloc>().add(LooperRedoPressed(channel));
     _announce(context.l10n.a11yRedone);
   }
 
-  /// Toggles the system record/play mode (shared with the pedal) and
-  /// announces the mode it landed on.
+  bool _isCapturing(int channel) {
+    final tracks = context.read<LooperBloc>().state.tracks;
+    return channel >= 0 &&
+        channel < tracks.length &&
+        tracks[channel].isCapturing;
+  }
+
+  /// Toggles the system record/play mode (the same [ControlCubit] method the
+  /// pedal footswitch drives) and announces the mode it landed on.
   void toggleMode() {
-    final pedal = context.read<PedalCubit>()..toggleMode();
+    final overlay = context.read<ControlCubit>()..toggleMode();
     _announce(
-      pedal.state.mode == LooperMode.record
+      overlay.state.mode == LooperMode.record
           ? context.l10n.a11yModeRecord
           : context.l10n.a11yModePlay,
     );
@@ -118,10 +133,10 @@ class TracksCommands {
     if (key == LogicalKeyboardKey.tab) return KeyEventResult.ignored;
     final keyboard = HardwareKeyboard.instance;
     final bloc = context.read<LooperBloc>();
-    final tracks = context.read<TracksCubit>();
-    final mode = context.read<PedalCubit>().state.mode;
+    final overlay = context.read<ControlCubit>();
+    final mode = overlay.state.mode;
     final l10n = context.l10n;
-    final selected = tracks.state.selectedChannel;
+    final selected = overlay.state.cursor;
 
     if (keyboard.isMetaPressed || keyboard.isControlPressed) {
       if (key == LogicalKeyboardKey.keyZ) {
@@ -171,14 +186,15 @@ class TracksCommands {
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.keyB) {
-      final nextBank = tracks.state.activeBank == 0 ? 1 : 0;
-      // Selecting the other bank's first track moves the cursor and reveals it.
-      tracks.select(nextBank * TracksState.tracksPerBank);
+      final nextBank = overlay.state.activeBank == 0 ? 1 : 0;
+      // Selecting the other bank's first track moves the cursor and reveals
+      // it — the pedal BANK footswitch semantics, via the same intent.
+      overlay.toggleBankWithCursor();
       _announce(l10n.a11yBankSelected(String.fromCharCode(0x41 + nextBank)));
       return KeyEventResult.handled;
     }
-    // `U` undoes the latest overdub layer; on a track that holds only its base
-    // loop (nothing to undo) it clears the track instead. The bloc decides.
+    // `U` undoes the latest overdub pass; past the base recording the track
+    // empties (redo can reinstate it layer by layer).
     if (key == LogicalKeyboardKey.keyU) {
       undo(selected);
       return KeyEventResult.handled;
@@ -190,7 +206,7 @@ class TracksCommands {
     if (digit != null) {
       final channel = digit - 1;
       if (channel <= 7) {
-        tracks.select(channel); // moves the cursor and reveals its bank
+        overlay.selectTrack(channel); // moves the cursor and reveals its bank
         if (mode == LooperMode.play) {
           bloc.add(LooperMuteToggled(channel));
         }
