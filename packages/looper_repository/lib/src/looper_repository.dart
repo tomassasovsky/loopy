@@ -8,6 +8,7 @@ import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
     show PluginDescriptor, PluginParamInfo, pluginParamInfoFromEngine;
+import 'package:looper_repository/src/models/session_rig.dart';
 import 'package:looper_repository/src/models/track.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 import 'package:looper_repository/src/models/transport_state.dart';
@@ -93,6 +94,17 @@ class LooperRepository {
   final Stream<void>? _ticker;
   Duration _pollInterval;
 
+  /// Fired synchronously whenever the repository mutates a lane's effect chain
+  /// on its own initiative — today the record-time snapshot-copy of a monitor
+  /// chain onto the recording lanes (F3). The bloc subscribes and persists the
+  /// resulting chain, so a take's remembered FX survive a restart.
+  ///
+  /// UI-driven structural chain edits do NOT fire this: the bloc already
+  /// persists those at the edit, and the bloc is the single settings writer for
+  /// chains, so double-writing is avoided. One listener (the looper bloc); a
+  /// later subscriber replaces it.
+  void Function(int channel, int lane)? onLaneChainChanged;
+
   /// The plugin scan catalog over this repository's engine (lazily created so
   /// the scan thread only spins up when something asks for plugins). The
   /// `appVersion` cache key is a placeholder until part 7 persists the cache.
@@ -112,6 +124,12 @@ class LooperRepository {
   /// [startEngine], cleared on [stopEngine]). The reconnect supervisor only
   /// recovers a device the user did not deliberately stop.
   bool _intendRunning = false;
+
+  /// Whether a restore-time plugin scan is in progress (F5). While true, a
+  /// restored plugin that fails to load renders as "loading…" rather than
+  /// "unavailable" — it is expected to bind once the scan lands. Set around
+  /// [_ensureRestoredPluginsLoaded]'s scan.
+  bool _pluginScanPending = false;
 
   /// The desired quantize-recording state, re-applied to the engine on every
   /// successful (re)start so it survives device changes and reconnects.
@@ -528,7 +546,21 @@ class LooperRepository {
     ];
     if (laneKeys.isEmpty && monitorKeys.isEmpty) return;
     if (pluginCatalog.descriptors.isNotEmpty) return; // already scanned
-    await pluginCatalog.scan();
+    // Mark the pending scan and re-apply so the failed-to-load entries render
+    // as "loading…" (not "unavailable") while the scan runs, then re-apply once
+    // it lands so a still-missing plugin becomes a genuine unavailable (F5).
+    _pluginScanPending = true;
+    for (final key in laneKeys) {
+      _applyLaneEffects(key.$1, key.$2);
+    }
+    monitorKeys.forEach(_applyMonitorEffects);
+    try {
+      await pluginCatalog.scan();
+    } finally {
+      // Always clear the flag — a scan that threw must not leave the chains
+      // stuck rendering "loading…" forever.
+      _pluginScanPending = false;
+    }
     if (!_intendRunning) return; // stopped while scanning
     for (final key in laneKeys) {
       _applyLaneEffects(key.$1, key.$2);
@@ -612,6 +644,10 @@ class LooperRepository {
       } else {
         _laneEffects[(channel, lane)] = snapshot;
       }
+      // The take's chain just changed under the repository's own hand — notify
+      // so the bloc persists it (F3: without this, a restart replays the
+      // pre-take chain from settings).
+      onLaneChainChanged?.call(channel, lane);
     }
   }
 
@@ -660,6 +696,186 @@ class LooperRepository {
     }
     return _engine.redo(channel: channel);
   }
+
+  /// Applies a loaded session [rig] to the engine THROUGH this repository —
+  /// the ONE session-apply path (F2). Every write lands in the remembered
+  /// caches as well as the engine, so a device restart / reconnect replays the
+  /// LOADED session by construction, never a pre-load cache.
+  ///
+  /// Order: clear every track via [clear] (which forgets remembered lane
+  /// mutes), await the engine settling to empty, import the stems, commit the
+  /// master loop, re-apply mix through the cached setters, then apply the
+  /// rig's chains — explicitly resetting every remembered lane / monitor chain
+  /// the rig does not define, so a previous session's leftovers can never
+  /// sound under the loaded one.
+  ///
+  /// Clears are applied asynchronously on the audio thread;
+  /// [clearPollInterval] / [clearPollAttempts] bound how long the settle wait
+  /// polls (tests can shrink them). Throws [StateError] when the engine fails
+  /// to clear or an import/commit is rejected.
+  Future<void> applySession(
+    SessionRig rig, {
+    Duration clearPollInterval = const Duration(milliseconds: 8),
+    int clearPollAttempts = 64,
+  }) async {
+    final trackCount = _engine.snapshot().tracks.length;
+    for (var channel = 0; channel < trackCount; channel++) {
+      clear(channel: channel);
+    }
+    // The session's mix replaces the remembered per-lane mix wholesale: purge
+    // it all (not just the mutes [clear] forgot) so the restart replay carries
+    // only the loaded values, then re-set from the rig below.
+    _laneVolume.clear();
+    _laneMute.clear();
+    if (!await _awaitCleared(clearPollInterval, clearPollAttempts)) {
+      throw StateError('engine did not clear before applying the session');
+    }
+
+    for (final track in rig.tracks) {
+      // A clear posted just above may not be acked yet — the engine rejects an
+      // import that races a pending state flip and expects a trivial retry. The
+      // ack lands within a buffer or two, so cap the retry low (NOT the full
+      // clear budget, which — times track count — could stall a load for
+      // seconds on a genuinely bad stem before surfacing the error).
+      final importRetries = clearPollAttempts < _maxImportAckRetries
+          ? clearPollAttempts
+          : _maxImportAckRetries;
+      var result = _engine.importTrack(track.channel, track.pcm);
+      for (
+        var attempt = 0;
+        !result.isOk && attempt < importRetries;
+        attempt++
+      ) {
+        await Future<void>.delayed(clearPollInterval);
+        result = _engine.importTrack(track.channel, track.pcm);
+      }
+      if (!result.isOk) {
+        throw StateError(
+          'failed to import track ${track.channel}: ${result.name}',
+        );
+      }
+    }
+    // An empty session (or a legacy save carrying a ghost grid with no
+    // tracks) establishes no master: the cleared engine stays free to define
+    // a fresh loop length.
+    if (rig.tracks.isNotEmpty && rig.baseLengthFrames > 0) {
+      final committed = _engine.commitSession(rig.baseLengthFrames);
+      if (!committed.isOk) {
+        throw StateError('failed to start the session: ${committed.name}');
+      }
+    }
+
+    // Session stems are lane-0-only for now (full multi-lane stems are a
+    // follow-up), so restore mix settings onto lane 0 — through the cached
+    // setters, so `_laneVolume` / `_laneMute` stay truthful.
+    for (final track in rig.tracks) {
+      setLaneVolume(track.volume, channel: track.channel, lane: 0);
+      setLaneMute(muted: track.muted, channel: track.channel, lane: 0);
+    }
+
+    // Chains: reset every remembered chain the rig does not define, then
+    // apply the rig's. `setLaneEffects` / `setMonitorEffects` keep cache and
+    // engine in lockstep (an empty chain pushes count 0 to the engine, wiping
+    // any leftover engine-side chain a clear alone would have kept).
+    for (final key in _laneEffects.keys.toList()) {
+      if (!rig.laneEffects.containsKey(key)) {
+        setLaneEffects(channel: key.$1, lane: key.$2, effects: const []);
+      }
+    }
+    rig.laneEffects.forEach(
+      (key, effects) =>
+          setLaneEffects(channel: key.$1, lane: key.$2, effects: effects),
+    );
+    // Monitors: fully reset every remembered monitor the rig does not define —
+    // not just its chain but its enable / routing / mix too, or an input
+    // enabled under session A would keep monitoring under session B (the F2
+    // leftover class). Reset to the disabled defaults, then apply the rig's.
+    final definedMonitors = {for (final m in rig.monitors) m.input};
+    final rememberedMonitors = {
+      ..._monitorInputEnabled.keys,
+      ..._monitorOutput.keys,
+      ..._monitorVolume.keys,
+      ..._monitorMute.keys,
+      ..._monitorEffects.keys,
+    };
+    for (final input in rememberedMonitors) {
+      if (definedMonitors.contains(input)) continue;
+      setMonitorInputEnabled(input: input, enabled: false);
+      setMonitorOutput(input: input, mask: _defaultMonitorOutputMask);
+      setMonitorVolume(input: input, volume: 1);
+      setMonitorMute(input: input, muted: false);
+      setMonitorEffects(input: input, effects: const []);
+    }
+    for (final monitor in rig.monitors) {
+      setMonitorInputEnabled(input: monitor.input, enabled: monitor.enabled);
+      setMonitorOutput(input: monitor.input, mask: monitor.outputMask);
+      setMonitorVolume(input: monitor.input, volume: monitor.volume);
+      setMonitorMute(input: monitor.input, muted: monitor.muted);
+      setMonitorEffects(input: monitor.input, effects: monitor.effects);
+    }
+  }
+
+  /// The default monitor output routing (the first stereo pair) an undefined
+  /// monitor resets to on a session apply — matches [monitorOutput]'s default.
+  static const int _defaultMonitorOutputMask = 0x3;
+
+  /// The ceiling on how many times a session-import retries the posted-clear
+  /// ack race (a few audio buffers). Bounds a genuinely-bad stem's failure so a
+  /// load can't stall for seconds per track.
+  static const int _maxImportAckRetries = 8;
+
+  /// Polls until every track reports empty and the master is reset, returning
+  /// whether the engine settled within [attempts].
+  Future<bool> _awaitCleared(Duration interval, int attempts) async {
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      final snapshot = _engine.snapshot();
+      final cleared =
+          snapshot.masterLengthFrames == 0 &&
+          snapshot.tracks.every((t) => t.state == TrackState.empty);
+      if (cleared) return true;
+      await Future<void>.delayed(interval);
+    }
+    return false;
+  }
+
+  /// Every remembered non-empty lane effect chain, keyed by `(channel, lane)`
+  /// — what a session save captures (the live rig is the truth being saved).
+  Map<(int, int), List<TrackEffect>> allLaneEffects() => {
+    for (final entry in _laneEffects.entries)
+      entry.key: List<TrackEffect>.unmodifiable(entry.value),
+  };
+
+  /// Every remembered non-empty monitor effect chain, keyed by input.
+  Map<int, List<TrackEffect>> allMonitorEffects() => {
+    for (final entry in _monitorEffects.entries)
+      entry.key: List<TrackEffect>.unmodifiable(entry.value),
+  };
+
+  /// Whether hardware [input]'s live monitor is enabled (remembered intent).
+  bool monitorEnabled(int input) => _monitorInputEnabled[input] ?? false;
+
+  /// Monitor [input]'s remembered output mask (the default stereo pair if
+  /// never set).
+  int monitorOutput(int input) =>
+      _monitorOutput[input] ?? _defaultMonitorOutputMask;
+
+  /// Monitor [input]'s remembered output gain (unity if never set).
+  double monitorVolume(int input) => _monitorVolume[input] ?? 1;
+
+  /// Whether monitor [input] is muted (remembered intent).
+  bool monitorMuted(int input) => _monitorMute[input] ?? false;
+
+  /// The fingerprint of lane [lane] of track [channel]'s CACHED chain, computed
+  /// with the same folding as the engine's [AudioEngine.laneFxFingerprint], so
+  /// the two can be compared for cache-vs-engine divergence (F6). An absent
+  /// chain yields the empty-chain basis, matching an empty engine lane.
+  int laneChainFingerprint(int channel, int lane) =>
+      trackChainFingerprint(_laneEffects[(channel, lane)] ?? const []);
+
+  /// The fingerprint of monitor [input]'s CACHED chain (see
+  /// [laneChainFingerprint]).
+  int monitorChainFingerprint(int input) =>
+      trackChainFingerprint(_monitorEffects[input] ?? const []);
 
   /// Sets track [channel]'s playback gain (`0..1`). Convenience for lane 0.
   EngineResult setVolume(double volume, {int channel = 0}) =>
@@ -1138,6 +1354,17 @@ class LooperRepository {
   /// stale metadata so the card renders the unresolved state.
   PluginEffect _bindPluginSlot(PluginSlotHandle? handle, PluginEffect fx) {
     if (handle == null) {
+      // A restore-time scan is still running (F5): the plugin isn't loaded YET,
+      // but it is expected to bind once the scan lands, so render "loading…"
+      // rather than a genuine "unavailable" the user might relink by hand.
+      if (_pluginScanPending) {
+        return fx.copyWith(
+          params: const [],
+          loading: true,
+          unavailable: false,
+          unsupported: false,
+        );
+      }
       // The plugin failed to load on the running engine — flag the D-MISS
       // placeholder, preserving ref + state for relink (never a silent `none`).
       // A failed load whose id IS in the scan catalog means the plugin is
@@ -1148,6 +1375,7 @@ class LooperRepository {
         params: const [],
         unavailable: true,
         unsupported: installed,
+        loading: false,
       );
     }
     // Restore the captured opaque state first (D-P1 frozen instance) — a
@@ -1183,6 +1411,7 @@ class LooperRepository {
       unavailable: false,
       unsupported: false,
       versionChanged: versionDrift,
+      loading: false,
     );
   }
 

@@ -10,7 +10,15 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
-import 'package:loopy_engine/loopy_engine.dart' hide EngineConfig;
+// The effect models come from the looper_repository barrel (the domain types
+// setLaneEffects expects); hide the engine-package originals to disambiguate.
+import 'package:loopy_engine/loopy_engine.dart'
+    hide
+        BuiltInEffect,
+        EngineConfig,
+        PluginEffect,
+        TrackEffect,
+        TrackEffectType;
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -127,6 +135,61 @@ void main() {
         expect(h.looper.transport.masterLengthFrames, 400);
       });
     }, skip: skip);
+
+    test('set then clear a lane chain keeps cache == engine (F6)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [
+            _SetLaneChain(0, 0, [0, 3]),
+          ], fa) // drive, reverb
+          ..settle(fa);
+        expect(h.fxFingerprintViolation(), isNull);
+
+        h
+          ..run(const [_SetLaneChain(0, 0, [])], fa) // clear
+          ..settle(fa);
+        expect(h.fxFingerprintViolation(), isNull);
+        expect(h.repo.laneChainFingerprint(0, 0), FxFingerprint.offset);
+      });
+    }, skip: skip);
+
+    test('a staged lane chain survives a dry-monitor record with cache == '
+        'engine (F4/F6)', () {
+      _inHarness((h, fa) {
+        // Stage a lane chain, then record a take through a CLEAN monitor: the
+        // lane chain must survive (F4) and cache must still equal engine (F6).
+        h
+          ..run(const [
+            _SetLaneChain(0, 0, [1]),
+          ], fa) // filter
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // record from empty
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // finalize
+          ..settle(fa);
+        expect(h.looper.tracks[0].lanes[0].effects, hasLength(1));
+        expect(h.fxFingerprintViolation(), isNull);
+      });
+    }, skip: skip);
+
+    test('recording through a monitor chain copies it onto the lane, cache == '
+        'engine (F3/F6)', () {
+      _inHarness((h, fa) {
+        // A monitor chain on input 0 is snapshot-copied onto the take's lane on
+        // record-from-empty; both the copy and the resulting chain must agree.
+        h
+          ..run(const [
+            _SetMonitorChain(0, [2, 3]),
+          ], fa) // delay, reverb
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
+        expect(h.fxFingerprintViolation(), isNull);
+      });
+    }, skip: skip);
   });
 
   test('seeded random sequences hold every invariant', () {
@@ -210,6 +273,40 @@ class _Harness {
     overlay: control.state,
     frame: frame,
   );
+
+  /// The FX-state invariant, checked only while the engine is running (a
+  /// stopped engine holds a stale published chain the cache legitimately
+  /// leads): every lane / monitor's cached chain fingerprint must equal the
+  /// published-chain fingerprint. Returns a violation message or null.
+  ///
+  /// This is the F6 safety net — it catches a wiped lane (F4) and any
+  /// cache/engine drift the fuzz alphabet's FX actions (set/clear lane +
+  /// monitor chains, record-over) can produce. Session-load leftovers (the F2 /
+  /// F2c class) are out of the FakeAsync alphabet's reach — real file I/O can't
+  /// run under FakeAsync — and are covered by the dedicated round-trip test
+  /// (test/session/session_fx_roundtrip_test.dart), which asserts this same
+  /// cache == engine equality after a save → clear → load.
+  String? fxFingerprintViolation() {
+    if (!looper.transport.isRunning) return null;
+    for (var channel = 0; channel < looper.tracks.length; channel++) {
+      final lanes = looper.tracks[channel].lanes.length;
+      for (var lane = 0; lane < (lanes < 1 ? 1 : lanes); lane++) {
+        final cache = repo.laneChainFingerprint(channel, lane);
+        final engineFp = engine.laneFxFingerprint(channel: channel, lane: lane);
+        if (cache != engineFp) {
+          return 'lane ($channel,$lane) cache fp $cache != engine $engineFp';
+        }
+      }
+    }
+    for (var input = 0; input < kMaxInputs; input++) {
+      final cache = repo.monitorChainFingerprint(input);
+      final engineFp = engine.monitorFxFingerprint(input: input);
+      if (cache != engineFp) {
+        return 'monitor $input cache fp $cache != engine $engineFp';
+      }
+    }
+    return null;
+  }
 
   /// One engine block + one snapshot poll + microtask flush, twice — the
   /// "settled" point the invariant spec is defined over.
@@ -411,6 +508,50 @@ class _Reconnect extends _FuzzAction {
   String describe() => '_Reconnect()';
 }
 
+/// A small palette of built-in types the FX actions draw from (index into
+/// [TrackEffectType.values] skipping `none`, which is a bypass, not an entry).
+const List<TrackEffectType> _fxPalette = [
+  TrackEffectType.drive,
+  TrackEffectType.filter,
+  TrackEffectType.delay,
+  TrackEffectType.reverb,
+];
+
+/// Sets lane [lane] of track [channel]'s chain to [types] (empty clears it),
+/// straight through the repository — the same call the bloc makes.
+class _SetLaneChain extends _FuzzAction {
+  const _SetLaneChain(this.channel, this.lane, this.types);
+  final int channel;
+  final int lane;
+  final List<int> types; // indices into _fxPalette
+
+  @override
+  void apply(_Harness h, FakeAsync fa) => h.repo.setLaneEffects(
+    channel: channel,
+    lane: lane,
+    effects: [for (final t in types) BuiltInEffect(type: _fxPalette[t])],
+  );
+
+  @override
+  String describe() => '_SetLaneChain($channel, $lane, $types)';
+}
+
+/// Sets monitor input [input]'s chain to [types] (empty clears it).
+class _SetMonitorChain extends _FuzzAction {
+  const _SetMonitorChain(this.input, this.types);
+  final int input;
+  final List<int> types;
+
+  @override
+  void apply(_Harness h, FakeAsync fa) => h.repo.setMonitorEffects(
+    input: input,
+    effects: [for (final t in types) BuiltInEffect(type: _fxPalette[t])],
+  );
+
+  @override
+  String describe() => '_SetMonitorChain($input, $types)';
+}
+
 // ---------------------------------------------------------------------------
 // Generation, replay, shrinking.
 // ---------------------------------------------------------------------------
@@ -433,15 +574,19 @@ List<_FuzzAction> _generate(int seed, int steps) {
   final rng = _Rng(seed);
   const buttons = PedalButton.values;
   final actions = <_FuzzAction>[];
+  // A short random chain of palette indices (length 0..3; 0 = clear the chain).
+  List<int> types() => [
+    for (var k = 0, n = rng.next(4); k < n; k++) rng.next(_fxPalette.length),
+  ];
   for (var i = 0; i < steps; i++) {
     final roll = rng.next(100);
     actions.add(switch (roll) {
-      < 30 => _Tap(buttons[rng.next(buttons.length)]),
-      < 36 => _Hold(buttons[rng.next(buttons.length)]),
-      < 42 => _Release(buttons[rng.next(buttons.length)]),
-      < 46 => const _LongPressUndo(),
-      < 50 => _Encoder(rng.next(17) - 8),
-      < 68 => _Bloc(
+      < 28 => _Tap(buttons[rng.next(buttons.length)]),
+      < 34 => _Hold(buttons[rng.next(buttons.length)]),
+      < 40 => _Release(buttons[rng.next(buttons.length)]),
+      < 44 => const _LongPressUndo(),
+      < 48 => _Encoder(rng.next(17) - 8),
+      < 64 => _Bloc(
         const [
           'record',
           'stop',
@@ -454,11 +599,14 @@ List<_FuzzAction> _generate(int seed, int steps) {
         ][rng.next(8)],
         rng.next(8),
       ),
-      < 74 => _Select(rng.next(8)),
-      < 78 => const _ToggleMode(),
-      < 90 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
-      < 94 => const _Tick(),
-      < 98 => _Elapse(const [5, 50, 600][rng.next(3)]),
+      < 70 => _Select(rng.next(8)),
+      < 74 => const _ToggleMode(),
+      < 84 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
+      < 88 => const _Tick(),
+      < 92 => _Elapse(const [5, 50, 600][rng.next(3)]),
+      // FX actions (the F6 alphabet): set/clear a lane or monitor chain.
+      < 96 => _SetLaneChain(rng.next(4), rng.next(2), types()),
+      < 99 => _SetMonitorChain(rng.next(4), types()),
       _ => const _Reconnect(),
     });
   }
@@ -486,6 +634,11 @@ String? _replay(List<_FuzzAction> actions) {
         final violations = checkControlInvariants(h.context);
         if (violations.isNotEmpty) {
           failure = 'step $i (${actions[i].describe()}): ${violations.first}';
+          return;
+        }
+        final fx = h.fxFingerprintViolation();
+        if (fx != null) {
+          failure = 'step $i (${actions[i].describe()}): $fx';
           return;
         }
       }

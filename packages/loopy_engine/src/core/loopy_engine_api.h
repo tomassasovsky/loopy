@@ -968,6 +968,22 @@ LE_EXPORT int32_t le_engine_set_monitor_input_fx_param(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output,
                                                int32_t enabled);
 
+/* ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
+ * An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
+ * for each of the a_fx_count active entries, its type, plus (for a built-in) its
+ * LE_FX_PARAMS float parameter bits — a plugin entry contributes its type only
+ * (its params live in the plugin host, not a_fx_param). The empty chain hashes
+ * to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
+ * Dart repository owns the chain and computes the identical hash over its cache,
+ * so a debug assert / the sequence fuzzer can catch a cache-vs-engine divergence
+ * without the engine ever narrating the chain back. Scanned on the control thread
+ * off the published a_fx_* atomics (the race-free seam, like le_max_fx_latency);
+ * the audio thread never reads it. Out-of-range args return 0. */
+LE_EXPORT uint64_t le_engine_lane_fx_fingerprint(le_engine* engine,
+                                                 int32_t channel, int32_t lane);
+LE_EXPORT uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine,
+                                                    int32_t input);
+
 /* ---- session persistence ---- *
  * Save: read each track's loop PCM with le_engine_export_track. Load: clear the
  * engine (so every track is EMPTY), le_engine_import_track each stem, then
