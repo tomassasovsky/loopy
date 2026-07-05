@@ -83,6 +83,26 @@ struct lpw_window {
 }
 @end
 
+// The scrim backdrop: a click on the dimmed area (outside the centred plugin
+// panel, whose subviews get their own clicks first) dismisses the popup, like a
+// modal barrier. The plugin panel + close button are subviews, so clicks on
+// them never reach this.
+@interface LpwScrimView : NSView {
+ @public
+  // Not owned by the scrim (the handle owns the target); no retain cycle since
+  // the target never points back at the scrim. Plain pointer so the file still
+  // compiles under manual reference counting (the native test harness).
+  LpwCloseTarget* closeTarget;
+}
+@end
+
+@implementation LpwScrimView
+- (void)mouseDown:(NSEvent*)event {
+  (void)event;
+  if (closeTarget) [closeTarget onClose:nil];
+}
+@end
+
 
 extern "C" {
 
@@ -113,9 +133,15 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
     NSView* root = [host contentView];
     const NSRect rb = [root bounds];
 
+    LpwCloseTarget* target = [[LpwCloseTarget alloc] init];
+    target->cb = on_close;
+    target->ctx = ctx;
+    target->suppress = false;
+
     // Full-window scrim so the embedded editor reads as a modal popup and eats
-    // clicks to the app behind it.
-    NSView* backdrop = [[NSView alloc] initWithFrame:rb];
+    // clicks to the app behind it; a click on the scrim dismisses it.
+    LpwScrimView* backdrop = [[LpwScrimView alloc] initWithFrame:rb];
+    backdrop->closeTarget = target;
     [backdrop setWantsLayer:YES];
     backdrop.layer.backgroundColor =
         [[NSColor colorWithCalibratedWhite:0 alpha:0.5] CGColor];
@@ -136,10 +162,6 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
 
     // A close button pinned to the scrim's top-right (kept out of the plugin's
     // own rect so it never overlaps a plugin control).
-    LpwCloseTarget* target = [[LpwCloseTarget alloc] init];
-    target->cb = on_close;
-    target->ctx = ctx;
-    target->suppress = false;
     NSButton* close = [NSButton buttonWithTitle:@"✕"
                                          target:target
                                          action:@selector(onClose:)];
