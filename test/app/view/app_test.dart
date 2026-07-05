@@ -97,7 +97,7 @@ void main() {
           settings: settings,
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
+          exportDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -124,7 +124,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
+          exportDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -251,7 +251,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
+          exportDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -305,7 +305,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
+          exportDirectory: () async => '.',
         ),
       );
       await tester.pumpAndSettle();
@@ -356,7 +356,7 @@ void main() {
           settings: settings,
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
+          exportDirectory: () async => '.',
           displayCount: () => 1,
         ),
       );
@@ -382,7 +382,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
-          sessionDirectory: () async => '.',
+          exportDirectory: () async => '.',
           audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
         ),
       );

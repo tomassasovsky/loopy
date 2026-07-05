@@ -17,11 +17,11 @@ enum SessionStatus {
 
 /// Which session action succeeded, for localized UI messaging.
 enum SessionOutcome {
-  /// A save (the legacy single bundle, [SessionCubit.saveSession], or a
-  /// write-back / save-as of a named session) succeeded.
+  /// A save (a write-back via [SessionCubit.save] or a
+  /// [SessionCubit.saveAs] of a named session) succeeded.
   saved,
 
-  /// A load (legacy or named) succeeded.
+  /// A [SessionCubit.loadNamed] succeeded.
   loaded,
 
   /// A named session was renamed.

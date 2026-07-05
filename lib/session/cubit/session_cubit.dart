@@ -17,53 +17,35 @@ part 'session_state.dart';
 class SessionCubit extends Cubit<SessionState> {
   /// Creates a [SessionCubit] backed by [repository] and [looper].
   ///
-  /// [directory] resolves the legacy single-bundle directory used by
-  /// [saveSession] / [loadSession] / the exports; the named-session methods go
-  /// through [repository]'s catalog instead. Injecting it keeps the cubit
-  /// testable.
+  /// [exportDirectory] resolves the directory a mixdown / stems are written to;
+  /// the named-session methods go through [repository]'s catalog instead.
+  /// Injecting it keeps the cubit testable.
   SessionCubit({
     required SessionRepository repository,
     required LooperRepository looper,
-    required Future<String> Function() directory,
+    required Future<String> Function() exportDirectory,
   }) : _repository = repository,
        _looper = looper,
-       _directory = directory,
+       _exportDirectory = exportDirectory,
        super(const SessionState());
 
   final SessionRepository _repository;
   final LooperRepository _looper;
-  final Future<String> Function() _directory;
+  final Future<String> Function() _exportDirectory;
 
-  // ---- legacy single-bundle actions (the menu still uses these until the
-  // named-session UI lands) ----
+  // ---- exports (a separate action from the session catalog) ----
 
-  /// Saves the live rig to the legacy single bundle.
-  Future<void> saveSession() => _run(() async {
-    await _repository.save(
-      await _directory(),
-      chains: chainsFromLooper(_looper),
-    );
-    return const _ActionResult(SessionOutcome.saved);
-  });
-
-  /// Loads the legacy single bundle back into the engine.
-  Future<void> loadSession() => _run(() async {
-    final bundle = await _repository.read(await _directory());
-    await _looper.applySession(rigFromBundle(bundle));
-    return const _ActionResult(SessionOutcome.loaded);
-  });
-
-  /// Exports a mixed-down WAV of the current session.
+  /// Exports a mixed-down WAV of the live rig into the export directory.
   Future<void> exportMixdown() => _run(() async {
     await _repository.exportMixdown(
-      '${await _directory()}/${SessionRepository.mixdownName}',
+      '${await _exportDirectory()}/${SessionRepository.mixdownName}',
     );
     return const _ActionResult(SessionOutcome.mixdownExported);
   });
 
   /// Exports each track as a separate stem WAV under a `stems` folder.
   Future<void> exportStems() => _run(() async {
-    await _repository.exportStems('${await _directory()}/stems');
+    await _repository.exportStems('${await _exportDirectory()}/stems');
     return const _ActionResult(SessionOutcome.stemsExported);
   });
 
