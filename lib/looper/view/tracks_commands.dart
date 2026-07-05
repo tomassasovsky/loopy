@@ -268,11 +268,19 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionOutcome.loaded => l10n.sessionLoaded,
       SessionOutcome.mixdownExported => l10n.mixdownExported,
       SessionOutcome.stemsExported => l10n.stemsExported,
+      // The named-session outcomes surface through the Sessions manager UI (a
+      // later part), which gives them their own messaging; no legacy SnackBar.
+      SessionOutcome.renamed ||
+      SessionOutcome.deleted ||
+      SessionOutcome.saveAsRequested ||
       null => null,
     },
     SessionStatus.failure => switch (state.error) {
       SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
+      // nameCollision gets a dedicated inline message in the manager UI; here
+      // (legacy path) it falls back to the generic error.
+      SessionError.nameCollision ||
       SessionError.unknown ||
       null => l10n.sessionErrorGeneric(state.errorMessage ?? ''),
     },
