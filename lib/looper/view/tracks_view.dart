@@ -61,13 +61,16 @@ class _TracksViewState extends State<TracksView> {
     // and minimal otherwise.
     return LooperScreenTheme(
       child: BlocListener<SessionCubit, SessionState>(
-        // Only react to a settled action — a save/load/export that finished or
-        // failed — never the transient `working` tick.
+        // React to a settled action — a save/load/export that finished or
+        // failed — never the transient `working` tick; plus the save-with-no-
+        // session signal that asks the UI to open Save-As.
         listenWhen: (previous, current) =>
-            current.status != previous.status &&
-            (current.status == SessionStatus.success ||
-                current.status == SessionStatus.failure),
-        listener: showSessionOutcome,
+            (current.status != previous.status &&
+                (current.status == SessionStatus.success ||
+                    current.status == SessionStatus.failure)) ||
+            (current.outcome == SessionOutcome.saveAsRequested &&
+                previous.outcome != SessionOutcome.saveAsRequested),
+        listener: onSessionState,
         child: Focus(
           autofocus: true,
           onKeyEvent: commands.handleKey,

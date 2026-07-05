@@ -20,7 +20,7 @@ void main() {
       );
 
       expect(l10n.appMenuLabel, 'Loopy');
-      expect(l10n.saveSession, 'Save session');
+      expect(l10n.sessionSaveAs, 'Save as…');
       expect(l10n.trackStatePlaying, 'playing');
       expect(l10n.defaultTrackName(1), 'TRACK 1');
     });
@@ -41,7 +41,7 @@ void main() {
         ),
       );
 
-      expect(l10n.saveSession, 'Guardar sesión');
+      expect(l10n.sessionSaveAs, 'Guardar como…');
       expect(l10n.trackStatePlaying, 'reproduciendo');
       expect(l10n.defaultTrackName(1), 'PISTA 1');
       expect(l10n.startEngine, 'Iniciar motor');

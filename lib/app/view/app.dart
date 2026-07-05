@@ -39,7 +39,7 @@ class App extends StatelessWidget {
     required this.settings,
     required this.waveformWindow,
     required this.sessionRepository,
-    required this.sessionDirectory,
+    required this.exportDirectory,
     this.pedalRepository,
     this.pedalSimulator,
     this.displayCount,
@@ -95,8 +95,8 @@ class App extends StatelessWidget {
   /// The shared session repository (save/load + export), sharing the engine.
   final SessionRepository sessionRepository;
 
-  /// Resolves the on-disk session bundle directory.
-  final Future<String> Function() sessionDirectory;
+  /// Resolves the directory a mixdown / stems export is written to.
+  final Future<String> Function() exportDirectory;
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +277,7 @@ class App extends StatelessWidget {
         ],
         child: _AppView(
           waveformWindow: waveformWindow,
-          sessionDirectory: sessionDirectory,
+          exportDirectory: exportDirectory,
           displayCount: displayCount,
         ),
       ),
@@ -290,12 +290,12 @@ class App extends StatelessWidget {
 class _AppView extends StatefulWidget {
   const _AppView({
     required this.waveformWindow,
-    required this.sessionDirectory,
+    required this.exportDirectory,
     this.displayCount,
   });
 
   final WaveformWindowService waveformWindow;
-  final Future<String> Function() sessionDirectory;
+  final Future<String> Function() exportDirectory;
   final int Function()? displayCount;
 
   @override
@@ -592,7 +592,7 @@ class _AppViewState extends State<_AppView> {
         supportedLocales: AppLocalizations.supportedLocales,
         home: Builder(
           builder: (context) {
-            final page = LooperPage(sessionDirectory: widget.sessionDirectory);
+            final page = LooperPage(exportDirectory: widget.exportDirectory);
             if (!loopyUsesFlutterTitleBar) return page;
             return LoopyWindowChromeShell(
               title: context.l10n.appMenuLabel,
