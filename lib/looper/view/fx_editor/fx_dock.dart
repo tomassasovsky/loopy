@@ -6,22 +6,18 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/view/fx_editor/fx_chain_strip.dart';
-import 'package:loopy/looper/view/fx_editor/fx_inspector.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:loopy/looper/view/signal_graph/plugin_browser.dart';
+import 'package:loopy/looper/view/signal_graph/signal_fx_rack.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/surface_theme.dart';
 
 /// The bottom **FX dock** on the Signal surface: edits one [scope]'s chain in
-/// place (a header naming the scope + its plain consequence, the chain strip,
-/// and the inspector for the selected block) without leaving the surface.
+/// place — a header naming the scope + its plain consequence, over the
+/// knob-rack editor ([SignalFxRack]) — without leaving the surface.
 ///
-/// Replaces the full-screen FX editor route — the same [FxChainStrip] /
-/// [FxInspector] widgets, re-homed into a docked panel. The chain is resolved
-/// live off the scope each build, so external edits reflect immediately and the
-/// dock empty-states the moment its target is gone. Keyed by the scope so
-/// switching the edited row resets the block selection.
+/// The chain is resolved live off the scope each build, so external edits
+/// reflect immediately and the dock empty-states the moment its target is gone.
 class FxDock extends StatefulWidget {
   /// Creates an [FxDock] editing [scope]; [onClose] dismisses the dock.
   const FxDock({required this.scope, required this.onClose, super.key});
@@ -37,16 +33,11 @@ class FxDock extends StatefulWidget {
 }
 
 class _FxDockState extends State<FxDock> {
-  /// The selected block index (the dock's intent), clamped to the live chain
-  /// each build. Starts on the first block per the open-selects-first rule.
-  int? _selected = 0;
-
   FxScope get _scope => widget.scope;
 
   Future<void> _addPlugin() async {
     final descriptor = await showPluginBrowser(context);
     if (descriptor == null || !mounted) return;
-    final newIndex = _scope.effects.length;
     _scope.insertPlugin(
       PluginRef(
         format: descriptor.format,
@@ -54,7 +45,6 @@ class _FxDockState extends State<FxDock> {
         version: descriptor.version,
       ),
     );
-    setState(() => _selected = newIndex);
   }
 
   @override
@@ -92,65 +82,23 @@ class _FxDockState extends State<FxDock> {
   }
 
   Widget _editor(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    final effects = _scope.effects;
-    final selected = effects.isEmpty
-        ? null
-        : (_selected ?? 0).clamp(0, effects.length - 1);
-    final selectedEffect = selected == null ? null : effects[selected];
-    final emptyHint = effects.isEmpty
-        ? l10n.signalLaneCleanHint
-        : l10n.fxEditorEmptySelection;
-
-    return Column(
-      children: [
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 64,
-          child: FxChainStrip(
-            effects: effects,
-            selectedIndex: selected,
-            canAdd: _scope.canAddEffect,
-            onSelect: (i) => setState(() => _selected = i),
-            onReorder: (from, to) {
-              _scope.moveEffect(from, to);
-              setState(() => _selected = to);
-            },
-            onAddEffect: () {
-              _scope.addEffect();
-              setState(() => _selected = effects.length);
-            },
-            onAddPlugin: () => unawaited(_addPlugin()),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Divider(height: 1, color: surface.line),
-        Expanded(
-          child: FxInspector(
-            key: ValueKey(selected),
-            effect: selectedEffect,
-            emptyHint: emptyHint,
-            onSetType: (t) => _scope.setType(selected!, t),
-            onSetParam: (p, v) => _scope.setParam(selected!, p, v),
-            onSetPluginParam: (id, v) =>
-                _scope.setPluginParam(selected!, id, v),
-            onOpenEditor: () => _scope.openPluginEditor(selected!),
-            onRelink: () => unawaited(_relink(selected!)),
-            onRemove: () {
-              _scope.removeEffect(selected!);
-              final nextLen = effects.length - 1;
-              setState(
-                () => _selected = nextLen <= 0
-                    ? null
-                    : (selected - 1).clamp(0, nextLen - 1),
-              );
-            },
-            onFormatPluginValue: (id, v) =>
-                _scope.formatPluginValue(selected!, id, v),
-          ),
-        ),
-      ],
+    // The original knob-rack editor (mix lives on the row cards, not here).
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+      child: SignalFxRack(
+        keyPrefix: 'fxDock',
+        effects: _scope.effects,
+        onAddEffect: _scope.addEffect,
+        onAddPlugin: () => unawaited(_addPlugin()),
+        onRemoveEffect: _scope.removeEffect,
+        onSetType: _scope.setType,
+        onSetParam: _scope.setParam,
+        onSetPluginParam: _scope.setPluginParam,
+        onOpenPluginEditor: _scope.openPluginEditor,
+        onRelinkPlugin: (index) => unawaited(_relink(index)),
+        onReorder: _scope.moveEffect,
+        onFormatPluginValue: _scope.formatPluginValue,
+      ),
     );
   }
 
