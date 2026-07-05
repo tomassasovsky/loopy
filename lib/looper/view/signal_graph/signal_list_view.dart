@@ -174,7 +174,6 @@ class _SignalListViewState extends State<SignalListView> {
         autofocus: true,
         child: Column(
           children: [
-            const _SignalHintStrip(),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -377,7 +376,8 @@ class _SignalDock extends StatelessWidget {
         ),
       );
     }
-    return SignalHintDock(message: context.l10n.signalHint);
+    // Nothing focused: the dock collapses rather than showing a how-to bar.
+    return const SizedBox.shrink();
   }
 
   PluginRef _refOf(PluginDescriptor d) =>

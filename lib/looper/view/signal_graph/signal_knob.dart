@@ -171,11 +171,7 @@ class SignalKnob extends StatelessWidget {
             width: size * 1.5,
             child: Text(
               label.toUpperCase(),
-              style: signalMono(
-                color: surface.textTertiary,
-                size: 9,
-                tracking: 1,
-              ),
+              style: signalMono(color: surface.textTertiary, size: 9),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
