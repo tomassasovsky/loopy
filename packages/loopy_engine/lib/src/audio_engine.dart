@@ -469,10 +469,10 @@ abstract interface class EnginePluginHosting {
   EngineResult pluginParamSet(PluginSlotHandle slot, int paramId, double value);
 
   /// Opens the plugin in [slot]'s own native editor in a host-owned top-level
-  /// window (umbrella D-WIN; macOS only). Idempotent. Returns
-  /// [EngineResult.ok], [EngineResult.invalid] for a non-live slot, or
-  /// [EngineResult.unsupported] when there is no editor / the platform is not
-  /// supported.
+  /// window (umbrella D-WIN; macOS + Windows — Linux/X11 is not yet
+  /// implemented). Idempotent. Returns [EngineResult.ok],
+  /// [EngineResult.invalid] for a non-live slot, or [EngineResult.unsupported]
+  /// when there is no editor / the platform is not supported.
   EngineResult pluginEditorOpen(PluginSlotHandle slot);
 
   /// Force-closes the plugin in [slot]'s editor window (D-WIN teardown).
