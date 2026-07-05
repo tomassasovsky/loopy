@@ -125,11 +125,10 @@ class LooperRepository {
   /// recovers a device the user did not deliberately stop.
   bool _intendRunning = false;
 
-  /// Whether a restore-time plugin scan is in progress (F5). While true, a
-  /// restored plugin that fails to load renders as "loading…" rather than
-  /// "unavailable" — it is expected to bind once the scan lands. Set around
-  /// [_ensureRestoredPluginsLoaded]'s scan.
-  bool _pluginScanPending = false;
+  /// Single-flight scan backing [_recoverUnavailablePlugins]: started the first
+  /// time a restored chain surfaces an unavailable plugin, then reused so the
+  /// plugin dirs are scanned at most once per session.
+  Future<List<PluginDescriptor>>? _restoredPluginScan;
 
   /// The desired quantize-recording state, re-applied to the engine on every
   /// successful (re)start so it survives device changes and reconnects.
@@ -519,53 +518,92 @@ class LooperRepository {
       );
       // Restored plugins load by id through the native scan cache, which is
       // empty on a cold start — so the apply above leaves them unavailable.
-      // Kick a scan and rebind them once it lands (resolving names too).
-      unawaited(_ensureRestoredPluginsLoaded());
+      // Most chains are restored AFTER this call (by the cubits, through
+      // setLaneEffects/setMonitorEffects), so the same recovery also fires from
+      // there; this call covers a mid-session reconnect where the chains are
+      // already present.
+      _recoverUnavailablePlugins();
     }
     return result;
   }
 
-  /// Whether [effects] holds at least one hosted-plugin entry.
-  static bool _hasPlugin(Iterable<TrackEffect> effects) =>
-      effects.any((e) => e is PluginEffect);
+  /// Whether [effects] holds a hosted plugin that failed to load (its id was
+  /// not in the scan cache when the chain was applied).
+  static bool _hasUnavailablePlugin(Iterable<TrackEffect> effects) =>
+      effects.any((e) => e is PluginEffect && e.unavailable);
 
-  /// A restored chain loads its plugins by id through the engine's in-process
-  /// scan cache. On a cold start nothing has scanned yet, so those loads fail
-  /// and the entries render as unavailable placeholders. If any restored chain
-  /// has a plugin and the catalog hasn't been populated, run a scan and
-  /// re-apply the plugin chains so they load (and resolve their display names)
-  /// without the user relinking by hand. A no-op once the catalog is populated.
-  Future<void> _ensureRestoredPluginsLoaded() async {
+  /// Recovers plugins that failed to load because the engine's in-process scan
+  /// cache was empty when their chain was applied.
+  ///
+  /// On a cold start nothing has scanned yet, and the saved chains are restored
+  /// (by the cubits, through [setLaneEffects]/[setMonitorEffects]) *after*
+  /// [startEngine] — so a one-shot scan at start would run before any chain
+  /// exists and miss them, leaving the entries stuck as unavailable
+  /// placeholders until the user relinks by hand. Instead, whenever an applied
+  /// chain surfaces an unavailable plugin, kick a single catalog scan and
+  /// re-apply the affected chains once it lands, so the plugins load (resolving
+  /// their display names too) on their own.
+  ///
+  /// While that recovery scan is in flight the affected entries are flipped to
+  /// the transient "loading…" state (F5), so the UI shows a spinner rather than
+  /// a scary "unavailable + relink" during the brief auto-recovery window; the
+  /// re-apply then resolves them, or restores genuine unavailability if the
+  /// plugin is still missing. A no-op when nothing is unavailable.
+  void _recoverUnavailablePlugins() {
     final laneKeys = [
       for (final e in _laneEffects.entries)
-        if (_hasPlugin(e.value)) e.key,
+        if (_hasUnavailablePlugin(e.value)) e.key,
     ];
     final monitorKeys = [
       for (final e in _monitorEffects.entries)
-        if (_hasPlugin(e.value)) e.key,
+        if (_hasUnavailablePlugin(e.value)) e.key,
     ];
     if (laneKeys.isEmpty && monitorKeys.isEmpty) return;
-    if (pluginCatalog.descriptors.isNotEmpty) return; // already scanned
-    // Mark the pending scan and re-apply so the failed-to-load entries render
-    // as "loading…" (not "unavailable") while the scan runs, then re-apply once
-    // it lands so a still-missing plugin becomes a genuine unavailable (F5).
-    _pluginScanPending = true;
+    // A populated catalog means a scan already ran this session: the chains
+    // were applied against a warm cache, so a plugin still unavailable is
+    // genuinely missing/unsupported and rescanning cannot change that.
+    if (pluginCatalog.descriptors.isNotEmpty) return;
+    _markUnavailablePluginsLoading(laneKeys, monitorKeys);
+    final scan = _restoredPluginScan ??= pluginCatalog.scan();
+    unawaited(
+      scan.then((_) {
+        if (!_intendRunning) return; // stopped while scanning
+        for (final key in laneKeys) {
+          _applyLaneEffects(key.$1, key.$2);
+        }
+        monitorKeys.forEach(_applyMonitorEffects);
+      }),
+    );
+  }
+
+  /// Flips the unavailable plugin entries of the given lane / monitor chains to
+  /// the transient loading state (F5) while [_recoverUnavailablePlugins]'s scan
+  /// runs. Lane chains re-project so the UI updates; monitor chains update the
+  /// cache (the MonitorCubit re-reads it), mirroring how the scan-landed
+  /// re-apply reaches each.
+  void _markUnavailablePluginsLoading(
+    List<(int, int)> laneKeys,
+    List<int> monitorKeys,
+  ) {
+    PluginEffect toLoading(PluginEffect fx) =>
+        fx.copyWith(loading: true, unavailable: false, unsupported: false);
     for (final key in laneKeys) {
-      _applyLaneEffects(key.$1, key.$2);
+      final effects = _laneEffects[key];
+      if (effects == null) continue;
+      _laneEffects[key] = [
+        for (final fx in effects)
+          if (fx is PluginEffect && fx.unavailable) toLoading(fx) else fx,
+      ];
     }
-    monitorKeys.forEach(_applyMonitorEffects);
-    try {
-      await pluginCatalog.scan();
-    } finally {
-      // Always clear the flag — a scan that threw must not leave the chains
-      // stuck rendering "loading…" forever.
-      _pluginScanPending = false;
+    for (final input in monitorKeys) {
+      final effects = _monitorEffects[input];
+      if (effects == null) continue;
+      _monitorEffects[input] = [
+        for (final fx in effects)
+          if (fx is PluginEffect && fx.unavailable) toLoading(fx) else fx,
+      ];
     }
-    if (!_intendRunning) return; // stopped while scanning
-    for (final key in laneKeys) {
-      _applyLaneEffects(key.$1, key.$2);
-    }
-    monitorKeys.forEach(_applyMonitorEffects);
+    if (laneKeys.isNotEmpty) _reproject();
   }
 
   /// Closes the audio device. A deliberate stop also cancels any in-flight
@@ -1084,7 +1122,11 @@ class LooperRepository {
     }
     _reproject();
     if (!_intendRunning) return EngineResult.ok;
-    return _applyLaneEffects(channel, lane);
+    final result = _applyLaneEffects(channel, lane);
+    // A restored chain whose plugin id wasn't in the (cold-start-empty) scan
+    // cache lands here as unavailable — kick the one-shot recovery scan.
+    _recoverUnavailablePlugins();
+    return result;
   }
 
   /// Sets parameter [param] of chain entry [index] on lane [lane] of track
@@ -1354,22 +1396,15 @@ class LooperRepository {
   /// stale metadata so the card renders the unresolved state.
   PluginEffect _bindPluginSlot(PluginSlotHandle? handle, PluginEffect fx) {
     if (handle == null) {
-      // A restore-time scan is still running (F5): the plugin isn't loaded YET,
-      // but it is expected to bind once the scan lands, so render "loading…"
-      // rather than a genuine "unavailable" the user might relink by hand.
-      if (_pluginScanPending) {
-        return fx.copyWith(
-          params: const [],
-          loading: true,
-          unavailable: false,
-          unsupported: false,
-        );
-      }
       // The plugin failed to load on the running engine — flag the D-MISS
       // placeholder, preserving ref + state for relink (never a silent `none`).
       // A failed load whose id IS in the scan catalog means the plugin is
       // installed but rejected (instrument / multi-bus — D-BUS), as opposed to
-      // simply missing; the card shows the right message.
+      // simply missing; the card shows the right message. On a cold start the
+      // catalog is still empty, so this reads as a plain unavailable — which
+      // [_recoverUnavailablePlugins] catches, flips to "loading…", and rebinds
+      // once its scan lands (F5); clearing `loading` here keeps that transition
+      // one-way per apply.
       final installed = _descriptorFor(fx.ref.id) != null;
       return fx.copyWith(
         params: const [],
@@ -1523,7 +1558,11 @@ class LooperRepository {
       _monitorEffects[input] = clamped;
     }
     if (!_intendRunning) return EngineResult.ok;
-    return _applyMonitorEffects(input);
+    final result = _applyMonitorEffects(input);
+    // Same cold-start recovery as setLaneEffects: a restored monitor chain
+    // whose plugin wasn't yet scanned lands unavailable — rescan and rebind.
+    _recoverUnavailablePlugins();
+    return result;
   }
 
   /// Sets parameter [param] of monitor [input]'s chain entry [index] to [value]

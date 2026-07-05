@@ -1210,7 +1210,7 @@ void main() {
       expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isFalse);
     });
 
-    test('a plugin that fails to load is flagged unavailable (D-MISS)', () {
+    test('a plugin that fails to load is flagged unavailable (D-MISS)', () async {
       engine.nextSlotHandle = null; // load fails (uninstalled / moved)
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1222,6 +1222,10 @@ void main() {
             ),
           ],
         );
+      // Cold-start recovery kicks a scan; let it complete (it finds nothing) so
+      // the entry settles from the transient loading state to the genuine
+      // unavailable placeholder.
+      await repo.pluginCatalog.scan();
       final fx = repo.laneEffects(0, 0).single as PluginEffect;
       // Preserved as a placeholder, never dropped to `none`.
       expect(fx.unavailable, isTrue);
@@ -1230,34 +1234,39 @@ void main() {
       expect(fx.unsupported, isFalse);
     });
 
-    test('a restored plugin keeps its persisted name before any scan', () {
-      engine.nextSlotHandle = null; // not loadable yet (catalog unscanned)
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setTrackEffects(
-          channel: 0,
-          effects: const [
-            PluginEffect(
-              ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
-              name: 'Saved Reverb',
-            ),
-          ],
-        );
-      final fx = repo.laneEffects(0, 0).single as PluginEffect;
-      // The persisted name survives the bind, so the placeholder reads as the
-      // plugin's name rather than a cryptic id.
-      expect(fx.unavailable, isTrue);
-      expect(fx.name, 'Saved Reverb');
-    });
+    test(
+      'a failed plugin keeps its persisted name in the placeholder',
+      () async {
+        engine.nextSlotHandle = null; // not loadable (catalog has no match)
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setTrackEffects(
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
+                name: 'Saved Reverb',
+              ),
+            ],
+          );
+        await repo.pluginCatalog.scan(); // settle recovery -> unavailable
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        // The persisted name survives the bind + recovery, so the placeholder
+        // reads as the plugin's name rather than a cryptic id.
+        expect(fx.unavailable, isTrue);
+        expect(fx.name, 'Saved Reverb');
+      },
+    );
 
     test(
-      'startEngine scans + rebinds restored '
-      'plugins, resolving names',
+      'a restored plugin recovers itself once the cold-start scan lands',
       () async {
-        // A cold restart: the chain is restored before any scan, so the first
-        // apply can't resolve the name from the (empty) catalog. startEngine
-        // must kick a scan and re-apply, resolving the name from the
-        // descriptor.
+        // A cold restart: the chain is restored (through setTrackEffects) after
+        // the engine started, so its first apply hits the still-empty scan
+        // cache and the plugin fails to load. The recovery flips it to
+        // "loading…" (F5) and kicks a catalog scan; when that lands the entry
+        // re-applies itself, resolving availability + the descriptor name —
+        // without the user relinking by hand.
         engine
           ..pluginScanResults = const [
             le.PluginDescriptor(
@@ -1269,10 +1278,10 @@ void main() {
               version: 0,
             ),
           ]
-          ..nextSlotHandle = MockPluginSlotHandle('p');
+          // Cold start: the scan cache is empty, so the first load fails.
+          ..nextSlotHandle = null;
         final repo = buildRepo()
-          // Stored while stopped -> applied (and the startup scan kicked) on
-          // start.
+          ..startEngine(const EngineConfig())
           ..setTrackEffects(
             channel: 0,
             effects: const [
@@ -1281,15 +1290,20 @@ void main() {
               ),
             ],
           );
-        // Before start, nothing is applied; the name is still unresolved.
-        expect((repo.laneEffects(0, 0).single as PluginEffect).name, isEmpty);
+        // First apply against the empty cache fails; recovery flips it to
+        // loading (not a premature "unavailable") and its scan is now in
+        // flight.
+        final mid = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(mid.loading, isTrue);
+        expect(mid.unavailable, isFalse);
 
-        repo.startEngine(const EngineConfig());
-        // Joins the startup scan already in flight; the rebind runs when it
-        // lands.
+        // The plugin is loadable once scanned; joining the in-flight recovery
+        // scan drives the re-apply.
+        engine.nextSlotHandle = MockPluginSlotHandle('p');
         await repo.pluginCatalog.scan();
 
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.loading, isFalse);
         expect(fx.unavailable, isFalse);
         expect(fx.name, 'Catalog Reverb');
       },
@@ -1410,9 +1424,9 @@ void main() {
 
     test('a restored MONITOR plugin also reads as loading during the boot '
         'scan (F5, monitor apply path)', () async {
-      // The loading flag is set in _bindPluginSlot, shared by the lane and
-      // monitor apply paths — cover the monitor call site too so a monitor-only
-      // regression is caught.
+      // The cold-start recovery flips unavailable entries to loading on both
+      // the lane and monitor apply paths — cover the monitor call site too so a
+      // monitor-only regression is caught.
       engine
         ..nextSlotHandle = null
         ..scanProgressOverride = const PluginScanProgress(
@@ -1461,7 +1475,7 @@ void main() {
       expect(fx.versionChanged, isFalse);
     });
 
-    test('relinkLanePlugin swaps the ref, keeps state, and reloads', () {
+    test('relinkLanePlugin swaps the ref, keeps state, and reloads', () async {
       engine.nextSlotHandle = null; // initial load fails -> unavailable
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1474,6 +1488,7 @@ void main() {
             ),
           ],
         );
+      await repo.pluginCatalog.scan(); // settle recovery -> unavailable
       expect(
         (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
         isTrue,
