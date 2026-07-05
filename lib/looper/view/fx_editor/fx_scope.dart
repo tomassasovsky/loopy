@@ -63,9 +63,6 @@ abstract class FxScope {
   /// Opens the native editor window for the plugin chain entry at [index].
   void openPluginEditor(int index);
 
-  /// Closes the native editor window for the plugin chain entry at [index].
-  void closePluginEditor(int index);
-
   /// Relinks the unavailable plugin chain entry at [index] to [ref] (D-MISS).
   void relinkPlugin(int index, PluginRef ref);
 
@@ -138,9 +135,6 @@ class InputFxScope extends FxScope {
 
   @override
   void openPluginEditor(int index) => monitor.openPluginEditor(input, index);
-
-  @override
-  void closePluginEditor(int index) => monitor.closePluginEditor(input, index);
 
   @override
   void relinkPlugin(int index, PluginRef ref) =>
@@ -232,10 +226,6 @@ class LaneFxScope extends FxScope {
   @override
   void openPluginEditor(int index) =>
       looper.add(LooperLanePluginEditorOpened(track, lane, index));
-
-  @override
-  void closePluginEditor(int index) =>
-      looper.add(LooperLanePluginEditorClosed(track, lane, index));
 
   @override
   void relinkPlugin(int index, PluginRef ref) =>
