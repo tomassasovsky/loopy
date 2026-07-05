@@ -31,6 +31,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     required this.ledAmber,
     required this.ledBlue,
     required this.ringGlow,
+    required this.chromeGradientTop,
+    required this.chromeGradientBottom,
+    required this.chromeBar,
+    required this.meterTrack,
+    required this.pageGlow,
+    required this.knobFaceTop,
+    required this.knobFaceBottom,
   });
 
   /// The neutral surface palette.
@@ -73,6 +80,24 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
   final Color ledBlue;
   final Color ringGlow;
 
+  /// Signal-surface recessed/gradient fills — the deep "instrument panel"
+  /// backdrops that sit below the cards. Sourced from tokens (rather than raw
+  /// literals) so the whole Signal surface deepens under the high-contrast
+  /// variant instead of staying fixed while the rest of the palette shifts.
+  ///
+  /// [chromeGradientTop]/[chromeGradientBottom] paint the top chrome bar's
+  /// vertical gradient; [chromeBar] is the flat hint-strip / legend fill;
+  /// [meterTrack] is the recessed input level-meter groove; [pageGlow] is the
+  /// inner stop of the page's radial backdrop; [knobFaceTop]/[knobFaceBottom]
+  /// are the rotary knob's radial-gradient cap.
+  final Color chromeGradientTop;
+  final Color chromeGradientBottom;
+  final Color chromeBar;
+  final Color meterTrack;
+  final Color pageGlow;
+  final Color knobFaceTop;
+  final Color knobFaceBottom;
+
   /// The display/body typeface — a geometric grotesque that gives the surfaces
   /// their instrument-panel character (bundled under `assets/fonts/`).
   static const String displayFont = 'Space Grotesk';
@@ -110,6 +135,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     Color? ledAmber,
     Color? ledBlue,
     Color? ringGlow,
+    Color? chromeGradientTop,
+    Color? chromeGradientBottom,
+    Color? chromeBar,
+    Color? meterTrack,
+    Color? pageGlow,
+    Color? knobFaceTop,
+    Color? knobFaceBottom,
   }) => SurfaceTheme(
     background: background ?? this.background,
     surface: surface ?? this.surface,
@@ -131,6 +163,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     ledAmber: ledAmber ?? this.ledAmber,
     ledBlue: ledBlue ?? this.ledBlue,
     ringGlow: ringGlow ?? this.ringGlow,
+    chromeGradientTop: chromeGradientTop ?? this.chromeGradientTop,
+    chromeGradientBottom: chromeGradientBottom ?? this.chromeGradientBottom,
+    chromeBar: chromeBar ?? this.chromeBar,
+    meterTrack: meterTrack ?? this.meterTrack,
+    pageGlow: pageGlow ?? this.pageGlow,
+    knobFaceTop: knobFaceTop ?? this.knobFaceTop,
+    knobFaceBottom: knobFaceBottom ?? this.knobFaceBottom,
   );
 
   @override
@@ -157,6 +196,16 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
       ledAmber: c(ledAmber, other.ledAmber),
       ledBlue: c(ledBlue, other.ledBlue),
       ringGlow: c(ringGlow, other.ringGlow),
+      chromeGradientTop: c(chromeGradientTop, other.chromeGradientTop),
+      chromeGradientBottom: c(
+        chromeGradientBottom,
+        other.chromeGradientBottom,
+      ),
+      chromeBar: c(chromeBar, other.chromeBar),
+      meterTrack: c(meterTrack, other.meterTrack),
+      pageGlow: c(pageGlow, other.pageGlow),
+      knobFaceTop: c(knobFaceTop, other.knobFaceTop),
+      knobFaceBottom: c(knobFaceBottom, other.knobFaceBottom),
       lanePalette: [
         for (var i = 0; i < lanePalette.length; i++)
           c(
@@ -206,6 +255,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     ledAmber: Color(0xFFF59E0B),
     ledBlue: Color(0xFF3B82F6),
     ringGlow: Color(0xFF3A3A44),
+    chromeGradientTop: Color(0xFF101016),
+    chromeGradientBottom: Color(0xFF0C0C10),
+    chromeBar: Color(0xFF0B0B0F),
+    meterTrack: Color(0xFF0E0E12),
+    pageGlow: Color(0xFF11111B),
+    knobFaceTop: Color(0xFF23232B),
+    knobFaceBottom: Color(0xFF121217),
   );
 
   /// High-contrast variant of [dark], selected automatically when the OS
@@ -243,6 +299,13 @@ class SurfaceTheme extends ThemeExtension<SurfaceTheme> {
     ledAmber: Color(0xFFFFC04D),
     ledBlue: Color(0xFF6BA8FF),
     ringGlow: Color(0xFF6B6D78),
+    chromeGradientTop: Color(0xFF0B0B10),
+    chromeGradientBottom: Color(0xFF050508),
+    chromeBar: Color(0xFF060609),
+    meterTrack: Color(0xFF040406),
+    pageGlow: Color(0xFF0B0B18),
+    knobFaceTop: Color(0xFF2E2E3A),
+    knobFaceBottom: Color(0xFF17171D),
   );
 }
 

@@ -100,7 +100,7 @@ class _InputRow extends StatelessWidget {
               height: 5,
               child: LinearProgressIndicator(
                 value: (on && !m.muted) ? m.volume.clamp(0.0, 1.0) : 0,
-                backgroundColor: const Color(0xFF0E0E12),
+                backgroundColor: surface.meterTrack,
                 valueColor: AlwaysStoppedAnimation(hue),
               ),
             ),

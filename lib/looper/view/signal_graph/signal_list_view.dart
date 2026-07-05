@@ -48,7 +48,7 @@ Future<void> showSignalPage(BuildContext context) {
                   gradient: RadialGradient(
                     center: const Alignment(-0.5, -1.15),
                     radius: 1.25,
-                    colors: [const Color(0xFF11111B), surface.background],
+                    colors: [surface.pageGlow, surface.background],
                     stops: const [0, 0.62],
                   ),
                 ),
