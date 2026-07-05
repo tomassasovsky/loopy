@@ -27,12 +27,14 @@ void main() {
       ).thenAnswer((_) => const Stream<LooperState>.empty());
     });
 
-    PedalCubit cubitWith(FakePedalTransport transport) => PedalCubit(
-      pedal: PedalRepository(transport),
-      looper: looper,
-      settings: SettingsRepository(store: FakeKeyValueStore()),
-      pollInterval: Duration.zero, // no hotplug timer in widget tests
-    );
+    PedalCubit cubitWith(FakePedalTransport transport) {
+      final settings = SettingsRepository(store: FakeKeyValueStore());
+      return PedalCubit(
+        pedal: PedalRepository(transport),
+        settings: settings,
+        pollInterval: Duration.zero, // no hotplug timer in widget tests
+      );
+    }
 
     Future<void> pumpSection(WidgetTester tester, PedalCubit cubit) =>
         tester.pumpApp(

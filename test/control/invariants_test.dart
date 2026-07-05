@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
 /// Direct unit tests for the control-surface invariant spec: each rule is
@@ -16,11 +14,12 @@ void main() {
     PedalMode mode = PedalMode.rec,
     int loopLengthMicros = 0,
     int selectedTrack = 0,
+    int activeBank = 0,
   }) => PedalStateFrame(
     globalColor: GlobalColor.off,
     trackLeds:
         leds ?? List.filled(PedalStateFrame.trackCount, PedalTrackLed.off),
-    activeBank: 0,
+    activeBank: activeBank,
     selectedTrack: selectedTrack,
     mode: mode,
     loopLengthMicros: loopLengthMicros,
@@ -59,7 +58,7 @@ void main() {
     test('rejects an EMPTY track with residual length', () {
       final c = ControlContext(
         looper: looper(tracks: tracksWith(const Track(lengthFrames: 100))),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(),
       );
       expect(violation(c, 'depths-sane'), isNotNull);
@@ -68,38 +67,120 @@ void main() {
     test('accepts a clean empty looper', () {
       final c = ControlContext(
         looper: looper(),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(),
       );
       expect(violation(c, 'depths-sane'), isNull);
     });
   });
 
-  group('cursor rules', () {
-    test('bank must match the cursor', () {
-      final c = ControlContext(
+  group('cursor-and-bank-in-range', () {
+    test('rejects an out-of-range cursor and bank', () {
+      // The wire frame asserts its own ranges, so an out-of-range OVERLAY is
+      // paired with an in-range frame (frame-mirrors-overlay flags that too,
+      // but this rule must fire on the overlay itself).
+      final badCursor = ControlContext(
         looper: looper(),
-        pedal: const PedalState(selectedTrack: 5), // bank should be 1
+        overlay: const ControlState(cursor: 9),
         frame: frame(),
       );
-      expect(violation(c, 'cursor-in-range'), isNotNull);
+      expect(violation(badCursor, 'cursor-and-bank-in-range'), isNotNull);
+
+      final badBank = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(activeBank: 2),
+        frame: frame(),
+      );
+      expect(violation(badBank, 'cursor-and-bank-in-range'), isNotNull);
     });
 
-    test('cursor-mirrored flags divergent surfaces, skips a null context', () {
-      final diverged = ControlContext(
+    test('accepts a bank-B cursor', () {
+      final c = ControlContext(
         looper: looper(),
-        pedal: const PedalState(selectedTrack: 4, activeBank: 1),
-        tracks: const TracksState(names: [], selectedChannel: 2),
-        frame: frame(),
+        overlay: const ControlState(cursor: 5, activeBank: 1),
+        frame: frame(selectedTrack: 5, activeBank: 1),
       );
-      expect(violation(diverged, 'cursor-mirrored'), isNotNull);
+      expect(violation(c, 'cursor-and-bank-in-range'), isNull);
+    });
+  });
 
-      final noTracks = ControlContext(
+  group('frame-mirrors-overlay', () {
+    test('rejects a frame whose cursor / bank / mode diverge', () {
+      final cursor = ControlContext(
         looper: looper(),
-        pedal: const PedalState(selectedTrack: 4, activeBank: 1),
+        overlay: const ControlState(cursor: 2),
+        frame: frame(), // selectedTrack: 0
+      );
+      expect(violation(cursor, 'frame-mirrors-overlay'), isNotNull);
+
+      final bank = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(activeBank: 1),
+        frame: frame(), // activeBank: 0
+      );
+      expect(violation(bank, 'frame-mirrors-overlay'), isNotNull);
+
+      final mode = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(mode: LooperMode.play),
+        frame: frame(), // mode: rec
+      );
+      expect(violation(mode, 'frame-mirrors-overlay'), isNotNull);
+    });
+
+    test('accepts a mirrored frame', () {
+      final c = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(mode: LooperMode.play, cursor: 4),
+        frame: frame(mode: PedalMode.play, selectedTrack: 4, activeBank: 1),
+      );
+      // The overlay's activeBank defaults to 0 while its cursor is 4 — set it.
+      final aligned = ControlContext(
+        looper: c.looper,
+        overlay: const ControlState(
+          mode: LooperMode.play,
+          cursor: 4,
+          activeBank: 1,
+        ),
+        frame: c.frame,
+      );
+      expect(violation(aligned, 'frame-mirrors-overlay'), isNull);
+    });
+  });
+
+  group('stored-intent-playable', () {
+    test('rejects stored sets referencing an empty track', () {
+      final excluded = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(excluded: {2}),
         frame: frame(),
       );
-      expect(violation(noTracks, 'cursor-mirrored'), isNull);
+      expect(violation(excluded, 'stored-intent-playable'), isNotNull);
+
+      final resume = ControlContext(
+        looper: looper(),
+        overlay: const ControlState(parkedResume: {5}),
+        frame: frame(),
+      );
+      expect(violation(resume, 'stored-intent-playable'), isNotNull);
+    });
+
+    test('accepts sets over content tracks', () {
+      final c = ControlContext(
+        looper: looper(
+          tracks: tracksWith(
+            const Track(
+              channel: 2,
+              state: TrackState.stopped,
+              lengthFrames: 100,
+            ),
+          ),
+          masterLengthFrames: 100,
+        ),
+        overlay: const ControlState(parkedResume: {2}),
+        frame: frame(loopLengthMicros: 1000),
+      );
+      expect(violation(c, 'stored-intent-playable'), isNull);
     });
   });
 
@@ -107,7 +188,7 @@ void main() {
     test('empty-track-dark: a lit EMPTY track violates (cursor excepted)', () {
       final lit = ControlContext(
         looper: looper(),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(leds: ledsWith(3, PedalTrackLed.green)),
       );
       expect(violation(lit, 'empty-track-dark'), isNotNull);
@@ -115,7 +196,7 @@ void main() {
       // The Rec-mode cursor LED is red on an empty track by design.
       final cursor = ControlContext(
         looper: looper(),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(leds: ledsWith(0, PedalTrackLed.red)),
       );
       expect(violation(cursor, 'empty-track-dark'), isNull);
@@ -133,7 +214,7 @@ void main() {
           ),
           masterLengthFrames: 100,
         ),
-        pedal: const PedalState(mode: LooperMode.play),
+        overlay: const ControlState(mode: LooperMode.play),
         frame: frame(
           leds: ledsWith(0, PedalTrackLed.green),
           mode: PedalMode.play,
@@ -143,8 +224,22 @@ void main() {
       expect(violation(c, 'muted-dark-in-play'), isNotNull);
     });
 
+    test('sounding-unexcluded-green: dark-but-sounding violates', () {
+      final c = ControlContext(
+        looper: looper(
+          tracks: tracksWith(
+            const Track(state: TrackState.playing, lengthFrames: 100),
+          ),
+          masterLengthFrames: 100,
+        ),
+        overlay: const ControlState(mode: LooperMode.play),
+        frame: frame(mode: PedalMode.play, loopLengthMicros: 1000),
+      );
+      expect(violation(c, 'sounding-unexcluded-green'), isNotNull);
+    });
+
     test(
-      'sounding-armed-and-green: dark-but-sounding violates (fuzz-only)',
+      'sounding-unexcluded-green: an excluded sounding track may be dark',
       () {
         final c = ControlContext(
           looper: looper(
@@ -153,20 +248,61 @@ void main() {
             ),
             masterLengthFrames: 100,
           ),
-          pedal: const PedalState(mode: LooperMode.play), // not armed
+          overlay: const ControlState(
+            mode: LooperMode.play,
+            excluded: {0},
+          ),
           frame: frame(mode: PedalMode.play, loopLengthMicros: 1000),
         );
-        expect(violation(c, 'sounding-armed-and-green'), isNotNull);
-        // ...but the projection-time context skips it (fuzzOnly).
-        expect(
-          checkControlInvariants(
-            c,
-            projectionContext: true,
-          ).where((v) => v.startsWith('sounding-armed-and-green:')),
-          isEmpty,
-        );
+        expect(violation(c, 'sounding-unexcluded-green'), isNull);
       },
     );
+
+    test('parked-preview-matches-resume: LEDs must preview the resume set', () {
+      LooperState parked() => looper(
+        tracks: tracksWith(
+          const Track(state: TrackState.stopped, lengthFrames: 100),
+        ),
+        masterLengthFrames: 100,
+      );
+      // Resume member dark: violation.
+      final dark = ControlContext(
+        looper: parked(),
+        overlay: const ControlState(
+          mode: LooperMode.play,
+          parkedResume: {0},
+        ),
+        frame: frame(mode: PedalMode.play, loopLengthMicros: 1000),
+      );
+      expect(violation(dark, 'parked-preview-matches-resume'), isNotNull);
+
+      // Non-member lit: violation.
+      final lit = ControlContext(
+        looper: parked(),
+        overlay: const ControlState(mode: LooperMode.play),
+        frame: frame(
+          leds: ledsWith(0, PedalTrackLed.green),
+          mode: PedalMode.play,
+          loopLengthMicros: 1000,
+        ),
+      );
+      expect(violation(lit, 'parked-preview-matches-resume'), isNotNull);
+
+      // Member lit green: holds.
+      final ok = ControlContext(
+        looper: parked(),
+        overlay: const ControlState(
+          mode: LooperMode.play,
+          parkedResume: {0},
+        ),
+        frame: frame(
+          leds: ledsWith(0, PedalTrackLed.green),
+          mode: PedalMode.play,
+          loopLengthMicros: 1000,
+        ),
+      );
+      expect(violation(ok, 'parked-preview-matches-resume'), isNull);
+    });
 
     test('capturing-red-in-rec: a dark capturing track violates', () {
       final c = ControlContext(
@@ -175,24 +311,15 @@ void main() {
             const Track(channel: 3, state: TrackState.recording),
           ),
         ),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(),
       );
       expect(violation(c, 'capturing-red-in-rec'), isNotNull);
     });
   });
 
-  group('armed set + ring', () {
-    test('armed-only-playable: an armed empty channel violates', () {
-      final c = ControlContext(
-        looper: looper(),
-        pedal: const PedalState(mode: LooperMode.play, playArmed: {2}),
-        frame: frame(mode: PedalMode.play),
-      );
-      expect(violation(c, 'armed-only-playable'), isNotNull);
-    });
-
-    test('ring-length-iff-loops: needs BOTH content and a grid', () {
+  group('ring-length-iff-loops', () {
+    test('needs BOTH content and a grid', () {
       // Content + grid but a dark ring: violation.
       final dark = ControlContext(
         looper: looper(
@@ -201,7 +328,7 @@ void main() {
           ),
           masterLengthFrames: 100,
         ),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(),
       );
       expect(violation(dark, 'ring-length-iff-loops'), isNotNull);
@@ -211,19 +338,19 @@ void main() {
         looper: looper(
           tracks: tracksWith(const Track(state: TrackState.recording)),
         ),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(leds: ledsWith(0, PedalTrackLed.red)),
       );
       expect(violation(defining, 'ring-length-iff-loops'), isNull);
-    });
 
-    test('frame-mirrors-mode: a rec frame in play mode violates', () {
-      final c = ControlContext(
-        looper: looper(),
-        pedal: const PedalState(mode: LooperMode.play),
-        frame: frame(), // mode: rec
+      // An undone-to-empty ghost grid (master kept, zero content) must not
+      // render a ring either.
+      final ghost = ControlContext(
+        looper: looper(masterLengthFrames: 100),
+        overlay: const ControlState(),
+        frame: frame(loopLengthMicros: 1000),
       );
-      expect(violation(c, 'frame-mirrors-mode'), isNotNull);
+      expect(violation(ghost, 'ring-length-iff-loops'), isNotNull);
     });
   });
 
@@ -231,7 +358,7 @@ void main() {
     test('throws with every violation listed, returns true when clean', () {
       final broken = ControlContext(
         looper: looper(tracks: tracksWith(const Track(lengthFrames: 100))),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(),
       );
       expect(
@@ -247,7 +374,7 @@ void main() {
 
       final clean = ControlContext(
         looper: looper(),
-        pedal: const PedalState(),
+        overlay: const ControlState(),
         frame: frame(),
       );
       expect(debugControlInvariantsHold(clean), isTrue);

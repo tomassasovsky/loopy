@@ -1,9 +1,25 @@
-/// The control-surface spec: the invariant list every surface (pedal LEDs,
-/// armed set, cursor, ring) must satisfy against engine truth. Enforced by
-/// the sequence fuzzer (test/fuzz/) and by debug-mode asserts at projection
-/// time. The phase-2 projection refactor (see
-/// docs/plan/2026-07-04-refactor-control-state-robustness-plan.md) adds the
-/// shared control overlay + pure projections here.
+/// The control layer: loopy's ONE home for stored user intent and its
+/// derivations.
+///
+/// - `ControlCubit` (business logic layer) owns the closed stored-intent
+///   inventory (mode, cursor, bank, excluded, parkedResume) — the only
+///   control state that is not derivable from engine truth, each bit with a
+///   written invalidation rule — AND is the one interpreter every surface
+///   reaches: the pedal's decoded footswitches arrive through
+///   `PedalRepository.events`, the keyboard and on-screen widgets call the
+///   same methods, so command sequences can never diverge. Repositories are
+///   composed at the bloc level (no domain-service orphans, no cubit
+///   depending on another cubit).
+/// - `control_projection.dart` computes everything else (armed set, LEDs,
+///   the pedal frame) as pure functions of `(LooperState × overlay)` —
+///   derived state cannot go stale.
+/// - `invariants.dart` is the executable spec, enforced by the sequence
+///   fuzzer (test/fuzz/) and by debug asserts on every projection.
+///
+/// Design rationale:
+/// docs/brainstorm/2026-07-04-control-state-robustness-brainstorm-doc.md.
 library;
 
+export 'control_projection.dart';
+export 'cubit/control_cubit.dart';
 export 'invariants.dart';

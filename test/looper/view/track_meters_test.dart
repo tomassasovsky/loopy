@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/looper/view/track_meters.dart';
-import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -22,7 +22,7 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
-  late PedalCubit pedal;
+  late ControlCubit control;
 
   setUp(() {
     final settings = SettingsRepository(store: FakeKeyValueStore());
@@ -32,14 +32,15 @@ void main() {
     when(
       () => looper.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    // The row reads the system mode from the shared PedalCubit.
-    pedal = PedalCubit(
-      pedal: PedalRepository(const NoopPedalTransport()),
+    // The row reads the mode / cursor / bank from the shared control cubit.
+    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    addTearDown(pedalRepo.dispose);
+    control = ControlCubit(
       looper: looper,
+      pedal: pedalRepo,
       settings: settings,
-      pollInterval: Duration.zero,
     );
-    addTearDown(pedal.close);
+    addTearDown(control.close);
   });
 
   void seed(LooperState state) {
@@ -56,7 +57,7 @@ void main() {
         providers: [
           BlocProvider<LooperBloc>.value(value: bloc),
           BlocProvider<TracksCubit>.value(value: tracks),
-          BlocProvider<PedalCubit>.value(value: pedal),
+          BlocProvider<ControlCubit>.value(value: control),
         ],
         child: const Scaffold(body: TrackMeterRow()),
       ),
@@ -85,7 +86,7 @@ void main() {
 
   testWidgets('the selected track bar has a white border', (tester) async {
     seed(LooperState(tracks: [for (var i = 0; i < 4; i++) Track(channel: i)]));
-    tracks.select(1);
+    control.selectTrack(1);
     await pump(tester);
 
     expect(borderColor(tester, 1), Colors.white);

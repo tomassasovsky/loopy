@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:loopy/theme/theme.dart';
 
 /// A chromeless row of the active-bank track level meters — the bars-only
@@ -24,16 +24,17 @@ class TrackMeterRow extends StatelessWidget {
     final looper = Theme.of(context).extension<LooperTheme>()!;
 
     final tracks = context.watch<LooperBloc>().state.tracks;
-    final cursor = context.watch<TracksCubit>().state;
-    // The system mode lives on PedalCubit — this row sits on the pedal's own
-    // screen, so its meter palette must follow the mode the footswitch sets.
-    final mode = context.watch<PedalCubit>().state.mode;
+    final names = context.watch<TracksCubit>().state;
+    // Mode / cursor / bank are the shared control overlay — this row sits on
+    // the pedal's own screen, so it follows exactly what the footswitch sets.
+    final overlay = context.watch<ControlCubit>().state;
+    final mode = overlay.mode;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final track in tracks)
-          if (cursor.bankContains(track.channel))
+          if (overlay.bankContains(track.channel))
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -41,9 +42,9 @@ class TrackMeterRow extends StatelessWidget {
                   track: track,
                   looper: looper,
                   mode: mode,
-                  selected: track.channel == cursor.selectedChannel,
+                  selected: track.channel == overlay.cursor,
                   name: l10n.displayTrackName(
-                    cursor.nameOf(track.channel),
+                    names.nameOf(track.channel),
                     track.channel,
                   ),
                 ),
