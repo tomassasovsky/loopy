@@ -36,10 +36,11 @@ struct lpw_window;
 // (LOOPY_EDITOR_EMBED=1) there is no window: [embedded] is the container NSView
 // added as a subview of the Loopy window, and [window]/[delegate] are null.
 struct lpw_window {
-  CFTypeRef window;     // NSWindow*
-  CFTypeRef delegate;   // LpwWindowDelegate* or LpwCloseTarget* (embed)
-  CFTypeRef embedded;   // NSView* scrim backdrop (embed mode)
-  CFTypeRef container;  // NSView* the plugin attaches to (embed mode)
+  CFTypeRef window;      // NSWindow*
+  CFTypeRef delegate;    // LpwWindowDelegate* or LpwCloseTarget* (embed)
+  CFTypeRef embedded;    // NSView* scrim backdrop (embed mode)
+  CFTypeRef container;   // NSView* the plugin attaches to (embed mode)
+  CFTypeRef keyMonitor;  // id, local Escape monitor (embed mode)
 };
 
 @implementation LpwWindowDelegate
@@ -178,6 +179,20 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
     h->container = CFBridgingRetain(container);  // handle owns +1
     h->delegate = CFBridgingRetain(target);     // handle owns +1
     target->handle = h;                          // for the deferred free
+
+    // Escape dismisses the popup, whatever has focus (the plugin's own view
+    // may be first responder). A local monitor intercepts the key before it
+    // reaches the focused view, for as long as the popup is open.
+    id keyMonitor = [NSEvent
+        addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                     handler:^NSEvent*(NSEvent* e) {
+                                       if ([e keyCode] == 53) {  // Escape
+                                         [target onClose:nil];
+                                         return nil;  // consume it
+                                       }
+                                       return e;
+                                     }];
+    h->keyMonitor = CFBridgingRetain(keyMonitor);
     return h;
   }
 
@@ -287,6 +302,12 @@ void lpw_window_close(lpw_window* window) {
     if (window->delegate) {
       LpwCloseTarget* t = (__bridge LpwCloseTarget*)window->delegate;
       t->suppress = true;
+    }
+    if (window->keyMonitor) {
+      id m = (__bridge id)window->keyMonitor;
+      [NSEvent removeMonitor:m];
+      CFBridgingRelease(window->keyMonitor);
+      window->keyMonitor = nullptr;
     }
     NSView* backdrop = (__bridge NSView*)window->embedded;
     [backdrop removeFromSuperview];  // drops the container + close button too
