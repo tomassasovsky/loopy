@@ -14,7 +14,7 @@ class _SignalHintStrip extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B0B0F),
+        color: surface.chromeBar,
         border: Border(bottom: BorderSide(color: surface.line)),
       ),
       child: Row(
@@ -54,7 +54,7 @@ class _SignalLegend extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B0B0F),
+        color: surface.chromeBar,
         border: Border(top: BorderSide(color: surface.line)),
       ),
       child: Wrap(
@@ -111,10 +111,10 @@ class _SignalChromeBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 12, 18, 12),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: surface.line)),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0xFF101016), Color(0xFF0C0C10)],
+          colors: [surface.chromeGradientTop, surface.chromeGradientBottom],
         ),
       ),
       child: Row(
