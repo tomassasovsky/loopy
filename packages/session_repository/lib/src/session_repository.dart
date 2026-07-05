@@ -6,7 +6,9 @@ import 'dart:typed_data';
 import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
 import 'package:session_repository/src/models/session.dart';
+import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
+import 'package:session_repository/src/session_name.dart';
 import 'package:session_repository/src/wav.dart';
 
 /// The decoded contents of a `.loopy` session bundle: the manifest plus each
@@ -41,23 +43,110 @@ class SessionChains {
 class SessionRepository {
   /// Creates a [SessionRepository] capturing from [engine].
   ///
+  /// [sessionsRoot] resolves the `sessions/` root directory the named-session
+  /// catalog ([listSessions] / [bundlePath] / [renameSession] /
+  /// [deleteSession]) operates under; it is optional so the existing
+  /// single-bundle flow (which addresses bundles by path) needs no root. The
+  /// catalog methods throw [StateError] when it is absent. Injecting a resolver
+  /// keeps the catalog testable (point it at a temp dir).
+  ///
   /// [clearPollInterval]/[clearPollAttempts] bound how long a save/export waits
   /// for in-flight overdub layers to settle before capturing. Tests can shrink
   /// these.
   SessionRepository({
     required AudioEngine engine,
+    Future<String> Function()? sessionsRoot,
     Duration clearPollInterval = const Duration(milliseconds: 8),
     int clearPollAttempts = 64,
   }) : _engine = engine,
+       _sessionsRoot = sessionsRoot,
        _clearPollInterval = clearPollInterval,
        _clearPollAttempts = clearPollAttempts;
 
   final AudioEngine _engine;
+  final Future<String> Function()? _sessionsRoot;
   final Duration _clearPollInterval;
   final int _clearPollAttempts;
 
   /// The mixdown filename within a session bundle.
   static const String mixdownName = 'mixdown.wav';
+
+  // ---- named-session catalog ----
+  //
+  // A name-keyed view over the `sessions/<slug>/` bundles. These do NOT touch
+  // the path-addressed read/save/export below — the bloc layer resolves a name
+  // to a path via [bundlePath] and feeds that into those. The sessions root is
+  // a sibling of the legacy single `loopy_session/` bundle, so the old bundle
+  // is never enumerated here.
+
+  Future<String> _rootPath() async {
+    final resolver = _sessionsRoot;
+    if (resolver == null) {
+      throw StateError('SessionRepository has no sessionsRoot configured');
+    }
+    return resolver();
+  }
+
+  /// Resolves [name]'s bundle directory under the sessions root, folding it to
+  /// a folder-safe slug (see [sessionSlug]). Throws [ArgumentError] for a name
+  /// that sanitizes to nothing.
+  Future<String> bundlePath(String name) async {
+    final slug = sessionSlug(name);
+    if (slug == null) {
+      throw ArgumentError.value(name, 'name', 'not a valid session name');
+    }
+    return '${await _rootPath()}/$slug';
+  }
+
+  /// Lists the saved sessions — one [SessionSummary] per `sessions/<slug>/`
+  /// folder that contains a `${Session.manifestName}`, sorted alphabetically
+  /// (case-insensitively). Enumeration only `stat`s for the manifest's presence
+  /// (never parses it), so a newer-version or otherwise unloadable bundle is
+  /// still listed; its typed failure surfaces on an actual load. A folder with
+  /// no manifest is skipped. Returns empty when the root does not exist yet.
+  Future<List<SessionSummary>> listSessions() async {
+    final root = Directory(await _rootPath());
+    if (!root.existsSync()) return const [];
+    return <SessionSummary>[
+      for (final entity in root.listSync())
+        if (entity is Directory &&
+            File('${entity.path}/${Session.manifestName}').existsSync())
+          SessionSummary(name: _basename(entity.path)),
+    ]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
+  /// Renames the bundle folder for session [from] to [to]. Throws
+  /// [SessionNameCollision] when [to]'s slug already exists (named sessions
+  /// never silently overwrite) and [ArgumentError] when [to] is not a valid
+  /// name. Renaming to the same slug is a no-op.
+  Future<void> renameSession(String from, String to) async {
+    final toSlug = sessionSlug(to);
+    if (toSlug == null) {
+      throw ArgumentError.value(to, 'to', 'not a valid session name');
+    }
+    final fromSlug = sessionSlug(from) ?? from;
+    if (toSlug == fromSlug) return;
+    final root = await _rootPath();
+    if (Directory('$root/$toSlug').existsSync()) {
+      throw SessionNameCollision(slug: toSlug);
+    }
+    Directory('$root/$fromSlug').renameSync('$root/$toSlug');
+  }
+
+  /// Deletes session [name]'s bundle folder. A missing folder (or an invalid
+  /// name) is a no-op — there is no concurrent-mutation race to guard in a
+  /// single-window desktop app.
+  Future<void> deleteSession(String name) async {
+    final slug = sessionSlug(name);
+    if (slug == null) return;
+    final dir = Directory('${await _rootPath()}/$slug');
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  }
+
+  /// The final path segment of [path] (the folder name), split on either
+  /// separator so it is correct on every OS.
+  static String _basename(String path) =>
+      path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
 
   /// Saves the engine's current state to the `.loopy` bundle [directory],
   /// writing the manifest, per-track stems, and a mixdown. Returns the saved
