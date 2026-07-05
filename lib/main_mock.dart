@@ -1,5 +1,6 @@
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/run_loopy.dart';
+import 'package:loopy/session_directory.dart';
 import 'package:session_repository/session_repository.dart';
 
 /// The mock flavor: a hardware-free engine that boots straight into the looper
@@ -13,7 +14,10 @@ Future<void> main(List<String> args) async {
   await runLoopy(
     args,
     repository: LooperRepository(engine: mock.engine),
-    sessionRepository: SessionRepository(engine: mock.engine),
+    sessionRepository: SessionRepository(
+      engine: mock.engine,
+      sessionsRoot: defaultSessionsRoot,
+    ),
     startConfig: mock.startConfig,
   );
 }

@@ -155,11 +155,13 @@ class AudioNotRunningBanner extends StatelessWidget {
 }
 
 /// A session action chosen from the [SessionMenu].
-enum _SessionAction { save, load, exportMixdown, exportStems }
+enum _SessionAction { save, manage, exportMixdown, exportStems }
 
-/// The session menu in the top bar: save / load the `.loopy` bundle and export
-/// a mixdown or per-track stems. Drives the [SessionCubit]; outcomes are
-/// surfaced by the view's [BlocListener] (a live-region SnackBar).
+/// The session area in the top bar: the current session name (or "Unsaved")
+/// beside a menu with quick Save, the Sessions manager, and the mixdown / stems
+/// exports. Drives the [SessionCubit]; save/load/export outcomes are surfaced by
+/// the view's [BlocListener] (a live-region SnackBar), and the Sessions manager
+/// opens its own dialog.
 ///
 /// A [PopupMenuButton] is keyboard-operable and screen-reader labelled (via
 /// its tooltip) out of the box, so it satisfies WCAG 2.1.1 / 4.1.2 without
@@ -171,44 +173,64 @@ class SessionMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return PopupMenuButton<_SessionAction>(
-      key: const Key('tracks_session_menu'),
-      tooltip: l10n.a11ySessionMenu,
-      icon: const Icon(Icons.folder_outlined, color: Colors.white70),
-      onSelected: (action) {
-        final cubit = context.read<SessionCubit>();
-        switch (action) {
-          case _SessionAction.save:
-            unawaited(cubit.saveSession());
-          case _SessionAction.load:
-            unawaited(cubit.loadSession());
-          case _SessionAction.exportMixdown:
-            unawaited(cubit.exportMixdown());
-          case _SessionAction.exportStems:
-            unawaited(cubit.exportStems());
-        }
-      },
-      itemBuilder: (context) => [
-        PopupMenuItem(
-          key: const Key('tracks_session_save'),
-          value: _SessionAction.save,
-          child: Text(l10n.saveSession),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // The current session name, or "Unsaved" when nothing is open — the
+        // document-model indicator a quick Save writes back to.
+        BlocBuilder<SessionCubit, SessionState>(
+          buildWhen: (a, b) => a.currentSessionName != b.currentSessionName,
+          builder: (context, state) => Text(
+            state.currentSessionName ?? l10n.sessionUnsaved,
+            key: const Key('tracks_session_name'),
+            style: TextStyle(
+              color: Colors.white70,
+              fontStyle: state.currentSessionName == null
+                  ? FontStyle.italic
+                  : FontStyle.normal,
+            ),
+          ),
         ),
-        PopupMenuItem(
-          key: const Key('tracks_session_load'),
-          value: _SessionAction.load,
-          child: Text(l10n.loadSession),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          key: const Key('tracks_session_exportMixdown'),
-          value: _SessionAction.exportMixdown,
-          child: Text(l10n.exportMixdown),
-        ),
-        PopupMenuItem(
-          key: const Key('tracks_session_exportStems'),
-          value: _SessionAction.exportStems,
-          child: Text(l10n.exportStems),
+        PopupMenuButton<_SessionAction>(
+          key: const Key('tracks_session_menu'),
+          tooltip: l10n.a11ySessionMenu,
+          icon: const Icon(Icons.folder_outlined, color: Colors.white70),
+          onSelected: (action) {
+            final cubit = context.read<SessionCubit>();
+            switch (action) {
+              case _SessionAction.save:
+                unawaited(cubit.save());
+              case _SessionAction.manage:
+                unawaited(showSessionsManager(context));
+              case _SessionAction.exportMixdown:
+                unawaited(cubit.exportMixdown());
+              case _SessionAction.exportStems:
+                unawaited(cubit.exportStems());
+            }
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              key: const Key('tracks_session_save'),
+              value: _SessionAction.save,
+              child: Text(l10n.sessionSave),
+            ),
+            PopupMenuItem(
+              key: const Key('tracks_session_manage'),
+              value: _SessionAction.manage,
+              child: Text(l10n.sessionManage),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem(
+              key: const Key('tracks_session_exportMixdown'),
+              value: _SessionAction.exportMixdown,
+              child: Text(l10n.exportMixdown),
+            ),
+            PopupMenuItem(
+              key: const Key('tracks_session_exportStems'),
+              value: _SessionAction.exportStems,
+              child: Text(l10n.exportStems),
+            ),
+          ],
         ),
       ],
     );

@@ -66,7 +66,7 @@ void main() {
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
             ],
-            child: LooperPage(sessionDirectory: () async => '.'),
+            child: LooperPage(exportDirectory: () async => '.'),
           ),
         ),
       );

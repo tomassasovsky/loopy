@@ -71,8 +71,9 @@ void main() {
     addTearDown(control.close);
     session = _MockSessionCubit();
     when(() => session.state).thenReturn(const SessionState());
-    when(() => session.saveSession()).thenAnswer((_) async {});
-    when(() => session.loadSession()).thenAnswer((_) async {});
+    when(session.save).thenAnswer((_) async {});
+    when(session.refreshSessions).thenAnswer((_) async {});
+    when(() => session.saveAs(any())).thenAnswer((_) async {});
     when(() => session.exportMixdown()).thenAnswer((_) async {});
     when(() => session.exportStems()).thenAnswer((_) async {});
   });
@@ -799,22 +800,73 @@ void main() {
       expect(find.byTooltip(l10n.a11ySessionMenu), findsOneWidget);
     });
 
-    testWidgets('save invokes the cubit', (tester) async {
+    testWidgets('quick Save writes back through the cubit', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       await openMenu(tester);
       await tester.tap(find.byKey(const Key('tracks_session_save')));
       await tester.pumpAndSettle();
-      verify(() => session.saveSession()).called(1);
+      verify(session.save).called(1);
     });
 
-    testWidgets('load invokes the cubit', (tester) async {
+    testWidgets('Sessions… refreshes the catalog and opens the manager', (
+      tester,
+    ) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
       await openMenu(tester);
-      await tester.tap(find.byKey(const Key('tracks_session_load')));
+      await tester.tap(find.byKey(const Key('tracks_session_manage')));
       await tester.pumpAndSettle();
-      verify(() => session.loadSession()).called(1);
+      verify(session.refreshSessions).called(1);
+      expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
+    });
+
+    testWidgets('the top bar shows "Unsaved" with no open session', (
+      tester,
+    ) async {
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      final label = tester.widget<Text>(
+        find.byKey(const Key('tracks_session_name')),
+      );
+      expect(label.data, l10n.sessionUnsaved);
+    });
+
+    testWidgets('the top bar shows the current session name', (tester) async {
+      when(
+        () => session.state,
+      ).thenReturn(const SessionState(currentSessionName: 'Verse'));
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('tracks_session_name'))).data,
+        'Verse',
+      );
+    });
+
+    testWidgets('Cmd/Ctrl+S writes back through the cubit', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+      verify(session.save).called(1);
+    });
+
+    testWidgets('a save-as request opens the name dialog', (tester) async {
+      whenListen(
+        session,
+        Stream.fromIterable(const [
+          SessionState(outcome: SessionOutcome.saveAsRequested),
+        ]),
+        initialState: const SessionState(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sessionName_field')), findsOneWidget);
     });
 
     testWidgets('export mixdown / stems invoke the cubit', (tester) async {
