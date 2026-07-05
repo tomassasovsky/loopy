@@ -180,7 +180,14 @@ class _SignalFxRackState extends State<SignalFxRack> {
             ),
             _AddDeviceCard(
               cardKey: Key('${keyPrefix}_addDevice'),
-              onAddEffect: full ? null : widget.onAddEffect,
+              // Add-of-type needs no new engine call: append a default device,
+              // then retype it to the picked type at its (now known) index.
+              onAddEffectType: full
+                  ? null
+                  : (type) {
+                      widget.onAddEffect();
+                      widget.onSetType(effects.length, type);
+                    },
               onAddPlugin: full ? null : widget.onAddPlugin,
             ),
           ],
@@ -1364,12 +1371,15 @@ class _ModeSegment extends StatelessWidget {
 class _AddDeviceCard extends StatelessWidget {
   const _AddDeviceCard({
     required this.cardKey,
-    required this.onAddEffect,
+    required this.onAddEffectType,
     required this.onAddPlugin,
   });
 
   final Key cardKey;
-  final VoidCallback? onAddEffect;
+
+  /// Adds a built-in device of the chosen type (the Ableton-style pick), or
+  /// null when the chain is full.
+  final ValueChanged<TrackEffectType>? onAddEffectType;
   final VoidCallback? onAddPlugin;
 
   @override
@@ -1387,11 +1397,9 @@ class _AddDeviceCard extends StatelessWidget {
       child: Column(
         children: [
           Expanded(
-            child: _AddDeviceButton(
-              buttonKey: const Key('signalGraph_addEffect'),
-              icon: Icons.graphic_eq,
-              label: l10n.signalAddEffect,
-              onTap: onAddEffect,
+            child: _AddDeviceMenu(
+              menuKey: const Key('signalGraph_addEffect'),
+              onAddType: onAddEffectType,
             ),
           ),
           Container(height: 1, color: surface.line),
@@ -1404,6 +1412,67 @@ class _AddDeviceCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The **device browser** for built-in effects — an Ableton-style picker: tap
+/// to choose the device type to add, rather than dropping a default you then
+/// retype. Disabled (greyed) when the chain is at capacity.
+class _AddDeviceMenu extends StatelessWidget {
+  const _AddDeviceMenu({required this.menuKey, required this.onAddType});
+
+  final Key menuKey;
+  final ValueChanged<TrackEffectType>? onAddType;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    final tint = onAddType == null
+        ? surface.textTertiary
+        : surface.textSecondary;
+    return PopupMenuButton<TrackEffectType>(
+      key: menuKey,
+      enabled: onAddType != null,
+      tooltip: l10n.signalAddEffect,
+      color: surface.cardHigh,
+      shape: signalMenuShape(surface),
+      elevation: 10,
+      menuPadding: const EdgeInsets.symmetric(vertical: 5),
+      position: PopupMenuPosition.under,
+      onSelected: (type) => onAddType?.call(type),
+      itemBuilder: (context) => [
+        // `none` is omitted — a chain never holds a do-nothing device.
+        for (final type in TrackEffectType.values)
+          if (type != TrackEffectType.none)
+            PopupMenuItem<TrackEffectType>(
+              value: type,
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                l10n.effectTypeLabel(type),
+                style: signalMono(color: surface.textPrimary, size: 12),
+              ),
+            ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.graphic_eq, size: 16, color: tint),
+            const SizedBox(height: 5),
+            Text(
+              l10n.signalAddEffect,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: signalMono(color: tint, size: 9),
+            ),
+          ],
+        ),
       ),
     );
   }
