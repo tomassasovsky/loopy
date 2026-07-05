@@ -65,6 +65,9 @@ class _FxDockState extends State<FxDock> {
         border: Border(top: BorderSide(color: surface.line)),
       ),
       child: Column(
+        // Left-align the dock body (the rack, narrower than the dock, would
+        // otherwise centre under the default cross-axis alignment).
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _FxDockHeader(
             title: _scope.label(l10n),
