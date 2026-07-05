@@ -180,20 +180,29 @@ void main() {
       expect(reorders, [(2, 0)]);
     });
 
-    testWidgets('the add-device "Add effect" button fires onAddEffect', (
+    testWidgets('the device browser adds the picked type at the chain end', (
       tester,
     ) async {
       var added = 0;
+      final retypes = <(int, TrackEffectType)>[];
       await tester.pumpApp(
         build(
+          // One device already in the chain, so the new one lands at index 1.
           effects: [BuiltInEffect(type: TrackEffectType.delay)],
           onAddEffect: () => added++,
+          onSetType: (i, t) => retypes.add((i, t)),
         ),
       );
-      // The two add buttons show directly — no menu to open.
+
+      // The "+" now opens an Ableton-style device browser; pick a type.
       await tester.tap(find.byKey(const Key('signalGraph_addEffect')));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Reverb').last);
+      await tester.pumpAndSettle();
+
+      // Add-of-type = append a default device, then retype it at its index.
       expect(added, 1);
+      expect(retypes, [(1, TrackEffectType.reverb)]);
     });
 
     testWidgets('the add-device "Add plugin…" button fires onAddPlugin', (
