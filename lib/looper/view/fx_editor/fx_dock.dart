@@ -13,46 +13,31 @@ import 'package:loopy/looper/view/signal_graph/plugin_browser.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/surface_theme.dart';
 
-/// Opens the dedicated **FX editor** for [scope] as a full-screen page. The
-/// scope drives one chain (an input's live monitor or a lane's snapshot); the
-/// backing [LooperBloc] and [MonitorCubit] are re-provided into the pushed
-/// route so the editor reflects live edits.
-Future<void> showFxEditorPage(
-  BuildContext context, {
-  required FxScope scope,
-}) {
-  final bloc = context.read<LooperBloc>();
-  final monitor = context.read<MonitorCubit>();
-  return Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => MultiBlocProvider(
-        providers: [
-          BlocProvider.value(value: bloc),
-          BlocProvider.value(value: monitor),
-        ],
-        child: FxEditorView(scope: scope),
-      ),
-    ),
-  );
-}
+/// The bottom **FX dock** on the Signal surface: edits one [scope]'s chain in
+/// place (a header naming the scope + its plain consequence, the chain strip,
+/// and the inspector for the selected block) without leaving the surface.
+///
+/// Replaces the full-screen FX editor route — the same [FxChainStrip] /
+/// [FxInspector] widgets, re-homed into a docked panel. The chain is resolved
+/// live off the scope each build, so external edits reflect immediately and the
+/// dock empty-states the moment its target is gone. Keyed by the scope so
+/// switching the edited row resets the block selection.
+class FxDock extends StatefulWidget {
+  /// Creates an [FxDock] editing [scope]; [onClose] dismisses the dock.
+  const FxDock({required this.scope, required this.onClose, super.key});
 
-/// The FX editor: a header naming the scope + its plain consequence, the chain
-/// strip, and the inspector for the selected block. The chain is resolved live
-/// off the scope each build, so external edits reflect immediately and the
-/// editor empty-states the moment its target is gone.
-class FxEditorView extends StatefulWidget {
-  /// Creates an [FxEditorView] driving [scope].
-  const FxEditorView({required this.scope, super.key});
-
-  /// The chain this editor edits.
+  /// The chain this dock edits.
   final FxScope scope;
 
+  /// Invoked when the dock's close affordance is tapped.
+  final VoidCallback onClose;
+
   @override
-  State<FxEditorView> createState() => _FxEditorViewState();
+  State<FxDock> createState() => _FxDockState();
 }
 
-class _FxEditorViewState extends State<FxEditorView> {
-  /// The selected block index (the editor's intent), clamped to the live chain
+class _FxDockState extends State<FxDock> {
+  /// The selected block index (the dock's intent), clamped to the live chain
   /// each build. Starts on the first block per the open-selects-first rule.
   int? _selected = 0;
 
@@ -60,10 +45,7 @@ class _FxEditorViewState extends State<FxEditorView> {
 
   Future<void> _addPlugin() async {
     final descriptor = await showPluginBrowser(context);
-    // The browser is a pushed route; the editor may have been popped while it
-    // was open, so bail before touching state.
     if (descriptor == null || !mounted) return;
-    // The appended block lands at the current (pre-insert) end of the chain.
     final newIndex = _scope.effects.length;
     _scope.insertPlugin(
       PluginRef(
@@ -85,24 +67,26 @@ class _FxEditorViewState extends State<FxEditorView> {
     final l10n = context.l10n;
     final surface = context.surface;
 
-    return Scaffold(
-      key: const Key('fx_editor_page'),
-      backgroundColor: surface.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _FxEditorHeader(
-              title: _scope.label(l10n),
-              consequence: _scope.consequence(l10n),
-              onClose: () => Navigator.of(context).maybePop(),
-            ),
-            Expanded(
-              child: _scope.isPresent
-                  ? _editor(context)
-                  : _Gone(message: l10n.fxEditorScopeGone),
-            ),
-          ],
-        ),
+    return Container(
+      key: const Key('fx_dock'),
+      height: 260,
+      decoration: BoxDecoration(
+        color: surface.background,
+        border: Border(top: BorderSide(color: surface.line)),
+      ),
+      child: Column(
+        children: [
+          _FxDockHeader(
+            title: _scope.label(l10n),
+            consequence: _scope.consequence(l10n),
+            onClose: widget.onClose,
+          ),
+          Expanded(
+            child: _scope.isPresent
+                ? _editor(context)
+                : _Gone(message: l10n.fxEditorScopeGone),
+          ),
+        ],
       ),
     );
   }
@@ -121,7 +105,7 @@ class _FxEditorViewState extends State<FxEditorView> {
 
     return Column(
       children: [
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         SizedBox(
           height: 64,
           child: FxChainStrip(
@@ -184,10 +168,10 @@ class _FxEditorViewState extends State<FxEditorView> {
   }
 }
 
-/// The editor's top bar — a back affordance, the scope title, and the plain
-/// consequence of editing this chain.
-class _FxEditorHeader extends StatelessWidget {
-  const _FxEditorHeader({
+/// The dock's header — the scope title, the plain consequence of editing this
+/// chain, and a close affordance.
+class _FxDockHeader extends StatelessWidget {
+  const _FxDockHeader({
     required this.title,
     required this.consequence,
     required this.onClose,
@@ -202,39 +186,41 @@ class _FxEditorHeader extends StatelessWidget {
     final surface = context.surface;
     final l10n = context.l10n;
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: surface.line)),
       ),
       child: Row(
         children: [
-          IconButton(
-            key: const Key('fxEditor_back'),
-            onPressed: onClose,
-            icon: const Icon(Icons.chevron_left),
-            color: surface.textSecondary,
-            tooltip: l10n.close,
-          ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+            child: Row(
               children: [
                 Text(
                   title,
                   style: signalLabel(
                     color: surface.textPrimary,
-                    size: 16,
+                    size: 15,
                     weight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  consequence,
-                  style: signalLabel(color: surface.textTertiary, size: 12),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    consequence,
+                    overflow: TextOverflow.ellipsis,
+                    style: signalLabel(color: surface.textTertiary, size: 12),
+                  ),
                 ),
               ],
             ),
+          ),
+          IconButton(
+            key: const Key('fxDock_close'),
+            onPressed: onClose,
+            icon: const Icon(Icons.close),
+            iconSize: 18,
+            color: surface.textSecondary,
+            tooltip: l10n.close,
           ),
         ],
       ),
@@ -243,7 +229,7 @@ class _FxEditorHeader extends StatelessWidget {
 }
 
 /// The empty-state shown when the edited chain's target no longer exists (its
-/// lane was removed while the route was open).
+/// lane was removed while the dock was open).
 class _Gone extends StatelessWidget {
   const _Gone({required this.message});
 
@@ -253,7 +239,7 @@ class _Gone extends StatelessWidget {
   Widget build(BuildContext context) {
     final surface = context.surface;
     return Center(
-      key: const Key('fxEditor_gone'),
+      key: const Key('fxDock_gone'),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(

@@ -7,9 +7,9 @@ import 'package:loopy/theme/surface_theme.dart';
 
 /// A compact, read-only **FX summary** on a routing card — the chain's block
 /// names as small chips (or a quiet "No FX" affordance when empty), all wrapped
-/// in a single tap target that opens the full FX editor. The routing surface
-/// shows *what* FX a chain carries; shaping happens in the editor, so this
-/// replaced the inline knob rack that used to live in the dock.
+/// in a single tap target that opens the chain in the bottom FX dock. The
+/// routing surface shows *what* FX a chain carries; shaping happens in the
+/// dock.
 class SignalFxSummary extends StatelessWidget {
   /// Creates a [SignalFxSummary].
   const SignalFxSummary({
