@@ -1251,13 +1251,14 @@ void main() {
     });
 
     test(
-      'startEngine scans + rebinds restored '
-      'plugins, resolving names',
+      'a restored plugin recovers itself once the '
+      'cold-start scan lands',
       () async {
-        // A cold restart: the chain is restored before any scan, so the first
-        // apply can't resolve the name from the (empty) catalog. startEngine
-        // must kick a scan and re-apply, resolving the name from the
-        // descriptor.
+        // A cold restart: the chain is restored (through setTrackEffects) after
+        // the engine started, so its first apply hits the still-empty scan
+        // cache and the plugin loads unavailable. That unavailable entry must
+        // kick a catalog scan and re-apply itself, resolving availability and
+        // the descriptor name — without the user relinking by hand.
         engine
           ..pluginScanResults = const [
             le.PluginDescriptor(
@@ -1269,24 +1270,25 @@ void main() {
               version: 0,
             ),
           ]
-          ..nextSlotHandle = MockPluginSlotHandle('p');
-        final repo = buildRepo()
-          // Stored while stopped -> applied (and the startup scan kicked) on
-          // start.
-          ..setTrackEffects(
-            channel: 0,
-            effects: const [
-              PluginEffect(
-                ref: PluginRef(format: PluginFormat.clap, id: 'p'),
-              ),
-            ],
-          );
-        // Before start, nothing is applied; the name is still unresolved.
-        expect((repo.laneEffects(0, 0).single as PluginEffect).name, isEmpty);
+          // Cold start: the scan cache is empty, so the first load fails.
+          ..nextSlotHandle = null;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        repo.setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(ref: PluginRef(format: PluginFormat.clap, id: 'p')),
+          ],
+        );
+        // First apply against the empty cache leaves it unavailable; the
+        // recovery scan is now in flight.
+        expect(
+          (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
+          isTrue,
+        );
 
-        repo.startEngine(const EngineConfig());
-        // Joins the startup scan already in flight; the rebind runs when it
-        // lands.
+        // The plugin is loadable once scanned; joining the in-flight recovery
+        // scan drives the re-apply.
+        engine.nextSlotHandle = MockPluginSlotHandle('p');
         await repo.pluginCatalog.scan();
 
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
