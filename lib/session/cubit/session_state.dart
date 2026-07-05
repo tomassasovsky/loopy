@@ -17,11 +17,22 @@ enum SessionStatus {
 
 /// Which session action succeeded, for localized UI messaging.
 enum SessionOutcome {
-  /// [SessionCubit.saveSession] succeeded.
+  /// A save (the legacy single bundle, [SessionCubit.saveSession], or a
+  /// write-back / save-as of a named session) succeeded.
   saved,
 
-  /// [SessionCubit.loadSession] succeeded.
+  /// A load (legacy or named) succeeded.
   loaded,
+
+  /// A named session was renamed.
+  renamed,
+
+  /// A named session was deleted.
+  deleted,
+
+  /// [SessionCubit.save] was called with no open session — the UI should open
+  /// the Save-As name dialog rather than the cubit silently picking a name.
+  saveAsRequested,
 
   /// [SessionCubit.exportMixdown] succeeded.
   mixdownExported,
@@ -39,13 +50,21 @@ enum SessionError {
   /// The session was written by a newer, incompatible version of the app.
   unsupportedVersion,
 
+  /// A save-as / rename targeted a name whose slug already exists.
+  nameCollision,
+
   /// Any other failure (I/O, engine, etc.); see [SessionState.errorMessage].
   unknown,
 }
 
-/// State of the [SessionCubit]: the current action [status] and a [outcome]
-/// for the most recent successful action, or a classified [error] (with a raw
-/// [errorMessage] for diagnostics) if it failed.
+/// State of the [SessionCubit].
+///
+/// Two logical parts: the **per-action result** ([status] plus [outcome] /
+/// [error] / [errorMessage] for the last action) and the **durable catalog**
+/// ([currentSessionName] — the document model's open session — and [sessions]
+/// — the picker list). The catalog fields survive across action transitions;
+/// the result fields describe only the most recent action. Neither is persisted
+/// to disk (the current session is a runtime pointer).
 class SessionState extends Equatable {
   /// Creates a [SessionState].
   const SessionState({
@@ -53,6 +72,8 @@ class SessionState extends Equatable {
     this.outcome,
     this.error,
     this.errorMessage,
+    this.currentSessionName,
+    this.sessions = const [],
   });
 
   /// The current action status.
@@ -67,6 +88,46 @@ class SessionState extends Equatable {
   /// The raw failure message, for diagnostics / the unknown-error fallback.
   final String? errorMessage;
 
+  /// The name of the session currently open (the document model), or `null`
+  /// when none is loaded. A runtime pointer — never persisted.
+  final String? currentSessionName;
+
+  /// The saved-session catalog, for the picker.
+  final List<SessionSummary> sessions;
+
+  /// Returns a copy for the next emit.
+  ///
+  /// The **result** fields ([outcome] / [error] / [errorMessage]) are
+  /// per-transition: they default to `null` (cleared) unless passed, so a fresh
+  /// status never carries a stale result. The **durable** fields
+  /// ([currentSessionName] / [sessions]) are preserved unless overridden;
+  /// [clearCurrentSession] sets the open-session pointer back to `null`.
+  SessionState copyWith({
+    SessionStatus? status,
+    SessionOutcome? outcome,
+    SessionError? error,
+    String? errorMessage,
+    String? currentSessionName,
+    bool clearCurrentSession = false,
+    List<SessionSummary>? sessions,
+  }) => SessionState(
+    status: status ?? this.status,
+    outcome: outcome,
+    error: error,
+    errorMessage: errorMessage,
+    currentSessionName: clearCurrentSession
+        ? null
+        : (currentSessionName ?? this.currentSessionName),
+    sessions: sessions ?? this.sessions,
+  );
+
   @override
-  List<Object?> get props => [status, outcome, error, errorMessage];
+  List<Object?> get props => [
+    status,
+    outcome,
+    error,
+    errorMessage,
+    currentSessionName,
+    sessions,
+  ];
 }
