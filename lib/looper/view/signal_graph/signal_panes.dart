@@ -161,6 +161,9 @@ class _InputsPane extends _Pane {
     required this.onTap,
     required this.onToggleRoute,
     required this.onToggleGate,
+    required this.onEditFx,
+    required this.onMuteToggled,
+    required this.onVolumeChanged,
   });
 
   final SignalRows rows;
@@ -169,6 +172,9 @@ class _InputsPane extends _Pane {
   final ValueChanged<InputRow> onTap;
   final void Function(int input, int output) onToggleRoute;
   final ValueChanged<int> onToggleGate;
+  final ValueChanged<int> onEditFx;
+  final ValueChanged<int> onMuteToggled;
+  final void Function(int input, double volume) onVolumeChanged;
 
   @override
   String header(AppLocalizations l10n) => l10n.signalSectionInputs;
@@ -189,9 +195,68 @@ class _InputsPane extends _Pane {
           onTap: () => onTap(r),
           onToggleRoute: (o) => onToggleRoute(r.input, o),
           onToggleGate: () => onToggleGate(r.input),
+          onEditFx: () => onEditFx(r.input),
+          onMuteToggled: () => onMuteToggled(r.input),
+          onVolumeChanged: (v) => onVolumeChanged(r.input, v),
         ),
       ),
   ];
+}
+
+/// The add/remove-lane controls for a track — relocated onto the routing
+/// surface from the old lane dock. Add is disabled at the per-track cap; the
+/// remove-last-lane action only shows when the track has more than one lane.
+class _LaneControls extends StatelessWidget {
+  const _LaneControls({
+    required this.track,
+    required this.canAdd,
+    required this.canRemove,
+    required this.onAddLane,
+    required this.onRemoveLane,
+  });
+
+  final int track;
+  final bool canAdd;
+  final bool canRemove;
+  final ValueChanged<int> onAddLane;
+  final ValueChanged<int> onRemoveLane;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final l10n = context.l10n;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (canRemove)
+          IconButton(
+            key: Key('signalGraph_removeLane_$track'),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            iconSize: 17,
+            color: surface.textSecondary,
+            tooltip: l10n.removeLaneTooltip,
+            icon: const Icon(Icons.layers_clear),
+            onPressed: () => onRemoveLane(track),
+          ),
+        TextButton.icon(
+          key: Key('signalGraph_addLane_$track'),
+          onPressed: canAdd ? () => onAddLane(track) : null,
+          icon: const Icon(Icons.add, size: 16),
+          label: Text(
+            l10n.addLane,
+            style: signalLabel(color: surface.textSecondary),
+          ),
+          style: TextButton.styleFrom(
+            foregroundColor: surface.textSecondary,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _TracksPane extends _Pane {
@@ -203,6 +268,11 @@ class _TracksPane extends _Pane {
     required this.onTap,
     required this.onToggleRoute,
     required this.onReassignInput,
+    required this.onEditFx,
+    required this.onMuteToggled,
+    required this.onVolumeChanged,
+    required this.onAddLane,
+    required this.onRemoveLane,
   });
 
   final SignalRows rows;
@@ -212,6 +282,15 @@ class _TracksPane extends _Pane {
   final ValueChanged<TakeRow> onTap;
   final void Function(TakeRow take, int output) onToggleRoute;
   final void Function(TakeRow take, int input) onReassignInput;
+  final ValueChanged<TakeRow> onEditFx;
+  final ValueChanged<TakeRow> onMuteToggled;
+  final void Function(TakeRow take, double volume) onVolumeChanged;
+
+  /// Adds a lane to the given track (below the per-track cap).
+  final ValueChanged<int> onAddLane;
+
+  /// Removes the given track's last lane (when it has more than one).
+  final ValueChanged<int> onRemoveLane;
 
   @override
   String header(AppLocalizations l10n) => l10n.signalSectionTracks;
@@ -231,6 +310,14 @@ class _TracksPane extends _Pane {
     final l10n = context.l10n;
     final out = <Widget>[];
     for (final g in rows.tracks) {
+      final laneCount = g.takes.length;
+      final controls = _LaneControls(
+        track: g.track,
+        canAdd: laneCount < kMaxLanes,
+        canRemove: laneCount > 1,
+        onAddLane: onAddLane,
+        onRemoveLane: onRemoveLane,
+      );
       Widget takeRow(TakeRow t) => _TraceDim(
         trace: trace,
         tags: t.tags,
@@ -246,10 +333,20 @@ class _TracksPane extends _Pane {
           onTap: () => onTap(t),
           onToggleRoute: (o) => onToggleRoute(t, o),
           onReassignInput: (i) => onReassignInput(t, i),
+          onEditFx: () => onEditFx(t),
+          onMuteToggled: () => onMuteToggled(t),
+          onVolumeChanged: (v) => onVolumeChanged(t, v),
         ),
       );
       if (g.single) {
-        out.add(takeRow(g.takes.first));
+        // A single-lane track is its own card; its add-lane control sits just
+        // under the row (there is no track header to carry it).
+        out.add(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [takeRow(g.takes.first), controls],
+          ),
+        );
       } else {
         out.add(
           Padding(
@@ -257,7 +354,8 @@ class _TracksPane extends _Pane {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // .trk-h: track name + a bordered "N takes" count badge.
+                // .trk-h: track name + a bordered "N takes" count badge +
+                // the add/remove-lane controls (relocated off the old dock).
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 2, 4, 7),
                   child: Row(
@@ -288,6 +386,8 @@ class _TracksPane extends _Pane {
                           ),
                         ),
                       ),
+                      const Spacer(),
+                      controls,
                     ],
                   ),
                 ),
