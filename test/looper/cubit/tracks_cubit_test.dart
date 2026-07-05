@@ -11,9 +11,8 @@ void main() {
   setUp(() => settings = SettingsRepository(store: FakeKeyValueStore()));
 
   group('TracksCubit', () {
-    test('defaults to channel 0 and generated names', () {
+    test('defaults to generated names', () {
       final cubit = TracksCubit(settings: settings);
-      expect(cubit.state.selectedChannel, 0);
       expect(cubit.state.names, [
         'TRACK 1',
         'TRACK 2',
@@ -26,58 +25,6 @@ void main() {
       ]);
       expect(cubit.state.nameOf(2), 'TRACK 3');
     });
-
-    test('defaults to bank A showing channels 0-3', () {
-      final state = TracksCubit(settings: settings).state;
-      expect(state.activeBank, 0);
-      expect(state.baseChannel, 0);
-      expect(state.bankContains(3), isTrue);
-      expect(state.bankContains(4), isFalse);
-    });
-
-    blocTest<TracksCubit, TracksState>(
-      'select changes the channel and reveals its bank',
-      build: () => TracksCubit(settings: settings),
-      // Channel 5 is in bank B, so selecting it also flips the active bank.
-      act: (cubit) => cubit.select(5),
-      expect: () => [
-        isA<TracksState>()
-            .having((s) => s.selectedChannel, 'selected', 5)
-            .having((s) => s.activeBank, 'activeBank', 1),
-      ],
-    );
-
-    blocTest<TracksCubit, TracksState>(
-      'selectBank changes the bank without moving the cursor',
-      build: () => TracksCubit(settings: settings),
-      act: (cubit) => cubit.selectBank(1),
-      expect: () => [
-        isA<TracksState>()
-            .having((s) => s.activeBank, 'activeBank', 1)
-            .having((s) => s.selectedChannel, 'selected', 0),
-      ],
-    );
-
-    blocTest<TracksCubit, TracksState>(
-      'selectBank clamps out-of-range indices',
-      build: () => TracksCubit(settings: settings),
-      act: (cubit) => cubit.selectBank(5),
-      expect: () => [
-        isA<TracksState>().having((s) => s.activeBank, 'activeBank', 1),
-      ],
-    );
-
-    blocTest<TracksCubit, TracksState>(
-      'toggleBank flips between bank A and bank B',
-      build: () => TracksCubit(settings: settings),
-      act: (cubit) => cubit
-        ..toggleBank()
-        ..toggleBank(),
-      expect: () => [
-        isA<TracksState>().having((s) => s.activeBank, 'activeBank', 1),
-        isA<TracksState>().having((s) => s.activeBank, 'activeBank', 0),
-      ],
-    );
 
     blocTest<TracksCubit, TracksState>(
       'rename updates and persists the name',

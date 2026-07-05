@@ -52,7 +52,7 @@
 
 
 /* struct le_engine and its nested types (le_fx_state, le_lane,
- * le_monitor_input, le_track) plus LE_RING_CAPACITY / LE_UNDO_SLOTS now live in
+ * le_monitor_input, le_track) plus LE_RING_CAPACITY / LE_POOL_SLOTS now live in
  * engine_private.h, shared with the per-OS translation units (engine_linux.c /
  * engine_apple.c / engine_windows.c). */
 
@@ -67,6 +67,20 @@
 void le_track_set_len(le_track* t, int32_t len) {
   const int32_t n = le_lanes_active(t);
   for (int32_t l = 0; l < n; ++l) store_i32(&t->lanes[l].a_len, len);
+}
+
+/* Ensures a pool slot holds >= [frames] frames (control thread; declared in
+ * engine_core.h). Undo layers are quantized to the loop length, so a reused
+ * slot may need to grow before serving a longer track — or to the full
+ * max_loop_frames before becoming a recording target. Replaces rather than
+ * preserves: every consumer writes the slot whole before it is read. */
+int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
+  if (frames <= 0) return 0;
+  if (ln->pool[slot] != NULL && ln->pool_cap[slot] >= frames) return 1;
+  free(ln->pool[slot]);
+  ln->pool[slot] = (float*)calloc((size_t)frames, sizeof(float));
+  ln->pool_cap[slot] = ln->pool[slot] != NULL ? frames : 0;
+  return ln->pool[slot] != NULL;
 }
 
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
@@ -176,7 +190,6 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   if (max_loop_frames <= 0) max_loop_frames = sample_rate * 30;
 
   /* Lane buffers are mono: one input channel in, routed out via the mask. */
-  const size_t samples = (size_t)max_loop_frames;
   engine->track_count = LE_MAX_TRACKS;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_track* tr = &engine->tracks[t];
@@ -196,25 +209,48 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     tr->start_iter = 0;
     tr->od_gain = 0.0f;
     tr->xfade_capture = 0;
+    /* Per-pass layer capture + its control-side bookkeeping: a reconfigure
+     * (including a device-loss recovery mid-dub) starts from a clean slate —
+     * no armed shadows, no in-flight layer, no queued taps, counters equal. */
+    tr->dub_slot = -1;
+    tr->dub_spare = -1;
+    tr->dub_retire_slot = -1;
+    tr->dub_count = -1;
+    tr->dub_phase = 0;
+    tr->dub_len = 0;
+    tr->dub_offset = 0;
+    tr->dub_draining = 0;
+    tr->dub_gen_audio = 0;
+    atomic_store_explicit(&tr->a_layer_in_flight, 0, memory_order_relaxed);
+    tr->outstanding_count = 0;
+    tr->queued_undo = 0;
+    tr->empty_len = 0;
+    tr->state_cmds_posted = 0;
+    tr->pending_target = LE_TRACK_EMPTY;
+    store_i32(&tr->a_state_acks, 0);
+    tr->dub_generation = 0;
     engine->track_quantize[t] = -1; /* inherit the global quantize default */
     engine->target_multiple[t] = 0; /* inherit the global default multiple */
 
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &tr->lanes[l];
       /* Free any buffers from a previous configuration. */
-      for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+      for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         free(ln->pool[i]);
         ln->pool[i] = NULL;
+        ln->pool_cap[i] = 0;
       }
       /* Lane l defaults to recording hardware input channel l; lane 0 thus
        * records input 0 and plays 0 + 1, preserving the prior single-track
        * stereo behaviour. */
       le_lane_reset(ln, l);
     }
-    /* Only lane 0 is active by default; allocate its live buffer now (further
-     * lanes' buffers and all undo snapshots allocate lazily). */
-    tr->lanes[0].pool[0] = (float*)calloc(samples, sizeof(float));
-    if (tr->lanes[0].pool[0] == NULL) return LE_ERR_INVALID;
+    /* Only lane 0 is active by default; allocate its live buffer now at the
+     * full recording cap (further lanes' buffers and all undo snapshots
+     * allocate lazily, undo layers at the loop-length quantum). */
+    if (!le_lane_ensure_slot(&tr->lanes[0], 0, max_loop_frames)) {
+      return LE_ERR_INVALID;
+    }
   }
 
   engine->sample_rate = sample_rate;
@@ -222,6 +258,16 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->out_channels = output_channels;
   engine->max_loop_frames = max_loop_frames;
   engine->fx_delay_frames = sample_rate; /* 1 s of delay line per slot */
+
+  /* Drop any stale traffic from a previous configuration — BOTH rings. The
+   * command ring can hold presses made while the device was stopped/lost
+   * (le_push still accepts them); replaying them onto the freshly reset tracks
+   * at the next start would fire surprise records and desync the
+   * state_cmds_posted/a_state_acks counters. Retired-layer events reference
+   * freed slots and restarted generations. The device is stopped during
+   * configure, so re-initialising the SPSC rings is race-free. */
+  le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
+  le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
 
   /* Latency-measurement capture window (~100 ms): the audio thread fills it with
    * the input-magnitude envelope, the resolver cross-correlates it. */
@@ -315,6 +361,19 @@ int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
   return ln->pool[load_i32(&ln->a_live)] != NULL ? 1 : 0;
 }
 
+int32_t le_engine_lane_slot_cap_for_test(le_engine* engine, int32_t channel,
+                                         int32_t lane, int32_t slot) {
+  if (engine == NULL) return -1;
+  if (channel < 0 || channel >= engine->track_count) return -1;
+  if (lane < 0 || lane >= LE_MAX_LANES) return -1;
+  if (slot < 0) {
+    /* slot < 0 selects the lane's LIVE slot. */
+    slot = load_i32(&engine->tracks[channel].lanes[lane].a_live);
+  }
+  if (slot >= LE_POOL_SLOTS) return -1;
+  return engine->tracks[channel].lanes[lane].pool_cap[slot];
+}
+
 void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
                                               int32_t channel, int32_t count) {
   if (engine == NULL) return;
@@ -383,6 +442,7 @@ le_engine* le_engine_create(void) {
   le_engine* engine = (le_engine*)calloc(1, sizeof(le_engine));
   if (engine == NULL) return NULL;
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
+  le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
@@ -405,7 +465,7 @@ void le_engine_destroy(le_engine* engine) {
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     for (int l = 0; l < LE_MAX_LANES; ++l) {
       le_lane* ln = &engine->tracks[t].lanes[l];
-      for (int i = 0; i < LE_UNDO_SLOTS; ++i) {
+      for (int i = 0; i < LE_POOL_SLOTS; ++i) {
         free(ln->pool[i]);
       }
       for (int s = 0; s < LE_FX_MAX; ++s) {

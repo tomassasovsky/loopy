@@ -596,7 +596,9 @@ class _PluginDeviceCard extends StatelessWidget {
   /// dense plugin is clamped to [kSignalRackMaxHeight] (its grid then scrolls).
   static double heightFor(PluginEffect fx) {
     final controls = _visibleControls(fx);
-    if (fx.unavailable || controls.isEmpty) return kSignalRackMinHeight;
+    if (fx.unavailable || fx.loading || controls.isEmpty) {
+      return kSignalRackMinHeight;
+    }
     final rows = _rowsFor(
       [for (final p in controls) _slotWidth(p)],
       kPluginCardMaxBodyWidth,
@@ -609,9 +611,12 @@ class _PluginDeviceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
+    // F5: a plugin still resolving through a cold-boot scan renders a distinct
+    // "loading…" placeholder (no relink — it is expected to bind on its own),
+    // so a still-scanning entry never reads as a genuine failure.
     // D-MISS: an unresolved plugin renders a placeholder that preserves the
     // entry (ref + state survive) and offers a relink, not its controls.
-    if (fx.unavailable) {
+    if (fx.loading || fx.unavailable) {
       return _PluginPlaceholderCard(
         cardKey: cardKey,
         keyPrefix: keyPrefix,
@@ -620,6 +625,7 @@ class _PluginDeviceCard extends StatelessWidget {
         title: fx.name.isNotEmpty
             ? fx.name
             : (fx.ref.id.isEmpty ? l10n.signalPluginUnknownName : fx.ref.id),
+        loading: fx.loading,
         unsupported: fx.unsupported,
         onRelink: onRelink,
         onRemove: onRemove,
@@ -787,11 +793,16 @@ class _PluginPlaceholderCard extends StatelessWidget {
     required this.unsupported,
     required this.onRelink,
     required this.onRemove,
+    this.loading = false,
   });
 
   final Key cardKey;
   final String keyPrefix;
   final String title;
+
+  /// Whether the plugin is still resolving through a scan (F5): the card shows
+  /// a spinner + "loading…" and NO relink — it is expected to bind on its own.
+  final bool loading;
 
   /// Whether the plugin is installed but rejected (unsupported topology, D-BUS)
   /// rather than simply missing — selects the explanatory message.
@@ -825,11 +836,22 @@ class _PluginPlaceholderCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.warning_amber_rounded,
-                  size: 13,
-                  color: surface.textTertiary,
-                ),
+                if (loading)
+                  SizedBox(
+                    key: Key('${keyPrefix}_spinner'),
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.6,
+                      color: surface.textTertiary,
+                    ),
+                  )
+                else
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 13,
+                    color: surface.textTertiary,
+                  ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -867,29 +889,38 @@ class _PluginPlaceholderCard extends StatelessWidget {
                 children: [
                   Text(
                     key: Key('${keyPrefix}_reason'),
-                    unsupported
-                        ? l10n.signalPluginUnsupported
-                        : l10n.signalPluginUnavailable,
+                    loading
+                        ? l10n.signalPluginLoading
+                        : (unsupported
+                              ? l10n.signalPluginUnsupported
+                              : l10n.signalPluginUnavailable),
                     textAlign: TextAlign.center,
                     style: signalLabel(color: surface.textTertiary, size: 10),
                   ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    key: Key('${keyPrefix}_relink'),
-                    onPressed: onRelink,
-                    icon: const Icon(Icons.link, size: 14),
-                    label: Text(
-                      l10n.signalPluginRelinkTooltip,
-                      style: signalMono(color: surface.textSecondary, size: 9),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  // A loading entry offers no relink — it is expected to bind
+                  // once the scan lands (F5).
+                  if (!loading) ...[
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      key: Key('${keyPrefix}_relink'),
+                      onPressed: onRelink,
+                      icon: const Icon(Icons.link, size: 14),
+                      label: Text(
+                        l10n.signalPluginRelinkTooltip,
+                        style: signalMono(
+                          color: surface.textSecondary,
+                          size: 9,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        side: BorderSide(color: surface.line),
+                      ),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      side: BorderSide(color: surface.line),
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),

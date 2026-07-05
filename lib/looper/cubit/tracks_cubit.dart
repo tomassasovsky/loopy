@@ -4,9 +4,13 @@ import 'package:settings_repository/settings_repository.dart';
 
 part 'tracks_state.dart';
 
-/// Tracks-view presentation state: the on-screen track cursor (selected track
-/// + active bank, transient) and the persisted view preferences (per-track
-/// names, indicator visibility) via [SettingsRepository].
+/// Tracks-view PREFERENCES: the persisted per-track display names and the
+/// indicator visibility toggle.
+///
+/// The track cursor and active bank are NOT here — they are control state,
+/// owned (once, for every surface) by `ControlOverlayCubit`; the record/play
+/// mode likewise. This cubit holds only what the tracks view persists about
+/// its own presentation.
 class TracksCubit extends Cubit<TracksState> {
   /// Creates a [TracksCubit] for [trackCount] tracks.
   TracksCubit({
@@ -39,26 +43,6 @@ class TracksCubit extends Cubit<TracksState> {
       emit(state.copyWith(names: names, showIndicators: showIndicators));
     }
   }
-
-  /// Selects track [channel] and reveals its bank, so the highlighted tile is
-  /// always in the visible bank (the two can never drift apart).
-  void select(int channel) => emit(
-    state.copyWith(
-      selectedChannel: channel,
-      activeBank: channel ~/ TracksState.tracksPerBank,
-    ),
-  );
-
-  /// Selects the active [bank] (0 or 1) without moving the track cursor — used
-  /// to browse the other bank (e.g. arming its tracks in play mode).
-  void selectBank(int bank) => emit(
-    state.copyWith(
-      activeBank: bank.clamp(0, TracksState.bankCountMax - 1),
-    ),
-  );
-
-  /// Toggles between bank A and bank B (cursor unchanged).
-  void toggleBank() => selectBank(state.activeBank == 0 ? 1 : 0);
 
   /// Sets and persists whether per-track status indicators are shown.
   Future<void> setShowIndicators({required bool value}) async {

@@ -246,7 +246,8 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperUndoPressed clears a track that has only its base loop',
+    'LooperUndoPressed on a base-loop track undoes (never clears): the '
+    'engine empties it redo-ably',
     build: buildBloc,
     seed: () => const LooperState(
       tracks: [
@@ -256,8 +257,8 @@ void main() {
     ),
     act: (bloc) => bloc.add(const LooperUndoPressed(1)),
     verify: (_) {
-      verify(() => repository.clear(channel: 1)).called(1);
-      verifyNever(() => repository.undo(channel: any(named: 'channel')));
+      verify(() => repository.undo(channel: 1)).called(1);
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
     },
   );
 
@@ -305,7 +306,8 @@ void main() {
   );
 
   blocTest<LooperBloc, LooperState>(
-    'LooperUndoPressed that clears a base-loop track also re-arms it',
+    'LooperUndoPressed on a muted base-loop track still undoes — the mute '
+    'is untouched (undo/redo are exact inverses)',
     build: buildBloc,
     seed: () => const LooperState(
       tracks: [
@@ -320,8 +322,14 @@ void main() {
     ),
     act: (bloc) => bloc.add(const LooperUndoPressed(1)),
     verify: (_) {
-      verify(() => repository.clear(channel: 1)).called(1);
-      verify(() => repository.setMute(muted: false, channel: 1)).called(1);
+      verify(() => repository.undo(channel: 1)).called(1);
+      verifyNever(() => repository.clear(channel: any(named: 'channel')));
+      verifyNever(
+        () => repository.setMute(
+          muted: any(named: 'muted'),
+          channel: any(named: 'channel'),
+        ),
+      );
     },
   );
 
@@ -827,6 +835,30 @@ void main() {
     );
 
     blocTest<LooperBloc, LooperState>(
+      'persists the take chain when the repository reports a record-time '
+      'snapshot copy (F3)',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      verify: (_) {
+        // The bloc wires a chain-persist callback onto the repository; capture
+        // it and simulate the record-time snapshot firing it.
+        final callback =
+            verify(
+                  () => repository.onLaneChainChanged = captureAny(),
+                ).captured.last
+                as void Function(int, int)?;
+        expect(callback, isNotNull);
+
+        final takeChain = [BuiltInEffect(type: TrackEffectType.delay)];
+        when(() => repository.laneEffects(0, 1)).thenReturn(takeChain);
+
+        callback!(0, 1);
+        verify(
+          () => settings.saveLaneEffects(0, 1, encodeTrackEffects(takeChain)),
+        ).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
       'inserting a plugin persists the chain enriched with its resolved name',
       build: () {
         // The repository resolves the display name while applying the chain;
@@ -912,25 +944,6 @@ void main() {
       verify(() => repository.play()).called(1);
       verify(() => repository.play(channel: 1)).called(1);
       verifyNever(() => repository.play(channel: 2));
-    },
-  );
-
-  blocTest<LooperBloc, LooperState>(
-    'LooperClearAllPressed clears every track that has content',
-    build: buildBloc,
-    seed: () => const LooperState(
-      tracks: [
-        Track(state: TrackState.playing, lengthFrames: 100),
-        Track(channel: 1), // empty -> skipped
-      ],
-    ),
-    act: (bloc) => bloc.add(const LooperClearAllPressed()),
-    verify: (_) {
-      verify(() => repository.clear()).called(1);
-      // Each cleared track is re-armed (unmuted); the empty track is skipped.
-      verify(() => repository.setMute(muted: false)).called(1);
-      verifyNever(() => repository.clear(channel: 1));
-      verifyNever(() => repository.setMute(muted: false, channel: 1));
     },
   );
 

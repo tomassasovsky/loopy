@@ -1,0 +1,9 @@
+# Test configuration for the loopy_engine package.
+#
+# Declare the `fuzz` tag so package:test does not warn about it. Tests tagged
+# `fuzz` drive the REAL native engine through the device-free pump
+# (PumpedNativeEngine) and self-skip in-test when LOOPY_ENGINE_LIB is unset —
+# build the library and export the path first:
+#   export LOOPY_ENGINE_LIB="$(bash tool/build_test_lib.sh)"
+tags:
+  fuzz:

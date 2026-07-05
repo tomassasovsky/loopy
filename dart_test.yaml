@@ -7,3 +7,8 @@
 # configured here (that would also block an explicit `--tags screenshots` run).
 tags:
   screenshots:
+  # The control-sequence fuzzer (test/fuzz/): drives the REAL native engine
+  # through the device-free pump. Self-skips in-test when LOOPY_ENGINE_LIB is
+  # unset -- build it first:
+  #   export LOOPY_ENGINE_LIB="$(bash packages/loopy_engine/tool/build_test_lib.sh)"
+  fuzz:

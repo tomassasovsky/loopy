@@ -183,6 +183,7 @@ class PluginEffect extends TrackEffect {
     this.unavailable = false,
     this.unsupported = false,
     this.versionChanged = false,
+    this.loading = false,
   });
 
   /// The hosted plugin's identity.
@@ -223,6 +224,14 @@ class PluginEffect extends TrackEffect {
   /// but the card notes the drift.
   final bool versionChanged;
 
+  /// Whether the plugin is still resolving: it hasn't loaded yet because a
+  /// plugin scan is in progress (typically a cold boot, F5), so it is expected
+  /// to bind once the scan lands. Transient. Distinct from [unavailable] — a
+  /// loading entry renders a "loading…" state (no relink), never the
+  /// "unavailable" placeholder, so a still-scanning plugin doesn't read as a
+  /// genuine failure.
+  final bool loading;
+
   @override
   int get typeCode => engine.kPluginFxCode;
 
@@ -236,6 +245,7 @@ class PluginEffect extends TrackEffect {
     bool? unavailable,
     bool? unsupported,
     bool? versionChanged,
+    bool? loading,
   }) => PluginEffect(
     ref: ref ?? this.ref,
     paramValues: paramValues ?? this.paramValues,
@@ -245,6 +255,7 @@ class PluginEffect extends TrackEffect {
     unavailable: unavailable ?? this.unavailable,
     unsupported: unsupported ?? this.unsupported,
     versionChanged: versionChanged ?? this.versionChanged,
+    loading: loading ?? this.loading,
   );
 
   @override
@@ -257,6 +268,7 @@ class PluginEffect extends TrackEffect {
     unavailable,
     unsupported,
     versionChanged,
+    loading,
   ];
 }
 
@@ -330,3 +342,32 @@ String encodeTrackEffects(List<TrackEffect> effects) =>
 List<TrackEffect> decodeTrackEffects(String? encoded) => [
   for (final e in engine.decodeTrackEffects(encoded)) _trackEffectFromEngine(e),
 ];
+
+/// An order-sensitive 64-bit fingerprint of [chain], computed with the SAME
+/// FNV-1a folding the native engine uses in `le_engine_lane_fx_fingerprint`, so
+/// the repository's cache hash can be compared to the engine's published-chain
+/// hash for divergence detection (F6).
+///
+/// Each entry folds in its type code; a built-in additionally folds its
+/// `kTrackEffectParams` parameter float-bits (padding a short param list with
+/// the type's defaults, matching the tail the engine seeds on a type set). A
+/// plugin entry contributes its type only — the engine's `a_fx_param` holds no
+/// plugin params (they live in the plugin host). An empty chain yields the
+/// FNV-1a offset basis.
+int trackChainFingerprint(List<TrackEffect> chain) {
+  var h = engine.FxFingerprint.offset;
+  final n = chain.length > engine.kTrackEffectMax
+      ? engine.kTrackEffectMax
+      : chain.length;
+  for (var i = 0; i < n; i++) {
+    final fx = chain[i];
+    h = engine.FxFingerprint.mixU32(h, fx.typeCode);
+    if (fx is! BuiltInEffect) continue; // plugin: type only
+    final defaults = fx.type.defaultParams;
+    for (var p = 0; p < engine.kTrackEffectParams; p++) {
+      final value = p < fx.params.length ? fx.params[p] : defaults[p];
+      h = engine.FxFingerprint.mixU32(h, engine.FxFingerprint.floatBits(value));
+    }
+  }
+  return h;
+}
