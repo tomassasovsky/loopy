@@ -64,8 +64,8 @@ void main() {
   });
 
   test(
-    'saving an all-empty looper persists no ghost grid, and loading an '
-    'empty session establishes no master',
+    'saving an all-empty looper persists no ghost grid — an empty session '
+    'reads back with no master to establish',
     () async {
       // The engine keeps the master grid after the last track is undone to
       // empty (redo needs it live) — but a zero-track session must not carry
@@ -77,15 +77,60 @@ void main() {
       expect(session.baseLengthFrames, 0);
       expect(session.tracks, isEmpty);
 
-      // Loading it into a fresh engine leaves the grid unset: the next
-      // recording is free to define its own loop length.
-      final target = FakeSessionEngine();
-      await repoFor(target).load(dir);
-      expect(target.masterLength, 0);
+      // Reading it back carries no grid: the apply path (looper repository)
+      // leaves the cleared engine free to define a fresh loop length.
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.baseLengthFrames, 0);
+      expect(bundle.stems, isEmpty);
     },
   );
 
-  test('save then load reproduces the engine state', () async {
+  test(
+    'save persists the lane chains and monitors, read returns them',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/fx';
+
+      const chains = SessionChains(
+        laneChains: [
+          SessionLaneChain(channel: 0, lane: 0, encoded: '[{"t":1}]'),
+        ],
+        monitors: [
+          SessionMonitor(
+            input: 2,
+            enabled: true,
+            outputMask: 0x1,
+            volume: 0.6,
+            muted: true,
+            encoded: '[{"t":7}]',
+          ),
+        ],
+      );
+      final session = await repoFor(source).save(dir, chains: chains);
+      expect(session.laneChains, chains.laneChains);
+      expect(session.monitors, chains.monitors);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.laneChains, chains.laneChains);
+      expect(bundle.session.monitors, chains.monitors);
+    },
+  );
+
+  test(
+    'save without chains writes an empty (but present) v2 chain list',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/nofx';
+
+      final session = await repoFor(source).save(dir);
+      expect(session.laneChains, isEmpty);
+      expect(session.monitors, isEmpty);
+    },
+  );
+
+  test('save then read returns the manifest and every decoded stem', () async {
     final source = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
       ..seedTrack(
@@ -98,24 +143,15 @@ void main() {
     final dir = '${tempDir.path}/s';
     await repoFor(source).save(dir);
 
-    final target = FakeSessionEngine();
-    await repoFor(target).load(dir);
-    final snap = target.snapshot();
+    final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
-    expect(snap.masterLengthFrames, 4);
-
-    expect(snap.tracks[0].state, TrackState.playing);
-    expect(snap.tracks[0].multiple, 1);
-    expect(target.exportTrack(0), Float32List.fromList([1, 1, 1, 1]));
-
-    expect(snap.tracks[1].state, TrackState.playing);
-    expect(snap.tracks[1].multiple, 2);
-    expect(snap.tracks[1].muted, isTrue);
-    expect(snap.tracks[1].volume, 0.5);
-    expect(
-      target.exportTrack(1),
-      Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]),
-    );
+    expect(bundle.session.baseLengthFrames, 4);
+    expect(bundle.session.tracks, hasLength(2));
+    expect(bundle.session.tracks[1].multiple, 2);
+    expect(bundle.session.tracks[1].muted, isTrue);
+    expect(bundle.session.tracks[1].volume, 0.5);
+    expect(bundle.stems[0], Float32List.fromList([1, 1, 1, 1]));
+    expect(bundle.stems[1], Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]));
   });
 
   test('mixdown sums unmuted tracks over the LCM period', () async {
@@ -162,15 +198,15 @@ void main() {
     expect(File('$dir/track1.wav').existsSync(), isFalse);
   });
 
-  test('load throws when the bundle is missing', () async {
+  test('read throws when the bundle is missing', () async {
     final engine = FakeSessionEngine();
     await expectLater(
-      repoFor(engine).load('${tempDir.path}/does_not_exist'),
+      repoFor(engine).read('${tempDir.path}/does_not_exist'),
       throwsA(isA<FileSystemException>()),
     );
   });
 
-  test('load refuses a session saved at a different sample rate', () async {
+  test('read refuses a session saved at a different sample rate', () async {
     final source = FakeSessionEngine(sampleRate: 44100)
       ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
     final dir = '${tempDir.path}/sr';
@@ -178,22 +214,21 @@ void main() {
 
     final target = FakeSessionEngine(); // 48000 Hz
     await expectLater(
-      repoFor(target).load(dir),
+      repoFor(target).read(dir),
       throwsA(isA<SessionSampleRateMismatch>()),
     );
   });
 
-  test('save then load round-trips a single mono track exactly', () async {
+  test('save then read round-trips a single mono stem exactly', () async {
     final source = FakeSessionEngine()
       ..seedTrack(0, Float32List.fromList([0.1, -0.2, 0.3, -0.4]));
     final dir = '${tempDir.path}/mono';
     await repoFor(source).save(dir);
 
-    final target = FakeSessionEngine();
-    await repoFor(target).load(dir);
+    final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
     expect(
-      target.exportTrack(0),
+      bundle.stems[0],
       Float32List.fromList([0.1, -0.2, 0.3, -0.4]),
     );
   });
