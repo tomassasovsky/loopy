@@ -134,6 +134,17 @@ class SessionCubit extends Cubit<SessionState> {
     );
   });
 
+  /// Duplicates saved session [from] to a NEW named session [to] (a copy on
+  /// disk; the open session is unchanged). A slug collision surfaces as
+  /// [SessionError.nameCollision] (the repository is the authority).
+  Future<void> duplicateSession(String from, String to) => _run(() async {
+    await _repository.duplicateSession(from, to);
+    return _ActionResult(
+      SessionOutcome.saved,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
   /// The slug [name] resolves to, or throws [ArgumentError] when it sanitizes
   /// to nothing (the same rule the repository's `bundlePath` enforces).
   String _slugOf(String name) {

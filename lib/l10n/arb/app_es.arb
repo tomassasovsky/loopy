@@ -23,6 +23,8 @@
     "sessionSaveAs": "Guardar como…",
     "sessionRename": "Renombrar",
     "sessionDelete": "Eliminar",
+    "sessionDuplicate": "Duplicar",
+    "sessionDuplicateTitle": "Duplicar como…",
     "sessionUnsaved": "Sin guardar",
     "sessionsManagerTitle": "Sesiones",
     "sessionsEmpty": "Aún no hay sesiones guardadas. Usa «Guardar como…» para crear una.",

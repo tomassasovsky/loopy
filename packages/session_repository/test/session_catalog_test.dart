@@ -136,6 +136,44 @@ void main() {
     });
   });
 
+  group('duplicateSession', () {
+    test('copies the bundle to a new independent folder', () async {
+      makeBundle('Source');
+
+      await repo().duplicateSession('Source', 'A Copy');
+
+      expect(Directory('${root.path}/Source').existsSync(), isTrue);
+      final copy = Directory('${root.path}/A Copy');
+      expect(copy.existsSync(), isTrue);
+      expect(
+        File('${copy.path}/${Session.manifestName}').existsSync(),
+        isTrue,
+      );
+    });
+
+    test('throws SessionNameCollision when the target slug exists', () async {
+      makeBundle('Source');
+      makeBundle('Clash');
+      await expectLater(
+        repo().duplicateSession('Source', 'Clash'),
+        throwsA(isA<SessionNameCollision>()),
+      );
+    });
+
+    test('is a no-op when the source is missing', () async {
+      await repo().duplicateSession('Ghost', 'New');
+      expect(Directory('${root.path}/New').existsSync(), isFalse);
+    });
+
+    test('throws ArgumentError when the new name is invalid', () async {
+      makeBundle('Source');
+      await expectLater(
+        repo().duplicateSession('Source', '  '),
+        throwsArgumentError,
+      );
+    });
+  });
+
   group('deleteSession', () {
     test('removes the bundle folder', () async {
       makeBundle('Doomed');
