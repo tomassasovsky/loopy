@@ -70,7 +70,6 @@
             }
         }
     },
-    "stopButton": "Stop",
     "trackStateEmpty": "empty",
     "trackStateRecording": "recording",
     "trackStateOverdubbing": "overdubbing",
@@ -273,8 +272,6 @@
     "signalSectionTracks": "Tracks",
     "signalSectionOutputs": "Outputs",
     "signalVolumeLabel": "Vol",
-    "signalContextInput": "Input",
-    "signalContextTake": "Take",
     "signalNothingRouted": "nothing routed here",
     "signalNotRouted": "not routed",
     "signalFieldFx": "FX",
@@ -352,15 +349,6 @@
     },
     "signalInputLive": "live",
     "signalInputOff": "off",
-    "signalThisTakeLabel": "This take · snapshot of In {inputNumber}",
-    "@signalThisTakeLabel": {
-        "placeholders": {
-            "inputNumber": {
-                "type": "int"
-            }
-        }
-    },
-    "signalThisTakeHint": "A copy taken at record. Editing it changes only this lane — the live input tone and your other takes stay untouched.",
     "signalLaneCleanHint": "This lane records its input clean. Add effects to colour just this take.",
     "signalAddEffectTooltip": "Add effect to this take",
     "inputMonitorLabel": "In {inputNumber} monitor",
@@ -400,6 +388,8 @@
     "signalPluginCancelScan": "Cancel",
     "signalAddEffect": "Add effect",
     "signalAddPlugin": "Add plugin…",
+    "signalEditFx": "Edit FX chain",
+    "signalNoFx": "No FX",
     "fxEditorInputTitle": "Input {number}",
     "@fxEditorInputTitle": {
         "placeholders": {

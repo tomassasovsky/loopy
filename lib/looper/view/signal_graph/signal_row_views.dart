@@ -10,6 +10,9 @@ class _InputRow extends StatelessWidget {
     required this.onTap,
     required this.onToggleRoute,
     required this.onToggleGate,
+    required this.onEditFx,
+    required this.onMuteToggled,
+    required this.onVolumeChanged,
   });
 
   final InputRow row;
@@ -19,13 +22,17 @@ class _InputRow extends StatelessWidget {
   final ValueChanged<int> onToggleRoute;
   final VoidCallback onToggleGate;
 
+  /// Opens the FX editor for this input's live-monitor chain.
+  final VoidCallback onEditFx;
+  final VoidCallback onMuteToggled;
+  final ValueChanged<double> onVolumeChanged;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
     final m = row.monitor;
     final on = m.enabled && !row.excluded;
-    final hue = on ? surface.accent : surface.textTertiary;
     if (row.excluded) {
       return _RowCard(
         rowKey: Key('signalIn_${row.input}'),
@@ -83,33 +90,24 @@ class _InputRow extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Text(
-                m.muted
-                    ? l10n.trackStateMuted
-                    : '${(m.volume.clamp(0.0, 1.0) * 100).round()}%',
-                style: signalMono(color: surface.textSecondary, size: 9.5),
+              _MixControl(
+                keyPrefix: 'signalIn_${row.input}',
+                muted: m.muted,
+                volume: m.volume,
+                onMuteToggled: onMuteToggled,
+                onVolumeChanged: onVolumeChanged,
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: SizedBox(
-              height: 5,
-              child: LinearProgressIndicator(
-                value: (on && !m.muted) ? m.volume.clamp(0.0, 1.0) : 0,
-                backgroundColor: surface.meterTrack,
-                valueColor: AlwaysStoppedAnimation(hue),
-              ),
+          const SizedBox(height: 10),
+          _FieldRow(
+            label: l10n.signalFieldFx,
+            child: SignalFxSummary(
+              summaryKey: Key('signalInFx_${row.input}'),
+              effects: m.effects,
+              onEdit: onEditFx,
             ),
           ),
-          if (m.effects.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _FieldRow(
-              label: l10n.signalFieldFx,
-              child: _RowFxChips(effects: m.effects),
-            ),
-          ],
           const SizedBox(height: 8),
           _FieldRow(
             label: l10n.signalFieldOut,
@@ -137,6 +135,9 @@ class _TakeRow extends StatelessWidget {
     required this.onTap,
     required this.onToggleRoute,
     required this.onReassignInput,
+    required this.onEditFx,
+    required this.onMuteToggled,
+    required this.onVolumeChanged,
   });
 
   final TakeRow take;
@@ -148,6 +149,11 @@ class _TakeRow extends StatelessWidget {
   final VoidCallback onTap;
   final ValueChanged<int> onToggleRoute;
   final ValueChanged<int> onReassignInput;
+
+  /// Opens the FX editor for this lane's snapshot chain.
+  final VoidCallback onEditFx;
+  final VoidCallback onMuteToggled;
+  final ValueChanged<double> onVolumeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -185,16 +191,24 @@ class _TakeRow extends StatelessWidget {
                 onReassign: onReassignInput,
               ),
               const Spacer(),
-              Text(
-                lane.muted
-                    ? l10n.trackStateMuted
-                    : '${(lane.volume.clamp(0.0, 1.0) * 100).round()}%',
-                style: signalMono(color: surface.textSecondary, size: 9.5),
+              _MixControl(
+                keyPrefix: 'signalTake_${take.track}_${take.laneIndex}',
+                muted: lane.muted,
+                volume: lane.volume,
+                onMuteToggled: onMuteToggled,
+                onVolumeChanged: onVolumeChanged,
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          _TakeFxLine(effects: lane.effects),
+          const SizedBox(height: 10),
+          _FieldRow(
+            label: l10n.signalFieldFx,
+            child: SignalFxSummary(
+              summaryKey: Key('signalTakeFx_${take.track}_${take.laneIndex}'),
+              effects: lane.effects,
+              onEdit: onEditFx,
+            ),
+          ),
           const SizedBox(height: 8),
           _FieldRow(
             label: l10n.signalFieldOut,
@@ -444,89 +458,55 @@ class _FieldRow extends StatelessWidget {
   }
 }
 
-/// Read-only FX chips for a row (the live input's chain) — bordered mono pills,
-/// matching the mockup. Editing happens in the dock.
-class _RowFxChips extends StatelessWidget {
-  const _RowFxChips({required this.effects});
+/// The mix control on a routing card: a mute toggle beside the rotary volume
+/// [SignalKnob]. Keyed off [keyPrefix] so each row keeps its namespace. Mixing
+/// lives on the routing surface; the FX editor is tone only.
+class _MixControl extends StatelessWidget {
+  const _MixControl({
+    required this.keyPrefix,
+    required this.muted,
+    required this.volume,
+    required this.onMuteToggled,
+    required this.onVolumeChanged,
+  });
 
-  final List<TrackEffect> effects;
+  final String keyPrefix;
+  final bool muted;
+  final double volume;
+  final VoidCallback onMuteToggled;
+  final ValueChanged<double> onVolumeChanged;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Built-in chips only — plugin entries get their own chip in part 5.
-        for (final e in effects.whereType<BuiltInEffect>())
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: surface.cardHigh,
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: surface.line),
-            ),
-            child: Text(
-              l10n.effectTypeLabel(e.type),
-              style: signalMono(color: surface.textSecondary, size: 10),
-            ),
-          ),
+        IconButton(
+          key: Key('${keyPrefix}_mute'),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          iconSize: 17,
+          color: muted ? surface.accent : surface.textSecondary,
+          tooltip: muted ? l10n.unmuteInputTooltip : l10n.muteInputTooltip,
+          icon: Icon(muted ? Icons.volume_off : Icons.volume_up),
+          onPressed: onMuteToggled,
+        ),
+        const SizedBox(width: 4),
+        SignalKnob(
+          knobKey: Key('${keyPrefix}_volume'),
+          value: muted ? 0 : volume,
+          max: kSignalMaxGain,
+          resetValue: 1,
+          snapTargets: const [1], // catch at unity (0 dB)
+          onChanged: onVolumeChanged,
+          label: l10n.signalVolumeLabel,
+          color: surface.accent,
+          size: 42,
+        ),
       ],
-    );
-  }
-}
-
-/// A take's FX line: the **`✦ snapshot`** badge naming its captured chain
-/// (mockup `.snap`), or a dashed **`clean take`** chip when it recorded dry.
-class _TakeFxLine extends StatelessWidget {
-  const _TakeFxLine({required this.effects});
-
-  final List<TrackEffect> effects;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final surface = context.surface;
-    if (effects.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: surface.line),
-        ),
-        child: Text(
-          l10n.signalCleanTake,
-          style: signalMono(color: surface.textTertiary, size: 10),
-        ),
-      );
-    }
-    final names = effects
-        .whereType<BuiltInEffect>()
-        .map((e) => l10n.effectTypeLabel(e.type))
-        .join(' · ');
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: surface.accent.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: surface.accent.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome, size: 11, color: surface.accent),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              names,
-              overflow: TextOverflow.ellipsis,
-              style: signalMono(color: surface.accent, size: 9.5),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
