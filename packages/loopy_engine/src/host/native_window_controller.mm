@@ -32,10 +32,13 @@ struct lpw_window;
 @end
 
 // The handle holds its NSWindow / delegate as bridged-retained CFTypeRefs so a
-// malloc'd C struct can own ObjC objects under ARC.
+// malloc'd C struct can own ObjC objects under ARC. In the embed spike
+// (LOOPY_EDITOR_EMBED=1) there is no window: [embedded] is the container NSView
+// added as a subview of the Loopy window, and [window]/[delegate] are null.
 struct lpw_window {
   CFTypeRef window;    // NSWindow*
   CFTypeRef delegate;  // LpwWindowDelegate*
+  CFTypeRef embedded;  // NSView* (embed spike only)
 };
 
 @implementation LpwWindowDelegate
@@ -56,11 +59,43 @@ struct lpw_window {
 
 extern "C" {
 
+// Centres [child] over [host] in the host window's content coordinates.
+static NSRect lpw_center_in(NSView* host, int32_t width, int32_t height) {
+  const NSRect b = [host bounds];
+  return NSMakeRect((b.size.width - width) / 2.0, (b.size.height - height) / 2.0,
+                    width, height);
+}
+
 lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
                             lpw_close_cb on_close, void* ctx) {
   if (width <= 0) width = 400;
   if (height <= 0) height = 300;
   const NSRect frame = NSMakeRect(0, 0, width, height);
+
+  // EMBED SPIKE (Option B viability): attach the plugin editor to a container
+  // NSView placed INSIDE the Loopy window (a centred subview of its content
+  // view) instead of a top-level window. Answers "does a plugin editor render
+  // when embedded in the app's window at all?" — the make-or-break for a real
+  // AppKitView platform-view embed. No titlebar/close (the host drives close).
+  const char* embedEnv = std::getenv("LOOPY_EDITOR_EMBED");
+  const bool embed = embedEnv && embedEnv[0] == '1';
+  NSWindow* host = [NSApp mainWindow] ?: [NSApp keyWindow];
+  if (embed && host) {
+    NSView* root = [host contentView];
+    NSView* container = [[NSView alloc] initWithFrame:frame];
+    [container setWantsLayer:YES];
+    [container setFrame:lpw_center_in(root, width, height)];
+    [container setAutoresizingMask:NSViewMinXMargin | NSViewMaxXMargin |
+                                   NSViewMinYMargin | NSViewMaxYMargin];
+    [root addSubview:container];
+    lpw_window* h = static_cast<lpw_window*>(std::calloc(1, sizeof(lpw_window)));
+    if (!h) return nullptr;
+    h->embedded = CFBridgingRetain(container);
+    (void)on_close;  // no user-initiated close in embed mode
+    (void)ctx;
+    return h;
+  }
+
   const NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                            NSWindowStyleMaskResizable |
                            NSWindowStyleMaskMiniaturizable;
@@ -120,13 +155,26 @@ lpw_window* lpw_window_open(int32_t width, int32_t height, const char* title,
 }
 
 void* lpw_window_content_view(lpw_window* window) {
-  if (!window || !window->window) return nullptr;
+  if (!window) return nullptr;
+  if (window->embedded) {
+    NSView* v = (__bridge NSView*)window->embedded;
+    return (__bridge void*)v;
+  }
+  if (!window->window) return nullptr;
   NSWindow* w = (__bridge NSWindow*)window->window;
   return (__bridge void*)[w contentView];
 }
 
 void lpw_window_resize(lpw_window* window, int32_t width, int32_t height) {
-  if (!window || !window->window || width <= 0 || height <= 0) return;
+  if (!window || width <= 0 || height <= 0) return;
+  if (window->embedded) {
+    NSView* v = (__bridge NSView*)window->embedded;
+    NSView* super = [v superview];
+    [v setFrame:super ? lpw_center_in(super, width, height)
+                      : NSMakeRect(0, 0, width, height)];
+    return;
+  }
+  if (!window->window) return;
   NSWindow* w = (__bridge NSWindow*)window->window;
   const NSRect newContent = NSMakeRect(0, 0, width, height);
   NSRect frame = [w frameRectForContentRect:newContent];
@@ -139,13 +187,23 @@ void lpw_window_resize(lpw_window* window, int32_t width, int32_t height) {
 }
 
 void lpw_window_show(lpw_window* window) {
-  if (!window || !window->window) return;
+  if (!window) return;
+  if (window->embedded) return;  // already in the view tree
+  if (!window->window) return;
   NSWindow* w = (__bridge NSWindow*)window->window;
   [w makeKeyAndOrderFront:nil];
 }
 
 void lpw_window_close(lpw_window* window) {
   if (!window) return;
+  if (window->embedded) {
+    NSView* v = (__bridge NSView*)window->embedded;
+    [v removeFromSuperview];
+    CFBridgingRelease(window->embedded);  // drops the handle's +1
+    window->embedded = nullptr;
+    std::free(window);
+    return;
+  }
   // Host-driven close: suppress the delegate callback (the caller is already in
   // teardown) and detach the delegate before releasing.
   if (window->delegate) {
