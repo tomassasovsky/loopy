@@ -400,6 +400,24 @@
     "signalPluginCancelScan": "Cancel",
     "signalAddEffect": "Add effect",
     "signalAddPlugin": "Add plugin…",
+    "fxEditorInputTitle": "Input {number}",
+    "@fxEditorInputTitle": {
+        "placeholders": {
+            "number": { "type": "int" }
+        }
+    },
+    "fxEditorInputConsequence": "prints into new takes",
+    "fxEditorLaneConsequence": "shapes playback, non-destructive",
+    "fxEditorChainIn": "IN",
+    "fxEditorChainOut": "OUT",
+    "fxEditorEmptySelection": "Select a block to edit its controls.",
+    "fxEditorScopeGone": "This chain no longer exists.",
+    "fxEditorEditBlock": "Edit {name}",
+    "@fxEditorEditBlock": {
+        "placeholders": {
+            "name": { "type": "String" }
+        }
+    },
     "startEngine": "Start engine",
     "sampleRateGroup": "Sample rate",
     "bufferSizeGroup": "Buffer size",

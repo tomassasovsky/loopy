@@ -11,6 +11,8 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/looper/view/fx_editor/fx_editor_page.dart';
+import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
@@ -332,6 +334,200 @@ void main() {
     await expectLater(
       find.byKey(const Key('signal_page')),
       matchesGoldenFile('goldens/signal_surface.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  // --- FX editor (part 2) ------------------------------------------------
+
+  const editorStatus = EngineStatus(
+    inputChannels: 2,
+    outputChannels: 2,
+    isConnected: true,
+  );
+
+  Future<void> openFxEditor(
+    WidgetTester tester, {
+    required LooperState state,
+    required FxScope Function(
+      LooperBloc bloc,
+      MonitorCubit monitor,
+      LooperRepository repo,
+    )
+    scopeOf,
+    Future<void> Function(MonitorCubit monitor)? primeMonitor,
+  }) async {
+    tester.view
+      ..physicalSize = const Size(1400, 1000)
+      ..devicePixelRatio = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final bloc = _ScreenshotLooperBloc();
+    whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
+    final repo = LooperRepository(
+      engine: FakeAudioEngine(),
+      ticker: const Stream<void>.empty(),
+    );
+    addTearDown(repo.dispose);
+    final monitor = MonitorCubit(repository: repo, settings: settings);
+    addTearDown(monitor.close);
+    if (primeMonitor != null) await primeMonitor(monitor);
+
+    await tester.pumpWidget(
+      RepositoryProvider<LooperRepository>.value(
+        value: repo,
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: _goldenTheme(),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: MultiBlocProvider(
+            providers: [
+              BlocProvider<LooperBloc>.value(value: bloc),
+              BlocProvider<MonitorCubit>.value(value: monitor),
+            ],
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () => showFxEditorPage(
+                      context,
+                      scope: scopeOf(bloc, monitor, repo),
+                    ),
+                    child: const Text('open'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('FX editor — lane scope with a chain', (tester) async {
+    await openFxEditor(
+      tester,
+      state: LooperState(
+        tracks: [
+          Track(
+            lanes: [
+              Lane(
+                inputChannel: 0,
+                effects: [
+                  BuiltInEffect(type: TrackEffectType.filter),
+                  BuiltInEffect(type: TrackEffectType.delay),
+                ],
+              ),
+            ],
+          ),
+        ],
+        status: editorStatus,
+      ),
+      scopeOf: (bloc, monitor, repo) =>
+          LaneFxScope(looper: bloc, repository: repo, track: 0, lane: 0),
+    );
+
+    await expectLater(
+      find.byKey(const Key('fx_editor_page')),
+      matchesGoldenFile('goldens/fx_editor_lane.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('FX editor — input scope', (tester) async {
+    await openFxEditor(
+      tester,
+      state: const LooperState(status: editorStatus),
+      scopeOf: (bloc, monitor, repo) => InputFxScope(
+        monitor: monitor,
+        looper: bloc,
+        repository: repo,
+        input: 0,
+      ),
+      primeMonitor: (m) async {
+        await m.setEnabled(0, enabled: true);
+        m
+          ..addEffect(0)
+          ..addEffect(0);
+      },
+    );
+
+    await expectLater(
+      find.byKey(const Key('fx_editor_page')),
+      matchesGoldenFile('goldens/fx_editor_input.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('FX editor — empty clean state', (tester) async {
+    await openFxEditor(
+      tester,
+      state: const LooperState(
+        tracks: [
+          Track(lanes: [Lane()]),
+        ],
+        status: editorStatus,
+      ),
+      scopeOf: (bloc, monitor, repo) =>
+          LaneFxScope(looper: bloc, repository: repo, track: 0, lane: 0),
+    );
+
+    await expectLater(
+      find.byKey(const Key('fx_editor_page')),
+      matchesGoldenFile('goldens/fx_editor_empty.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('FX editor — plugin block', (tester) async {
+    await openFxEditor(
+      tester,
+      state: const LooperState(
+        tracks: [
+          Track(
+            lanes: [
+              Lane(
+                effects: [
+                  PluginEffect(
+                    ref: PluginRef(format: PluginFormat.vst3, id: 'comp'),
+                    name: 'Compressor',
+                    params: [
+                      PluginParamInfo(
+                        id: 1,
+                        name: 'Ratio',
+                        unit: ':1',
+                        min: 1,
+                        max: 20,
+                        def: 4,
+                        stepCount: 0,
+                        flags: 0x01,
+                      ),
+                      PluginParamInfo(
+                        id: 2,
+                        name: 'Threshold',
+                        unit: 'dB',
+                        min: -60,
+                        max: 0,
+                        def: -18,
+                        stepCount: 0,
+                        flags: 0x01,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+        status: editorStatus,
+      ),
+      scopeOf: (bloc, monitor, repo) =>
+          LaneFxScope(looper: bloc, repository: repo, track: 0, lane: 0),
+    );
+
+    await expectLater(
+      find.byKey(const Key('fx_editor_page')),
+      matchesGoldenFile('goldens/fx_editor_plugin.png'),
     );
   }, skip: !hasScreenshotFonts);
 }
