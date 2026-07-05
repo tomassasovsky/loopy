@@ -75,6 +75,11 @@ class SessionCubit extends Cubit<SessionState> {
           error: switch (error) {
             SessionSampleRateMismatch() => SessionError.sampleRateMismatch,
             SessionUnsupportedVersion() => SessionError.unsupportedVersion,
+            // The catalog's collision is not reachable through today's
+            // save/load actions; part 2 wires the named CRUD and maps this to a
+            // dedicated SessionError.nameCollision. Kept exhaustive so the
+            // sealed switch compiles.
+            SessionNameCollision() => SessionError.unknown,
           },
           errorMessage: '$error',
         ),
