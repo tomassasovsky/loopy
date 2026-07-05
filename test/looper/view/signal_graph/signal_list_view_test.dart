@@ -182,7 +182,7 @@ void main() {
       expect(monitor.state.forInput(0).enabled, isFalse);
     });
 
-    testWidgets('the input FX summary opens the editor for that input', (
+    testWidgets('the input FX summary opens the dock for that input', (
       tester,
     ) async {
       seed(stateWith());
@@ -191,11 +191,11 @@ void main() {
       await tester.tap(find.byKey(const Key('signalInFx_0')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('fx_editor_page')), findsOneWidget);
+      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
       expect(find.text('Input 1'), findsOneWidget);
     });
 
-    testWidgets('the take FX summary opens the editor for that lane', (
+    testWidgets('the take FX summary opens the dock for that lane', (
       tester,
     ) async {
       seed(stateWith());
@@ -204,9 +204,22 @@ void main() {
       await tester.tap(find.byKey(const Key('signalTakeFx_0_0')));
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('fx_editor_page')), findsOneWidget);
-      // The editor opened for the lane scope (its header reads "Lane 1").
+      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
+      // The dock opened for the lane scope (its header reads "Lane 1").
       expect(find.text('Lane 1'), findsOneWidget);
+    });
+
+    testWidgets('the dock closes via its close affordance', (tester) async {
+      seed(stateWith());
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('signalInFx_0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('fx_dock')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('fxDock_close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('fx_dock')), findsNothing);
     });
 
     testWidgets('a single-lane track carries an add-lane control', (

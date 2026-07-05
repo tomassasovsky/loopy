@@ -8,7 +8,7 @@ import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/view/fx_editor/fx_editor_page.dart';
+import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:loopy/looper/view/signal_graph/signal_fx_summary.dart';
 import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
@@ -81,7 +81,7 @@ Future<void> showSignalPage(BuildContext context) {
 /// to light its connections across all panes and dim the rest). Tracks are
 /// grouped so a single-lane track is one row (no "Lane 1"); a multi-lane track
 /// nests its takes. Each input/lane card carries its mix + a tappable FX
-/// summary that opens the dedicated editor; there is no bottom dock.
+/// summary that opens the chain in the bottom **FX dock** ([FxDock]).
 class SignalListView extends StatefulWidget {
   /// Creates a [SignalListView].
   const SignalListView({this.trackNames = const [], super.key});
@@ -99,24 +99,48 @@ class _SignalListViewState extends State<SignalListView> {
   ({int track, int lane})? _focusedTake;
   int? _tracedOutput;
 
+  /// The chain currently open in the bottom FX dock, or null when the dock is
+  /// closed. Tapping a row's FX summary sets it; the dock's close clears it.
+  FxScope? _editedScope;
+
   MonitorCubit get _monitor => context.read<MonitorCubit>();
   LooperBloc get _bloc => context.read<LooperBloc>();
 
   bool get _anyFocus =>
       _focusedInput != null || _focusedTake != null || _tracedOutput != null;
 
+  // Selecting an input / take card opens the FX dock on that chain (and closes
+  // it when the same card is tapped again); outputs carry no FX, so tracing one
+  // closes the dock.
   void _focusInput(int c) => setState(() {
     final same = _focusedInput == c;
     _focusedInput = same ? null : c;
     _focusedTake = null;
     _tracedOutput = null;
+    _editedScope = same
+        ? null
+        : InputFxScope(
+            monitor: _monitor,
+            looper: _bloc,
+            repository: context.read<LooperRepository>(),
+            input: c,
+          );
   });
 
   void _focusTake(TakeRow take) => setState(() {
-    final same = _focusedTake == (track: take.track, lane: take.laneIndex);
-    _focusedTake = same ? null : (track: take.track, lane: take.laneIndex);
+    final key = (track: take.track, lane: take.laneIndex);
+    final same = _focusedTake == key;
+    _focusedTake = same ? null : key;
     _focusedInput = null;
     _tracedOutput = null;
+    _editedScope = same
+        ? null
+        : LaneFxScope(
+            looper: _bloc,
+            repository: context.read<LooperRepository>(),
+            track: take.track,
+            lane: take.laneIndex,
+          );
   });
 
   void _traceOutput(int o) => setState(() {
@@ -124,12 +148,14 @@ class _SignalListViewState extends State<SignalListView> {
     _tracedOutput = same ? null : o;
     _focusedInput = null;
     _focusedTake = null;
+    _editedScope = null;
   });
 
   void _clear() => setState(() {
     _focusedInput = null;
     _focusedTake = null;
     _tracedOutput = null;
+    _editedScope = null;
   });
 
   /// The lit-tag set, **recomputed from current rows each build** so editing a
@@ -166,7 +192,9 @@ class _SignalListViewState extends State<SignalListView> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (_anyFocus) {
+          if (_editedScope != null) {
+            setState(() => _editedScope = null);
+          } else if (_anyFocus) {
             _clear();
           } else {
             unawaited(Navigator.of(context).maybePop());
@@ -277,6 +305,12 @@ class _SignalListViewState extends State<SignalListView> {
                 },
               ),
             ),
+            if (_editedScope != null)
+              FxDock(
+                key: ValueKey(_editedScope),
+                scope: _editedScope!,
+                onClose: () => setState(() => _editedScope = null),
+              ),
             const _SignalLegend(),
           ],
         ),
@@ -285,7 +319,7 @@ class _SignalListViewState extends State<SignalListView> {
   }
 
   // Tapping a card only traces its signal — it never changes what you hear.
-  // Monitoring is toggled deliberately on the gate dot; FX open in the editor.
+  // Monitoring is toggled deliberately on the gate dot; FX open in the dock.
   void _onTapInput(InputRow row) {
     if (row.excluded) return;
     _focusInput(row.input);
@@ -294,33 +328,27 @@ class _SignalListViewState extends State<SignalListView> {
   int _laneCount(LooperState looper, int track) =>
       track < looper.tracks.length ? looper.tracks[track].lanes.length : 1;
 
-  /// Opens the FX editor for input [input]'s live-monitor chain.
+  /// Opens the bottom FX dock on input [input]'s live-monitor chain.
   void _editInputFx(int input) {
-    unawaited(
-      showFxEditorPage(
-        context,
-        scope: InputFxScope(
-          monitor: _monitor,
-          looper: _bloc,
-          repository: context.read<LooperRepository>(),
-          input: input,
-        ),
-      ),
-    );
+    setState(() {
+      _editedScope = InputFxScope(
+        monitor: _monitor,
+        looper: _bloc,
+        repository: context.read<LooperRepository>(),
+        input: input,
+      );
+    });
   }
 
-  /// Opens the FX editor for lane [lane] of track [track].
+  /// Opens the bottom FX dock on lane [lane] of track [track].
   void _editLaneFx(int track, int lane) {
-    unawaited(
-      showFxEditorPage(
-        context,
-        scope: LaneFxScope(
-          looper: _bloc,
-          repository: context.read<LooperRepository>(),
-          track: track,
-          lane: lane,
-        ),
-      ),
-    );
+    setState(() {
+      _editedScope = LaneFxScope(
+        looper: _bloc,
+        repository: context.read<LooperRepository>(),
+        track: track,
+        lane: lane,
+      );
+    });
   }
 }
