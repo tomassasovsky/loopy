@@ -129,6 +129,25 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
       }
       break;  // HTCAPTION → DefWindowProc drags the overlay
+    case WM_MOVING: {
+      // Keep the overlay inside the app window — it can never be dragged out of
+      // the main Flutter view.
+      auto* r = reinterpret_cast<RECT*>(lParam);
+      RECT o = {};
+      if (GetWindowRect(GetWindow(hwnd, GW_OWNER), &o)) {
+        const int w = r->right - r->left;
+        const int ht = r->bottom - r->top;
+        if (r->left < o.left) r->left = o.left;
+        if (r->top < o.top) r->top = o.top;
+        if (r->left > o.right - w) r->left = o.right - w;
+        if (r->top > o.bottom - ht) r->top = o.bottom - ht;
+        if (r->left < o.left) r->left = o.left;  // owner smaller than overlay
+        if (r->top < o.top) r->top = o.top;
+        r->right = r->left + w;
+        r->bottom = r->top + ht;
+      }
+      return TRUE;
+    }
     case WM_SIZE:
       // The plugin's editor fills the client BELOW the title strip.
       if (h && h->content) {
