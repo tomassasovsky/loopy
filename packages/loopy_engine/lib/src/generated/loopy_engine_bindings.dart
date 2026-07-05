@@ -2018,6 +2018,58 @@ class LoopyEngineBindings {
   late final _le_engine_set_output_enabled = _le_engine_set_output_enabledPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
+  /// An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
+  /// for each of the a_fx_count active entries, its type, plus (for a built-in) its
+  /// LE_FX_PARAMS float parameter bits — a plugin entry contributes its type only
+  /// (its params live in the plugin host, not a_fx_param). The empty chain hashes
+  /// to the FNV-1a offset basis. This is DETECTION only, not a chain readback: the
+  /// Dart repository owns the chain and computes the identical hash over its cache,
+  /// so a debug assert / the sequence fuzzer can catch a cache-vs-engine divergence
+  /// without the engine ever narrating the chain back. Scanned on the control thread
+  /// off the published a_fx_* atomics (the race-free seam, like le_max_fx_latency);
+  /// the audio thread never reads it. Out-of-range args return 0.
+  int le_engine_lane_fx_fingerprint(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+  ) {
+    return _le_engine_lane_fx_fingerprint(
+      engine,
+      channel,
+      lane,
+    );
+  }
+
+  late final _le_engine_lane_fx_fingerprintPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint64 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_lane_fx_fingerprint');
+  late final _le_engine_lane_fx_fingerprint = _le_engine_lane_fx_fingerprintPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  int le_engine_monitor_fx_fingerprint(
+    ffi.Pointer<le_engine> engine,
+    int input,
+  ) {
+    return _le_engine_monitor_fx_fingerprint(
+      engine,
+      input,
+    );
+  }
+
+  late final _le_engine_monitor_fx_fingerprintPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint64 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_monitor_fx_fingerprint');
+  late final _le_engine_monitor_fx_fingerprint =
+      _le_engine_monitor_fx_fingerprintPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Copies up to `max_frames` frames of track `channel`'s mono loop into `out`;
   /// returns the number of frames written (the track length, clamped to
   /// `max_frames`), or 0 on a bad argument / empty track. Reads the live buffer —

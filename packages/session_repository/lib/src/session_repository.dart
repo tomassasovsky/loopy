@@ -4,22 +4,46 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:loopy_engine/loopy_engine.dart';
+import 'package:meta/meta.dart';
 import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/session_exception.dart';
 import 'package:session_repository/src/wav.dart';
 
-/// Saves and restores Loopy sessions and exports audio.
+/// The decoded contents of a `.loopy` session bundle: the manifest plus each
+/// track's stem PCM, keyed by channel.
+typedef SessionBundle = ({Session session, Map<int, Float32List> stems});
+
+/// The effect-chain data a [SessionRepository.save] persists that the engine
+/// snapshot alone cannot supply: the lane chains and monitor configurations.
+///
+/// The bloc layer gathers these from the looper repository (the live rig is
+/// the truth being saved) and hands them to [SessionRepository.save]. Kept as
+/// pre-built manifest models so this package never depends on the effect model.
+@immutable
+class SessionChains {
+  /// Creates a [SessionChains].
+  const SessionChains({this.laneChains = const [], this.monitors = const []});
+
+  /// The lane effect chains to persist.
+  final List<SessionLaneChain> laneChains;
+
+  /// The per-input monitor configurations to persist.
+  final List<SessionMonitor> monitors;
+}
+
+/// Saves Loopy sessions, reads them back, and exports audio.
 ///
 /// A session is a `.loopy` bundle directory: a [Session.manifestName] manifest,
-/// one 32-bit-float stem WAV per track, and a `mixdown.wav`. The repository
-/// reads the engine's loop PCM for export and writes it back on load; it does
-/// not own the engine (the looper repository does), it only drives it.
+/// one 32-bit-float stem WAV per track, and a `mixdown.wav`. This repository
+/// only does file I/O plus the engine READS a save/export needs (snapshot +
+/// loop PCM); applying a loaded session to the engine is the looper
+/// repository's job (the single owner of looper state) — see [read].
 class SessionRepository {
-  /// Creates a [SessionRepository] driving [engine].
+  /// Creates a [SessionRepository] capturing from [engine].
   ///
-  /// [clearPollInterval]/[clearPollAttempts] bound how long [load] waits for the
-  /// engine to report all tracks cleared before importing (clears are applied
-  /// asynchronously on the audio thread). Tests can shrink these.
+  /// [clearPollInterval]/[clearPollAttempts] bound how long a save/export waits
+  /// for in-flight overdub layers to settle before capturing. Tests can shrink
+  /// these.
   SessionRepository({
     required AudioEngine engine,
     Duration clearPollInterval = const Duration(milliseconds: 8),
@@ -38,7 +62,16 @@ class SessionRepository {
   /// Saves the engine's current state to the `.loopy` bundle [directory],
   /// writing the manifest, per-track stems, and a mixdown. Returns the saved
   /// [Session] manifest.
-  Future<Session> save(String directory) async {
+  ///
+  /// The audio + per-track mix come from the engine snapshot; the effect chains
+  /// come from [chains], gathered from the looper repository by the bloc layer
+  /// (the live rig — not settings — is the truth being saved). Chains exist
+  /// independently of audio, so they are written for every lane / monitor that
+  /// has one, regardless of which tracks hold audio.
+  Future<Session> save(
+    String directory, {
+    SessionChains chains = const SessionChains(),
+  }) async {
     await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
@@ -53,7 +86,7 @@ class SessionRepository {
       );
     }
 
-    final session = _sessionFrom(captured);
+    final session = _sessionFrom(captured, chains);
     await File('$directory/${Session.manifestName}').writeAsString(
       const JsonEncoder.withIndent('  ').convert(session.toJson()),
     );
@@ -71,8 +104,16 @@ class SessionRepository {
     return session;
   }
 
-  /// Restores a session from the `.loopy` bundle [directory] into the engine.
-  Future<Session> load(String directory) async {
+  /// Reads and validates the `.loopy` bundle [directory]: decodes the manifest
+  /// and every referenced stem WAV. Pure I/O — the engine is never driven;
+  /// the caller (the bloc layer) hands the result to the looper repository's
+  /// `applySession`, the one apply path.
+  ///
+  /// The stems are raw PCM at the saved rate; loading them on a device running
+  /// a different rate would play the session back at the wrong pitch (there is
+  /// no resampling), so this refuses with [SessionSampleRateMismatch] rather
+  /// than decode something unusable.
+  Future<SessionBundle> read(String directory) async {
     final manifest = await File(
       '$directory/${Session.manifestName}',
     ).readAsString();
@@ -80,9 +121,6 @@ class SessionRepository {
       jsonDecode(manifest) as Map<String, dynamic>,
     );
 
-    // The stems are raw PCM at the saved rate; loading them on a device running
-    // a different rate would play the session back at the wrong pitch (there is
-    // no resampling), so refuse rather than do so silently.
     final current = _engine.snapshot();
     if (current.sampleRate > 0 &&
         session.sampleRate > 0 &&
@@ -93,42 +131,12 @@ class SessionRepository {
       );
     }
 
-    // Clear the current session and wait for the engine to settle to empty.
-    for (var i = 0; i < current.tracks.length; i++) {
-      _engine.clear(channel: i);
-    }
-    if (!await _awaitCleared()) {
-      throw StateError('engine did not clear before loading the session');
-    }
-
+    final stems = <int, Float32List>{};
     for (final track in session.tracks) {
       final bytes = await File('$directory/${track.stem}').readAsBytes();
-      final result = _engine.importTrack(
-        track.channel,
-        WavCodec.decodeFloat32(bytes).samples,
-      );
-      if (!result.isOk) {
-        throw StateError('failed to import ${track.stem}: ${result.name}');
-      }
+      stems[track.channel] = WavCodec.decodeFloat32(bytes).samples;
     }
-    // An empty session (or a legacy save carrying a ghost grid with no
-    // tracks) establishes no master: the cleared engine stays free to define
-    // a fresh loop length.
-    if (session.tracks.isNotEmpty && session.baseLengthFrames > 0) {
-      final committed = _engine.commitSession(session.baseLengthFrames);
-      if (!committed.isOk) {
-        throw StateError('failed to start the session: ${committed.name}');
-      }
-    }
-
-    // Session stems are lane-0-only for now (full multi-lane stems are a
-    // follow-up), so restore mix settings onto lane 0.
-    for (final track in session.tracks) {
-      _engine
-        ..setLaneVolume(track.volume, channel: track.channel)
-        ..setLaneMute(muted: track.muted, channel: track.channel);
-    }
-    return session;
+    return (session: session, stems: stems);
   }
 
   /// Exports a single mixed-down WAV of the current session to [path].
@@ -196,7 +204,7 @@ class SessionRepository {
     return _Capture(snapshot: snapshot, stems: stems, tracks: tracks);
   }
 
-  Session _sessionFrom(_Capture captured) {
+  Session _sessionFrom(_Capture captured, SessionChains chains) {
     final snapshot = captured.snapshot;
     return Session(
       sampleRate: snapshot.sampleRate,
@@ -209,6 +217,8 @@ class SessionRepository {
           ? 0
           : snapshot.masterLengthFrames,
       tracks: captured.tracks,
+      laneChains: chains.laneChains,
+      monitors: chains.monitors,
     );
   }
 
@@ -240,20 +250,6 @@ class SessionRepository {
       }
     }
     return mix;
-  }
-
-  /// Polls until every track reports empty and the master is reset, returning
-  /// whether the engine settled within [_clearPollAttempts].
-  Future<bool> _awaitCleared() async {
-    for (var attempt = 0; attempt < _clearPollAttempts; attempt++) {
-      final snapshot = _engine.snapshot();
-      final cleared =
-          snapshot.masterLengthFrames == 0 &&
-          snapshot.tracks.every((t) => t.state == TrackState.empty);
-      if (cleared) return true;
-      await Future<void>.delayed(_clearPollInterval);
-    }
-    return false;
   }
 
   /// Waits until no track has an overdub undo layer in flight (the punch-out

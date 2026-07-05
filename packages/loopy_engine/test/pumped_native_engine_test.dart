@@ -63,4 +63,45 @@ void main() {
     s = engine.snapshot();
     expect(s.tracks.first.redoDepth, 0);
   }, skip: skip);
+
+  group('fx chain fingerprint (native-side properties)', () {
+    late PumpedNativeEngine engine;
+
+    setUp(() {
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 48000,
+          ),
+        );
+    });
+    tearDown(() => engine.dispose());
+
+    void applyLaneChain(List<TrackEffectType> types) {
+      for (var i = 0; i < types.length; i++) {
+        engine.setLaneFx(channel: 0, lane: 0, index: i, type: types[i]);
+      }
+      engine
+        ..setLaneFxCount(channel: 0, lane: 0, count: types.length)
+        ..pump(frames: 0); // drain the fx ring commands
+    }
+
+    test('an empty lane fingerprints to the FNV offset basis', () {
+      expect(
+        engine.laneFxFingerprint(channel: 0, lane: 0),
+        FxFingerprint.offset,
+      );
+    });
+
+    test('reordering the chain changes the fingerprint (order-sensitive)', () {
+      applyLaneChain([TrackEffectType.drive, TrackEffectType.reverb]);
+      final fpAb = engine.laneFxFingerprint(channel: 0, lane: 0);
+      applyLaneChain([TrackEffectType.reverb, TrackEffectType.drive]);
+      final fpBa = engine.laneFxFingerprint(channel: 0, lane: 0);
+      expect(fpAb, isNot(fpBa));
+    });
+  }, skip: skip);
 }

@@ -70,8 +70,131 @@ class SessionTrack {
       Object.hash(channel, volume, muted, multiple, lengthFrames, stem);
 }
 
-/// A saved Loopy session: the transport/tempo settings plus the tracks. Paired
-/// with per-track stem WAV files in a `.loopy` bundle directory.
+/// One lane's effect chain within a [Session] (schema v2+).
+///
+/// The chain is stored as the opaque [encoded] string produced by the looper
+/// domain's `encodeTrackEffects` — the same wire format settings persist — so
+/// this data package never depends on the effect model. Chains exist
+/// independently of audio, so a [channel]/[lane] here may not match any
+/// [SessionTrack].
+@immutable
+class SessionLaneChain {
+  /// Creates a [SessionLaneChain].
+  const SessionLaneChain({
+    required this.channel,
+    required this.lane,
+    required this.encoded,
+  });
+
+  /// Projects a [SessionLaneChain] from a decoded JSON map.
+  factory SessionLaneChain.fromJson(Map<String, dynamic> json) =>
+      SessionLaneChain(
+        channel: (json['channel'] as num).toInt(),
+        lane: (json['lane'] as num).toInt(),
+        encoded: json['encoded'] as String,
+      );
+
+  /// Track channel this chain belongs to.
+  final int channel;
+
+  /// Lane index within the track.
+  final int lane;
+
+  /// The chain as an opaque `encodeTrackEffects` string.
+  final String encoded;
+
+  /// Serializes this chain to a JSON map.
+  Map<String, dynamic> toJson() => {
+    'channel': channel,
+    'lane': lane,
+    'encoded': encoded,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionLaneChain &&
+          runtimeType == other.runtimeType &&
+          channel == other.channel &&
+          lane == other.lane &&
+          encoded == other.encoded;
+
+  @override
+  int get hashCode => Object.hash(channel, lane, encoded);
+}
+
+/// One hardware input's live-monitor configuration within a [Session] (schema
+/// v2+): routing / mix plus the monitor's [encoded] effect chain.
+@immutable
+class SessionMonitor {
+  /// Creates a [SessionMonitor].
+  const SessionMonitor({
+    required this.input,
+    required this.enabled,
+    required this.outputMask,
+    required this.volume,
+    required this.muted,
+    required this.encoded,
+  });
+
+  /// Projects a [SessionMonitor] from a decoded JSON map.
+  factory SessionMonitor.fromJson(Map<String, dynamic> json) => SessionMonitor(
+    input: (json['input'] as num).toInt(),
+    enabled: json['enabled'] as bool,
+    outputMask: (json['outputMask'] as num).toInt(),
+    volume: (json['volume'] as num).toDouble(),
+    muted: json['muted'] as bool,
+    encoded: json['encoded'] as String,
+  );
+
+  /// Hardware input index.
+  final int input;
+
+  /// Whether live monitoring of the input is enabled.
+  final bool enabled;
+
+  /// Bitmask of output channels the monitor plays to.
+  final int outputMask;
+
+  /// Monitor output gain in `0..1`.
+  final double volume;
+
+  /// Whether the monitor is muted.
+  final bool muted;
+
+  /// The monitor chain as an opaque `encodeTrackEffects` string.
+  final String encoded;
+
+  /// Serializes this monitor to a JSON map.
+  Map<String, dynamic> toJson() => {
+    'input': input,
+    'enabled': enabled,
+    'outputMask': outputMask,
+    'volume': volume,
+    'muted': muted,
+    'encoded': encoded,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionMonitor &&
+          runtimeType == other.runtimeType &&
+          input == other.input &&
+          enabled == other.enabled &&
+          outputMask == other.outputMask &&
+          volume == other.volume &&
+          muted == other.muted &&
+          encoded == other.encoded;
+
+  @override
+  int get hashCode =>
+      Object.hash(input, enabled, outputMask, volume, muted, encoded);
+}
+
+/// A saved Loopy session: the transport/tempo settings, the tracks, and (schema
+/// v2+) the lane + monitor effect chains. Paired with per-track stem WAV files
+/// in a `.loopy` bundle directory.
 @immutable
 class Session {
   /// Creates a [Session].
@@ -80,10 +203,14 @@ class Session {
     required this.channels,
     required this.baseLengthFrames,
     required this.tracks,
+    this.laneChains = const [],
+    this.monitors = const [],
   });
 
   /// Projects a [Session] from a decoded JSON map.
   ///
+  /// A v1 manifest (no `laneChains` / `monitors`) loads with empty chains, so a
+  /// legacy bundle restores explicitly-cleared chains rather than leftovers.
   /// Throws [SessionUnsupportedVersion] for a manifest written by a newer,
   /// incompatible schema version than this code understands.
   factory Session.fromJson(Map<String, dynamic> json) {
@@ -102,11 +229,20 @@ class Session {
         for (final t in json['tracks'] as List<dynamic>)
           SessionTrack.fromJson(t as Map<String, dynamic>),
       ],
+      laneChains: [
+        for (final c in (json['laneChains'] as List<dynamic>? ?? const []))
+          SessionLaneChain.fromJson(c as Map<String, dynamic>),
+      ],
+      monitors: [
+        for (final m in (json['monitors'] as List<dynamic>? ?? const []))
+          SessionMonitor.fromJson(m as Map<String, dynamic>),
+      ],
     );
   }
 
-  /// The manifest schema version this code writes and accepts.
-  static const int formatVersion = 1;
+  /// The manifest schema version this code writes and accepts. v2 added the
+  /// lane + monitor effect chains; v1 bundles still load (with empty chains).
+  static const int formatVersion = 2;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -123,6 +259,12 @@ class Session {
   /// The session's tracks (those that hold audio).
   final List<SessionTrack> tracks;
 
+  /// The lane effect chains the session defines (empty for a v1 bundle).
+  final List<SessionLaneChain> laneChains;
+
+  /// The per-input live monitors the session defines (empty for a v1 bundle).
+  final List<SessionMonitor> monitors;
+
   /// Serializes this session manifest to a JSON map.
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
@@ -130,6 +272,8 @@ class Session {
     'channels': channels,
     'baseLengthFrames': baseLengthFrames,
     'tracks': [for (final t in tracks) t.toJson()],
+    'laneChains': [for (final c in laneChains) c.toJson()],
+    'monitors': [for (final m in monitors) m.toJson()],
   };
 
   @override
@@ -140,7 +284,9 @@ class Session {
           sampleRate == other.sampleRate &&
           channels == other.channels &&
           baseLengthFrames == other.baseLengthFrames &&
-          _listEquals(tracks, other.tracks);
+          _listEquals(tracks, other.tracks) &&
+          _listEquals(laneChains, other.laneChains) &&
+          _listEquals(monitors, other.monitors);
 
   @override
   int get hashCode => Object.hash(
@@ -148,10 +294,12 @@ class Session {
     channels,
     baseLengthFrames,
     Object.hashAll(tracks),
+    Object.hashAll(laneChains),
+    Object.hashAll(monitors),
   );
 }
 
-bool _listEquals(List<SessionTrack> a, List<SessionTrack> b) {
+bool _listEquals<T>(List<T> a, List<T> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {
     if (a[i] != b[i]) return false;

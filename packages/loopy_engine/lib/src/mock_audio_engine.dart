@@ -4,6 +4,7 @@ import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/audio_engine.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
+import 'package:loopy_engine/src/fx_fingerprint.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
@@ -515,6 +516,15 @@ class MockAudioEngine implements AudioEngine {
     required int param,
     required double value,
   }) => _requireRunning();
+
+  // The mock runs no DSP and holds no engine-side chain, so every chain
+  // fingerprints to the empty-chain basis (the repository owns the real cache).
+  @override
+  int laneFxFingerprint({required int channel, required int lane}) =>
+      FxFingerprint.offset;
+
+  @override
+  int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
 
   @override
   Float32List readVisual() => Float32List(0);

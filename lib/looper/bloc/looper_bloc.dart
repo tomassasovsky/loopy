@@ -279,6 +279,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (s) => add(LooperStateUpdated(s)),
     );
     _controllerSubscription = controller?.events.listen(_onControllerEvent);
+    // Persist chains the repository mutates on its own — the record-time
+    // snapshot-copy of a monitor chain onto the take's lanes (F3). The bloc
+    // stays the single settings writer for chains.
+    _repository.onLaneChainChanged = _persistLaneChain;
   }
 
   final LooperRepository _repository;
@@ -344,6 +348,20 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     );
   }
 
+  /// Persists lane [lane] of [channel]'s current chain — the sink for the
+  /// repository's [LooperRepository.onLaneChainChanged] notification (F3: the
+  /// record-time snapshot copy). Reads the repository's enriched chain so a
+  /// persisted plugin entry keeps its resolved name.
+  void _persistLaneChain(int channel, int lane) {
+    unawaited(
+      _settings?.saveLaneEffects(
+        channel,
+        lane,
+        encodeTrackEffects(_repository.laneEffects(channel, lane)),
+      ),
+    );
+  }
+
   /// Cancels every editor-sync poll timer for lane [lane] of [channel].
   void _cancelLaneEditorTimers(int channel, int lane) {
     _lanePluginEditorTimers.removeWhere((key, timer) {
@@ -380,6 +398,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       timer.cancel();
     }
     _lanePluginEditorTimers.clear();
+    // The repository outlives the bloc; drop the chain-persist callback so a
+    // later record doesn't call into a closed bloc.
+    if (_repository.onLaneChainChanged == _persistLaneChain) {
+      _repository.onLaneChainChanged = null;
+    }
     unawaited(_subscription.cancel());
     unawaited(_controllerSubscription?.cancel());
     return super.close();

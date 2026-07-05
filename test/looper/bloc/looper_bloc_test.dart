@@ -835,6 +835,30 @@ void main() {
     );
 
     blocTest<LooperBloc, LooperState>(
+      'persists the take chain when the repository reports a record-time '
+      'snapshot copy (F3)',
+      build: () => LooperBloc(repository: repository, settings: settings),
+      verify: (_) {
+        // The bloc wires a chain-persist callback onto the repository; capture
+        // it and simulate the record-time snapshot firing it.
+        final callback =
+            verify(
+                  () => repository.onLaneChainChanged = captureAny(),
+                ).captured.last
+                as void Function(int, int)?;
+        expect(callback, isNotNull);
+
+        final takeChain = [BuiltInEffect(type: TrackEffectType.delay)];
+        when(() => repository.laneEffects(0, 1)).thenReturn(takeChain);
+
+        callback!(0, 1);
+        verify(
+          () => settings.saveLaneEffects(0, 1, encodeTrackEffects(takeChain)),
+        ).called(1);
+      },
+    );
+
+    blocTest<LooperBloc, LooperState>(
       'inserting a plugin persists the chain enriched with its resolved name',
       build: () {
         // The repository resolves the display name while applying the chain;

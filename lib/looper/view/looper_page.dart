@@ -37,6 +37,7 @@ class LooperPage extends StatelessWidget {
         BlocProvider(
           create: (context) => SessionCubit(
             repository: context.read<SessionRepository>(),
+            looper: context.read<LooperRepository>(),
             directory: sessionDirectory,
           ),
         ),

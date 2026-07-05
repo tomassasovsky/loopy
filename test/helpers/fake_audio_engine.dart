@@ -383,6 +383,13 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  @override
+  int laneFxFingerprint({required int channel, required int lane}) =>
+      FxFingerprint.offset;
+
+  @override
+  int monitorFxFingerprint({required int input}) => FxFingerprint.offset;
+
   /// Per-output structural gate passed to [setOutputEnabled].
   final Map<int, bool> outputEnabled = {};
 

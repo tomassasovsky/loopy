@@ -204,6 +204,7 @@
     "signalPluginUnknownName": "Plugin",
     "signalPluginToggleOn": "Sí",
     "signalPluginToggleOff": "No",
+    "signalPluginLoading": "Cargando…",
     "signalPluginUnavailable": "Plugin no disponible",
     "signalPluginUnsupported": "Plugin no compatible",
     "signalPluginVersionChanged": "La versión cambió desde que se guardó",

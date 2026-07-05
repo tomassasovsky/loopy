@@ -846,6 +846,10 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  int laneFxFingerprint({required int channel, required int lane}) =>
+      _bindings.le_engine_lane_fx_fingerprint(_engine, channel, lane);
+
+  @override
   EngineResult setMonitorInputEnabled({
     required int input,
     required bool enabled,
@@ -937,6 +941,10 @@ class NativeAudioEngine implements AudioEngine {
       ),
     );
   }
+
+  @override
+  int monitorFxFingerprint({required int input}) =>
+      _bindings.le_engine_monitor_fx_fingerprint(_engine, input);
 
   @override
   Float32List readVisual() {

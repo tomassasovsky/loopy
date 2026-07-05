@@ -1,31 +1,51 @@
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/session/session_mapping.dart';
 import 'package:session_repository/session_repository.dart';
 
 part 'session_state.dart';
 
 /// Drives session persistence actions (save / load / export) and surfaces their
 /// outcome so the UI can show progress and a success/failure message.
+///
+/// Composes the two repositories at the bloc level (repositories never import
+/// repositories): the session repository does the file I/O, the looper
+/// repository — the single owner of looper state — applies a loaded session
+/// to the engine and supplies the live chains a save captures.
 class SessionCubit extends Cubit<SessionState> {
-  /// Creates a [SessionCubit] backed by [repository].
+  /// Creates a [SessionCubit] backed by [repository] and [looper].
   ///
   /// [directory] resolves the session bundle directory lazily (e.g. the app's
   /// documents folder); injecting it keeps the cubit testable.
   SessionCubit({
     required SessionRepository repository,
+    required LooperRepository looper,
     required Future<String> Function() directory,
   }) : _repository = repository,
+       _looper = looper,
        _directory = directory,
        super(const SessionState());
 
   final SessionRepository _repository;
+  final LooperRepository _looper;
   final Future<String> Function() _directory;
 
-  /// Saves the current session (manifest + stems + mixdown).
-  Future<void> saveSession() => _run(_repository.save, SessionOutcome.saved);
+  /// Saves the current session (manifest + stems + mixdown), capturing the
+  /// live effect chains from the looper repository (the rig — not settings — is
+  /// the truth being saved).
+  Future<void> saveSession() => _run(
+    (directory) =>
+        _repository.save(directory, chains: chainsFromLooper(_looper)),
+    SessionOutcome.saved,
+  );
 
-  /// Loads the saved session back into the engine.
-  Future<void> loadSession() => _run(_repository.load, SessionOutcome.loaded);
+  /// Loads the saved session back into the engine: reads the bundle, then
+  /// applies it through the looper repository (the one apply path).
+  Future<void> loadSession() => _run((directory) async {
+    final bundle = await _repository.read(directory);
+    await _looper.applySession(rigFromBundle(bundle));
+  }, SessionOutcome.loaded);
 
   /// Exports a mixed-down WAV of the current session.
   Future<void> exportMixdown() => _run(

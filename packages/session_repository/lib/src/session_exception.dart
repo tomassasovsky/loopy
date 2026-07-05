@@ -12,7 +12,7 @@ sealed class SessionException implements Exception {
 
 /// The session was recorded at a sample rate that differs from the running
 /// device's. Loading its raw stems would play them back at the wrong pitch
-/// (there is no resampling), so [SessionRepository.load] refuses.
+/// (there is no resampling), so [SessionRepository.read] refuses.
 class SessionSampleRateMismatch extends SessionException {
   /// Creates a [SessionSampleRateMismatch].
   const SessionSampleRateMismatch({

@@ -642,6 +642,50 @@ void main() {
       expect(relinked, [0]);
     });
 
+    testWidgets(
+      'a loading plugin shows a spinner + "Loading…", no relink (F5)',
+      (tester) async {
+        await tester.pumpApp(
+          build(
+            fx: plugin(id: 'scanning', name: 'My Reverb').copyWith(
+              loading: true,
+            ),
+          ),
+        );
+        // The still-resolving entry reads as loading, not a genuine failure.
+        expect(find.text('Loading…'), findsOneWidget);
+        expect(find.text('Plugin unavailable'), findsNothing);
+        expect(
+          find.byKey(const Key('signalGraph_lane_device_0_spinner')),
+          findsOneWidget,
+        );
+        // No relink — it is expected to bind on its own once the scan lands.
+        expect(
+          find.byKey(const Key('signalGraph_lane_device_0_relink')),
+          findsNothing,
+        );
+        // The saved display name still shows so the slot is identifiable.
+        expect(find.text('My Reverb'), findsOneWidget);
+      },
+    );
+
+    testWidgets('loading takes precedence over unavailable', (tester) async {
+      // A restored entry can carry a stale unavailable from a prior apply while
+      // the fresh scan is pending; loading wins so it never flashes the
+      // "unavailable" message.
+      await tester.pumpApp(
+        build(
+          fx: plugin(id: 'scanning').copyWith(loading: true, unavailable: true),
+        ),
+      );
+      expect(find.text('Loading…'), findsOneWidget);
+      expect(find.text('Plugin unavailable'), findsNothing);
+      expect(
+        find.byKey(const Key('signalGraph_lane_device_0_relink')),
+        findsNothing,
+      );
+    });
+
     testWidgets('an unsupported plugin shows the distinct reason', (
       tester,
     ) async {
