@@ -585,8 +585,10 @@ class LooperRepository {
 
   /// Copies each active lane's recorded-input monitor chain onto the lane's own
   /// remembered effect chain (by value). Mirrors the engine snapshot-on-
-  /// record so [LooperState] / persistence reflect the take's FX. A lane with no
-  /// monitorable input gets a cleared chain.
+  /// record so [LooperState] / persistence reflect the take's FX. A lane with
+  /// nothing monitored (no monitorable input, or a clean input chain) keeps its
+  /// own chain — mirroring the engine — so deliberately staged / restored lane
+  /// FX survive a fresh take instead of being wiped by a dry monitor.
   void _snapshotMonitorChainsOntoLanes(int channel) {
     final count = _laneCount[channel] ?? 1;
     for (var lane = 0; lane < count; lane++) {
@@ -594,24 +596,21 @@ class LooperRepository {
       final chain = (input >= 0 && input < kMaxInputs)
           ? _monitorEffects[input]
           : null;
-      if (chain == null || chain.isEmpty) {
+      if (chain == null || chain.isEmpty) continue;
+      // D-P1: a plugin in the monitor chain can't be value-copied — capture
+      // its live opaque state so the lane re-instantiates a frozen instance
+      // from that exact state on playback. The recorded audio is dry either
+      // way, so a capture failure just drops the entry (bypassed) without
+      // affecting the take.
+      final snapshot = <TrackEffect>[];
+      for (var i = 0; i < chain.length; i++) {
+        final captured = _capturePluginForLane(chain[i], input, i);
+        if (captured != null) snapshot.add(captured);
+      }
+      if (snapshot.isEmpty) {
         _laneEffects.remove((channel, lane));
       } else {
-        // D-P1: a plugin in the monitor chain can't be value-copied — capture
-        // its live opaque state so the lane re-instantiates a frozen instance
-        // from that exact state on playback. The recorded audio is dry either
-        // way, so a capture failure just drops the entry (bypassed) without
-        // affecting the take.
-        final snapshot = <TrackEffect>[];
-        for (var i = 0; i < chain.length; i++) {
-          final captured = _capturePluginForLane(chain[i], input, i);
-          if (captured != null) snapshot.add(captured);
-        }
-        if (snapshot.isEmpty) {
-          _laneEffects.remove((channel, lane));
-        } else {
-          _laneEffects[(channel, lane)] = snapshot;
-        }
+        _laneEffects[(channel, lane)] = snapshot;
       }
     }
   }

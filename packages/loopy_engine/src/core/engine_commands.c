@@ -292,22 +292,23 @@ static void le_cancel_arm(le_engine* engine, int32_t channel) {
  * setters, which prepare DSP / allocate delay lines on this thread and publish
  * the type/count through the command ring, so the audio thread applies them with
  * the same release/acquire ordering and DSP reset as a manual edit. The recorded
- * buffer stays clean; playback re-applies the snapshot. A lane that records no
- * monitorable input gets a cleared (clean) chain. */
+ * buffer stays clean; playback re-applies the snapshot. A lane with nothing
+ * monitored (no monitorable input, or a clean input chain) KEEPS its own chain:
+ * deliberately staged / persistence-restored lane FX must survive a fresh take
+ * rather than be wiped by a dry monitor — the snapshot only overwrites when
+ * there is a monitored chain to copy. */
 static void le_snapshot_input_fx_to_lanes(le_engine* engine, le_track* t) {
   const int32_t ch = (int32_t)(t - engine->tracks);
   const int32_t lanes = le_lanes_active(t);
   for (int32_t l = 0; l < lanes; ++l) {
     le_lane* ln = &t->lanes[l];
     const int32_t ic = load_i32(&ln->a_input_channel);
-    if (ic < 0 || ic >= LE_MAX_INPUTS) {
-      le_engine_set_lane_fx_count(engine, ch, l, 0); /* no monitorable input */
-      continue;
-    }
+    if (ic < 0 || ic >= LE_MAX_INPUTS) continue; /* nothing monitored: keep */
     le_monitor_input* m = &engine->monitors[ic];
     int32_t n = load_i32(&m->a_fx_count);
     if (n < 0) n = 0;
     if (n > LE_FX_MAX) n = LE_FX_MAX;
+    if (n == 0) continue; /* dry monitor: keep the lane's own chain */
     for (int32_t s = 0; s < n; ++s) {
       le_engine_set_lane_fx(engine, ch, l, s, load_i32(&m->a_fx_type[s]));
       for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {

@@ -132,7 +132,8 @@ typedef enum le_command_code {
    * the whole input, then the input's live signal runs through its own effect
    * chain / routing / volume / mute. An empty chain is the clean (dry) path. Never
    * recorded, independent of all track state. The chain you monitor live is the
-   * chain that is snapshot-copied onto a track lane when you record into it. The
+   * chain that is snapshot-copied onto a track lane when you record into it (a
+   * clean monitor chain leaves the lane's own staged chain untouched). The
    * monitor commands are keyed by input only (no per-lane index): the FX commands
    * carry (input, index, type) in the typed `fx` arm (lane unused), the count in
    * `fxcount` (lane unused); output rides the `trackmask` arm (channel = input);

@@ -1,48 +1,47 @@
 /// The control-surface invariant spec: loopy's LED / armed-set / cursor truth
 /// rules, written ONCE and enforced twice — the sequence fuzzer
 /// (`test/fuzz/`) checks every predicate after each settled step against the
-/// REAL engine, and debug builds assert them on every pedal frame projection.
-/// Documentation and enforcement are the same artifact.
+/// REAL engine, and debug builds assert them on every frame projection
+/// (`control_projection.dart`). Documentation and enforcement are the same
+/// artifact.
 ///
 /// Predicates are over SETTLED states: engine truth is polled (~16 ms), so a
 /// command's effect reaches the projections one poll later. Callers settle
 /// (pump + poll + microtask flush) before checking; asserting mid-transition
 /// is a caller bug, not a violation.
 ///
-/// Each invariant carries a `pin` tag:
-///  - timeless (pin: false): must survive the phase-2 projection refactor;
-///  - current-behavior pin (pin: true): pins today's architecture (stored
-///    armed set, mirrored cursor); phase 2 replaces it with a successor
-///    written against the ControlOverlay.
+/// The rules deliberately RESTATE the derivation (sounding, parked, the armed
+/// formula) rather than importing `control_projection.dart` — a spec that
+/// called the implementation it checks would be tautological.
+///
+/// History: the pre-refactor spec carried `pin`/`fuzzOnly` tags for rules the
+/// stored-armed-set architecture could not honour at projection time (a
+/// deliberate disarm was indistinguishable from a stale set). With the
+/// overlay's explicit `excluded` set, every rule is projection-safe; the
+/// retired `cursor-mirrored` pin is now unrepresentable — there is one
+/// cursor.
 library;
 
 import 'package:looper_repository/looper_repository.dart';
-import 'package:loopy/looper/cubit/tracks_cubit.dart';
+import 'package:loopy/control/cubit/control_cubit.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
-import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
-/// Everything the spec predicates over: engine truth ([looper]) plus each
-/// surface's state and the projected wire frame.
+/// Everything the spec predicates over: engine truth, the stored-intent
+/// overlay, and the projected wire frame.
 class ControlContext {
   /// Creates a [ControlContext].
   const ControlContext({
     required this.looper,
-    required this.pedal,
+    required this.overlay,
     required this.frame,
-    this.tracks,
   });
 
   /// Engine truth (the polled snapshot projection).
   final LooperState looper;
 
-  /// The pedal overlay (mode, cursor, armed set, bank).
-  final PedalState pedal;
-
-  /// The on-screen cursor state; null where unavailable (the pedal cubit's
-  /// projection-time assert has no TracksCubit access), skipping the
-  /// cursor-mirror rule.
-  final TracksState? tracks;
+  /// The stored user intent (mode, cursor, bank, excluded, parkedResume).
+  final ControlState overlay;
 
   /// The projected LED frame (what the hardware pedal renders).
   final PedalStateFrame frame;
@@ -52,26 +51,10 @@ class ControlContext {
 /// of the violation.
 class ControlInvariant {
   /// Creates a [ControlInvariant].
-  const ControlInvariant(
-    this.name,
-    this.check, {
-    this.pin = false,
-    this.fuzzOnly = false,
-  });
+  const ControlInvariant(this.name, this.check);
 
   /// Stable identifier, used in failure output and corpus annotations.
   final String name;
-
-  /// Whether this pins CURRENT behavior (replaced in phase 2) rather than a
-  /// timeless truth.
-  final bool pin;
-
-  /// True for rules that only hold under the fuzzer's action alphabet — e.g.
-  /// sounding⟹armed is violated by a DELIBERATE on-screen disarm
-  /// (`togglePlayArm`), which pre-phase-2 state cannot distinguish from a
-  /// stale armed set. The projection-time debug assert skips these; phase 2's
-  /// explicit excluded-set makes them projection-safe successors.
-  final bool fuzzOnly;
 
   /// Returns `null` when the rule holds for the context, else a violation
   /// message.
@@ -88,6 +71,14 @@ bool _sounding(Track t) =>
     !t.muted &&
     (t.state == TrackState.playing || t.state == TrackState.overdubbing);
 
+bool _parked(LooperState s) =>
+    s.tracks.any((t) => t.hasContent) &&
+    !s.tracks.any(
+      (t) =>
+          t.hasContent &&
+          (t.state == TrackState.playing || t.state == TrackState.overdubbing),
+    );
+
 /// The control-surface invariants, most fundamental first.
 final List<ControlInvariant> controlInvariants = [
   ControlInvariant('depths-sane', (c) {
@@ -103,25 +94,45 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
-  ControlInvariant('cursor-in-range', (c) {
-    final cursor = c.pedal.selectedTrack;
-    if (cursor < 0 || cursor >= c.looper.tracks.length && cursor >= 8) {
-      return 'cursor $cursor out of range';
-    }
-    if (c.pedal.activeBank != cursor ~/ PedalState.tracksPerBank) {
-      return 'bank ${c.pedal.activeBank} does not match cursor $cursor';
+  ControlInvariant('cursor-and-bank-in-range', (c) {
+    final cursor = c.overlay.cursor;
+    if (cursor < 0 || cursor >= 8) return 'cursor $cursor out of range';
+    final bank = c.overlay.activeBank;
+    if (bank < 0 || bank >= ControlState.bankCount) {
+      return 'bank $bank out of range';
     }
     return null;
   }),
-  ControlInvariant('cursor-mirrored', (c) {
-    final tracks = c.tracks;
-    if (tracks == null) return null; // context without the on-screen cursor
-    if (tracks.selectedChannel != c.pedal.selectedTrack) {
-      return 'on-screen cursor ${tracks.selectedChannel} != pedal cursor '
-          '${c.pedal.selectedTrack}';
+  ControlInvariant('frame-mirrors-overlay', (c) {
+    if (c.frame.selectedTrack != c.overlay.cursor) {
+      return 'frame cursor ${c.frame.selectedTrack} != overlay '
+          '${c.overlay.cursor}';
+    }
+    if (c.frame.activeBank != c.overlay.activeBank) {
+      return 'frame bank ${c.frame.activeBank} != overlay '
+          '${c.overlay.activeBank}';
+    }
+    final want = c.overlay.mode == LooperMode.play
+        ? PedalMode.play
+        : PedalMode.rec;
+    if (c.frame.mode != want) {
+      return 'frame mode ${c.frame.mode} != overlay mode ${c.overlay.mode}';
     }
     return null;
-  }, pin: true),
+  }),
+  // The invalidation table as predicates: stored sets may only reference
+  // tracks that still hold (or are finishing) a loop.
+  ControlInvariant('stored-intent-playable', (c) {
+    for (final channel in c.overlay.excluded.followedBy(
+      c.overlay.parkedResume,
+    )) {
+      final t = _trackAt(c.looper, channel);
+      if (t == null || !_playable(t)) {
+        return 'stored intent references non-playable channel $channel';
+      }
+    }
+    return null;
+  }),
   ControlInvariant('empty-track-dark', (c) {
     for (final t in c.looper.tracks) {
       if (t.state != TrackState.empty ||
@@ -130,8 +141,7 @@ final List<ControlInvariant> controlInvariants = [
       }
       final led = c.frame.trackLeds[t.channel];
       final isCursor =
-          c.pedal.mode == LooperMode.record &&
-          t.channel == c.pedal.selectedTrack;
+          c.overlay.mode == LooperMode.record && t.channel == c.overlay.cursor;
       if (!isCursor && led != PedalTrackLed.off) {
         return 'EMPTY track ${t.channel} shows $led';
       }
@@ -139,7 +149,7 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('muted-dark-in-play', (c) {
-    if (c.pedal.mode != LooperMode.play) return null;
+    if (c.overlay.mode != LooperMode.play) return null;
     for (final t in c.looper.tracks) {
       if (t.muted &&
           t.channel < c.frame.trackLeds.length &&
@@ -150,43 +160,40 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
-  ControlInvariant('armed-only-playable', (c) {
-    for (final channel in c.pedal.playArmed) {
-      final t = _trackAt(c.looper, channel);
-      if (t == null || !_playable(t)) {
-        return 'armed channel $channel is not playable';
+  // The redo-relight rule, now projection-safe: anything sounding in the mix
+  // that the user did NOT deliberately exclude reads green. Sound-but-dark
+  // was the original bug class; under pure derivation it is structurally
+  // unreachable — this pins it against regressions in the derivation itself.
+  ControlInvariant('sounding-unexcluded-green', (c) {
+    if (c.overlay.mode != LooperMode.play) return null;
+    if (_parked(c.looper)) return null; // nothing sounds while parked
+    for (final t in c.looper.tracks) {
+      if (!_sounding(t) || c.overlay.excluded.contains(t.channel)) continue;
+      if (t.channel < c.frame.trackLeds.length &&
+          c.frame.trackLeds[t.channel] != PedalTrackLed.green) {
+        return 'sounding track ${t.channel} LED is '
+            '${c.frame.trackLeds[t.channel]}, not green';
       }
     }
     return null;
-  }, pin: true),
-  // The redo-relight rule: anything actually sounding in the mix is under
-  // pedal control and reads green. Sound-but-dark was the original bug class.
-  // fuzzOnly: the fuzz alphabet never calls the UI-only deliberate-disarm API
-  // (togglePlayArm), so there a sounding track outside the armed set is
-  // always a reconciliation bug; at projection time a deliberate disarm is
-  // legitimate and indistinguishable until phase 2's excluded-set.
-  ControlInvariant(
-    'sounding-armed-and-green',
-    (c) {
-      if (c.pedal.mode != LooperMode.play) return null;
-      for (final t in c.looper.tracks) {
-        if (!_sounding(t)) continue;
-        if (!c.pedal.playArmed.contains(t.channel)) {
-          return 'sounding track ${t.channel} is not armed';
-        }
-        if (t.channel < c.frame.trackLeds.length &&
-            c.frame.trackLeds[t.channel] != PedalTrackLed.green) {
-          return 'sounding track ${t.channel} LED is '
-              '${c.frame.trackLeds[t.channel]}, not green';
-        }
+  }),
+  // While parked, the LEDs preview exactly what Rec/Play resumes.
+  ControlInvariant('parked-preview-matches-resume', (c) {
+    if (c.overlay.mode != LooperMode.play || !_parked(c.looper)) return null;
+    for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {
+      final t = _trackAt(c.looper, ch);
+      final wantGreen =
+          c.overlay.parkedResume.contains(ch) && !(t?.muted ?? false);
+      final green = c.frame.trackLeds[ch] == PedalTrackLed.green;
+      if (wantGreen != green) {
+        return 'parked LED $ch is ${c.frame.trackLeds[ch]} but resume '
+            'membership is ${c.overlay.parkedResume.contains(ch)}';
       }
-      return null;
-    },
-    pin: true,
-    fuzzOnly: true,
-  ),
+    }
+    return null;
+  }),
   ControlInvariant('capturing-red-in-rec', (c) {
-    if (c.pedal.mode != LooperMode.record) return null;
+    if (c.overlay.mode != LooperMode.record) return null;
     for (final t in c.looper.tracks) {
       if (t.isCapturing &&
           t.channel < c.frame.trackLeds.length &&
@@ -196,7 +203,7 @@ final List<ControlInvariant> controlInvariants = [
       }
     }
     return null;
-  }, pin: true),
+  }),
   ControlInvariant('ring-length-iff-loops', (c) {
     // The ring shows a length only when there is BOTH something holding (or
     // capturing) a loop AND an established grid: a defining recording has no
@@ -211,35 +218,21 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
-  ControlInvariant('frame-mirrors-mode', (c) {
-    final want = c.pedal.mode == LooperMode.play
-        ? PedalMode.play
-        : PedalMode.rec;
-    if (c.frame.mode != want) {
-      return 'frame mode ${c.frame.mode} != pedal mode ${c.pedal.mode}';
-    }
-    return null;
-  }, pin: true),
 ];
 
 /// Evaluates the invariants against [c]; returns the violations
-/// (`"name: message"`), empty when all hold. [projectionContext] skips the
-/// fuzz-only rules (see [ControlInvariant.fuzzOnly]).
-List<String> checkControlInvariants(
-  ControlContext c, {
-  bool projectionContext = false,
-}) => [
+/// (`"name: message"`), empty when all hold.
+List<String> checkControlInvariants(ControlContext c) => [
   for (final invariant in controlInvariants)
-    if (!(projectionContext && invariant.fuzzOnly))
-      if (invariant.check(c) case final String message)
-        '${invariant.name}: $message',
+    if (invariant.check(c) case final String message)
+      '${invariant.name}: $message',
 ];
 
 /// Assert-mode hook for projection time: throws (listing every violation)
 /// when the spec is broken, returns true otherwise. Usable inside
 /// `assert(...)` for zero release-mode cost.
 bool debugControlInvariantsHold(ControlContext c) {
-  final violations = checkControlInvariants(c, projectionContext: true);
+  final violations = checkControlInvariants(c);
   if (violations.isNotEmpty) {
     throw StateError(
       'control invariants violated:\n  ${violations.join('\n  ')}',
