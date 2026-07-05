@@ -11,7 +11,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
-import 'package:loopy/looper/view/fx_editor/fx_editor_page.dart';
+import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
@@ -388,14 +388,14 @@ void main() {
             ],
             child: Builder(
               builder: (context) => Scaffold(
-                body: Center(
-                  child: ElevatedButton(
-                    onPressed: () => showFxEditorPage(
-                      context,
+                body: Column(
+                  children: [
+                    const Spacer(),
+                    FxDock(
                       scope: scopeOf(bloc, monitor, repo),
+                      onClose: () {},
                     ),
-                    child: const Text('open'),
-                  ),
+                  ],
                 ),
               ),
             ),
@@ -403,7 +403,6 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
 
@@ -431,7 +430,7 @@ void main() {
     );
 
     await expectLater(
-      find.byKey(const Key('fx_editor_page')),
+      find.byKey(const Key('fx_dock')),
       matchesGoldenFile('goldens/fx_editor_lane.png'),
     );
   }, skip: !hasScreenshotFonts);
@@ -455,7 +454,7 @@ void main() {
     );
 
     await expectLater(
-      find.byKey(const Key('fx_editor_page')),
+      find.byKey(const Key('fx_dock')),
       matchesGoldenFile('goldens/fx_editor_input.png'),
     );
   }, skip: !hasScreenshotFonts);
@@ -474,7 +473,7 @@ void main() {
     );
 
     await expectLater(
-      find.byKey(const Key('fx_editor_page')),
+      find.byKey(const Key('fx_dock')),
       matchesGoldenFile('goldens/fx_editor_empty.png'),
     );
   }, skip: !hasScreenshotFonts);
@@ -526,7 +525,7 @@ void main() {
     );
 
     await expectLater(
-      find.byKey(const Key('fx_editor_page')),
+      find.byKey(const Key('fx_dock')),
       matchesGoldenFile('goldens/fx_editor_plugin.png'),
     );
   }, skip: !hasScreenshotFonts);
