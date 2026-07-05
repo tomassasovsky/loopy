@@ -304,7 +304,6 @@ void main() {
       await tester.pump();
       verify(() => bloc.add(const LooperLaneCountChanged(0, 3))).called(1);
     });
-
     testWidgets('the gate dot toggles monitoring on and off', (tester) async {
       seed(stateWith());
       await pump(tester);

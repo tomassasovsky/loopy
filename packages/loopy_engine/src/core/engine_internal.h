@@ -167,6 +167,13 @@ int32_t le_engine_begin_latency_for_test(le_engine* engine);
 int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,
                                              int32_t lane);
 
+/* Allocated frames of lane [lane]'s pool slot [slot] (slot < 0 selects the
+ * lane's live slot; 0 = unallocated; -1 = out of range). Lets tests assert the
+ * undo-layer quantized sizing and the full-cap live-buffer invariant. Not part
+ * of the FFI surface. */
+int32_t le_engine_lane_slot_cap_for_test(le_engine* engine, int32_t channel,
+                                         int32_t lane, int32_t slot);
+
 /* Forces track [channel]'s active lane count to [count] WITHOUT allocating the
  * new lanes' buffers, so a test can drive the audio thread into the window where
  * lane_count claims more lanes than are allocated and assert the real-time

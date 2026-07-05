@@ -300,6 +300,14 @@ abstract interface class EffectsControl {
     required int param,
     required double value,
   });
+
+  /// An order-sensitive 64-bit fingerprint of lane [lane] of track [channel]'s
+  /// PUBLISHED effect chain — its active entries' types plus (for built-ins)
+  /// their parameter bits. For divergence detection only: the repository owns
+  /// the chain and computes the identical hash over its cache, so a mismatch
+  /// flags a cache-vs-engine drift. An empty / out-of-range chain hashes to the
+  /// FNV-1a offset basis.
+  int laneFxFingerprint({required int channel, required int lane});
 }
 
 /// Per-input live monitoring: a single chain per hardware input — enable plus
@@ -353,6 +361,11 @@ abstract interface class MonitorControl {
     required int param,
     required double value,
   });
+
+  /// An order-sensitive 64-bit fingerprint of monitor input [input]'s PUBLISHED
+  /// effect chain (see [EffectsControl.laneFxFingerprint]). For cache-vs-engine
+  /// divergence detection only.
+  int monitorFxFingerprint({required int input});
 }
 
 /// Session persistence: stem export/import and committing a restored session.

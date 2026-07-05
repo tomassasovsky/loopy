@@ -60,6 +60,10 @@ static inline void le_flush_denormals(void) {
 
 /* ---- command handlers (audio thread) ---- */
 
+/* Defined with the per-pass capture machinery below; every path that moves a
+ * track into OVERDUBBING calls it so the layer capture is armed. */
+static void le_dub_session_start(le_engine* e, le_track* t);
+
 static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
   const int32_t len = t->record_pos > 0 ? t->record_pos : 1;
   le_loop_clock_set_length(&e->clock, len);
@@ -69,6 +73,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state) {
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
   store_i32(&t->a_state, end_state);
   t->start_iter = 0;
+  if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
 }
 
 /* Seam-crossfade overlap length (~10 ms): the frames captured past the loop
@@ -129,7 +134,196 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state) {
   le_track_set_len(t, k * base);
   store_i32(&t->a_state, end_state);
   t->record_pos = 0;
+  if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
 }
+/* ---- per-pass undo layer capture (audio thread) ----
+ *
+ * While a track overdubs, every in-place write first saves the pre-value into
+ * the armed shadow slot (same slot index on every lane, lockstep). The write
+ * trajectory visits each of the track's dub_len positions exactly once per
+ * dub_len frames, so dub_count == dub_len means the shadow holds a complete
+ * pre-pass image; it is then retired through the evt_ring (the control thread
+ * stacks it as one undo layer) and the pre-posted spare takes over. A punch-out
+ * mid-pass leaves live authoritative (writes were in place); once the punch
+ * envelope has decayed the uncovered remainder is bulk-copied live -> shadow in
+ * bounded chunks (le_dub_block_update) and the completed layer retires. */
+
+/* Begins (or continues) a dub capture session when a track enters OVERDUBBING.
+ * A session already in flight (re-punch-in during the fade tail or the drain)
+ * keeps its capture state untouched — the coverage stays coherent and the
+ * passes merge into one layer; a fresh session latches the pass length and the
+ * record offset (a mid-dub offset change would tear the trajectory) and arms
+ * the spare. dub_count = -1 defers the start-point latch to the first write,
+ * so no entry path (press, quantize fire, rec/dub or auto finalize) needs
+ * position math here. */
+static void le_dub_session_start(le_engine* e, le_track* t) {
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  if (len <= 0) return;
+  if (load_i32(&t->a_layer_in_flight)) {
+    /* A re-punch while the previous layer is still in flight. Two cases:
+     *  - Fade-tail continuation (od_gain > 0): writes never stopped, so the
+     *    shadow's coverage is still contiguous — keep capturing into it; the
+     *    passes merge into one coherent layer.
+     *  - Gap / drain re-punch (od_gain == 0 with a partial shadow): writes
+     *    stopped and the transport moved on, so resuming the old coverage
+     *    would leave holes — and a drain running underneath would copy the
+     *    NEW dub's audio into the OLD layer's uncovered remainder (a torn
+     *    snapshot). Discard the partial coverage and restart the capture on
+     *    the same slot: the new session's first pass re-covers it fully. The
+     *    interrupted partial pass simply stops being separately undoable —
+     *    every undo boundary still restores a state that actually existed. */
+    if (t->od_gain <= 0.0f && t->dub_slot >= 0 &&
+        (t->dub_draining ||
+         (t->dub_count > 0 && t->dub_count < t->dub_len))) {
+      t->dub_draining = 0;
+      t->dub_count = -1;
+      t->dub_phase = 0;
+    }
+    return;
+  }
+  t->dub_len = len;
+  t->dub_offset = load_i32(&e->a_record_offset);
+  t->dub_phase = 0;
+  if (t->dub_slot < 0 && t->dub_spare >= 0) {
+    t->dub_slot = t->dub_spare;
+    t->dub_spare = -1;
+  }
+  t->dub_count = -1;
+  atomic_store_explicit(&t->a_layer_in_flight, 1, memory_order_release);
+}
+
+/* Tries to push a parked retired layer into the evt_ring (audio thread).
+ * Wait-free: on a full ring the slot simply stays parked for the next block —
+ * never blocked, never dropped. */
+static void le_dub_try_retire(le_engine* e, le_track* t) {
+  if (t->dub_retire_slot < 0) return;
+  const le_command evt = {.code = LE_EVT_LAYER_RETIRED,
+                          .evt = {(int32_t)(t - e->tracks), t->dub_retire_slot,
+                                  t->dub_gen_audio}};
+  if (le_ring_push(&e->evt_ring, evt)) t->dub_retire_slot = -1;
+}
+
+/* Drops the track's armed shadow slots (audio thread) — a fresh capture or a
+ * redo-from-empty may change the loop length, and a leftover slot could be
+ * sized for the OLD length (undo layers are loop-length-quantized). The
+ * control side reclaimed `outstanding` when it posted the triggering command,
+ * so the slots return to the pool cleanly; correctly-sized replacements arrive
+ * via the poll-driven replenish once a dub session runs. */
+static void le_dub_drop_armed(le_track* t) {
+  t->dub_slot = -1;
+  t->dub_spare = -1;
+  t->dub_retire_slot = -1;
+  t->dub_count = -1;
+  t->dub_phase = 0;
+  t->dub_draining = 0;
+}
+
+/* Pass boundary (dub_phase wrapped): hand a complete shadow to the retire
+ * queue and arm the pre-posted spare for the next pass. With the retire queue
+ * still occupied (evt ring full) the complete shadow stays frozen — writes
+ * continue un-backed and the passes merge coherently into one layer. With no
+ * spare on hand the boundary is skipped the same way. */
+static void le_dub_boundary(le_engine* e, le_track* t) {
+  if (t->dub_draining) return; /* the armed shadow belongs to the old session */
+  if (t->dub_slot >= 0 && t->dub_count >= t->dub_len) {
+    if (t->dub_retire_slot >= 0) return; /* frozen: retire is stuck */
+    t->dub_retire_slot = t->dub_slot;
+    t->dub_slot = -1;
+    le_dub_try_retire(e, t);
+  }
+  if (t->dub_slot < 0 && t->dub_spare >= 0) {
+    t->dub_slot = t->dub_spare;
+    t->dub_spare = -1;
+    t->dub_count = -1; /* first write of the new pass latches the start */
+  }
+}
+
+/* Once-per-block dub maintenance for every track (audio thread; also runs for
+ * frames == 0 calls so the host tests' drain(e) pump advances it): retries
+ * parked retires, and — once a punched-out session's fade tail has decayed —
+ * drains the uncovered remainder of the in-flight layer live -> shadow in
+ * LE_DRAIN_CHUNK-bounded runs, retires it, and clears the flight flag. The
+ * retire event is pushed BEFORE the flag clears (the release pairs with the
+ * control thread's acquire), so a control thread that sees flag == 0 after
+ * draining the evt_ring is guaranteed to hold every layer. */
+static void le_dub_block_update(le_engine* e) {
+  const int32_t base = e->clock.length;
+  for (int32_t ti = 0; ti < e->track_count; ++ti) {
+    le_track* t = &e->tracks[ti];
+    le_dub_try_retire(e, t);
+    if (!load_i32(&t->a_layer_in_flight)) continue;
+    const int32_t st = load_i32(&t->a_state);
+    if (st == LE_TRACK_OVERDUBBING || t->od_gain > 0.0f) continue; /* writing */
+
+    /* Punch-out complete. A partially covered shadow drains: the un-backed
+     * positions were never written this pass, so live still holds their
+     * pre-pass values and any copy order works — the trajectory walk just
+     * enumerates exactly the uncovered set. */
+    if (t->dub_slot >= 0 && t->dub_count > 0 && t->dub_count < t->dub_len &&
+        !t->dub_draining && base > 0) {
+      t->dub_draining = 1;
+      const int32_t k0 = load_i32(&t->a_multiple) > 0
+                             ? load_i32(&t->a_multiple)
+                             : 1;
+      const int64_t ahead = (int64_t)t->dub_start_vpos + t->dub_count;
+      t->dub_vpos = (int32_t)(ahead % base);
+      t->dub_vseg = (int32_t)((t->dub_start_vseg + ahead / base) % k0);
+    }
+    if (t->dub_draining && base > 0) {
+      const int32_t k = load_i32(&t->a_multiple) > 0 ? load_i32(&t->a_multiple)
+                                                     : 1;
+      const int32_t off = t->dub_offset > 0 ? t->dub_offset % base : 0;
+      const int32_t lanes = le_lanes_active(t);
+      /* The copy runs per lane, so the RT budget is frames x lanes — scale the
+       * chunk down so a multi-lane track drains the same bytes per block as a
+       * mono one (LE_DRAIN_CHUNK samples per track per callback). */
+      int32_t budget = LE_DRAIN_CHUNK / lanes;
+      if (budget < 1) budget = 1;
+      while (budget > 0 && t->dub_count < t->dub_len) {
+        /* Contiguous w run: until the segment ends (vpos wraps) or the
+         * compensated position wraps (vpos == off). */
+        int32_t run = base - t->dub_vpos;
+        if (t->dub_vpos < off && off - t->dub_vpos < run) {
+          run = off - t->dub_vpos;
+        }
+        if (run > budget) run = budget;
+        if (run > t->dub_len - t->dub_count) run = t->dub_len - t->dub_count;
+        const int32_t w0 =
+            t->dub_vseg * base + comp_pos(t->dub_vpos, off, base);
+        for (int32_t l = 0; l < lanes; ++l) {
+          le_lane* ln = &t->lanes[l];
+          float* lb = ln->pool[load_i32(&ln->a_live)];
+          float* sb = ln->pool[t->dub_slot];
+          if (lb != NULL && sb != NULL) {
+            memcpy(sb + w0, lb + w0, (size_t)run * sizeof(float));
+          }
+        }
+        t->dub_count += run;
+        budget -= run;
+        t->dub_vpos += run;
+        if (t->dub_vpos >= base) {
+          t->dub_vpos = 0;
+          t->dub_vseg = (t->dub_vseg + 1) % k;
+        }
+      }
+      if (t->dub_count >= t->dub_len) t->dub_draining = 0;
+    }
+    if (t->dub_draining) continue; /* more chunks next block */
+
+    /* Retire a complete shadow (drained, or frozen at punch-out). */
+    if (t->dub_slot >= 0 && t->dub_count >= t->dub_len &&
+        t->dub_retire_slot < 0) {
+      t->dub_retire_slot = t->dub_slot;
+      t->dub_slot = -1;
+      le_dub_try_retire(e, t);
+    }
+    /* Session fully wound down: every layer retired and collected-able. */
+    if (t->dub_retire_slot < 0 && (t->dub_slot < 0 || t->dub_count <= 0)) {
+      atomic_store_explicit(&t->a_layer_in_flight, 0, memory_order_release);
+    }
+  }
+}
+
 /* There is a single input stream, so only one track may capture at a time.
  * Closes any track (other than `except_ch`) that is currently RECORDING or
  * OVERDUBBING, finalizing the master loop if the closed track was the defining
@@ -166,6 +360,10 @@ static void handle_record(le_engine* e, int32_t ch) {
   le_track* t = &e->tracks[ch];
   switch (load_i32(&t->a_state)) {
     case LE_TRACK_EMPTY:
+      /* A fresh capture may define a new loop length: leftover armed shadow
+       * slots (sized for the previous loop) are dropped; control reclaimed
+       * them when it posted this command/arm. */
+      le_dub_drop_armed(t);
       /* First record overall (no master yet) defines the master loop; otherwise
        * the new track records freely from the loop top. Both are RECORDING,
        * distinguished by clock.length. */
@@ -179,10 +377,12 @@ static void handle_record(le_engine* e, int32_t ch) {
          * current loop phase — no waiting for the loop top. record_pos seeds to
          * the master position and start_iter to the current iteration, so it
          * stays equal to (loop_iteration - start_iter)*base + position; buffer
-         * writes are therefore phase-locked to the master and the slice before
-         * the press in this first segment stays silent (the live buffer was
-         * zeroed on the control thread). Spans one or more base loops, rounded
-         * up on stop — or exactly K with a fixed multiple (auto-finalized). */
+         * writes are therefore phase-locked to the master. Spans one or more
+         * base loops, rounded up on stop — or exactly K with a fixed multiple
+         * (auto-finalized), where the write head wraps into K*base so a
+         * mid-loop take keeps the audio played past the loop top. The slice
+         * before the press stays silent (zeroed on the control thread) until
+         * a fixed-multiple take wraps around and fills it. */
         t->record_pos = e->clock.position;
         t->record_start = t->record_pos;
         t->start_iter = e->loop_iteration;
@@ -204,8 +404,10 @@ static void handle_record(le_engine* e, int32_t ch) {
     }
     case LE_TRACK_PLAYING:
     case LE_TRACK_STOPPED:
-      /* Undo snapshot already taken on the calling thread by le_engine_record. */
+      /* Punch-in: arm the per-pass layer capture (the shadow slots were posted
+       * by le_engine_record before this command). */
       store_i32(&t->a_state, LE_TRACK_OVERDUBBING);
+      le_dub_session_start(e, t);
       break;
     case LE_TRACK_OVERDUBBING:
       store_i32(&t->a_state, LE_TRACK_PLAYING);
@@ -250,6 +452,24 @@ static void handle_clear(le_engine* e, int32_t ch) {
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
+  /* Drop the per-pass capture wholesale: the control thread reclaimed every
+   * posted shadow slot when it pushed this clear and bumped the generation (we
+   * mirror the bump), so an already-pushed retire event from before the clear
+   * reads as stale and is never re-stacked. */
+  t->dub_slot = -1;
+  t->dub_spare = -1;
+  t->dub_retire_slot = -1;
+  t->dub_count = -1;
+  t->dub_phase = 0;
+  t->dub_draining = 0;
+  t->dub_gen_audio++;
+  atomic_store_explicit(&t->a_layer_in_flight, 0, memory_order_release);
+  /* A cleared track comes back unmuted: the next recording is always audible
+   * rather than silently muted by a leftover Stop. */
+  for (int l = 0; l < LE_MAX_LANES; ++l) {
+    store_i32(&t->lanes[l].a_muted, 0);
+  }
+  atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
   /* Undo/redo stacks and each lane's a_live are reset by le_engine_clear on the
    * control thread; the audio thread only resets the state/transport here. */
 
@@ -383,8 +603,71 @@ static void apply_command(le_engine* e, const le_command* cmd) {
     case LE_CMD_CLEAR:
       handle_clear(e, cmd->arg_i);
       break;
-    /* Undo/redo are handled on the control thread (le_engine_undo/redo), not
-     * via the command ring. */
+    case LE_CMD_DUB_SHADOW: {
+      /* A shadow slot for per-pass layer capture (buffers already allocated by
+       * the control thread; visible via the ring's release/acquire). Arm it
+       * directly when no pass is mid-flight; otherwise park it as the spare a
+       * boundary rotation will pick up — arming mid-pass would tear coverage. */
+      const int32_t ch = cmd->lanei.channel;
+      const int32_t slot = cmd->lanei.value;
+      if (!valid_channel(e, ch) || slot < 0 || slot >= LE_POOL_SLOTS) break;
+      le_track* t = &e->tracks[ch];
+      const int mid_pass =
+          (load_i32(&t->a_state) == LE_TRACK_OVERDUBBING ||
+           t->od_gain > 0.0f) &&
+          t->dub_phase > 0;
+      if (t->dub_slot < 0 && !mid_pass && !t->dub_draining) {
+        t->dub_slot = slot;
+        t->dub_count = -1;
+      } else if (t->dub_spare < 0) {
+        t->dub_spare = slot;
+      }
+      break;
+    }
+    case LE_CMD_UNDO_TO_EMPTY: {
+      /* Undo past the base layer: the track reads as content-less (the control
+       * thread keeps its live slot on the redo stack for resurrection) while
+       * the master grid deliberately survives — redo needs it; a full reset
+       * stays Clear's job (handle_clear's all-empty check). */
+      if (!valid_channel(e, cmd->arg_i)) break;
+      le_track* t = &e->tracks[cmd->arg_i];
+      t->record_pos = 0;
+      t->start_iter = 0;
+      t->pending_record = 0;
+      t->od_gain = 0.0f;
+      t->xfade_capture = 0;
+      store_i32(&t->a_pending, 0);
+      store_i32(&t->a_state, LE_TRACK_EMPTY);
+      le_track_set_len(t, 0);
+      store_i32(&t->a_multiple, 1);
+      atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
+      break;
+    }
+    case LE_CMD_REDO_FROM_EMPTY: {
+      /* Reinstate an undone-to-empty track: the control thread already swapped
+       * a_live back to the base content; restore length/multiple/state here.
+       * start_iter = 0 keeps the COMMIT_SESSION segment convention. */
+      const int32_t ch = cmd->lanei.channel;
+      const int32_t len = cmd->lanei.value;
+      if (!valid_channel(e, ch)) break;
+      le_track* t = &e->tracks[ch];
+      if (load_i32(&t->a_state) == LE_TRACK_EMPTY && len > 0) {
+        /* The restored loop may differ in length from whatever the leftover
+         * armed shadows were sized for — drop them (control reclaimed). */
+        le_dub_drop_armed(t);
+        const int32_t base = e->clock.length > 0 ? e->clock.length : len;
+        int32_t k = len / base;
+        if (k < 1) k = 1;
+        le_track_set_len(t, len);
+        store_i32(&t->a_multiple, k);
+        t->start_iter = 0;
+        store_i32(&t->a_state, LE_TRACK_PLAYING);
+      }
+      atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
+      break;
+    }
+    /* Undo/redo swaps are handled on the control thread (le_engine_undo/redo),
+     * not via the command ring; only the state flips above ride it. */
     case LE_CMD_SET_VOLUME: {
       if (!valid_channel(e, cmd->arg_i)) break;
       float v = cmd->arg_f;
@@ -1113,6 +1396,56 @@ static inline void mix_tracks_frame(
     }
     e->tracks[t].od_gain = od_gain;
 
+    /* Per-pass layer capture for this frame, shared by every lane: the write
+     * position uses the session-latched offset (a mid-dub offset change must
+     * not tear the trajectory), and `backing` says whether the armed shadow is
+     * still collecting pre-values (it stops once complete — frozen — or while
+     * an old pass drains). The first backed-up write latches the pass's start
+     * point for the drain walk. */
+    le_track* tr = &e->tracks[t];
+
+    /* Recording write head for this frame, shared by every lane (or -1 when
+     * nothing may be written). The defining track writes linearly. A new
+     * track over the master is phase-locked (record_pos == segment*base +
+     * position) and latency-compensated by dropping the first `offset`
+     * frames so it aligns with what the player heard. With a fixed multiple
+     * the final length (K*base) is already known, so the head wraps into it:
+     * audio captured past the loop top lands at its heard phase instead of
+     * beyond the final length, where finalize would silently orphan it (a
+     * mid-loop take used to lose everything recorded after the top). Auto
+     * (K == 0) stays linear — finalize rounds the length up instead, so
+     * nothing is dropped. A negative head (capture inside the latency window
+     * of a press near the top) stays dropped: the pre-press slice is silent
+     * by design. */
+    int32_t rec_w = -1;
+    if (st[t] == LE_TRACK_RECORDING) {
+      if (e->clock.length == 0) {
+        rec_w = tr->record_pos;
+      } else {
+        rec_w = tr->record_pos - offset;
+        const int32_t k = le_effective_multiple(e, t);
+        const int32_t known_len = k >= 1 ? k * e->clock.length : 0;
+        if (known_len > 0 && rec_w >= known_len) rec_w %= known_len;
+      }
+      if (rec_w >= e->max_loop_frames) rec_w = -1;
+    }
+
+    const int dub_writes =
+        (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) &&
+        od_gain > 0.0f && e->clock.length > 0;
+    int32_t wdub = 0;
+    int backing = 0;
+    if (dub_writes) {
+      wdub = seg_base[t] + comp_pos(pos, tr->dub_offset, e->clock.length);
+      backing = tr->dub_slot >= 0 && !tr->dub_draining && tr->dub_len > 0 &&
+                tr->dub_count < tr->dub_len;
+      if (backing && tr->dub_count < 0) {
+        tr->dub_count = 0;
+        tr->dub_start_vpos = pos;
+        tr->dub_start_vseg = seg_base[t] / e->clock.length;
+      }
+    }
+
     for (int l = 0; l < lane_n[t]; ++l) {
       /* Clean single-input capture: a lane records exactly its assigned hardware
        * input — never an average of several — or silence when it has no input,
@@ -1132,20 +1465,7 @@ static inline void mix_tracks_frame(
 
       float loopsample = 0.0f;
       if (st[t] == LE_TRACK_RECORDING) {
-        if (e->clock.length == 0) {
-          /* defining track: no reference loop yet, so no compensation */
-          if (e->tracks[t].record_pos < e->max_loop_frames) {
-            lbuf[e->tracks[t].record_pos] = insample;
-          }
-        } else {
-          /* new track: phase-locked shared write head (record_pos ==
-           * segment*base + position), latency-compensated by dropping the first
-           * `offset` frames so it aligns with what the player heard. */
-          const int32_t w = e->tracks[t].record_pos - offset;
-          if (w >= 0 && w < e->max_loop_frames) {
-            lbuf[w] = insample;
-          }
-        }
+        if (rec_w >= 0) lbuf[rec_w] = insample;
       } else if (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) {
         /* Mix the existing loop (read before write). Layer the live input at the
          * compensated position, scaled by the punch envelope so it ramps in on
@@ -1154,12 +1474,18 @@ static inline void mix_tracks_frame(
          * od_gain == 0 in steady playback, so this is a plain read. */
         loopsample = lbuf[seg_base[t] + pos];
         if (od_gain > 0.0f) {
-          const int32_t w =
-              seg_base[t] + comp_pos(pos, offset, e->clock.length);
+          /* Backup-on-write: save the pre-value into the armed shadow first —
+           * the incremental per-pass undo snapshot (same slot on every lane,
+           * lockstep). Live stays authoritative; the shadow becomes one undo
+           * layer when the pass completes (or drains after punch-out). */
+          if (backing) {
+            float* sb = e->tracks[t].lanes[l].pool[tr->dub_slot];
+            if (sb != NULL) sb[wdub] = lbuf[wdub];
+          }
           /* Feedback scales the existing content at the write head before the new
            * layer is summed in, bounding runaway buildup. fb == 1.0 (the default)
            * is the classic additive `+= insample`. */
-          lbuf[w] = lbuf[w] * overdub_fb + insample * od_gain;
+          lbuf[wdub] = lbuf[wdub] * overdub_fb + insample * od_gain;
         }
       }
 
@@ -1186,6 +1512,18 @@ static inline void mix_tracks_frame(
       if (la > lane_peak[t][l]) lane_peak[t][l] = la;
       if (la > frame_trk_peak[t]) frame_trk_peak[t] = la;
       lane_sumsq[t][l] += loopsample * loopsample;
+    }
+
+    /* Advance the per-pass capture once per written frame (all lanes share the
+     * one write head): count tracks the shadow's coverage, phase the pass
+     * boundary — where a complete shadow retires and the spare takes over. */
+    if (dub_writes && tr->dub_len > 0) {
+      if (backing) tr->dub_count++;
+      tr->dub_phase++;
+      if (tr->dub_phase >= tr->dub_len) {
+        tr->dub_phase = 0;
+        le_dub_boundary(e, tr);
+      }
     }
   }
 }
@@ -1218,6 +1556,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
 
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd);
+
+  /* Per-pass undo layer maintenance: retry parked retires and advance the
+   * post-punch-out drain. Runs every call — including frames == 0 pumps (the
+   * host tests' drain helper) — so a completed layer always retires. */
+  le_dub_block_update(e);
 
   /* Global master output gain, read once per block after draining the ring so a
    * mid-block change applies from the next block (no per-frame atomic load). */

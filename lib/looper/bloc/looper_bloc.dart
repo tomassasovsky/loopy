@@ -36,16 +36,12 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (event, _) => _repository.play(channel: event.channel),
     );
     on<LooperClearPressed>((event, _) => _clearAndArm(event.channel));
-    on<LooperUndoPressed>((event, _) {
-      // A track with content but no overdub layers has nothing to undo; undo
-      // would be a no-op. Treat U there as "clear this track" so a single press
-      // discards the lone base loop instead of doing nothing.
-      if (_hasOnlyBaseLoop(event.channel)) {
-        _clearAndArm(event.channel);
-      } else {
-        _repository.undo(channel: event.channel);
-      }
-    });
+    on<LooperUndoPressed>(
+      // Undo is per-layer all the way down: the engine peels one overdub pass
+      // per press, and undoing past the base recording empties the track while
+      // keeping the redo history, so redo can reinstate it layer by layer.
+      (event, _) => _repository.undo(channel: event.channel),
+    );
     on<LooperRedoPressed>(
       (event, _) => _repository.redo(channel: event.channel),
     );
@@ -269,11 +265,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _repository.stopTrack(channel: track.channel);
       }
     });
-    on<LooperClearAllPressed>((_, _) {
-      for (final track in state.tracks) {
-        if (track.hasContent) _clearAndArm(track.channel);
-      }
-    });
     on<LooperOutputEnabledToggled>((event, _) {
       _repository.setOutputEnabled(
         output: event.output,
@@ -288,6 +279,10 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       (s) => add(LooperStateUpdated(s)),
     );
     _controllerSubscription = controller?.events.listen(_onControllerEvent);
+    // Persist chains the repository mutates on its own — the record-time
+    // snapshot-copy of a monitor chain onto the take's lanes (F3). The bloc
+    // stays the single settings writer for chains.
+    _repository.onLaneChainChanged = _persistLaneChain;
   }
 
   final LooperRepository _repository;
@@ -310,22 +305,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
 
   /// Clears track [channel] and returns it to its default armed-to-play state:
   /// unmuted. A cleared track should be ready to sound again on the next
-  /// record/play rather than staying silently muted, and the unmute is
-  /// persisted so it survives a restart. Shared by every clear path (per-track,
-  /// clear-all, and the undo that empties a track holding only its base loop).
+  /// record/play rather than staying silently muted (the engine also unmutes
+  /// every lane on clear), and the unmute is persisted per lane so it survives
+  /// a restart. Shared by every clear path (per-track and clear-all).
   void _clearAndArm(int channel) {
     _repository
       ..clear(channel: channel)
       ..setMute(muted: false, channel: channel);
-    unawaited(_settings?.saveLaneMute(channel, 0, muted: false));
-  }
-
-  /// Whether [channel] holds a single recorded loop with no overdub layers to
-  /// undo — the case where `U` clears the track instead of removing a layer.
-  bool _hasOnlyBaseLoop(int channel) {
-    if (channel < 0 || channel >= state.tracks.length) return false;
-    final track = state.tracks[channel];
-    return track.hasContent && !track.canUndo;
+    final lanes = channel >= 0 && channel < state.tracks.length
+        ? state.tracks[channel].lanes.length
+        : 1;
+    for (var lane = 0; lane < (lanes < 1 ? 1 : lanes); lane++) {
+      unawaited(_settings?.saveLaneMute(channel, lane, muted: false));
+    }
   }
 
   bool _laneMuted(int channel, int lane) {
@@ -347,6 +339,20 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     // Persist the repository's chain, not the input: applying it enriches each
     // plugin entry with its resolved display name (so the name survives a
     // restart), which the pre-apply `effects` list does not yet carry.
+    unawaited(
+      _settings?.saveLaneEffects(
+        channel,
+        lane,
+        encodeTrackEffects(_repository.laneEffects(channel, lane)),
+      ),
+    );
+  }
+
+  /// Persists lane [lane] of [channel]'s current chain — the sink for the
+  /// repository's [LooperRepository.onLaneChainChanged] notification (F3: the
+  /// record-time snapshot copy). Reads the repository's enriched chain so a
+  /// persisted plugin entry keeps its resolved name.
+  void _persistLaneChain(int channel, int lane) {
     unawaited(
       _settings?.saveLaneEffects(
         channel,
@@ -392,6 +398,11 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
       timer.cancel();
     }
     _lanePluginEditorTimers.clear();
+    // The repository outlives the bloc; drop the chain-persist callback so a
+    // later record doesn't call into a closed bloc.
+    if (_repository.onLaneChainChanged == _persistLaneChain) {
+      _repository.onLaneChainChanged = null;
+    }
     unawaited(_subscription.cancel());
     unawaited(_controllerSubscription?.cancel());
     return super.close();

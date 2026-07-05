@@ -350,6 +350,7 @@
     "signalInputLive": "live",
     "signalInputOff": "off",
     "signalLaneCleanHint": "This lane records its input clean. Add effects to colour just this take.",
+    "signalAddEffectTooltip": "Add effect to this take",
     "inputMonitorLabel": "In {inputNumber} monitor",
     "@inputMonitorLabel": {
         "placeholders": {
@@ -368,6 +369,7 @@
     "signalPluginUnknownName": "Plugin",
     "signalPluginToggleOn": "On",
     "signalPluginToggleOff": "Off",
+    "signalPluginLoading": "Loading…",
     "signalPluginUnavailable": "Plugin unavailable",
     "signalPluginUnsupported": "Plugin unsupported",
     "signalPluginVersionChanged": "Version changed since saved",

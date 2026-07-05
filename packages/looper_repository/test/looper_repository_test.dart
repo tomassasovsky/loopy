@@ -1210,7 +1210,7 @@ void main() {
       expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isFalse);
     });
 
-    test('a plugin that fails to load is flagged unavailable (D-MISS)', () {
+    test('a plugin that fails to load is flagged unavailable (D-MISS)', () async {
       engine.nextSlotHandle = null; // load fails (uninstalled / moved)
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1222,6 +1222,10 @@ void main() {
             ),
           ],
         );
+      // Cold-start recovery kicks a scan; let it complete (it finds nothing) so
+      // the entry settles from the transient loading state to the genuine
+      // unavailable placeholder.
+      await repo.pluginCatalog.scan();
       final fx = repo.laneEffects(0, 0).single as PluginEffect;
       // Preserved as a placeholder, never dropped to `none`.
       expect(fx.unavailable, isTrue);
@@ -1230,34 +1234,39 @@ void main() {
       expect(fx.unsupported, isFalse);
     });
 
-    test('a restored plugin keeps its persisted name before any scan', () {
-      engine.nextSlotHandle = null; // not loadable yet (catalog unscanned)
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setTrackEffects(
-          channel: 0,
-          effects: const [
-            PluginEffect(
-              ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
-              name: 'Saved Reverb',
-            ),
-          ],
-        );
-      final fx = repo.laneEffects(0, 0).single as PluginEffect;
-      // The persisted name survives the bind, so the placeholder reads as the
-      // plugin's name rather than a cryptic id.
-      expect(fx.unavailable, isTrue);
-      expect(fx.name, 'Saved Reverb');
-    });
+    test(
+      'a failed plugin keeps its persisted name in the placeholder',
+      () async {
+        engine.nextSlotHandle = null; // not loadable (catalog has no match)
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setTrackEffects(
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
+                name: 'Saved Reverb',
+              ),
+            ],
+          );
+        await repo.pluginCatalog.scan(); // settle recovery -> unavailable
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        // The persisted name survives the bind + recovery, so the placeholder
+        // reads as the plugin's name rather than a cryptic id.
+        expect(fx.unavailable, isTrue);
+        expect(fx.name, 'Saved Reverb');
+      },
+    );
 
     test(
-      'startEngine scans + rebinds restored '
-      'plugins, resolving names',
+      'a restored plugin recovers itself once the cold-start scan lands',
       () async {
-        // A cold restart: the chain is restored before any scan, so the first
-        // apply can't resolve the name from the (empty) catalog. startEngine
-        // must kick a scan and re-apply, resolving the name from the
-        // descriptor.
+        // A cold restart: the chain is restored (through setTrackEffects) after
+        // the engine started, so its first apply hits the still-empty scan
+        // cache and the plugin fails to load. The recovery flips it to
+        // "loading…" (F5) and kicks a catalog scan; when that lands the entry
+        // re-applies itself, resolving availability + the descriptor name —
+        // without the user relinking by hand.
         engine
           ..pluginScanResults = const [
             le.PluginDescriptor(
@@ -1269,10 +1278,10 @@ void main() {
               version: 0,
             ),
           ]
-          ..nextSlotHandle = MockPluginSlotHandle('p');
+          // Cold start: the scan cache is empty, so the first load fails.
+          ..nextSlotHandle = null;
         final repo = buildRepo()
-          // Stored while stopped -> applied (and the startup scan kicked) on
-          // start.
+          ..startEngine(const EngineConfig())
           ..setTrackEffects(
             channel: 0,
             effects: const [
@@ -1281,15 +1290,20 @@ void main() {
               ),
             ],
           );
-        // Before start, nothing is applied; the name is still unresolved.
-        expect((repo.laneEffects(0, 0).single as PluginEffect).name, isEmpty);
+        // First apply against the empty cache fails; recovery flips it to
+        // loading (not a premature "unavailable") and its scan is now in
+        // flight.
+        final mid = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(mid.loading, isTrue);
+        expect(mid.unavailable, isFalse);
 
-        repo.startEngine(const EngineConfig());
-        // Joins the startup scan already in flight; the rebind runs when it
-        // lands.
+        // The plugin is loadable once scanned; joining the in-flight recovery
+        // scan drives the re-apply.
+        engine.nextSlotHandle = MockPluginSlotHandle('p');
         await repo.pluginCatalog.scan();
 
         final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        expect(fx.loading, isFalse);
         expect(fx.unavailable, isFalse);
         expect(fx.name, 'Catalog Reverb');
       },
@@ -1363,6 +1377,81 @@ void main() {
       expect(fx.versionChanged, isTrue);
     });
 
+    test('a restored plugin reads as loading while the boot scan is pending, '
+        'then unavailable once it lands still missing (F5)', () async {
+      // Cold boot: the plugin can't load (empty native cache) and a scan will
+      // run. While the scan is pending the entry must render "loading", not a
+      // premature "unavailable" — then flip to unavailable if it stays missing.
+      engine
+        ..nextSlotHandle =
+            null // load fails (cold cache)
+        ..scanProgressOverride = const PluginScanProgress(
+          done: false, // the boot scan does not complete yet
+          found: 0,
+          scanned: 0,
+          total: 1,
+        );
+      final repo = buildRepo()
+        ..setTrackEffects(
+          channel: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      // The startup scan is kicked and pending -> loading, not unavailable.
+      var fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.loading, isTrue);
+      expect(fx.unavailable, isFalse);
+
+      // Let the scan complete with the plugin still absent -> unavailable.
+      engine.scanProgressOverride = const PluginScanProgress(
+        done: true,
+        found: 0,
+        scanned: 1,
+        total: 1,
+      );
+      await repo.pluginCatalog.scan(); // joins + drains the in-flight scan
+
+      fx = repo.laneEffects(0, 0).single as PluginEffect;
+      expect(fx.loading, isFalse);
+      expect(fx.unavailable, isTrue);
+    });
+
+    test('a restored MONITOR plugin also reads as loading during the boot '
+        'scan (F5, monitor apply path)', () async {
+      // The cold-start recovery flips unavailable entries to loading on both
+      // the lane and monitor apply paths — cover the monitor call site too so a
+      // monitor-only regression is caught.
+      engine
+        ..nextSlotHandle = null
+        ..scanProgressOverride = const PluginScanProgress(
+          done: false,
+          found: 0,
+          scanned: 0,
+          total: 1,
+        );
+      final repo = buildRepo()
+        ..setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      final fx = repo.monitorEffects(0).single as PluginEffect;
+      expect(fx.loading, isTrue);
+      expect(fx.unavailable, isFalse);
+    });
+
     test('a loaded plugin the catalog has not seen is not flagged drifted', () {
       // No scan has run, so there is no descriptor to compare against: drift is
       // undetectable and must stay false (never a false "versions match").
@@ -1386,7 +1475,7 @@ void main() {
       expect(fx.versionChanged, isFalse);
     });
 
-    test('relinkLanePlugin swaps the ref, keeps state, and reloads', () {
+    test('relinkLanePlugin swaps the ref, keeps state, and reloads', () async {
       engine.nextSlotHandle = null; // initial load fails -> unavailable
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1399,6 +1488,7 @@ void main() {
             ),
           ],
         );
+      await repo.pluginCatalog.scan(); // settle recovery -> unavailable
       expect(
         (repo.laneEffects(0, 0).single as PluginEffect).unavailable,
         isTrue,
@@ -1612,6 +1702,102 @@ void main() {
       expect(
         (repo.laneEffects(0, 0).single as BuiltInEffect).type,
         TrackEffectType.delay,
+      );
+    });
+
+    test('the record snapshot fires onLaneChainChanged for each copied lane '
+        '(F3)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final changed = <(int, int)>[];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..onLaneChainChanged = (channel, lane) {
+          changed.add((channel, lane));
+        }
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      // The notification fired for the take's lane, and the reported chain is
+      // the post-take (snapshot-copied) one.
+      expect(changed, [(0, 0)]);
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
+    });
+
+    test('a dry monitor does not fire onLaneChainChanged (nothing copied)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final changed = <(int, int)>[];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..onLaneChainChanged = (channel, lane) {
+          changed.add((channel, lane));
+        }
+        ..record(); // clean input chain -> no snapshot copy
+      addTearDown(repo.dispose);
+
+      expect(changed, isEmpty);
+    });
+
+    test('record keeps a staged lane chain when the input monitor chain is '
+        'empty (dry monitor never wipes lane FX)', () {
+      // Track 0 is EMPTY, so record is a fresh capture; input 0's monitor
+      // chain is clean. The lane's own (staged / persistence-restored) chain
+      // must survive the snapshot instead of being cleared.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..record();
+
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.reverb,
       );
     });
 
@@ -1872,6 +2058,347 @@ void main() {
       expect(info.kind, LoopbackKind.monitor);
       expect(engine.calls, contains('detectLoopback'));
     });
+  });
+
+  group('applySession', () {
+    /// A snapshot with [count] settled-empty tracks (the post-clear state), so
+    /// the apply's settle wait passes immediately.
+    EngineSnapshot clearedSnapshot(int count) => EngineSnapshot(
+      isRunning: true,
+      sampleRate: 48000,
+      bufferFrames: 128,
+      framesProcessed: 0,
+      xrunCount: 0,
+      inputRms: 0,
+      inputPeak: 0,
+      outputRms: 0,
+      latencyState: le.LatencyState.idle,
+      measuredLatencyMs: -1,
+      tracks: [for (var i = 0; i < count; i++) const TrackSnapshot.empty()],
+    );
+
+    test(
+      'clears every track, imports stems, commits, and applies mix',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final pcm = Float32List.fromList([1, 1, 1, 1]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(channel: 0, pcm: pcm, volume: 0.5, muted: true),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(
+          engine.calls,
+          containsAllInOrder(<String>[
+            'clear',
+            'clear',
+            'importTrack',
+            'commitSession',
+            'setLaneVolume',
+            'setLaneMute',
+          ]),
+        );
+        expect(engine.importedTracks[0], pcm);
+        expect(engine.committedBaseFrames, 4);
+        expect(engine.laneVol[(0, 0)], 0.5);
+        expect(engine.laneMute[(0, 0)], isTrue);
+      },
+    );
+
+    test('an empty rig imports nothing and establishes no master', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      await repo.applySession(
+        const SessionRig(),
+        clearPollInterval: Duration.zero,
+      );
+
+      expect(engine.calls, isNot(contains('importTrack')));
+      expect(engine.calls, isNot(contains('commitSession')));
+      expect(engine.committedBaseFrames, isNull);
+    });
+
+    test('a restart after apply replays the LOADED mix, never the pre-load '
+        'caches (F2a/F2b)', () async {
+      engine.nextSnapshot = clearedSnapshot(3);
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        // Pre-load rig: remembered volume + mute on track 2.
+        ..setLaneVolume(0.9, channel: 2, lane: 0)
+        ..setLaneMute(muted: true, channel: 2, lane: 0);
+      addTearDown(repo.dispose);
+
+      await repo.applySession(
+        SessionRig(
+          baseLengthFrames: 4,
+          tracks: [
+            SessionRigTrack(
+              channel: 0,
+              pcm: Float32List.fromList([1, 1, 1, 1]),
+              volume: 0.5,
+              muted: false,
+            ),
+          ],
+        ),
+        clearPollInterval: Duration.zero,
+      );
+
+      // A device restart replays only the loaded session's mix.
+      engine.laneVol.clear();
+      engine.laneMute.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+
+      expect(engine.laneVol, {(0, 0): 0.5});
+      expect(engine.laneMute, {(0, 0): false});
+    });
+
+    test('resets remembered chains the rig does not define — lane and '
+        'monitor (F2c)', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..setMonitorEffects(
+          input: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        );
+      addTearDown(repo.dispose);
+
+      await repo.applySession(
+        const SessionRig(),
+        clearPollInterval: Duration.zero,
+      );
+
+      // Engine chain lengths were explicitly zeroed (leftovers can't sound).
+      expect(engine.laneFxCount[(0, 0)], 0);
+      expect(engine.monitorFxCount[1], 0);
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(repo.monitorEffects(1), isEmpty);
+
+      // And a restart replays nothing stale.
+      engine.laneFx.clear();
+      engine.monitorFx.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.laneFx, isEmpty);
+      expect(engine.monitorFx, isEmpty);
+    });
+
+    test('fully resets a leftover monitor the rig does not define — routing '
+        'and mix, not just its chain (F2)', () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      // Session A left input 1 enabled with custom routing / mix.
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorInputEnabled(input: 1, enabled: true)
+        ..setMonitorOutput(input: 1, mask: 0x4)
+        ..setMonitorVolume(input: 1, volume: 0.3)
+        ..setMonitorMute(input: 1, muted: true);
+      addTearDown(repo.dispose);
+
+      // Session B does not define input 1 at all.
+      await repo.applySession(
+        const SessionRig(),
+        clearPollInterval: Duration.zero,
+      );
+
+      // The leftover monitor is fully reset to disabled defaults — an enabled
+      // monitor from A can never keep sounding under B.
+      expect(repo.monitorEnabled(1), isFalse);
+      expect(repo.monitorOutput(1), 0x3);
+      expect(repo.monitorVolume(1), 1);
+      expect(repo.monitorMuted(1), isFalse);
+      expect(engine.monitorInputEnabled[1], isFalse);
+    });
+
+    test(
+      'applies the rig chains and monitors through the cached setters',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        await repo.applySession(
+          SessionRig(
+            laneEffects: {
+              (1, 0): [BuiltInEffect(type: TrackEffectType.delay)],
+            },
+            monitors: [
+              SessionRigMonitor(
+                input: 0,
+                enabled: true,
+                outputMask: 0x1,
+                volume: 0.7,
+                muted: false,
+                effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
+        expect(engine.laneFxCount[(1, 0)], 1);
+        expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+        expect(engine.monitorInputEnabled[0], isTrue);
+        expect(engine.monitorOutput[0], 0x1);
+        expect(engine.monitorVolume[0], 0.7);
+        expect(engine.monitorMute[0], isFalse);
+
+        // The caches are truthful: a restart reproduces the loaded chains.
+        engine.laneFx.clear();
+        engine.monitorFx.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.laneFx[(1, 0, 0)]?.code, TrackEffectType.delay.code);
+        expect(engine.monitorFx[(0, 0)]?.code, TrackEffectType.reverb.code);
+      },
+    );
+
+    test(
+      'retries an import that races a not-yet-acked clear, then succeeds',
+      () async {
+        // The engine rejects the first couple of imports (the posted-clear ack
+        // race); applySession retries and the import lands rather than failing.
+        engine
+          ..nextSnapshot = clearedSnapshot(1)
+          ..importFailCountdown = 2;
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final pcm = Float32List.fromList([1, 1, 1, 1]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(channel: 0, pcm: pcm, volume: 1, muted: false),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.importFailCountdown, 0); // the retries were consumed
+        expect(
+          engine.importedTracks[0],
+          pcm,
+        ); // and the import ultimately landed
+      },
+    );
+
+    test('throws when the engine never settles to cleared', () async {
+      engine.nextSnapshot = _playingSnapshot;
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      await expectLater(
+        repo.applySession(
+          const SessionRig(),
+          clearPollInterval: Duration.zero,
+          clearPollAttempts: 2,
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('throws when a stem import is rejected', () async {
+      engine
+        ..nextSnapshot = clearedSnapshot(1)
+        ..importResult = EngineResult.invalid;
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+
+      await expectLater(
+        repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                channel: 0,
+                pcm: Float32List.fromList([1, 1, 1, 1]),
+                volume: 1,
+                muted: false,
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        ),
+        throwsStateError,
+      );
+    });
+  });
+
+  group('chain and monitor read accessors', () {
+    test(
+      'allLaneEffects and allMonitorEffects expose the remembered chains',
+      () {
+        final repo = buildRepo()
+          ..setLaneEffects(
+            channel: 1,
+            lane: 2,
+            effects: [BuiltInEffect(type: TrackEffectType.drive)],
+          )
+          ..setMonitorEffects(
+            input: 3,
+            effects: [BuiltInEffect(type: TrackEffectType.echo)],
+          );
+        addTearDown(repo.dispose);
+
+        final lanes = repo.allLaneEffects();
+        expect(lanes.keys, [(1, 2)]);
+        expect(
+          (lanes[(1, 2)]!.single as BuiltInEffect).type,
+          TrackEffectType.drive,
+        );
+        final monitors = repo.allMonitorEffects();
+        expect(monitors.keys, [3]);
+        expect(
+          (monitors[3]!.single as BuiltInEffect).type,
+          TrackEffectType.echo,
+        );
+      },
+    );
+
+    test(
+      'monitor config getters read the remembered intent (with defaults)',
+      () {
+        final repo = buildRepo();
+        addTearDown(repo.dispose);
+
+        expect(repo.monitorEnabled(0), isFalse);
+        expect(repo.monitorOutput(0), 0x3);
+        expect(repo.monitorVolume(0), 1);
+        expect(repo.monitorMuted(0), isFalse);
+
+        repo
+          ..setMonitorInputEnabled(input: 0, enabled: true)
+          ..setMonitorOutput(input: 0, mask: 0x1)
+          ..setMonitorVolume(input: 0, volume: 0.4)
+          ..setMonitorMute(input: 0, muted: true);
+
+        expect(repo.monitorEnabled(0), isTrue);
+        expect(repo.monitorOutput(0), 0x1);
+        expect(repo.monitorVolume(0), 0.4);
+        expect(repo.monitorMuted(0), isTrue);
+      },
+    );
   });
 
   group('reconnect supervisor', () {

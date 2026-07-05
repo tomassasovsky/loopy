@@ -51,6 +51,10 @@ typedef struct le_command {
       int32_t channel, lane;
       float value;
     } lanef;
+    struct { /* LE_EVT_LAYER_RETIRED (audio -> control, on the evt_ring) */
+      int32_t channel, slot;
+      uint32_t generation;
+    } evt;
   };
 } le_command;
 
