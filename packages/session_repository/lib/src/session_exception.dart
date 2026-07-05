@@ -51,3 +51,17 @@ class SessionUnsupportedVersion extends SessionException {
   String toString() =>
       'unsupported session version $version (supports up to $supported)';
 }
+
+/// A save-as / rename targeted a name whose folder [slug] already exists in the
+/// sessions catalog. Named sessions never silently overwrite, so the caller
+/// must pick another name.
+class SessionNameCollision extends SessionException {
+  /// Creates a [SessionNameCollision] for the colliding [slug].
+  const SessionNameCollision({required this.slug});
+
+  /// The folder slug (the sanitized name) that already exists.
+  final String slug;
+
+  @override
+  String toString() => 'a session named "$slug" already exists';
+}
