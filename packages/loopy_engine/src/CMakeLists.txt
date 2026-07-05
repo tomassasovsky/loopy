@@ -31,10 +31,10 @@ add_library(loopy_engine SHARED
   # Always compiled; calls le_plugin_slot_create which is the real host on a
   # plugin build and a NULL-returning stub otherwise.
   core/engine_plugin.c
-  # le_plugin_* stubs for non-LOOPY_ENABLE_PLUGINS builds (Windows/Linux today).
-  # Internally #ifndef-guarded, so it compiles to an empty object when plugins
-  # are enabled and host/plugin_scan.cpp + host/slot.cpp provide the real
-  # symbols.
+  # le_plugin_* stubs for non-LOOPY_ENABLE_PLUGINS builds (Linux today; macOS
+  # and Windows compile the real host). Internally #ifndef-guarded, so it
+  # compiles to an empty object when plugins are enabled and
+  # host/plugin_scan.cpp + host/slot.cpp provide the real symbols.
   core/plugin_disabled.c
   # ---- platform/: per-OS device seams (engine_platform.h) ----
   # Each is wrapped whole in its OS guard, so the two that don't match the build
