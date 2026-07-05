@@ -336,6 +336,35 @@ void main() {
     );
 
     blocTest<SessionCubit, SessionState>(
+      'duplicateSession copies the bundle and refreshes the catalog',
+      setUp: () {
+        stubCatalog();
+        when(
+          () => repository.duplicateSession(any(), any()),
+        ).thenAnswer((_) async {});
+      },
+      seed: () =>
+          const SessionState(currentSessionName: 'A', sessions: summaries),
+      build: build,
+      act: (cubit) => cubit.duplicateSession('A', 'A copy'),
+      expect: () => [
+        isA<SessionState>().having(
+          (s) => s.status,
+          'st',
+          SessionStatus.working,
+        ),
+        isA<SessionState>()
+            .having((s) => s.status, 'st', SessionStatus.success)
+            .having((s) => s.outcome, 'outcome', SessionOutcome.saved)
+            // The open session is unchanged — a duplicate is a disk copy.
+            .having((s) => s.currentSessionName, 'current', 'A')
+            .having((s) => s.sessions, 'sessions', summaries),
+      ],
+      verify: (_) =>
+          verify(() => repository.duplicateSession('A', 'A copy')).called(1),
+    );
+
+    blocTest<SessionCubit, SessionState>(
       'saveAs with an unsanitizable name fails (invalid), writing nothing',
       setUp: stubCatalog,
       build: build,
