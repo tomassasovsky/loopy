@@ -6,18 +6,21 @@ import 'package:session_repository/session_repository.dart';
 
 part 'session_state.dart';
 
-/// Drives session persistence actions (save / load / export) and surfaces their
-/// outcome so the UI can show progress and a success/failure message.
+/// Drives session persistence (save / load / export) and the named-session
+/// catalog (list / save-as / rename / delete), tracking the open session so a
+/// plain [save] writes back without re-prompting (the document model).
 ///
 /// Composes the two repositories at the bloc level (repositories never import
-/// repositories): the session repository does the file I/O, the looper
-/// repository — the single owner of looper state — applies a loaded session
-/// to the engine and supplies the live chains a save captures.
+/// repositories): the session repository does the file I/O + owns the catalog
+/// layout, the looper repository — the single owner of looper state — applies a
+/// loaded session to the engine and supplies the live chains a save captures.
 class SessionCubit extends Cubit<SessionState> {
   /// Creates a [SessionCubit] backed by [repository] and [looper].
   ///
-  /// [directory] resolves the session bundle directory lazily (e.g. the app's
-  /// documents folder); injecting it keeps the cubit testable.
+  /// [directory] resolves the legacy single-bundle directory used by
+  /// [saveSession] / [loadSession] / the exports; the named-session methods go
+  /// through [repository]'s catalog instead. Injecting it keeps the cubit
+  /// testable.
   SessionCubit({
     required SessionRepository repository,
     required LooperRepository looper,
@@ -31,62 +34,162 @@ class SessionCubit extends Cubit<SessionState> {
   final LooperRepository _looper;
   final Future<String> Function() _directory;
 
-  /// Saves the current session (manifest + stems + mixdown), capturing the
-  /// live effect chains from the looper repository (the rig — not settings — is
-  /// the truth being saved).
-  Future<void> saveSession() => _run(
-    (directory) =>
-        _repository.save(directory, chains: chainsFromLooper(_looper)),
-    SessionOutcome.saved,
-  );
+  // ---- legacy single-bundle actions (the menu still uses these until the
+  // named-session UI lands) ----
 
-  /// Loads the saved session back into the engine: reads the bundle, then
-  /// applies it through the looper repository (the one apply path).
-  Future<void> loadSession() => _run((directory) async {
-    final bundle = await _repository.read(directory);
+  /// Saves the live rig to the legacy single bundle.
+  Future<void> saveSession() => _run(() async {
+    await _repository.save(
+      await _directory(),
+      chains: chainsFromLooper(_looper),
+    );
+    return const _ActionResult(SessionOutcome.saved);
+  });
+
+  /// Loads the legacy single bundle back into the engine.
+  Future<void> loadSession() => _run(() async {
+    final bundle = await _repository.read(await _directory());
     await _looper.applySession(rigFromBundle(bundle));
-  }, SessionOutcome.loaded);
+    return const _ActionResult(SessionOutcome.loaded);
+  });
 
   /// Exports a mixed-down WAV of the current session.
-  Future<void> exportMixdown() => _run(
-    (dir) => _repository.exportMixdown('$dir/${SessionRepository.mixdownName}'),
-    SessionOutcome.mixdownExported,
-  );
+  Future<void> exportMixdown() => _run(() async {
+    await _repository.exportMixdown(
+      '${await _directory()}/${SessionRepository.mixdownName}',
+    );
+    return const _ActionResult(SessionOutcome.mixdownExported);
+  });
 
   /// Exports each track as a separate stem WAV under a `stems` folder.
-  Future<void> exportStems() => _run(
-    (dir) => _repository.exportStems('$dir/stems'),
-    SessionOutcome.stemsExported,
-  );
+  Future<void> exportStems() => _run(() async {
+    await _repository.exportStems('${await _directory()}/stems');
+    return const _ActionResult(SessionOutcome.stemsExported);
+  });
 
-  Future<void> _run(
-    Future<void> Function(String directory) action,
-    SessionOutcome outcome,
-  ) async {
-    emit(const SessionState(status: SessionStatus.working));
+  // ---- named-session catalog (the document model) ----
+
+  /// Reloads the saved-session catalog into state (for the picker). A quiet
+  /// update — no working/success cycle.
+  Future<void> refreshSessions() async =>
+      emit(state.copyWith(sessions: await _repository.listSessions()));
+
+  /// Saves the live rig as a NEW named session and makes it current. Rejects a
+  /// duplicate slug with [SessionError.nameCollision] and writes nothing.
+  Future<void> saveAs(String name) => _run(() async {
+    final slug = _slugOf(name);
+    if ((await _repository.listSessions()).any((s) => s.name == slug)) {
+      throw SessionNameCollision(slug: slug);
+    }
+    await _repository.save(
+      await _repository.bundlePath(name),
+      chains: chainsFromLooper(_looper),
+    );
+    return _ActionResult(
+      SessionOutcome.saved,
+      currentName: slug,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Writes the live rig back to the open session with no prompt. With no open
+  /// session, signals the UI to open Save-As ([SessionOutcome.saveAsRequested])
+  /// rather than silently picking a name.
+  Future<void> save() {
+    final name = state.currentSessionName;
+    if (name == null) {
+      emit(
+        state.copyWith(
+          status: SessionStatus.idle,
+          outcome: SessionOutcome.saveAsRequested,
+        ),
+      );
+      return Future<void>.value();
+    }
+    return _run(() async {
+      await _repository.save(
+        await _repository.bundlePath(name),
+        chains: chainsFromLooper(_looper),
+      );
+      return const _ActionResult(SessionOutcome.saved);
+    });
+  }
+
+  /// Loads named session [name] into the engine through the looper repository
+  /// (the one apply path), makes it current, and refreshes the catalog.
+  Future<void> loadNamed(String name) => _run(() async {
+    final bundle = await _repository.read(await _repository.bundlePath(name));
+    await _looper.applySession(rigFromBundle(bundle));
+    return _ActionResult(
+      SessionOutcome.loaded,
+      currentName: _slugOf(name),
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Renames session [from] to [to]. If [from] is the open session, the current
+  /// pointer follows the rename. A slug collision surfaces as
+  /// [SessionError.nameCollision] (the repository is the authority).
+  Future<void> renameSession(String from, String to) => _run(() async {
+    await _repository.renameSession(from, to);
+    final open = state.currentSessionName;
+    return _ActionResult(
+      SessionOutcome.renamed,
+      currentName: open == from ? _slugOf(to) : open,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// Deletes session [name]. If it is the open session, the current pointer is
+  /// cleared — the live rig keeps playing (the engine is never touched here).
+  Future<void> deleteSession(String name) => _run(() async {
+    await _repository.deleteSession(name);
+    final wasOpen = state.currentSessionName == _slugOf(name);
+    return _ActionResult(
+      SessionOutcome.deleted,
+      clearCurrent: wasOpen,
+      sessions: await _repository.listSessions(),
+    );
+  });
+
+  /// The slug [name] resolves to, or throws [ArgumentError] when it sanitizes
+  /// to nothing (the same rule the repository's `bundlePath` enforces).
+  String _slugOf(String name) {
+    final slug = sessionSlug(name);
+    if (slug == null) {
+      throw ArgumentError.value(name, 'name', 'not a valid session name');
+    }
+    return slug;
+  }
+
+  /// Runs [action] with the standard working → success/failure envelope,
+  /// folding its durable-catalog changes into the next state and preserving the
+  /// open session + list across the transition.
+  Future<void> _run(Future<_ActionResult> Function() action) async {
+    emit(state.copyWith(status: SessionStatus.working));
     try {
-      await action(await _directory());
-      emit(SessionState(status: SessionStatus.success, outcome: outcome));
+      final result = await action();
+      emit(
+        state.copyWith(
+          status: SessionStatus.success,
+          outcome: result.outcome,
+          currentSessionName: result.currentName,
+          clearCurrentSession: result.clearCurrent,
+          sessions: result.sessions,
+        ),
+      );
     } on SessionException catch (error) {
       // Recoverable, user-facing refusals: classify so the UI can localize.
       emit(
-        SessionState(
+        state.copyWith(
           status: SessionStatus.failure,
-          error: switch (error) {
-            SessionSampleRateMismatch() => SessionError.sampleRateMismatch,
-            SessionUnsupportedVersion() => SessionError.unsupportedVersion,
-            // The catalog's collision is not reachable through today's
-            // save/load actions; part 2 wires the named CRUD and maps this to a
-            // dedicated SessionError.nameCollision. Kept exhaustive so the
-            // sealed switch compiles.
-            SessionNameCollision() => SessionError.unknown,
-          },
+          error: _classify(error),
           errorMessage: '$error',
         ),
       );
     } on Object catch (error) {
       emit(
-        SessionState(
+        state.copyWith(
           status: SessionStatus.failure,
           error: SessionError.unknown,
           errorMessage: '$error',
@@ -94,4 +197,26 @@ class SessionCubit extends Cubit<SessionState> {
       );
     }
   }
+
+  static SessionError _classify(SessionException error) => switch (error) {
+    SessionSampleRateMismatch() => SessionError.sampleRateMismatch,
+    SessionUnsupportedVersion() => SessionError.unsupportedVersion,
+    SessionNameCollision() => SessionError.nameCollision,
+  };
+}
+
+/// What a session action changed: its success [outcome] plus any durable
+/// catalog updates to fold into the next state.
+class _ActionResult {
+  const _ActionResult(
+    this.outcome, {
+    this.currentName,
+    this.clearCurrent = false,
+    this.sessions,
+  });
+
+  final SessionOutcome outcome;
+  final String? currentName;
+  final bool clearCurrent;
+  final List<SessionSummary>? sessions;
 }
