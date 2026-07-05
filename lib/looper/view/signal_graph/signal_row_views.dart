@@ -65,7 +65,6 @@ class _InputRow extends StatelessWidget {
                 style: signalMono(
                   color: surface.textPrimary,
                   size: 12,
-                  tracking: 1,
                   weight: FontWeight.w600,
                 ),
               ),
@@ -77,10 +76,9 @@ class _InputRow extends StatelessWidget {
                   key: Key('signalInGate_${row.input}'),
                   onTap: onToggleGate,
                   borderRadius: BorderRadius.circular(20),
-                  child: SignalGatePill(
-                    label: on ? l10n.signalInputLive : l10n.signalInputOff,
-                    on: on,
-                    color: surface.accent,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: SignalGateDot(on: on),
                   ),
                 ),
               ),
@@ -246,11 +244,9 @@ class _OutputRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final hue = outputColor(surface, row.output);
     final nothingRouted = inputs.isEmpty && tracks.isEmpty;
     return _RowCard(
       rowKey: Key('signalOut_${row.output}'),
-      rail: row.enabled ? hue : surface.line,
       selected: selected,
       onTap: onTap,
       semanticLabel: row.enabled
@@ -261,17 +257,7 @@ class _OutputRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Container(
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: row.enabled ? hue : surface.textTertiary,
-                  boxShadow: row.enabled
-                      ? signalGlow(hue, blur: 8, spread: 0)
-                      : null,
-                ),
-              ),
+              SignalGateDot(on: row.enabled),
               const SizedBox(width: 9),
               Text(
                 l10n.outputChannelLabel(row.output + 1),
@@ -307,7 +293,6 @@ class _OutputRow extends StatelessWidget {
               _FieldRow(
                 label: l10n.signalFieldInputs,
                 child: _FeederChips(
-                  color: surface.accent,
                   labels: [
                     for (final i in inputs) l10n.inputChannelLabel(i + 1),
                   ],
@@ -319,7 +304,6 @@ class _OutputRow extends StatelessWidget {
               _FieldRow(
                 label: l10n.signalFieldTracks,
                 child: _FeederChips(
-                  colors: [for (final t in tracks) surface.laneColor(t)],
                   labels: [for (final t in tracks) _trackLabel(l10n, t)],
                 ),
               ),
@@ -331,54 +315,42 @@ class _OutputRow extends StatelessWidget {
 }
 
 /// A read-only wrap of source chips on an output card — one per input or track
-/// routed in, each tinted with that source's traceable hue. A single [color]
-/// tints them all (inputs share the accent); [colors] gives a per-chip hue
-/// (each track wears its own lane colour).
+/// routed in. Neutral at rest: the output card carries its own identity (its
+/// `Out N` label + gate dot), so the sources read as a quiet list rather than a
+/// colour code.
 class _FeederChips extends StatelessWidget {
-  const _FeederChips({required this.labels, this.color, this.colors})
-    : assert(
-        color != null || colors != null,
-        'provide a shared color or per-chip colors',
-      );
+  const _FeederChips({required this.labels});
 
   final List<String> labels;
-  final Color? color;
-  final List<Color>? colors;
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
       spacing: 6,
       runSpacing: 6,
-      children: [
-        for (var i = 0; i < labels.length; i++)
-          _FeederChip(label: labels[i], color: colors?[i] ?? color!),
-      ],
+      children: [for (final label in labels) _FeederChip(label: label)],
     );
   }
 }
 
 class _FeederChip extends StatelessWidget {
-  const _FeederChip({required this.label, required this.color});
+  const _FeederChip({required this.label});
 
   final String label;
-  final Color color;
 
   @override
   Widget build(BuildContext context) {
+    final surface = context.surface;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
+        color: surface.cardHigh,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: color.withValues(alpha: 0.55)),
+        border: Border.all(color: surface.line),
       ),
       child: Text(
         label,
-        style: signalMono(
-          color: Color.alphaBlend(Colors.white.withValues(alpha: 0.14), color),
-          size: 10,
-        ),
+        style: signalMono(color: surface.textSecondary, size: 10),
       ),
     );
   }
@@ -389,7 +361,6 @@ class _FeederChip extends StatelessWidget {
 class _RowCard extends StatelessWidget {
   const _RowCard({
     required this.child,
-    this.rail,
     this.rowKey,
     this.onTap,
     this.semanticLabel,
@@ -397,20 +368,16 @@ class _RowCard extends StatelessWidget {
   });
 
   final Widget child;
-
-  /// The coloured left rail, or null for no rail (input + track cards).
-  final Color? rail;
   final Key? rowKey;
   final VoidCallback? onTap;
   final String? semanticLabel;
 
-  /// The tapped card — gets the accent border + glow (mockup `.trace-self`).
+  /// The tapped card — selection reads as an accent border, nothing more.
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
-    final railColor = rail;
     final card = Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -420,50 +387,15 @@ class _RowCard extends StatelessWidget {
           color: selected ? surface.accent : surface.line,
           width: selected ? 1.5 : 1,
         ),
-        boxShadow: selected
-            ? [
-                BoxShadow(
-                  color: surface.accent.withValues(alpha: 0.45),
-                  blurRadius: 26,
-                  spreadRadius: -8,
-                ),
-              ]
-            : null,
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(railColor == null ? 13 : 14, 11, 12, 11),
+        padding: const EdgeInsets.fromLTRB(13, 11, 12, 11),
         child: child,
       ),
     );
-    // Draw the rail on TOP of the card, but clipped to the card's rounded-rect
-    // so it follows the corners and the selection border can't paint over it.
-    // The clip wraps only the rail (not the card), so the selection glow is
-    // preserved. Omitted entirely when null (input + track cards).
-    final content = railColor == null
-        ? card
-        : Stack(
-            children: [
-              card,
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(11),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 3,
-                          color: railColor.withValues(alpha: 0.9),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
     final framed = Padding(
       padding: const EdgeInsets.only(bottom: 9),
-      child: content,
+      child: card,
     );
     if (onTap == null) return KeyedSubtree(key: rowKey, child: framed);
     return FocusableTapTarget(
@@ -498,10 +430,10 @@ class _FieldRow extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               label,
-              style: signalMono(
+              style: signalLabel(
                 color: surface.textTertiary,
-                size: 9,
-                tracking: 1.4,
+                size: 9.5,
+                weight: FontWeight.w500,
               ),
             ),
           ),
@@ -534,7 +466,7 @@ class _RowFxChips extends StatelessWidget {
             decoration: BoxDecoration(
               color: surface.cardHigh,
               borderRadius: BorderRadius.circular(7),
-              border: Border.all(color: kSignalLine2),
+              border: Border.all(color: surface.line),
             ),
             child: Text(
               l10n.effectTypeLabel(e.type),
@@ -562,7 +494,7 @@ class _TakeFxLine extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: kSignalLine2),
+          border: Border.all(color: surface.line),
         ),
         child: Text(
           l10n.signalCleanTake,
@@ -577,20 +509,20 @@ class _TakeFxLine extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: kSignalSnapshotBg,
+        color: surface.accent.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: kSignalSnapshotLine),
+        border: Border.all(color: surface.accent.withValues(alpha: 0.5)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.auto_awesome, size: 11, color: kSignalSnapshotInk),
+          Icon(Icons.auto_awesome, size: 11, color: surface.accent),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
               names,
               overflow: TextOverflow.ellipsis,
-              style: signalMono(color: kSignalSnapshotInk, size: 9.5),
+              style: signalMono(color: surface.accent, size: 9.5),
             ),
           ),
         ],
@@ -651,8 +583,8 @@ class _CaptureBadge extends StatelessWidget {
       key: badgeKey,
       tooltip: l10n.signalReassignInput,
       onSelected: onReassign,
-      color: kSignalMenu,
-      shape: signalMenuShape(),
+      color: surface.cardHigh,
+      shape: signalMenuShape(surface),
       elevation: 10,
       menuPadding: const EdgeInsets.symmetric(vertical: 5),
       position: PopupMenuPosition.under,
@@ -677,9 +609,9 @@ class _CaptureBadge extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: kSignalInset,
+          color: surface.surface,
           borderRadius: BorderRadius.circular(7),
-          border: Border.all(color: kSignalLine2),
+          border: Border.all(color: surface.line),
         ),
         child: Text(
           recorded
@@ -715,18 +647,20 @@ class _GateToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
-            color: on ? kSignalSnapshotBg : kSignalInset,
+            color: on
+                ? surface.accent.withValues(alpha: 0.16)
+                : surface.surface,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: on ? kSignalSnapshotLine : kSignalLine2,
+              color: on ? surface.accent.withValues(alpha: 0.5) : surface.line,
             ),
           ),
           child: Text(
             on ? 'ON' : 'OFF',
-            style: signalMono(
-              color: on ? kSignalSnapshotInk : surface.textSecondary,
-              size: 9,
-              tracking: 1,
+            style: signalLabel(
+              color: on ? surface.accent : surface.textSecondary,
+              size: 9.5,
+              weight: FontWeight.w600,
             ),
           ),
         ),

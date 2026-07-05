@@ -25,15 +25,11 @@ class _SignalTabs extends StatelessWidget {
               unselectedLabelColor: surface.textTertiary,
               indicatorColor: surface.accent,
               dividerColor: Colors.transparent,
-              labelStyle: signalMono(
+              labelStyle: signalLabel(
                 color: surface.accent,
-                tracking: 1.6,
                 weight: FontWeight.w600,
               ),
-              unselectedLabelStyle: signalMono(
-                color: surface.textTertiary,
-                tracking: 1.6,
-              ),
+              unselectedLabelStyle: signalLabel(color: surface.textTertiary),
               tabs: [
                 for (final p in panes)
                   Tab(
@@ -100,11 +96,9 @@ class _PaneShell extends StatelessWidget {
               children: [
                 Text(
                   pane.header(l10n).toUpperCase(),
-                  style: signalMono(
+                  style: signalLabel(
                     color: surface.textTertiary,
-                    size: 10.5,
-                    tracking: 2.6,
-                    weight: FontWeight.w500,
+                    weight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(width: 8),

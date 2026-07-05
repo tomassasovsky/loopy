@@ -286,7 +286,6 @@
       "description": "Badge on a multi-lane track header counting its takes.",
       "placeholders": { "count": { "type": "int" } }
     },
-    "signalTraceHint": "Tap any row to trace its signal — connected rows light up, the rest fade. Tap a chip to route.",
     "signalLegendLive": "LIVE input is monitored",
     "signalLegendSnapshot": "FX snapshot taken at record",
     "signalLegendChip": "chip = routed to that output",
@@ -364,7 +363,6 @@
     "signalThisTakeHint": "A copy taken at record. Editing it changes only this lane — the live input tone and your other takes stay untouched.",
     "signalLaneCleanHint": "This lane records its input clean. Add effects to colour just this take.",
     "signalAddEffectTooltip": "Add effect to this take",
-    "signalHint": "Tap an input to dial its tone (it's what records). Tap a lane to route it. Tap an output to gate it on or off.",
     "inputMonitorLabel": "In {inputNumber} monitor",
     "@inputMonitorLabel": {
         "placeholders": {

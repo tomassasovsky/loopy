@@ -57,8 +57,8 @@ class _MixControl extends StatelessWidget {
   }
 }
 
-/// A mono "context" tag for the dock header — `INPUT` / `TAKE` — so it always
-/// reads what kind of thing is focused.
+/// A "context" tag for the dock header — `INPUT` / `TAKE` — so it always reads
+/// what kind of thing is focused.
 class _ContextTag extends StatelessWidget {
   const _ContextTag({required this.label, required this.color});
 
@@ -76,7 +76,7 @@ class _ContextTag extends StatelessWidget {
       ),
       child: Text(
         label.toUpperCase(),
-        style: signalMono(color: color, size: 9.5, tracking: 1.6),
+        style: signalLabel(color: color, size: 9.5, weight: FontWeight.w600),
       ),
     );
   }
@@ -153,7 +153,6 @@ class SignalInputDock extends StatelessWidget {
                 style: signalMono(
                   color: surface.textPrimary,
                   size: 13,
-                  tracking: 0.5,
                   weight: FontWeight.w600,
                 ),
               ),
@@ -401,34 +400,6 @@ class _DockShell extends StatelessWidget {
         border: Border(top: BorderSide(color: surface.line)),
       ),
       child: child,
-    );
-  }
-}
-
-/// A hint shown when nothing is focused.
-class SignalHintDock extends StatelessWidget {
-  /// Creates a [SignalHintDock].
-  const SignalHintDock({required this.message, super.key});
-
-  /// The hint text.
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = context.surface;
-    return _DockShell(
-      child: Row(
-        children: [
-          Icon(Icons.touch_app_outlined, size: 16, color: surface.textTertiary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: signalMono(color: surface.textSecondary, size: 12),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

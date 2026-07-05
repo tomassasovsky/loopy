@@ -191,7 +191,7 @@ void main() {
       );
     });
 
-    testWidgets('the gate pill toggles monitoring on and off', (tester) async {
+    testWidgets('the gate dot toggles monitoring on and off', (tester) async {
       seed(stateWith());
       await pump(tester);
       expect(monitor.state.forInput(0).enabled, isFalse);
@@ -203,6 +203,30 @@ void main() {
       await tester.tap(find.byKey(const Key('signalInGate_0')));
       await tester.pumpAndSettle();
       expect(monitor.state.forInput(0).enabled, isFalse);
+    });
+
+    testWidgets('the input gate names its on/off state for a11y', (
+      tester,
+    ) async {
+      // The lit/dim dot replaced the LIVE/OFF pill, so state must stay exposed
+      // to assistive tech by label — never by colour/opacity alone — and the
+      // gate must still announce as an interactive toggle, not static text.
+      final handle = tester.ensureSemantics();
+      seed(stateWith());
+      await pump(tester);
+
+      final gate = find.byKey(const Key('signalInGate_0'));
+      final off = tester.getSemantics(gate);
+      expect(off, isSemantics(isButton: true, hasTapAction: true));
+      expect(off.label.toLowerCase(), contains('off'));
+
+      await tester.tap(gate);
+      await tester.pumpAndSettle();
+
+      final on = tester.getSemantics(gate);
+      expect(on, isSemantics(isButton: true, hasTapAction: true));
+      expect(on.label.toLowerCase(), contains('live'));
+      handle.dispose();
     });
 
     testWidgets('toggling an input route chip updates its output mask', (
