@@ -565,15 +565,6 @@ class ControlCubit extends Cubit<ControlState> {
   // Outbound frame projection (via PedalRepository)
   // ---------------------------------------------------------------------------
 
-  /// The pedal-track LED color for [channel] — the pure projection, exposed
-  /// for the on-screen emulation and tests.
-  // ignore: prefer_void_public_cubit_methods
-  PedalTrackLed trackLedFor(int channel) {
-    final looperState = _looperState;
-    if (looperState == null) return PedalTrackLed.off;
-    return projectTrackLed(looperState, state, channel);
-  }
-
   void _onLooperState(LooperState looperState) {
     _looperState = looperState;
     _reduce(looperState);
