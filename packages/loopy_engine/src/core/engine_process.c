@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "audio_ring.h"      /* le_audio_ring_push_frame (performance capture) */
 #include "engine_core.h"     /* valid_channel, le_track_set_len, le_mask_to_channel */
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
 #include "engine_internal.h" /* le_engine_process prototype */
@@ -888,6 +889,21 @@ static void apply_command(le_engine* e, const le_command* cmd) {
                             memory_order_relaxed);
       break;
     }
+    /* Performance-recording capture: zero-payload — the control thread already
+     * published the ring set + frozen config directly into e->perf (see
+     * loopy_engine_api.h's LE_CMD_PERF_ARM doc) before pushing this command,
+     * so applying it is just flipping the audio-thread-local mirror plus the
+     * atomic the snapshot reads. */
+    case LE_CMD_PERF_ARM:
+      e->perf.armed = 1;
+      atomic_store_explicit(&e->a_perf_armed, 1, memory_order_release);
+      break;
+    case LE_CMD_PERF_DISARM:
+      /* Stop touching the rings for good before le_perf_disarm's quiescent
+       * wait starts counting buffer boundaries. */
+      e->perf.armed = 0;
+      atomic_store_explicit(&e->a_perf_armed, 0, memory_order_release);
+      break;
     case LE_CMD_COMMIT_SESSION: {
       const int32_t base = cmd->arg_i;
       if (base <= 0) break;
@@ -1013,6 +1029,47 @@ static inline void master_bus_frame(le_engine* e, float* out, uint32_t f,
     *out_sumsq += sample * sample;
     const float sa = fabsf(sample);
     if (sa > *frame_out_peak) *frame_out_peak = sa;
+  }
+}
+
+/* Performance-recording capture taps (le_perf_arm/disarm, loopy_engine_api.h):
+ * copy the post-limiter master output and each captured monitor input's
+ * post-FX signal into their pre-published rings. Both are no-ops when not
+ * armed (`e->perf.armed`, the audio-thread-local mirror of a_perf_armed);
+ * neither ever blocks or allocates — a full ring just drops the frame and
+ * bumps the shared overrun atomic. */
+
+/* Tap for the master bus: [master_out_ch] selects the first enabled output
+ * pair frozen at arm (mono when only one channel was captured). */
+static inline void perf_tap_master_frame(le_engine* e, const float* out,
+                                         uint32_t f, int ch_out) {
+  if (!e->perf.armed) return;
+  float s[2];
+  const int32_t ch0 = e->perf.master_out_ch[0];
+  s[0] = (ch0 >= 0 && ch0 < ch_out) ? out[f * (uint32_t)ch_out + (uint32_t)ch0]
+                                    : 0.0f;
+  if (e->perf.master_channels == 2) {
+    const int32_t ch1 = e->perf.master_out_ch[1];
+    s[1] = (ch1 >= 0 && ch1 < ch_out)
+               ? out[f * (uint32_t)ch_out + (uint32_t)ch1]
+               : 0.0f;
+  }
+  if (!le_audio_ring_push_frame(&e->perf.master_ring, s,
+                                (size_t)e->perf.master_channels)) {
+    atomic_fetch_add_explicit(&e->a_perf_overruns, 1u, memory_order_relaxed);
+  }
+}
+
+/* Tap for one captured monitor input: always one push per frame while armed
+ * and captured — including a silent (0, 0) frame when the input is currently
+ * off/muted — so the ring stays frame-aligned with the master ring (the
+ * eventual DAW export needs every captured track on the same timeline, not a
+ * sparse packing of only-when-audible samples). */
+static inline void perf_tap_monitor_frame(le_engine* e, int input, float l,
+                                          float r) {
+  const float s[2] = {l, r};
+  if (!le_audio_ring_push_frame(&e->perf.monitor_ring[input], s, 2)) {
+    atomic_fetch_add_explicit(&e->a_perf_overruns, 1u, memory_order_relaxed);
   }
 }
 
@@ -1295,7 +1352,12 @@ static inline void mix_monitors_frame(
     const uint32_t* mon_out) {
   if (in) {
     for (int c = 0; c < ch_in && c < LE_MAX_INPUTS; ++c) {
-      if (!mon_on[c] || mon_mut[c]) continue;
+      const int captured =
+          e->perf.armed && (e->perf.input_mask & (1u << c)) != 0;
+      if (!mon_on[c] || mon_mut[c]) {
+        if (captured) perf_tap_monitor_frame(e, c, 0.0f, 0.0f);
+        continue;
+      }
       const float clean = in[f * ch_in + c];
       float ml = clean;
       float mr = clean;
@@ -1304,6 +1366,7 @@ static inline void mix_monitors_frame(
                        mon_fx_type[c], mon_fx_params[c]);
       }
       const float g = mon_vol[c];
+      if (captured) perf_tap_monitor_frame(e, c, ml * g, mr * g);
       le_fx_route(out, f, ch_out, mon_out[c] & out_enabled, ml * g, mr * g);
     }
   }
@@ -1668,6 +1731,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
      * bypassed all of this via `continue` above. */
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                      lim_release, &out_sumsq, &frame_out_peak);
+    perf_tap_master_frame(e, out, f, ch_out);
     viz_tap_frame(e, tc, pos, frame_out_peak, frame_trk_peak);
     advance_transport_frame(e, tc, st);
   }
@@ -1697,4 +1761,14 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_i32(&e->a_master_pos, e->clock.position);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,
                             memory_order_relaxed);
+  /* Elapsed-frames-since-arm, batched once per block like a_frames above
+   * (armed is fixed for the whole call — commands drain before the frame
+   * loop starts) rather than a per-frame atomic add. Counts every frame this
+   * call processed, including ones the latency harness diverted, so it reads
+   * as wall-clock frames since arm, not samples the master tap actually
+   * captured. */
+  if (e->perf.armed) {
+    atomic_fetch_add_explicit(&e->a_perf_frames, (uint64_t)frames,
+                              memory_order_relaxed);
+  }
 }
