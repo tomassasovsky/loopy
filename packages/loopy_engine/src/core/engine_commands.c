@@ -285,42 +285,6 @@ static void le_cancel_arm(le_engine* engine, int32_t channel) {
   le_push(engine, LE_CMD_DISARM, channel, 0.0f);
 }
 
-/* Snapshots each active lane's recorded-input monitor FX chain onto the lane's
- * own FX chain — a deep copy of types + params, NOT a shared reference (D2/D3).
- * Control-thread only: runs in le_engine_record when a track first leaves EMPTY,
- * NEVER on the audio thread (NF-1). It reuses the proven per-entry lane-FX
- * setters, which prepare DSP / allocate delay lines on this thread and publish
- * the type/count through the command ring, so the audio thread applies them with
- * the same release/acquire ordering and DSP reset as a manual edit. The recorded
- * buffer stays clean; playback re-applies the snapshot. A lane with nothing
- * monitored (no monitorable input, or a clean input chain) KEEPS its own chain:
- * deliberately staged / persistence-restored lane FX must survive a fresh take
- * rather than be wiped by a dry monitor — the snapshot only overwrites when
- * there is a monitored chain to copy. */
-static void le_snapshot_input_fx_to_lanes(le_engine* engine, le_track* t) {
-  const int32_t ch = (int32_t)(t - engine->tracks);
-  const int32_t lanes = le_lanes_active(t);
-  for (int32_t l = 0; l < lanes; ++l) {
-    le_lane* ln = &t->lanes[l];
-    const int32_t ic = load_i32(&ln->a_input_channel);
-    if (ic < 0 || ic >= LE_MAX_INPUTS) continue; /* nothing monitored: keep */
-    le_monitor_input* m = &engine->monitors[ic];
-    int32_t n = load_i32(&m->a_fx_count);
-    if (n < 0) n = 0;
-    if (n > LE_FX_MAX) n = LE_FX_MAX;
-    if (n == 0) continue; /* dry monitor: keep the lane's own chain */
-    for (int32_t s = 0; s < n; ++s) {
-      le_engine_set_lane_fx(engine, ch, l, s, load_i32(&m->a_fx_type[s]));
-      for (int32_t p = 0; p < LE_FX_PARAMS; ++p) {
-        le_engine_set_lane_fx_param(engine, ch, l, s, p,
-                                    load_f32(&m->a_fx_param[s][p]));
-      }
-    }
-    le_engine_set_lane_fx_count(engine, ch, l, n);
-  }
-  engine->snapshot_copy_count++;
-}
-
 /* Whether any track is driving the loop clock (playing or capturing). A
  * quantized action can only fire at a loop top if the transport is actually
  * ticking — with everything parked or empty the clock is HELD at the top
@@ -435,14 +399,14 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
     has_master = 0; /* the CLEAR ahead of us in the ring resets the grid */
   }
 
-  /* Snapshot-on-record (D2/D3): a track first leaving EMPTY deep-copies each
-   * lane's recorded-input monitor chain onto the lane, so the take plays back
-   * through the chain the performer monitored. Taken once here (control thread),
-   * before the arm/immediate branches, so a later overdub or input-chain edit
-   * never alters the take. Independent of the monitor enable gate (D8). */
-  if (st == LE_TRACK_EMPTY) {
-    le_snapshot_input_fx_to_lanes(engine, t);
-  }
+  /* No engine self-snapshot on record: the host (LooperRepository) is the sole
+   * record-time snapshot authority and pushes each take's lane FX through the
+   * command ring like any other lane edit. The engine is a pure sink — it holds
+   * only what the host pushes, so there is no second, ring-deferred computation
+   * to race or diverge (the dry-take-when-FX-monitored bug). The internal CLEAR
+   * that may ride ahead of us (grid redefinition, above) resets only the master
+   * grid / buffers via handle_clear — it does NOT touch lane FX — so the host's
+   * pushed chain, queued before this record command, is never clobbered. */
 
   /* Sound-activated: a record press on an empty track arms a signal-triggered
    * start (LE_CMD_ARM with trigger 1); the audio thread begins recording the

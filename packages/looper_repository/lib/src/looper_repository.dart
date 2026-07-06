@@ -628,10 +628,13 @@ class LooperRepository {
   /// Advances track [channel]: record / finalize loop / toggle overdub.
   ///
   /// When the track is leaving EMPTY (a fresh capture), the input's live
-  /// monitor chain is snapshot-copied onto each recording lane (mirroring the
-  /// engine's own copy-on-record) so the take's remembered FX matches what was
-  /// monitored. The copy is by value, so editing the input chain afterwards
-  /// never alters the take (D3).
+  /// monitor chain is snapshot-copied onto each recording lane and pushed to
+  /// the engine, so the take's remembered FX matches what was monitored. The
+  /// repository is the sole record-time snapshot authority: it computes the
+  /// snapshot from the synchronously-correct `_monitorEffects` cache (never
+  /// from ring-deferred engine state), so there is no drain-timing race. The
+  /// copy is by value, so editing the input chain afterwards never alters the
+  /// take (D3).
   EngineResult record({int channel = 0}) {
     final snapshot = _engine.snapshot();
     if (channel >= 0 &&
@@ -654,12 +657,22 @@ class LooperRepository {
   }
 
   /// Copies each active lane's recorded-input monitor chain onto the lane's own
-  /// remembered effect chain (by value). Mirrors the engine snapshot-on-
-  /// record so [LooperState] / persistence reflect the take's FX. A lane with
-  /// nothing monitored (no monitorable input, or a clean input chain) keeps its
-  /// own chain — mirroring the engine — so deliberately staged / restored lane
-  /// FX survive a fresh take instead of being wiped by a dry monitor.
+  /// remembered effect chain (by value) AND pushes it to the engine — the
+  /// repository is the single record-time snapshot authority and the engine is
+  /// a pure sink that holds only what the repo pushes (it no longer self-
+  /// snapshots on record). Keeps [LooperState] / persistence / engine all
+  /// deriving from the one owner. A lane with nothing monitored (no monitorable
+  /// input, or a clean input chain) keeps its own chain — that dry path bails
+  /// before any push, so the lane's engine chain is left untouched. A *non-
+  /// empty* monitored chain always overwrites the lane (D2 — the take sounds
+  /// like what was monitored), even if plugin captures reduce it to empty; that
+  /// overwrite is pushed too, so cache and engine stay equal.
   void _snapshotMonitorChainsOntoLanes(int channel) {
+    // Iterate the repo's own lane config (`_laneCount` / `_laneInput`). The repo
+    // is the single writer of both — every `setLaneCount` / `setLaneInput`
+    // updates the cache and the engine together — so this targets exactly the
+    // track's active lanes and their recorded inputs (must-verify #3), with no
+    // read of ring-deferred engine state.
     final count = _laneCount[channel] ?? 1;
     for (var lane = 0; lane < count; lane++) {
       final input = _laneInput[(channel, lane)] ?? lane;
@@ -678,10 +691,18 @@ class LooperRepository {
         if (captured != null) snapshot.add(captured);
       }
       if (snapshot.isEmpty) {
+        // Every entry of a non-empty monitored chain failed to capture (all
+        // plugins, all bypassed): the monitored chain still overwrites the lane
+        // (D2), reducing it to empty. Push that too (below) so a stale
+        // staged/persisted engine chain can't outlive it and diverge.
         _laneEffects.remove((channel, lane));
       } else {
         _laneEffects[(channel, lane)] = snapshot;
       }
+      // Push it to the engine's lane FX like any other lane edit (plugin
+      // entries carry the frozen state captured above) — the pure-sink push
+      // that lands the take's chain regardless of ring-drain timing.
+      _applyLaneEffects(channel, lane);
       // The take's chain just changed under the repository's own hand — notify
       // so the bloc persists it (F3: without this, a restart replays the
       // pre-take chain from settings).
