@@ -550,11 +550,17 @@ class MockAudioEngine implements AudioEngine {
   @override
   EngineResult commitSession(int baseFrames) => _requireRunning();
 
+  /// The `captureDir` passed to the most recent [perfArm] call, for test
+  /// assertions. `null` until the first arm.
+  String? lastPerfCaptureDir;
+
   @override
-  EngineResult perfArm() {
+  EngineResult perfArm(String captureDir) {
+    if (captureDir.isEmpty) return EngineResult.invalid;
     final result = _requireRunning();
     if (!result.isOk) return result;
     _perfArmed = true; // idempotent: re-arming just keeps it armed
+    lastPerfCaptureDir = captureDir;
     return EngineResult.ok;
   }
 

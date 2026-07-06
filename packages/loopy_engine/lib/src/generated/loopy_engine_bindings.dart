@@ -2020,33 +2020,47 @@ class LoopyEngineBindings {
 
   /// Arms performance-recording capture: allocates the master + per-monitor
   /// rings, freezes the captured input set from whichever inputs are currently
-  /// monitored, and publishes them to the audio thread. Idempotent (a second call
-  /// while already armed is a no-op success). Returns LE_OK, LE_ERR_NOT_RUNNING
-  /// (not configured), or LE_ERR_INVALID (no output enabled to capture, or
-  /// allocation failure).
+  /// monitored, publishes them to the audio thread, and starts the drain thread
+  /// writing into `capture_dir` (created if it does not already exist).
+  /// Idempotent (a second call while already armed is a no-op success — the
+  /// armed session's original `capture_dir` keeps draining; the repeat call's
+  /// `capture_dir` argument is still required to be non-null/non-empty but is
+  /// otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING (not configured),
+  /// LE_ERR_INVALID (null/empty `capture_dir`, no output enabled to capture, or
+  /// ring allocation failure), or LE_ERR_DEVICE (the drain thread could not be
+  /// started — e.g. the directory could not be created — or a previous disarm's
+  /// quiescent wait bailed out and left a stale drain session still live).
   int le_perf_arm(
     ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Char> capture_dir,
   ) {
     return _le_perf_arm(
       engine,
+      capture_dir,
     );
   }
 
   late final _le_perf_armPtr =
-      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
-        'le_perf_arm',
-      );
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+        >
+      >('le_perf_arm');
   late final _le_perf_arm = _le_perf_armPtr
-      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+      >();
 
   /// Disarms performance-recording capture: tells the audio thread to stop
-  /// writing, then frees the rings only after a published-quiescent handshake
-  /// confirms it has (so there is never a use-after-free or an audio-thread
-  /// free) — mirroring the plugin-slot teardown handshake. Idempotent (a second
-  /// call while already disarmed is a no-op success). Returns LE_OK, or
-  /// LE_ERR_DEVICE if the callback could not be confirmed quiescent (a stalled
-  /// device; the rings are left retracted and are reclaimed by a later retry or
-  /// at le_engine_destroy).
+  /// writing, waits for a published-quiescent handshake to confirm it has (so
+  /// there is never a use-after-free or an audio-thread free) — mirroring the
+  /// plugin-slot teardown handshake — then stops and joins the drain thread
+  /// (which runs one final drain-and-flush pass) before freeing the rings.
+  /// Idempotent (a second call while already disarmed is a no-op success).
+  /// Returns LE_OK, or LE_ERR_DEVICE if the callback could not be confirmed
+  /// quiescent (a stalled device; the rings and drain thread are left
+  /// retracted-but-running and are reclaimed by a later retry or at
+  /// le_engine_destroy).
   int le_perf_disarm(
     ffi.Pointer<le_engine> engine,
   ) {

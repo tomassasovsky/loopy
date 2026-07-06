@@ -987,8 +987,8 @@ LE_EXPORT int32_t le_engine_set_monitor_input_fx_param(le_engine* engine,
 LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output,
                                                int32_t enabled);
 
-/* ---- performance recording (RT capture taps; part 1 of the DAW-export stack)
- * ---- *
+/* ---- performance recording (RT capture taps + capture-to-disk; parts 1-2 of
+ * the DAW-export stack) ---- *
  * While armed, the audio thread copies two kinds of streams into pre-published
  * lock-free rings: the post-limiter master output (stereo from the first
  * enabled output pair; mono when the device has only one), and each hardware
@@ -998,26 +998,39 @@ LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output
  * and published to the audio thread with LE_CMD_PERF_ARM; on overflow the
  * audio thread drops the frame and increments the overrun atomic — it never
  * blocks or allocates. Status (armed / frames / overruns) is exposed only via
- * le_snapshot; there is no separate query call. This part has no drain thread
- * and no file I/O — the rings simply fill and, once full, drop — those land in
- * part 2. */
+ * le_snapshot; there is no separate query call.
+ *
+ * A dedicated background drain thread (perf_drain.h; spawned by le_perf_arm,
+ * joined by le_perf_disarm) empties those rings into raw PCM temp files plus a
+ * `performance.json` sidecar under the capture directory, flushed every
+ * ~250 ms. WAV headers are written only at finalize (a later part): a crash
+ * mid-capture leaves salvageable raw PCM + a parseable sidecar, never a
+ * truncated WAV. */
 
 /* Arms performance-recording capture: allocates the master + per-monitor
  * rings, freezes the captured input set from whichever inputs are currently
- * monitored, and publishes them to the audio thread. Idempotent (a second call
- * while already armed is a no-op success). Returns LE_OK, LE_ERR_NOT_RUNNING
- * (not configured), or LE_ERR_INVALID (no output enabled to capture, or
- * allocation failure). */
-LE_EXPORT int32_t le_perf_arm(le_engine* engine);
+ * monitored, publishes them to the audio thread, and starts the drain thread
+ * writing into `capture_dir` (created if it does not already exist).
+ * Idempotent (a second call while already armed is a no-op success — the
+ * armed session's original `capture_dir` keeps draining; the repeat call's
+ * `capture_dir` argument is still required to be non-null/non-empty but is
+ * otherwise unused). Returns LE_OK, LE_ERR_NOT_RUNNING (not configured),
+ * LE_ERR_INVALID (null/empty `capture_dir`, no output enabled to capture, or
+ * ring allocation failure), or LE_ERR_DEVICE (the drain thread could not be
+ * started — e.g. the directory could not be created — or a previous disarm's
+ * quiescent wait bailed out and left a stale drain session still live). */
+LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
 
 /* Disarms performance-recording capture: tells the audio thread to stop
- * writing, then frees the rings only after a published-quiescent handshake
- * confirms it has (so there is never a use-after-free or an audio-thread
- * free) — mirroring the plugin-slot teardown handshake. Idempotent (a second
- * call while already disarmed is a no-op success). Returns LE_OK, or
- * LE_ERR_DEVICE if the callback could not be confirmed quiescent (a stalled
- * device; the rings are left retracted and are reclaimed by a later retry or
- * at le_engine_destroy). */
+ * writing, waits for a published-quiescent handshake to confirm it has (so
+ * there is never a use-after-free or an audio-thread free) — mirroring the
+ * plugin-slot teardown handshake — then stops and joins the drain thread
+ * (which runs one final drain-and-flush pass) before freeing the rings.
+ * Idempotent (a second call while already disarmed is a no-op success).
+ * Returns LE_OK, or LE_ERR_DEVICE if the callback could not be confirmed
+ * quiescent (a stalled device; the rings and drain thread are left
+ * retracted-but-running and are reclaimed by a later retry or at
+ * le_engine_destroy). */
 LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 
 /* ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *

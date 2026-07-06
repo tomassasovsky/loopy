@@ -968,9 +968,16 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult perfArm() {
+  EngineResult perfArm(String captureDir) {
     _checkAlive();
-    return EngineResult.fromCode(_bindings.le_perf_arm(_engine));
+    final dirPtr = captureDir.toNativeUtf8();
+    try {
+      return EngineResult.fromCode(
+        _bindings.le_perf_arm(_engine, dirPtr.cast()),
+      );
+    } finally {
+      malloc.free(dirPtr);
+    }
   }
 
   @override

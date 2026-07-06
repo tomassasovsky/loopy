@@ -347,6 +347,13 @@ typedef struct le_perf_capture {
   uint32_t input_mask;
 
   int armed;
+
+  /* The capture-to-disk drain thread (perf_drain.h), spawned by le_perf_arm
+   * right after the ring set above is published and joined by le_perf_disarm
+   * before the rings are freed. Opaque here (perf_drain.c owns the
+   * definition) — control-thread lifecycle only; engine_process.c never
+   * touches it. NULL when not armed. */
+  struct le_perf_drain* drain;
 } le_perf_capture;
 
 struct le_engine {

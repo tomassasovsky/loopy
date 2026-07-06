@@ -85,6 +85,7 @@ add_library(loopy_engine SHARED
   core/lockfree_ring.c
   core/loop_clock.c
   core/audio_ring.c          # float SPSC ring (performance-recording capture)
+  core/perf_drain.c          # perf-capture drain thread: rings -> raw PCM + sidecar
   # Control-thread plugin-slot lifecycle (load/clear + quiescent handshake).
   # Always compiled; calls le_plugin_slot_create which is the real host on a
   # plugin build and a NULL-returning stub otherwise.

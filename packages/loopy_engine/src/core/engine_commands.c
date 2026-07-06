@@ -30,6 +30,7 @@
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
 #include "loopy_engine_api.h"
+#include "perf_drain.h"  /* le_perf_drain_start/stop (capture-to-disk thread) */
 
 /* Returns a pool slot INDEX that is neither the (shared) live index, nor
  * referenced by either undo/redo stack, nor posted to the audio thread as a
@@ -1035,13 +1036,27 @@ static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
   }
 }
 
-int32_t le_perf_arm(le_engine* engine) {
-  if (engine == NULL) return LE_ERR_INVALID;
+int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
+  if (engine == NULL || capture_dir == NULL || capture_dir[0] == '\0') {
+    return LE_ERR_INVALID;
+  }
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
     return LE_OK; /* already armed: idempotent */
+  }
+  if (engine->perf.drain != NULL) {
+    /* A previous disarm's quiescent wait bailed out (a stalled device
+     * callback) before it could stop+join the drain thread and free the
+     * rings — the audio thread had already applied LE_CMD_PERF_DISARM
+     * (a_perf_armed reads 0), but the OLD session's rings and thread are
+     * still live (le_perf_disarm leaves them exactly as-is in that case, so
+     * a later retry — once the callback recovers — can still clean them up).
+     * Arming now would reallocate engine->perf.master_ring / monitor_ring in
+     * place while that old thread is still popping from them: refuse until
+     * a successful disarm actually clears `drain`. */
+    return LE_ERR_DEVICE;
   }
 
   int32_t out_ch[2];
@@ -1078,12 +1093,27 @@ int32_t le_perf_arm(le_engine* engine) {
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
 
+  /* Spawn the drain thread before publishing to the audio thread: it only
+   * ever reads through le_audio_ring_pop (never allocates/frees the ring
+   * buffers themselves), so starting it slightly early is harmless — it just
+   * finds empty rings until the audio thread begins producing. Arming without
+   * a working drain thread would silently drop every captured frame, so a
+   * failure here aborts the whole arm. */
+  engine->perf.drain = le_perf_drain_start(engine, capture_dir);
+  if (engine->perf.drain == NULL) {
+    le_perf_free_unpublished(engine, input_mask);
+    engine->perf.input_mask = 0;
+    return LE_ERR_DEVICE;
+  }
+
   /* Push-then-mutate would be backwards here: the ring set must be fully
    * published (visible via the command ring's release/acquire pairing) BEFORE
    * the audio thread may touch it, so every field above is written first and
    * this push is what makes them visible. */
   const int32_t rc = le_push(engine, LE_CMD_PERF_ARM, 0, 0.0f);
   if (rc != LE_OK) {
+    le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
+    engine->perf.drain = NULL;
     le_perf_free_unpublished(engine, input_mask);
     engine->perf.input_mask = 0;
     return rc;
@@ -1129,6 +1159,14 @@ int32_t le_perf_disarm(le_engine* engine) {
       return LE_ERR_DEVICE;
     }
   }
+
+  /* The audio thread has confirmed quiescent (or there is no concurrent
+   * writer at all — the device-free test pump). Stop and join the drain
+   * thread BEFORE freeing the rings below: it is the rings' last reader
+   * (le_audio_ring_pop), and its own final drain-and-flush pass needs them
+   * intact. */
+  le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
+  engine->perf.drain = NULL;
 
   free(engine->perf.master_ring.buffer);
   engine->perf.master_ring = (le_audio_ring){0};
