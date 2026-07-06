@@ -32,12 +32,21 @@
                                 * / LE_MAX_LANES / LE_FX_MAX / LE_FX_PARAMS /
                                 * LE_VIZ_POINTS */
 #include "miniaudio.h"         /* ma_device, ma_context, ma_device_id */
+#include "perf_log_ring.h"     /* le_perf_log_ring (performance event log) */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define LE_RING_CAPACITY 256u
+
+/* Performance event log (part 3): 4096 slots absorbs a command storm (a
+ * scripted/automated burst of >= 2000 audibility-affecting changes) within one
+ * 250ms drain interval without dropping an entry; the control-side ring is
+ * far smaller since it only ever sees human-paced UI edits. Both power of
+ * two, matching every other ring in this engine. */
+#define LE_PERF_LOG_RING_CAPACITY 4096u
+#define LE_PERF_LOG_CTRL_RING_CAPACITY 512u
 
 /* Per-track buffer pool size: one live buffer plus up to LE_POOL_SLOTS-1 undo/
  * redo layers (one per overdub pass). Buffers are allocated lazily, so memory
@@ -348,6 +357,30 @@ typedef struct le_perf_capture {
 
   int armed;
 
+  /* The sample-accurate event log (part 3): every audibility-affecting
+   * command the audio thread applies, plus a handful of transport facts
+   * (record start/end, loop length locked, layer retired), tagged with the
+   * capture frame it occurred at and pushed here for perf_drain.c to append
+   * to events.log. Audio-thread-producer, so it lives alongside the taps
+   * above rather than being control-allocated at arm like the audio rings —
+   * a fixed-size field the same way evt_ring is (see le_engine below), just
+   * re-initialised (head/tail reset) on every arm so a session never sees a
+   * stale entry from a previous one. See docs/design/performance-event-log-
+   * format.md for the audited command table and on-disk format. */
+  le_perf_log_ring log_ring;
+  le_perf_log_entry log_storage[LE_PERF_LOG_RING_CAPACITY];
+
+  /* A second, control-thread-producer instance for the direct-atomic setters
+   * that bypass the command ring entirely (FX/monitor params, the limiter,
+   * overdub feedback, and the common in-track undo/redo swap) — splitting by
+   * producer thread keeps both rings single-producer/single-consumer with no
+   * new synchronization, at the cost of the drain thread appending two
+   * streams to events.log that are monotonic per-stream but not globally
+   * merged (see the format doc). Sized far smaller than log_ring: these are
+   * human-paced UI edits, not per-buffer audio-thread traffic. */
+  le_perf_log_ring log_ctrl_ring;
+  le_perf_log_entry log_ctrl_storage[LE_PERF_LOG_CTRL_RING_CAPACITY];
+
   /* The capture-to-disk drain thread (perf_drain.h), spawned by le_perf_arm
    * right after the ring set above is published and joined by le_perf_disarm
    * before the rings are freed. Opaque here (perf_drain.c owns the
@@ -447,6 +480,14 @@ struct le_engine {
   _Atomic int32_t a_perf_armed;
   _Atomic uint64_t a_perf_frames;
   _Atomic uint32_t a_perf_overruns;
+  /* Perf-log ring drops (part 3), tracked separately from a_perf_overruns
+   * (the PCM-ring overrun count from part 1) — a dropped log entry and a
+   * dropped audio sample are different failure modes worth telling apart in
+   * a native test. Not surfaced via le_snapshot: no Dart consumer needs this
+   * yet (native tests read the atomic directly); add it there if a later
+   * part does. */
+  _Atomic uint32_t a_perf_log_overruns;
+  _Atomic uint32_t a_perf_log_ctrl_overruns;
   le_perf_capture perf;
 
   /* Tracks. */

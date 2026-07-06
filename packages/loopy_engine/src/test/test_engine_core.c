@@ -3351,6 +3351,57 @@ static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
   return 0;
 }
 
+/* ---- events.log test helpers (part 3, docs/design/performance-event-log-
+ * format.md): a 12-byte header, then fixed 28-byte entries. Decoding mirrors
+ * perf_drain.c's le_pd_write_log_entry exactly (frame, then code, then the
+ * union's raw 16 bytes), so a round-trip through these helpers proves the
+ * on-disk format, not just the in-memory ring. ---- */
+#define LE_TEST_EVENTS_HEADER_BYTES 12
+#define LE_TEST_EVENTS_ENTRY_BYTES 28
+
+static size_t read_binary_file_for_test(const char* path, unsigned char* out,
+                                        size_t cap) {
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return 0;
+  const size_t n = fread(out, 1, cap, f);
+  fclose(f);
+  return n;
+}
+
+static void decode_log_entry(const unsigned char* raw, le_perf_log_entry* out) {
+  memcpy(&out->frame, raw, sizeof(out->frame));
+  memcpy(&out->cmd.code, raw + sizeof(out->frame), sizeof(out->cmd.code));
+  memcpy(((char*)&out->cmd) + sizeof(out->cmd.code),
+        raw + sizeof(out->frame) + sizeof(out->cmd.code),
+        LE_TEST_EVENTS_ENTRY_BYTES - sizeof(out->frame) -
+            sizeof(out->cmd.code));
+}
+
+/* Number of whole 28-byte entries in an events.log read of `n` bytes
+ * (n must be >= the 12-byte header; entries start right after it). */
+static size_t log_entry_count(size_t n) {
+  if (n < LE_TEST_EVENTS_HEADER_BYTES) return 0;
+  return (n - LE_TEST_EVENTS_HEADER_BYTES) / LE_TEST_EVENTS_ENTRY_BYTES;
+}
+
+static void decode_log_entry_at(const unsigned char* buf, size_t index,
+                                le_perf_log_entry* out) {
+  decode_log_entry(buf + LE_TEST_EVENTS_HEADER_BYTES +
+                       index * LE_TEST_EVENTS_ENTRY_BYTES,
+                   out);
+}
+
+/* Finds the first entry at or after `from` whose code matches; returns its
+ * index, or -1 if none remain. */
+static int find_log_entry(const unsigned char* buf, size_t count, int from,
+                          int32_t code, le_perf_log_entry* out) {
+  for (size_t i = (size_t)(from < 0 ? 0 : from); i < count; ++i) {
+    decode_log_entry_at(buf, i, out);
+    if (out->cmd.code == code) return (int)i;
+  }
+  return -1;
+}
+
 static void test_perf_arm_requires_configure(void) {
   printf("test_perf_arm_requires_configure\n");
   le_engine* e = le_engine_create();
@@ -4018,6 +4069,446 @@ static void test_perf_reconfigure_while_armed_marks_sidecar_device_changed(void)
   CHECK(strstr(json, "\"stopped_early\": \"device_changed\"") != NULL);
   CHECK(strstr(json, "\"finalized\": false") != NULL);
 
+  le_engine_destroy(e);
+}
+
+/* Acceptance criteria 1 (audited table round-trips through ring -> file) and
+ * 2 (events carry the correct capture frame): arms, advances a known number
+ * of frames, pushes one representative command per union-arm shape the
+ * audited table covers (plus one excluded code, to prove it is NOT logged),
+ * then asserts every logged entry's frame matches the buffer-start snapshot
+ * and its payload matches what was pushed. */
+static void test_perf_events_log_table_round_trip_and_frame_accuracy(void) {
+  printf("test_perf_events_log_table_round_trip_and_frame_accuracy\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  process_const(e, 0.0f, LOOP_N, out);
+  const uint64_t expected_frame =
+      atomic_load_explicit(&e->a_perf_frames, memory_order_relaxed);
+
+  CHECK(le_engine_set_master_gain(e, 0.7f) == LE_OK);           /* generic */
+  CHECK(le_engine_set_track_volume(e, 0, 0.4f) == LE_OK);       /* generic */
+  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);            /* generic */
+  CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK);        /* generic */
+  CHECK(le_engine_set_input_mask(e, 0, 1) == LE_OK);            /* trackmask */
+  CHECK(le_engine_set_output_mask(e, 0, 1) == LE_OK);           /* trackmask */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK); /* fx */
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);      /* fxcount */
+  CHECK(le_engine_set_lane_input(e, 0, 0, 0) == LE_OK);         /* lanei */
+  CHECK(le_engine_set_lane_output(e, 0, 0, 1) == LE_OK);        /* lanei */
+  CHECK(le_engine_set_lane_volume(e, 0, 0, 0.5f) == LE_OK);     /* lanef */
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);          /* lanef */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);         /* generic */
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK); /* fx */
+  CHECK(le_engine_set_monitor_input_fx_count(e, 0, 1) == LE_OK); /* fxcount */
+  CHECK(le_engine_set_monitor_input_output(e, 0, 1) == LE_OK);  /* trackmask */
+  CHECK(le_engine_set_monitor_input_volume(e, 0, 0.6f) == LE_OK); /* generic */
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK);    /* generic */
+  CHECK(le_engine_set_record_offset(e, 480) == LE_OK); /* EXCLUDED: must not log */
+  drain(e); /* apply_command runs once here — every entry above tags `expected_frame` */
+
+  /* Control-side emission (bypasses the command ring entirely): logged via
+   * log_ctrl_ring, drained into the same events.log, tagged with the same
+   * a_perf_frames snapshot since it hasn't advanced since `expected_frame`
+   * was captured above. */
+  CHECK(le_engine_set_limiter(e, 1, 0.9f) == LE_OK);
+  CHECK(le_engine_set_overdub_feedback(e, 0.8f) == LE_OK);
+  CHECK(atomic_load_explicit(&e->a_perf_log_ctrl_overruns,
+                            memory_order_relaxed) == 0u);
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* blocks: final flush + join */
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  CHECK(memcmp(buf, "PLEV", 4) == 0);
+  uint32_t version;
+  memcpy(&version, buf + 4, 4);
+  CHECK(version == 1);
+  int32_t sample_rate;
+  memcpy(&sample_rate, buf + 8, 4);
+  CHECK(sample_rate == 48000);
+
+  const size_t count = log_entry_count(n);
+  le_perf_log_entry entry;
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MASTER_GAIN, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_f == 0.7f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_VOLUME, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_i == 0 && entry.cmd.arg_f == 0.4f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MUTE, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_i == 0 && entry.cmd.arg_f != 0.0f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_OUTPUT_ENABLED, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_INPUT_MASK, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.trackmask.channel == 0 && entry.cmd.trackmask.mask == 1u);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_OUTPUT_MASK, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.trackmask.channel == 0 && entry.cmd.trackmask.mask == 1u);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_LANE_FX, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.fx.channel == 0 && entry.cmd.fx.lane == 0 &&
+        entry.cmd.fx.index == 0 && entry.cmd.fx.type == LE_FX_DRIVE);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_LANE_FX_COUNT, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.fxcount.channel == 0 && entry.cmd.fxcount.count == 1);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_LANE_INPUT, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.lanei.channel == 0 && entry.cmd.lanei.value == 0);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_LANE_OUTPUT, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.lanei.channel == 0 && entry.cmd.lanei.value == 1);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_LANE_VOLUME, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.lanef.value == 0.5f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_LANE_MUTE, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.lanef.value != 0.0f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MONITOR_INPUT, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MONITOR_INPUT_FX, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.fx.type == LE_FX_DELAY);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MONITOR_INPUT_FX_COUNT,
+                       &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.fxcount.channel == 0 && entry.cmd.fxcount.count == 1);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MONITOR_INPUT_OUTPUT,
+                       &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.trackmask.channel == 0 && entry.cmd.trackmask.mask == 1u);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MONITOR_INPUT_VOLUME,
+                       &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_i == 0 && entry.cmd.arg_f == 0.6f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MONITOR_INPUT_MUTE, &entry) >=
+        0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_i == 0 && entry.cmd.arg_f != 0.0f);
+
+  /* Excluded: a calibration value, never logged. */
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_RECORD_OFFSET, &entry) < 0);
+
+  /* Control-side codes (log_ctrl_ring). */
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_SET_LIMITER, &entry) >= 0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_i == 1 && entry.cmd.arg_f == 0.9f);
+
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_SET_OVERDUB_FEEDBACK, &entry) >=
+        0);
+  CHECK(entry.frame == expected_frame);
+  CHECK(entry.cmd.arg_f == 0.8f);
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: transport facts (record start/end, loop length
+ * locked, layer retired) are logged sample-accurately, distinct from the raw
+ * commands that triggered them. Also covers undo/redo (control-side
+ * emission, the common in-track swap path). */
+static void test_perf_events_log_transport_facts(void) {
+  printf("test_perf_events_log_transport_facts\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* EMPTY -> RECORDING, no master yet */
+  drain(e);
+  process_const(e, 1.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize: defines the master loop */
+  drain(e);
+
+  /* One overdub pass so a layer actually retires — mirrors
+   * test_looper_overdub_and_undo's exact sequence (punch-in, one pass equal
+   * to the loop length so the capture wraps and retires within it, punch-out,
+   * then let the punch envelope settle before touching undo). */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* PLAYING -> OVERDUBBING (punch-in) */
+  process_const(e, 0.5f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* OVERDUBBING -> PLAYING (punch-out) */
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out); /* punch envelope quiet: session winds down */
+  drain(e);
+
+  /* Bounded poll on the actual retirement signal (snapshot's undo_depth, the
+   * same field test_looper_overdub_and_undo asserts on) rather than assuming
+   * one drain suffices — belt-and-braces against scheduling-independent
+   * per-pass capture timing. */
+  le_snapshot snap;
+  for (int i = 0; i < 64; ++i) {
+    le_engine_get_snapshot(e, &snap);
+    if (snap.tracks[0].undo_depth > 0) break;
+    drain(e);
+  }
+  CHECK(snap.tracks[0].undo_depth > 0);
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* common in-track swap: control-side log */
+  drain(e);
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* same */
+  drain(e);
+
+  /* LE_CMD_STOP / LE_CMD_PLAY coverage. */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK); /* PLAYING -> STOPPED */
+  drain(e);
+  CHECK(le_engine_play(e, 0) == LE_OK); /* STOPPED -> PLAYING */
+  drain(e);
+
+  /* LE_CMD_UNDO_TO_EMPTY / LE_CMD_REDO_FROM_EMPTY coverage (the audio-thread
+   * edge cases of undo/redo, distinct from the control-side common swap
+   * already exercised above): undo the overdub (back to the common-swap
+   * path once more), then undo PAST the base layer — with no stacked undo
+   * layer left, this takes the to-EMPTY branch and posts LE_CMD_UNDO_TO_EMPTY
+   * instead of the common swap; both still log LE_PLOG_UNDO, just from a
+   * different code path (see docs/design/performance-event-log-format.md). */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* removes the overdub again */
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* past the base layer -> EMPTY */
+  drain(e);
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* from-EMPTY edge case -> LE_PLOG_REDO */
+  drain(e);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK); /* LE_CMD_CLEAR coverage */
+  drain(e);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+  le_perf_log_entry entry;
+
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_RECORD_START, &entry) >= 0);
+  CHECK(entry.cmd.arg_i == 0);
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_RECORD_END, &entry) >= 0);
+  CHECK(entry.cmd.arg_i == 0);
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_LOOP_LENGTH_LOCKED, &entry) >= 0);
+  CHECK(entry.cmd.arg_i == LOOP_N);
+  CHECK(find_log_entry(buf, count, 0, LE_PLOG_LAYER_RETIRED, &entry) >= 0);
+  CHECK(entry.cmd.evt.channel == 0);
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_RECORD, &entry) >= 0);
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_STOP, &entry) >= 0);
+  CHECK(entry.cmd.arg_i == 0);
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_PLAY, &entry) >= 0);
+  CHECK(entry.cmd.arg_i == 0);
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_CLEAR, &entry) >= 0);
+  CHECK(entry.cmd.arg_i == 0);
+
+  /* LE_PLOG_UNDO fires 3 times (common swap x2, then the to-EMPTY edge case)
+   * and LE_PLOG_REDO fires twice (common swap, then the from-EMPTY edge
+   * case) — counting proves BOTH code paths actually logged, not just
+   * whichever ran first (find_log_entry alone can't distinguish them, since
+   * both paths emit the identical code). */
+  size_t undo_entries = 0, redo_entries = 0;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == LE_PLOG_UNDO) ++undo_entries;
+    if (entry.cmd.code == LE_PLOG_REDO) ++redo_entries;
+  }
+  CHECK(undo_entries == 3);
+  CHECK(redo_entries == 2);
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: a command storm (>= 2000 events) loses nothing —
+ * the 4096-slot log_ring absorbs it with headroom to spare. Pushed in
+ * batches bounded by the 256-slot command ring's own capacity, draining
+ * between batches (drain(e) applies every pushed command in one call,
+ * pushing one log_ring entry per command); the real assertion is that the
+ * dedicated overrun atomic never increments and every command that was
+ * pushed shows up in the file after a clean disarm — not that it all landed
+ * within one wall-clock 250ms window, which no deterministic single-process
+ * test can force against a real background thread without flakiness. */
+static void test_perf_events_log_command_storm_no_loss(void) {
+  printf("test_perf_events_log_command_storm_no_loss\n");
+  le_engine* e = make_configured_engine();
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  const int total = 2500;
+  const int batch = 200; /* well under the 256-slot command ring's capacity */
+  int pushed = 0;
+  while (pushed < total) {
+    const int this_batch = (total - pushed) < batch ? (total - pushed) : batch;
+    for (int i = 0; i < this_batch; ++i) {
+      CHECK(le_engine_set_master_gain(e, (float)(pushed + i) / (float)total) ==
+            LE_OK);
+    }
+    drain(e);
+    pushed += this_batch;
+  }
+
+  CHECK(atomic_load_explicit(&e->a_perf_log_overruns, memory_order_relaxed) ==
+        0u);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  /* 2500 entries x 28 bytes + the 12-byte header, plus slack. */
+  static unsigned char buf[2500 * LE_TEST_EVENTS_ENTRY_BYTES + 4096];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  size_t gain_entries = 0;
+  le_perf_log_entry entry;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code == LE_CMD_SET_MASTER_GAIN) ++gain_entries;
+  }
+  CHECK(gain_entries == (size_t)total);
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: FX param sweeps are logged (control-side emission)
+ * with monotonic frames. Each le_engine_set_lane_fx_param call reads a fresh
+ * a_perf_frames snapshot, so processing frames between calls should produce
+ * a strictly non-decreasing frame sequence in the log. */
+static void test_perf_events_log_fx_param_sweep_monotonic_frames(void) {
+  printf("test_perf_events_log_fx_param_sweep_monotonic_frames\n");
+  le_engine* e = make_configured_engine();
+  float out[LOOP_N];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DELAY) == LE_OK);
+  drain(e);
+
+  const int sweeps = 10;
+  const int lane_param = 1;    /* non-zero, to prove the packing isn't just
+                                * coincidentally right for param==0 */
+  const int monitor_param = 2; /* different again, on the monitor sibling */
+  for (int i = 0; i < sweeps; ++i) {
+    process_const(e, 0.0f, LOOP_N, out); /* advance a_perf_frames between calls */
+    CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, lane_param,
+                                      (float)i / (float)sweeps) == LE_OK);
+    CHECK(le_engine_set_monitor_input_fx_param(
+              e, 0, 0, monitor_param, (float)(sweeps - i) / (float)sweeps) ==
+          LE_OK);
+  }
+  drain(e);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  static unsigned char buf[16384];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES);
+  const size_t count = log_entry_count(n);
+
+  /* Lane FX param sweep: decode the packed payload at every step (not just
+   * the code/frame ordering) — index/param unpacked from fx.index, the swept
+   * float recovered by bit-casting fx.type back. */
+  uint64_t last_frame = 0;
+  int seen = 0;
+  le_perf_log_entry entry;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code != LE_PLOG_SET_LANE_FX_PARAM) continue;
+    if (seen > 0) CHECK(entry.frame >= last_frame);
+    last_frame = entry.frame;
+    CHECK(entry.cmd.fx.channel == 0 && entry.cmd.fx.lane == 0);
+    CHECK(LE_PLOG_FX_PARAM_INDEX(entry.cmd.fx.index) == 0);
+    CHECK(LE_PLOG_FX_PARAM_PARAM(entry.cmd.fx.index) == lane_param);
+    const float value = bits_to_f32((uint32_t)entry.cmd.fx.type);
+    CHECK(fabsf(value - (float)seen / (float)sweeps) < 1e-6f);
+    ++seen;
+  }
+  CHECK(seen == sweeps);
+
+  /* Monitor FX param sibling: same packing, distinct param value, lane == -1
+   * sentinel (input effects have no lane) — proves the low-byte packing
+   * doesn't collide between the two independently-chosen param indices. */
+  uint64_t last_mon_frame = 0;
+  int seen_mon = 0;
+  for (size_t i = 0; i < count; ++i) {
+    decode_log_entry_at(buf, i, &entry);
+    if (entry.cmd.code != LE_PLOG_SET_MONITOR_FX_PARAM) continue;
+    if (seen_mon > 0) CHECK(entry.frame >= last_mon_frame);
+    last_mon_frame = entry.frame;
+    CHECK(entry.cmd.fx.channel == 0 && entry.cmd.fx.lane == -1);
+    CHECK(LE_PLOG_FX_PARAM_INDEX(entry.cmd.fx.index) == 0);
+    CHECK(LE_PLOG_FX_PARAM_PARAM(entry.cmd.fx.index) == monitor_param);
+    const float value = bits_to_f32((uint32_t)entry.cmd.fx.type);
+    CHECK(fabsf(value - (float)(sweeps - seen_mon) / (float)sweeps) < 1e-6f);
+    ++seen_mon;
+  }
+  CHECK(seen_mon == sweeps);
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: the log file is readable after an abrupt stop, up to
+ * the last flush — mirroring part 2's crash-consistency test's documented
+ * scope substitution (no portable safe way to SIGKILL this test process
+ * mid-capture; reading a live, still-running capture proves the same
+ * on-disk-format invariant: parseable header + whole entries up to the last
+ * completed drain cycle). */
+static void test_perf_events_log_readable_after_abrupt_stop(void) {
+  printf("test_perf_events_log_readable_after_abrupt_stop\n");
+  le_engine* e = make_configured_engine();
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/events.log", perf_test_dir());
+  remove(path); /* clear any stale content from a prior test session */
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  CHECK(le_engine_set_master_gain(e, 0.42f) == LE_OK);
+  drain(e);
+
+  /* Wait for the drain thread's own background cycle to flush this session's
+   * events.log (removed above, so its reappearance can only be this
+   * session's own first cycle — same reasoning as part 2's crash-consistency
+   * test's sidecar poll). */
+  CHECK(poll_file_reaches_size_for_test(
+      path, LE_TEST_EVENTS_HEADER_BYTES + LE_TEST_EVENTS_ENTRY_BYTES, 2000));
+
+  static unsigned char buf[4096];
+  const size_t n = read_binary_file_for_test(path, buf, sizeof(buf));
+  CHECK(n >= LE_TEST_EVENTS_HEADER_BYTES + LE_TEST_EVENTS_ENTRY_BYTES);
+  CHECK(memcmp(buf, "PLEV", 4) == 0);
+  const size_t count = log_entry_count(n);
+  le_perf_log_entry entry;
+  CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MASTER_GAIN, &entry) >= 0);
+
+  le_perf_disarm(e);
   le_engine_destroy(e);
 }
 
@@ -6465,6 +6956,11 @@ int main(void) {
   test_perf_drain_disk_full_stops_cleanly();
   test_perf_drain_files_are_crash_consistent_mid_capture();
   test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
+  test_perf_events_log_table_round_trip_and_frame_accuracy();
+  test_perf_events_log_transport_facts();
+  test_perf_events_log_command_storm_no_loss();
+  test_perf_events_log_fx_param_sweep_monotonic_frames();
+  test_perf_events_log_readable_after_abrupt_stop();
   test_record_does_not_self_snapshot();
   test_record_never_touches_lane_fx();
   test_output_disabled_is_silent_routes_preserved();
