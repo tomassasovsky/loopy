@@ -23,6 +23,7 @@
 
 #include "audio_ring.h"      /* le_audio_ring_pop */
 #include "engine_private.h"  /* le_engine, le_perf_capture, LE_MAX_INPUTS */
+#include "layer_staging_ring.h" /* le_layer_staging_ring_pop (retired-layer persistence) */
 #include "perf_log_ring.h"   /* le_perf_log_ring_pop (performance event log) */
 
 #if defined(_WIN32)
@@ -42,7 +43,14 @@
                               * logged in the sidecar */
 #define LE_PD_PATH_MAX 960   /* capture_dir length; +32 headroom for filenames */
 #define LE_PD_FULL_PATH_MAX (LE_PD_PATH_MAX + 32)
-#define LE_PD_JSON_BUF 32768 /* generous for LE_PD_MAX_GAPS entries + fields */
+#define LE_PD_JSON_BUF 524288 /* generous for LE_PD_MAX_GAPS + LE_PD_MAX_LAYERS
+                               * entries + fields (each layer entry runs to
+                               * ~150 bytes; LE_PD_MAX_LAYERS of them is
+                               * ~300KB at the current LE_MAX_TRACKS *
+                               * LE_POOL_SLOTS headroom) — the loop guards in
+                               * le_pd_write_sidecar bail out safely if this
+                               * ever isn't enough, rather than truncating
+                               * silently or overrunning the buffer */
 #define LE_PD_SCRATCH_SAMPLES 2048 /* per-drain-cycle pop buffer, in samples */
 
 /* events.log wire format (docs/design/performance-event-log-format.md): a
@@ -62,6 +70,14 @@
  * generator is meant to parse the resulting bytes without importing engine
  * code, using the per-code arm layout documented in the format doc. */
 #define LE_PD_EVENTS_ENTRY_BYTES 28 /* 8 (frame) + 4 (code) + 16 (union payload) */
+
+#define LE_PD_MAX_LAYERS \
+  LE_LAYER_STAGING_RING_CAPACITY /* recorded layer-manifest entries; matches
+                                  * the ring's capacity 1:1 so a full ring
+                                  * never has to drop a manifest entry */
+#define LE_PD_LAYER_CHUNK_FRAMES 512 /* interleave-and-write in bounded chunks,
+                                      * same rationale as le_pd_catch_up's
+                                      * zero-fill chunking */
 
 /* ---- portable thread + sleep shim (extends engine_plugin.c's
  * control_sleep_ms one-file-branch-by-platform style to a real joinable
@@ -161,6 +177,22 @@ typedef struct le_pd_gap {
   uint64_t duration_frames;
 } le_pd_gap;
 
+/* One retired-layer manifest entry (part 5, D-LAYER) — recorded once its
+ * file is durably written (fclose'd), so it never appears in the sidecar
+ * before the bytes it describes are actually on disk. `channel`/`slot`/
+ * `generation` are the same key events.log's LE_PLOG_LAYER_RETIRED entry
+ * carries, for a renderer to cross-reference the sample-accurate frame (see
+ * layer_staging_ring.h and docs/design/performance-event-log-format.md). */
+typedef struct le_pd_layer_manifest_entry {
+  int32_t channel;
+  int32_t slot;
+  uint32_t generation;
+  uint64_t frame;
+  int32_t frame_count;
+  int32_t lane_count;
+  char filename[64];
+} le_pd_layer_manifest_entry;
+
 typedef struct le_pd_file {
   FILE* f;
   uint64_t written; /* frames written so far, in THIS file's own channel width */
@@ -187,6 +219,9 @@ struct le_perf_drain {
 
   le_pd_gap gaps[LE_PD_MAX_GAPS];
   int gap_count;
+
+  le_pd_layer_manifest_entry layers[LE_PD_MAX_LAYERS];
+  int layer_count;
 };
 
 int le_perf_drain_self_stopped_for_test(struct le_perf_drain* drain) {
@@ -256,6 +291,78 @@ static int le_pd_drain_log_ring(FILE* f, le_perf_log_ring* ring) {
     if (!le_pd_write_log_entry(f, &entry)) return 0;
   }
   return 1;
+}
+
+/* Writes one retired layer's PCM to its own file, interleaving lanes the same
+ * way multi-channel PCM is interleaved everywhere else in this format
+ * (lane0[0], lane1[0], ..., lane0[1], lane1[1], ...). ALWAYS frees every
+ * `entry->lane_pcm[l]` before returning, success or failure — this function
+ * takes ownership of the staged copy unconditionally, matching
+ * layer_staging_ring.h's documented handoff contract. Only records a
+ * manifest entry on success, and only once the file is fclose'd (durably on
+ * disk) — see le_pd_layer_manifest_entry's doc comment for why. */
+static int le_pd_write_staged_layer(le_perf_drain* d,
+                                    const le_staged_layer* entry) {
+  char filename[64];
+  snprintf(filename, sizeof(filename), "layer-%d-%llu-%d.pcm", entry->channel,
+          (unsigned long long)entry->frame, entry->slot);
+  char path[LE_PD_FULL_PATH_MAX];
+  snprintf(path, sizeof(path), "%s/%s", d->capture_dir, filename);
+
+  int ok = 1;
+  FILE* f = fopen(path, "wb");
+  if (f == NULL) {
+    ok = 0;
+  } else {
+    float chunk[LE_PD_LAYER_CHUNK_FRAMES * LE_MAX_LANES];
+    int32_t fr = 0;
+    while (ok && fr < entry->frame_count) {
+      const int32_t remaining = entry->frame_count - fr;
+      const int32_t n =
+          remaining < LE_PD_LAYER_CHUNK_FRAMES ? remaining : LE_PD_LAYER_CHUNK_FRAMES;
+      for (int32_t i = 0; i < n; ++i) {
+        for (int32_t l = 0; l < entry->lane_count; ++l) {
+          chunk[i * entry->lane_count + l] = entry->lane_pcm[l][fr + i];
+        }
+      }
+      if (!le_pd_write(f, chunk,
+                       (size_t)n * (size_t)entry->lane_count * sizeof(float))) {
+        ok = 0;
+      }
+      fr += n;
+    }
+    if (fclose(f) != 0) ok = 0;
+  }
+
+  for (int32_t l = 0; l < entry->lane_count; ++l) free(entry->lane_pcm[l]);
+
+  if (ok && d->layer_count < LE_PD_MAX_LAYERS) {
+    le_pd_layer_manifest_entry* m = &d->layers[d->layer_count];
+    m->channel = entry->channel;
+    m->slot = entry->slot;
+    m->generation = entry->generation;
+    m->frame = entry->frame;
+    m->frame_count = entry->frame_count;
+    m->lane_count = entry->lane_count;
+    snprintf(m->filename, sizeof(m->filename), "%s", filename);
+    d->layer_count++;
+  }
+  return ok;
+}
+
+/* Drains everything currently available from the retired-layer staging ring
+ * into individual layer files. Continues past a single layer's write
+ * failure (each layer is an independent file — one bad layer shouldn't stop
+ * later ones from persisting) but reports overall failure so the caller's
+ * disk-full bookkeeping still fires. */
+static int le_pd_drain_layer_staging(le_perf_drain* d) {
+  le_staged_layer entry;
+  int ok = 1;
+  while (le_layer_staging_ring_pop(&d->engine->perf.layer_staging_ring,
+                                   &entry)) {
+    if (!le_pd_write_staged_layer(d, &entry)) ok = 0;
+  }
+  return ok;
 }
 
 /* Drains everything currently available from `ring` (a le_audio_ring of
@@ -365,8 +472,16 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full) {
   const uint32_t overruns = atomic_load_explicit(&d->engine->a_perf_overruns,
                                                  memory_order_relaxed);
 
-  char buf[LE_PD_JSON_BUF];
-  int off = snprintf(buf, sizeof(buf),
+  /* Heap-allocated, not a local array: LE_PD_JSON_BUF scales with
+   * LE_PD_MAX_LAYERS (in turn LE_MAX_TRACKS * LE_POOL_SLOTS), and this
+   * function runs on the drain thread, whose stack is sized for the small,
+   * fixed-size buffers every other function here uses — a stack array this
+   * large blew that stack (SIGBUS) the first time LE_PD_JSON_BUF grew past
+   * a few hundred KB. */
+  char* buf = (char*)malloc(LE_PD_JSON_BUF);
+  if (buf == NULL) return 0;
+  int result = 0;
+  int off = snprintf(buf, LE_PD_JSON_BUF,
                      "{\n"
                      "  \"slug\": \"%s\",\n"
                      "  \"sample_rate\": %d,\n"
@@ -374,58 +489,93 @@ static int le_pd_write_sidecar(le_perf_drain* d, int report_disk_full) {
                      "\"captured_inputs\": [",
                      slug_esc, d->engine->sample_rate,
                      d->engine->perf.master_channels);
-  if (off < 0) return 0;
+  if (off < 0) goto done;
 
   int first = 1;
   for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
     if (!(d->engine->perf.input_mask & (1u << c))) continue;
-    off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%s%d",
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "%s%d",
                     first ? "" : ", ", c);
     first = 0;
   }
 
-  off += snprintf(buf + off, sizeof(buf) - (size_t)off,
+  off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                  "]},\n"
                  "  \"capture_frames\": %llu,\n"
                  "  \"overrun_count\": %u,\n"
                  "  \"overrun_gaps\": [",
                  (unsigned long long)elapsed, overruns);
 
-  for (int i = 0; i < d->gap_count; ++i) {
-    off += snprintf(buf + off, sizeof(buf) - (size_t)off,
+  /* Loop guard re-checks `off` before every snprintf: once `off` reaches
+   * LE_PD_JSON_BUF, `LE_PD_JSON_BUF - off` would otherwise underflow
+   * (size_t is unsigned) and hand snprintf a huge bogus size on the very
+   * next iteration — an out-of-bounds write, not just truncation. */
+  for (int i = 0; i < d->gap_count && off >= 0 && off < LE_PD_JSON_BUF; ++i) {
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "%s{\"frame\": %llu, \"duration_frames\": %llu}",
                    i == 0 ? "" : ", ", (unsigned long long)d->gaps[i].frame,
                    (unsigned long long)d->gaps[i].duration_frames);
   }
-  off += snprintf(buf + off, sizeof(buf) - (size_t)off, "],\n");
+  if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
+  off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
+
+  /* Retired-layer manifest (part 5, D-LAYER): every layer persisted so far
+   * this session, so part 7's offline renderer can stitch overdub passes
+   * without re-deriving anything from the pool (which may have long since
+   * reclaimed/reused these slots). `frame` here is the best-effort staging-
+   * time snapshot (see layer_staging_ring.h); cross-reference `channel`/
+   * `slot`/`generation` against events.log's LE_PLOG_LAYER_RETIRED entries
+   * for the sample-accurate retire frame. */
+  if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
+  off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                 "  \"layers\": [");
+  for (int i = 0; i < d->layer_count && off >= 0 && off < LE_PD_JSON_BUF;
+       ++i) {
+    const le_pd_layer_manifest_entry* m = &d->layers[i];
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
+                   "%s{\"channel\": %d, \"slot\": %d, \"generation\": %u, "
+                   "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": %d, "
+                   "\"filename\": \"%s\"}",
+                   i == 0 ? "" : ", ", m->channel, m->slot, m->generation,
+                   (unsigned long long)m->frame, m->frame_count,
+                   m->lane_count, m->filename);
+  }
+  if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
+  off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off, "],\n");
 
   if (report_disk_full) {
-    off += snprintf(buf + off, sizeof(buf) - (size_t)off,
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "  \"stopped_early\": \"disk_full\",\n");
   } else if (atomic_load_explicit(&d->device_changed, memory_order_acquire)) {
-    off += snprintf(buf + off, sizeof(buf) - (size_t)off,
+    off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                    "  \"stopped_early\": \"device_changed\",\n");
   }
 
-  off += snprintf(buf + off, sizeof(buf) - (size_t)off,
+  off += snprintf(buf + off, (size_t)LE_PD_JSON_BUF - (size_t)off,
                  "  \"finalized\": false\n}\n");
-  if (off < 0 || (size_t)off >= sizeof(buf)) return 0; /* truncated */
+  if (off < 0 || off >= LE_PD_JSON_BUF) goto done; /* truncated */
 
-  char tmp_path[LE_PD_FULL_PATH_MAX];
-  char final_path[LE_PD_FULL_PATH_MAX];
-  snprintf(tmp_path, sizeof(tmp_path), "%s/performance.json.tmp",
-          d->capture_dir);
-  snprintf(final_path, sizeof(final_path), "%s/performance.json",
-          d->capture_dir);
+  {
+    char tmp_path[LE_PD_FULL_PATH_MAX];
+    char final_path[LE_PD_FULL_PATH_MAX];
+    snprintf(tmp_path, sizeof(tmp_path), "%s/performance.json.tmp",
+            d->capture_dir);
+    snprintf(final_path, sizeof(final_path), "%s/performance.json",
+            d->capture_dir);
 
-  FILE* f = fopen(tmp_path, "wb");
-  if (f == NULL) return 0;
-  const size_t len = (size_t)off;
-  const int ok = fwrite(buf, 1, len, f) == len;
-  fclose(f);
-  if (!ok) return 0;
+    FILE* f = fopen(tmp_path, "wb");
+    if (f == NULL) goto done;
+    const size_t len = (size_t)off;
+    const int ok = fwrite(buf, 1, len, f) == len;
+    fclose(f);
+    if (!ok) goto done;
 
-  return le_pd_atomic_rename(tmp_path, final_path);
+    result = le_pd_atomic_rename(tmp_path, final_path);
+  }
+
+done:
+  free(buf);
+  return result;
 }
 
 /* One drain-and-flush pass: pop everything available from every captured
@@ -478,6 +628,13 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
   if (ok && !le_pd_drain_log_ring(d->events_file, &e->perf.log_ctrl_ring)) {
     ok = 0;
   }
+
+  /* Retired-layer persistence (part 5, D-LAYER): each staged layer is its
+   * own self-contained file (open, write, fclose — not a long-lived stream
+   * like master.pcm), so there is nothing to flush separately below; the
+   * fclose inside le_pd_write_staged_layer already makes it durable before
+   * its manifest entry is recorded. */
+  if (ok && !le_pd_drain_layer_staging(d)) ok = 0;
 
   /* The PCM files stay open for the whole capture session (never closed
    * until disarm), so without an explicit flush here their buffered writes
