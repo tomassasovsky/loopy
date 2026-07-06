@@ -1210,30 +1210,32 @@ void main() {
       expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isFalse);
     });
 
-    test('a plugin that fails to load is flagged unavailable '
-        '(D-MISS)', () async {
-      engine.nextSlotHandle = null; // load fails (uninstalled / moved)
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setTrackEffects(
-          channel: 0,
-          effects: const [
-            PluginEffect(
-              ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
-            ),
-          ],
-        );
-      // Cold-start recovery kicks a scan; let it complete (it finds nothing) so
-      // the entry settles from the transient loading state to the genuine
-      // unavailable placeholder.
-      await repo.pluginCatalog.scan();
-      final fx = repo.laneEffects(0, 0).single as PluginEffect;
-      // Preserved as a placeholder, never dropped to `none`.
-      expect(fx.unavailable, isTrue);
-      expect(fx.ref.id, 'gone');
-      // Not in the scan catalog -> missing, not an unsupported topology.
-      expect(fx.unsupported, isFalse);
-    });
+    test(
+      'a plugin that fails to load is flagged unavailable (D-MISS)',
+      () async {
+        engine.nextSlotHandle = null; // load fails (uninstalled / moved)
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setTrackEffects(
+            channel: 0,
+            effects: const [
+              PluginEffect(
+                ref: PluginRef(format: PluginFormat.clap, id: 'gone'),
+              ),
+            ],
+          );
+        // Cold-start recovery kicks a scan; let it complete (it finds nothing)]
+        // so the entry settles from the transient loading state to the genuine
+        // unavailable placeholder.
+        await repo.pluginCatalog.scan();
+        final fx = repo.laneEffects(0, 0).single as PluginEffect;
+        // Preserved as a placeholder, never dropped to `none`.
+        expect(fx.unavailable, isTrue);
+        expect(fx.ref.id, 'gone');
+        // Not in the scan catalog -> missing, not an unsupported topology.
+        expect(fx.unsupported, isFalse);
+      },
+    );
 
     test(
       'a failed plugin keeps its persisted name in the placeholder',

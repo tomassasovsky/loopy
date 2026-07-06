@@ -781,41 +781,20 @@ void main() {
   });
 
   group('session menu', () {
-    Future<void> openMenu(WidgetTester tester) async {
-      await tester.tap(find.byKey(const Key('tracks_session_menu')));
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('the menu button is present and carries an accessible name', (
+    testWidgets('the session button is present and accessibly labelled', (
       tester,
     ) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-
-      // The PopupMenuButton's tooltip is its accessible name (and is itself
-      // keyboard-operable + screen-reader announced); operability is covered by
-      // the activation tests below.
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.byKey(const Key('tracks_session_menu')), findsOneWidget);
       expect(find.byTooltip(l10n.a11ySessionMenu), findsOneWidget);
     });
 
-    testWidgets('quick Save writes back through the cubit', (tester) async {
+    testWidgets('the folder button opens the Sessions popup', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      await openMenu(tester);
-      await tester.tap(find.byKey(const Key('tracks_session_save')));
-      await tester.pumpAndSettle();
-      verify(session.save).called(1);
-    });
-
-    testWidgets('Sessions… refreshes the catalog and opens the manager', (
-      tester,
-    ) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-      await openMenu(tester);
-      await tester.tap(find.byKey(const Key('tracks_session_manage')));
+      await tester.tap(find.byKey(const Key('tracks_session_menu')));
       await tester.pumpAndSettle();
       verify(session.refreshSessions).called(1);
       expect(find.byKey(const Key('sessions_manager')), findsOneWidget);
@@ -867,23 +846,6 @@ void main() {
       await pump(tester);
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('sessionName_field')), findsOneWidget);
-    });
-
-    testWidgets('export mixdown / stems invoke the cubit', (tester) async {
-      seed(const LooperState(tracks: [Track()]));
-      await pump(tester);
-
-      await openMenu(tester);
-      await tester.tap(
-        find.byKey(const Key('tracks_session_exportMixdown')),
-      );
-      await tester.pumpAndSettle();
-      verify(() => session.exportMixdown()).called(1);
-
-      await openMenu(tester);
-      await tester.tap(find.byKey(const Key('tracks_session_exportStems')));
-      await tester.pumpAndSettle();
-      verify(() => session.exportStems()).called(1);
     });
 
     testWidgets('a success outcome surfaces a live-region SnackBar', (

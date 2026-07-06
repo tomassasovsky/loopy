@@ -133,6 +133,39 @@ class SessionRepository {
     Directory('$root/$fromSlug').renameSync('$root/$toSlug');
   }
 
+  /// Copies session [from]'s bundle to a NEW session [to]. Throws
+  /// [SessionNameCollision] when [to]'s slug already exists (never overwrites),
+  /// [ArgumentError] when [to] is not a valid name, and is a no-op when [from]
+  /// does not exist. The copy is independent — editing it never touches [from].
+  Future<void> duplicateSession(String from, String to) async {
+    final toSlug = sessionSlug(to);
+    if (toSlug == null) {
+      throw ArgumentError.value(to, 'to', 'not a valid session name');
+    }
+    final fromSlug = sessionSlug(from) ?? from;
+    final root = await _rootPath();
+    final src = Directory('$root/$fromSlug');
+    if (!src.existsSync()) return;
+    if (Directory('$root/$toSlug').existsSync()) {
+      throw SessionNameCollision(slug: toSlug);
+    }
+    _copyDirSync(src, Directory('$root/$toSlug'));
+  }
+
+  /// Recursively copies [src] to [dst] (files + nested folders). The catalog
+  /// bundles are shallow, but this stays correct for any nesting.
+  static void _copyDirSync(Directory src, Directory dst) {
+    dst.createSync(recursive: true);
+    for (final entity in src.listSync()) {
+      final name = _basename(entity.path);
+      if (entity is Directory) {
+        _copyDirSync(entity, Directory('${dst.path}/$name'));
+      } else if (entity is File) {
+        entity.copySync('${dst.path}/$name');
+      }
+    }
+  }
+
   /// Deletes session [name]'s bundle folder. A missing folder (or an invalid
   /// name) is a no-op — there is no concurrent-mutation race to guard in a
   /// single-window desktop app.

@@ -6,11 +6,12 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/session/session.dart';
 import 'package:session_repository/session_repository.dart';
 
-/// Opens the **Sessions manager**: an alphabetical list of saved sessions with
-/// load-on-tap, per-row rename / delete, and a "Save as…" action (an empty
-/// state when there are none). Refreshes the catalog first so the list is
-/// current, then hands the live [SessionCubit] down through the dialog route
-/// (which sits under the root navigator, outside the page's providers).
+/// Opens the **Sessions** popup — the single place to handle sessions (like
+/// Loopy Pro's projects browser): the current session with Save / Save As, a
+/// grid of saved-session cards (load-on-tap; per-card rename / duplicate /
+/// delete), and the mixdown / stems exports. Refreshes the catalog first, then
+/// hands the live [SessionCubit] down through the dialog route (which sits
+/// under the root navigator, outside the page's providers).
 Future<void> showSessionsManager(BuildContext context) async {
   final cubit = context.read<SessionCubit>();
   await cubit.refreshSessions();
@@ -25,9 +26,9 @@ Future<void> showSessionsManager(BuildContext context) async {
 }
 
 /// Prompts for a name and saves the live rig as a NEW named session. Shared by
-/// the manager's "Save as…" and the top bar's quick Save when no session is
-/// open. The dialog's inline check is fast feedback only; [SessionCubit.saveAs]
-/// stays the collision authority.
+/// the popup's "Save as…" and the top bar's quick Save when no session is open.
+/// The dialog's inline check is fast feedback only; [SessionCubit.saveAs] stays
+/// the collision authority.
 Future<void> promptSaveAs(BuildContext context) async {
   final cubit = context.read<SessionCubit>();
   final l10n = context.l10n;
@@ -40,114 +41,264 @@ Future<void> promptSaveAs(BuildContext context) async {
   await cubit.saveAs(name);
 }
 
-/// The Sessions-manager dialog body. Rebuilds off the [SessionCubit]'s
-/// `sessions` list so a rename / delete reflows in place.
+/// Prompts for a name and duplicates saved session [from] to a new copy.
+Future<void> promptDuplicate(BuildContext context, String from) async {
+  final cubit = context.read<SessionCubit>();
+  final l10n = context.l10n;
+  final to = await showSessionNameDialog(
+    context: context,
+    title: l10n.sessionDuplicateTitle,
+    initial: from,
+    taken: cubit.state.sessions.map((s) => s.name).toSet(),
+  );
+  if (to == null) return;
+  await cubit.duplicateSession(from, to);
+}
+
+/// The Sessions popup: a fixed-size panel with a header (current session +
+/// Save / Save As), a grid of session cards, and the exports bar. Rebuilds off
+/// the cubit's `sessions` + `currentSessionName`.
 class _SessionsManagerDialog extends StatelessWidget {
   const _SessionsManagerDialog();
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return BlocBuilder<SessionCubit, SessionState>(
-      buildWhen: (a, b) =>
-          a.sessions != b.sessions ||
-          a.currentSessionName != b.currentSessionName,
-      builder: (context, state) {
-        return AlertDialog(
-          key: const Key('sessions_manager'),
-          title: Text(l10n.sessionsManagerTitle),
-          content: SizedBox(
-            width: 360,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+    return Dialog(
+      key: const Key('sessions_manager'),
+      child: SizedBox(
+        width: 620,
+        height: 520,
+        child: BlocBuilder<SessionCubit, SessionState>(
+          buildWhen: (a, b) =>
+              a.sessions != b.sessions ||
+              a.currentSessionName != b.currentSessionName,
+          builder: (context, state) {
+            final cubit = context.read<SessionCubit>();
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (state.sessions.isEmpty)
-                  Padding(
-                    key: const Key('sessions_empty'),
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Text(
-                      l10n.sessionsEmpty,
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        for (final summary in state.sessions)
-                          _SessionRow(
-                            summary: summary,
-                            isCurrent: summary.name == state.currentSessionName,
+                _Header(state: state),
+                const Divider(height: 1),
+                Expanded(
+                  child: state.sessions.isEmpty
+                      ? Center(
+                          child: Padding(
+                            key: const Key('sessions_empty'),
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              l10n.sessionsEmpty,
+                              textAlign: TextAlign.center,
+                            ),
                           ),
-                      ],
-                    ),
-                  ),
+                        )
+                      : GridView.builder(
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate:
+                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 190,
+                                mainAxisExtent: 96,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                          itemCount: state.sessions.length,
+                          itemBuilder: (context, i) {
+                            final summary = state.sessions[i];
+                            return _SessionCard(
+                              summary: summary,
+                              isCurrent:
+                                  summary.name == state.currentSessionName,
+                            );
+                          },
+                        ),
+                ),
+                const Divider(height: 1),
+                _ExportsBar(cubit: cubit),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(l10n.close),
-            ),
-            FilledButton(
-              key: const Key('sessions_saveAs'),
-              onPressed: () => unawaited(promptSaveAs(context)),
-              child: Text(l10n.sessionSaveAs),
-            ),
-          ],
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 }
 
-/// A single session row: tap the title to load it, or use the trailing
-/// rename / delete actions. The load and delete close the manager (a load
-/// swaps the rig, a delete confirms first); a rename keeps it open so the list
-/// reflows.
-class _SessionRow extends StatelessWidget {
-  const _SessionRow({required this.summary, required this.isCurrent});
+/// The popup header: the title + current session name (or "Unsaved"), the Save
+/// (write-back) and Save As actions, and a close affordance.
+class _Header extends StatelessWidget {
+  const _Header({required this.state});
+
+  final SessionState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final cubit = context.read<SessionCubit>();
+    final theme = Theme.of(context);
+    final current = state.currentSessionName;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 10, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  l10n.sessionsManagerTitle,
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  current ?? l10n.sessionUnsaved,
+                  key: const Key('sessions_currentName'),
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontStyle: current == null
+                        ? FontStyle.italic
+                        : FontStyle.normal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            key: const Key('sessions_save'),
+            // Write back to the open session, or prompt Save-As when none.
+            onPressed: () => current == null
+                ? unawaited(promptSaveAs(context))
+                : unawaited(cubit.save()),
+            icon: const Icon(Icons.save_outlined, size: 18),
+            label: Text(l10n.sessionSave),
+          ),
+          const SizedBox(width: 4),
+          FilledButton.icon(
+            key: const Key('sessions_saveAs'),
+            onPressed: () => unawaited(promptSaveAs(context)),
+            icon: const Icon(Icons.add, size: 18),
+            label: Text(l10n.sessionSaveAs),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            key: const Key('sessions_close'),
+            tooltip: l10n.close,
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single saved-session **card**: tap to load (closes the popup), with a
+/// per-card menu for rename / duplicate / delete. The open session is
+/// highlighted.
+class _SessionCard extends StatelessWidget {
+  const _SessionCard({required this.summary, required this.isCurrent});
 
   final SessionSummary summary;
   final bool isCurrent;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final cubit = context.read<SessionCubit>();
-    return ListTile(
-      key: Key('sessions_row_${summary.name}'),
-      contentPadding: EdgeInsets.zero,
-      // Highlight the open session so the list doubles as a "you are here".
-      selected: isCurrent,
-      leading: Icon(
-        isCurrent ? Icons.folder_open : Icons.folder_outlined,
-      ),
-      title: Text(summary.name),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            key: Key('sessions_rename_${summary.name}'),
-            tooltip: l10n.a11ySessionRename(summary.name),
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => unawaited(_rename(context, cubit)),
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Material(
+      key: Key('sessions_card_${summary.name}'),
+      color: isCurrent
+          ? scheme.primaryContainer
+          : scheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () {
+          unawaited(cubit.loadNamed(summary.name));
+          Navigator.of(context).pop();
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    isCurrent ? Icons.folder_open : Icons.folder_outlined,
+                    size: 18,
+                    color: isCurrent
+                        ? scheme.onPrimaryContainer
+                        : scheme.onSurfaceVariant,
+                  ),
+                  const Spacer(),
+                  _CardMenu(summary: summary),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                summary.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: isCurrent
+                      ? scheme.onPrimaryContainer
+                      : scheme.onSurface,
+                ),
+              ),
+            ],
           ),
-          IconButton(
-            key: Key('sessions_delete_${summary.name}'),
-            tooltip: l10n.a11ySessionDelete(summary.name),
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => unawaited(_delete(context, cubit)),
-          ),
-        ],
+        ),
       ),
-      onTap: () {
-        unawaited(cubit.loadNamed(summary.name));
-        Navigator.of(context).pop();
+    );
+  }
+}
+
+/// A session card's overflow menu: rename / duplicate / delete.
+class _CardMenu extends StatelessWidget {
+  const _CardMenu({required this.summary});
+
+  final SessionSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return PopupMenuButton<String>(
+      key: Key('sessions_menu_${summary.name}'),
+      tooltip: l10n.a11ySessionMenu,
+      icon: const Icon(Icons.more_vert, size: 18),
+      padding: EdgeInsets.zero,
+      onSelected: (value) {
+        final cubit = context.read<SessionCubit>();
+        switch (value) {
+          case 'rename':
+            unawaited(_rename(context, cubit));
+          case 'duplicate':
+            unawaited(promptDuplicate(context, summary.name));
+          case 'delete':
+            unawaited(_delete(context, cubit));
+        }
       },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          key: Key('sessions_rename_${summary.name}'),
+          value: 'rename',
+          child: Text(l10n.sessionRename),
+        ),
+        PopupMenuItem(
+          key: Key('sessions_duplicate_${summary.name}'),
+          value: 'duplicate',
+          child: Text(l10n.sessionDuplicate),
+        ),
+        PopupMenuItem(
+          key: Key('sessions_delete_${summary.name}'),
+          value: 'delete',
+          child: Text(l10n.sessionDelete),
+        ),
+      ],
     );
   }
 
@@ -157,7 +308,7 @@ class _SessionRow extends StatelessWidget {
       context: context,
       title: l10n.sessionRenameTitle,
       initial: summary.name,
-      // Every other name is taken; the row's own name is allowed (a no-op).
+      // Every other name is taken; the card's own name is allowed (a no-op).
       taken: cubit.state.sessions
           .map((s) => s.name)
           .where((n) => n != summary.name)
@@ -171,14 +322,46 @@ class _SessionRow extends StatelessWidget {
     final confirmed = await _confirmDelete(context, summary.name);
     if (!confirmed) return;
     await cubit.deleteSession(summary.name);
-    if (context.mounted) Navigator.of(context).pop();
   }
 }
 
-/// Shows a name-input dialog (save-as / rename) with an **inline** sanitize +
-/// duplicate-slug error, returning the entered name once it clears both checks,
-/// or `null` if cancelled. [taken] is the set of slugs already in use (fast
-/// feedback only — the cubit/repository remains the collision authority).
+/// The popup's export bar: a mixdown WAV and per-track stems.
+class _ExportsBar extends StatelessWidget {
+  const _ExportsBar({required this.cubit});
+
+  final SessionCubit cubit;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Row(
+        children: [
+          TextButton.icon(
+            key: const Key('sessions_exportMixdown'),
+            onPressed: () => unawaited(cubit.exportMixdown()),
+            icon: const Icon(Icons.download_outlined, size: 18),
+            label: Text(l10n.exportMixdown),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            key: const Key('sessions_exportStems'),
+            onPressed: () => unawaited(cubit.exportStems()),
+            icon: const Icon(Icons.download_outlined, size: 18),
+            label: Text(l10n.exportStems),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shows a name-input dialog (save-as / rename / duplicate) with an **inline**
+/// sanitize + duplicate-slug error, returning the entered name once it clears
+/// both checks, or `null` if cancelled. [taken] is the set of slugs already in
+/// use (fast feedback only — the cubit/repository remains the collision
+/// authority).
 Future<String?> showSessionNameDialog({
   required BuildContext context,
   required String title,
