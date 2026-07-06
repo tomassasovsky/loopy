@@ -93,16 +93,25 @@ void main() {
 
     group('performance recording capture', () {
       test('requires the engine to be running', () {
-        expect(engine.perfArm(), EngineResult.notRunning);
+        expect(engine.perfArm('test-capture'), EngineResult.notRunning);
+      });
+
+      test('rejects an empty capture directory', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.perfArm(''), EngineResult.invalid);
+        expect(engine.snapshot().isPerfArmed, isFalse);
       });
 
       test('arms, disarms, and is idempotent both ways', () {
         engine.start(engine.defaultConfig);
         expect(engine.snapshot().isPerfArmed, isFalse);
 
-        expect(engine.perfArm(), EngineResult.ok);
+        expect(engine.perfArm('test-capture'), EngineResult.ok);
         expect(engine.snapshot().isPerfArmed, isTrue);
-        expect(engine.perfArm(), EngineResult.ok); // already armed: no-op
+        expect(
+          engine.perfArm('test-capture'),
+          EngineResult.ok,
+        ); // already armed: no-op
 
         expect(engine.perfDisarm(), EngineResult.ok);
         expect(engine.snapshot().isPerfArmed, isFalse);
@@ -114,7 +123,7 @@ void main() {
         expect(engine.snapshot().perfFrames, 0);
 
         engine
-          ..perfArm()
+          ..perfArm('test-capture')
           ..snapshot(); // advances frames by one buffer
         expect(engine.snapshot().perfFrames, greaterThan(0));
 
@@ -127,7 +136,7 @@ void main() {
       test('the mock models no ring capacity: overruns stay 0', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm();
+          ..perfArm('test-capture');
         for (var i = 0; i < 5; i++) {
           engine.snapshot();
         }
@@ -137,7 +146,7 @@ void main() {
       test('a fresh start disarms and resets frames', () {
         engine
           ..start(engine.defaultConfig)
-          ..perfArm()
+          ..perfArm('test-capture')
           ..snapshot()
           ..stop()
           ..start(engine.defaultConfig);

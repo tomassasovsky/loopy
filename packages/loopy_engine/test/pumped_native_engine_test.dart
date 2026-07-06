@@ -80,7 +80,15 @@ void main() {
 
       expect(engine.snapshot().isPerfArmed, isFalse);
 
-      expect(engine.perfArm(), EngineResult.ok);
+      // A real capture dir: arm now spawns a real drain thread that writes
+      // real files there (part 2), so this must be a scratch temp dir, never
+      // a relative path that would litter the working directory.
+      final captureDir = Directory.systemTemp.createTempSync(
+        'loopy_perf_ffi_test_',
+      );
+      addTearDown(() => captureDir.deleteSync(recursive: true));
+
+      expect(engine.perfArm(captureDir.path), EngineResult.ok);
       engine.pump(frames: 0); // drain the arm command
       var s = engine.snapshot();
       expect(s.isPerfArmed, isTrue);
@@ -93,9 +101,19 @@ void main() {
       expect(s.perfFrames, 256);
       expect(s.perfOverruns, 0); // well within the ~2 s capture window
 
+      // perfDisarm blocks on joining the drain thread (part 2), which runs
+      // its own final drain-and-flush pass before the call returns — so the
+      // files are already complete by the time this line executes, with no
+      // wait needed.
       expect(engine.perfDisarm(), EngineResult.ok);
       engine.pump(frames: 0); // drain the disarm command (no device: no wait)
       expect(engine.snapshot().isPerfArmed, isFalse);
+
+      expect(
+        File('${captureDir.path}/performance.json').existsSync(),
+        isTrue,
+      );
+      expect(File('${captureDir.path}/master.pcm').existsSync(), isTrue);
     },
     skip: skip,
   );

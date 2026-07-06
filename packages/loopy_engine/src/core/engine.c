@@ -44,6 +44,7 @@
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
 #include "miniaudio.h"
+#include "perf_drain.h" /* le_perf_drain_stop (reconfigure/destroy teardown) */
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
  * PipeWire quantum forcing) lives behind the engine_platform.h seam, implemented
@@ -180,6 +181,33 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
                             int32_t input_channels, int32_t output_channels,
                             int32_t max_loop_frames) {
   if (engine == NULL) return LE_ERR_INVALID;
+
+  /* Performance-recording capture: stop and join the drain thread — if
+   * still armed here, the engine is being reconfigured mid-session (a
+   * device/sample-rate change) — BEFORE touching ANY other engine field
+   * below. The drain thread is a real background thread (unlike the rest of
+   * this function's state, which the audio thread alone would otherwise
+   * race) and reads engine->sample_rate / perf.master_channels /
+   * perf.input_mask directly (safe only because they are fixed for the
+   * whole armed session); mutating them first and stopping the thread
+   * second would let it observe a torn or already-new value mid-flush. The
+   * rings themselves are freed after (mirrors the ring-drop below): the
+   * device is stopped during configure (no audio thread), so freeing is
+   * race-free once the drain thread — the rings' other reader — has been
+   * joined here. */
+  if (engine->perf.drain != NULL) {
+    le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DEVICE_CHANGED);
+    engine->perf.drain = NULL;
+  }
+  free(engine->perf.master_ring.buffer);
+  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+    free(engine->perf.monitor_ring[c].buffer);
+  }
+  engine->perf = (le_perf_capture){0};
+  store_i32(&engine->a_perf_armed, 0);
+  atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+
   if (input_channels <= 0) input_channels = 2;
   if (input_channels > LE_MAX_CHANNELS) input_channels = LE_MAX_CHANNELS;
   if (output_channels <= 0) output_channels = 2;
@@ -269,17 +297,6 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
 
-  /* Performance-recording capture: the device is stopped during configure (no
-   * audio thread), so any rings left over from a previous session (including
-   * one still armed) can be freed directly — mirrors the ring drop above. */
-  free(engine->perf.master_ring.buffer);
-  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
-    free(engine->perf.monitor_ring[c].buffer);
-  }
-  engine->perf = (le_perf_capture){0};
-  store_i32(&engine->a_perf_armed, 0);
-  atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
-  atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
 
   /* Latency-measurement capture window (~100 ms): the audio thread fills it with
    * the input-magnitude envelope, the resolver cross-correlates it. */
@@ -499,7 +516,14 @@ void le_engine_destroy(le_engine* engine) {
   free(engine->lat_buf);
   /* The device is already closed (no audio thread), so the performance-capture
    * rings — including any left retracted-but-allocated by a disarm that could
-   * not confirm quiescence — can be freed directly, without the handshake. */
+   * not confirm quiescence — can be freed directly, without the handshake. The
+   * drain thread is a plain background thread (not the audio callback) and may
+   * still be alive if a prior disarm bailed out on the quiescent wait, so stop
+   * and join it first — it is the rings' last reader. */
+  if (engine->perf.drain != NULL) {
+    le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
+    engine->perf.drain = NULL;
+  }
   free(engine->perf.master_ring.buffer);
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
     free(engine->perf.monitor_ring[c].buffer);

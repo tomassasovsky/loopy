@@ -3245,7 +3245,7 @@ static void test_monitor_and_playback_sum(void) {
   le_engine_destroy(e);
 }
 
-/* ---- performance recording (le_perf_arm / le_perf_disarm) ---- *
+/* ---- performance recording (le_perf_arm / le_perf_disarm / perf_drain) ---- *
  * The control-thread ABI (engine_commands.c): addressing + error paths, and
  * the disarm fast path (a_running == 0, taken by every test below since this
  * suite never opens a device). The success + quiescent-handshake path (and
@@ -3254,12 +3254,109 @@ static void test_monitor_and_playback_sum(void) {
  * test_plugin_slot.c's test_engine_abi_errors makes for the plugin-slot
  * quiescent handshake, which the perf-capture teardown mirrors. */
 
+/* One shared scratch directory for every perf-capture test's drain files
+ * *within this process*, under the system temp dir, qualified by PID so
+ * concurrent invocations of this test binary (e.g. a developer running
+ * locally while CI also runs) never collide. Reused rather than
+ * unique-per-test within the process: every arm reopens its files with "wb"
+ * (truncating), and every test calls le_engine_destroy before returning —
+ * which joins any still-running drain thread (engine.c's teardown hook) — so
+ * no test's files or thread can bleed into the next one's assertions. This
+ * guarantee is process-scoped only: these tests must run sequentially within
+ * one process (never `ctest -j` / a parallel test runner against this
+ * binary), since two threads/processes sharing one PID-qualified directory
+ * would still race each other. */
+#if defined(_WIN32)
+#include <process.h> /* _getpid */
+#define test_getpid() _getpid()
+#else
+#include <unistd.h> /* getpid */
+#define test_getpid() getpid()
+#endif
+
+static const char* perf_test_dir(void) {
+  static char dir[512];
+  static int initialized = 0;
+  if (!initialized) {
+    const char* tmp = getenv("TMPDIR");
+    if (tmp == NULL || tmp[0] == '\0') tmp = "/tmp";
+    /* PID-qualified: concurrent copies of this test binary (a re-run racing
+     * a still-shutting-down previous one, or genuinely parallel CI jobs)
+     * must never share a directory — every perf_drain test truncates
+     * ("wb") and free-runs a real background thread against these files, so
+     * a shared path across processes corrupts unrelated runs. */
+    snprintf(dir, sizeof(dir), "%s/loopy_perf_test_%d", tmp,
+            (int)test_getpid());
+    initialized = 1;
+  }
+  return dir;
+}
+
+/* The drain thread flushes every ~250 ms (LE_PD_FLUSH_MS, perf_drain.c) on a
+ * real background thread — the perf_drain tests below need to actually wait
+ * for it rather than call it synchronously. */
+#if defined(_WIN32)
+#include <windows.h>
+static void test_sleep_ms(int ms) { Sleep((DWORD)ms); }
+#else
+#include <time.h>
+static void test_sleep_ms(int ms) {
+  struct timespec ts = {ms / 1000, (long)(ms % 1000) * 1000000L};
+  nanosleep(&ts, NULL);
+}
+#endif
+
+/* Reads up to `cap - 1` bytes of `path` into `out` and NUL-terminates it, for
+ * substring-matching a hand-rolled sidecar (no JSON library in this tree — see
+ * perf_drain.c). Returns the byte count read, or 0 if the file could not be
+ * opened. */
+static size_t read_file_for_test(const char* path, char* out, size_t cap) {
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return 0;
+  const size_t n = fread(out, 1, cap - 1, f);
+  fclose(f);
+  out[n] = '\0';
+  return n;
+}
+
+/* Polls a condition every 10 ms up to `timeout_ms`, rather than a fixed
+ * sleep — deterministic regardless of how fast the drain thread's real
+ * background scheduling actually runs (a fixed sleep only has as much
+ * margin as its duration minus the flush cadence; a poll loop has none of
+ * that risk and is normally much faster than the timeout in the common
+ * case). Used only by the handful of perf_drain tests that need to observe
+ * the drain thread's OWN background cycle rather than a call that already
+ * blocks until it (le_perf_disarm, le_engine_configure). */
+static int poll_drain_self_stopped_for_test(struct le_perf_drain* drain,
+                                            int timeout_ms) {
+  for (int waited = 0; waited < timeout_ms; waited += 10) {
+    if (le_perf_drain_self_stopped_for_test(drain)) return 1;
+    test_sleep_ms(10);
+  }
+  return le_perf_drain_self_stopped_for_test(drain);
+}
+
+static int poll_file_reaches_size_for_test(const char* path, long min_bytes,
+                                           int timeout_ms) {
+  for (int waited = 0; waited < timeout_ms; waited += 10) {
+    FILE* f = fopen(path, "rb");
+    if (f != NULL) {
+      fseek(f, 0, SEEK_END);
+      const long size = ftell(f);
+      fclose(f);
+      if (size >= min_bytes) return 1;
+    }
+    test_sleep_ms(10);
+  }
+  return 0;
+}
+
 static void test_perf_arm_requires_configure(void) {
   printf("test_perf_arm_requires_configure\n");
   le_engine* e = le_engine_create();
-  CHECK(le_perf_arm(e) == LE_ERR_NOT_RUNNING); /* not configured yet */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_ERR_NOT_RUNNING); /* not configured yet */
   le_engine_configure(e, 48000, 1, 1, 100);
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   le_engine_destroy(e);
 }
 
@@ -3274,7 +3371,7 @@ static void test_perf_reconfigure_while_armed_resets_cleanly(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000);
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
   le_snapshot s;
   le_engine_get_snapshot(e, &s);
@@ -3289,7 +3386,7 @@ static void test_perf_reconfigure_while_armed_resets_cleanly(void) {
 
   /* A fresh arm afterward works cleanly (the old rings were actually freed,
    * not merely forgotten). */
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1);
@@ -3302,14 +3399,81 @@ static void test_perf_arm_rejects_no_enabled_output(void) {
   le_engine* e = make_configured_engine(); /* mono in/out */
   CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK); /* disable the only output */
   drain(e);
-  CHECK(le_perf_arm(e) == LE_ERR_INVALID); /* nothing to capture */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_ERR_INVALID); /* nothing to capture */
+  le_engine_destroy(e);
+}
+
+/* When the drain thread fails to start (here: capture_dir names a plain FILE,
+ * not a directory — le_pd_mkdir_recursive "succeeds" since something already
+ * exists there (POSIX mkdir reports EEXIST regardless of type), but opening
+ * master.pcm inside it then fails since it isn't actually a directory),
+ * le_perf_arm returns LE_ERR_DEVICE and cleanly unwinds every ring it had
+ * already allocated — proven by a subsequent successful arm at a real path,
+ * which would fail loudly (a stale input_mask, a leaked ring) if the unwind
+ * were incomplete. */
+static void test_perf_arm_cleans_up_when_drain_thread_fails_to_start(void) {
+  printf("test_perf_arm_cleans_up_when_drain_thread_fails_to_start\n");
+  le_engine* e = make_configured_engine();
+
+  char blocked_path[600];
+  snprintf(blocked_path, sizeof(blocked_path), "%s_blocked_by_a_file",
+          perf_test_dir());
+  /* Ensure a clean slate: some other test run's directory of the same name
+   * would make mkdir's EEXIST ambiguous with "it's actually a real dir". */
+  remove(blocked_path);
+  FILE* f = fopen(blocked_path, "wb");
+  CHECK(f != NULL);
+  if (f != NULL) fclose(f);
+
+  CHECK(le_perf_arm(e, blocked_path) == LE_ERR_DEVICE);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 0); /* never published: the arm never reached that point */
+
+  /* A subsequent arm at a real directory works cleanly — proves the failed
+   * attempt didn't leak a ring or leave stale input_mask/config behind. */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+
+  le_perf_disarm(e);
+  remove(blocked_path);
   le_engine_destroy(e);
 }
 
 static void test_perf_null_safety(void) {
   printf("test_perf_null_safety\n");
-  CHECK(le_perf_arm(NULL) == LE_ERR_INVALID);
+  CHECK(le_perf_arm(NULL, perf_test_dir()) == LE_ERR_INVALID);
   CHECK(le_perf_disarm(NULL) == LE_ERR_INVALID);
+}
+
+/* A null or empty capture_dir is rejected before anything else — including
+ * before the not-configured check, so an unconfigured engine with a bad path
+ * still reports LE_ERR_INVALID, not LE_ERR_NOT_RUNNING. */
+static void test_perf_arm_rejects_bad_capture_dir(void) {
+  printf("test_perf_arm_rejects_bad_capture_dir\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_perf_arm(e, NULL) == LE_ERR_INVALID);
+  CHECK(le_perf_arm(e, "") == LE_ERR_INVALID);
+  le_engine_destroy(e);
+}
+
+/* A capture_dir that would not fit (with room for filenames like
+ * "/master.pcm") is refused outright rather than silently truncated by the
+ * internal snprintf into a directory the caller never asked for. */
+static void test_perf_arm_rejects_capture_dir_too_long(void) {
+  printf("test_perf_arm_rejects_capture_dir_too_long\n");
+  le_engine* e = make_configured_engine();
+  char huge[2048];
+  memset(huge, 'a', sizeof(huge) - 1);
+  huge[sizeof(huge) - 1] = '\0';
+  CHECK(le_perf_arm(e, huge) == LE_ERR_DEVICE);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 0);
+  CHECK(e->perf.drain == NULL);
+  le_engine_destroy(e);
 }
 
 /* Arm/disarm toggle the snapshot's perf_armed flag; both are idempotent, and a
@@ -3326,13 +3490,13 @@ static void test_perf_arm_disarm_lifecycle(void) {
   CHECK(s.perf_armed == 0);
   CHECK(le_perf_disarm(e) == LE_OK); /* idempotent: never armed */
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e); /* apply LE_CMD_PERF_ARM */
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1);
   CHECK(s.perf_frames == 0); /* nothing processed yet besides the 0-frame drain */
 
-  CHECK(le_perf_arm(e) == LE_OK); /* idempotent: already armed */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK); /* idempotent: already armed */
 
   CHECK(le_perf_disarm(e) == LE_OK);
   drain(e); /* apply LE_CMD_PERF_DISARM */
@@ -3340,11 +3504,45 @@ static void test_perf_arm_disarm_lifecycle(void) {
   CHECK(s.perf_armed == 0);
   CHECK(le_perf_disarm(e) == LE_OK); /* idempotent: already disarmed */
 
-  CHECK(le_perf_arm(e) == LE_OK); /* re-arm after a clean disarm */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK); /* re-arm after a clean disarm */
   drain(e);
   le_engine_get_snapshot(e, &s);
   CHECK(s.perf_armed == 1);
   CHECK(s.perf_overruns == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Regression: a disarm that bails out on a stalled quiescent wait leaves the
+ * OLD drain thread + rings alive even when a_perf_armed already reads 0 (the
+ * audio thread can apply LE_CMD_PERF_DISARM promptly while the CONTROL
+ * thread's own 2-boundary confirmation still times out — e.g. a huge buffer
+ * size makes each boundary slow to reach even though the callback isn't
+ * literally frozen; this harness has no real concurrent audio thread to
+ * reproduce that exact race, so a_perf_armed is poked directly to reach the
+ * same state le_perf_disarm's bailout leaves: armed cleared, drain thread
+ * and rings untouched). A retry le_perf_arm must refuse — not silently
+ * reallocate engine->perf.master_ring/monitor_ring in place while that old
+ * thread is still popping from them. */
+static void test_perf_arm_refuses_when_drain_thread_still_live(void) {
+  printf("test_perf_arm_refuses_when_drain_thread_still_live\n");
+  le_engine* e = make_configured_engine();
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  store_i32(&e->a_perf_armed, 0); /* the state a stalled-bailout disarm leaves */
+  CHECK(e->perf.drain != NULL); /* the old session's thread/rings are still live */
+
+  /* A retry must refuse, not orphan the still-live old session. */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_ERR_DEVICE);
+
+  /* Recovery: once the session is actually torn down (a real disarm, which
+   * clears perf.drain), a fresh arm works cleanly again. */
+  store_i32(&e->a_perf_armed, 1); /* restore so le_perf_disarm doesn't no-op */
+  CHECK(le_perf_disarm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
 
   le_engine_destroy(e);
 }
@@ -3362,7 +3560,7 @@ static void test_perf_master_tap_bit_identical_mono(void) {
   le_engine_record(e, 0);              /* finalize -> PLAYING */
   drain(e);
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_perf_master_channels_for_test(e) == 1);
 
@@ -3394,7 +3592,7 @@ static void test_perf_master_tap_bit_identical_stereo_post_gain(void) {
   CHECK(le_engine_set_master_gain(e, 0.5f) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
   CHECK(le_engine_perf_master_channels_for_test(e) == 2);
 
@@ -3430,7 +3628,7 @@ static void test_perf_monitor_tap_matches_mix_contribution(void) {
   CHECK(le_engine_set_monitor_input_volume(e, 0, 0.5f) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e) == LE_OK); /* freezes input_mask = {0} */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK); /* freezes input_mask = {0} */
   drain(e);
 
   float out[2 * LOOP_N];
@@ -3469,7 +3667,7 @@ static void test_perf_monitor_tap_pads_silence_when_muted(void) {
   CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK); /* mute after arm */
@@ -3500,7 +3698,7 @@ static void test_perf_monitor_tap_pads_silence_when_disabled(void) {
   CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
   drain(e);
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_set_monitor_input(e, 0, 0) == LE_OK); /* disable after arm */
@@ -3532,7 +3730,7 @@ static void test_perf_overflow_counts_and_drops(void) {
   le_engine_record(e, 0); /* finalize -> PLAYING */
   drain(e);
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   float big_out[32];
@@ -3557,7 +3755,7 @@ static void test_perf_frames_advance_during_latency_measurement(void) {
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 1, 1, 1000); /* lat_buf_cap = 48000/10 = 4800 */
 
-  CHECK(le_perf_arm(e) == LE_OK);
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
   drain(e);
 
   CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
@@ -3572,6 +3770,253 @@ static void test_perf_frames_advance_during_latency_measurement(void) {
   le_engine_get_snapshot(e, &s);
   CHECK(s.latency_state == LE_LATENCY_MEASURING); /* harness still owns every frame */
   CHECK(s.perf_frames == CAP); /* still counted, not stalled by the harness */
+
+  le_engine_destroy(e);
+}
+
+/* ---- perf_drain: the capture-to-disk background thread ---- */
+
+/* Drained master.pcm is byte-identical to the processed output for the same
+ * input. Disarms BEFORE reading the file rather than sleeping past a flush
+ * cycle: le_perf_disarm blocks on joining the drain thread, which runs its
+ * own final drain-and-flush pass first — a hard synchronization guarantee,
+ * not a timing guess, so this can never flake under scheduling pressure. */
+static void test_perf_drain_writes_master_pcm_byte_identical(void) {
+  printf("test_perf_drain_writes_master_pcm_byte_identical\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float out2[LOOP_N];
+  process_const(e, 0.0f, LOOP_N, out2); /* now playing the recorded 1.0 loop */
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out2[i] - 1.0f) < 1e-6f);
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* blocks until the final flush completes */
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float captured[LOOP_N];
+    const size_t n = fread(captured, sizeof(float), LOOP_N, f);
+    fclose(f);
+    CHECK(n == LOOP_N);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(captured[i] == out2[i]);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* A ring overrun (tiny ring capacity via a tiny sample rate, mirroring
+ * test_perf_overflow_counts_and_drops) leaves the drain thread's file behind
+ * wall-clock elapsed frames; it silence-fills the gap so the file stays
+ * sample-consistent and records the gap in the sidecar. */
+static void test_perf_drain_silence_fills_overrun_gap(void) {
+  printf("test_perf_drain_silence_fills_overrun_gap\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny rate -> tiny ring, 7 usable frames */
+
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* 7 pushes succeed, 25 drop (overrun) */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_frames == 32);
+  CHECK(s.perf_overruns == 32 - 7);
+
+  /* Disarm (blocks until the final flush, which does the same catch-up
+   * logic as any other cycle) rather than sleeping past one — a hard
+   * synchronization guarantee instead of a timing guess. */
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float buf[64];
+    const size_t n = fread(buf, sizeof(float), 64, f);
+    fclose(f);
+    CHECK(n == 32); /* 7 real frames + 25 silence-filled == elapsed */
+    for (size_t i = 0; i < 7 && i < n; ++i) {
+      CHECK(buf[i] == 1.0f); /* the 7 that actually reached the ring */
+    }
+    for (size_t i = 7; i < n; ++i) CHECK(buf[i] == 0.0f); /* the padded gap */
+  }
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"overrun_gaps\"") != NULL);
+  CHECK(strstr(json, "\"frame\": 7") != NULL);
+  CHECK(strstr(json, "\"duration_frames\": 25") != NULL);
+  CHECK(strstr(json, "\"finalized\": false") != NULL);
+
+  le_engine_destroy(e);
+}
+
+/* A write failure (forced deterministically — no real full disk needed) stops
+ * the drain thread cleanly: it self-stops rather than retrying, marks the
+ * sidecar's final flush `stopped_early: disk_full`, and — critically — the
+ * engine itself is never touched (the audio path keeps processing normally
+ * regardless of the capture failure). */
+static void test_perf_drain_disk_full_stops_cleanly(void) {
+  printf("test_perf_drain_disk_full_stops_cleanly\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  le_perf_drain_force_write_failure_for_test(1);
+
+  /* The engine keeps processing audio normally throughout — a capture
+   * failure must never touch the audio path. */
+  float out[LOOP_N];
+  process_const(e, 0.5f, LOOP_N, out);
+
+  /* Poll rather than a fixed sleep: this specifically needs the drain
+   * thread's OWN background cycle to observe the forced failure (not just
+   * disarm's final pass), so there is no call here that already blocks
+   * until it. 2 s is generous; the common case resolves within one flush
+   * cycle (~250 ms). */
+  const int stopped = poll_drain_self_stopped_for_test(e->perf.drain, 2000);
+
+  le_perf_drain_force_write_failure_for_test(0); /* reset before other tests run */
+
+  CHECK(stopped);
+  CHECK(le_perf_drain_self_stopped_for_test(e->perf.drain) == 1);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1); /* the engine itself is unaffected; still "armed" */
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"stopped_early\": \"disk_full\"") != NULL);
+
+  le_perf_disarm(e); /* the thread already exited; this just reaps/joins it */
+  le_engine_destroy(e);
+}
+
+/* Crash consistency: the sidecar and PCM files on disk are already fully
+ * valid (parseable, readable up to the last flush) at any point during a
+ * still-running capture — no clean disarm/finalize ever happens in this
+ * test. This is the actual invariant a process kill relies on (umbrella
+ * D-FMT/D-SALVAGE): reading the files from a second handle while the drain
+ * thread is still alive proves it directly, rather than literally killing a
+ * thread (no portable, safe API for that — it would only test an OS/thread-
+ * implementation detail, not the on-disk format this part actually owns). */
+static void test_perf_drain_files_are_crash_consistent_mid_capture(void) {
+  printf("test_perf_drain_files_are_crash_consistent_mid_capture\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  /* The shared scratch dir (perf_test_dir) can still hold a PREVIOUS test's
+   * sidecar (e.g. test_perf_drain_disk_full_stops_cleanly's, which does
+   * write `stopped_early`) — it is only overwritten once THIS session's
+   * drain thread completes its own first cycle, whereas the PCM files below
+   * are truncated immediately at arm (fopen "wb"). Remove it explicitly so
+   * "stopped_early is absent" can't spuriously pass by reading stale
+   * content from a different session. */
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  remove(sidecar_path);
+
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float out2[LOOP_N];
+  process_const(e, 0.0f, LOOP_N, out2);
+
+  /* This test's whole point is to read the files WHILE the drain thread is
+   * still alive (no disarm/finalize yet), so it can't just block on a call
+   * that joins the thread. Poll for the sidecar to reappear (removed above)
+   * instead of a fixed sleep: since it's the LAST step of a drain cycle
+   * (after the PCM flush), its mere presence proves this session's PCM
+   * flush already happened too — a hard ordering guarantee, not a timing
+   * guess, and immune to a stale prior session's file since that was
+   * deleted. */
+  CHECK(poll_file_reaches_size_for_test(sidecar_path, 1, 2000));
+
+  char json[4096];
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(json[0] == '{'); /* minimal well-formedness: no library to parse with */
+  CHECK(strstr(json, "\"finalized\": false") != NULL);
+  CHECK(strstr(json, "\"slug\"") != NULL);
+  CHECK(strstr(json, "\"capture_frames\"") != NULL);
+  CHECK(strstr(json, "\"stopped_early\"") == NULL); /* still running normally */
+
+  char pcm_path[600];
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", perf_test_dir());
+  FILE* pf = fopen(pcm_path, "rb");
+  CHECK(pf != NULL);
+  if (pf != NULL) {
+    float buf[LOOP_N];
+    const size_t n = fread(buf, sizeof(float), LOOP_N, pf);
+    fclose(pf);
+    CHECK(n == LOOP_N);
+  }
+
+  le_perf_disarm(e);
+  le_engine_destroy(e);
+}
+
+/* The capture-to-disk counterpart to
+ * test_perf_reconfigure_while_armed_resets_cleanly: a reconfigure while armed
+ * stops+joins the drain thread (le_engine_configure blocks on the join, so no
+ * sleep is needed before reading the sidecar back), and its final flush marks
+ * the reason. */
+static void test_perf_reconfigure_while_armed_marks_sidecar_device_changed(void) {
+  printf("test_perf_reconfigure_while_armed_marks_sidecar_device_changed\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  float out[LOOP_N];
+  process_const(e, 0.5f, LOOP_N, out);
+
+  CHECK(le_engine_configure(e, 48000, 1, 1, 1000) == LE_OK); /* reconfigure, still armed */
+
+  char json[4096];
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"stopped_early\": \"device_changed\"") != NULL);
+  CHECK(strstr(json, "\"finalized\": false") != NULL);
 
   le_engine_destroy(e);
 }
@@ -6002,8 +6447,12 @@ int main(void) {
   test_perf_arm_requires_configure();
   test_perf_reconfigure_while_armed_resets_cleanly();
   test_perf_arm_rejects_no_enabled_output();
+  test_perf_arm_cleans_up_when_drain_thread_fails_to_start();
   test_perf_null_safety();
+  test_perf_arm_rejects_bad_capture_dir();
+  test_perf_arm_rejects_capture_dir_too_long();
   test_perf_arm_disarm_lifecycle();
+  test_perf_arm_refuses_when_drain_thread_still_live();
   test_perf_master_tap_bit_identical_mono();
   test_perf_master_tap_bit_identical_stereo_post_gain();
   test_perf_monitor_tap_matches_mix_contribution();
@@ -6011,6 +6460,11 @@ int main(void) {
   test_perf_overflow_counts_and_drops();
   test_perf_frames_advance_during_latency_measurement();
   test_perf_monitor_tap_pads_silence_when_disabled();
+  test_perf_drain_writes_master_pcm_byte_identical();
+  test_perf_drain_silence_fills_overrun_gap();
+  test_perf_drain_disk_full_stops_cleanly();
+  test_perf_drain_files_are_crash_consistent_mid_capture();
+  test_perf_reconfigure_while_armed_marks_sidecar_device_changed();
   test_record_does_not_self_snapshot();
   test_record_never_touches_lane_fx();
   test_output_disabled_is_silent_routes_preserved();
