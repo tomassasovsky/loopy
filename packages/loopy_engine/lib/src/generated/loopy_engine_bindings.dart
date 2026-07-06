@@ -2162,6 +2162,52 @@ class LoopyEngineBindings {
         int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)
       >();
 
+  /// Copies up to `max_frames` frames of track `channel`'s lane `lane` mono loop
+  /// into `out`; returns the number of frames written (the lane's length,
+  /// clamped to `max_frames`), 0 for a valid-but-empty lane, or LE_ERR_INVALID
+  /// for an out-of-range channel/lane or a non-positive `max_frames`. Same
+  /// settled-buffer semantics as le_engine_export_track (which is equivalent to
+  /// lane 0 and untouched by this addition) — call when the track is not
+  /// capturing.
+  int le_engine_export_track_lane(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_export_track_lane(
+      engine,
+      channel,
+      lane,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_export_track_lanePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_export_track_lane');
+  late final _le_engine_export_track_lane = _le_engine_export_track_lanePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
   /// Loads `frames` mono frames of PCM into track `channel`'s buffer and records
   /// the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
   /// tail is zeroed. The track starts playing on le_engine_commit_session. Returns

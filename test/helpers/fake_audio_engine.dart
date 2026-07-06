@@ -409,6 +409,9 @@ class FakeAudioEngine implements AudioEngine {
   Float32List exportTrack(int channel) => Float32List(0);
 
   @override
+  Float32List exportTrackLane(int channel, int lane) => Float32List(0);
+
+  @override
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
 
   @override

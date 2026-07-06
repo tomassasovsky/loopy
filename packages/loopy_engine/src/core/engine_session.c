@@ -34,6 +34,23 @@ int32_t le_engine_export_track(le_engine* engine, int32_t channel, float* out,
   return n;
 }
 
+int32_t le_engine_export_track_lane(le_engine* engine, int32_t channel,
+                                    int32_t lane, float* out,
+                                    int32_t max_frames) {
+  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (max_frames <= 0) return LE_ERR_INVALID;
+  le_lane* ln = &engine->tracks[channel].lanes[lane];
+  int32_t n = load_i32(&ln->a_len);
+  if (n > max_frames) n = max_frames;
+  if (n <= 0) return 0;
+  const int live = load_i32(&ln->a_live);
+  if (ln->pool[live] == NULL) return 0;
+  memcpy(out, ln->pool[live], (size_t)n * sizeof(float));
+  return n;
+}
+
 int32_t le_engine_import_track(le_engine* engine, int32_t channel,
                                const float* pcm, int32_t frames) {
   if (engine == NULL || pcm == NULL) return LE_ERR_INVALID;
