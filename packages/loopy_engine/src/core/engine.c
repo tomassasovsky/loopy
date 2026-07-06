@@ -316,7 +316,6 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * ENABLED; the audio thread skips a cleared output in the mix fan-out. */
   atomic_store_explicit(&engine->a_output_enabled_mask, 0xFFFFFFFFu,
                         memory_order_relaxed);
-  engine->snapshot_copy_count = 0;
 
   /* Per-input live monitors: all disabled by default (each defaults to full
    * stereo output, empty chain). Inputs are monitored only when explicitly
@@ -346,10 +345,6 @@ void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
   if (engine == NULL) return;
   atomic_store_explicit(&engine->a_excluded_input_mask, mask,
                         memory_order_relaxed);
-}
-
-int32_t le_engine_snapshot_copy_count_for_test(le_engine* engine) {
-  return engine == NULL ? 0 : engine->snapshot_copy_count;
 }
 
 int le_engine_lane_buffer_allocated_for_test(le_engine* engine, int32_t channel,

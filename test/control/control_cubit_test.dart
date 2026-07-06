@@ -811,21 +811,29 @@ void main() {
       );
 
       test(
-        'trackLedFor exposes the pure projection for the on-screen pedal',
-        () {
+        'the pushed frame carries the per-track LED projection',
+        () async {
+          pedal.bind('out');
+          transport.sent.clear();
           setEngine(
             _tracksWith(const [
               Track(), // ch0 cursor by default -> red
               Track(channel: 1, state: TrackState.recording),
             ]),
           );
+          await pumpEventQueue();
 
-          expect(cubit.trackLedFor(0), PedalTrackLed.red);
-          expect(cubit.trackLedFor(1), PedalTrackLed.red);
-          expect(cubit.trackLedFor(2), PedalTrackLed.off);
+          final leds = PedalCodec.decodeFrame(transport.sent.last)?.trackLeds;
+          expect(leds?[0], PedalTrackLed.red);
+          expect(leds?[1], PedalTrackLed.red);
+          expect(leds?[2], PedalTrackLed.off);
 
           cubit.selectTrack(2);
-          expect(cubit.trackLedFor(2), PedalTrackLed.red);
+          await pumpEventQueue();
+          expect(
+            PedalCodec.decodeFrame(transport.sent.last)?.trackLeds[2],
+            PedalTrackLed.red,
+          );
         },
       );
     });
