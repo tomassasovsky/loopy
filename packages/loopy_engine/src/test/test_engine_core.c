@@ -2996,9 +2996,11 @@ static void test_monitor_clean_chain_not_recorded(void) {
 }
 
 /* The monitored (effected) live signal is never printed into a recording: the
- * captured BUFFER stays dry even though the input is monitored through FX. The
- * effect colors playback only because the lane re-applies the snapshot
- * (non-destructive, D2) — proven by exporting the clean PCM. */
+ * captured BUFFER stays dry even though the input is monitored through FX. And
+ * because the engine no longer self-snapshots the monitor chain onto the lane
+ * (the host owns the record-time snapshot), playback of a take the engine
+ * recorded — with no host push — is DRY: the lane FX are whatever the host
+ * pushed, nothing more. */
 static void test_monitor_input_not_recorded(void) {
   printf("test_monitor_input_not_recorded\n");
   le_engine* e = le_engine_create();
@@ -3029,12 +3031,14 @@ static void test_monitor_input_not_recorded(void) {
   CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
 
-  /* But playback re-applies the snapshotted drive: out == tanh(1.0). */
+  /* Playback is DRY 1.0: the engine performed no self-snapshot, so the lane has
+   * no FX (the host would push the monitored chain — see the repository's
+   * record-snapshot tests). */
   float zin[2 * LOOP_N] = {0};
   le_engine_process(e, out, zin, LOOP_N);
   for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f);
-    CHECK(fabsf(out[i * 2 + 1] - tanhf(1.0f)) < 1e-5f);
+    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f);
+    CHECK(fabsf(out[i * 2 + 1] - 1.0f) < 1e-6f);
   }
 
   le_engine_destroy(e);
@@ -3151,161 +3155,52 @@ static void test_monitor_and_playback_sum(void) {
   le_engine_destroy(e);
 }
 
-/* Recording snapshots the recorded input's monitor FX chain onto the new lane:
- * the take plays back through the chain the performer monitored, while the
- * recorded buffer stays clean (non-destructive — D2). */
-static void test_record_snapshots_input_fx(void) {
-  printf("test_record_snapshots_input_fx\n");
-  le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 2, 2, 1000); /* lane 0 records input 0 */
-  float out[2 * LOOP_N];
-  float in[2 * LOOP_N];
-  for (int i = 0; i < LOOP_N; ++i) {
-    in[i * 2 + 0] = 1.0f;
-    in[i * 2 + 1] = 0.0f;
-  }
+/* The engine's record-time snapshot of the recorded input's monitor FX chain
+ * onto the take's lane — and its copy-on-record independence (D3) — moved to the
+ * host (LooperRepository), which is now the single record-time snapshot
+ * authority. The engine-level tests that asserted the self-snapshot were retired
+ * with it; the behavior is re-asserted at the repository level (deterministic
+ * race + plugin + non-clobber tests) and the engine's pure-sink contract is
+ * pinned by test_record_does_not_self_snapshot below. */
 
-  /* Configure a unity drive on input 0's monitor chain (monitor stays DISABLED —
-   * the snapshot is independent of the monitor gate, D8). */
-  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f); /* 1x pre-gain */
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f); /* unity level */
-  le_engine_set_monitor_input_fx_count(e, 0, 1);
-  drain(e);
-
-  /* Record a clean 1.0 loop on track 0; the snapshot copies the drive onto lane 0. */
-  le_engine_record(e, 0);
-  le_engine_process(e, out, in, LOOP_N);
-  le_engine_record(e, 0); /* finalize -> PLAYING */
-  drain(e);
-
-  /* Playback over silence: the lane re-applies the snapshot drive, so the dry
-   * 1.0 buffer comes out tanh(1.0) on both default-stereo outputs. */
-  float zin[2 * LOOP_N] = {0};
-  le_engine_process(e, out, zin, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f);
-    CHECK(fabsf(out[i * 2 + 1] - tanhf(1.0f)) < 1e-5f);
-  }
-
-  /* The recorded buffer itself is clean: lane FX count == 1, but the stored PCM
-   * (exported) is the dry 1.0, never tanh. */
-  float pcm[LOOP_N];
-  CHECK(le_engine_export_track(e, 0, pcm, LOOP_N) == LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
-
-  le_engine_destroy(e);
-}
-
-/* Copy-on-record, not a live reference (D3): editing the input chain AFTER a take
- * is recorded leaves the take's snapshot unchanged, and a later take captures the
- * NEW chain — each take is its own entity. */
-static void test_snapshot_is_independent_of_later_input_edits(void) {
-  printf("test_snapshot_is_independent_of_later_input_edits\n");
+/* The engine is a pure sink for lane FX: it does NOT self-snapshot the recorded
+ * input's monitor chain onto the lane on record. The host (LooperRepository) is
+ * the sole record-time snapshot authority and pushes the take's lane FX through
+ * the command ring like any other lane edit — so there is no second, ring-
+ * deferred computation to race (the dry-take-when-FX-monitored bug). Asserted on
+ * the PUBLISHED-chain fingerprints: a record-from-EMPTY over a HOT monitor
+ * leaves the lane's chain untouched (still the empty basis). */
+static void test_record_does_not_self_snapshot(void) {
+  printf("test_record_does_not_self_snapshot\n");
   le_engine* e = le_engine_create();
   le_engine_configure(e, 48000, 2, 2, 1000);
-  float out[2 * LOOP_N];
-  float in[2 * LOOP_N];
-  for (int i = 0; i < LOOP_N; ++i) {
-    in[i * 2 + 0] = 1.0f;
-    in[i * 2 + 1] = 0.0f;
-  }
 
-  /* Input 0 monitor = unity drive; record take on track 0. */
+  /* Monitor a drive on input 0; lane 0 of empty track 0 records input 0. */
   le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f);
   le_engine_set_monitor_input_fx_count(e, 0, 1);
   drain(e);
+
+  const uint64_t empty_lane_fp = le_engine_lane_fx_fingerprint(e, 0, 0);
+  CHECK(le_engine_monitor_fx_fingerprint(e, 0) != empty_lane_fp); /* hot */
+
+  /* Record from EMPTY: the engine must NOT copy the monitor chain onto the
+   * lane. The lane's published chain stays exactly what it was (empty). */
   le_engine_record(e, 0);
-  le_engine_process(e, out, in, LOOP_N);
-  le_engine_record(e, 0); /* finalize track 0 -> PLAYING (master) */
   drain(e);
-
-  /* Now CLEAR the input chain — the live monitor is back to clean. */
-  le_engine_set_monitor_input_fx_count(e, 0, 0);
-  drain(e);
-
-  /* Track 0 still plays through its snapshot drive: tanh(1.0), unchanged. */
-  float zin[2 * LOOP_N] = {0};
-  le_engine_process(e, out, zin, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - tanhf(1.0f)) < 1e-5f);
-  }
-
-  /* A NEW take (track 1, lane 0 records input 1 by default) with the input chain
-   * now clean records a clean snapshot: track 1 plays back dry. Route input 1's
-   * lane and record over the existing master. */
-  le_engine_set_lane_input(e, 1, 0, 1); /* track 1 lane 0 records input 1 */
-  drain(e);
-  for (int i = 0; i < LOOP_N; ++i) {
-    in[i * 2 + 0] = 0.0f;
-    in[i * 2 + 1] = 1.0f; /* feed input 1 */
-  }
-  le_engine_record(e, 1);
-  le_engine_process(e, out, in, LOOP_N); /* records one base loop */
-  le_engine_record(e, 1);                /* finalize -> playing */
-  drain(e);
-  /* Mute track 0 so only track 1 sounds, then play over silence: dry 1.0. */
-  le_engine_set_track_mute(e, 0, 1);
-  drain(e);
-  le_engine_process(e, out, zin, LOOP_N);
-  for (int i = 0; i < LOOP_N; ++i) {
-    CHECK(fabsf(out[i * 2 + 0] - 1.0f) < 1e-6f); /* track 1 dry, no drive */
-  }
+  CHECK(le_engine_lane_fx_fingerprint(e, 0, 0) == empty_lane_fp);
 
   le_engine_destroy(e);
 }
 
-/* NF-1: the snapshot deep-copy runs on the CONTROL thread (le_engine_record) and
- * NEVER on the audio thread (le_engine_process). Asserted via the control-thread
- * copy counter, which must advance on record but never across processing. */
-static void test_record_snapshot_is_rt_safe(void) {
-  printf("test_record_snapshot_is_rt_safe\n");
-  le_engine* e = le_engine_create();
-  le_engine_configure(e, 48000, 2, 2, 1000);
-  float out[2 * LOOP_N];
-  float in[2 * LOOP_N];
-  for (int i = 0; i < LOOP_N; ++i) {
-    in[i * 2 + 0] = 1.0f;
-    in[i * 2 + 1] = 0.0f;
-  }
-  le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
-  le_engine_set_monitor_input_fx_count(e, 0, 1);
-  drain(e);
-
-  CHECK(le_engine_snapshot_copy_count_for_test(e) == 0);
-  le_engine_record(e, 0); /* EMPTY -> record: snapshot on the control thread */
-  const int32_t after_record = le_engine_snapshot_copy_count_for_test(e);
-  CHECK(after_record == 1);
-
-  /* Process the whole take: record, finalize, playback. The copy count must not
-   * move — the audio thread never performs the snapshot. */
-  le_engine_process(e, out, in, LOOP_N);
-  le_engine_record(e, 0); /* finalize (not EMPTY) -> no snapshot */
-  drain(e);
-  float zin[2 * LOOP_N] = {0};
-  for (int k = 0; k < 4; ++k) le_engine_process(e, out, zin, LOOP_N);
-  CHECK(le_engine_snapshot_copy_count_for_test(e) == 1);
-
-  /* An overdub press (PLAYING -> OVERDUBBING) is also not a fresh capture, so it
-   * must NOT re-snapshot — the take keeps its original chain. */
-  le_engine_record(e, 0); /* PLAYING -> OVERDUBBING */
-  CHECK(le_engine_snapshot_copy_count_for_test(e) == 1);
-  drain(e);
-  for (int k = 0; k < 4; ++k) le_engine_process(e, out, in, LOOP_N);
-  CHECK(le_engine_snapshot_copy_count_for_test(e) == 1);
-
-  le_engine_destroy(e);
-}
-
-/* Staged lane FX survive a fresh take when nothing is monitored: with a clean
- * input chain, snapshot-on-record keeps the lane's own chain (it used to wipe
- * it, so persistence-restored track FX vanished on the first record). A
- * monitored chain still overwrites the staged one (D2: the take sounds like
- * what was monitored). */
-static void test_record_keeps_staged_lane_fx_when_monitor_clean(void) {
-  printf("test_record_keeps_staged_lane_fx_when_monitor_clean\n");
+/* The engine never touches a lane's FX on record — it is a pure sink for the
+ * host-pushed chain. A staged lane chain survives a fresh take whether the
+ * recorded input's monitor chain is clean OR hot: the host (LooperRepository)
+ * owns the record-time snapshot and pushes any overwrite itself. (Previously the
+ * engine self-snapshotted, so a hot monitor overwrote the staged lane chain
+ * here; that authority now lives entirely in the host — see the repository's
+ * record-snapshot tests.) */
+static void test_record_never_touches_lane_fx(void) {
+  printf("test_record_never_touches_lane_fx\n");
   le_engine* e = make_configured_engine();
   float out[64];
 
@@ -3317,8 +3212,8 @@ static void test_record_keeps_staged_lane_fx_when_monitor_clean(void) {
   CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
   drain(e);
 
-  /* Record a take: the staged chain survives the snapshot and colours
-   * playback — tanh drive on the recorded 0.5. */
+  /* Record a take: the staged chain survives and colours playback — tanh drive
+   * on the recorded 0.5. */
   le_engine_record(e, 0);
   process_const(e, 0.5f, LOOP_N, out);
   le_engine_record(e, 0); /* finalize -> PLAYING */
@@ -3328,18 +3223,20 @@ static void test_record_keeps_staged_lane_fx_when_monitor_clean(void) {
     CHECK(fabsf(out[i] - tanhf(0.5f)) < 1e-5f);
   }
 
-  /* A monitored chain still overwrites a staged one (D2). Clear the take,
-   * stage a hot drive, and monitor input 0 through a unity drive: the new
-   * take plays the monitored unity chain, not the staged hot one. */
+  /* A HOT monitor chain no longer overwrites the staged one engine-side — the
+   * engine performs no self-snapshot. Clear the take, re-stage a UNITY drive,
+   * and monitor input 0 through a HOT drive: the new take still plays the STAGED
+   * unity chain (tanh(0.5)), NOT the hot monitor one — proving the engine left
+   * the lane's chain alone. */
   CHECK(le_engine_clear(e, 0) == LE_OK);
   drain(e);
   le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE);
-  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 1.0f); /* hot pre-gain */
+  le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.0f); /* 1x pre-gain (unity) */
   le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 1.0f);
   le_engine_set_lane_fx_count(e, 0, 0, 1);
   le_engine_set_monitor_input_fx(e, 0, 0, LE_FX_DRIVE);
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 0.0f); /* 1x pre-gain */
-  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f); /* unity level */
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 0, 1.0f); /* hot pre-gain */
+  le_engine_set_monitor_input_fx_param(e, 0, 0, 1, 1.0f);
   le_engine_set_monitor_input_fx_count(e, 0, 1);
   drain(e);
   le_engine_record(e, 0);
@@ -5681,10 +5578,8 @@ int main(void) {
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
-  test_record_snapshots_input_fx();
-  test_snapshot_is_independent_of_later_input_edits();
-  test_record_snapshot_is_rt_safe();
-  test_record_keeps_staged_lane_fx_when_monitor_clean();
+  test_record_does_not_self_snapshot();
+  test_record_never_touches_lane_fx();
   test_output_disabled_is_silent_routes_preserved();
   test_reenable_restores_audio();
   test_gate_beyond_channel_count_ignored();

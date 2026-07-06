@@ -491,13 +491,6 @@ struct le_engine {
    * Audio-thread-local: written/read only on the device callback. */
   int32_t lat_saved_monitor_enabled[LE_MAX_INPUTS];
 
-  /* Test instrumentation (control-thread-only, never touched by the audio
-   * thread): counts how many times the record-FX snapshot deep-copy ran. The
-   * RT-safety test asserts this advances on le_engine_record (control thread) and
-   * never on le_engine_process, proving the copy never happens on the audio
-   * thread (NF-1). A plain int — single writer, the control thread. */
-  int32_t snapshot_copy_count;
-
   char device_name[256];
 
   /* Explicit context + resolved device ids, used when capturing from a detected

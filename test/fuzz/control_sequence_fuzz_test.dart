@@ -190,6 +190,26 @@ void main() {
         expect(h.fxFingerprintViolation(), isNull);
       });
     }, skip: skip);
+
+    test('monitor FX set then record-from-empty in the SAME turn (no drain) '
+        'still lands on the take, cache == engine (snapshot race)', () {
+      _inHarness((h, fa) {
+        // The regression: set a monitor chain and record from EMPTY with NO
+        // ring drain between the two (the widest race window — the engine used
+        // to self-snapshot a not-yet-published monitor count and print a dry
+        // take). The repo owns the snapshot now, so the take carries the chain
+        // and cache == engine holds after the settle.
+        h
+          ..run(const [
+            _SetMonitorThenRecord(0, 0, [2, 3]),
+          ], fa) // delay, reverb
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // finalize
+          ..settle(fa);
+        expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
+        expect(h.fxFingerprintViolation(), isNull);
+      });
+    }, skip: skip);
   });
 
   test('seeded random sequences hold every invariant', () {
@@ -552,6 +572,31 @@ class _SetMonitorChain extends _FuzzAction {
   String describe() => '_SetMonitorChain($input, $types)';
 }
 
+/// Sets monitor input [input]'s chain to [types] AND records track [channel]
+/// from empty in the SAME turn — no ring drain between the monitor push and the
+/// record snapshot. This is the ordering that exposed the snapshot race: the
+/// engine's self-snapshot read a not-yet-published monitor count and printed a
+/// dry take. The repository owns the snapshot now, so the take must still carry
+/// the chain and cache == engine must hold after the next settle.
+class _SetMonitorThenRecord extends _FuzzAction {
+  const _SetMonitorThenRecord(this.input, this.channel, this.types);
+  final int input;
+  final int channel;
+  final List<int> types;
+
+  @override
+  void apply(_Harness h, FakeAsync fa) {
+    h.repo.setMonitorEffects(
+      input: input,
+      effects: [for (final t in types) BuiltInEffect(type: _fxPalette[t])],
+    );
+    h.bloc.add(LooperRecordPressed(channel));
+  }
+
+  @override
+  String describe() => '_SetMonitorThenRecord($input, $channel, $types)';
+}
+
 // ---------------------------------------------------------------------------
 // Generation, replay, shrinking.
 // ---------------------------------------------------------------------------
@@ -604,9 +649,14 @@ List<_FuzzAction> _generate(int seed, int steps) {
       < 84 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
       < 88 => const _Tick(),
       < 92 => _Elapse(const [5, 50, 600][rng.next(3)]),
-      // FX actions (the F6 alphabet): set/clear a lane or monitor chain.
-      < 96 => _SetLaneChain(rng.next(4), rng.next(2), types()),
-      < 99 => _SetMonitorChain(rng.next(4), types()),
+      // FX actions (the F6 alphabet): set/clear a lane or monitor chain, or the
+      // race ordering — monitor-then-record with no drain between. Input is
+      // pinned to 0 (not randomized like _SetMonitorChain): a track's lane 0
+      // records input 0 by default, so only a monitor on input 0 reaches the
+      // recorded lane — the ordering under test.
+      < 95 => _SetLaneChain(rng.next(4), rng.next(2), types()),
+      < 97 => _SetMonitorChain(rng.next(4), types()),
+      < 99 => _SetMonitorThenRecord(0, rng.next(4), types()),
       _ => const _Reconnect(),
     });
   }

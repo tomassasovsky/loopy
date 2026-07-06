@@ -1210,7 +1210,8 @@ void main() {
       expect(repo.isMonitorPluginEditorOpen(input: 1, index: 0), isFalse);
     });
 
-    test('a plugin that fails to load is flagged unavailable (D-MISS)', () async {
+    test('a plugin that fails to load is flagged unavailable '
+        '(D-MISS)', () async {
       engine.nextSlotHandle = null; // load fails (uninstalled / moved)
       final repo = buildRepo()
         ..startEngine(const EngineConfig())
@@ -1904,6 +1905,250 @@ void main() {
       expect(lane, hasLength(2));
       expect((lane[0] as BuiltInEffect).type, TrackEffectType.drive);
       expect((lane[1] as BuiltInEffect).type, TrackEffectType.reverb);
+    });
+
+    test('record PUSHES the snapshotted chain to the engine, not just the '
+        'cache (one-authority sink)', () {
+      // The repository is the sole record-time snapshot authority: after a
+      // record-from-EMPTY it must push the copied lane chain to the engine (the
+      // engine no longer self-snapshots), so the engine holds exactly what the
+      // repo cached.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.delay),
+            BuiltInEffect(type: TrackEffectType.reverb),
+          ],
+        )
+        ..record();
+
+      // The engine's lane FX now mirror the snapshot the repo computed. (The
+      // fake records the engine-package enum, hidden here; compare by name.)
+      expect(engine.laneFx[(0, 0, 0)]?.name, 'delay');
+      expect(engine.laneFx[(0, 0, 1)]?.name, 'reverb');
+      expect(engine.laneFxCount[(0, 0)], 2);
+      // The lane-FX push is enqueued BEFORE the record command, so the chain is
+      // published before the take can ever play back (no audible gap).
+      expect(
+        engine.calls.lastIndexOf('setLaneFxCount') <
+            engine.calls.indexOf('record'),
+        isTrue,
+      );
+    });
+
+    test('record pushes the captured plugin WITH its frozen state to the '
+        'engine (not a placeholder — D-P1)', () {
+      engine
+        ..nextState = Uint8List.fromList([1, 2, 3, 4])
+        ..nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty()],
+        );
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        )
+        ..record();
+
+      // The lane plugin was loaded on the engine and seeded with the exact
+      // opaque state captured from the monitor slot — the frozen instance, not
+      // a stateless placeholder (the C-side clobber the fix removes).
+      expect(engine.lanePlugins[(0, 0, 0)], 'p');
+      expect(engine.stateSets, isNotEmpty);
+      expect(engine.stateSets.last, Uint8List.fromList([1, 2, 3, 4]));
+    });
+
+    test('a dry monitor pushes NO lane FX edit on record (non-clobber)', () {
+      // Track 0 EMPTY, input 0 monitor clean, lane 0 holds a staged chain. The
+      // record must not touch the engine's lane FX (never a count=0 push), so a
+      // deliberately staged / restored engine chain survives untouched.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        );
+      engine.calls.clear();
+      repo.record();
+
+      // No lane-FX command rode the ring for this dry take.
+      expect(engine.calls.where((c) => c.startsWith('setLaneFx')), isEmpty);
+    });
+
+    test('an overdub (non-EMPTY track) neither snapshots nor pushes lane '
+        'FX', () {
+      // Track 0 is PLAYING — a record press is an overdub, not a fresh capture,
+      // so the monitor chain must NOT be snapshot-copied or pushed (the gate
+      // the fix preserves).
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [
+          TrackSnapshot(
+            state: TrackState.playing,
+            volume: 1,
+            muted: false,
+            lengthFrames: 96000,
+            undoDepth: 1,
+            rms: 0,
+            peak: 0,
+          ),
+        ],
+      );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        );
+      engine.calls.clear();
+      repo.record();
+
+      expect(engine.calls.where((c) => c.startsWith('setLaneFx')), isEmpty);
+      expect(repo.laneEffects(0, 0), isEmpty);
+    });
+
+    test('a non-empty monitor whose every plugin capture fails overwrites a '
+        'staged lane to empty on cache AND engine (D2 + one-authority)', () {
+      // The all-captures-fail edge: input 0 monitors a single plugin whose
+      // state capture fails (bypassed), while lane 0 holds a staged chain. The
+      // monitored chain still overwrites the lane (D2) — reducing it to empty —
+      // and, crucially, that empty is PUSHED so a stale staged engine chain
+      // can't outlive the take (cache == engine). This is NOT the dry-monitor
+      // path (which keeps the lane); the monitor here is non-empty.
+      engine
+        ..nextState =
+            Uint8List(0) // capture failure -> the entry is dropped
+        ..nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty()],
+        );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneEffects(
+          channel: 0,
+          lane: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..setMonitorEffects(
+          input: 0,
+          effects: const [
+            PluginEffect(
+              ref: PluginRef(format: PluginFormat.clap, id: 'p'),
+            ),
+          ],
+        );
+      engine.calls.clear();
+      repo.record();
+
+      // Cache is emptied AND the engine was pushed the empty chain (count 0) —
+      // the staged reverb no longer sounds anywhere.
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(engine.laneFxCount[(0, 0)], 0);
+    });
+
+    test('a later take captures the CURRENT monitor chain, leaving an earlier '
+        "take's snapshot intact (D3)", () {
+      // Two temporally-separate takes on two empty tracks: track 0 records
+      // input 0 monitoring [delay]; the monitor is then retuned to [drive] and
+      // track 1 (lane 0 records input 1) records. Each take froze the chain
+      // that was live at ITS record — neither take mutates the other.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneInput(channel: 1, lane: 0, inputChannel: 1)
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.delay)],
+        )
+        ..record() // track 0 freezes [delay]
+        ..setMonitorEffects(
+          input: 1,
+          effects: [BuiltInEffect(type: TrackEffectType.drive)],
+        )
+        ..record(channel: 1); // track 1 freezes [drive]
+
+      expect(
+        (repo.laneEffects(0, 0).single as BuiltInEffect).type,
+        TrackEffectType.delay,
+      );
+      expect(
+        (repo.laneEffects(1, 0).single as BuiltInEffect).type,
+        TrackEffectType.drive,
+      );
     });
 
     test('a corrupt state blob is ignored; the plugin still loads', () {
