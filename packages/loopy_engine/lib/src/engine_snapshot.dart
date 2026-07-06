@@ -339,6 +339,9 @@ class EngineSnapshot {
     this.masterGain = 1,
     this.activeBackend = AudioBackend.miniaudio,
     this.outputEnabledMask = 0xFFFFFFFF,
+    this.isPerfArmed = false,
+    this.perfFrames = 0,
+    this.perfOverruns = 0,
     this.tracks = const [],
   });
 
@@ -365,6 +368,9 @@ class EngineSnapshot {
       masterGain = 1,
       activeBackend = AudioBackend.miniaudio,
       outputEnabledMask = 0xFFFFFFFF,
+      isPerfArmed = false,
+      perfFrames = 0,
+      perfOverruns = 0,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -397,6 +403,9 @@ class EngineSnapshot {
     masterGain: native.master_gain,
     activeBackend: AudioBackend.fromNative(native.active_backend),
     outputEnabledMask: native.output_enabled_mask,
+    isPerfArmed: native.perf_armed != 0,
+    perfFrames: native.perf_frames,
+    perfOverruns: native.perf_overruns,
     tracks: tracks,
   );
 
@@ -488,6 +497,19 @@ class EngineSnapshot {
   /// (The domain-level `LooperState.isOutputEnabled` interprets this bit.)
   final int outputEnabledMask;
 
+  /// Whether performance-recording capture is armed (`AudioEngine.perfArm` /
+  /// `AudioEngine.perfDisarm`) — the RT taps are actively copying the master
+  /// output (and each captured monitor input) into the capture rings.
+  final bool isPerfArmed;
+
+  /// Frames processed since the most recent `AudioEngine.perfArm`, regardless
+  /// of any capture ring dropping frames. `0` when never armed.
+  final int perfFrames;
+
+  /// Capture frames dropped (a full ring) since the most recent
+  /// `AudioEngine.perfArm`. `0` when never armed or nothing has overflowed.
+  final int perfOverruns;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -544,6 +566,9 @@ class EngineSnapshot {
           masterGain == other.masterGain &&
           activeBackend == other.activeBackend &&
           outputEnabledMask == other.outputEnabledMask &&
+          isPerfArmed == other.isPerfArmed &&
+          perfFrames == other.perfFrames &&
+          perfOverruns == other.perfOverruns &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -569,6 +594,9 @@ class EngineSnapshot {
     masterGain,
     activeBackend,
     outputEnabledMask,
+    isPerfArmed,
+    perfFrames,
+    perfOverruns,
     ...tracks,
   ]);
 

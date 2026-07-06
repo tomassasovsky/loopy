@@ -165,6 +165,11 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->active_backend = load_i32(&engine->a_active_backend);
   out->output_enabled_mask =
       atomic_load_explicit(&engine->a_output_enabled_mask, memory_order_relaxed);
+  out->perf_armed = load_i32(&engine->a_perf_armed);
+  out->perf_frames =
+      atomic_load_explicit(&engine->a_perf_frames, memory_order_relaxed);
+  out->perf_overruns =
+      atomic_load_explicit(&engine->a_perf_overruns, memory_order_relaxed);
   out->track_count = engine->track_count;
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,

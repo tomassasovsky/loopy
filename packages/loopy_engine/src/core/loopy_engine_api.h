@@ -168,6 +168,18 @@ typedef enum le_command_code {
                                 * arm: channel, value = restored length. The
                                 * control thread already swapped a_live. */
 
+  /* ---- performance-recording capture (arm/disarm the RT taps) ----
+   * Zero-payload commands: the control thread allocates the capture rings and
+   * writes the frozen config (master.perf_master_out_ch / .perf_input_mask,
+   * struct le_engine.perf, engine_private.h) directly into engine state BEFORE
+   * pushing the command, then the ring's release/acquire ordering makes that
+   * state visible to the audio thread once it pops — the same
+   * control-allocates/publish pattern as le_post_dub_shadows and the FX delay
+   * lines, so no payload is needed. */
+  LE_CMD_PERF_ARM = 41,    /* begin publishing to the perf capture rings */
+  LE_CMD_PERF_DISARM = 42, /* stop; control frees the rings after a quiescent
+                            * handshake once the audio thread acks this */
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
@@ -415,6 +427,13 @@ typedef struct le_snapshot {
    * count are reported enabled but never sounded. Set via
    * le_engine_set_output_enabled. */
   uint32_t output_enabled_mask;
+
+  /* Performance-recording capture (le_perf_arm / le_perf_disarm). No separate
+   * status ABI — these three atomics are the whole surface for this slice
+   * (part 2 adds file-drain progress alongside them). */
+  int32_t perf_armed;      /* 0/1: the RT taps are live */
+  uint64_t perf_frames;    /* frames processed since the most recent arm */
+  uint32_t perf_overruns;  /* dropped capture frames (ring full) since arm */
 
   /* Tracks. */
   int32_t track_count; /* number of usable tracks (<= LE_MAX_TRACKS) */
@@ -967,6 +986,39 @@ LE_EXPORT int32_t le_engine_set_monitor_input_fx_param(le_engine* engine,
  * enabled by default and on every fresh configure. */
 LE_EXPORT int32_t le_engine_set_output_enabled(le_engine* engine, int32_t output,
                                                int32_t enabled);
+
+/* ---- performance recording (RT capture taps; part 1 of the DAW-export stack)
+ * ---- *
+ * While armed, the audio thread copies two kinds of streams into pre-published
+ * lock-free rings: the post-limiter master output (stereo from the first
+ * enabled output pair; mono when the device has only one), and each hardware
+ * input actively monitored AT ARM (post-monitor-FX, pre-route; frozen for the
+ * whole arm session — an input enabled later is not retroactively captured).
+ * Rings are allocated control-side at arm (>= 2 s of audio at the device rate)
+ * and published to the audio thread with LE_CMD_PERF_ARM; on overflow the
+ * audio thread drops the frame and increments the overrun atomic — it never
+ * blocks or allocates. Status (armed / frames / overruns) is exposed only via
+ * le_snapshot; there is no separate query call. This part has no drain thread
+ * and no file I/O — the rings simply fill and, once full, drop — those land in
+ * part 2. */
+
+/* Arms performance-recording capture: allocates the master + per-monitor
+ * rings, freezes the captured input set from whichever inputs are currently
+ * monitored, and publishes them to the audio thread. Idempotent (a second call
+ * while already armed is a no-op success). Returns LE_OK, LE_ERR_NOT_RUNNING
+ * (not configured), or LE_ERR_INVALID (no output enabled to capture, or
+ * allocation failure). */
+LE_EXPORT int32_t le_perf_arm(le_engine* engine);
+
+/* Disarms performance-recording capture: tells the audio thread to stop
+ * writing, then frees the rings only after a published-quiescent handshake
+ * confirms it has (so there is never a use-after-free or an audio-thread
+ * free) — mirroring the plugin-slot teardown handshake. Idempotent (a second
+ * call while already disarmed is a no-op success). Returns LE_OK, or
+ * LE_ERR_DEVICE if the callback could not be confirmed quiescent (a stalled
+ * device; the rings are left retracted and are reclaimed by a later retry or
+ * at le_engine_destroy). */
+LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 
 /* ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
  * An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:

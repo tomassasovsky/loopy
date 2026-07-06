@@ -472,6 +472,22 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Result returned by [perfArm] / [perfDisarm].
+  EngineResult perfArmResult = EngineResult.ok;
+  EngineResult perfDisarmResult = EngineResult.ok;
+
+  @override
+  EngineResult perfArm() {
+    calls.add('perfArm');
+    return perfArmResult;
+  }
+
+  @override
+  EngineResult perfDisarm() {
+    calls.add('perfDisarm');
+    return perfDisarmResult;
+  }
+
   @override
   void dispose() => calls.add('dispose');
 

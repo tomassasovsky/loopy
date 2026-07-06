@@ -269,6 +269,18 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
 
+  /* Performance-recording capture: the device is stopped during configure (no
+   * audio thread), so any rings left over from a previous session (including
+   * one still armed) can be freed directly — mirrors the ring drop above. */
+  free(engine->perf.master_ring.buffer);
+  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+    free(engine->perf.monitor_ring[c].buffer);
+  }
+  engine->perf = (le_perf_capture){0};
+  store_i32(&engine->a_perf_armed, 0);
+  atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+
   /* Latency-measurement capture window (~100 ms): the audio thread fills it with
    * the input-magnitude envelope, the resolver cross-correlates it. */
   free(engine->lat_buf);
@@ -485,6 +497,13 @@ void le_engine_destroy(le_engine* engine) {
     }
   }
   free(engine->lat_buf);
+  /* The device is already closed (no audio thread), so the performance-capture
+   * rings — including any left retracted-but-allocated by a disarm that could
+   * not confirm quiescence — can be freed directly, without the handshake. */
+  free(engine->perf.master_ring.buffer);
+  for (int c = 0; c < LE_MAX_INPUTS; ++c) {
+    free(engine->perf.monitor_ring[c].buffer);
+  }
   le_platform_on_engine_teardown(); /* Linux restores PipeWire's dynamic quantum */
   free(engine);
 }

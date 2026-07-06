@@ -280,6 +280,10 @@ class FakeSessionEngine implements AudioEngine {
     required bool enabled,
   }) => EngineResult.ok;
   @override
+  EngineResult perfArm() => EngineResult.ok;
+  @override
+  EngineResult perfDisarm() => EngineResult.ok;
+  @override
   EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
   @override
   PluginScanProgress scanPoll() => PluginScanProgress.empty;

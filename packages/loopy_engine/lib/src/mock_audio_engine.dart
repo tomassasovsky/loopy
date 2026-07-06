@@ -62,6 +62,8 @@ class MockAudioEngine implements AudioEngine {
   double _measuredLatencyMs = -1;
   int _recordOffsetFrames = 0;
   double _masterGain = 1;
+  bool _perfArmed = false;
+  int _perfFrames = 0;
 
   final List<_MockTrack> _tracks = List<_MockTrack>.generate(
     LE_MAX_TRACKS,
@@ -93,6 +95,8 @@ class MockAudioEngine implements AudioEngine {
     _latencyState = LatencyState.idle;
     _measuredLatencyMs = -1;
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
+    _perfArmed = false; // disarmed on every fresh start/reconfigure
+    _perfFrames = 0;
     return EngineResult.ok;
   }
 
@@ -109,6 +113,7 @@ class MockAudioEngine implements AudioEngine {
     if (_running) {
       final buffer = _activeConfig?.bufferFrames ?? 128;
       _framesProcessed += buffer;
+      if (_perfArmed) _perfFrames += buffer;
     }
     return EngineSnapshot(
       isRunning: _running,
@@ -132,6 +137,10 @@ class MockAudioEngine implements AudioEngine {
       activeBackend: _running
           ? (_activeConfig?.backend ?? AudioBackend.miniaudio)
           : AudioBackend.miniaudio,
+      isPerfArmed: _perfArmed,
+      perfFrames: _perfFrames,
+      // perfOverruns defaults to 0: the mock models no ring capacity, so
+      // nothing ever overflows.
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -540,6 +549,20 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   EngineResult commitSession(int baseFrames) => _requireRunning();
+
+  @override
+  EngineResult perfArm() {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _perfArmed = true; // idempotent: re-arming just keeps it armed
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult perfDisarm() {
+    _perfArmed = false; // idempotent: disarming an unarmed mock is a no-op
+    return EngineResult.ok;
+  }
 
   @override
   void dispose() {

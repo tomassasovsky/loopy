@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
@@ -62,6 +63,10 @@ extern "C" {
  * (~0.1-0.5 ms — bounded on the Pi appliance target). A 30 s mono loop
  * completes in ~44 callbacks (~0.5 s at typical buffer sizes). */
 #define LE_DRAIN_CHUNK 32768
+
+/* Minimum performance-recording capture ring size, in seconds of audio at the
+ * device rate (le_perf_arm sizes the master + per-monitor rings from this). */
+#define LE_PERF_CAPTURE_SECONDS 2
 
 /* One looper track.
  *
@@ -321,6 +326,29 @@ typedef struct le_track {
   int32_t xfade_end_state;
 } le_track;
 
+/* Performance-recording capture state (le_perf_arm / le_perf_disarm,
+ * loopy_engine_api.h). Rings are allocated CONTROL-side at arm and freed
+ * CONTROL-side only after the quiescent handshake in le_perf_disarm; the audio
+ * thread only ever pushes into an already-published ring — the same
+ * control-allocates/publish discipline as le_lane.fx.delay and the hosted-
+ * plugin slot pointers. `armed` is the audio-thread-LOCAL mirror of the
+ * published a_perf_armed atomic (like le_track.dub_slot mirrors
+ * a_layer_in_flight): cheaper to test per frame than an atomic load, and the
+ * only field of this struct the audio thread itself ever writes. */
+typedef struct le_perf_capture {
+  le_audio_ring master_ring;
+  int32_t master_channels;  /* 1 (mono) or 2 (stereo) — the ring's frame width */
+  int32_t master_out_ch[2]; /* captured output channel(s); [1] == -1 if mono */
+
+  /* One stereo ring per hardware input, valid iff its bit is set in
+   * input_mask (frozen at arm: inputs enabled later are not retroactively
+   * captured). */
+  le_audio_ring monitor_ring[LE_MAX_INPUTS];
+  uint32_t input_mask;
+
+  int armed;
+} le_perf_capture;
+
 struct le_engine {
   /* The device backend driving the lifecycle (le_select_backend's choice),
    * remembered so le_engine_stop / le_engine_destroy release the device through
@@ -405,6 +433,14 @@ struct le_engine {
    * without bound. Unity (1.0) by default == the classic additive overdub (and
    * what the native tests assert); < 1.0 decays older layers. Float bits. */
   _Atomic uint32_t a_overdub_fb_bits;
+
+  /* Performance-recording capture: published status atomics (le_snapshot's
+   * whole surface for this slice) plus the RT-owned ring set/config in `perf`
+   * (le_perf_capture above). */
+  _Atomic int32_t a_perf_armed;
+  _Atomic uint64_t a_perf_frames;
+  _Atomic uint32_t a_perf_overruns;
+  le_perf_capture perf;
 
   /* Tracks. */
   le_track tracks[LE_MAX_TRACKS];

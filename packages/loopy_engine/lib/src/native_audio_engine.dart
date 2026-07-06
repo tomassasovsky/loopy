@@ -968,6 +968,18 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult perfArm() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_perf_arm(_engine));
+  }
+
+  @override
+  EngineResult perfDisarm() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_perf_disarm(_engine));
+  }
+
+  @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
@@ -1069,6 +1081,9 @@ class PumpedNativeEngine extends NativeAudioEngine {
       fxAddedLatencyFrames: s.fxAddedLatencyFrames,
       masterGain: s.masterGain,
       activeBackend: s.activeBackend,
+      isPerfArmed: s.isPerfArmed,
+      perfFrames: s.perfFrames,
+      perfOverruns: s.perfOverruns,
       tracks: s.tracks,
     );
   }
