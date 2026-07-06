@@ -151,11 +151,6 @@ uint32_t le_excluded_mask_from_names(le_channel_name_fn get_name, void* ctx,
 void le_engine_set_excluded_input_mask_for_test(le_engine* engine,
                                                 uint32_t mask);
 
-/* How many times the record-FX snapshot deep-copy has run (control thread only).
- * Lets a test prove the copy advances on le_engine_record but never on
- * le_engine_process (NF-1 / the RT contract). Not part of the FFI surface. */
-int32_t le_engine_snapshot_copy_count_for_test(le_engine* engine);
-
 /* Begins a round-trip latency measurement without a device (configured-gated,
  * like the looper commands), so the harness's loopback-channel detection can be
  * tested deterministically. Not part of the FFI surface. */
