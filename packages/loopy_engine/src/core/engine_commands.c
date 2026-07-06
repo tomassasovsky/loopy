@@ -30,7 +30,8 @@
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
 #include "loopy_engine_api.h"
-#include "perf_drain.h"  /* le_perf_drain_start/stop (capture-to-disk thread) */
+#include "perf_drain.h"     /* le_perf_drain_start/stop (capture-to-disk thread) */
+#include "perf_log_ring.h"  /* le_perf_log_ring_push (control-side event log) */
 
 /* Returns a pool slot INDEX that is neither the (shared) live index, nor
  * referenced by either undo/redo stack, nor posted to the audio thread as a
@@ -507,6 +508,29 @@ int32_t le_engine_clear(le_engine* engine, int32_t channel) {
   return LE_OK;
 }
 
+/* Performance event log, control-thread side (part 3, docs/design/
+ * performance-event-log-format.md): the direct-atomic setters below (FX/
+ * monitor params, the limiter, overdub feedback) and the common in-track
+ * undo/redo swap bypass the command ring entirely, so they push into
+ * perf.log_ctrl_ring instead of relying on apply_command's emission. Reads
+ * a_perf_frames as a snapshot — accurate within one buffer, which is the
+ * documented tolerance for these control-side events. No-op when not armed,
+ * checked via the published atomic (this runs on the control thread, not the
+ * audio thread, so e->perf.armed — the audio-thread-local mirror — must not
+ * be read here). */
+static void le_plog_push_ctrl(le_engine* engine, le_command cmd) {
+  if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+    return;
+  }
+  const uint64_t frame =
+      atomic_load_explicit(&engine->a_perf_frames, memory_order_relaxed);
+  const le_perf_log_entry entry = {.frame = frame, .cmd = cmd};
+  if (!le_perf_log_ring_push(&engine->perf.log_ctrl_ring, entry)) {
+    atomic_fetch_add_explicit(&engine->a_perf_log_ctrl_overruns, 1u,
+                              memory_order_relaxed);
+  }
+}
+
 /* Undo/redo run on the control thread: they swap the live pool index (atomic;
  * the audio thread's only window into the buffers) on EVERY active lane in
  * lockstep, so the one undo span moves all lanes together. Allowed only when
@@ -534,6 +558,8 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   le_engine_drain_events(engine);
   if (t->undo_count > 0) {
     le_undo_swap(t);
+    le_plog_push_ctrl(engine,
+                      (le_command){.code = LE_PLOG_UNDO, .arg_i = channel});
     return LE_OK;
   }
   /* No stacked layers left: undoing the base recording itself empties the
@@ -614,6 +640,8 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
   store_i32(&t->a_undo_depth, t->undo_count);
   store_i32(&t->a_redo_depth, t->redo_count);
+  le_plog_push_ctrl(engine,
+                    (le_command){.code = LE_PLOG_REDO, .arg_i = channel});
   return LE_OK;
 }
 int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
@@ -719,6 +747,9 @@ int32_t le_engine_set_limiter(le_engine* engine, int32_t enabled,
   if (ceiling > 1.0f) ceiling = 1.0f;
   store_f32(&engine->a_limiter_ceiling_bits, ceiling);
   store_i32(&engine->a_limiter_enabled, enabled ? 1 : 0);
+  le_plog_push_ctrl(engine, (le_command){.code = LE_PLOG_SET_LIMITER,
+                                        .arg_i = enabled ? 1 : 0,
+                                        .arg_f = ceiling});
   return LE_OK;
 }
 
@@ -727,6 +758,8 @@ int32_t le_engine_set_overdub_feedback(le_engine* engine, float feedback) {
   if (feedback < 0.0f) feedback = 0.0f;
   if (feedback > 1.0f) feedback = 1.0f;
   store_f32(&engine->a_overdub_fb_bits, feedback);
+  le_plog_push_ctrl(engine, (le_command){.code = LE_PLOG_SET_OVERDUB_FEEDBACK,
+                                        .arg_f = feedback});
   return LE_OK;
 }
 
@@ -798,6 +831,11 @@ int32_t le_engine_set_lane_fx_param(le_engine* engine, int32_t channel,
    * audio-thread DSP state). Works whether or not the device is running. */
   store_f32(&engine->tracks[channel].lanes[lane].a_fx_param[index][param],
             value);
+  le_plog_push_ctrl(
+      engine, (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
+                           .fx = {channel, lane,
+                                  LE_PLOG_FX_PARAM_PACK(index, param),
+                                  (int32_t)f32_to_bits(value)}});
   return LE_OK;
 }
 
@@ -870,6 +908,11 @@ int32_t le_engine_set_monitor_input_fx_param(le_engine* engine, int32_t input,
   if (value < 0.0f) value = 0.0f;
   if (value > 1.0f) value = 1.0f;
   store_f32(&engine->monitors[input].a_fx_param[index][param], value);
+  le_plog_push_ctrl(
+      engine, (le_command){.code = LE_PLOG_SET_MONITOR_FX_PARAM,
+                           .fx = {input, -1,
+                                  LE_PLOG_FX_PARAM_PACK(index, param),
+                                  (int32_t)f32_to_bits(value)}});
   return LE_OK;
 }
 
@@ -1092,6 +1135,19 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
 
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_log_overruns, 0u, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_log_ctrl_overruns, 0u,
+                        memory_order_relaxed);
+  /* Reset both perf-log rings so a fresh session never sees a stale entry
+   * left over from a previous one — safe here (before LE_CMD_PERF_ARM is
+   * pushed below) the same way publishing the audio rings above is: the
+   * audio thread has not yet been told to start producing into log_ring, and
+   * this control thread is the only producer for log_ctrl_ring. */
+  le_perf_log_ring_init(&engine->perf.log_ring, engine->perf.log_storage,
+                        LE_PERF_LOG_RING_CAPACITY);
+  le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
+                        engine->perf.log_ctrl_storage,
+                        LE_PERF_LOG_CTRL_RING_CAPACITY);
 
   /* Spawn the drain thread before publishing to the audio thread: it only
    * ever reads through le_audio_ring_pop (never allocates/frees the ring

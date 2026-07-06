@@ -296,6 +296,17 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
    * configure, so re-initialising the SPSC rings is race-free. */
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
+  /* NOT redundant with the `engine->perf = (le_perf_capture){0}` reset above:
+   * a zero-struct leaves capacity/mask/buffer at 0/0/NULL, which is not a
+   * working ring — these calls are what actually point log_ring/log_ctrl_ring
+   * back at their storage arrays with the right capacity, the same way the
+   * two le_ring_init calls above are load-bearing despite ring/evt_ring also
+   * having just been implicitly zeroed by the surrounding struct resets. */
+  le_perf_log_ring_init(&engine->perf.log_ring, engine->perf.log_storage,
+                        LE_PERF_LOG_RING_CAPACITY);
+  le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
+                        engine->perf.log_ctrl_storage,
+                        LE_PERF_LOG_CTRL_RING_CAPACITY);
 
 
   /* Latency-measurement capture window (~100 ms): the audio thread fills it with
@@ -467,6 +478,11 @@ le_engine* le_engine_create(void) {
   if (engine == NULL) return NULL;
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
+  le_perf_log_ring_init(&engine->perf.log_ring, engine->perf.log_storage,
+                        LE_PERF_LOG_RING_CAPACITY);
+  le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
+                        engine->perf.log_ctrl_storage,
+                        LE_PERF_LOG_CTRL_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
