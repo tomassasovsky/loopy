@@ -29,6 +29,7 @@
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
+#include "layer_staging_ring.h" /* le_layer_staging_ring_push (retired-layer persistence) */
 #include "loopy_engine_api.h"
 #include "perf_drain.h"     /* le_perf_drain_start/stop (capture-to-disk thread) */
 #include "perf_log_ring.h"  /* le_perf_log_ring_push (control-side event log) */
@@ -192,6 +193,70 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
   t->queued_undo = 0;
 }
 
+/* Retired-layer persistence (part 5, D-LAYER): copies a retiring layer's PCM
+ * into a fresh heap buffer per active lane and hands it to the drain thread
+ * via layer_staging_ring — BEFORE any pool-reclaim path (eviction, clear,
+ * redo-invalidation) can let the slot's memory be overwritten by a later
+ * write. No-op when not armed (checked via the published atomic — this is
+ * control-thread code, so e->perf.armed, the audio-thread-local mirror, must
+ * not be read here).
+ *
+ * Called from le_handle_retired UNCONDITIONALLY, before its generation check:
+ * a generation mismatch there means "this event predates a clear," but the
+ * audio genuinely played and was captured into the pool slot right up until
+ * that clear — skipping the copy would silently destroy it, which is exactly
+ * the hazard this part exists to close. A dropped copy (OOM, or the staging
+ * ring itself full — see LE_LAYER_STAGING_RING_CAPACITY) increments a
+ * dedicated overrun atomic rather than corrupting state. */
+static void le_stage_retired_layer(le_engine* engine, int32_t channel,
+                                   int32_t slot, uint32_t generation) {
+  if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+    return;
+  }
+  if (channel < 0 || channel >= engine->track_count) return;
+  le_track* t = &engine->tracks[channel];
+  const int32_t frame_count = load_i32(&t->lanes[0].a_len);
+  if (frame_count <= 0) return; /* nothing recorded into this slot */
+  const int32_t lane_count = le_lanes_active(t);
+
+  le_staged_layer entry = {0};
+  entry.channel = channel;
+  entry.lane_count = lane_count;
+  entry.frame_count = frame_count;
+  entry.slot = slot;
+  entry.generation = generation;
+  entry.frame = atomic_load_explicit(&engine->a_perf_frames,
+                                     memory_order_relaxed);
+
+  for (int32_t l = 0; l < lane_count; ++l) {
+    const float* src = t->lanes[l].pool[slot];
+    if (src == NULL) {
+      /* Shouldn't happen for an active lane whose track just retired a pass
+       * on this slot (le_post_dub_shadows allocates every active lane's
+       * buffer before posting it) — fail closed rather than copy garbage. */
+      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
+                                memory_order_relaxed);
+      return;
+    }
+    float* copy = (float*)malloc((size_t)frame_count * sizeof(float));
+    if (copy == NULL) {
+      for (int32_t k = 0; k < l; ++k) free(entry.lane_pcm[k]);
+      atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
+                                memory_order_relaxed);
+      return;
+    }
+    memcpy(copy, src, (size_t)frame_count * sizeof(float));
+    entry.lane_pcm[l] = copy;
+  }
+
+  if (!le_layer_staging_ring_push(&engine->perf.layer_staging_ring, entry)) {
+    for (int32_t l = 0; l < lane_count; ++l) free(entry.lane_pcm[l]);
+    atomic_fetch_add_explicit(&engine->a_perf_layer_overruns, 1u,
+                              memory_order_relaxed);
+  }
+}
+
 /* Handles one retired-layer event (control thread): returns the slot from the
  * audio thread's hands (`outstanding`) onto the undo stack, and replenishes the
  * spare while the dub session keeps running. */
@@ -199,6 +264,7 @@ static void le_handle_retired(le_engine* engine, const le_command* evt) {
   const int32_t ch = evt->evt.channel;
   if (ch < 0 || ch >= engine->track_count) return;
   le_track* t = &engine->tracks[ch];
+  le_stage_retired_layer(engine, ch, evt->evt.slot, evt->evt.generation);
   if (evt->evt.generation != t->dub_generation) {
     return; /* pre-clear era: the slot was already reclaimed by the clear */
   }
@@ -368,6 +434,20 @@ static void le_begin_empty_capture(le_engine* engine, int32_t channel) {
  * incrementally on the audio thread. */
 static void le_begin_punch_in(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
+  /* Part 5 (D-LAYER): le_clear_redo below discards redo_stack's slot
+   * references — the redo-invalidation hazard (undo, then a fresh punch-in)
+   * the plan calls out by name. The caller (le_engine_record) already drained
+   * once at its own top, but a previous dub session's tail can still be
+   * draining/retiring asynchronously (a_layer_in_flight can outlive the
+   * state's return to PLAYING/STOPPED, which is this function's own
+   * precondition) — so a fresh retire event could have landed in evt_ring in
+   * the interim. Draining again here, immediately before the discard,
+   * shrinks that window from "however long since the last poll" to the
+   * handful of instructions in between (it can't be fully closed without
+   * blocking on the audio thread, which this control-thread-only fix
+   * deliberately does not do — see le_stage_retired_layer, which persists
+   * the event's PCM regardless of by the time it IS drained). */
+  le_engine_drain_events(engine);
   le_clear_redo(t);
   t->queued_undo = 0;
   le_post_dub_shadows(engine, channel);
@@ -492,6 +572,19 @@ int32_t le_engine_clear(le_engine* engine, int32_t channel) {
    * counters equal without sharing a variable). */
   const int32_t rc = le_push(engine, LE_CMD_CLEAR, channel, 0.0f);
   if (rc != LE_OK) return rc;
+  /* Part 5 (D-LAYER): drain again, immediately before the reclaim below —
+   * the initial drain at the top of this function catches whatever was
+   * already in evt_ring, but the audio thread runs concurrently and could
+   * push a fresh retire event for this track in the interim (a dub session's
+   * tail can still be draining/retiring after punch-out, independent of
+   * whatever triggered this clear). Every layer that reaches le_handle_retired
+   * gets staged (le_stage_retired_layer) regardless of the generation check
+   * that follows it, so this call's only job is to make sure any such event
+   * is popped and staged BEFORE the generation bump below would otherwise
+   * leave it sitting undrained while its slot becomes reclaimable — the same
+   * race this part's own docs describe as narrowed, not eliminated, by a
+   * control-thread-only fix. */
+  le_engine_drain_events(engine);
   t->undo_count = 0;
   le_clear_redo(t);
   store_i32(&t->a_undo_depth, 0);
@@ -1138,6 +1231,8 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   atomic_store_explicit(&engine->a_perf_log_overruns, 0u, memory_order_relaxed);
   atomic_store_explicit(&engine->a_perf_log_ctrl_overruns, 0u,
                         memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_layer_overruns, 0u,
+                        memory_order_relaxed);
   /* Reset both perf-log rings so a fresh session never sees a stale entry
    * left over from a previous one — safe here (before LE_CMD_PERF_ARM is
    * pushed below) the same way publishing the audio rings above is: the
@@ -1148,6 +1243,16 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
                         engine->perf.log_ctrl_storage,
                         LE_PERF_LOG_CTRL_RING_CAPACITY);
+  /* Same reasoning for the layer-staging ring (part 5) — safe to blindly
+   * re-init (not free-then-init) because a previous session's drain thread
+   * always empties it in its unconditional final drain cycle before
+   * le_perf_drain_stop returns, and le_perf_arm refuses to re-arm at all
+   * while a stale drain thread from a stalled disarm is still alive (the
+   * only scenario where this ring could otherwise still hold live
+   * heap-owned entries). */
+  le_layer_staging_ring_init(&engine->perf.layer_staging_ring,
+                             engine->perf.layer_staging_storage,
+                             LE_LAYER_STAGING_RING_CAPACITY);
 
   /* Spawn the drain thread before publishing to the audio thread: it only
    * ever reads through le_audio_ring_pop (never allocates/frees the ring

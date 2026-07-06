@@ -86,6 +86,7 @@ add_library(loopy_engine SHARED
   core/loop_clock.c
   core/audio_ring.c          # float SPSC ring (performance-recording capture)
   core/perf_log_ring.c       # perf event log: SPSC ring of frame-tagged le_command entries
+  core/layer_staging_ring.c  # retired-layer PCM staging ring (persist before pool eviction)
   core/perf_drain.c          # perf-capture drain thread: rings -> raw PCM + sidecar
   # Control-thread plugin-slot lifecycle (load/clear + quiescent handshake).
   # Always compiled; calls le_plugin_slot_create which is the real host on a
