@@ -21,7 +21,13 @@ void main() {
     when(() => session.loadNamed(any())).thenAnswer((_) async {});
     when(() => session.renameSession(any(), any())).thenAnswer((_) async {});
     when(() => session.deleteSession(any())).thenAnswer((_) async {});
+    when(
+      () => session.duplicateSession(any(), any()),
+    ).thenAnswer((_) async {});
     when(() => session.saveAs(any())).thenAnswer((_) async {});
+    when(session.save).thenAnswer((_) async {});
+    when(() => session.exportMixdown()).thenAnswer((_) async {});
+    when(() => session.exportStems()).thenAnswer((_) async {});
   });
 
   Future<AppLocalizations> l10n() =>
@@ -57,16 +63,25 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // Opens session A's card overflow menu and taps [item] (rename/duplicate/
+  // delete), settling the menu.
+  Future<void> tapCardMenu(WidgetTester tester, String item) async {
+    await tester.tap(find.byKey(const Key('sessions_menu_A')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('sessions_${item}_A')));
+    await tester.pumpAndSettle();
+  }
+
   group('SessionsManagerDialog', () {
     testWidgets('refreshes the catalog on open', (tester) async {
       await openManager(tester);
       verify(session.refreshSessions).called(1);
     });
 
-    testWidgets('renders a row per saved session', (tester) async {
+    testWidgets('renders a card per saved session', (tester) async {
       await openManager(tester, state: const SessionState(sessions: two));
-      expect(find.byKey(const Key('sessions_row_A')), findsOneWidget);
-      expect(find.byKey(const Key('sessions_row_B')), findsOneWidget);
+      expect(find.byKey(const Key('sessions_card_A')), findsOneWidget);
+      expect(find.byKey(const Key('sessions_card_B')), findsOneWidget);
     });
 
     testWidgets('shows the empty state with no sessions', (tester) async {
@@ -74,35 +89,28 @@ void main() {
       expect(find.byKey(const Key('sessions_empty')), findsOneWidget);
     });
 
-    testWidgets('highlights the open session', (tester) async {
-      await openManager(
-        tester,
-        state: const SessionState(sessions: two, currentSessionName: 'A'),
-      );
-      final open = tester.widget<ListTile>(
-        find.byKey(const Key('sessions_row_A')),
-      );
-      expect(open.selected, isTrue);
-      final other = tester.widget<ListTile>(
-        find.byKey(const Key('sessions_row_B')),
-      );
-      expect(other.selected, isFalse);
-    });
-
-    testWidgets('tapping a row loads it and closes the manager', (
+    testWidgets('the header shows the current session name or Unsaved', (
       tester,
     ) async {
+      final strings = await l10n();
+      await openManager(tester);
+      expect(
+        tester.widget<Text>(find.byKey(const Key('sessions_currentName'))).data,
+        strings.sessionUnsaved,
+      );
+    });
+
+    testWidgets('tapping a card loads it and closes the popup', (tester) async {
       await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_row_A')));
+      await tester.tap(find.byKey(const Key('sessions_card_A')));
       await tester.pumpAndSettle();
       verify(() => session.loadNamed('A')).called(1);
       expect(find.byKey(const Key('sessions_manager')), findsNothing);
     });
 
-    testWidgets('renaming a session fires the cubit', (tester) async {
+    testWidgets('renaming via the card menu fires the cubit', (tester) async {
       await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_rename_A')));
-      await tester.pumpAndSettle();
+      await tapCardMenu(tester, 'rename');
       await tester.enterText(
         find.byKey(const Key('sessionName_field')),
         'Chorus',
@@ -112,26 +120,25 @@ void main() {
       verify(() => session.renameSession('A', 'Chorus')).called(1);
     });
 
-    testWidgets('renaming to an existing name shows an inline error', (
+    testWidgets('duplicating via the card menu fires the cubit', (
       tester,
     ) async {
       await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_rename_A')));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('sessionName_field')), 'B');
+      await tapCardMenu(tester, 'duplicate');
+      await tester.enterText(
+        find.byKey(const Key('sessionName_field')),
+        'A copy',
+      );
       await tester.tap(find.byKey(const Key('sessionName_save')));
       await tester.pumpAndSettle();
-      final dup = (await l10n()).sessionNameDuplicate('B');
-      expect(find.text(dup), findsOneWidget);
-      verifyNever(() => session.renameSession(any(), any()));
+      verify(() => session.duplicateSession('A', 'A copy')).called(1);
     });
 
-    testWidgets('deleting a session confirms then fires the cubit', (
+    testWidgets('deleting via the card menu confirms then fires', (
       tester,
     ) async {
       await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_delete_A')));
-      await tester.pumpAndSettle();
+      await tapCardMenu(tester, 'delete');
       await tester.tap(find.byKey(const Key('sessionDelete_confirm')));
       await tester.pumpAndSettle();
       verify(() => session.deleteSession('A')).called(1);
@@ -139,11 +146,21 @@ void main() {
 
     testWidgets('cancelling the delete confirm does nothing', (tester) async {
       await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_delete_A')));
-      await tester.pumpAndSettle();
+      await tapCardMenu(tester, 'delete');
       await tester.tap(find.text((await l10n()).cancel));
       await tester.pumpAndSettle();
       verifyNever(() => session.deleteSession(any()));
+    });
+
+    testWidgets('a rename collision shows an inline error', (tester) async {
+      await openManager(tester, state: const SessionState(sessions: two));
+      await tapCardMenu(tester, 'rename');
+      await tester.enterText(find.byKey(const Key('sessionName_field')), 'B');
+      await tester.tap(find.byKey(const Key('sessionName_save')));
+      await tester.pumpAndSettle();
+      final dup = (await l10n()).sessionNameDuplicate('B');
+      expect(find.text(dup), findsOneWidget);
+      verifyNever(() => session.renameSession(any(), any()));
     });
 
     testWidgets('Save as… saves a new named session', (tester) async {
@@ -159,31 +176,32 @@ void main() {
       verify(() => session.saveAs('Bridge')).called(1);
     });
 
-    testWidgets('Save as… with a duplicate name shows an inline error', (
-      tester,
-    ) async {
-      await openManager(tester, state: const SessionState(sessions: two));
-      await tester.tap(find.byKey(const Key('sessions_saveAs')));
+    testWidgets('Save writes back when a session is open', (tester) async {
+      await openManager(
+        tester,
+        state: const SessionState(currentSessionName: 'A', sessions: two),
+      );
+      await tester.tap(find.byKey(const Key('sessions_save')));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('sessionName_field')), 'A');
-      await tester.tap(find.byKey(const Key('sessionName_save')));
-      await tester.pumpAndSettle();
-      final dup = (await l10n()).sessionNameDuplicate('A');
-      expect(find.text(dup), findsOneWidget);
-      verifyNever(() => session.saveAs(any()));
+      verify(session.save).called(1);
     });
 
-    testWidgets('a name that sanitizes to nothing shows an inline error', (
-      tester,
-    ) async {
-      await openManager(tester);
-      await tester.tap(find.byKey(const Key('sessions_saveAs')));
+    testWidgets('Save with no open session opens Save-As', (tester) async {
+      await openManager(tester, state: const SessionState(sessions: two));
+      await tester.tap(find.byKey(const Key('sessions_save')));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('sessionName_field')), '!!!');
-      await tester.tap(find.byKey(const Key('sessionName_save')));
+      expect(find.byKey(const Key('sessionName_field')), findsOneWidget);
+      verifyNever(session.save);
+    });
+
+    testWidgets('the exports fire the cubit', (tester) async {
+      await openManager(tester, state: const SessionState(sessions: two));
+      await tester.tap(find.byKey(const Key('sessions_exportMixdown')));
       await tester.pumpAndSettle();
-      expect(find.text((await l10n()).sessionNameInvalid), findsOneWidget);
-      verifyNever(() => session.saveAs(any()));
+      verify(() => session.exportMixdown()).called(1);
+      await tester.tap(find.byKey(const Key('sessions_exportStems')));
+      await tester.pumpAndSettle();
+      verify(() => session.exportStems()).called(1);
     });
   });
 }
