@@ -154,18 +154,11 @@ class AudioNotRunningBanner extends StatelessWidget {
   }
 }
 
-/// A session action chosen from the [SessionMenu].
-enum _SessionAction { save, manage, exportMixdown, exportStems }
-
 /// The session area in the top bar: the current session name (or "Unsaved")
-/// beside a menu with quick Save, the Sessions manager, and the mixdown / stems
-/// exports. Drives the [SessionCubit]; save/load/export outcomes are surfaced by
-/// the view's [BlocListener] (a live-region SnackBar), and the Sessions manager
-/// opens its own dialog.
-///
-/// A [PopupMenuButton] is keyboard-operable and screen-reader labelled (via
-/// its tooltip) out of the box, so it satisfies WCAG 2.1.1 / 4.1.2 without
-/// extra wiring.
+/// beside a folder button that opens the **Sessions** popup — the single place
+/// to save / load / manage sessions and export (Loopy-Pro-style). The popup
+/// surfaces its own actions; save/load/export outcomes still flow through the
+/// view's [BlocListener] (a live-region SnackBar).
 class SessionMenu extends StatelessWidget {
   /// Creates a [SessionMenu].
   const SessionMenu({super.key});
@@ -191,46 +184,14 @@ class SessionMenu extends StatelessWidget {
             ),
           ),
         ),
-        PopupMenuButton<_SessionAction>(
+        IconButton(
           key: const Key('tracks_session_menu'),
           tooltip: l10n.a11ySessionMenu,
-          icon: const Icon(Icons.folder_outlined, color: Colors.white70),
-          onSelected: (action) {
-            final cubit = context.read<SessionCubit>();
-            switch (action) {
-              case _SessionAction.save:
-                unawaited(cubit.save());
-              case _SessionAction.manage:
-                unawaited(showSessionsManager(context));
-              case _SessionAction.exportMixdown:
-                unawaited(cubit.exportMixdown());
-              case _SessionAction.exportStems:
-                unawaited(cubit.exportStems());
-            }
-          },
-          itemBuilder: (context) => [
-            PopupMenuItem(
-              key: const Key('tracks_session_save'),
-              value: _SessionAction.save,
-              child: Text(l10n.sessionSave),
-            ),
-            PopupMenuItem(
-              key: const Key('tracks_session_manage'),
-              value: _SessionAction.manage,
-              child: Text(l10n.sessionManage),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              key: const Key('tracks_session_exportMixdown'),
-              value: _SessionAction.exportMixdown,
-              child: Text(l10n.exportMixdown),
-            ),
-            PopupMenuItem(
-              key: const Key('tracks_session_exportStems'),
-              value: _SessionAction.exportStems,
-              child: Text(l10n.exportStems),
-            ),
-          ],
+          visualDensity: VisualDensity.compact,
+          iconSize: 20,
+          color: Colors.white70,
+          icon: const Icon(Icons.folder_outlined),
+          onPressed: () => unawaited(showSessionsManager(context)),
         ),
       ],
     );

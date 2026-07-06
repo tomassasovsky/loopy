@@ -46,6 +46,8 @@
     "sessionSaveAs": "Save as…",
     "sessionRename": "Rename",
     "sessionDelete": "Delete",
+    "sessionDuplicate": "Duplicate",
+    "sessionDuplicateTitle": "Duplicate as…",
     "sessionUnsaved": "Unsaved",
     "sessionsManagerTitle": "Sessions",
     "sessionsEmpty": "No saved sessions yet. Use “Save as…” to create one.",
