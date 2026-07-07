@@ -1,19 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:daw_export/src/automation_thinning.dart';
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/event_log_reader.dart';
+import 'package:daw_export/src/manifest_json.dart';
 
 /// Reads a finalized performance-recording capture directory's
-/// `performance.json` (docs/design/performance-manifest-format.md) directly
-/// — no import of `performance_repository`/`loopy_engine`, matching this
+/// `performance.json` (docs/design/performance-manifest-format.md) and
+/// `events.log` (docs/design/performance-event-log-format.md) directly — no
+/// import of `performance_repository`/`loopy_engine`, matching this
 /// package's own-input-model rule — into a [DawProject] whose clips
 /// reference the capture's already-rendered stems (`stems/wet/`, falling
 /// back to `stems/dry/` for a channel whose wet render failed or hasn't run)
-/// and per-lane loop exports (`loops/`).
-///
-/// This only reconstructs what part 9 actually needs: track layout and
-/// full-length arrangement clips plus per-lane session clips. It does not
-/// read `events.log` at all — automation lanes are part 10.
+/// and per-lane loop exports (`loops/`), and whose tracks carry automation
+/// lanes reconstructed from the raw logged volume/mute gestures (part 10).
 abstract final class DawManifestReader {
   /// Reads `<captureDir>/performance.json` and returns the [DawProject] it
   /// describes, or `null` if the manifest is missing/unreadable/corrupt (a
@@ -37,8 +38,8 @@ abstract final class DawManifestReader {
     if (sampleRate <= 0 || captureFrames <= 0) return null;
     final captureSeconds = captureFrames / sampleRate;
 
-    final armTracks = _tracksOf(manifest['armSnapshot']);
-    final disarmTracks = _tracksOf(manifest['disarmSnapshot']);
+    final armTracks = tracksOf(manifest['armSnapshot']);
+    final disarmTracks = tracksOf(manifest['disarmSnapshot']);
 
     // channel -> (lane -> pcmRef). Built from arm first, then disarm
     // overwrites — disarm is the later, fresher pass (a track recorded
@@ -58,6 +59,8 @@ abstract final class DawManifestReader {
         laneMap[laneIndex] = pcmRef;
       }
     }
+
+    final logEntries = EventLogReader.readAll(captureDir);
 
     final tracks = <DawTrack>[];
     for (final channel in pcmRefsByChannel.keys.toList()..sort()) {
@@ -87,6 +90,37 @@ abstract final class DawManifestReader {
 
       if (arrangementFile == null && sessionClips.isEmpty) continue;
 
+      final automationLanes = <AutomationLane>[];
+      if (logEntries != null) {
+        final raw = EventLogReader.readChannelAutomation(
+          logEntries,
+          channel,
+          sampleRate,
+          tempoBpm,
+        );
+        if (raw.volume.isNotEmpty) {
+          automationLanes.add(
+            AutomationLane(
+              target: AutomationTarget.volume,
+              breakpoints: thinVolumeAutomation(
+                raw: raw.volume,
+                tempoBpm: tempoBpm,
+              ),
+            ),
+          );
+        }
+        if (raw.mute.isNotEmpty) {
+          // Mute is step-shaped, never thinned — see AutomationTarget.
+          // activator's own doc.
+          automationLanes.add(
+            AutomationLane(
+              target: AutomationTarget.activator,
+              breakpoints: raw.mute,
+            ),
+          );
+        }
+      }
+
       tracks.add(
         DawTrack(
           name: 'Track $channel',
@@ -98,18 +132,12 @@ abstract final class DawManifestReader {
                   lengthSeconds: captureSeconds,
                 ),
           sessionClips: sessionClips,
+          automationLanes: automationLanes,
         ),
       );
     }
 
     return DawProject(tracks: tracks, tempoBpm: tempoBpm);
-  }
-
-  static List<Map<String, dynamic>> _tracksOf(dynamic snapshot) {
-    if (snapshot is! Map<String, dynamic>) return const [];
-    final tracks = snapshot['tracks'];
-    if (tracks is! List) return const [];
-    return [for (final t in tracks) t as Map<String, dynamic>];
   }
 
   static String? _firstExisting(String captureDir, List<String> candidates) {
