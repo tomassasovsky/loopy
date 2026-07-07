@@ -45,6 +45,7 @@
 #include "loopy_engine_api.h"
 #include "miniaudio.h"
 #include "perf_drain.h" /* le_perf_drain_stop (reconfigure/destroy teardown) */
+#include "perf_render.h" /* le_perf_render_cancel (reconfigure/destroy teardown) */
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
  * PipeWire quantum forcing) lives behind the engine_platform.h seam, implemented
@@ -199,6 +200,11 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DEVICE_CHANGED);
     engine->perf.drain = NULL;
   }
+  /* An active render is independent of the arm/drain lifecycle above, but
+   * still owned by this engine's perf struct (about to be zeroed below) —
+   * cancel+join it first so a reconfigure never orphans its worker thread
+   * (uncancellable, unpollable, and leaked once the handle is lost). */
+  le_perf_render_cancel(engine);
   free(engine->perf.master_ring.buffer);
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
     free(engine->perf.monitor_ring[c].buffer);
@@ -545,6 +551,9 @@ void le_engine_destroy(le_engine* engine) {
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
     engine->perf.drain = NULL;
   }
+  /* Same reasoning as the reconfigure teardown above: cancel+join any active
+   * render before this engine (and its perf.render handle) is freed. */
+  le_perf_render_cancel(engine);
   free(engine->perf.master_ring.buffer);
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
     free(engine->perf.monitor_ring[c].buffer);

@@ -499,6 +499,24 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult renderBegin(String captureDir) {
+    calls.add('renderBegin');
+    return EngineResult.ok;
+  }
+
+  @override
+  PerformanceRenderProgress renderPoll() => PerformanceRenderProgress.empty;
+
+  @override
+  List<PerformanceRenderTrackStatus> renderTrackStatuses() => const [];
+
+  @override
+  EngineResult renderCancel() {
+    calls.add('renderCancel');
+    return EngineResult.ok;
+  }
+
+  @override
   void dispose() => calls.add('dispose');
 
   /// Waveform returned by [readVisual] (mutate in tests).

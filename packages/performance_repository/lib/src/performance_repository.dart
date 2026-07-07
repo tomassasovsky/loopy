@@ -66,6 +66,20 @@ class PerformanceRepository {
   /// The directory of the in-progress capture, or `null` when not armed.
   String? get armedDirectory => _armedDir;
 
+  /// The offline dry-stem renderer's current progress (part 7) — a pure
+  /// passthrough poll, the same on-demand convention `EngineSnapshot`'s own
+  /// perf fields use. `PerformanceRenderProgress.empty` when no render has
+  /// ever been started (or the most recent one already finished and nothing
+  /// new has started since).
+  PerformanceRenderProgress get renderProgress => _engine.renderPoll();
+
+  /// Every track's render outcome discovered so far (part 7) — grows
+  /// progressively as each stem completes. A per-track failure does not mean
+  /// the render as a whole failed (partial success); check
+  /// [PerformanceRenderTrackStatus.succeeded] per entry.
+  List<PerformanceRenderTrackStatus> get renderTrackStatuses =>
+      _engine.renderTrackStatuses();
+
   void _setStatus(PerformanceCaptureStatus status) {
     _status = status;
     if (!_statusController.isClosed) _statusController.add(status);
@@ -139,6 +153,11 @@ class PerformanceRepository {
   /// device), capture is left armed and finalize does not run — the rings
   /// and drain thread are retracted-but-running per its own contract, so
   /// finalizing now would race the still-writing drain thread.
+  ///
+  /// Once the bundle is finalized, starts the offline dry-stem render (part
+  /// 7) in the background — this method returns as soon as the bundle itself
+  /// is complete, without waiting on the render; poll [renderProgress] /
+  /// [renderTrackStatuses] for its outcome.
   Future<EngineResult> disarm() async {
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
@@ -230,7 +249,9 @@ class PerformanceRepository {
   /// finalize path [disarm] does, minus a live disarm (there is no engine
   /// session left to stop) and minus a disarm-time snapshot pass (there is no
   /// live engine state left to snapshot). The arm-time snapshot recovers from
-  /// its own crash-survival file when present.
+  /// its own crash-survival file when present. Also starts the offline
+  /// dry-stem render, same as [disarm] — a salvage render is free (D-RENDER
+  /// reads only from the capture directory, never the live engine).
   Future<void> recoverCapture(String directory) =>
       _finalize(directory, armSnapshot: null, disarmSnapshot: null);
 
@@ -303,6 +324,16 @@ class PerformanceRepository {
       const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
     );
     if (armFile.existsSync()) armFile.deleteSync();
+
+    // Kick off the offline dry-stem render (part 7): fire-and-forget — the
+    // worker thread reads only from `dir` on disk from here on, with no
+    // further dependency on this finalize call, so its outcome is exposed
+    // purely via the poll-on-demand `renderProgress`/`renderTrackStatuses`
+    // getters above rather than awaited here. A failure to even START a
+    // render (e.g. one is already running) is silently accepted — the
+    // bundle itself is already complete and valid without its stems, which
+    // is exactly the umbrella's partial-success posture applied one level up.
+    _engine.renderBegin(dir);
   }
 
   /// Exports every currently-settled lane's PCM as a WAV directly into
