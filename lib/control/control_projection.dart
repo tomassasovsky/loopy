@@ -83,6 +83,7 @@ PedalStateFrame projectFrame(
   LooperState looper,
   ControlState overlay, {
   bool clearFadeActive = false,
+  bool performanceArmed = false,
 }) {
   final leds = <PedalTrackLed>[
     for (var channel = 0; channel < PedalStateFrame.trackCount; channel++)
@@ -128,6 +129,7 @@ PedalStateFrame projectFrame(
       PedalStateFrame.maxLoopLengthMicros,
     ),
     clearFadeActive: clearFadeActive,
+    performanceArmed: performanceArmed,
   );
   // The control-surface invariant spec runs on every projection in debug
   // builds — the same predicates the sequence fuzzer checks. assert() only:

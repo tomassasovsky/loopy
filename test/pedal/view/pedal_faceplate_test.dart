@@ -10,8 +10,10 @@ import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+import '../../helpers/fake_audio_engine.dart';
 import '../../helpers/fake_key_value_store.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
@@ -22,6 +24,7 @@ PedalStateFrame _frame({
   int loopLengthMicros = 0,
   PedalMode mode = PedalMode.rec,
   bool clearFadeActive = false,
+  bool performanceArmed = false,
   Map<int, PedalTrackLed> leds = const {},
 }) => PedalStateFrame(
   globalColor: globalColor,
@@ -34,6 +37,7 @@ PedalStateFrame _frame({
   mode: mode,
   loopLengthMicros: loopLengthMicros,
   clearFadeActive: clearFadeActive,
+  performanceArmed: performanceArmed,
 );
 
 const _recPlayKey = Key('pedalFaceplate_footswitch_recPlay');
@@ -89,12 +93,22 @@ void main() {
     // through the shared PedalRepository into the same control layer the app
     // wires (mode/cursor owned by ControlCubit).
     final pedalRepo = PedalRepository(sim);
+    final performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    addTearDown(performance.dispose);
     final control = ControlCubit(
       looper: looper,
       pedal: pedalRepo,
       settings: settings,
+      performance: performance,
     );
-    addTearDown(control.close);
+    // NOT awaited: awaiting ControlCubit.close() here deadlocks (a
+    // Flutter-test-binding stream-cancel interaction, tracked separately —
+    // not a bug in this test or in ControlCubit itself; unawaited still
+    // runs every cancellation to completion).
+    addTearDown(() => unawaited(control.close()));
     final cubit = PedalCubit(
       pedal: pedalRepo,
       settings: settings,
@@ -297,6 +311,53 @@ void main() {
       sim.send(PedalCodec.encodeFrame(_frame(clearFadeActive: true)));
       await tester.pump();
       expect(clearColor(), SurfaceTheme.dark.ledRed);
+    });
+
+    group('the MODE status LED (D-PEDAL)', () {
+      const modeLedKey = Key('pedalFaceplate_led_mode');
+
+      testWidgets('is absent when performance recording is not armed', (
+        tester,
+      ) async {
+        final (_, sim) = await pumpFaceplate(tester);
+
+        sim.send(PedalCodec.encodeFrame(_frame()));
+        await tester.pump();
+
+        expect(find.byKey(modeLedKey), findsNothing);
+      });
+
+      testWidgets('is present and blinks while armed', (tester) async {
+        final (_, sim) = await pumpFaceplate(tester);
+
+        sim.send(PedalCodec.encodeFrame(_frame(performanceArmed: true)));
+        await tester.pump();
+        expect(find.byKey(modeLedKey), findsOneWidget);
+
+        Color ledColor() =>
+            (tester.widget<Container>(find.byKey(modeLedKey)).decoration!
+                    as BoxDecoration)
+                .color!;
+
+        // _BlinkingLed starts lit, then alternates lit/dark every 400ms.
+        expect(ledColor(), SurfaceTheme.dark.ledRed);
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(ledColor(), Colors.transparent);
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(ledColor(), SurfaceTheme.dark.ledRed);
+      });
+
+      testWidgets('disappears again once disarmed', (tester) async {
+        final (_, sim) = await pumpFaceplate(tester);
+
+        sim.send(PedalCodec.encodeFrame(_frame(performanceArmed: true)));
+        await tester.pump();
+        expect(find.byKey(modeLedKey), findsOneWidget);
+
+        sim.send(PedalCodec.encodeFrame(_frame()));
+        await tester.pump();
+        expect(find.byKey(modeLedKey), findsNothing);
+      });
     });
   });
 

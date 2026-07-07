@@ -246,6 +246,7 @@ class App extends StatelessWidget {
                 looper: context.read<LooperRepository>(),
                 pedal: pedalRepo,
                 settings: context.read<SettingsRepository>(),
+                performance: context.read<PerformanceRepository>(),
               );
               unawaited(cubit.load()); // boot-default mode restore
               return cubit;
