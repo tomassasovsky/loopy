@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy_engine/loopy_engine.dart';
 import 'package:session_repository/session_repository.dart';
+import 'package:wav_codec/wav_codec.dart';
 
 import 'helpers/fake_session_engine.dart';
 

@@ -7,4 +7,3 @@ export 'src/models/session_summary.dart';
 export 'src/session_exception.dart';
 export 'src/session_name.dart';
 export 'src/session_repository.dart';
-export 'src/wav.dart';
