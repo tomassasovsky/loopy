@@ -2,6 +2,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/session/session_mapping.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 
 part 'session_state.dart';
@@ -10,12 +11,16 @@ part 'session_state.dart';
 /// catalog (list / save-as / rename / delete), tracking the open session so a
 /// plain [save] writes back without re-prompting (the document model).
 ///
-/// Composes the two repositories at the bloc level (repositories never import
+/// Composes three repositories at the bloc level (repositories never import
 /// repositories): the session repository does the file I/O + owns the catalog
 /// layout, the looper repository — the single owner of looper state — applies a
-/// loaded session to the engine and supplies the live chains a save captures.
+/// loaded session to the engine and supplies the live chains a save captures,
+/// and the performance repository is disarmed+finalized before a load applies
+/// (a session load while armed would otherwise pull the rug out from under an
+/// in-progress capture).
 class SessionCubit extends Cubit<SessionState> {
-  /// Creates a [SessionCubit] backed by [repository] and [looper].
+  /// Creates a [SessionCubit] backed by [repository], [looper], and
+  /// [performance].
   ///
   /// [exportDirectory] resolves the directory a mixdown / stems are written to;
   /// the named-session methods go through [repository]'s catalog instead.
@@ -23,14 +28,17 @@ class SessionCubit extends Cubit<SessionState> {
   SessionCubit({
     required SessionRepository repository,
     required LooperRepository looper,
+    required PerformanceRepository performance,
     required Future<String> Function() exportDirectory,
   }) : _repository = repository,
        _looper = looper,
+       _performance = performance,
        _exportDirectory = exportDirectory,
        super(const SessionState());
 
   final SessionRepository _repository;
   final LooperRepository _looper;
+  final PerformanceRepository _performance;
   final Future<String> Function() _exportDirectory;
 
   // ---- exports (a separate action from the session catalog) ----
@@ -99,7 +107,15 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Loads named session [name] into the engine through the looper repository
   /// (the one apply path), makes it current, and refreshes the catalog.
+  ///
+  /// Auto-disarms and finalizes an in-progress performance-recording capture
+  /// first — applying a loaded session mid-capture would otherwise pull the
+  /// rug out from under it. The finalize + render run through the same path a
+  /// manual disarm does; `PerformanceRecorderCubit` observes the repository's
+  /// status stream, so it reflects this disarm too even though it was never
+  /// the one to call it.
   Future<void> loadNamed(String name) => _run(() async {
+    await _performance.disarmAndFinalize();
     final bundle = await _repository.read(await _repository.bundlePath(name));
     await _looper.applySession(rigFromBundle(bundle));
     return _ActionResult(

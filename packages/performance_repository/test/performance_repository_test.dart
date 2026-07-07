@@ -600,5 +600,99 @@ void main() {
         );
       },
     );
+
+    test('discardUnfinalized deletes the capture directory outright', () async {
+      final root = Directory('${tempDir.path}/exports');
+      final crashed = Directory('${root.path}/perf-crashed')
+        ..createSync(recursive: true);
+      writeNativeSidecar(crashed.path);
+
+      await repo.discardUnfinalized(crashed.path);
+
+      expect(crashed.existsSync(), isFalse);
+    });
+
+    test(
+      'discardUnfinalized is a no-op when the directory no longer exists',
+      () async {
+        await repo.discardUnfinalized('${tempDir.path}/exports/never-existed');
+      },
+    );
+  });
+
+  group('captureProgress', () {
+    test('reads zero/false when not armed', () {
+      expect(repo.captureProgress, (elapsed: Duration.zero, overrun: false));
+    });
+
+    test('reads elapsed time and overrun from the engine snapshot', () {
+      engine
+        ..perfFrames =
+            48000 // 1 second at the fake's 48kHz sample rate
+        ..perfOverruns = 3;
+
+      final progress = repo.captureProgress;
+      expect(progress.elapsed, const Duration(seconds: 1));
+      expect(progress.overrun, isTrue);
+    });
+  });
+
+  group('renameCapture', () {
+    late Directory root;
+
+    setUp(() {
+      root = Directory('${tempDir.path}/exports')..createSync(recursive: true);
+    });
+
+    test('renames the bundle folder to the sanitized slug', () async {
+      final dir = Directory('${root.path}/perf-old')
+        ..createSync(recursive: true);
+
+      final renamed = await repo.renameCapture(dir.path, 'My Take!');
+
+      expect(renamed, '${root.path}/My Take');
+      expect(Directory(renamed).existsSync(), isTrue);
+      expect(dir.existsSync(), isFalse);
+    });
+
+    test(
+      'is a no-op that returns the same path when the slug is unchanged',
+      () async {
+        final dir = Directory('${root.path}/perf-same')
+          ..createSync(recursive: true);
+
+        final renamed = await repo.renameCapture(dir.path, 'perf-same');
+
+        expect(renamed, dir.path);
+        expect(dir.existsSync(), isTrue);
+      },
+    );
+
+    test(
+      'throws ArgumentError when the name folds to nothing usable',
+      () async {
+        final dir = Directory('${root.path}/perf-blank')
+          ..createSync(recursive: true);
+
+        await expectLater(
+          repo.renameCapture(dir.path, '!!!'),
+          throwsArgumentError,
+        );
+      },
+    );
+
+    test(
+      'throws PerformanceNameCollision when the target slug already exists',
+      () async {
+        final dir = Directory('${root.path}/perf-a')
+          ..createSync(recursive: true);
+        Directory('${root.path}/Taken').createSync(recursive: true);
+
+        await expectLater(
+          repo.renameCapture(dir.path, 'Taken'),
+          throwsA(isA<PerformanceNameCollision>()),
+        );
+      },
+    );
   });
 }

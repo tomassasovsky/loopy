@@ -12,6 +12,7 @@ import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/window/window_chrome.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -28,11 +29,13 @@ Future<void> runLoopy(
   List<String> args, {
   LooperRepository? repository,
   SessionRepository? sessionRepository,
+  PerformanceRepository? performanceRepository,
   EngineConfig? startConfig,
 }) async {
   assert(
-    (repository == null) == (sessionRepository == null),
-    'inject both repositories together or neither',
+    (repository == null) == (sessionRepository == null) &&
+        (repository == null) == (performanceRepository == null),
+    'inject all three repositories together or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -53,16 +56,24 @@ Future<void> runLoopy(
   // concrete type is never named here, keeping loopy_engine transitive.
   final LooperRepository looper;
   final SessionRepository session;
-  if (repository == null || sessionRepository == null) {
+  final PerformanceRepository performance;
+  if (repository == null ||
+      sessionRepository == null ||
+      performanceRepository == null) {
     final engine = createNativeAudioEngine();
     looper = LooperRepository(engine: engine);
     session = SessionRepository(
       engine: engine,
       sessionsRoot: defaultSessionsRoot,
     );
+    performance = PerformanceRepository(
+      engine: engine,
+      exportsRoot: defaultExportDirectory,
+    );
   } else {
     looper = repository;
     session = sessionRepository;
+    performance = performanceRepository;
   }
 
   // The native MIDI source feeds the controller pipeline; it is null when no
@@ -126,6 +137,7 @@ Future<void> runLoopy(
       settings: settings,
       waveformWindow: DesktopMultiWindowWaveformService(),
       sessionRepository: session,
+      performanceRepository: performance,
       exportDirectory: defaultExportDirectory,
       initialAsioDrivers: asioDrivers,
     ),
