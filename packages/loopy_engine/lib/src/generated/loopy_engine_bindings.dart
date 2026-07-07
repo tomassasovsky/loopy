@@ -2076,6 +2076,137 @@ class LoopyEngineBindings {
   late final _le_perf_disarm = _le_perf_disarmPtr
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
+  /// Starts an offline render of the finalized capture at `capture_dir`: spawns
+  /// a worker thread that writes `stems/dry/track<channel>.wav` under
+  /// `capture_dir` for every non-empty track, with poll-based progress. Returns
+  /// LE_OK once the worker thread is launched (this call never blocks on the
+  /// render itself), LE_ERR_INVALID for a null engine/capture_dir or an empty
+  /// capture_dir, or LE_ERR_ALREADY_RUNNING if a render is already active on
+  /// this engine.
+  int le_perf_render_begin(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Char> capture_dir,
+  ) {
+    return _le_perf_render_begin(
+      engine,
+      capture_dir,
+    );
+  }
+
+  late final _le_perf_render_beginPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+        >
+      >('le_perf_render_begin');
+  late final _le_perf_render_begin = _le_perf_render_beginPtr
+      .asFunction<
+        int Function(ffi.Pointer<le_engine>, ffi.Pointer<ffi.Char>)
+      >();
+
+  /// Reads the current render's progress: `*done` (0 while rendering, 1 once
+  /// finished), `*progress_pct` (0..100, monotonic), `*track_count` (how many
+  /// entries `le_perf_render_track_status` can currently read — grows
+  /// progressively as each track's stem completes, not only once `*done`).
+  /// Safe to call whether or not a render is active — with none active,
+  /// `*done` reads 1, `*progress_pct` reads 100, `*track_count` reads 0. Any
+  /// output pointer may be NULL to skip that field. Returns LE_OK, or
+  /// LE_ERR_INVALID for a null engine.
+  int le_perf_render_poll(
+    ffi.Pointer<le_engine> engine,
+    ffi.Pointer<ffi.Int32> done,
+    ffi.Pointer<ffi.Int32> progress_pct,
+    ffi.Pointer<ffi.Int32> track_count,
+  ) {
+    return _le_perf_render_poll(
+      engine,
+      done,
+      progress_pct,
+      track_count,
+    );
+  }
+
+  late final _le_perf_render_pollPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_perf_render_poll');
+  late final _le_perf_render_poll = _le_perf_render_pollPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Reads render result `index`'s (0..track_count-1, from the most recent
+  /// le_perf_render_poll) track channel and outcome (`*succeeded`: 1 if its
+  /// stem was written, 0 on a per-stem failure — the umbrella's "partial
+  /// success" posture: one failed stem does not abort the others). Returns
+  /// LE_OK, or LE_ERR_INVALID for a null engine / out-of-range index.
+  int le_perf_render_track_status(
+    ffi.Pointer<le_engine> engine,
+    int index,
+    ffi.Pointer<ffi.Int32> channel,
+    ffi.Pointer<ffi.Int32> succeeded,
+  ) {
+    return _le_perf_render_track_status(
+      engine,
+      index,
+      channel,
+      succeeded,
+    );
+  }
+
+  late final _le_perf_render_track_statusPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Pointer<ffi.Int32>,
+            ffi.Pointer<ffi.Int32>,
+          )
+        >
+      >('le_perf_render_track_status');
+  late final _le_perf_render_track_status = _le_perf_render_track_statusPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          ffi.Pointer<ffi.Int32>,
+          ffi.Pointer<ffi.Int32>,
+        )
+      >();
+
+  /// Cancels an in-progress render and joins the worker thread; a no-op when no
+  /// render is active. Cancellation is checked once per per-track work chunk
+  /// (never mid-stem), so this only returns once the worker has actually
+  /// stopped, leaving no partial stem file for whichever track was in flight.
+  /// Returns LE_OK, or LE_ERR_INVALID for a null engine.
+  int le_perf_render_cancel(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_perf_render_cancel(
+      engine,
+    );
+  }
+
+  late final _le_perf_render_cancelPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_perf_render_cancel',
+      );
+  late final _le_perf_render_cancel = _le_perf_render_cancelPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
   /// ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
   /// An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
   /// for each of the a_fx_count active entries, its type, plus (for a built-in) its
@@ -2165,10 +2296,14 @@ class LoopyEngineBindings {
   /// Copies up to `max_frames` frames of track `channel`'s lane `lane` mono loop
   /// into `out`; returns the number of frames written (the lane's length,
   /// clamped to `max_frames`), 0 for a valid-but-empty lane, or LE_ERR_INVALID
-  /// for an out-of-range channel/lane or a non-positive `max_frames`. Same
-  /// settled-buffer semantics as le_engine_export_track (which is equivalent to
-  /// lane 0 and untouched by this addition) — call when the track is not
-  /// capturing.
+  /// for an out-of-range channel/lane or a non-positive `max_frames`. On a
+  /// successful (valid-argument) call this is byte-identical to
+  /// le_engine_export_track (which is equivalent to lane 0 and untouched by
+  /// this addition) — call when the track is not capturing. The two functions
+  /// intentionally diverge on invalid-argument return codes: this one
+  /// distinguishes LE_ERR_INVALID from 0 because it has a `lane` argument to
+  /// validate separately; le_engine_export_track has no such argument and
+  /// returns 0 uniformly for any bad input.
   int le_engine_export_track_lane(
     ffi.Pointer<le_engine> engine,
     int channel,

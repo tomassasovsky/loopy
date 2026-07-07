@@ -4,6 +4,7 @@ import 'package:loopy_engine/src/audio_device.dart';
 import 'package:loopy_engine/src/engine_config.dart';
 import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
 
@@ -537,6 +538,37 @@ abstract interface class EnginePerformanceCapture {
   /// left retracted-but-running and are reclaimed by a later retry or when
   /// the engine is disposed.
   EngineResult perfDisarm();
+
+  /// Starts an offline render of the finalized capture at [captureDir]: a
+  /// worker thread reconstructs each non-empty track's full-length DRY stem
+  /// (part 7 — wet stems are part 8) by replaying `events.log` against the
+  /// capture's snapshots and retired-layer files, and writes
+  /// `stems/dry/track<channel>.wav`. Reads only from disk — no live-engine
+  /// dependency, so a render runs correctly whether or not this engine is
+  /// currently armed or looping. Returns [EngineResult.ok] once the worker
+  /// thread is launched (this call never blocks on the render itself),
+  /// [EngineResult.invalid] for an empty [captureDir], or
+  /// [EngineResult.alreadyRunning] if a render is already active.
+  EngineResult renderBegin(String captureDir);
+
+  /// Reads the current render's progress. Safe to call repeatedly (e.g. on a
+  /// timer) whether or not a render is active — [PerformanceRenderProgress.
+  /// empty] when none is.
+  PerformanceRenderProgress renderPoll();
+
+  /// Reads every track's render outcome discovered so far (growing
+  /// progressively as each stem completes, not only once
+  /// [PerformanceRenderProgress.done]). A per-track failure
+  /// ([PerformanceRenderTrackStatus.succeeded] `false`) does not abort the
+  /// render — the umbrella's partial-success posture.
+  List<PerformanceRenderTrackStatus> renderTrackStatuses();
+
+  /// Cancels an in-progress render and joins the worker thread; a no-op when
+  /// no render is active. Cancellation is checked once per per-track work
+  /// chunk (never mid-stem), so this only returns once the worker has
+  /// actually stopped, leaving no partial stem file for whichever track was
+  /// in flight.
+  EngineResult renderCancel();
 }
 
 /// The data-layer boundary over the native audio engine, composed from the

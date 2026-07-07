@@ -408,6 +408,13 @@ typedef struct le_perf_capture {
    * definition) — control-thread lifecycle only; engine_process.c never
    * touches it. NULL when not armed. */
   struct le_perf_drain* drain;
+
+  /* The offline render worker (perf_render.h, part 7) — independent of the
+   * arm/disarm/drain lifecycle above: a render reads only a finalized
+   * capture directory from disk, never live engine state, so it can run
+   * whether or not this engine is currently armed. Opaque here (perf_render.c
+   * owns the definition). NULL when no render is active. */
+  struct le_perf_render* render;
 } le_perf_capture;
 
 struct le_engine {

@@ -376,6 +376,53 @@ void main() {
               as Map<String, dynamic>;
       expect(manifest['finalized'], isTrue);
     });
+
+    test(
+      'starts the offline dry-stem render (part 7) once finalized, exposed '
+      'via renderProgress/renderTrackStatuses',
+      () async {
+        await armAndSeedNative(engine, repo);
+        final dir = repo.armedDirectory!;
+        engine.mockRenderTrackStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+
+        expect(repo.renderProgress, PerformanceRenderProgress.empty);
+        expect(repo.renderTrackStatuses, isEmpty);
+
+        await repo.disarm();
+
+        expect(engine.renderBeginCalls, 1);
+        expect(engine.lastRenderCaptureDir, dir);
+        expect(repo.renderProgress.done, isTrue);
+        expect(repo.renderTrackStatuses, hasLength(1));
+        expect(repo.renderTrackStatuses.single.succeeded, isTrue);
+      },
+    );
+
+    test(
+      'still finalizes the bundle when renderBegin fails to even start '
+      '(e.g. a render already in flight)',
+      () async {
+        await armAndSeedNative(engine, repo);
+        final dir = repo.armedDirectory!;
+        engine.renderBeginResult = EngineResult.alreadyRunning;
+
+        await repo.disarm();
+
+        expect(engine.renderBeginCalls, 1);
+        final manifest =
+            jsonDecode(File('$dir/performance.json').readAsStringSync())
+                as Map<String, dynamic>;
+        expect(
+          manifest['finalized'],
+          isTrue,
+          reason:
+              'the bundle is already complete and valid without its '
+              'stems — a render that never started must not block that',
+        );
+      },
+    );
   });
 
   group('persistLiveLanes', () {
