@@ -1,8 +1,46 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:daw_export/daw_export.dart';
 import 'package:test/test.dart';
+
+/// Writes a minimal `events.log` fixture — see
+/// `event_log_reader_test.dart`'s own copy of this helper for the exact
+/// on-disk layout this mirrors; duplicated here (not shared) since test
+/// helpers in this package are kept file-local by convention.
+void _writeLog(
+  String path,
+  int sampleRate,
+  List<(int frame, int code, List<int> payload)> entries,
+) {
+  final out = BytesBuilder()..add('PLEV'.codeUnits);
+  final version = ByteData(4)..setUint32(0, 1, Endian.little);
+  out.add(version.buffer.asUint8List());
+  final sr = ByteData(4)..setInt32(0, sampleRate, Endian.little);
+  out.add(sr.buffer.asUint8List());
+
+  for (final (frame, code, payload) in entries) {
+    final header = ByteData(12)
+      ..setUint64(0, frame, Endian.little)
+      ..setInt32(8, code, Endian.little);
+    out.add(header.buffer.asUint8List());
+    final padded = List<int>.filled(16, 0);
+    for (var i = 0; i < payload.length && i < 16; i++) {
+      padded[i] = payload[i];
+    }
+    out.add(padded);
+  }
+
+  File(path).writeAsBytesSync(out.toBytes());
+}
+
+List<int> _generic(int argI, double argF) {
+  final b = ByteData(16)
+    ..setInt32(0, argI, Endian.little)
+    ..setFloat32(4, argF, Endian.little);
+  return b.buffer.asUint8List();
+}
 
 void main() {
   group('DawManifestReader.read', () {
@@ -242,6 +280,124 @@ void main() {
 
       final project = DawManifestReader.read(dir.path);
       expect(project!.tracks, isEmpty);
+    });
+
+    test(
+      'builds a volume automation lane from events.log for a track that '
+      'also has an arrangement clip',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+        const codeSetVolume = 7;
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, codeSetVolume, _generic(0, 0.5)),
+          (48000, codeSetVolume, _generic(0, 0.9)),
+        ]);
+
+        final project = DawManifestReader.read(dir.path);
+        final lanes = project!.tracks.single.automationLanes;
+        expect(lanes, hasLength(1));
+        expect(lanes.single.target, AutomationTarget.volume);
+        expect(lanes.single.breakpoints, hasLength(2));
+        expect(lanes.single.breakpoints.first.beat, 0.0);
+        expect(lanes.single.breakpoints.last.beat, 2.0); // 1s at 120bpm
+      },
+    );
+
+    test(
+      'builds an activator (mute) automation lane from events.log, '
+      'independent of whether a volume lane exists',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+        const codeSetMute = 8;
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, codeSetMute, _generic(0, 1)), // muted
+          (48000, codeSetMute, _generic(0, 0)), // unmuted
+        ]);
+
+        final project = DawManifestReader.read(dir.path);
+        final lanes = project!.tracks.single.automationLanes;
+        expect(lanes, hasLength(1));
+        expect(lanes.single.target, AutomationTarget.activator);
+        expect(lanes.single.breakpoints, hasLength(2));
+        expect(lanes.single.breakpoints.first.value, 0.0); // muted -> off
+        expect(lanes.single.breakpoints.last.value, 1.0); // unmuted -> on
+      },
+    );
+
+    test('a track with no logged gestures gets no automation lanes', () {
+      Directory('${dir.path}/stems/wet').createSync(recursive: true);
+      File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+      File('${dir.path}/performance.json').writeAsStringSync(
+        jsonEncode({
+          'sample_rate': 48000,
+          'capture_frames': 48000,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'stems/wet/track0.wav',
+                  },
+                ],
+              },
+            ],
+          },
+          'disarmSnapshot': {'tracks': <dynamic>[]},
+          'layers': <dynamic>[],
+        }),
+      );
+      // No events.log at all.
+      final project = DawManifestReader.read(dir.path);
+      expect(project!.tracks.single.automationLanes, isEmpty);
     });
   });
 }
