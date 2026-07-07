@@ -1,0 +1,21 @@
+Renames the USB-MIDI product string the 16U2 enumerates as, from the
+upstream default "MocoLUFA" to "VAMP Loopstation" (loopy's pedal is the
+VAMP unit). Apply against dualMocoLUFA's Descriptors.c before building —
+see firmware/README.md.
+
+Upstream: https://github.com/kuwatay/mocolufa (Apache License 2.0)
+
+--- a/Descriptors.c
++++ b/Descriptors.c
+@@ -453,9 +453,9 @@
+ /* for MIDI */
+ USB_Descriptor_String_t PROGMEM ProductStringMIDI =
+ {
+-	.Header                 = {.Size = USB_STRING_LEN(8), .Type = DTYPE_String},
++	.Header                 = {.Size = USB_STRING_LEN(16), .Type = DTYPE_String},
+
+-	.UnicodeString          = L"MocoLUFA"
++	.UnicodeString          = L"VAMP Loopstation"
+ };
+
+ /** This function is called by the library when in device mode, and must be overridden (see library "USB Descriptors"
