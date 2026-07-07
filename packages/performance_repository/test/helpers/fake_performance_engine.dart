@@ -39,6 +39,8 @@ class FakePerformanceEngine implements AudioEngine {
   EngineResult perfDisarmResult = EngineResult.ok;
   int perfArmCalls = 0;
   int perfDisarmCalls = 0;
+  int perfFrames = 0;
+  int perfOverruns = 0;
 
   /// Seeds track [channel] lane [lane] with settled [pcm] (state defaults to
   /// [TrackState.playing] — a settled, exportable lane).
@@ -97,6 +99,8 @@ class FakePerformanceEngine implements AudioEngine {
     masterGain: masterGain,
     recordOffsetFrames: recordOffsetFrames,
     isPerfArmed: perfArmed,
+    perfFrames: perfFrames,
+    perfOverruns: perfOverruns,
     tracks: [
       for (final t in _tracks)
         TrackSnapshot(

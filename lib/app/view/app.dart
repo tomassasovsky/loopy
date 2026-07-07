@@ -13,11 +13,13 @@ import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
+import 'package:loopy/performance/performance.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/window/window_chrome.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -39,6 +41,7 @@ class App extends StatelessWidget {
     required this.settings,
     required this.waveformWindow,
     required this.sessionRepository,
+    required this.performanceRepository,
     required this.exportDirectory,
     this.pedalRepository,
     this.pedalSimulator,
@@ -95,6 +98,9 @@ class App extends StatelessWidget {
   /// The shared session repository (save/load + export), sharing the engine.
   final SessionRepository sessionRepository;
 
+  /// The shared performance-recording repository, sharing the engine.
+  final PerformanceRepository performanceRepository;
+
   /// Resolves the directory a mixdown / stems export is written to.
   final Future<String> Function() exportDirectory;
 
@@ -116,6 +122,7 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: midiDeviceRepository),
         RepositoryProvider.value(value: settings),
         RepositoryProvider.value(value: sessionRepository),
+        RepositoryProvider.value(value: performanceRepository),
         RepositoryProvider.value(value: pedalSim),
       ],
       child: MultiBlocProvider(
@@ -269,6 +276,19 @@ class App extends StatelessWidget {
               final cubit = AudioRecoveryCubit(
                 looper: context.read<LooperRepository>(),
                 recoveryConfig: audioRecoveryConfig,
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // Eager (not lazy): must be watching at boot to find a capture a
+          // crash left unfinalized (D-SALVAGE) before the tracks view first
+          // builds, so the recovery prompt is ready the instant it mounts.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = PerformanceRecorderCubit(
+                performance: context.read<PerformanceRepository>(),
               );
               unawaited(cubit.load());
               return cubit;

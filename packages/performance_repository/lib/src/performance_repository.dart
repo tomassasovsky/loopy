@@ -8,6 +8,7 @@ import 'package:performance_repository/src/models/performance_chains.dart';
 import 'package:performance_repository/src/models/performance_manifest.dart';
 import 'package:performance_repository/src/models/unfinalized_capture.dart';
 import 'package:performance_repository/src/performance_capture_status.dart';
+import 'package:performance_repository/src/performance_exception.dart';
 import 'package:performance_repository/src/performance_slug.dart';
 import 'package:wav_codec/wav_codec.dart';
 
@@ -82,6 +83,23 @@ class PerformanceRepository {
   /// [PerformanceRenderTrackStatus.succeeded] per entry.
   List<PerformanceRenderTrackStatus> get renderTrackStatuses =>
       _engine.renderTrackStatuses();
+
+  /// The in-progress capture's elapsed time and overrun flag, read from the
+  /// engine snapshot's own `perfFrames`/`perfOverruns` fields (part 1) —
+  /// meaningful only while armed; reads as zero/`false` otherwise, mirroring
+  /// those fields' own at-rest defaults. Poll-on-demand, the same convention
+  /// [renderProgress] uses, so a UI driving an elapsed-time readout ticks
+  /// this itself rather than this repository owning a second internal timer.
+  ({Duration elapsed, bool overrun}) get captureProgress {
+    final snapshot = _engine.snapshot();
+    final sampleRate = snapshot.sampleRate > 0 ? snapshot.sampleRate : 48000;
+    return (
+      elapsed: Duration(
+        microseconds: snapshot.perfFrames * 1000000 ~/ sampleRate,
+      ),
+      overrun: snapshot.perfOverruns > 0,
+    );
+  }
 
   void _setStatus(PerformanceCaptureStatus status) {
     _status = status;
@@ -259,6 +277,42 @@ class PerformanceRepository {
   /// directory, never the live engine).
   Future<void> recoverCapture(String directory) =>
       _finalize(directory, armSnapshot: null, disarmSnapshot: null);
+
+  /// Discards a crashed (unfinalized) capture at [directory] by deleting it
+  /// outright — the counterpart to [recoverCapture] when the user chooses
+  /// not to salvage it. A no-op if [directory] no longer exists.
+  Future<void> discardUnfinalized(String directory) async {
+    final dir = Directory(directory);
+    if (dir.existsSync()) await dir.delete(recursive: true);
+  }
+
+  /// Folds [to] into a folder-safe slug and renames the finished capture at
+  /// [directory] to it, returning the new directory path. Mirrors
+  /// `SessionRepository.renameSession`'s never-overwrite contract — this
+  /// package can't import that one, so the fold is a small, deliberately
+  /// duplicated copy, not a shared dependency.
+  ///
+  /// Throws [ArgumentError] when [to] folds to nothing usable, and
+  /// [PerformanceNameCollision] when the target slug already exists. Renaming
+  /// to the same slug is a no-op that returns [directory] unchanged.
+  Future<String> renameCapture(String directory, String to) async {
+    final slug = performanceCaptureSlug(to);
+    if (slug == null) {
+      throw ArgumentError.value(to, 'to', 'not a valid capture name');
+    }
+    if (slug == _basename(directory)) return directory;
+    final target = '${_dirname(directory)}/$slug';
+    if (Directory(target).existsSync()) {
+      throw PerformanceNameCollision(slug: slug);
+    }
+    Directory(directory).renameSync(target);
+    return target;
+  }
+
+  String _dirname(String path) {
+    final idx = path.lastIndexOf(RegExp(r'[/\\]'));
+    return idx == -1 ? '.' : path.substring(0, idx);
+  }
 
   Future<void> _finalize(
     String dir, {
