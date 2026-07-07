@@ -1033,21 +1033,25 @@ LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
  * le_engine_destroy). */
 LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 
-/* ---- offline performance renderer (part 7 of the DAW-export stack) ----
- * Dry replay only (`perf_render.h`): reconstructs full-length per-track
- * stems from a FINALIZED capture directory (part 6's `performance.json` +
- * `events.log` + `loops/` + retired-layer PCM), on a dedicated worker
- * thread. Reads exclusively from disk — no live-engine dependency — so a
- * render can run concurrently with live looping, and a crash-salvage render
- * is free. Wet stems + the golden master-parity gate are part 8. */
+/* ---- offline performance renderer (parts 7-8 of the DAW-export stack) ----
+ * Reconstructs, from a FINALIZED capture directory (part 6's
+ * `performance.json` + `events.log` + `loops/` + retired-layer PCM), on a
+ * dedicated worker thread: full-length per-track dry stems (part 7,
+ * `stems/dry/track<channel>.wav`), per-track wet (FX-applied) stems and a
+ * reconstructed master bus (part 8, `stems/wet/track<channel>.wav` +
+ * `stems/wet/master.wav`: track sum + master gain + limiter — this
+ * feature's golden-parity guardrail against the live-captured master).
+ * Reads exclusively from disk — no live-engine dependency — so a render can
+ * run concurrently with live looping, and a crash-salvage render is free. */
 
 /* Starts an offline render of the finalized capture at `capture_dir`: spawns
- * a worker thread that writes `stems/dry/track<channel>.wav` under
- * `capture_dir` for every non-empty track, with poll-based progress. Returns
- * LE_OK once the worker thread is launched (this call never blocks on the
- * render itself), LE_ERR_INVALID for a null engine/capture_dir or an empty
- * capture_dir, or LE_ERR_ALREADY_RUNNING if a render is already active on
- * this engine. */
+ * a worker thread that writes `stems/dry/track<channel>.wav` +
+ * `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
+ * track, then `stems/wet/master.wav` once every channel has been processed,
+ * with poll-based progress. Returns LE_OK once the worker thread is
+ * launched (this call never blocks on the render itself), LE_ERR_INVALID
+ * for a null engine/capture_dir or an empty capture_dir, or
+ * LE_ERR_ALREADY_RUNNING if a render is already active on this engine. */
 LE_EXPORT int32_t le_perf_render_begin(le_engine* engine,
                                        const char* capture_dir);
 
@@ -1066,8 +1070,11 @@ LE_EXPORT int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
 /* Reads render result `index`'s (0..track_count-1, from the most recent
  * le_perf_render_poll) track channel and outcome (`*succeeded`: 1 if its
  * stem was written, 0 on a per-stem failure — the umbrella's "partial
- * success" posture: one failed stem does not abort the others). Returns
- * LE_OK, or LE_ERR_INVALID for a null engine / out-of-range index. */
+ * success" posture: one failed stem does not abort the others). `*succeeded`
+ * reflects BOTH the dry and wet stem for that channel — either one failing
+ * marks the track failed, since a wet stem with no matching dry source is
+ * not a usable partial result. Returns LE_OK, or LE_ERR_INVALID for a null
+ * engine / out-of-range index. */
 LE_EXPORT int32_t le_perf_render_track_status(le_engine* engine,
                                               int32_t index, int32_t* channel,
                                               int32_t* succeeded);

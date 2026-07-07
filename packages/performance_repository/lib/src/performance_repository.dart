@@ -66,16 +66,19 @@ class PerformanceRepository {
   /// The directory of the in-progress capture, or `null` when not armed.
   String? get armedDirectory => _armedDir;
 
-  /// The offline dry-stem renderer's current progress (part 7) — a pure
-  /// passthrough poll, the same on-demand convention `EngineSnapshot`'s own
-  /// perf fields use. `PerformanceRenderProgress.empty` when no render has
-  /// ever been started (or the most recent one already finished and nothing
-  /// new has started since).
+  /// The offline renderer's current progress — dry stems (part 7), wet
+  /// (FX-applied) stems, and the reconstructed master bus (both part 8) all
+  /// run within the same render session, so one progress value covers all of
+  /// them. A pure passthrough poll, the same on-demand convention
+  /// `EngineSnapshot`'s own perf fields use. `PerformanceRenderProgress.empty`
+  /// when no render has ever been started (or the most recent one already
+  /// finished and nothing new has started since).
   PerformanceRenderProgress get renderProgress => _engine.renderPoll();
 
-  /// Every track's render outcome discovered so far (part 7) — grows
-  /// progressively as each stem completes. A per-track failure does not mean
-  /// the render as a whole failed (partial success); check
+  /// Every track's render outcome discovered so far — grows progressively as
+  /// each stem completes. `succeeded` reflects both that track's dry AND wet
+  /// stem (either failing marks the track failed). A per-track failure does
+  /// not mean the render as a whole failed (partial success); check
   /// [PerformanceRenderTrackStatus.succeeded] per entry.
   List<PerformanceRenderTrackStatus> get renderTrackStatuses =>
       _engine.renderTrackStatuses();
@@ -154,9 +157,10 @@ class PerformanceRepository {
   /// and drain thread are retracted-but-running per its own contract, so
   /// finalizing now would race the still-writing drain thread.
   ///
-  /// Once the bundle is finalized, starts the offline dry-stem render (part
-  /// 7) in the background — this method returns as soon as the bundle itself
-  /// is complete, without waiting on the render; poll [renderProgress] /
+  /// Once the bundle is finalized, starts the offline render (dry stems,
+  /// wet/FX-applied stems, and the reconstructed master bus — parts 7-8) in
+  /// the background — this method returns as soon as the bundle itself is
+  /// complete, without waiting on the render; poll [renderProgress] /
   /// [renderTrackStatuses] for its outcome.
   Future<EngineResult> disarm() async {
     final dir = _armedDir;
@@ -250,8 +254,9 @@ class PerformanceRepository {
   /// session left to stop) and minus a disarm-time snapshot pass (there is no
   /// live engine state left to snapshot). The arm-time snapshot recovers from
   /// its own crash-survival file when present. Also starts the offline
-  /// dry-stem render, same as [disarm] — a salvage render is free (D-RENDER
-  /// reads only from the capture directory, never the live engine).
+  /// render (dry stems, wet stems, master reconstruction), same as [disarm]
+  /// — a salvage render is free (D-RENDER reads only from the capture
+  /// directory, never the live engine).
   Future<void> recoverCapture(String directory) =>
       _finalize(directory, armSnapshot: null, disarmSnapshot: null);
 
@@ -325,11 +330,13 @@ class PerformanceRepository {
     );
     if (armFile.existsSync()) armFile.deleteSync();
 
-    // Kick off the offline dry-stem render (part 7): fire-and-forget — the
-    // worker thread reads only from `dir` on disk from here on, with no
-    // further dependency on this finalize call, so its outcome is exposed
-    // purely via the poll-on-demand `renderProgress`/`renderTrackStatuses`
-    // getters above rather than awaited here. A failure to even START a
+    // Kick off the offline render (dry stems, wet stems, master
+    // reconstruction — parts 7-8, one render session covers all three):
+    // fire-and-forget — the worker thread reads only from `dir` on disk from
+    // here on, with no further dependency on this finalize call, so its
+    // outcome is exposed purely via the poll-on-demand
+    // `renderProgress`/`renderTrackStatuses` getters above rather than
+    // awaited here. A failure to even START a
     // render (e.g. one is already running) is silently accepted — the
     // bundle itself is already complete and valid without its stems, which
     // is exactly the umbrella's partial-success posture applied one level up.
