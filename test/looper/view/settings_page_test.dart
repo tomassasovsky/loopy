@@ -13,6 +13,7 @@ import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -33,6 +34,7 @@ void main() {
   late AudioSetupCubit audioSetup;
   late MidiSetupCubit midiSetup;
   late PedalRepository pedalRepo;
+  late PerformanceRepository performance;
   late ControlCubit control;
   late PedalCubit pedal;
   late RefreshRateCubit refreshRate;
@@ -68,10 +70,16 @@ void main() {
     // The real control cubit: it owns the shared LooperMode whose persisted
     // default the View section edits.
     pedalRepo = PedalRepository(const NoopPedalTransport());
+    performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    addTearDown(performance.dispose);
     control = ControlCubit(
       looper: repository,
       pedal: pedalRepo,
       settings: settings,
+      performance: performance,
     );
     addTearDown(control.close);
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.

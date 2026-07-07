@@ -235,6 +235,12 @@ static void renderRing() {
   }
 }
 
+// Performance-recording armed (D-PEDAL): the mode LED (12) BLINKS red instead
+// of showing its usual transport-activity color, distinct eyes-free from
+// looper-recording's own SOLID red (PEDAL_GLOBAL_RED). Half-period matches
+// the on-screen simulator's `_BlinkingLed` (400 ms) for parity.
+static const unsigned long kBlinkHalfPeriodMs = 400;
+
 static void render() {
   renderRing(); // the loop-position ring, LEDs 0..11
   if (g_haveFrame) {
@@ -245,13 +251,18 @@ static void render() {
     for (uint8_t i = 0; i < 4; i++) {
       g_leds[kTrackLed0 + i] = ledColor(g_frame.track_leds[base + i]);
     }
-    // LED 12 shows transport activity from loopy's global_color: green playing,
-    // red recording, amber overdubbing, blue during a clear fade — and green
-    // when idle (off = not recording). The pedal's Rec/Play mode is no longer
-    // shown here.
-    g_leds[kModeLed] = (g_frame.global_color == PEDAL_GLOBAL_OFF)
-                           ? CRGB::Green
-                           : globalColor(g_frame.global_color);
+    if (g_frame.performance_armed) {
+      const bool blinkOn = (millis() / kBlinkHalfPeriodMs) % 2 == 0;
+      g_leds[kModeLed] = blinkOn ? CRGB::Red : CRGB::Black;
+    } else {
+      // LED 12 shows transport activity from loopy's global_color: green
+      // playing, red recording, amber overdubbing, blue during a clear fade —
+      // and green when idle (off = not recording). The pedal's Rec/Play mode
+      // is no longer shown here.
+      g_leds[kModeLed] = (g_frame.global_color == PEDAL_GLOBAL_OFF)
+                             ? CRGB::Green
+                             : globalColor(g_frame.global_color);
+    }
     g_leds[kClearLed] = g_frame.clear_fade ? CRGB::Red : CRGB::Black;
     g_leds[kBankLed] = (g_frame.active_bank == 1) ? CRGB(0, 0, 80) : CRGB::Black;
   } else {

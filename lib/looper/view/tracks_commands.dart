@@ -61,7 +61,7 @@ class TracksCommands {
   /// (tracks wiped and re-armed, mode back to record, cursor home) — and
   /// announces it.
   void clearAll() {
-    context.read<ControlCubit>().clearAll();
+    unawaited(context.read<ControlCubit>().clearAll());
     _announce(context.l10n.a11yAllCleared);
   }
 

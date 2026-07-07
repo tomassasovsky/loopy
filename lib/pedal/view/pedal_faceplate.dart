@@ -310,7 +310,18 @@ class _TopPlate extends StatelessWidget {
                 footswitch(PedalButton.recPlay, 'REC/PLAY', _pedalU(0), _row1V),
                 footswitch(PedalButton.stop, 'STOP', _pedalU(1), _row1V),
                 footswitch(PedalButton.undo, 'UNDO', _pedalU(2), _row1V),
-                footswitch(PedalButton.mode, 'MODE', _pedalU(3), _row1V),
+                footswitch(
+                  PedalButton.mode,
+                  'MODE',
+                  _pedalU(3),
+                  _row1V,
+                  statusLed: frame.performanceArmed
+                      ? _BlinkingLed(
+                          ledKey: const Key('pedalFaceplate_led_mode'),
+                          color: surface.ledRed,
+                        )
+                      : null,
+                ),
                 ...silkLabels('REC/PLAY', _pedalU(0), _row1V),
                 ...silkLabels('STOP', _pedalU(1), _row1V),
                 ...silkLabels('UNDO', _pedalU(2), _row1V),
@@ -694,6 +705,51 @@ class _Led extends StatelessWidget {
         shape: BoxShape.circle,
         boxShadow: glow ? [BoxShadow(color: color, blurRadius: 6)] : null,
       ),
+    );
+  }
+}
+
+/// A [_Led] that toggles lit/dark on a fixed period — the performance-armed
+/// indication (D-PEDAL): **blinking** [color], distinct eyes-free from any
+/// solid-lit status LED (e.g. the looper's own solid record red).
+class _BlinkingLed extends StatefulWidget {
+  const _BlinkingLed({required this.ledKey, required this.color});
+
+  final Key ledKey;
+  final Color color;
+
+  /// On/off half-period — distinguishable at a glance from a steady light
+  /// without being distracting.
+  static const _period = Duration(milliseconds: 400);
+
+  @override
+  State<_BlinkingLed> createState() => _BlinkingLedState();
+}
+
+class _BlinkingLedState extends State<_BlinkingLed> {
+  Timer? _timer;
+  bool _lit = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(_BlinkingLed._period, (_) {
+      setState(() => _lit = !_lit);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _Led(
+      ledKey: widget.ledKey,
+      color: _lit ? widget.color : Colors.transparent,
+      glow: _lit,
     );
   }
 }

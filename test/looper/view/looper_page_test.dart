@@ -69,6 +69,7 @@ void main() {
                   looper: repository,
                   pedal: PedalRepository(const NoopPedalTransport()),
                   settings: settings,
+                  performance: performanceRepository,
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),

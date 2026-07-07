@@ -7,6 +7,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control_projection.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'control_state.dart';
@@ -33,26 +34,38 @@ part 'control_state.dart';
 /// stale.
 class ControlCubit extends Cubit<ControlState> {
   /// Creates a [ControlCubit] over the shared repositories.
+  ///
+  /// [performance] backs the MODE-footswitch long-press gesture
+  /// (arm/disarm performance recording, D-PEDAL) and the clear-while-armed
+  /// persist-before-clear ordering — composed here rather than routed
+  /// through `PerformanceRecorderCubit`, since cubits never call cubits;
+  /// that cubit observes this repository's own status stream, so it reflects
+  /// a pedal-triggered arm/disarm too.
   ControlCubit({
     required LooperRepository looper,
     required PedalRepository pedal,
     required SettingsRepository settings,
+    required PerformanceRepository performance,
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
+       _performance = performance,
        super(const ControlState()) {
     _looperSub = _looper.looperState.listen(_onLooperState);
     _eventsSub = _pedal.events.listen(_handleEvent);
     _statusSub = _pedal.statusChanges.listen(_onBindStatus);
+    _perfStatusSub = _performance.captureStatus.listen(_onPerformanceStatus);
   }
 
   final LooperRepository _looper;
   final PedalRepository _pedal;
   final SettingsRepository _settings;
+  final PerformanceRepository _performance;
 
   late final StreamSubscription<LooperState> _looperSub;
   late final StreamSubscription<PedalEvent> _eventsSub;
   late final StreamSubscription<PedalBindStatus> _statusSub;
+  late final StreamSubscription<PerformanceCaptureStatus> _perfStatusSub;
 
   // Encoder accumulator: the engine exposes no master-gain read-back, so the
   // control layer tracks the value it last sent (unity until the first turn).
@@ -68,9 +81,24 @@ class ControlCubit extends Cubit<ControlState> {
   bool _undoHandled = false;
   int _undoChannel = 0;
 
+  // MODE press/release timing (tap = toggle Rec/Play mode, long-press =
+  // arm/disarm performance recording, D-PEDAL). No spare footswitch/pin
+  // exists on the physical pedal, so the gesture rides the existing MODE
+  // button rather than a new one — mirrors the undo/redo split above.
+  Timer? _modeTimer;
+  bool _modeArmed = false;
+  bool _modeHandled = false;
+
   // Whether the Clear footswitch is currently held down. Lights the Clear
   // LED (the `clearFadeActive` frame bit) for as long as it is pressed.
   bool _clearHeld = false;
+
+  // Mirrors `PerformanceRepository.captureStatus` so the pedal frame can
+  // render the armed LED without re-deriving it from the raw status stream on
+  // every projection. Independent of `ControlState` (nothing routes through
+  // stored intent), so a status change re-projects directly rather than
+  // through `emit`.
+  bool _performanceArmed = false;
 
   // Latest looper snapshot + diff state for the frame push.
   LooperState? _looperState;
@@ -432,7 +460,15 @@ class ControlCubit extends Cubit<ControlState> {
   /// and the overlay returns home (record mode, cursor 0). Undone-to-empty
   /// tracks must be included — only clear wipes their resurrect path, and the
   /// master grid resets once everything is empty.
-  void clearAll() {
+  ///
+  /// While performance recording is armed (D-CLEAR), awaits
+  /// [PerformanceRepository.persistLiveLanes] first: a track mid-capture is
+  /// skipped by the engine clear below (the audio thread still owns its
+  /// buffer), so its performance-recording bundle would otherwise lose that
+  /// pass entirely rather than the persisted-then-cleared PCM the repository
+  /// itself already knows how to skip.
+  Future<void> clearAll() async {
+    if (_performanceArmed) await _performance.persistLiveLanes();
     for (final track in _tracks) {
       if (!track.hasContent && !track.canRedo) continue;
       _looper
@@ -484,6 +520,7 @@ class ControlCubit extends Cubit<ControlState> {
       case ButtonReleased(:final button):
         if (button == PedalButton.undo) _onUndoRelease();
         if (button == PedalButton.clear) _onClearRelease();
+        if (button == PedalButton.mode) _onModeRelease();
       case EncoderDelta(:final delta):
         _log('encoder $delta');
         encoderTurned(delta);
@@ -503,7 +540,7 @@ class ControlCubit extends Cubit<ControlState> {
       case PedalButton.stop:
         stop();
       case PedalButton.mode:
-        toggleMode();
+        _armMode();
       case PedalButton.bank:
         toggleBankWithCursor();
       case PedalButton.clear:
@@ -519,7 +556,7 @@ class ControlCubit extends Cubit<ControlState> {
   void _onClear() {
     // Light the Clear LED while the footswitch is held (cleared on release).
     _clearHeld = true;
-    clearAll();
+    unawaited(clearAll());
   }
 
   /// Clear footswitch released: darken the Clear LED (the clear itself
@@ -550,6 +587,54 @@ class ControlCubit extends Cubit<ControlState> {
     if (!_undoHandled) {
       _log('undo ch=$_undoChannel  (tap)');
       undo(_undoChannel);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Performance recording (D-PEDAL)
+  // ---------------------------------------------------------------------------
+
+  /// Arms or disarms performance recording, mirroring the toolbar's own
+  /// dispatch (`PerformanceRecorderCubit.toggleArm` calls the same
+  /// repository methods, including the guarded `disarm()` — not
+  /// `disarmAndFinalize()`, which is reserved for `SessionCubit`'s
+  /// unguarded auto-disarm-before-load) — the repository's own double-press
+  /// guard covers a rapid re-press identically here, so it is not
+  /// duplicated in this cubit.
+  void togglePerformanceRecord() {
+    if (_performanceArmed) {
+      unawaited(_performance.disarm());
+    } else {
+      unawaited(_performance.arm());
+    }
+  }
+
+  void _onPerformanceStatus(PerformanceCaptureStatus status) {
+    final armed = status == PerformanceCaptureStatus.armed;
+    if (armed == _performanceArmed) return;
+    _performanceArmed = armed;
+    _pushProjected();
+  }
+
+  void _armMode() {
+    _modeArmed = true;
+    _modeHandled = false;
+    _modeTimer?.cancel();
+    _modeTimer = Timer(_longPress, () {
+      _modeHandled = true; // long-press = arm/disarm performance recording
+      _log('performance record toggled (long-press)');
+      togglePerformanceRecord();
+    });
+  }
+
+  void _onModeRelease() {
+    if (!_modeArmed) return;
+    _modeArmed = false;
+    _modeTimer?.cancel();
+    _modeTimer = null;
+    if (!_modeHandled) {
+      _log('mode toggled (tap)');
+      toggleMode();
     }
   }
 
@@ -600,6 +685,7 @@ class ControlCubit extends Cubit<ControlState> {
       looperState,
       state,
       clearFadeActive: _clearHeld,
+      performanceArmed: _performanceArmed,
     );
     if (frame == _lastFrame) return; // diff: only push on change
     _lastFrame = frame;
@@ -654,9 +740,11 @@ class ControlCubit extends Cubit<ControlState> {
   @override
   Future<void> close() async {
     _undoTimer?.cancel();
+    _modeTimer?.cancel();
     await _looperSub.cancel();
     await _eventsSub.cancel();
     await _statusSub.cancel();
+    await _perfStatusSub.cancel();
     return super.close();
   }
 }
