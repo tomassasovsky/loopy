@@ -72,6 +72,7 @@ typedef struct pedal_frame {
   uint8_t play_mode;  /* 0 = Rec mode, 1 = Play mode */
   uint8_t clear_fade; /* clear-all fade in progress */
   uint8_t goodbye;    /* shutdown frame: darken everything */
+  uint8_t performance_armed; /* D-PEDAL: blink the mode LED red when set */
   uint8_t global_color;
   uint8_t active_bank; /* 0 = A, 1 = B */
   uint8_t armed_track; /* 0..7 */

@@ -53,6 +53,7 @@ class PedalStateFrame extends Equatable {
     required this.loopLengthMicros,
     required this.clearFadeActive,
     this.isGoodbye = false,
+    this.performanceArmed = false,
   }) : assert(
          trackLeds.length == trackCount,
          'a frame must carry exactly $trackCount track LEDs',
@@ -119,6 +120,11 @@ class PedalStateFrame extends Equatable {
   /// darkens when loopy quits while the USB stays powered.
   final bool isGoodbye;
 
+  /// Whether performance-recording is armed (D-PEDAL) — the firmware renders
+  /// this as **blinking** red, distinct from [GlobalColor.red]'s solid red
+  /// (looper recording), so the performer can tell the two apart eyes-free.
+  final bool performanceArmed;
+
   /// Returns a copy with the given fields replaced.
   PedalStateFrame copyWith({
     GlobalColor? globalColor,
@@ -129,6 +135,7 @@ class PedalStateFrame extends Equatable {
     int? loopLengthMicros,
     bool? clearFadeActive,
     bool? isGoodbye,
+    bool? performanceArmed,
   }) {
     return PedalStateFrame(
       globalColor: globalColor ?? this.globalColor,
@@ -139,6 +146,7 @@ class PedalStateFrame extends Equatable {
       loopLengthMicros: loopLengthMicros ?? this.loopLengthMicros,
       clearFadeActive: clearFadeActive ?? this.clearFadeActive,
       isGoodbye: isGoodbye ?? this.isGoodbye,
+      performanceArmed: performanceArmed ?? this.performanceArmed,
     );
   }
 
@@ -152,6 +160,7 @@ class PedalStateFrame extends Equatable {
     loopLengthMicros,
     clearFadeActive,
     isGoodbye,
+    performanceArmed,
   ];
 
   @override
@@ -160,5 +169,6 @@ class PedalStateFrame extends Equatable {
       'tracks: ${trackLeds.map((l) => l.name).join(",")}, '
       'bank: $activeBank, selected: $selectedTrack, '
       'mode: ${mode.name}, loopUs: $loopLengthMicros, '
-      'clearFade: $clearFadeActive, goodbye: $isGoodbye)';
+      'clearFade: $clearFadeActive, goodbye: $isGoodbye, '
+      'performanceArmed: $performanceArmed)';
 }

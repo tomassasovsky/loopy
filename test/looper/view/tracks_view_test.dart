@@ -70,10 +70,15 @@ void main() {
     // reads, and the M key / mode chip / number keys drive it.
     final pedalRepo = PedalRepository(const NoopPedalTransport());
     addTearDown(pedalRepo.dispose);
+    performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
     control = ControlCubit(
       looper: repository,
       pedal: pedalRepo,
       settings: settings,
+      performance: performance,
     );
     addTearDown(control.close);
     session = _MockSessionCubit();
@@ -83,10 +88,6 @@ void main() {
     when(() => session.saveAs(any())).thenAnswer((_) async {});
     when(() => session.exportMixdown()).thenAnswer((_) async {});
     when(() => session.exportStems()).thenAnswer((_) async {});
-    performance = PerformanceRepository(
-      engine: FakeAudioEngine(),
-      exportsRoot: () async => '.',
-    );
     performanceRecorder = _MockPerformanceRecorderCubit();
     when(
       () => performanceRecorder.state,

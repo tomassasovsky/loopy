@@ -25,7 +25,8 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 ///
 /// | byte  | meaning                                                  |
 /// |-------|----------------------------------------------------------|
-/// | 0     | flags: bit0 mode, bit1 clearFadeActive, bit2 goodbye     |
+/// | 0     | flags: bit0 mode, bit1 clearFadeActive, bit2 goodbye,    |
+/// |       | bit3 performanceArmed                                    |
 /// | 1     | [GlobalColor] index                                      |
 /// | 2     | active bank (0 = A, 1 = B)                               |
 /// | 3     | armed track (0..7)                                       |
@@ -73,7 +74,8 @@ abstract final class PedalCodec {
     payload[0] =
         (frame.mode == PedalMode.play ? 0x01 : 0) |
         (frame.clearFadeActive ? 0x02 : 0) |
-        (frame.isGoodbye ? 0x04 : 0);
+        (frame.isGoodbye ? 0x04 : 0) |
+        (frame.performanceArmed ? 0x08 : 0);
     payload[1] = frame.globalColor.index;
     payload[2] = frame.activeBank;
     payload[3] = frame.selectedTrack;
@@ -168,6 +170,7 @@ abstract final class PedalCodec {
       mode: (flags & 0x01 != 0) ? PedalMode.play : PedalMode.rec,
       clearFadeActive: flags & 0x02 != 0,
       isGoodbye: flags & 0x04 != 0,
+      performanceArmed: flags & 0x08 != 0,
       loopLengthMicros: loopLengthMicros,
     );
   }

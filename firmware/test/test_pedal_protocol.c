@@ -75,8 +75,8 @@ static int decode_fixture(const char* name, pedal_frame* out) {
 static void test_golden_round_trip(void) {
   printf("test_golden_round_trip\n");
   static const char* kNames[] = {
-      "blank_goodbye", "idle_rec", "recording_track1", "playing_bankb",
-      "clear_fade",
+      "blank_goodbye",    "idle_rec",  "recording_track1",
+      "playing_bankb",    "clear_fade", "performance_armed",
   };
   pedal_frame frame;
   for (size_t i = 0; i < sizeof(kNames) / sizeof(kNames[0]); i++) {
@@ -134,6 +134,30 @@ static void test_goodbye_flag(void) {
   CHECK(f.goodbye == 1);
   CHECK(f.global_color == PEDAL_GLOBAL_OFF);
   for (int i = 0; i < 8; i++) CHECK(f.track_leds[i] == PEDAL_LED_OFF);
+}
+
+/* D-PEDAL: the performance-armed flag (flags bit3) round-trips independent
+ * of the other flag bits, and a pre-D-PEDAL frame (bit3 never set) still
+ * decodes cleanly with performance_armed == 0 (old-firmware back-compat —
+ * every existing fixture predates this flag). */
+static void test_performance_armed_flag(void) {
+  printf("test_performance_armed_flag\n");
+  pedal_frame f;
+  if (!decode_fixture("performance_armed", &f)) return;
+  CHECK(f.performance_armed == 1);
+  CHECK(f.global_color == PEDAL_GLOBAL_GREEN);
+  CHECK(f.track_leds[0] == PEDAL_LED_RED);
+
+  static const char* kOldStyle[] = {
+      "blank_goodbye", "idle_rec", "recording_track1", "playing_bankb",
+      "clear_fade",
+  };
+  for (size_t i = 0; i < sizeof(kOldStyle) / sizeof(kOldStyle[0]); i++) {
+    pedal_frame old;
+    if (decode_fixture(kOldStyle[i], &old)) {
+      CHECK(old.performance_armed == 0);
+    }
+  }
 }
 
 static void test_malformed_frames_are_rejected(void) {
@@ -203,6 +227,7 @@ int main(int argc, char** argv) {
   test_decode_fields_playing_bankb();
   test_decode_fields_clear_fade();
   test_goodbye_flag();
+  test_performance_armed_flag();
   test_malformed_frames_are_rejected();
   test_identity_request();
   test_button_and_encoder_encode();

@@ -144,3 +144,29 @@ LEDs · loop length µs) is 7-bit packed and XOR-checksummed. Loop-top is the
 single real-time byte `0xFA`. Footswitches send a fixed Note (NoteOn press /
 NoteOff release); the encoder sends relative CC `0x10`. See `pedal_protocol.h`
 and loopy's `PedalCodec` for the authoritative field table.
+
+## D-PEDAL addendum: performance-recording arm/disarm
+
+Adds a **flags bit only** — no new footswitch pin, no new Note, no pin-map
+change. The physical pedal has no spare footswitch slot, so the gesture rides
+the existing **MODE** button (`D6`, note `3`) instead:
+
+- **Tap MODE** — toggles Rec/Play mode (unchanged).
+- **Hold MODE ≥ 500 ms** — arms/disarms performance recording. loopy times the
+  hold itself from the same press/release Notes the firmware already sends
+  (identical to how UNDO's tap-vs-long-press-for-redo already works); the
+  firmware does not need to distinguish tap from hold.
+
+The one wire change is **payload byte 0, bit 3** (`performance_armed`),
+alongside the existing bit0 (mode) / bit1 (clear fade) / bit2 (goodbye). When
+set, **LED 12** (the mode/global-activity LED) blinks red instead of showing
+its usual transport-activity color — deliberately distinct from
+`PEDAL_GLOBAL_RED`'s **solid** red (looper recording), so the performer can
+tell "armed" from "recording" eyes-free. Blink half-period is 400 ms,
+matching the on-screen simulator.
+
+**Back-compat:** a pedal still running pre-D-PEDAL firmware never sets bit3,
+which decodes as `performance_armed = 0` — loopy just never shows the pedal as
+armed; nothing else in the frame changes shape. Conversely, new firmware
+talking to an old app build is unaffected too, since bit3 was previously
+always `0` and simply carried no meaning.

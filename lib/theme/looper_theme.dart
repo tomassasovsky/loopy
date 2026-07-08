@@ -107,6 +107,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.recordMeterColors,
     required this.playMeterColors,
     required this.indicatorColors,
+    required this.toolbarIconColor,
   });
 
   /// Background of a track tile.
@@ -133,6 +134,11 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Per-track status-indicator colors by [TrackIndicator].
   final Map<TrackIndicator, Color> indicatorColors;
 
+  /// Icon color for the toolbar's unarmed/neutral icon buttons (Play/Stop
+  /// All, Clear All, Fullscreen, Signal, Settings, Session, and the
+  /// unarmed performance-record button).
+  final Color toolbarIconColor;
+
   /// The meter color for [state] in the current mode ([mode] selects the
   /// play or record table). Transparent if the table omits it.
   Color meterColor(LooperMeterState state, {required LooperMode mode}) =>
@@ -157,6 +163,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Map<LooperMeterState, Color>? recordMeterColors,
     Map<LooperMeterState, Color>? playMeterColors,
     Map<TrackIndicator, Color>? indicatorColors,
+    Color? toolbarIconColor,
   }) => LooperTheme(
     tileBackground: tileBackground ?? this.tileBackground,
     tileBorder: tileBorder ?? this.tileBorder,
@@ -166,6 +173,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     recordMeterColors: recordMeterColors ?? this.recordMeterColors,
     playMeterColors: playMeterColors ?? this.playMeterColors,
     indicatorColors: indicatorColors ?? this.indicatorColors,
+    toolbarIconColor: toolbarIconColor ?? this.toolbarIconColor,
   );
 
   static Map<K, Color> _lerpColorMap<K>(
@@ -205,6 +213,9 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
         other.indicatorColors,
         t,
       ),
+      toolbarIconColor:
+          Color.lerp(toolbarIconColor, other.toolbarIconColor, t) ??
+          toolbarIconColor,
     );
   }
 }

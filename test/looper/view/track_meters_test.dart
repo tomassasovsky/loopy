@@ -10,6 +10,7 @@ import 'package:loopy/looper/view/track_meters.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -35,10 +36,16 @@ void main() {
     // The row reads the mode / cursor / bank from the shared control cubit.
     final pedalRepo = PedalRepository(const NoopPedalTransport());
     addTearDown(pedalRepo.dispose);
+    final performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    addTearDown(performance.dispose);
     control = ControlCubit(
       looper: looper,
       pedal: pedalRepo,
       settings: settings,
+      performance: performance,
     );
     addTearDown(control.close);
   });

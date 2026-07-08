@@ -27,6 +27,7 @@ void main() {
       expect(blank.loopLengthMicros, 0);
       expect(blank.clearFadeActive, isFalse);
       expect(blank.isGoodbye, isFalse);
+      expect(blank.performanceArmed, isFalse);
     });
 
     test('sets isGoodbye when requested', () {
@@ -44,11 +45,16 @@ void main() {
       expect(sample(), isNot(sample().copyWith(selectedTrack: 5)));
     });
 
+    test('frames differ when only performanceArmed differs', () {
+      expect(sample(), isNot(sample().copyWith(performanceArmed: true)));
+    });
+
     test('toString surfaces the salient fields', () {
       final text = sample().toString();
       expect(text, contains('amber'));
       expect(text, contains('bank: 1'));
       expect(text, contains('selected: 4'));
+      expect(text, contains('performanceArmed: false'));
     });
   });
 
@@ -62,6 +68,7 @@ void main() {
         loopLengthMicros: 50,
         clearFadeActive: false,
         isGoodbye: true,
+        performanceArmed: true,
         trackLeds: List<PedalTrackLed>.filled(
           PedalStateFrame.trackCount,
           PedalTrackLed.red,
@@ -74,6 +81,7 @@ void main() {
       expect(updated.loopLengthMicros, 50);
       expect(updated.clearFadeActive, isFalse);
       expect(updated.isGoodbye, isTrue);
+      expect(updated.performanceArmed, isTrue);
       expect(updated.trackLeds, everyElement(PedalTrackLed.red));
     });
 
