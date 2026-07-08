@@ -146,4 +146,24 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_vst3_delay_wrapper_tests.exe"
   "$OUT/loopy_vst3_delay_wrapper_tests.exe"
+
+  # Same two test layers as Delay (part 2), repeated for "Loopy Reverb"
+  # (part 3) — GUID-drift regression test first, then wrapper-level tests
+  # (including the mono-input stereo-tail check the part 3 plan calls out).
+  echo "== building vst3 reverb GUID-drift test =="
+  $CXX -std=c++17 -Ithird_party/vst3sdk -Ivst3/reverb \
+    vst3/reverb/test_vst3_reverb_ids.cpp \
+    -o "$OUT/loopy_vst3_reverb_ids_tests.exe"
+  "$OUT/loopy_vst3_reverb_ids_tests.exe"
+
+  echo "== building vst3 reverb wrapper tests =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio -Ivst3/reverb \
+    vst3/reverb/test_vst3_reverb_wrapper.cpp \
+    vst3/reverb/processor.cpp vst3/reverb/controller.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_reverb_wrapper_tests.exe"
+  "$OUT/loopy_vst3_reverb_wrapper_tests.exe"
 fi
