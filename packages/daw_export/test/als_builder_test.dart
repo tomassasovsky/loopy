@@ -305,5 +305,225 @@ void main() {
       expect(xml, contains('<MainTrack>'));
       expect(RegExp('<AudioTrack').allMatches(xml), isEmpty);
     });
+
+    test(
+      'a volume automation lane emits FloatEvents whose EnvelopeTarget '
+      'PointeeId matches the track mixer Volume AutomationTarget id',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/wet/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              automationLanes: [
+                AutomationLane(
+                  target: AutomationTarget.volume,
+                  breakpoints: [
+                    AutomationBreakpoint(beat: 0, value: 0.5),
+                    AutomationBreakpoint(beat: 4, value: 0.9),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final xml = _decompress(buildAls(project));
+        expect(xml, contains('<Volume>'));
+        final volumeTargetId = int.parse(
+          RegExp(
+            r'<Volume>.*?<AutomationTarget Id="(\d+)">',
+            dotAll: true,
+          ).firstMatch(xml)!.group(1)!,
+        );
+        // The specific pair, not just "some pointee id somewhere" —
+        // extracts the PointeeId of the one envelope that actually contains
+        // a FloatEvent and asserts it equals Volume's own AutomationTarget
+        // id exactly, the same rigor as the tempo envelope's own test.
+        final floatEnvelopePointeeId = int.parse(
+          RegExp(
+            r'<PointeeId Value="(\d+)"/>\s*</EnvelopeTarget>\s*<Automation>'
+            r'\s*<Events>\s*<FloatEvent',
+          ).firstMatch(xml)!.group(1)!,
+        );
+        expect(floatEnvelopePointeeId, volumeTargetId);
+
+        final floatEvents = RegExp(
+          r'<FloatEvent Time="([\d.]+)" Value="([\d.]+)"/>',
+        ).allMatches(xml).toList();
+        expect(floatEvents, hasLength(2));
+        expect(double.parse(floatEvents[0].group(1)!), 0.0);
+        expect(double.parse(floatEvents[0].group(2)!), 0.5);
+        expect(double.parse(floatEvents[1].group(1)!), 4.0);
+        expect(double.parse(floatEvents[1].group(2)!), 0.9);
+      },
+    );
+
+    test(
+      'an activator (mute) automation lane emits step-shaped BoolEvents, '
+      'never interpolated FloatEvents, at the exact logged beats',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/wet/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              automationLanes: [
+                AutomationLane(
+                  target: AutomationTarget.activator,
+                  breakpoints: [
+                    AutomationBreakpoint(beat: 0, value: 1),
+                    AutomationBreakpoint(beat: 2, value: 0),
+                    AutomationBreakpoint(beat: 3, value: 1),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final xml = _decompress(buildAls(project));
+        expect(xml, contains('<TrackActivator>'));
+        final activatorTargetId = int.parse(
+          RegExp(
+            r'<TrackActivator>.*?<AutomationTarget Id="(\d+)">',
+            dotAll: true,
+          ).firstMatch(xml)!.group(1)!,
+        );
+        // The specific pair, not just "some pointee id somewhere" — same
+        // rigor as the volume test and the baseline tempo test above.
+        final boolEnvelopePointeeId = int.parse(
+          RegExp(
+            r'<PointeeId Value="(\d+)"/>\s*</EnvelopeTarget>\s*<Automation>'
+            r'\s*<Events>\s*<BoolEvent',
+          ).firstMatch(xml)!.group(1)!,
+        );
+        expect(boolEnvelopePointeeId, activatorTargetId);
+
+        final boolEvents = RegExp(
+          r'<BoolEvent Time="([\d.]+)" Value="(true|false)"/>',
+        ).allMatches(xml).toList();
+        expect(boolEvents, hasLength(3));
+        expect(boolEvents[0].group(1), '0.0');
+        expect(boolEvents[0].group(2), 'true');
+        expect(boolEvents[1].group(1), '2.0');
+        expect(boolEvents[1].group(2), 'false');
+        expect(boolEvents[2].group(1), '3.0');
+        expect(boolEvents[2].group(2), 'true');
+      },
+    );
+
+    test(
+      'a track with both a volume and an activator lane gets two distinct '
+      'AutomationTarget ids and two distinct envelopes, both consistent',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/wet/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              automationLanes: [
+                AutomationLane(
+                  target: AutomationTarget.volume,
+                  breakpoints: [
+                    AutomationBreakpoint(beat: 0, value: 0.5),
+                    AutomationBreakpoint(beat: 4, value: 0.9),
+                  ],
+                ),
+                AutomationLane(
+                  target: AutomationTarget.activator,
+                  breakpoints: [
+                    AutomationBreakpoint(beat: 0, value: 1),
+                    AutomationBreakpoint(beat: 2, value: 0),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final xml = _decompress(buildAls(project));
+        expect(RegExp('<FloatEvent').allMatches(xml), isNotEmpty);
+        expect(RegExp('<BoolEvent').allMatches(xml), isNotEmpty);
+        expect(
+          RegExp(r'<AutomationEnvelope Id="\d+">').allMatches(xml).length,
+          3,
+        ); // tempo + volume + activator
+        // No two Ids collide anywhere, including the two new automation
+        // targets and their envelopes.
+        final idList = RegExp(
+          r'Id="(\d+)"',
+        ).allMatches(xml).map((m) => int.parse(m.group(1)!)).toList();
+        expect(idList.toSet().length, idList.length);
+      },
+    );
+
+    test(
+      'a track with two automation lanes for the same target throws, '
+      'rather than silently picking one',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              automationLanes: [
+                AutomationLane(
+                  target: AutomationTarget.volume,
+                  breakpoints: [AutomationBreakpoint(beat: 0, value: 0.5)],
+                ),
+                AutomationLane(
+                  target: AutomationTarget.volume,
+                  breakpoints: [AutomationBreakpoint(beat: 0, value: 0.9)],
+                ),
+              ],
+            ),
+          ],
+        );
+
+        expect(() => buildAls(project), throwsArgumentError);
+      },
+    );
+
+    test(
+      'a track with no automation lanes emits no per-track '
+      'Volume/TrackActivator mixer entries (the MainTrack still has its '
+      'own Mixer/Tempo, which this must not be confused with)',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/wet/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+            ),
+          ],
+        );
+        final xml = _decompress(buildAls(project));
+        // The MainTrack's own Mixer/Tempo is always present.
+        expect(xml, contains('<Mixer>'));
+        expect(xml, isNot(contains('<Volume>')));
+        expect(xml, isNot(contains('<TrackActivator>')));
+        // Only the tempo envelope exists — no per-track automation envelope.
+        expect(
+          RegExp(r'<AutomationEnvelope Id="\d+">').allMatches(xml),
+          hasLength(1),
+        );
+      },
+    );
   });
 }

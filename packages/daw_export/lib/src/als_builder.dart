@@ -99,13 +99,45 @@ void _writeAudioTrack(
   _IdAllocator allocator,
 ) {
   final trackId = allocator.next();
+  final volumeLane = _laneFor(track, AutomationTarget.volume);
+  final activatorLane = _laneFor(track, AutomationTarget.activator);
+
   buffer
     ..writeln('<AudioTrack Id="$trackId">')
     ..writeln('<Name>')
     ..writeln('<EffectiveName Value="${_xmlEscape(track.name)}"/>')
     ..writeln('<UserName Value="${_xmlEscape(track.name)}"/>')
     ..writeln('</Name>')
-    ..writeln('<DeviceChain>')
+    ..writeln('<DeviceChain>');
+
+  int? volumeTargetId;
+  int? activatorTargetId;
+  if (volumeLane != null || activatorLane != null) {
+    buffer.writeln('<Mixer>');
+    if (volumeLane != null) {
+      volumeTargetId = allocator.next();
+      buffer.writeln('''
+<Volume>
+<Manual Value="1.0"/>
+<AutomationTarget Id="$volumeTargetId">
+<LockEnvelope Value="0"/>
+</AutomationTarget>
+</Volume>''');
+    }
+    if (activatorLane != null) {
+      activatorTargetId = allocator.next();
+      buffer.writeln('''
+<TrackActivator>
+<Manual Value="true"/>
+<AutomationTarget Id="$activatorTargetId">
+<LockEnvelope Value="0"/>
+</AutomationTarget>
+</TrackActivator>''');
+    }
+    buffer.writeln('</Mixer>');
+  }
+
+  buffer
     ..writeln('<MainSequencer>')
     ..writeln('<ClipSlotList>');
 
@@ -155,8 +187,96 @@ void _writeAudioTrack(
     ..writeln('</Events>')
     ..writeln('</Arranger>')
     ..writeln('</MainSequencer>')
-    ..writeln('</DeviceChain>')
-    ..writeln('</AudioTrack>');
+    ..writeln('</DeviceChain>');
+
+  if (volumeLane != null || activatorLane != null) {
+    buffer
+      ..writeln('<AutomationEnvelopes>')
+      ..writeln('<Envelopes>');
+    if (volumeLane != null) {
+      buffer.writeln(
+        _floatEnvelope(allocator.next(), volumeTargetId!, volumeLane),
+      );
+    }
+    if (activatorLane != null) {
+      buffer.writeln(
+        _boolEnvelope(allocator.next(), activatorTargetId!, activatorLane),
+      );
+    }
+    buffer
+      ..writeln('</Envelopes>')
+      ..writeln('</AutomationEnvelopes>');
+  }
+
+  buffer.writeln('</AudioTrack>');
+}
+
+/// Finds [track]'s automation lane for [target], or `null` if it has none.
+/// Enforces the "at most one lane per target" invariant [DawTrack.
+/// automationLanes] documents rather than silently picking one of several —
+/// a caller that violates it gets a loud [ArgumentError], not a
+/// hard-to-notice dropped envelope.
+AutomationLane? _laneFor(DawTrack track, AutomationTarget target) {
+  final matches = track.automationLanes
+      .where((l) => l.target == target)
+      .toList();
+  if (matches.length > 1) {
+    throw ArgumentError.value(
+      track.name,
+      'track',
+      'has ${matches.length} automation lanes for $target — at most one is '
+          'allowed per track per target',
+    );
+  }
+  return matches.isEmpty ? null : matches.single;
+}
+
+/// A continuous (ramp-interpolated) automation envelope — used for
+/// [AutomationTarget.volume]. Every breakpoint becomes a `FloatEvent`;
+/// Ableton linearly interpolates between consecutive `FloatEvent`s by
+/// default, matching [AutomationLane]'s own documented continuous-ramp
+/// semantics.
+String _floatEnvelope(int envelopeId, int pointeeId, AutomationLane lane) {
+  final events = lane.breakpoints
+      .map((b) => '<FloatEvent Time="${b.beat}" Value="${b.value}"/>')
+      .join();
+  return '''
+<AutomationEnvelope Id="$envelopeId">
+<EnvelopeTarget>
+<PointeeId Value="$pointeeId"/>
+</EnvelopeTarget>
+<Automation>
+<Events>
+$events
+</Events>
+</Automation>
+</AutomationEnvelope>''';
+}
+
+/// A step-shaped automation envelope — used for [AutomationTarget.activator]
+/// (D-MUTE). Every breakpoint becomes a `BoolEvent`, which Ableton holds at
+/// its value until the next event rather than interpolating — the correct
+/// semantics for a mute toggle, which is a discrete state change, not a
+/// ramp.
+String _boolEnvelope(int envelopeId, int pointeeId, AutomationLane lane) {
+  final events = lane.breakpoints
+      .map(
+        (b) =>
+            '<BoolEvent Time="${b.beat}" '
+            'Value="${b.value != 0.0}"/>',
+      )
+      .join();
+  return '''
+<AutomationEnvelope Id="$envelopeId">
+<EnvelopeTarget>
+<PointeeId Value="$pointeeId"/>
+</EnvelopeTarget>
+<Automation>
+<Events>
+$events
+</Events>
+</Automation>
+</AutomationEnvelope>''';
 }
 
 String _audioClip({
