@@ -1062,6 +1062,21 @@ LE_EXPORT uint64_t le_engine_monitor_fx_fingerprint(le_engine* engine,
 LE_EXPORT int32_t le_engine_export_track(le_engine* engine, int32_t channel,
                                          float* out, int32_t max_frames);
 
+/* Copies up to `max_frames` frames of track `channel`'s lane `lane` mono loop
+ * into `out`; returns the number of frames written (the lane's length,
+ * clamped to `max_frames`), 0 for a valid-but-empty lane, or LE_ERR_INVALID
+ * for an out-of-range channel/lane or a non-positive `max_frames`. On a
+ * successful (valid-argument) call this is byte-identical to
+ * le_engine_export_track (which is equivalent to lane 0 and untouched by
+ * this addition) — call when the track is not capturing. The two functions
+ * intentionally diverge on invalid-argument return codes: this one
+ * distinguishes LE_ERR_INVALID from 0 because it has a `lane` argument to
+ * validate separately; le_engine_export_track has no such argument and
+ * returns 0 uniformly for any bad input. */
+LE_EXPORT int32_t le_engine_export_track_lane(le_engine* engine,
+                                              int32_t channel, int32_t lane,
+                                              float* out, int32_t max_frames);
+
 /* Loads `frames` mono frames of PCM into track `channel`'s buffer and records
  * the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
  * tail is zeroed. The track starts playing on le_engine_commit_session. Returns

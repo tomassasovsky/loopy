@@ -5550,6 +5550,73 @@ static void test_session_export_import_roundtrip(void) {
   le_engine_destroy(e);
 }
 
+/* le_engine_export_track_lane exports any lane, not just lane 0 — asserted
+ * against a two-lane track recording two distinct inputs, so each lane's
+ * export is independently verifiable. le_engine_export_track (lane 0) stays
+ * byte-identical: same settled-buffer memcpy, same return value. */
+static void test_export_track_lane_multi_lane(void) {
+  printf("test_export_track_lane_multi_lane\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000);
+  le_engine_set_lane_count(e, 0, 2);
+  le_engine_set_lane_input(e, 0, 0, 0); /* lane 0 records input 0 */
+  le_engine_set_lane_input(e, 0, 1, 1); /* lane 1 records input 1 */
+  drain(e);
+
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f;
+    in[i * 2 + 1] = 2.0f;
+  }
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  float lane0[64];
+  float lane1[64];
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 64) == LOOP_N);
+  CHECK(le_engine_export_track_lane(e, 0, 1, lane1, 64) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(lane0[i] - 1.0f) < 1e-6f);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(lane1[i] - 2.0f) < 1e-6f);
+
+  /* le_engine_export_track (the existing lane-0-only entry point) is
+   * byte-identical to exporting lane 0 explicitly. */
+  float legacy[64];
+  CHECK(le_engine_export_track(e, 0, legacy, 64) == LOOP_N);
+  CHECK(memcmp(legacy, lane0, (size_t)LOOP_N * sizeof(float)) == 0);
+
+  /* max_frames clamps identically to the lane-0 entry point. */
+  float clamped[2];
+  CHECK(le_engine_export_track_lane(e, 0, 0, clamped, 2) == 2);
+
+  /* A valid but never-recorded-into lane (track 1's lane 0, allocated but
+   * empty) returns 0 frames, not an error. */
+  float empty[64];
+  CHECK(le_engine_export_track_lane(e, 1, 0, empty, 64) == 0);
+
+  /* A lane index that's in-range (< LE_MAX_LANES) but was never allocated at
+   * all — track 0's lane_count is 2, so lane 2 is a distinct branch from the
+   * "allocated but a_len == 0" case above: pool[live] itself is NULL. */
+  CHECK(le_engine_export_track_lane(e, 0, 2, empty, 64) == 0);
+
+  /* Invalid channel/lane -> LE_ERR_INVALID, distinct from the 0-frames case
+   * above (le_engine_export_track's lane-0-only sibling has no such
+   * distinction to make, since it has no `lane` argument to validate). */
+  CHECK(le_engine_export_track_lane(e, -1, 0, lane0, 64) == LE_ERR_INVALID);
+  CHECK(le_engine_export_track_lane(e, e->track_count, 0, lane0, 64) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_export_track_lane(e, 0, -1, lane0, 64) == LE_ERR_INVALID);
+  CHECK(le_engine_export_track_lane(e, 0, LE_MAX_LANES, lane0, 64) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_export_track_lane(e, 0, 0, NULL, 64) == LE_ERR_INVALID);
+  CHECK(le_engine_export_track_lane(NULL, 0, 0, lane0, 64) == LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
 /* ---- multi-lane tracks ---- */
 
 /* Configures a 2-in/2-out engine, gives track 0 two lanes recording inputs 0
@@ -6917,6 +6984,7 @@ int main(void) {
   test_multi_lane_quantize_overdub_arm();
   test_multi_lane_loop_multiple();
   test_session_export_import_roundtrip();
+  test_export_track_lane_multi_lane();
   test_target_multiple_forces_length();
   test_default_multiple_applies_to_inheriting_tracks();
   test_fixed_multiple_auto_finalizes();

@@ -375,6 +375,12 @@ abstract interface class SessionIo {
   /// capturing.
   Float32List exportTrack(int channel);
 
+  /// Copies track [channel]'s lane [lane] recorded mono loop PCM out for
+  /// session export, or an empty list for an empty lane or an out-of-range
+  /// [channel]/[lane]. Equivalent to [exportTrack] for `lane == 0`, but reads
+  /// any lane — read-only, call when not capturing.
+  Float32List exportTrackLane(int channel, int lane);
+
   /// Loads mono [pcm] into the EMPTY track [channel] for a session restore.
   /// Pair with [commitSession] to establish the master and play. Returns
   /// [EngineResult.invalid] if the track is not empty.
