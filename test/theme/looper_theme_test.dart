@@ -43,6 +43,7 @@ void main() {
         TrackIndicator.play: Color(0xFF4CDA4A),
         TrackIndicator.record: Color(0xFFFF1744),
       },
+      toolbarIconColor: Color(0xFFB0B3BC),
     );
 
     test('meterColor picks the table for the current mode', () {
@@ -97,6 +98,7 @@ void main() {
         recordMeterColors: {},
         playMeterColors: {},
         indicatorColors: {},
+        toolbarIconColor: Color(0xFFB0B3BC),
       );
       expect(sparse.indicatorColor(TrackIndicator.play), Colors.transparent);
     });
