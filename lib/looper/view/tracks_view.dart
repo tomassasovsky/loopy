@@ -10,6 +10,7 @@ import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/track_column.dart';
 import 'package:loopy/looper/view/tracks_chrome.dart';
 import 'package:loopy/looper/view/tracks_commands.dart';
+import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 
@@ -60,17 +61,34 @@ class _TracksViewState extends State<TracksView> {
     // anywhere or pressing `S` (and from the macOS menu bar). Kept chromeless
     // and minimal otherwise.
     return LooperScreenTheme(
-      child: BlocListener<SessionCubit, SessionState>(
-        // React to a settled action — a save/load/export that finished or
-        // failed — never the transient `working` tick; plus the save-with-no-
-        // session signal that asks the UI to open Save-As.
-        listenWhen: (previous, current) =>
-            (current.status != previous.status &&
-                (current.status == SessionStatus.success ||
-                    current.status == SessionStatus.failure)) ||
-            (current.outcome == SessionOutcome.saveAsRequested &&
-                previous.outcome != SessionOutcome.saveAsRequested),
-        listener: onSessionState,
+      child: MultiBlocListener(
+        listeners: [
+          BlocListener<SessionCubit, SessionState>(
+            // React to a settled action — a save/load/export that finished or
+            // failed — never the transient `working` tick; plus the
+            // save-with-no-session signal that asks the UI to open Save-As.
+            listenWhen: (previous, current) =>
+                (current.status != previous.status &&
+                    (current.status == SessionStatus.success ||
+                        current.status == SessionStatus.failure)) ||
+                (current.outcome == SessionOutcome.saveAsRequested &&
+                    previous.outcome != SessionOutcome.saveAsRequested),
+            listener: onSessionState,
+          ),
+          BlocListener<PerformanceRecorderCubit, PerformanceRecorderState>(
+            // Fire once on entering `Completed` (a rename afterwards re-emits
+            // `Completed` with a different result, which must not reopen the
+            // sheet) and once on the boot-recovery prompt appearing.
+            listenWhen: (previous, current) =>
+                (current is PerformanceRecorderCompleted &&
+                    previous is! PerformanceRecorderCompleted) ||
+                (current is PerformanceRecorderIdle &&
+                    current.recoveryDirectory != null &&
+                    !(previous is PerformanceRecorderIdle &&
+                        previous.recoveryDirectory != null)),
+            listener: onPerformanceRecorderState,
+          ),
+        ],
         child: Focus(
           autofocus: true,
           onKeyEvent: commands.handleKey,

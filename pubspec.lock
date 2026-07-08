@@ -168,6 +168,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.8"
+  daw_export:
+    dependency: "direct main"
+    description:
+      path: "packages/daw_export"
+      relative: true
+    source: path
+    version: "0.1.0"
   desktop_multi_window:
     dependency: "direct main"
     description:
@@ -586,6 +593,13 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/pedal_repository"
+      relative: true
+    source: path
+    version: "0.1.0"
+  performance_repository:
+    dependency: "direct main"
+    description:
+      path: "packages/performance_repository"
       relative: true
     source: path
     version: "0.1.0"

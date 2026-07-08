@@ -6,8 +6,10 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
+import 'package:loopy/performance/performance.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -26,6 +28,10 @@ void main() {
       );
       final controllerRepository = ControllerRepository(sources: const []);
       final sessionRepository = SessionRepository(engine: FakeAudioEngine());
+      final performanceRepository = PerformanceRepository(
+        engine: FakeAudioEngine(),
+        exportsRoot: () async => '.',
+      );
       final settings = SettingsRepository(store: FakeKeyValueStore());
       // The looper page renders the pedal faceplate, whose gate reads a
       // PedalCubit; unbound (no on-screen pedal) it shows the TracksView.
@@ -46,6 +52,7 @@ void main() {
             RepositoryProvider.value(value: repository),
             RepositoryProvider.value(value: controllerRepository),
             RepositoryProvider.value(value: sessionRepository),
+            RepositoryProvider.value(value: performanceRepository),
             RepositoryProvider.value(value: settings),
             RepositoryProvider<SimulatorPedalTransport>.value(value: sim),
           ],
@@ -65,6 +72,11 @@ void main() {
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
+              BlocProvider<PerformanceRecorderCubit>(
+                create: (_) => PerformanceRecorderCubit(
+                  performance: performanceRepository,
+                ),
+              ),
             ],
             child: LooperPage(exportDirectory: () async => '.'),
           ),

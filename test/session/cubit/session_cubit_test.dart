@@ -5,11 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/session/session.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 
 class _MockSessionRepository extends Mock implements SessionRepository {}
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+class _MockPerformanceRepository extends Mock
+    implements PerformanceRepository {}
 
 const _session = Session(
   sampleRate: 48000,
@@ -21,6 +25,7 @@ const _session = Session(
 void main() {
   late SessionRepository repository;
   late LooperRepository looper;
+  late PerformanceRepository performance;
 
   setUpAll(() {
     registerFallbackValue(const SessionRig());
@@ -30,15 +35,22 @@ void main() {
   setUp(() {
     repository = _MockSessionRepository();
     looper = _MockLooperRepository();
+    performance = _MockPerformanceRepository();
     // Default chain getters so the save path's _captureChains() has something
     // to read; individual tests override as needed.
     when(looper.allLaneEffects).thenReturn(const {});
     when(looper.allMonitorEffects).thenReturn(const {});
+    // loadNamed's auto-disarm-before-load orchestration; a no-op success by
+    // default since nothing is armed in these tests.
+    when(
+      performance.disarmAndFinalize,
+    ).thenAnswer((_) async => EngineResult.ok);
   });
 
   SessionCubit build() => SessionCubit(
     repository: repository,
     looper: looper,
+    performance: performance,
     exportDirectory: () async => '/tmp/x',
   );
 
@@ -253,6 +265,28 @@ void main() {
       verify: (_) {
         verify(() => repository.read('/root/A')).called(1);
         verify(() => looper.applySession(any())).called(1);
+        verify(performance.disarmAndFinalize).called(1);
+      },
+    );
+
+    blocTest<SessionCubit, SessionState>(
+      'loadNamed auto-disarms and finalizes before reading the bundle '
+      '(D-ORCHESTRATE)',
+      setUp: () {
+        stubCatalog();
+        when(() => repository.read(any())).thenAnswer(
+          (_) async => (session: _session, stems: <int, Float32List>{}),
+        );
+        when(() => looper.applySession(any())).thenAnswer((_) async {});
+      },
+      build: build,
+      act: (cubit) => cubit.loadNamed('A'),
+      verify: (_) {
+        verifyInOrder([
+          performance.disarmAndFinalize,
+          () => repository.read(any()),
+          () => looper.applySession(any()),
+        ]);
       },
     );
 

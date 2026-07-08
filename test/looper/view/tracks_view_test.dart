@@ -10,10 +10,12 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 import 'package:settings_repository/settings_repository.dart';
 
@@ -27,6 +29,9 @@ class _MockLooperRepository extends Mock implements LooperRepository {}
 class _MockSessionCubit extends MockCubit<SessionState>
     implements SessionCubit {}
 
+class _MockPerformanceRecorderCubit extends MockCubit<PerformanceRecorderState>
+    implements PerformanceRecorderCubit {}
+
 void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
@@ -34,6 +39,8 @@ void main() {
   late LooperRepository repository;
   late SettingsRepository settings;
   late SessionCubit session;
+  late PerformanceRepository performance;
+  late PerformanceRecorderCubit performanceRecorder;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -76,6 +83,20 @@ void main() {
     when(() => session.saveAs(any())).thenAnswer((_) async {});
     when(() => session.exportMixdown()).thenAnswer((_) async {});
     when(() => session.exportStems()).thenAnswer((_) async {});
+    performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    performanceRecorder = _MockPerformanceRecorderCubit();
+    when(
+      () => performanceRecorder.state,
+    ).thenReturn(const PerformanceRecorderIdle());
+    when(performanceRecorder.toggleArm).thenAnswer((_) async {});
+    when(performanceRecorder.recoverBootCapture).thenAnswer((_) async {});
+    when(performanceRecorder.discardBootCapture).thenAnswer((_) async {});
+    when(
+      () => performanceRecorder.renameCompletedCapture(any()),
+    ).thenAnswer((_) async {});
   });
 
   void seed(LooperState state) {
@@ -94,6 +115,7 @@ void main() {
       home: MultiRepositoryProvider(
         providers: [
           RepositoryProvider<LooperRepository>.value(value: repository),
+          RepositoryProvider<PerformanceRepository>.value(value: performance),
         ],
         child: MultiBlocProvider(
           providers: [
@@ -101,6 +123,9 @@ void main() {
             BlocProvider<TracksCubit>.value(value: tracks),
             BlocProvider<ControlCubit>.value(value: control),
             BlocProvider<SessionCubit>.value(value: session),
+            BlocProvider<PerformanceRecorderCubit>.value(
+              value: performanceRecorder,
+            ),
           ],
           child: const TracksView(),
         ),
@@ -899,6 +924,172 @@ void main() {
       final l10n = await AppLocalizations.delegate.load(const Locale('en'));
       expect(find.text(l10n.sessionErrorSampleRate), findsOneWidget);
     });
+  });
+
+  group('performance recorder', () {
+    testWidgets('A toggles arm', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.pump();
+      verify(performanceRecorder.toggleArm).called(1);
+    });
+
+    testWidgets(
+      'a boot-recovery prompt appears when a crashed capture is found',
+      (tester) async {
+        whenListen(
+          performanceRecorder,
+          Stream.fromIterable(const [
+            PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
+          ]),
+          initialState: const PerformanceRecorderIdle(),
+        );
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+        await tester.pump();
+
+        expect(find.byKey(const Key('perfRecovery_dialog')), findsOneWidget);
+      },
+    );
+
+    testWidgets('the boot-recovery prompt cannot be dismissed via the '
+        'barrier (D-SALVAGE must not soft-lock arming)', (tester) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+
+      // Tap far outside the dialog's content — the modal barrier.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('perfRecovery_dialog')), findsOneWidget);
+    });
+
+    testWidgets('Recover calls recoverBootCapture and dismisses the prompt', (
+      tester,
+    ) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('perfRecovery_recover')));
+      await tester.pumpAndSettle();
+
+      verify(performanceRecorder.recoverBootCapture).called(1);
+      expect(find.byKey(const Key('perfRecovery_dialog')), findsNothing);
+    });
+
+    testWidgets('Discard calls discardBootCapture and dismisses the prompt', (
+      tester,
+    ) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderIdle(recoveryDirectory: '/tmp/perf-crashed'),
+        ]),
+        initialState: const PerformanceRecorderIdle(),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('perfRecovery_discard')));
+      await tester.pumpAndSettle();
+
+      verify(performanceRecorder.discardBootCapture).called(1);
+      expect(find.byKey(const Key('perfRecovery_dialog')), findsNothing);
+    });
+
+    testWidgets('a completed capture opens the completion sheet', (
+      tester,
+    ) async {
+      whenListen(
+        performanceRecorder,
+        Stream.fromIterable(const [
+          PerformanceRecorderCompleted(PerformanceRecordDone('/tmp/perf-1')),
+        ]),
+        initialState: const PerformanceRecorderRendering(percent: 100),
+      );
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+      await tester.pump();
+
+      expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
+    });
+
+    testWidgets(
+      'a short-capture auto-discard shows a SnackBar, not the completion '
+      'sheet',
+      (tester) async {
+        whenListen(
+          performanceRecorder,
+          Stream.fromIterable(const [
+            PerformanceRecorderCompleted.discardedShort(),
+          ]),
+          initialState: const PerformanceRecorderRendering(percent: 100),
+        );
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+        await tester.pump();
+
+        final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+        expect(find.text(l10n.perfDiscarded), findsOneWidget);
+        expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'renaming (re-emitting Completed with a different path) does not '
+      'reopen the completion sheet once dismissed',
+      (tester) async {
+        final controller = StreamController<PerformanceRecorderState>();
+        addTearDown(controller.close);
+        whenListen(
+          performanceRecorder,
+          controller.stream,
+          initialState: const PerformanceRecorderRendering(percent: 100),
+        );
+        seed(const LooperState(tracks: [Track()]));
+        await pump(tester);
+
+        controller.add(
+          const PerformanceRecorderCompleted(
+            PerformanceRecordDone('/tmp/perf-1'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('perfCompletion_sheet')), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('perfCompletion_close')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+
+        // The "rename" — a second Completed with a different path — must not
+        // reopen the sheet the user already dismissed.
+        controller.add(
+          const PerformanceRecorderCompleted(
+            PerformanceRecordDone('/tmp/renamed'),
+          ),
+        );
+        await tester.pump();
+        expect(find.byKey(const Key('perfCompletion_sheet')), findsNothing);
+      },
+    );
   });
 
   group('transport controls', () {
