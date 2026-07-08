@@ -9,7 +9,7 @@ import 'package:session_repository/src/models/session.dart';
 import 'package:session_repository/src/models/session_summary.dart';
 import 'package:session_repository/src/session_exception.dart';
 import 'package:session_repository/src/session_name.dart';
-import 'package:session_repository/src/wav.dart';
+import 'package:wav_codec/wav_codec.dart';
 
 /// The decoded contents of a `.loopy` session bundle: the manifest plus each
 /// track's stem PCM, keyed by channel.

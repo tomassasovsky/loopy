@@ -1,0 +1,27 @@
+name: performance_repository
+description: >-
+  Owns the performance-recording capture lifecycle end-to-end: arming and
+  disarming the audio engine's capture rings, snapshotting settled lanes and
+  monitor/master state, finalizing raw PCM to WAV, and assembling the
+  `{documents}/exports/<slug>/` bundle. Depends only on the AudioEngine
+  interface, never NativeAudioEngine.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+  flutter: ^3.41.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  loopy_engine:
+    path: ../loopy_engine
+  meta: ^1.16.0
+  wav_codec:
+    path: ../wav_codec
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^10.2.0
