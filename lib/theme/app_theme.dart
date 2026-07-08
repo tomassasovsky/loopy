@@ -106,6 +106,7 @@ abstract final class AppTheme {
         recordMeterColors: _recordMeterColors,
         playMeterColors: _playMeterColors,
         indicatorColors: _indicatorColors,
+        toolbarIconColor: Colors.white70,
       ),
     );
   }
@@ -133,6 +134,9 @@ abstract final class AppTheme {
         recordMeterColors: _hcRecordMeterColors,
         playMeterColors: _hcPlayMeterColors,
         indicatorColors: _hcIndicatorColors,
+        // SurfaceTheme.highContrast.textSecondary — brighter than the neon
+        // theme's white70 to clear the HC contrast threshold.
+        toolbarIconColor: Color(0xFFD6D8E0),
       ),
     );
   }
