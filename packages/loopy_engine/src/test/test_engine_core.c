@@ -22,6 +22,7 @@
 #include <string.h>
 #include <wchar.h>
 
+#include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
 #include "engine_internal.h"
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
@@ -104,6 +105,95 @@ static void test_ring_wraps_around(void) {
     CHECK(le_ring_push(&ring, cmd) == 1);
     CHECK(le_ring_pop(&ring, &out) == 1);
     CHECK(out.code == i);
+  }
+}
+
+/* ---- le_audio_ring (performance-recording capture ring) ---- */
+
+static void test_audio_ring_init_rejects_bad_capacity(void) {
+  printf("test_audio_ring_init_rejects_bad_capacity\n");
+  float storage[8];
+  le_audio_ring ring;
+  CHECK(le_audio_ring_init(&ring, storage, 8) == 1); /* power of two */
+  CHECK(le_audio_ring_init(&ring, storage, 6) == 0); /* not power of two */
+  CHECK(le_audio_ring_init(&ring, storage, 1) == 0); /* too small */
+  CHECK(le_audio_ring_init(&ring, storage, 0) == 0); /* zero */
+  CHECK(le_audio_ring_init(NULL, storage, 8) == 0);  /* null ring */
+  CHECK(le_audio_ring_init(&ring, NULL, 8) == 0);    /* null buffer */
+}
+
+static void test_audio_ring_push_pop_fifo(void) {
+  printf("test_audio_ring_push_pop_fifo\n");
+  float storage[8];
+  le_audio_ring ring;
+  le_audio_ring_init(&ring, storage, 8);
+
+  float out[8];
+  CHECK(le_audio_ring_pop(&ring, out, 8) == 0); /* empty */
+
+  for (int i = 0; i < 3; ++i) {
+    float frame[2] = {(float)i, (float)i + 0.5f};
+    CHECK(le_audio_ring_push_frame(&ring, frame, 2) == 1);
+  }
+  CHECK(le_audio_ring_pop(&ring, out, 8) == 6);
+  for (int i = 0; i < 3; ++i) {
+    CHECK(out[i * 2 + 0] == (float)i);
+    CHECK(out[i * 2 + 1] == (float)i + 0.5f);
+  }
+  CHECK(le_audio_ring_pop(&ring, out, 8) == 0); /* drained */
+}
+
+static void test_audio_ring_push_frame_all_or_nothing(void) {
+  printf("test_audio_ring_push_frame_all_or_nothing\n");
+  float storage[4]; /* usable slots == capacity - 1 == 3 samples */
+  le_audio_ring ring;
+  le_audio_ring_init(&ring, storage, 4);
+
+  float mono[1] = {1.0f};
+  CHECK(le_audio_ring_push_frame(&ring, mono, 1) == 1); /* 1/3 used */
+  CHECK(le_audio_ring_push_frame(&ring, mono, 1) == 1); /* 2/3 used */
+
+  /* Only 1 sample free; a 2-sample frame must be refused WHOLESALE, never
+   * partially written (a torn stereo frame would be worse than a dropped
+   * one). */
+  float stereo[2] = {2.0f, 3.0f};
+  CHECK(le_audio_ring_push_frame(&ring, stereo, 2) == 0);
+
+  float out[4];
+  CHECK(le_audio_ring_pop(&ring, out, 4) == 2); /* exactly the two mono pushes */
+  CHECK(out[0] == 1.0f);
+  CHECK(out[1] == 1.0f);
+}
+
+static void test_audio_ring_reports_full(void) {
+  printf("test_audio_ring_reports_full\n");
+  float storage[4];
+  le_audio_ring ring;
+  le_audio_ring_init(&ring, storage, 4);
+
+  float v = 1.0f;
+  CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1);
+  CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1);
+  CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1);
+  CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 0); /* full at capacity-1 */
+
+  float out[1];
+  CHECK(le_audio_ring_pop(&ring, out, 1) == 1);
+  CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1); /* room again after a pop */
+}
+
+static void test_audio_ring_wraps_around(void) {
+  printf("test_audio_ring_wraps_around\n");
+  float storage[4];
+  le_audio_ring ring;
+  le_audio_ring_init(&ring, storage, 4);
+
+  float out[1];
+  for (int i = 0; i < 100; ++i) {
+    float v = (float)i;
+    CHECK(le_audio_ring_push_frame(&ring, &v, 1) == 1);
+    CHECK(le_audio_ring_pop(&ring, out, 1) == 1);
+    CHECK(out[0] == v);
   }
 }
 
@@ -3155,6 +3245,337 @@ static void test_monitor_and_playback_sum(void) {
   le_engine_destroy(e);
 }
 
+/* ---- performance recording (le_perf_arm / le_perf_disarm) ---- *
+ * The control-thread ABI (engine_commands.c): addressing + error paths, and
+ * the disarm fast path (a_running == 0, taken by every test below since this
+ * suite never opens a device). The success + quiescent-handshake path (and
+ * its LE_ERR_DEVICE stalled-callback branch) needs a running device callback
+ * and is covered by manual/integration testing — the same scope note
+ * test_plugin_slot.c's test_engine_abi_errors makes for the plugin-slot
+ * quiescent handshake, which the perf-capture teardown mirrors. */
+
+static void test_perf_arm_requires_configure(void) {
+  printf("test_perf_arm_requires_configure\n");
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_arm(e) == LE_ERR_NOT_RUNNING); /* not configured yet */
+  le_engine_configure(e, 48000, 1, 1, 100);
+  CHECK(le_perf_arm(e) == LE_OK);
+  le_engine_destroy(e);
+}
+
+/* A reconfigure while armed (le_engine_configure, always device-free here)
+ * frees the perf rings and resets every perf atomic, rather than leaking the
+ * old rings or leaving a stale armed flag behind — the device is closed
+ * during configure, so this is a direct free, not the quiescent handshake. A
+ * subsequent arm must work cleanly afterward (no double-free, no stale
+ * pointer reuse). */
+static void test_perf_reconfigure_while_armed_resets_cleanly(void) {
+  printf("test_perf_reconfigure_while_armed_resets_cleanly\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+
+  /* Reconfigure while still armed. */
+  CHECK(le_engine_configure(e, 48000, 1, 1, 1000) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 0);
+  CHECK(s.perf_frames == 0);
+  CHECK(s.perf_overruns == 0);
+
+  /* A fresh arm afterward works cleanly (the old rings were actually freed,
+   * not merely forgotten). */
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+
+  le_engine_destroy(e);
+}
+
+static void test_perf_arm_rejects_no_enabled_output(void) {
+  printf("test_perf_arm_rejects_no_enabled_output\n");
+  le_engine* e = make_configured_engine(); /* mono in/out */
+  CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK); /* disable the only output */
+  drain(e);
+  CHECK(le_perf_arm(e) == LE_ERR_INVALID); /* nothing to capture */
+  le_engine_destroy(e);
+}
+
+static void test_perf_null_safety(void) {
+  printf("test_perf_null_safety\n");
+  CHECK(le_perf_arm(NULL) == LE_ERR_INVALID);
+  CHECK(le_perf_disarm(NULL) == LE_ERR_INVALID);
+}
+
+/* Arm/disarm toggle the snapshot's perf_armed flag; both are idempotent, and a
+ * disarm-then-rearm cycle actually frees and rebuilds the rings rather than
+ * reusing stale state (perf_overruns resets to 0 on the fresh arm). Device-free
+ * (a_running == 0), so le_perf_disarm's quiescent wait is skipped and teardown
+ * is immediate. */
+static void test_perf_arm_disarm_lifecycle(void) {
+  printf("test_perf_arm_disarm_lifecycle\n");
+  le_engine* e = make_configured_engine();
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 0);
+  CHECK(le_perf_disarm(e) == LE_OK); /* idempotent: never armed */
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e); /* apply LE_CMD_PERF_ARM */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+  CHECK(s.perf_frames == 0); /* nothing processed yet besides the 0-frame drain */
+
+  CHECK(le_perf_arm(e) == LE_OK); /* idempotent: already armed */
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+  drain(e); /* apply LE_CMD_PERF_DISARM */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 0);
+  CHECK(le_perf_disarm(e) == LE_OK); /* idempotent: already disarmed */
+
+  CHECK(le_perf_arm(e) == LE_OK); /* re-arm after a clean disarm */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_armed == 1);
+  CHECK(s.perf_overruns == 0);
+
+  le_engine_destroy(e);
+}
+
+/* The master ring's contents are bit-identical to the processed (post-gain,
+ * post-limiter) output for the same input — mono device. */
+static void test_perf_master_tap_bit_identical_mono(void) {
+  printf("test_perf_master_tap_bit_identical_mono\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out); /* recording: not audible yet */
+  le_engine_record(e, 0);              /* finalize -> PLAYING */
+  drain(e);
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+  CHECK(le_engine_perf_master_channels_for_test(e) == 1);
+
+  float out2[LOOP_N];
+  process_const(e, 0.0f, LOOP_N, out2); /* now playing the recorded 1.0 loop */
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out2[i] - 1.0f) < 1e-6f);
+
+  float captured[LOOP_N];
+  CHECK(le_engine_perf_master_pop_for_test(e, captured, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(captured[i] == out2[i]);
+
+  le_engine_destroy(e);
+}
+
+/* Stereo device: the tap runs post master-gain (and would run post-limiter,
+ * were it engaged) — proving the capture point matches the doc'd "after
+ * master_bus_frame" placement, not a pre-gain source. */
+static void test_perf_master_tap_bit_identical_stereo_post_gain(void) {
+  printf("test_perf_master_tap_bit_identical_stereo_post_gain\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 2, 1000); /* mono in, stereo out */
+
+  le_engine_record(e, 0);
+  float out[2 * LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING, lane 0 defaults to out 0+1 */
+  drain(e);
+
+  CHECK(le_engine_set_master_gain(e, 0.5f) == LE_OK);
+  drain(e);
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+  CHECK(le_engine_perf_master_channels_for_test(e) == 2);
+
+  float out2[2 * LOOP_N];
+  process_const(e, 0.0f, LOOP_N, out2);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out2[i * 2 + 0] - 0.5f) < 1e-6f);
+    CHECK(fabsf(out2[i * 2 + 1] - 0.5f) < 1e-6f);
+  }
+
+  float captured[2 * LOOP_N];
+  CHECK(le_engine_perf_master_pop_for_test(e, captured, LOOP_N) == LOOP_N);
+  for (int i = 0; i < 2 * LOOP_N; ++i) CHECK(captured[i] == out2[i]);
+
+  le_engine_destroy(e);
+}
+
+/* A monitor input active at arm is captured post-FX/post-volume, pre-route: the
+ * ring holds the same stereo pair that would be summed into the mix, even
+ * though only one output channel is actually routed. Input 1 (never
+ * monitored) has no ring at all. */
+static void test_perf_monitor_tap_matches_mix_contribution(void) {
+  printf("test_perf_monitor_tap_matches_mix_contribution\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 1000); /* 2-in, 2-out */
+  float in[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 1.0f; /* monitored + captured */
+    in[i * 2 + 1] = 9.0f; /* neither monitored nor captured */
+  }
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK); /* out 0 only */
+  CHECK(le_engine_set_monitor_input_volume(e, 0, 0.5f) == LE_OK);
+  drain(e);
+
+  CHECK(le_perf_arm(e) == LE_OK); /* freezes input_mask = {0} */
+  drain(e);
+
+  float out[2 * LOOP_N];
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out[i * 2 + 0] - 0.5f) < 1e-6f); /* routed */
+    CHECK(fabsf(out[i * 2 + 1]) < 1e-6f);        /* not routed */
+  }
+
+  /* The captured pair is (0.5, 0.5) — the pre-route stereo contribution — on
+   * BOTH channels, even though only out 0 received it. */
+  float captured[2 * LOOP_N];
+  CHECK(le_engine_perf_monitor_pop_for_test(e, 0, captured, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(captured[i * 2 + 0] - 0.5f) < 1e-6f);
+    CHECK(fabsf(captured[i * 2 + 1] - 0.5f) < 1e-6f);
+  }
+
+  /* Input 1 was never monitored/captured: no ring for it. */
+  CHECK(le_engine_perf_monitor_pop_for_test(e, 1, captured, LOOP_N) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* An input captured at arm keeps writing a time-aligned frame even while it is
+ * currently muted (contributing nothing to the mix) — silence, not a gap —
+ * so a later DAW export can line every captured track up against the master
+ * on one shared timeline. */
+static void test_perf_monitor_tap_pads_silence_when_muted(void) {
+  printf("test_perf_monitor_tap_pads_silence_when_muted\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  float in[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 1.0f;
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
+  drain(e);
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_set_monitor_input_mute(e, 0, 1) == LE_OK); /* mute after arm */
+  drain(e);
+
+  float out[LOOP_N];
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f); /* silent out */
+
+  float captured[2 * LOOP_N];
+  CHECK(le_engine_perf_monitor_pop_for_test(e, 0, captured, LOOP_N) == LOOP_N);
+  for (int i = 0; i < 2 * LOOP_N; ++i) CHECK(captured[i] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Same silence-padding guarantee as the muted case above, but for the OTHER
+ * `!mon_on[c]` branch condition: the input disabled outright (rather than
+ * muted) after arm. Both paths share one `if (!mon_on[c] || mon_mut[c])`
+ * guard in mix_monitors_frame, so this pins the disabled half of it too. */
+static void test_perf_monitor_tap_pads_silence_when_disabled(void) {
+  printf("test_perf_monitor_tap_pads_silence_when_disabled\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000);
+  float in[LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) in[i] = 1.0f;
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
+  drain(e);
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_set_monitor_input(e, 0, 0) == LE_OK); /* disable after arm */
+  drain(e);
+
+  float out[LOOP_N];
+  le_engine_process(e, out, in, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i]) < 1e-6f); /* silent out */
+
+  float captured[2 * LOOP_N];
+  CHECK(le_engine_perf_monitor_pop_for_test(e, 0, captured, LOOP_N) == LOOP_N);
+  for (int i = 0; i < 2 * LOOP_N; ++i) CHECK(captured[i] == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+/* On a full ring the audio thread drops the whole frame and increments the
+ * shared overrun atomic; it never blocks. A tiny sample rate yields a tiny
+ * (deterministic) ring capacity so the overflow is exactly reproducible: mono
+ * capacity = next_pow2(1 * 4 * LE_PERF_CAPTURE_SECONDS) = 8 samples, 7 usable. */
+static void test_perf_overflow_counts_and_drops(void) {
+  printf("test_perf_overflow_counts_and_drops\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 4, 1, 1, 1000); /* tiny sample rate -> tiny ring */
+
+  le_engine_record(e, 0);
+  float out[LOOP_N];
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+
+  float big_out[32];
+  process_const(e, 0.0f, 32, big_out); /* far more frames than the ring holds */
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.perf_frames == 32);      /* elapsed frames counted regardless of drops */
+  CHECK(s.perf_overruns == 32 - 7); /* only the first 7 fit */
+
+  le_engine_destroy(e);
+}
+
+/* Regression: perf_frames advances even across a concurrent latency
+ * measurement, whose harness diverts every frame in the capture window
+ * (process_input_frame's `continue`) before the master tap would otherwise
+ * run. Counted once per le_engine_process call (batched with a_frames, not a
+ * per-frame atomic add), so it reads as wall-clock frames since arm, not
+ * "frames the master tap actually saw". */
+static void test_perf_frames_advance_during_latency_measurement(void) {
+  printf("test_perf_frames_advance_during_latency_measurement\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 1000); /* lat_buf_cap = 48000/10 = 4800 */
+
+  CHECK(le_perf_arm(e) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
+  drain(e);
+
+  enum { CAP = 480 }; /* well inside the ~4800-frame capture window */
+  float out[CAP];
+  float in[CAP] = {0};
+  le_engine_process(e, out, in, CAP);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state == LE_LATENCY_MEASURING); /* harness still owns every frame */
+  CHECK(s.perf_frames == CAP); /* still counted, not stalled by the harness */
+
+  le_engine_destroy(e);
+}
+
 /* The engine's record-time snapshot of the recorded input's monitor FX chain
  * onto the take's lane — and its copy-on-record independence (D3) — moved to the
  * host (LooperRepository), which is now the single record-time snapshot
@@ -5578,6 +5999,18 @@ int main(void) {
   test_two_monitored_inputs_dont_interfere();
   test_monitor_disable_and_excluded();
   test_monitor_and_playback_sum();
+  test_perf_arm_requires_configure();
+  test_perf_reconfigure_while_armed_resets_cleanly();
+  test_perf_arm_rejects_no_enabled_output();
+  test_perf_null_safety();
+  test_perf_arm_disarm_lifecycle();
+  test_perf_master_tap_bit_identical_mono();
+  test_perf_master_tap_bit_identical_stereo_post_gain();
+  test_perf_monitor_tap_matches_mix_contribution();
+  test_perf_monitor_tap_pads_silence_when_muted();
+  test_perf_overflow_counts_and_drops();
+  test_perf_frames_advance_during_latency_measurement();
+  test_perf_monitor_tap_pads_silence_when_disabled();
   test_record_does_not_self_snapshot();
   test_record_never_touches_lane_fx();
   test_output_disabled_is_silent_routes_preserved();
@@ -5592,6 +6025,11 @@ int main(void) {
   test_ring_push_pop_fifo();
   test_ring_reports_full();
   test_ring_wraps_around();
+  test_audio_ring_init_rejects_bad_capacity();
+  test_audio_ring_push_pop_fifo();
+  test_audio_ring_push_frame_all_or_nothing();
+  test_audio_ring_reports_full();
+  test_audio_ring_wraps_around();
   test_engine_lifecycle_without_device();
   test_null_safety();
   test_loop_clock();

@@ -414,6 +414,30 @@ class FakeAudioEngine implements AudioEngine {
   @override
   EngineResult commitSession(int baseFrames) => EngineResult.ok;
 
+  // --- Performance recording capture ---
+
+  /// Call counters for [perfArm] / [perfDisarm].
+  int perfArmCalls = 0;
+  int perfDisarmCalls = 0;
+
+  /// Result returned by [perfArm].
+  EngineResult perfArmResult = EngineResult.ok;
+
+  /// Result returned by [perfDisarm].
+  EngineResult perfDisarmResult = EngineResult.ok;
+
+  @override
+  EngineResult perfArm() {
+    perfArmCalls++;
+    return perfArmResult;
+  }
+
+  @override
+  EngineResult perfDisarm() {
+    perfDisarmCalls++;
+    return perfDisarmResult;
+  }
+
   // --- Plugin hosting (scan: part 2; slots: part 3) ---
 
   @override

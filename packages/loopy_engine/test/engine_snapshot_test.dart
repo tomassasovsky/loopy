@@ -31,6 +31,9 @@ void main() {
       expect(snapshot.measuredLatencyMs, -1);
       expect(snapshot.masterGain, 1);
       expect(snapshot.activeBackend, AudioBackend.miniaudio);
+      expect(snapshot.isPerfArmed, isFalse);
+      expect(snapshot.perfFrames, 0);
+      expect(snapshot.perfOverruns, 0);
     });
   });
 
@@ -260,6 +263,9 @@ void main() {
           ..fx_added_latency_frames = 1024
           ..master_gain = 0.5
           ..active_backend = 1
+          ..perf_armed = 1
+          ..perf_frames = 96000
+          ..perf_overruns = 7
           ..track_count = 2;
 
         const tracks = [
@@ -292,6 +298,9 @@ void main() {
         expect(snapshot.fxAddedLatencyMs, closeTo(1024 * 1000 / 48000, 1e-9));
         expect(snapshot.masterGain, closeTo(0.5, 1e-6));
         expect(snapshot.activeBackend, AudioBackend.asio);
+        expect(snapshot.isPerfArmed, isTrue);
+        expect(snapshot.perfFrames, 96000);
+        expect(snapshot.perfOverruns, 7);
         expect(snapshot.trackCount, 2);
         // Back-compat single-track accessors read track 0.
         expect(snapshot.trackState, TrackState.playing);
@@ -352,6 +361,19 @@ void main() {
       }
     });
 
+    test('perf_armed == 0 maps to isPerfArmed false', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        ptr.ref.perf_armed = 0;
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).isPerfArmed,
+          isFalse,
+        );
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
     test('device_present is independent of running', () {
       final ptr = calloc<le_snapshot>();
       try {
@@ -385,6 +407,9 @@ void main() {
       double masterGain = 1,
       int fxAddedLatencyFrames = 0,
       int outputEnabledMask = 0xFFFFFFFF,
+      bool isPerfArmed = false,
+      int perfFrames = 0,
+      int perfOverruns = 0,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -401,6 +426,9 @@ void main() {
       fxAddedLatencyFrames: fxAddedLatencyFrames,
       activeBackend: activeBackend,
       outputEnabledMask: outputEnabledMask,
+      isPerfArmed: isPerfArmed,
+      perfFrames: perfFrames,
+      perfOverruns: perfOverruns,
     );
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
@@ -429,6 +457,18 @@ void main() {
 
     test('outputEnabledMask participates in equality', () {
       expect(build(), isNot(equals(build(outputEnabledMask: 0x1))));
+    });
+
+    test('isPerfArmed participates in equality', () {
+      expect(build(), isNot(equals(build(isPerfArmed: true))));
+    });
+
+    test('perfFrames participates in equality', () {
+      expect(build(), isNot(equals(build(perfFrames: 48000))));
+    });
+
+    test('perfOverruns participates in equality', () {
+      expect(build(), isNot(equals(build(perfOverruns: 3))));
     });
 
     test('fxAddedLatencyMs is 0 when the sample rate is unknown', () {

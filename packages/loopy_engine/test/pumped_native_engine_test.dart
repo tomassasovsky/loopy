@@ -64,6 +64,42 @@ void main() {
     expect(s.tracks.first.redoDepth, 0);
   }, skip: skip);
 
+  test(
+    'performance-recording capture arms via the real FFI and advances frames',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      );
+
+      expect(engine.snapshot().isPerfArmed, isFalse);
+
+      expect(engine.perfArm(), EngineResult.ok);
+      engine.pump(frames: 0); // drain the arm command
+      var s = engine.snapshot();
+      expect(s.isPerfArmed, isTrue);
+      expect(s.perfFrames, 0);
+
+      engine.pump(frames: 256);
+      s = engine.snapshot();
+      // Struct-layout smoke test: perfFrames/perfOverruns actually read the
+      // fields the C header declares them at, not a neighbor's bits.
+      expect(s.perfFrames, 256);
+      expect(s.perfOverruns, 0); // well within the ~2 s capture window
+
+      expect(engine.perfDisarm(), EngineResult.ok);
+      engine.pump(frames: 0); // drain the disarm command (no device: no wait)
+      expect(engine.snapshot().isPerfArmed, isFalse);
+    },
+    skip: skip,
+  );
+
   group('fx chain fingerprint (native-side properties)', () {
     late PumpedNativeEngine engine;
 
