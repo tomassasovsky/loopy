@@ -50,11 +50,26 @@ The UNO's ATmega16U2 normally presents a USB-serial port. The
 baud — which is why the sketch uses `Serial.begin(31250)` and the MIDIUSB library
 is **not** usable here (it is 32U4-only).
 
+Stock dualMocoLUFA enumerates as USB product "MocoLUFA". loopy's pedal is
+branded VAMP, so we build from source with
+[`mocolufa-vamp-rename.patch`](mocolufa-vamp-rename.patch) applied, which
+renames the USB-MIDI product string to "VAMP Loopstation":
+
+```sh
+# one-time build setup
+git clone https://github.com/kuwatay/mocolufa
+curl -LO http://www.fourwalledcubicle.com/files/LUFA/LUFA-100807.zip
+unzip LUFA-100807.zip -d mocolufa/../  # unpacks alongside mocolufa/, per makefile's LUFA_PATH
+cd mocolufa
+patch -p1 < /path/to/firmware/mocolufa-vamp-rename.patch
+make clean && make   # produces dualMoco.hex
+```
+
 Put the 16U2 in DFU mode (briefly short the 16U2 RESET pin to GND — the two pads
 near the USB connector), then:
 
 ```sh
-# erase, flash dualMocoLUFA, restart
+# erase, flash the patched dualMoco.hex, restart
 dfu-programmer atmega16u2 erase
 dfu-programmer atmega16u2 flash dualMoco.hex
 dfu-programmer atmega16u2 reset
