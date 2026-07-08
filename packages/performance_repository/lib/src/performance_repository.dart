@@ -48,6 +48,20 @@ class PerformanceRepository {
   String? _armedDir;
   PerformanceArmSnapshot? _armSnapshot;
 
+  /// When the current capture was armed, or `null` when not armed. Backs
+  /// [disarm]'s double-press guard (D-PEDAL/D-GUARD) — centralized here
+  /// rather than in a caller, since arm/disarm now has more than one caller
+  /// (the toolbar's `PerformanceRecorderCubit` and the pedal's `ControlCubit`
+  /// MODE long-press) and both must share one guard rather than risk drift
+  /// between two separately-tuned copies.
+  DateTime? _armedAt;
+
+  /// A disarm within this window of the matching arm is ignored — the arm
+  /// and disarm gestures are easy to fat-finger back to back on the same
+  /// control (a toolbar click, or a pedal long-press that fires again before
+  /// the performer releases the footswitch).
+  static const Duration disarmGuardWindow = Duration(seconds: 1);
+
   /// The sidecar manifest filename within a capture directory.
   static const String manifestName = 'performance.json';
 
@@ -158,16 +172,43 @@ class PerformanceRepository {
 
     _armedDir = dir;
     _armSnapshot = armSnapshot;
+    _armedAt = _now();
     _setStatus(PerformanceCaptureStatus.armed);
     return EngineResult.ok;
   }
 
-  /// Disarms performance-recording capture: takes the disarm-time
-  /// settled-lane snapshot pass (covers a track recorded fresh during the
-  /// performance — recording finalization produces no retire event, so
-  /// nothing else would persist its PCM), disarms the engine, converts the
-  /// raw master/monitor PCM to WAV, and merges every snapshot into the
-  /// sidecar with `finalized: true`.
+  /// Disarms performance-recording capture — the **toggle-gesture** path
+  /// (toolbar click, pedal MODE long-press): a disarm within
+  /// [disarmGuardWindow] of the matching [arm] is ignored, capture stays
+  /// armed (D-GUARD; a fat-fingered re-press of the same physical control,
+  /// not a deliberate disarm). Programmatic disarms that have nothing to do
+  /// with that gesture — e.g. auto-disarm-before-load — must use
+  /// [disarmAndFinalize] instead, which always proceeds.
+  ///
+  /// See [disarmAndFinalize] for what the disarm itself actually does;
+  /// idempotent identically.
+  Future<EngineResult> disarm() async {
+    final dir = _armedDir;
+    if (dir == null) return EngineResult.ok;
+    final armedAt = _armedAt;
+    if (armedAt != null && _now().difference(armedAt) < disarmGuardWindow) {
+      return EngineResult.ok;
+    }
+    return _finalizeArmed(dir);
+  }
+
+  /// Disarms performance-recording capture unconditionally — the
+  /// **programmatic** path (`SessionCubit` awaits this before applying a
+  /// loaded session): never subject to [disarm]'s double-press guard, since
+  /// a session load has nothing to do with a fat-fingered re-press of the
+  /// arm/disarm control and must not be silently skipped by a guard built
+  /// for a different scenario.
+  ///
+  /// Takes the disarm-time settled-lane snapshot pass (covers a track
+  /// recorded fresh during the performance — recording finalization produces
+  /// no retire event, so nothing else would persist its PCM), disarms the
+  /// engine, converts the raw master/monitor PCM to WAV, and merges every
+  /// snapshot into the sidecar with `finalized: true`.
   ///
   /// Idempotent — calling this while already disarmed is a no-op success.
   /// If `EnginePerformanceCapture.perfDisarm` itself fails (a stalled
@@ -180,10 +221,13 @@ class PerformanceRepository {
   /// the background — this method returns as soon as the bundle itself is
   /// complete, without waiting on the render; poll [renderProgress] /
   /// [renderTrackStatuses] for its outcome.
-  Future<EngineResult> disarm() async {
+  Future<EngineResult> disarmAndFinalize() async {
     final dir = _armedDir;
     if (dir == null) return EngineResult.ok;
+    return _finalizeArmed(dir);
+  }
 
+  Future<EngineResult> _finalizeArmed(String dir) async {
     _setStatus(PerformanceCaptureStatus.finalizing);
     final disarmSnapshot = PerformanceDisarmSnapshot(
       tracks: _captureSettledLanes(
@@ -207,14 +251,10 @@ class PerformanceRepository {
 
     _armedDir = null;
     _armSnapshot = null;
+    _armedAt = null;
     _setStatus(PerformanceCaptureStatus.done);
     return EngineResult.ok;
   }
-
-  /// An alias for [disarm], named for the load-while-armed call site
-  /// (`SessionCubit` awaits this before applying a loaded session) so that
-  /// caller reads self-documented rather than a bare `disarm()`.
-  Future<EngineResult> disarmAndFinalize() => disarm();
 
   /// Exports every currently-settled (non-capturing) lane's PCM into the
   /// in-progress capture directory's `loops/`, overwriting any prior export

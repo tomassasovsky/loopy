@@ -238,15 +238,17 @@ void main() {
     test(
       'armed -> disarm path on a second call after the guard window',
       () async {
-        var now = clock;
-        final cubit = build(now: () => now);
+        final cubit = build();
         addTearDown(cubit.close);
 
         await cubit.toggleArm();
         await pumpEventQueue();
         expect(cubit.state, isA<PerformanceRecorderArmed>());
 
-        now = now.add(const Duration(seconds: 2));
+        // The double-press guard (D-GUARD) now lives in
+        // PerformanceRepository.disarm itself, keyed off the SHARED `clock`
+        // this cubit's `performance` reads — not the cubit's own `now`.
+        clock = clock.add(const Duration(seconds: 2));
         await cubit.toggleArm();
         await pumpEventQueue();
 
@@ -257,15 +259,14 @@ void main() {
     test(
       'a disarm attempted within 1s of arm is ignored (double-press guard)',
       () async {
-        var now = clock;
-        final cubit = build(now: () => now);
+        final cubit = build();
         addTearDown(cubit.close);
 
         await cubit.toggleArm();
         await pumpEventQueue();
         expect(cubit.state, isA<PerformanceRecorderArmed>());
 
-        now = now.add(const Duration(milliseconds: 500));
+        clock = clock.add(const Duration(milliseconds: 500));
         await cubit.toggleArm();
         await pumpEventQueue();
 

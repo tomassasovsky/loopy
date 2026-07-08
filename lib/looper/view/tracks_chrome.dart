@@ -58,6 +58,9 @@ class TracksToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final toolbarIconColor = Theme.of(
+      context,
+    ).extension<LooperTheme>()!.toolbarIconColor;
     return Row(
       children: [
         ModeIndicator(mode: mode, onToggle: onToggleMode),
@@ -73,7 +76,7 @@ class TracksToolbar extends StatelessWidget {
           tooltip: anyActive ? l10n.stopAllTooltip : l10n.playAllTooltip,
           visualDensity: VisualDensity.compact,
           iconSize: 20,
-          color: Colors.white70,
+          color: toolbarIconColor,
           icon: Icon(anyActive ? Icons.stop : Icons.play_arrow),
           onPressed: playStopEnabled ? onPlayStopAll : null,
         ),
@@ -83,7 +86,7 @@ class TracksToolbar extends StatelessWidget {
           tooltip: l10n.clearAllTooltip,
           visualDensity: VisualDensity.compact,
           iconSize: 20,
-          color: Colors.white70,
+          color: toolbarIconColor,
           icon: const Icon(Icons.delete_sweep_outlined),
           onPressed: transportEnabled ? onClearAll : null,
         ),
@@ -94,7 +97,7 @@ class TracksToolbar extends StatelessWidget {
             tooltip: l10n.fullscreenTooltip,
             visualDensity: VisualDensity.compact,
             iconSize: 20,
-            color: Colors.white70,
+            color: toolbarIconColor,
             icon: const Icon(Icons.fullscreen),
             onPressed: () => unawaited(toggleLoopyFullScreen()),
           ),
@@ -103,7 +106,7 @@ class TracksToolbar extends StatelessWidget {
           tooltip: l10n.signalTooltip,
           visualDensity: VisualDensity.compact,
           iconSize: 20,
-          color: Colors.white70,
+          color: toolbarIconColor,
           icon: const Icon(Icons.account_tree_outlined),
           onPressed: () => unawaited(showSignalPage(context)),
         ),
@@ -114,7 +117,7 @@ class TracksToolbar extends StatelessWidget {
           tooltip: l10n.settingsTooltip,
           visualDensity: VisualDensity.compact,
           iconSize: 20,
-          color: Colors.white70,
+          color: toolbarIconColor,
           icon: const Icon(Icons.settings_outlined),
           onPressed: () => unawaited(openLoopySettings()),
         ),
@@ -170,6 +173,9 @@ class SessionMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final toolbarIconColor = Theme.of(
+      context,
+    ).extension<LooperTheme>()!.toolbarIconColor;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -193,7 +199,7 @@ class SessionMenu extends StatelessWidget {
           tooltip: l10n.a11ySessionMenu,
           visualDensity: VisualDensity.compact,
           iconSize: 20,
-          color: Colors.white70,
+          color: toolbarIconColor,
           icon: const Icon(Icons.folder_outlined),
           onPressed: () => unawaited(showSessionsManager(context)),
         ),

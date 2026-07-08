@@ -20,6 +20,7 @@ import 'package:loopy_engine/loopy_engine.dart'
         TrackEffect,
         TrackEffectType;
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 import '../helpers/fake_key_value_store.dart';
@@ -243,6 +244,13 @@ class _Harness {
     engine = PumpedNativeEngine();
     ticker = StreamController<void>.broadcast(sync: true);
     reconnectTicker = StreamController<void>.broadcast(sync: true);
+    // A real temp dir rather than '.': `arm()`'s directory creation never
+    // actually completes inside this FakeAsync zone today (real dart:io
+    // async ops don't run there), so this is defense-in-depth, not a fix for
+    // an observed leak — if a MODE long-press ever fires for real in a fuzz
+    // sequence, or `arm()` picks up sync file I/O, this is what stands
+    // between that and polluting the repo working directory.
+    tempDir = Directory.systemTemp.createTempSync('loopy_control_fuzz');
     repo = LooperRepository(
       engine: engine,
       ticker: ticker.stream,
@@ -260,10 +268,15 @@ class _Harness {
     bloc = LooperBloc(repository: repo);
     sim = SimulatorPedalTransport(inner: const NoopPedalTransport());
     pedalRepo = PedalRepository(sim);
+    performance = PerformanceRepository(
+      engine: engine,
+      exportsRoot: () async => tempDir.path,
+    );
     control = ControlCubit(
       looper: repo,
       pedal: pedalRepo,
       settings: settings,
+      performance: performance,
     );
     cubit = PedalCubit(
       pedal: pedalRepo,
@@ -274,6 +287,7 @@ class _Harness {
     settle(fa);
   }
 
+  late final Directory tempDir;
   late final PumpedNativeEngine engine;
   late final StreamController<void> ticker;
   late final StreamController<void> reconnectTicker;
@@ -281,6 +295,7 @@ class _Harness {
   late final LooperBloc bloc;
   late final SimulatorPedalTransport sim;
   late final PedalRepository pedalRepo;
+  late final PerformanceRepository performance;
   late final ControlCubit control;
   late final PedalCubit cubit;
   final Set<PedalButton> _held = {};
@@ -352,12 +367,14 @@ class _Harness {
     unawaited(control.close());
     unawaited(cubit.close());
     unawaited(bloc.close());
+    performance.dispose();
     fa.flushMicrotasks();
     unawaited(repo.dispose());
     fa.flushMicrotasks();
     unawaited(ticker.close());
     unawaited(reconnectTicker.close());
     fa.flushMicrotasks();
+    if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   }
 }
 
@@ -467,7 +484,7 @@ class _Bloc extends _FuzzAction {
         h.bloc.add(LooperMuteToggled(channel));
       case 'clearAll':
         // The on-screen clear-all path IS the unified intent now.
-        h.control.clearAll();
+        unawaited(h.control.clearAll());
     }
   }
 

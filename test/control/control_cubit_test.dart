@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
@@ -7,12 +8,33 @@ import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
-import '../helpers/fake_key_value_store.dart';
+import '../helpers/helpers.dart';
 import '../pedal/helpers/fake_pedal_transport.dart';
 
 class _MockLooperRepository extends Mock implements LooperRepository {}
+
+/// A real [PerformanceRepository] that additionally logs when
+/// [persistLiveLanes] runs, into a shared [log] list — proves the D-CLEAR
+/// ordering (persist-before-clear) without mocking file I/O, since the
+/// repository itself is not mock-friendly (real disk access).
+class _RecordingPerformanceRepository extends PerformanceRepository {
+  _RecordingPerformanceRepository({
+    required this.log,
+    required super.engine,
+    required super.exportsRoot,
+  });
+
+  final List<String> log;
+
+  @override
+  Future<void> persistLiveLanes() async {
+    log.add('persistLiveLanes');
+    await super.persistLiveLanes();
+  }
+}
 
 LooperState _stateWith(
   List<Track> tracks, {
@@ -52,7 +74,10 @@ void main() {
     late SettingsRepository settings;
     late FakePedalTransport transport;
     late PedalRepository pedal;
+    late PerformanceRepository performance;
     late ControlCubit cubit;
+    late Directory tempDir;
+    late DateTime clock;
 
     /// Publishes [tracks] as engine truth: both the pull (`looper.state`) and
     /// the push (the cubit's reducer subscription) see the same snapshot.
@@ -95,7 +120,19 @@ void main() {
       ).thenReturn(EngineResult.ok);
       when(() => looper.setMasterGain(any())).thenReturn(EngineResult.ok);
 
-      cubit = ControlCubit(looper: looper, pedal: pedal, settings: settings);
+      tempDir = Directory.systemTemp.createTempSync('loopy_control_cubit');
+      clock = DateTime(2026, 7, 6, 14, 30, 15);
+      performance = PerformanceRepository(
+        engine: FakeAudioEngine(),
+        exportsRoot: () async => tempDir.path,
+        now: () => clock,
+      );
+      cubit = ControlCubit(
+        looper: looper,
+        pedal: pedal,
+        settings: settings,
+        performance: performance,
+      );
       setEngine(_emptyTracks());
     });
 
@@ -103,6 +140,8 @@ void main() {
       await cubit.close();
       await pedal.dispose();
       await looperStates.close();
+      performance.dispose();
+      tempDir.deleteSync(recursive: true);
     });
 
     group('mode', () {
@@ -526,8 +565,8 @@ void main() {
           );
           cubit
             ..toggleMode()
-            ..selectTrack(5)
-            ..clearAll();
+            ..selectTrack(5);
+          unawaited(cubit.clearAll());
 
           verify(() => looper.clear()).called(1);
           verify(() => looper.clear(channel: 1)).called(1); // redo path wiped
@@ -544,6 +583,123 @@ void main() {
           await Future<void>.delayed(Duration.zero);
           expect(await settings.loadLaneMute(0, 0), isFalse);
           expect(await settings.loadLaneMute(1, 0), isFalse);
+        },
+      );
+
+      test(
+        'while armed, persistLiveLanes runs BEFORE any looper.clear (D-CLEAR)',
+        () async {
+          final log = <String>[];
+          final recordingPerformance = _RecordingPerformanceRepository(
+            log: log,
+            engine: FakeAudioEngine(),
+            exportsRoot: () async => tempDir.path,
+          );
+          addTearDown(recordingPerformance.dispose);
+          final armedCubit = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: recordingPerformance,
+          );
+          addTearDown(armedCubit.close);
+
+          await recordingPerformance.arm();
+          await pumpEventQueue(); // deliver captureStatus.armed to the cubit
+
+          setEngine(
+            _tracksWith(const [
+              Track(state: TrackState.playing, lengthFrames: 48000),
+            ]),
+          );
+          when(() => looper.clear(channel: any(named: 'channel'))).thenAnswer((
+            _,
+          ) {
+            log.add('looper.clear');
+            return EngineResult.ok;
+          });
+
+          await armedCubit.clearAll();
+
+          expect(log, ['persistLiveLanes', 'looper.clear']);
+        },
+      );
+
+      test('while NOT armed, clearAll never calls persistLiveLanes', () async {
+        setEngine(
+          _tracksWith(const [
+            Track(state: TrackState.playing, lengthFrames: 48000),
+          ]),
+        );
+        final log = <String>[];
+        final unarmedPerformance = _RecordingPerformanceRepository(
+          log: log,
+          engine: FakeAudioEngine(),
+          exportsRoot: () async => tempDir.path,
+        );
+        addTearDown(unarmedPerformance.dispose);
+        final unarmedCubit = ControlCubit(
+          looper: looper,
+          pedal: pedal,
+          settings: settings,
+          performance: unarmedPerformance,
+        );
+        addTearDown(unarmedCubit.close);
+
+        await unarmedCubit.clearAll();
+
+        expect(log, isEmpty);
+        verify(() => looper.clear()).called(1);
+      });
+    });
+
+    group('performance recording (D-PEDAL)', () {
+      test(
+        'togglePerformanceRecord arms the repository when unarmed, then '
+        'disarms it on a second call',
+        () async {
+          expect(performance.armedDirectory, isNull);
+
+          cubit.togglePerformanceRecord();
+          await pumpEventQueue();
+          expect(performance.armedDirectory, isNotNull);
+          expect(
+            await performance.captureStatus.first,
+            PerformanceCaptureStatus.armed,
+          );
+
+          // Past disarm's double-press guard window (D-GUARD) — this test
+          // proves the toggle mechanic, not the guard itself.
+          clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+
+          cubit.togglePerformanceRecord();
+          await pumpEventQueue();
+          expect(performance.armedDirectory, isNull);
+        },
+      );
+
+      test(
+        '_onPerformanceStatus reactivity: an external arm() (bypassing '
+        "this cubit's own method) is still reflected in the projected frame",
+        () async {
+          pedal.bind('out');
+          transport.sent.clear();
+
+          // Drive the repository directly — not through
+          // cubit.togglePerformanceRecord() — to prove the cubit reacts to
+          // the shared captureStatus stream regardless of who triggered it
+          // (mirrors PerformanceRecorderCubit's own reactive design).
+          await performance.arm();
+          await pumpEventQueue();
+
+          final frame = PedalCodec.decodeFrame(transport.sent.last);
+          expect(frame?.performanceArmed, isTrue);
+
+          await performance.disarmAndFinalize();
+          await pumpEventQueue();
+
+          final disarmedFrame = PedalCodec.decodeFrame(transport.sent.last);
+          expect(disarmedFrame?.performanceArmed, isFalse);
         },
       );
     });
@@ -630,7 +786,12 @@ void main() {
       });
 
       test('Mode toggles the shared mode', () async {
-        transport.emit(0x90, PedalButton.mode.note, 100);
+        // A tap (press + quick release) — mode now rides the same
+        // tap-vs-long-press split as undo (D-PEDAL): a bare press alone no
+        // longer toggles it.
+        transport
+          ..emit(0x90, PedalButton.mode.note, 100)
+          ..emit(0x80, PedalButton.mode.note, 0);
         await pumpEventQueue();
         expect(cubit.state.mode, LooperMode.play);
       });
@@ -709,6 +870,55 @@ void main() {
 
           verify(() => looper.redo()).called(1);
           verifyNever(() => looper.undo(channel: any(named: 'channel')));
+        });
+      });
+
+      group('mode press timing (D-PEDAL)', () {
+        test('tap toggles mode and does NOT arm/disarm performance '
+            'recording', () async {
+          expect(cubit.state.mode, LooperMode.record);
+          transport
+            ..emit(0x90, PedalButton.mode.note, 100) // press
+            ..emit(0x80, PedalButton.mode.note, 0); // quick release == tap
+          await pumpEventQueue();
+
+          expect(cubit.state.mode, LooperMode.play);
+          expect(performance.armedDirectory, isNull);
+        });
+
+        test(
+          'long-press arms performance recording and does NOT flip mode',
+          () async {
+            transport.emit(0x90, PedalButton.mode.note, 100);
+            // Default long-press threshold is 500 ms.
+            await Future<void>.delayed(const Duration(milliseconds: 600));
+            transport.emit(0x80, PedalButton.mode.note, 0);
+            await pumpEventQueue();
+
+            expect(cubit.state.mode, LooperMode.record); // unchanged
+            expect(performance.armedDirectory, isNotNull);
+          },
+        );
+
+        test('a long-press then a second long-press disarms again', () async {
+          transport.emit(0x90, PedalButton.mode.note, 100);
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          transport.emit(0x80, PedalButton.mode.note, 0);
+          await pumpEventQueue();
+          expect(performance.armedDirectory, isNotNull);
+
+          // Past disarm's double-press guard window (D-GUARD) — the fake
+          // clock does not advance with the real 600ms long-press delay
+          // above, so it must be moved explicitly for the second long-press
+          // to actually disarm rather than be guarded.
+          clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
+
+          transport.emit(0x90, PedalButton.mode.note, 100);
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          transport.emit(0x80, PedalButton.mode.note, 0);
+          await pumpEventQueue();
+
+          expect(performance.armedDirectory, isNull);
         });
       });
     });

@@ -38,7 +38,7 @@ class PerfRecordButton extends StatelessWidget {
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       iconSize: 20,
-      color: armed ? looper.recordColor : Colors.white70,
+      color: armed ? looper.recordColor : looper.toolbarIconColor,
       icon: Icon(
         armed ? Icons.fiber_manual_record : Icons.fiber_manual_record_outlined,
       ),

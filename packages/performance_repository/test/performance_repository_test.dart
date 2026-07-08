@@ -246,6 +246,10 @@ void main() {
       PerformanceRepository r,
     ) async {
       await r.arm();
+      // Past the disarm double-press guard window (D-GUARD) — this helper's
+      // callers arm then disarm within the same test body, which a fixed
+      // fake clock would otherwise always land inside.
+      clock = clock.add(PerformanceRepository.disarmGuardWindow * 2);
       writeNativeSidecar(
         r.armedDirectory!,
         capturedInputs: const [0],
@@ -346,6 +350,40 @@ void main() {
 
     test('is a no-op success when not armed', () async {
       expect(await repo.disarm(), EngineResult.ok);
+    });
+
+    test(
+      'a disarm within disarmGuardWindow of arm is ignored (D-GUARD), '
+      'capture stays armed',
+      () async {
+        await repo.arm();
+        final dir = repo.armedDirectory;
+
+        final result = await repo.disarm();
+
+        expect(result, EngineResult.ok);
+        expect(
+          repo.armedDirectory,
+          dir,
+          reason: 'the guard must leave capture armed, not finalize it',
+        );
+        expect(engine.perfDisarmCalls, 0);
+      },
+    );
+
+    test('a disarm past disarmGuardWindow of arm proceeds normally', () async {
+      await armAndSeedNative(engine, repo);
+      final dir = repo.armedDirectory;
+
+      final result = await repo.disarm();
+
+      expect(result, EngineResult.ok);
+      expect(repo.armedDirectory, isNull);
+      expect(
+        jsonDecode(File('$dir/performance.json').readAsStringSync())
+            as Map<String, dynamic>,
+        containsPair('finalized', true),
+      );
     });
 
     test(

@@ -74,5 +74,18 @@ Map<String, PedalStateFrame> goldenFrames() {
       loopLengthMicros: 0xFEDCBA98,
       clearFadeActive: true,
     ),
+
+    // Performance recording armed (D-PEDAL) — exercises the new flags bit3
+    // alongside an otherwise-ordinary Rec-mode, bank A frame.
+    'performance_armed': PedalStateFrame(
+      globalColor: GlobalColor.green,
+      trackLeds: leds(const [PedalTrackLed.red]),
+      activeBank: 0,
+      selectedTrack: 0,
+      mode: PedalMode.rec,
+      loopLengthMicros: 0,
+      clearFadeActive: false,
+      performanceArmed: true,
+    ),
   };
 }

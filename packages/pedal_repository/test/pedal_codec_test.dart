@@ -47,6 +47,47 @@ void main() {
     });
   });
 
+  group('PedalCodec.performanceArmed flag (D-PEDAL)', () {
+    test('round-trips independently of the other flag bits', () {
+      final frame = PedalStateFrame.blank().copyWith(
+        performanceArmed: true,
+        clearFadeActive: true,
+        mode: PedalMode.play,
+      );
+      final decoded = PedalCodec.decodeFrame(PedalCodec.encodeFrame(frame));
+      expect(decoded!.performanceArmed, isTrue);
+      expect(decoded.clearFadeActive, isTrue);
+      expect(decoded.mode, PedalMode.play);
+    });
+
+    test('decodes performanceArmed back out', () {
+      final frame = PedalStateFrame.blank().copyWith(performanceArmed: true);
+      final decoded = PedalCodec.decodeFrame(PedalCodec.encodeFrame(frame));
+      expect(decoded!.performanceArmed, isTrue);
+    });
+
+    test(
+      'an old-firmware-shaped frame (bit3 unset) decodes with '
+      'performanceArmed false',
+      () {
+        // A frame built exactly as pre-D-PEDAL firmware would have sent it —
+        // flags byte carries only mode/clearFadeActive/goodbye, bit3 never
+        // set. Proves a pedal running old firmware still decodes cleanly.
+        final oldStyle = buildStateSysEx([
+          0x00, // flags: rec mode, no clear fade, not goodbye
+          GlobalColor.green.index,
+          0,
+          0,
+          ...List.filled(8, 0),
+          0, 0, 0, 0,
+        ]);
+        final decoded = PedalCodec.decodeFrame(oldStyle);
+        expect(decoded, isNotNull);
+        expect(decoded!.performanceArmed, isFalse);
+      },
+    );
+  });
+
   group('PedalCodec.decodeMessage', () {
     test('decodes a NoteOn for every button as a press', () {
       for (final button in PedalButton.values) {

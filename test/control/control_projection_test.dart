@@ -275,6 +275,23 @@ void main() {
       expect(frame.clearFadeActive, isTrue);
     });
 
+    test('performanceArmed defaults to false when omitted', () {
+      final frame = projectFrame(
+        _stateWith(_tracksWith(const []), masterLengthFrames: 0),
+        const ControlState(),
+      );
+      expect(frame.performanceArmed, isFalse);
+    });
+
+    test('carries performanceArmed: true onto the wire (D-PEDAL)', () {
+      final frame = projectFrame(
+        _stateWith(_tracksWith(const []), masterLengthFrames: 0),
+        const ControlState(),
+        performanceArmed: true,
+      );
+      expect(frame.performanceArmed, isTrue);
+    });
+
     test('asserts the invariant spec on an inconsistent projection input', () {
       // A stored resume set referencing an empty track violates
       // stored-intent-playable — the projection-time assert catches it.

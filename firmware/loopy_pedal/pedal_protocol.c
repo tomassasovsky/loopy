@@ -53,7 +53,8 @@ int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
   uint8_t payload[PEDAL_PAYLOAD_LEN];
   payload[0] = (uint8_t)((frame->play_mode ? 0x01 : 0) |
                          (frame->clear_fade ? 0x02 : 0) |
-                         (frame->goodbye ? 0x04 : 0));
+                         (frame->goodbye ? 0x04 : 0) |
+                         (frame->performance_armed ? 0x08 : 0));
   payload[1] = frame->global_color;
   payload[2] = frame->active_bank;
   payload[3] = frame->armed_track;
@@ -113,6 +114,7 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
   out->play_mode = (uint8_t)(payload[0] & 0x01u);
   out->clear_fade = (uint8_t)((payload[0] >> 1) & 0x01u);
   out->goodbye = (uint8_t)((payload[0] >> 2) & 0x01u);
+  out->performance_armed = (uint8_t)((payload[0] >> 3) & 0x01u);
   out->global_color = color;
   out->active_bank = bank;
   out->armed_track = armed;
