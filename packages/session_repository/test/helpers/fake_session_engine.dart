@@ -288,6 +288,14 @@ class FakeSessionEngine implements AudioEngine {
   @override
   EngineResult perfDisarm() => EngineResult.ok;
   @override
+  EngineResult renderBegin(String captureDir) => EngineResult.ok;
+  @override
+  PerformanceRenderProgress renderPoll() => PerformanceRenderProgress.empty;
+  @override
+  List<PerformanceRenderTrackStatus> renderTrackStatuses() => const [];
+  @override
+  EngineResult renderCancel() => EngineResult.ok;
+  @override
   EngineResult scanBegin({bool rescan = false}) => EngineResult.ok;
   @override
   PluginScanProgress scanPoll() => PluginScanProgress.empty;

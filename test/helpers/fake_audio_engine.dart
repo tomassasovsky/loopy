@@ -445,6 +445,33 @@ class FakeAudioEngine implements AudioEngine {
     return perfDisarmResult;
   }
 
+  /// Result returned by [renderBegin].
+  EngineResult renderBeginResult = EngineResult.ok;
+
+  /// The `captureDir` passed to the most recent [renderBegin] call.
+  String? lastRenderCaptureDir;
+
+  /// Progress reported by [renderPoll].
+  PerformanceRenderProgress renderProgress = PerformanceRenderProgress.empty;
+
+  /// Track statuses reported by [renderTrackStatuses].
+  List<PerformanceRenderTrackStatus> renderStatuses = const [];
+
+  @override
+  EngineResult renderBegin(String captureDir) {
+    lastRenderCaptureDir = captureDir;
+    return renderBeginResult;
+  }
+
+  @override
+  PerformanceRenderProgress renderPoll() => renderProgress;
+
+  @override
+  List<PerformanceRenderTrackStatus> renderTrackStatuses() => renderStatuses;
+
+  @override
+  EngineResult renderCancel() => EngineResult.ok;
+
   // --- Plugin hosting (scan: part 2; slots: part 3) ---
 
   @override

@@ -7,6 +7,7 @@ import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/fx_fingerprint.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
 
@@ -570,6 +571,45 @@ class MockAudioEngine implements AudioEngine {
   @override
   EngineResult perfDisarm() {
     _perfArmed = false; // idempotent: disarming an unarmed mock is a no-op
+    return EngineResult.ok;
+  }
+
+  /// The `captureDir` passed to the most recent [renderBegin] call, for test
+  /// assertions. `null` until the first render.
+  String? lastRenderCaptureDir;
+
+  /// The per-track outcomes [renderTrackStatuses] reports once a render has
+  /// started — set this before calling [renderBegin] to model a specific
+  /// scenario (e.g. a partial-success render).
+  List<PerformanceRenderTrackStatus> mockRenderTrackStatuses = const [];
+
+  bool _renderStarted = false;
+
+  @override
+  EngineResult renderBegin(String captureDir) {
+    if (captureDir.isEmpty) return EngineResult.invalid;
+    if (_renderStarted) return EngineResult.alreadyRunning;
+    _renderStarted = true;
+    lastRenderCaptureDir = captureDir;
+    return EngineResult.ok;
+  }
+
+  @override
+  PerformanceRenderProgress renderPoll() =>
+      // The mock has no real worker thread — a "started" render is already
+      // done, 100%, the instant it starts. That happens to be the same value
+      // as "never started" (PerformanceRenderProgress.empty), so there is
+      // nothing for _renderStarted to distinguish here; it still gates
+      // renderTrackStatuses below.
+      PerformanceRenderProgress.empty;
+
+  @override
+  List<PerformanceRenderTrackStatus> renderTrackStatuses() =>
+      _renderStarted ? mockRenderTrackStatuses : const [];
+
+  @override
+  EngineResult renderCancel() {
+    _renderStarted = false;
     return EngineResult.ok;
   }
 

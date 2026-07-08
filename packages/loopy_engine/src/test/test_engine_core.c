@@ -28,6 +28,7 @@
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
 #include "engine_platform.h"  /* le_platform_device_id_to_str, ma_device_id */
 #include "fft.h"              /* le_fft, le_rfft_fwd, le_rfft_inv, le_hann_init */
+#include "json_read.h"        /* le_json_parse (part 7 offline renderer) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
@@ -7429,6 +7430,653 @@ static void test_fft_roundtrip(void) {
   CHECK(hann[3] == -42.0f);
 }
 
+/* ---- json_read: the minimal JSON parser (part 7) ----
+ *
+ * Direct unit tests for the parser itself, isolated from the full
+ * performance.json schema every perf_render_* test below exercises it
+ * through — malformed input, arena exhaustion, and nesting are all easy to
+ * get wrong in a hand-rolled parser and deserve their own coverage. */
+
+static void test_json_read_parses_nested_objects_and_arrays(void) {
+  printf("test_json_read_parses_nested_objects_and_arrays\n");
+  static le_json_value nodes[64];
+  le_json_arena arena = {.nodes = nodes, .capacity = 64, .used = 0};
+  const char* text =
+      "{\"a\": 1, \"b\": true, \"c\": null, \"d\": \"hi\", "
+      "\"e\": {\"f\": [1, 2, 3]}}";
+  le_json_value* root = le_json_parse(text, &arena);
+  CHECK(root != NULL);
+  CHECK(le_json_number(le_json_get(root, "a"), -1) == 1.0);
+  CHECK(le_json_bool(le_json_get(root, "b"), 0) == 1);
+  CHECK(le_json_get(root, "c") != NULL);
+  CHECK(le_json_get(root, "c")->type == LE_JSON_NULL);
+  char s[8];
+  CHECK(le_json_string(le_json_get(root, "d"), s, sizeof(s)));
+  CHECK(strcmp(s, "hi") == 0);
+  const le_json_value* e = le_json_get(root, "e");
+  CHECK(e != NULL);
+  const le_json_value* f = le_json_get(e, "f");
+  CHECK(le_json_length(f) == 3);
+  CHECK(le_json_number(le_json_at(f, 0), -1) == 1.0);
+  CHECK(le_json_number(le_json_at(f, 2), -1) == 3.0);
+  CHECK(le_json_at(f, 3) == NULL); /* out of range */
+}
+
+static void test_json_read_rejects_malformed_input(void) {
+  printf("test_json_read_rejects_malformed_input\n");
+  static le_json_value nodes[16];
+  le_json_arena arena = {.nodes = nodes, .capacity = 16, .used = 0};
+  CHECK(le_json_parse("{\"a\": }", &arena) == NULL);
+  CHECK(le_json_parse("{\"a\": 1", &arena) == NULL); /* unterminated */
+  CHECK(le_json_parse("[1, 2,]", &arena) == NULL);   /* trailing comma */
+  CHECK(le_json_parse("not json", &arena) == NULL);
+  CHECK(le_json_parse("", &arena) == NULL);
+  CHECK(le_json_parse(NULL, &arena) == NULL);
+}
+
+static void test_json_read_arena_exhaustion_fails_cleanly(void) {
+  printf("test_json_read_arena_exhaustion_fails_cleanly\n");
+  /* Exactly 2 nodes' worth of capacity for a document that needs 3 (the
+   * object plus two array elements) — parsing must fail, not overrun the
+   * array or return a partially-built tree. */
+  static le_json_value nodes[2];
+  le_json_arena arena = {.nodes = nodes, .capacity = 2, .used = 0};
+  CHECK(le_json_parse("[1, 2]", &arena) == NULL);
+}
+
+static void test_json_read_get_and_length_reject_non_objects(void) {
+  printf("test_json_read_get_and_length_reject_non_objects\n");
+  static le_json_value nodes[8];
+  le_json_arena arena = {.nodes = nodes, .capacity = 8, .used = 0};
+  le_json_value* array = le_json_parse("[1, 2, 3]", &arena);
+  CHECK(array != NULL);
+  CHECK(le_json_get(array, "x") == NULL); /* not an object */
+  CHECK(le_json_length(array) == 3);      /* length still works on arrays */
+  CHECK(le_json_at(array, 0) != NULL);
+  CHECK(le_json_get(NULL, "x") == NULL);
+  CHECK(le_json_length(NULL) == 0);
+  CHECK(le_json_at(NULL, 0) == NULL);
+}
+
+/* ---- perf_render: the offline renderer (part 7) ----
+ *
+ * A native-only test cannot drive the full production pipeline (part 6's
+ * armSnapshot/disarmSnapshot/loops/*.wav/finalized:true are all written by
+ * Dart's performance_repository, never by this engine directly) — so these
+ * tests hand-construct a capture directory's contents directly, mirroring
+ * exactly what that pipeline produces (docs/design/performance-manifest-
+ * format.md, docs/design/performance-event-log-format.md), then invoke the
+ * renderer against the fixture and assert on its output stems. */
+
+#if defined(_WIN32)
+#include <direct.h> /* _mkdir */
+#else
+#include <sys/stat.h> /* mkdir */
+#endif
+
+static void test_render_mkdir(const char* path) {
+#if defined(_WIN32)
+  _mkdir(path);
+#else
+  mkdir(path, 0755);
+#endif
+}
+
+static const char* render_test_dir(const char* name) {
+  static char dir[600];
+  snprintf(dir, sizeof(dir), "%s/render_%s_%d", perf_test_dir(), name,
+          (int)test_getpid());
+  test_render_mkdir(dir);
+  return dir;
+}
+
+/* Writes `samples` as a 32-bit float mono WAV — the same fixed format
+ * wav_codec/perf_render.c's own reader expects. */
+static void test_write_wav_mono(const char* path, const float* samples,
+                                int32_t count, int32_t sample_rate) {
+  FILE* f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  unsigned char header[44] = {0};
+  memcpy(header + 0, "RIFF", 4);
+  const uint32_t data_bytes = (uint32_t)count * (uint32_t)sizeof(float);
+  const uint32_t riff_size = 36 + data_bytes;
+  memcpy(header + 4, &riff_size, 4);
+  memcpy(header + 8, "WAVE", 4);
+  memcpy(header + 12, "fmt ", 4);
+  const uint32_t fmt_size = 16;
+  memcpy(header + 16, &fmt_size, 4);
+  const uint16_t format_code = 3;
+  memcpy(header + 20, &format_code, 2);
+  const uint16_t channels = 1;
+  memcpy(header + 22, &channels, 2);
+  const uint32_t sr = (uint32_t)sample_rate;
+  memcpy(header + 24, &sr, 4);
+  const uint32_t byte_rate = sr * (uint32_t)sizeof(float);
+  memcpy(header + 28, &byte_rate, 4);
+  const uint16_t block_align = (uint16_t)sizeof(float);
+  memcpy(header + 32, &block_align, 2);
+  const uint16_t bits = 32;
+  memcpy(header + 34, &bits, 2);
+  memcpy(header + 36, "data", 4);
+  memcpy(header + 40, &data_bytes, 4);
+  fwrite(header, 1, sizeof(header), f);
+  fwrite(samples, sizeof(float), (size_t)count, f);
+  fclose(f);
+}
+
+static void test_write_raw_pcm_mono(const char* path, const float* samples,
+                                    int32_t count) {
+  FILE* f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  fwrite(samples, sizeof(float), (size_t)count, f);
+  fclose(f);
+}
+
+static void test_write_log_header(FILE* f, int32_t sample_rate) {
+  fwrite("PLEV", 1, 4, f);
+  const uint32_t version = 1;
+  fwrite(&version, 4, 1, f);
+  fwrite(&sample_rate, 4, 1, f);
+}
+
+/* Writes one 28-byte events.log entry, matching perf_drain.c's own encoding
+ * exactly (frame, code, then the union's 16-byte payload region). */
+static void test_write_log_entry(FILE* f, uint64_t frame, le_command cmd) {
+  fwrite(&frame, 8, 1, f);
+  fwrite(&cmd.code, 4, 1, f);
+  fwrite(((unsigned char*)&cmd) + 4, 16, 1, f);
+}
+
+static void test_write_manifest(const char* dir, const char* body) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/performance.json", dir);
+  FILE* f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if (f == NULL) return;
+  fwrite(body, 1, strlen(body), f);
+  fclose(f);
+}
+
+/* Reads track `channel`'s rendered dry stem and returns its frame count (0 if
+ * the file is missing/unreadable), filling `out` (caller-sized) with its
+ * samples. */
+static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
+                              int32_t out_cap) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/stems/dry/track%d.wav", dir, channel);
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return 0;
+  unsigned char header[44];
+  if (fread(header, 1, sizeof(header), f) != sizeof(header)) {
+    fclose(f);
+    return 0;
+  }
+  uint32_t data_bytes;
+  memcpy(&data_bytes, header + 40, 4);
+  const int32_t frames = (int32_t)(data_bytes / sizeof(float));
+  const int32_t n = frames < out_cap ? frames : out_cap;
+  const size_t got = fread(out, sizeof(float), (size_t)n, f);
+  fclose(f);
+  return (int32_t)got;
+}
+
+/* Polls until the render finishes or `max_polls` is exceeded (each poll ~1ms
+ * apart) — a real worker thread, not a synchronous call. */
+static void test_wait_for_render(le_engine* e, int max_polls) {
+  for (int i = 0; i < max_polls; ++i) {
+    int32_t done = 0;
+    le_perf_render_poll(e, &done, NULL, NULL);
+    if (done) return;
+    test_sleep_ms(1);
+  }
+}
+
+/* Acceptance: a scripted log (record -> play -> mute -> volume ride -> stop)
+ * renders a dry stem whose boundaries land at the exact logged frames. The
+ * non-content events (mute/volume/stop) must not corrupt the timeline — the
+ * dry stem is unity-gain loop content only (volume/mute are automation for
+ * the .als generator, parts 9-10, not baked into stem audio). */
+static void test_perf_render_scripted_log_boundaries(void) {
+  printf("test_perf_render_scripted_log_boundaries\n");
+  const char* dir = render_test_dir("scripted");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 20;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+
+  const float base[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, base, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+          "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+          "\"loops/track0-lane0.wav\"}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    test_write_log_entry(
+        lf, 2, (le_command){.code = LE_CMD_PLAY, .arg_i = 0, .arg_f = 0});
+    test_write_log_entry(
+        lf, 8, (le_command){.code = LE_CMD_SET_MUTE, .arg_i = 0, .arg_f = 1});
+    test_write_log_entry(lf, 12,
+                        (le_command){.code = LE_CMD_SET_VOLUME,
+                                    .arg_i = 0,
+                                    .arg_f = 0.3f});
+    test_write_log_entry(
+        lf, 18, (le_command){.code = LE_CMD_STOP, .arg_i = 0, .arg_f = 0});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  int32_t done = 0, progress = 0, track_count = 0;
+  CHECK(le_perf_render_poll(e, &done, &progress, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(progress == 100);
+  CHECK(track_count == 1);
+  int32_t channel = -1, succeeded = 0;
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 0);
+  CHECK(succeeded == 1);
+
+  float stem[20];
+  const int32_t got = test_read_stem(dir, 0, stem, 20);
+  CHECK(got == (int32_t)capture_frames);
+  /* Unity-gain, looped base content for the WHOLE capture window — mute/
+   * volume/stop never touch the stem's samples. */
+  for (int32_t i = 0; i < got; ++i) {
+    CHECK(fabsf(stem[i] - 1.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance: overdub-pass stitching. Track settled at arm with a constant
+ * base image; one retired layer (a different constant) whose retire frame
+ * implies a punch-in exactly `loop_len` frames earlier. Frames before the
+ * punch-in play the pre-pass (arm) image; frames from the punch-in onward
+ * play the retired layer, looped. */
+static void test_perf_render_overdub_stitching(void) {
+  printf("test_perf_render_overdub_stitching\n");
+  const char* dir = render_test_dir("stitch");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 16;
+  const uint64_t retire_frame = 12; /* the new image activates exactly here —
+                                    * not one loop cycle earlier: a punch-out
+                                    * mid-cycle retires via an async, chunked
+                                    * drain that can land arbitrarily later
+                                    * than "punch-in + one cycle", so the
+                                    * logged retire frame itself is the only
+                                    * value this capture can trust */
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+
+  const float pre[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, pre, loop_len, sr);
+
+  const float post[4] = {2.0f, 2.0f, 2.0f, 2.0f};
+  char layer_path[700];
+  snprintf(layer_path, sizeof(layer_path), "%s/layer-0-12-1.pcm", dir);
+  test_write_raw_pcm_mono(layer_path, post, loop_len);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+          "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+          "\"loops/track0-lane0.wav\"}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, "
+          "\"layers\": [{\"channel\": 0, \"slot\": 1, \"generation\": 0, "
+          "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
+          "\"filename\": \"layer-0-12-1.pcm\"}]}",
+          sr, (unsigned long long)capture_frames,
+          (unsigned long long)retire_frame, loop_len);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    test_write_log_entry(
+        lf, retire_frame,
+        (le_command){.code = LE_PLOG_LAYER_RETIRED,
+                    .evt = {.channel = 0, .slot = 1, .generation = 0}});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  float stem[16];
+  const int32_t got = test_read_stem(dir, 0, stem, 16);
+  CHECK(got == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < retire_frame; ++f) {
+    CHECK(fabsf(stem[f] - 1.0f) < 1e-6f); /* before retire: pre-pass image */
+  }
+  for (uint64_t f = retire_frame; f < capture_frames; ++f) {
+    CHECK(fabsf(stem[f] - 2.0f) < 1e-6f); /* from retire onward: post-pass */
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance: a track recorded fresh while armed (absent from armSnapshot,
+ * present only in disarmSnapshot) renders silence up to its logged
+ * RECORD_END frame, then the disarm-snapshot content, looped. */
+static void test_perf_render_fresh_recorded_while_armed(void) {
+  printf("test_perf_render_fresh_recorded_while_armed\n");
+  const char* dir = render_test_dir("fresh");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 12;
+  const uint64_t record_end = 4;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, content, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"tracks\": []}, "
+          "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 1, \"lanes\": "
+          "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+          "\"loops/track1-lane0.wav\"}]}]}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    test_write_log_entry(
+        lf, record_end,
+        (le_command){.code = LE_PLOG_RECORD_END, .arg_i = 1, .arg_f = 0});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  float stem[12];
+  const int32_t got = test_read_stem(dir, 1, stem, 12);
+  CHECK(got == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < record_end; ++f) {
+    CHECK(fabsf(stem[f]) < 1e-6f); /* silent while recording */
+  }
+  for (uint64_t f = record_end; f < capture_frames; ++f) {
+    CHECK(fabsf(stem[f] - 0.5f) < 1e-6f); /* disarm-snapshot content, looped */
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance: progress is monotonic 0-100 and reaches done; cancel stops the
+ * worker within one work chunk (join returns promptly) and leaves no partial
+ * stem file for whichever track was in flight. */
+static void test_perf_render_progress_and_cancel(void) {
+  printf("test_perf_render_progress_and_cancel\n");
+  const char* dir = render_test_dir("progress");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+
+  const float content[4] = {0.25f, 0.25f, 0.25f, 0.25f};
+  char manifest_tracks[4096];
+  int off = 0;
+  for (int ch = 0; ch < 4; ++ch) {
+    char wav_path[700];
+    snprintf(wav_path, sizeof(wav_path), "%s/track%d-lane0.wav", loops_dir, ch);
+    test_write_wav_mono(wav_path, content, loop_len, sr);
+    off += snprintf(manifest_tracks + off, sizeof(manifest_tracks) - (size_t)off,
+                   "%s{\"channel\": %d, \"lanes\": [{\"lane\": 0, "
+                   "\"deferred\": false, \"pcmRef\": "
+                   "\"loops/track%d-lane0.wav\"}]}",
+                   ch == 0 ? "" : ", ", ch, ch);
+  }
+
+  char manifest[8192];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %d, "
+          "\"armSnapshot\": {\"tracks\": [%s]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, loop_len, manifest_tracks);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    fclose(lf);
+  }
+
+  /* Run 1: let it run to completion, sampling progress along the way. */
+  le_engine* e1 = le_engine_create();
+  CHECK(le_perf_render_begin(e1, dir) == LE_OK);
+  int32_t last_progress = -1;
+  int32_t done = 0;
+  for (int i = 0; i < 2000 && !done; ++i) {
+    int32_t p = 0;
+    le_perf_render_poll(e1, &done, &p, NULL);
+    CHECK(p >= last_progress); /* monotonic */
+    last_progress = p;
+    if (!done) test_sleep_ms(1);
+  }
+  CHECK(done == 1);
+  CHECK(last_progress == 100);
+  le_engine_destroy(e1);
+
+  /* Run 2: cancel immediately; the worker must stop and join without
+   * hanging, and le_perf_render_begin on a fresh engine (a fresh capture
+   * dir's worth of state, same fixture) must still work afterward — this
+   * only proves cancel's join is well-behaved, not a specific partial-file
+   * guarantee (which would need pausing the worker mid-chunk, not exercised
+   * here). */
+  le_engine* e2 = le_engine_create();
+  CHECK(le_perf_render_begin(e2, dir) == LE_OK);
+  CHECK(le_perf_render_cancel(e2) == LE_OK);
+  int32_t done2 = 0;
+  le_perf_render_poll(e2, &done2, NULL, NULL);
+  CHECK(done2 == 1); /* no render active: poll reports done */
+  le_engine_destroy(e2);
+}
+
+/* Acceptance: a render runs correctly while the SAME engine keeps processing
+ * live audio — no interaction (the render thread never touches live engine
+ * state; the audio thread never touches the render handle). */
+static void test_perf_render_concurrent_with_live_engine(void) {
+  printf("test_perf_render_concurrent_with_live_engine\n");
+  const char* dir = render_test_dir("concurrent");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float content[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, content, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %d, "
+          "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+          "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+          "\"loops/track0-lane0.wav\"}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, loop_len);
+  test_write_manifest(dir, manifest);
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    fclose(lf);
+  }
+
+  le_engine* live = make_configured_engine();
+  record_base_loop(live, 1.0f);
+  le_snapshot before;
+  le_engine_get_snapshot(live, &before);
+
+  le_engine* renderer = le_engine_create();
+  CHECK(le_perf_render_begin(renderer, dir) == LE_OK);
+
+  float out[LOOP_N];
+  process_const(live, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  test_wait_for_render(renderer, 2000);
+  int32_t done = 0;
+  le_perf_render_poll(renderer, &done, NULL, NULL);
+  CHECK(done == 1);
+
+  le_snapshot after;
+  le_engine_get_snapshot(live, &after);
+  CHECK(after.tracks[0].state == before.tracks[0].state);
+  CHECK(after.tracks[0].length_frames == before.tracks[0].length_frames);
+
+  le_engine_destroy(live);
+  le_engine_destroy(renderer);
+}
+
+/* Acceptance: a per-stem failure (an unreadable pcmRef) yields partial
+ * success — the render still completes, reporting that one track failed
+ * while the other succeeded, rather than aborting the whole render. */
+static void test_perf_render_partial_success(void) {
+  printf("test_perf_render_partial_success\n");
+  const char* dir = render_test_dir("partial");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float content[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, content, loop_len, sr);
+  /* track1's pcmRef deliberately points at a file that does not exist. */
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %d, "
+          "\"armSnapshot\": {\"tracks\": ["
+          "{\"channel\": 0, \"lanes\": [{\"lane\": 0, \"deferred\": false, "
+          "\"pcmRef\": \"loops/track0-lane0.wav\"}]}, "
+          "{\"channel\": 1, \"lanes\": [{\"lane\": 0, \"deferred\": false, "
+          "\"pcmRef\": \"loops/track1-lane0.wav\"}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, loop_len);
+  test_write_manifest(dir, manifest);
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  int32_t done = 0, track_count = 0;
+  le_perf_render_poll(e, &done, NULL, &track_count);
+  CHECK(done == 1);
+  CHECK(track_count == 2);
+
+  int good = 0, bad = 0;
+  for (int i = 0; i < track_count; ++i) {
+    int32_t channel = -1, succeeded = -1;
+    CHECK(le_perf_render_track_status(e, i, &channel, &succeeded) == LE_OK);
+    if (channel == 0) {
+      CHECK(succeeded == 1);
+      good++;
+    } else if (channel == 1) {
+      CHECK(succeeded == 0);
+      bad++;
+    }
+  }
+  CHECK(good == 1);
+  CHECK(bad == 1);
+  CHECK(test_read_stem(dir, 0, (float[4]){0}, 4) == loop_len);
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance (robustness): pointing a render at a directory with no
+ * performance.json (or, separately, a corrupt one) must not hang or crash —
+ * the worker should reach `done` with zero tracks, matching a render that
+ * legitimately has nothing to do. */
+static void test_perf_render_missing_or_corrupt_manifest(void) {
+  printf("test_perf_render_missing_or_corrupt_manifest\n");
+
+  const char* missing_dir = render_test_dir("missing-manifest");
+  le_engine* e1 = le_engine_create();
+  CHECK(le_perf_render_begin(e1, missing_dir) == LE_OK);
+  test_wait_for_render(e1, 2000);
+  int32_t done = 0, track_count = -1;
+  CHECK(le_perf_render_poll(e1, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(track_count == 0);
+  le_engine_destroy(e1);
+
+  const char* corrupt_dir = render_test_dir("corrupt-manifest");
+  test_write_manifest(corrupt_dir, "{not valid json");
+  le_engine* e2 = le_engine_create();
+  CHECK(le_perf_render_begin(e2, corrupt_dir) == LE_OK);
+  test_wait_for_render(e2, 2000);
+  done = 0;
+  track_count = -1;
+  CHECK(le_perf_render_poll(e2, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(track_count == 0);
+  le_engine_destroy(e2);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -7619,6 +8267,19 @@ int main(void) {
   test_octaver_psola_no_chatter();
   test_octaver_added_latency();
   test_fft_roundtrip();
+
+  test_json_read_parses_nested_objects_and_arrays();
+  test_json_read_rejects_malformed_input();
+  test_json_read_arena_exhaustion_fails_cleanly();
+  test_json_read_get_and_length_reject_non_objects();
+
+  test_perf_render_scripted_log_boundaries();
+  test_perf_render_overdub_stitching();
+  test_perf_render_fresh_recorded_while_armed();
+  test_perf_render_progress_and_cancel();
+  test_perf_render_concurrent_with_live_engine();
+  test_perf_render_partial_success();
+  test_perf_render_missing_or_corrupt_manifest();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

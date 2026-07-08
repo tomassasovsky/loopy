@@ -88,6 +88,8 @@ add_library(loopy_engine SHARED
   core/perf_log_ring.c       # perf event log: SPSC ring of frame-tagged le_command entries
   core/layer_staging_ring.c  # retired-layer PCM staging ring (persist before pool eviction)
   core/perf_drain.c          # perf-capture drain thread: rings -> raw PCM + sidecar
+  core/json_read.c           # minimal read-only JSON parser (performance.json)
+  core/perf_render.c         # offline renderer: replay capture dir -> dry stems
   # Control-thread plugin-slot lifecycle (load/clear + quiescent handshake).
   # Always compiled; calls le_plugin_slot_create which is the real host on a
   # plugin build and a NULL-returning stub otherwise.
