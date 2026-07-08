@@ -1033,6 +1033,52 @@ LE_EXPORT int32_t le_perf_arm(le_engine* engine, const char* capture_dir);
  * le_engine_destroy). */
 LE_EXPORT int32_t le_perf_disarm(le_engine* engine);
 
+/* ---- offline performance renderer (part 7 of the DAW-export stack) ----
+ * Dry replay only (`perf_render.h`): reconstructs full-length per-track
+ * stems from a FINALIZED capture directory (part 6's `performance.json` +
+ * `events.log` + `loops/` + retired-layer PCM), on a dedicated worker
+ * thread. Reads exclusively from disk — no live-engine dependency — so a
+ * render can run concurrently with live looping, and a crash-salvage render
+ * is free. Wet stems + the golden master-parity gate are part 8. */
+
+/* Starts an offline render of the finalized capture at `capture_dir`: spawns
+ * a worker thread that writes `stems/dry/track<channel>.wav` under
+ * `capture_dir` for every non-empty track, with poll-based progress. Returns
+ * LE_OK once the worker thread is launched (this call never blocks on the
+ * render itself), LE_ERR_INVALID for a null engine/capture_dir or an empty
+ * capture_dir, or LE_ERR_ALREADY_RUNNING if a render is already active on
+ * this engine. */
+LE_EXPORT int32_t le_perf_render_begin(le_engine* engine,
+                                       const char* capture_dir);
+
+/* Reads the current render's progress: `*done` (0 while rendering, 1 once
+ * finished), `*progress_pct` (0..100, monotonic), `*track_count` (how many
+ * entries `le_perf_render_track_status` can currently read — grows
+ * progressively as each track's stem completes, not only once `*done`).
+ * Safe to call whether or not a render is active — with none active,
+ * `*done` reads 1, `*progress_pct` reads 100, `*track_count` reads 0. Any
+ * output pointer may be NULL to skip that field. Returns LE_OK, or
+ * LE_ERR_INVALID for a null engine. */
+LE_EXPORT int32_t le_perf_render_poll(le_engine* engine, int32_t* done,
+                                     int32_t* progress_pct,
+                                     int32_t* track_count);
+
+/* Reads render result `index`'s (0..track_count-1, from the most recent
+ * le_perf_render_poll) track channel and outcome (`*succeeded`: 1 if its
+ * stem was written, 0 on a per-stem failure — the umbrella's "partial
+ * success" posture: one failed stem does not abort the others). Returns
+ * LE_OK, or LE_ERR_INVALID for a null engine / out-of-range index. */
+LE_EXPORT int32_t le_perf_render_track_status(le_engine* engine,
+                                              int32_t index, int32_t* channel,
+                                              int32_t* succeeded);
+
+/* Cancels an in-progress render and joins the worker thread; a no-op when no
+ * render is active. Cancellation is checked once per per-track work chunk
+ * (never mid-stem), so this only returns once the worker has actually
+ * stopped, leaving no partial stem file for whichever track was in flight.
+ * Returns LE_OK, or LE_ERR_INVALID for a null engine. */
+LE_EXPORT int32_t le_perf_render_cancel(le_engine* engine);
+
 /* ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
  * An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
  * for each of the a_fx_count active entries, its type, plus (for a built-in) its

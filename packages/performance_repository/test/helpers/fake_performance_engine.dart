@@ -159,6 +159,34 @@ class FakePerformanceEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  int renderBeginCalls = 0;
+  String? lastRenderCaptureDir;
+  EngineResult renderBeginResult = EngineResult.ok;
+  List<PerformanceRenderTrackStatus> mockRenderTrackStatuses = const [];
+  bool _renderStarted = false;
+
+  @override
+  EngineResult renderBegin(String captureDir) {
+    renderBeginCalls++;
+    lastRenderCaptureDir = captureDir;
+    if (!renderBeginResult.isOk) return renderBeginResult;
+    _renderStarted = true;
+    return EngineResult.ok;
+  }
+
+  @override
+  PerformanceRenderProgress renderPoll() => PerformanceRenderProgress.empty;
+
+  @override
+  List<PerformanceRenderTrackStatus> renderTrackStatuses() =>
+      _renderStarted ? mockRenderTrackStatuses : const [];
+
+  @override
+  EngineResult renderCancel() {
+    _renderStarted = false;
+    return EngineResult.ok;
+  }
+
   // ---- unused by PerformanceRepository: inert defaults ----
   @override
   String get version => 'fake';

@@ -10,6 +10,7 @@ import 'package:loopy_engine/src/engine_snapshot.dart';
 import 'package:loopy_engine/src/ffi_strings.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart';
 import 'package:loopy_engine/src/loopback_info.dart';
+import 'package:loopy_engine/src/performance_render_progress.dart';
 import 'package:loopy_engine/src/plugin_descriptor.dart';
 import 'package:loopy_engine/src/track_effect.dart';
 import 'package:meta/meta.dart';
@@ -1007,6 +1008,80 @@ class NativeAudioEngine implements AudioEngine {
   EngineResult perfDisarm() {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_perf_disarm(_engine));
+  }
+
+  @override
+  EngineResult renderBegin(String captureDir) {
+    _checkAlive();
+    final dirPtr = captureDir.toNativeUtf8();
+    try {
+      return EngineResult.fromCode(
+        _bindings.le_perf_render_begin(_engine, dirPtr.cast()),
+      );
+    } finally {
+      malloc.free(dirPtr);
+    }
+  }
+
+  @override
+  PerformanceRenderProgress renderPoll() {
+    _checkAlive();
+    final donePtr = calloc<Int32>();
+    final progressPtr = calloc<Int32>();
+    try {
+      _bindings.le_perf_render_poll(_engine, donePtr, progressPtr, nullptr);
+      return PerformanceRenderProgress(
+        done: donePtr.value != 0,
+        progressPercent: progressPtr.value,
+      );
+    } finally {
+      calloc
+        ..free(donePtr)
+        ..free(progressPtr);
+    }
+  }
+
+  @override
+  List<PerformanceRenderTrackStatus> renderTrackStatuses() {
+    _checkAlive();
+    final countPtr = calloc<Int32>();
+    final channelPtr = calloc<Int32>();
+    final succeededPtr = calloc<Int32>();
+    try {
+      _bindings.le_perf_render_poll(_engine, nullptr, nullptr, countPtr);
+      final count = countPtr.value;
+      if (count <= 0) return const [];
+      final result = <PerformanceRenderTrackStatus>[];
+      for (var i = 0; i < count; i++) {
+        if (_bindings.le_perf_render_track_status(
+              _engine,
+              i,
+              channelPtr,
+              succeededPtr,
+            ) !=
+            0) {
+          continue;
+        }
+        result.add(
+          PerformanceRenderTrackStatus(
+            channel: channelPtr.value,
+            succeeded: succeededPtr.value != 0,
+          ),
+        );
+      }
+      return result;
+    } finally {
+      calloc
+        ..free(countPtr)
+        ..free(channelPtr)
+        ..free(succeededPtr);
+    }
+  }
+
+  @override
+  EngineResult renderCancel() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_perf_render_cancel(_engine));
   }
 
   @override
