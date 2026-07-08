@@ -3402,6 +3402,44 @@ static int find_log_entry(const unsigned char* buf, size_t count, int from,
   return -1;
 }
 
+/* ---- retired-layer manifest test helpers (part 5, D-LAYER) — the sidecar's
+ * "layers" array is hand-rolled JSON like the rest of performance.json, so
+ * these are plain strstr-based scans, not a real parser. ---- */
+
+/* Counts occurrences of `"filename"` in the sidecar text — one per layer
+ * manifest entry, a cheap proxy for "how many layers were persisted." */
+static int count_layer_entries_for_test(const char* json) {
+  int count = 0;
+  const char* p = json;
+  while ((p = strstr(p, "\"filename\"")) != NULL) {
+    ++count;
+    p += 10;
+  }
+  return count;
+}
+
+/* Extracts the Nth (0-indexed) layer entry's filename field from the
+ * sidecar's "layers" array into `out` (a plain scan for `"filename": "..."`,
+ * matching le_pd_write_sidecar's own construction exactly). Returns 1 on
+ * success, 0 if fewer than n+1 entries exist. */
+static int nth_layer_filename_for_test(const char* json, int n, char* out,
+                                       size_t out_cap) {
+  const char* p = json;
+  for (int i = 0; i <= n; ++i) {
+    p = strstr(p, "\"filename\": \"");
+    if (p == NULL) return 0;
+    if (i < n) p += 13;
+  }
+  p += 13; /* past the opening quote */
+  const char* end = strchr(p, '"');
+  if (end == NULL) return 0;
+  size_t len = (size_t)(end - p);
+  if (len >= out_cap) len = out_cap - 1;
+  memcpy(out, p, len);
+  out[len] = '\0';
+  return 1;
+}
+
 static void test_perf_arm_requires_configure(void) {
   printf("test_perf_arm_requires_configure\n");
   le_engine* e = le_engine_create();
@@ -4509,6 +4547,427 @@ static void test_perf_events_log_readable_after_abrupt_stop(void) {
   CHECK(find_log_entry(buf, count, 0, LE_CMD_SET_MASTER_GAIN, &entry) >= 0);
 
   le_perf_disarm(e);
+  le_engine_destroy(e);
+}
+
+/* ---- retired-layer persistence (part 5, D-LAYER) ---- */
+
+/* Acceptance criterion: a layer survives pool eviction. Deliberately overflow
+ * LE_POOL_SLOTS with overdub passes while armed (mirrors
+ * test_undo_pool_eviction's exact technique — one continuous punch-in held
+ * across many passes, LOOP_N frames each, polled between passes) and confirm
+ * every one of them was persisted to its own file with the fed content,
+ * regardless of how many their in-memory undo_stack slot was evicted from. */
+static void test_perf_layer_persists_through_pool_eviction(void) {
+  printf("test_perf_layer_persists_through_pool_eviction\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in, hold across many passes */
+  const int passes = LE_POOL_SLOTS + 10;
+  le_snapshot poll;
+  for (int pass = 0; pass < passes; ++pass) {
+    process_const(e, 0.5f, LOOP_N, out);
+    /* The poll tick: le_engine_get_snapshot drains evt_ring (unlike drain(e),
+     * which only pumps the command ring) — this is what actually calls
+     * le_handle_retired / stages each retire while armed, matching
+     * test_undo_pool_eviction's exact per-pass technique. */
+    le_engine_get_snapshot(e, &poll);
+  }
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  settle_dub(e);
+
+  CHECK(atomic_load_explicit(&e->a_perf_layer_overruns, memory_order_relaxed) ==
+        0u);
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* blocks: final flush + join */
+
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  static char json[262144];
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+
+  const int layer_count = count_layer_entries_for_test(json);
+  /* Every pass retires exactly one layer (dub_len == LOOP_N, one pass per
+   * call) — pool eviction only affects the in-memory undo_stack, never
+   * whether a layer got staged in the first place. */
+  CHECK(layer_count == passes);
+
+  /* Spot-check the first and last persisted layers' content. Undo layers are
+   * backup-ON-WRITE snapshots of the PRE-pass content (what undo restores
+   * you to), not the post-pass result — so the layer retiring after pass i
+   * (0-indexed) holds 1.0 + 0.5*i: the first pass's retiring layer is just
+   * the recorded base (1.0), and the last pass's is one step behind the
+   * final `top` test_undo_pool_eviction computes. */
+  char filename[64];
+  CHECK(nth_layer_filename_for_test(json, 0, filename, sizeof(filename)));
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+  }
+
+  CHECK(nth_layer_filename_for_test(json, passes - 1, filename,
+                                    sizeof(filename)));
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    const float want = 1.0f + 0.5f * (float)(passes - 1);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - want) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: clearing a track mid-overdub while armed loses no
+ * already-retired layer. Two full passes retire two layers, then a third
+ * pass is left mid-flight (never reaches dub_len) when clear fires — the two
+ * completed layers must still be on disk with correct content, and the clear
+ * itself must still succeed cleanly. */
+static void test_perf_layer_persists_through_clear_during_dub(void) {
+  printf("test_perf_layer_persists_through_clear_during_dub\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  /* Undo layers back up the PRE-pass content: pass 1's retiring layer holds
+   * the base (1.0), pass 2's holds 1.5 (post-pass-1). Uses drain(e), not
+   * le_engine_get_snapshot: it does not itself reach le_engine_drain_events,
+   * so both passes' retire events actually stage together, in the same
+   * sweep, inside le_engine_clear's own leading drain call below — this
+   * test doubles as (incidental) burst coverage for the unconditional-
+   * staging-before-generation-check ordering in le_handle_retired. */
+  process_const(e, 0.5f, LOOP_N, out); /* pass 1: retiring layer holds 1.0 */
+  drain(e);
+  process_const(e, 0.5f, LOOP_N, out); /* pass 2: retiring layer holds 1.5 */
+  drain(e);
+  /* Pass 3, left mid-flight: less than a full dub_len, never retires. */
+  process_const(e, 0.5f, LOOP_N / 2, out);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* The engine stays usable after the clear. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.25f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  static char json[262144];
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+
+  /* Both completed passes persisted; the mid-flight third never retired, so
+   * it contributes nothing (correctly — there was no complete layer to
+   * lose). */
+  CHECK(count_layer_entries_for_test(json) == 2);
+
+  char filename[64];
+  CHECK(nth_layer_filename_for_test(json, 0, filename, sizeof(filename)));
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+  }
+
+  CHECK(nth_layer_filename_for_test(json, 1, filename, sizeof(filename)));
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.5f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: undo -> new overdub while armed persists the
+ * invalidated redo layer before its slot is reclaimed. A completed pass
+ * retires (and is staged), then undo pushes it onto the redo stack, then a
+ * fresh punch-in invalidates that redo stack (le_begin_punch_in's
+ * le_clear_redo) — the layer's file must still exist and be correct even
+ * though its in-memory redo_stack reference was just discarded. */
+static void test_perf_layer_persists_through_redo_invalidation(void) {
+  printf("test_perf_layer_persists_through_redo_invalidation\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  process_const(e, 0.5f, LOOP_N, out); /* one pass: retiring layer holds 1.0 */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out); /* settle the punch envelope */
+  drain(e);
+
+  le_snapshot s;
+  for (int i = 0; i < 64; ++i) {
+    le_engine_get_snapshot(e, &s);
+    if (s.tracks[0].undo_depth > 0) break;
+    drain(e);
+  }
+  CHECK(s.tracks[0].undo_depth > 0);
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* the layer moves to the redo stack */
+  drain(e);
+
+  /* A fresh punch-in invalidates the redo stack that layer was sitting on. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.25f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  static char json[262144];
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+
+  /* The undone layer and the fresh punch-in's completed pass both persisted,
+   * in retire order — both retiring layers hold 1.0 (the pre-pass base):
+   * the undo restored the track to exactly the same content the fresh
+   * punch-in then dubbed over again. */
+  CHECK(count_layer_entries_for_test(json) == 2);
+
+  char filename[64];
+  CHECK(nth_layer_filename_for_test(json, 0, filename, sizeof(filename)));
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+  }
+
+  CHECK(nth_layer_filename_for_test(json, 1, filename, sizeof(filename)));
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: staging hand-off ordering — a layer is never reported
+ * persisted (in the sidecar manifest) before its file is actually flushed;
+ * a drain-thread write failure marks the sidecar (disk_full) rather than
+ * crashing. Forces every write to fail (the same test hook part 2 uses),
+ * drives one retire while armed, and confirms the failing layer never
+ * appears in the manifest even though its file was created. */
+static void test_perf_layer_hand_off_ordering_on_write_failure(void) {
+  printf("test_perf_layer_hand_off_ordering_on_write_failure\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+
+  le_perf_drain_force_write_failure_for_test(1);
+
+  process_const(e, 0.5f, LOOP_N, out); /* a layer retires and is staged */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  drain(e);
+
+  /* Poll rather than a fixed sleep — needs the drain thread's OWN background
+   * cycle to observe the forced failure (matches part 2's disk-full test). */
+  const int stopped = poll_drain_self_stopped_for_test(e->perf.drain, 2000);
+  le_perf_drain_force_write_failure_for_test(0); /* reset before other tests */
+  CHECK(stopped);
+
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  static char json[262144];
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+  CHECK(strstr(json, "\"stopped_early\": \"disk_full\"") != NULL);
+  /* Never reported: the write failed, so le_pd_write_staged_layer never
+   * reached the point where it records a manifest entry. */
+  CHECK(count_layer_entries_for_test(json) == 0);
+
+  le_perf_disarm(e);
+  le_engine_destroy(e);
+}
+
+/* Acceptance criterion: not armed -> zero behavior change. Every existing
+ * undo/redo/clear/pool-eviction test already exercises this path untouched
+ * (the broader regression proof), but this pins the part-5-specific
+ * invariant directly: an overdub pass retiring with performance capture
+ * NEVER armed must not touch the staging ring or its overrun counter at
+ * all. */
+static void test_perf_layer_no_staging_when_unarmed(void) {
+  printf("test_perf_layer_no_staging_when_unarmed\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  process_const(e, 0.5f, LOOP_N, out);    /* one pass retires, unarmed */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  drain(e);
+  settle_dub(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1); /* the retire itself still worked */
+  CHECK(atomic_load_explicit(&e->a_perf_layer_overruns, memory_order_relaxed) ==
+        0u);
+
+  le_staged_layer entry;
+  CHECK(le_layer_staging_ring_pop(&e->perf.layer_staging_ring, &entry) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Direct ring-level test (no engine, no threads): proves the ring's own
+ * full/pop bookkeeping holds at exactly the capacity this engine configures
+ * it with (LE_MAX_TRACKS * LE_POOL_SLOTS — the multi-track worst case, see
+ * engine_private.h). le_stage_retired_layer's own overrun handling (freeing
+ * the copied PCM and incrementing a_perf_layer_overruns on a failed push) is
+ * covered by test_perf_layer_no_staging_when_unarmed's sibling arm-time
+ * paths; this test isolates the ring primitive itself. */
+static void test_layer_staging_ring_overflow_returns_zero(void) {
+  printf("test_layer_staging_ring_overflow_returns_zero\n");
+  static le_staged_layer storage[LE_LAYER_STAGING_RING_CAPACITY];
+  le_layer_staging_ring ring;
+  CHECK(le_layer_staging_ring_init(&ring, storage,
+                                   LE_LAYER_STAGING_RING_CAPACITY) == 1);
+
+  le_staged_layer entry = {0}; /* lane_count 0: no heap buffers to leak here */
+
+  int pushed = 0;
+  for (uint32_t i = 0; i < LE_LAYER_STAGING_RING_CAPACITY; ++i) {
+    entry.slot = (int32_t)i;
+    if (!le_layer_staging_ring_push(&ring, entry)) break;
+    ++pushed;
+  }
+  CHECK(pushed == (int)LE_LAYER_STAGING_RING_CAPACITY - 1); /* one slot reserved */
+  CHECK(le_layer_staging_ring_push(&ring, entry) == 0);     /* still full */
+
+  le_staged_layer out;
+  CHECK(le_layer_staging_ring_pop(&ring, &out) == 1);
+  CHECK(out.slot == 0);                                 /* FIFO order held */
+  CHECK(le_layer_staging_ring_push(&ring, entry) == 1); /* freed slot reusable */
+  ++pushed; /* that push added one more entry beyond the initial fill */
+
+  int popped = 1; /* the explicit pop above */
+  while (le_layer_staging_ring_pop(&ring, &out)) ++popped;
+  CHECK(popped == pushed);
+}
+
+/* Acceptance edge case: two retires landing in the SAME le_engine_drain_events
+ * sweep (a burst — no poll between the two passes) exercises
+ * le_stage_retired_layer's unconditional-staging-before-generation-check
+ * ordering differently than the one-retire-per-poll pattern every other test
+ * in this cluster uses. Both must still be staged and persisted, in FIFO
+ * order, with nothing skipped or reordered. */
+static void test_perf_layer_persists_burst_of_two_in_one_drain(void) {
+  printf("test_perf_layer_persists_burst_of_two_in_one_drain\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  /* Two full passes back to back with no poll in between: both retire
+   * events sit in evt_ring until the single le_engine_get_snapshot below
+   * drains them together. */
+  process_const(e, 0.5f, LOOP_N, out);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_snapshot poll;
+  le_engine_get_snapshot(e, &poll); /* one sweep, two retires */
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch out */
+  drain(e);
+  settle_dub(e);
+
+  CHECK(atomic_load_explicit(&e->a_perf_layer_overruns, memory_order_relaxed) ==
+        0u);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char sidecar_path[600];
+  snprintf(sidecar_path, sizeof(sidecar_path), "%s/performance.json",
+          perf_test_dir());
+  static char json[262144];
+  CHECK(read_file_for_test(sidecar_path, json, sizeof(json)) > 0);
+
+  CHECK(count_layer_entries_for_test(json) == 2);
+
+  char filename[64];
+  CHECK(nth_layer_filename_for_test(json, 0, filename, sizeof(filename)));
+  char path[700];
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+  }
+
+  CHECK(nth_layer_filename_for_test(json, 1, filename, sizeof(filename)));
+  snprintf(path, sizeof(path), "%s/%s", perf_test_dir(), filename);
+  f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    float pcm[LOOP_N];
+    CHECK(fread(pcm, sizeof(float), LOOP_N, f) == LOOP_N);
+    fclose(f);
+    for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 1.5f) < 1e-6f);
+  }
+
   le_engine_destroy(e);
 }
 
@@ -7029,6 +7488,13 @@ int main(void) {
   test_perf_events_log_command_storm_no_loss();
   test_perf_events_log_fx_param_sweep_monotonic_frames();
   test_perf_events_log_readable_after_abrupt_stop();
+  test_perf_layer_persists_through_pool_eviction();
+  test_perf_layer_persists_through_clear_during_dub();
+  test_perf_layer_persists_through_redo_invalidation();
+  test_perf_layer_hand_off_ordering_on_write_failure();
+  test_perf_layer_no_staging_when_unarmed();
+  test_layer_staging_ring_overflow_returns_zero();
+  test_perf_layer_persists_burst_of_two_in_one_drain();
   test_record_does_not_self_snapshot();
   test_record_never_touches_lane_fx();
   test_output_disabled_is_silent_routes_preserved();

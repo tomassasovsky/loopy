@@ -307,7 +307,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
                         engine->perf.log_ctrl_storage,
                         LE_PERF_LOG_CTRL_RING_CAPACITY);
-
+  le_layer_staging_ring_init(&engine->perf.layer_staging_ring,
+                             engine->perf.layer_staging_storage,
+                             LE_LAYER_STAGING_RING_CAPACITY);
 
   /* Latency-measurement capture window (~100 ms): the audio thread fills it with
    * the input-magnitude envelope, the resolver cross-correlates it. */
@@ -483,6 +485,9 @@ le_engine* le_engine_create(void) {
   le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
                         engine->perf.log_ctrl_storage,
                         LE_PERF_LOG_CTRL_RING_CAPACITY);
+  le_layer_staging_ring_init(&engine->perf.layer_staging_ring,
+                             engine->perf.layer_staging_storage,
+                             LE_LAYER_STAGING_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
