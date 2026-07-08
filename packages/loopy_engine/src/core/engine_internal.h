@@ -213,6 +213,23 @@ int32_t le_engine_perf_master_channels_for_test(le_engine* engine);
 int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
                                             float* out, int32_t max_frames);
 
+/* ---- perf-drain test seams (perf_drain.h; part 2) ---- */
+
+struct le_perf_drain; /* opaque; full definition in perf_drain.c */
+
+/* Whether the drain thread stopped itself early (a disk-full write failure)
+ * rather than running until le_perf_drain_stop was called. Only safe to call
+ * up until the corresponding le_perf_drain_stop — that call frees `drain`, so
+ * a `drain` pointer retained past it is a use-after-free. Not part of the FFI
+ * surface. */
+int le_perf_drain_self_stopped_for_test(struct le_perf_drain* drain);
+
+/* Forces every subsequent PCM/sidecar write attempt (across every drain
+ * thread in the process) to fail, deterministically simulating a full disk
+ * without needing a real one. Disabled by default; a test must re-disable it
+ * (pass 0) before the next test runs. Not part of the FFI surface. */
+void le_perf_drain_force_write_failure_for_test(int enabled);
+
 #ifdef __cplusplus
 }
 #endif

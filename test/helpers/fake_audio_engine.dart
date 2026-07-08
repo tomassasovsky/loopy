@@ -426,9 +426,13 @@ class FakeAudioEngine implements AudioEngine {
   /// Result returned by [perfDisarm].
   EngineResult perfDisarmResult = EngineResult.ok;
 
+  /// The `captureDir` passed to the most recent [perfArm] call.
+  String? lastPerfCaptureDir;
+
   @override
-  EngineResult perfArm() {
+  EngineResult perfArm(String captureDir) {
     perfArmCalls++;
+    lastPerfCaptureDir = captureDir;
     return perfArmResult;
   }
 

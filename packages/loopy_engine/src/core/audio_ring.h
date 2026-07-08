@@ -7,8 +7,8 @@
  * same wait-free push/pop discipline, but with the producer/consumer roles
  * reversed from le_ring — here the AUDIO thread is the producer (the
  * performance-capture taps in engine_process.c push into it) and the control
- * thread is the eventual consumer (a future drain thread; part 1 has none, so
- * pop only serves tests). push_frame writes `n` contiguous floats as one
+ * thread is the consumer (perf_drain.c's background drain thread). push_frame
+ * writes `n` contiguous floats as one
  * all-or-nothing unit so a stereo/mono capture frame is never torn across a
  * fill/drop boundary: on a full ring it drops the whole frame and returns 0
  * rather than partially writing it.
@@ -48,9 +48,8 @@ int le_audio_ring_push_frame(le_audio_ring* ring, const float* samples,
                             size_t n);
 
 /* Consumer side: pops up to `max` samples into `out`, returning the count
- * actually popped (0 if the ring is empty). Wait-free. Not called from the
- * audio thread in this slice (there is no drain thread yet); exists for
- * native-test bit-parity assertions and a future drain consumer. */
+ * actually popped (0 if the ring is empty). Wait-free. Called from
+ * perf_drain.c's background drain thread, never from the audio thread. */
 size_t le_audio_ring_pop(le_audio_ring* ring, float* out, size_t max);
 
 #ifdef __cplusplus
