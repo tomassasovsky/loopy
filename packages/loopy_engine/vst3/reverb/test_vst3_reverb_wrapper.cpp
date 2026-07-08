@@ -343,6 +343,22 @@ static void test_reverb_stays_correct_at_96khz() {
   setup.maxSamplesPerBlock = 4096;
   setup.sampleRate = 96000.0;
   CHECK(proc->setupProcessing(setup) == kResultOk);
+
+  // The actual invariant this regression guards: the ring must be large
+  // enough for BOTH banks' combined comb+allpass+spread offsets to run
+  // without hitting engine_fx.c's `if (off + len > cap) break` guard. This
+  // is what the pre-fix fixed-48000 cap violated above ~83 kHz; checking
+  // only "nonzero, finite output" below would not have caught it, since a
+  // partially dropped network still produces a nonzero, finite (just
+  // quieter/less diffuse) tail.
+  const int comb_len_sum = 1116 + 1188 + 1277 + 1356 + 1422 + 1491 + 1557 + 1617;
+  const int ap_len_sum = 556 + 441 + 341 + 225;
+  const int spread_lines = 8 + 4; /* bank 1's combs + allpasses */
+  const double scale = 96000.0 / 44100.0;
+  const int required = static_cast<int>(
+      std::ceil((2.0 * (comb_len_sum + ap_len_sum) + spread_lines * 23.0) * scale));
+  CHECK(processor.ringCapacityForTesting() >= required);
+
   CHECK(processor.setActive(true) == kResultOk);
 
   const int32 n = 8192;
