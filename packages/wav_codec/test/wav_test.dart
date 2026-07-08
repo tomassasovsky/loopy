@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
-import 'package:session_repository/session_repository.dart';
+import 'package:test/test.dart';
+import 'package:wav_codec/wav_codec.dart';
 
 void main() {
   group('WavCodec', () {

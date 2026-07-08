@@ -1,0 +1,18 @@
+name: wav_codec
+description: >-
+  Minimal 32-bit IEEE-float WAV encoder/decoder — the lossless format Loopy
+  stores its loop stems, mixdowns, and performance-recording exports in. Pure
+  Dart, no Flutter dependency, so non-Flutter tooling (e.g. daw_export) can
+  read the files this writes without pulling in the framework.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  meta: ^1.16.0
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^10.2.0
