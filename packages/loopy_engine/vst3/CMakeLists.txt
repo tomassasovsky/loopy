@@ -1,9 +1,10 @@
-# vst3/CMakeLists.txt — standalone project building "Loopy Delay" as a real
-# .vst3 bundle. An independent build (umbrella: "New: VST3 plugin artifacts
-# (independent build)"), not folded into loopy_engine's own SHARED-library
-# build — pulls in the engine/src project via add_subdirectory only to reuse
-# loopy_dsp_core (part 1) and the plugin_disabled.c stub (D-LINK), without
-# editing ../src/CMakeLists.txt at all.
+# vst3/CMakeLists.txt — standalone project building "Loopy Delay" (part 2)
+# and "Loopy Reverb" (part 3) as real .vst3 bundles. An independent build
+# (umbrella: "New: VST3 plugin artifacts (independent build)"), not folded
+# into loopy_engine's own SHARED-library build — pulls in the engine/src
+# project via add_subdirectory only to reuse loopy_dsp_core (part 1) and the
+# plugin_disabled.c stub (D-LINK), without editing ../src/CMakeLists.txt at
+# all.
 #
 # The vendored VST3 SDK ships no CMake helper modules or sample template
 # (packages/loopy_engine/third_party/vst3sdk has no *.cmake files anywhere,
@@ -37,10 +38,11 @@ add_compile_definitions(
   "$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>"
 )
 
-# Only loopy_vst3_delay is ever requested as a build target (below), so this
-# pulls loopy_dsp_core's definition into scope without also having to build
-# ../src's own loopy_engine SHARED target (which has its own, unrelated
-# per-OS device/MIDI dependencies out of scope here).
+# Only loopy_vst3_delay / loopy_vst3_reverb are ever requested as build
+# targets (below), so this pulls loopy_dsp_core's definition into scope
+# without also having to build ../src's own loopy_engine SHARED target
+# (which has its own, unrelated per-OS device/MIDI dependencies out of scope
+# here).
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_BINARY_DIR}/engine_src")
 
 # --- core_plugin_disabled_stub: satisfies le_plugin_slot_process (D-LINK) ---
@@ -94,8 +96,45 @@ add_library(sdk STATIC
 set_target_properties(sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(sdk PUBLIC sdk_common)
 
-# --- loopy_vst3_delay: the plugin itself — a plain module; the .vst3 bundle
-# folder is assembled by hand below (no vendored CMake bundle helper exists). --
+# --- Local dev-install: OFF by default so CI stays clean. -------------------
+option(LOOPY_VST3_DEV_INSTALL
+  "Copy built VST3 bundles to ~/Library/Audio/Plug-Ins/VST3 after build" OFF)
+
+# Assembles a .vst3 bundle by hand for a MODULE target (no vendored CMake
+# bundle helper exists — packages/loopy_engine/third_party/vst3sdk has no
+# *.cmake files anywhere): Contents/MacOS/<display_name> (the built binary),
+# Contents/Info.plist (hand-authored, from <source_dir>/Info.plist),
+# Contents/PkgInfo, ad-hoc codesigned. Shared by both loopy_vst3_delay (part
+# 2) and loopy_vst3_reverb (part 3) rather than duplicating this per plugin.
+function(loopy_vst3_add_bundle target display_name source_dir)
+  set(bundle "${CMAKE_CURRENT_BINARY_DIR}/${display_name}.vst3")
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle}/Contents/MacOS"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "$<TARGET_FILE:${target}>" "${bundle}/Contents/MacOS/${display_name}"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${source_dir}/Info.plist" "${bundle}/Contents/Info.plist"
+    COMMAND /bin/sh -c "printf 'BNDL????' > '${bundle}/Contents/PkgInfo'"
+    # Ad-hoc dev-signed for local build/test; real Developer ID signing +
+    # hardened runtime + notarization for distribution is part 7 (D-SIGN).
+    COMMAND codesign -f -s - "${bundle}"
+    COMMENT "Assembling ${display_name}.vst3 bundle"
+    VERBATIM
+  )
+  if(LOOPY_VST3_DEV_INSTALL)
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/Library/Audio/Plug-Ins/VST3"
+      COMMAND ${CMAKE_COMMAND} -E rm -rf
+        "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/${display_name}.vst3"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${bundle}" "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/${display_name}.vst3"
+      COMMENT "Installing ${display_name}.vst3 to ~/Library/Audio/Plug-Ins/VST3"
+      VERBATIM
+    )
+  endif()
+endfunction()
+
+# --- loopy_vst3_delay: "Loopy Delay" (part 2) -------------------------------
 add_library(loopy_vst3_delay MODULE
   delay/processor.cpp
   delay/controller.cpp
@@ -120,34 +159,31 @@ target_link_libraries(loopy_vst3_delay PRIVATE
 target_link_options(loopy_vst3_delay PRIVATE
   "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
 )
+loopy_vst3_add_bundle(loopy_vst3_delay "Loopy Delay" "${CMAKE_CURRENT_SOURCE_DIR}/delay")
 
-# --- .vst3 bundle assembly ---------------------------------------------------
-set(LOOPY_DELAY_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/Loopy Delay.vst3")
-add_custom_command(TARGET loopy_vst3_delay POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${LOOPY_DELAY_BUNDLE}/Contents/MacOS"
-  COMMAND ${CMAKE_COMMAND} -E copy
-    "$<TARGET_FILE:loopy_vst3_delay>" "${LOOPY_DELAY_BUNDLE}/Contents/MacOS/Loopy Delay"
-  COMMAND ${CMAKE_COMMAND} -E copy
-    "${CMAKE_CURRENT_SOURCE_DIR}/delay/Info.plist" "${LOOPY_DELAY_BUNDLE}/Contents/Info.plist"
-  COMMAND /bin/sh -c "printf 'BNDL????' > '${LOOPY_DELAY_BUNDLE}/Contents/PkgInfo'"
-  # Ad-hoc dev-signed for local build/test; real Developer ID signing +
-  # hardened runtime + notarization for distribution is part 7 (D-SIGN).
-  COMMAND codesign -f -s - "${LOOPY_DELAY_BUNDLE}"
-  COMMENT "Assembling Loopy Delay.vst3 bundle"
-  VERBATIM
+# --- loopy_vst3_reverb: "Loopy Reverb" (part 3) -----------------------------
+add_library(loopy_vst3_reverb MODULE
+  reverb/processor.cpp
+  reverb/controller.cpp
+  reverb/factory.cpp
 )
-
-# --- Local dev-install: OFF by default so CI stays clean. -------------------
-option(LOOPY_VST3_DEV_INSTALL
-  "Copy built VST3 bundles to ~/Library/Audio/Plug-Ins/VST3 after build" OFF)
-if(LOOPY_VST3_DEV_INSTALL)
-  add_custom_command(TARGET loopy_vst3_delay POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/Library/Audio/Plug-Ins/VST3"
-    COMMAND ${CMAKE_COMMAND} -E rm -rf
-      "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/Loopy Delay.vst3"
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-      "${LOOPY_DELAY_BUNDLE}" "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/Loopy Delay.vst3"
-    COMMENT "Installing Loopy Delay.vst3 to ~/Library/Audio/Plug-Ins/VST3"
-    VERBATIM
-  )
-endif()
+set_target_properties(loopy_vst3_reverb PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  PREFIX ""
+  SUFFIX ""
+  OUTPUT_NAME "Loopy Reverb"
+)
+target_include_directories(loopy_vst3_reverb PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/reverb"
+)
+target_link_libraries(loopy_vst3_reverb PRIVATE
+  loopy_dsp_core
+  core_plugin_disabled_stub
+  sdk
+  sdk_common
+)
+target_link_options(loopy_vst3_reverb PRIVATE
+  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+)
+loopy_vst3_add_bundle(loopy_vst3_reverb "Loopy Reverb" "${CMAKE_CURRENT_SOURCE_DIR}/reverb")
