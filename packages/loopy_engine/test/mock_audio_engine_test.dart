@@ -283,5 +283,9 @@ void main() {
         expect(engine.pluginParamValueText(slot, 999, 0.5), isNull);
       });
     });
+
+    test('exportTrackLane returns an empty list (mock models no PCM)', () {
+      expect(engine.exportTrackLane(0, 0), isEmpty);
+    });
   });
 }

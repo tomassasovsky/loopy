@@ -64,6 +64,46 @@ void main() {
     expect(s.tracks.first.redoDepth, 0);
   }, skip: skip);
 
+  test('exportTrackLane reads lane 0 through the real FFI', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+
+    expect(
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      ),
+      EngineResult.ok,
+    );
+
+    expect(engine.record(), EngineResult.ok);
+    engine.pump(frames: 64, input: 0.75);
+    expect(engine.record(), EngineResult.ok); // finalize -> PLAYING
+    engine.pump(frames: 0);
+
+    final lane0 = engine.exportTrackLane(0, 0);
+    expect(lane0.length, 64);
+    expect(lane0, everyElement(closeTo(0.75, 1e-6)));
+
+    // Matches the legacy lane-0-only entry point byte-for-byte.
+    expect(lane0, engine.exportTrack(0));
+
+    // An unallocated lane on this single-lane track yields an empty export,
+    // not an error the Dart layer surfaces. Note this exercises
+    // le_engine_get_lane's bounds check over FFI, not
+    // le_engine_export_track_lane's own guards — exportTrackLane reads the
+    // lane's length first and short-circuits to an empty list before ever
+    // calling the native export function once that length is <= 0 (mirrors
+    // exportTrack's identical pattern). The native function's own guards are
+    // covered directly by test_export_track_lane_multi_lane in
+    // test_engine_core.c.
+    expect(engine.exportTrackLane(0, 7), isEmpty);
+  }, skip: skip);
+
   test(
     'performance-recording capture arms via the real FFI and advances frames',
     () {

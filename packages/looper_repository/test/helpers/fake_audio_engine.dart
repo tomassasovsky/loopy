@@ -440,6 +440,12 @@ class FakeAudioEngine implements AudioEngine {
     return Float32List(0);
   }
 
+  @override
+  Float32List exportTrackLane(int channel, int lane) {
+    calls.add('exportTrackLane');
+    return Float32List(0);
+  }
+
   /// PCM passed to [importTrack], keyed by channel.
   final Map<int, Float32List> importedTracks = {};
 

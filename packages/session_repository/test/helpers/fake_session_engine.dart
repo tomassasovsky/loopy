@@ -88,6 +88,10 @@ class FakeSessionEngine implements AudioEngine {
       Float32List.fromList(_tracks[channel].pcm);
 
   @override
+  Float32List exportTrackLane(int channel, int lane) =>
+      lane == 0 ? Float32List.fromList(_tracks[channel].pcm) : Float32List(0);
+
+  @override
   EngineResult importTrack(int channel, Float32List pcm) {
     final track = _tracks[channel];
     if (track.state != TrackState.empty) return EngineResult.invalid;
