@@ -375,6 +375,7 @@
     "UART",
     "undoable",
     "undriven",
+    "unfinalized",
     "unflashed",
     "uninit",
     "uninitialised",
