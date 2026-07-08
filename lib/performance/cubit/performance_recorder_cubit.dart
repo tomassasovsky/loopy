@@ -35,11 +35,13 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// the double-press-guard clock; injectable for deterministic tests.
   PerformanceRecorderCubit({
     required PerformanceRepository performance,
-    this.armedTickInterval = const Duration(milliseconds: 250),
-    this.renderPollInterval = const Duration(milliseconds: 200),
+    Duration armedTickInterval = const Duration(milliseconds: 250),
+    Duration renderPollInterval = const Duration(milliseconds: 200),
     DateTime Function() now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
   }) : _performance = performance,
+       _armedTickInterval = armedTickInterval,
+       _renderPollInterval = renderPollInterval,
        _now = now,
        _freeSpaceBytes = freeSpaceBytes ?? _dfFreeSpaceBytes,
        super(const PerformanceRecorderIdle()) {
@@ -54,11 +56,11 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final Future<int?> Function(String path) _freeSpaceBytes;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
-  final Duration armedTickInterval;
+  final Duration _armedTickInterval;
 
   /// How often [PerformanceRepository.renderProgress] is polled after
   /// disarm.
-  final Duration renderPollInterval;
+  final Duration _renderPollInterval;
 
   late final StreamSubscription<PerformanceCaptureStatus> _statusSubscription;
   Timer? _armedTicker;
@@ -191,7 +193,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
         _armedTicker?.cancel();
         _emitArmedTick();
         _armedTicker = Timer.periodic(
-          armedTickInterval,
+          _armedTickInterval,
           (_) => _emitArmedTick(),
         );
         unawaited(_checkLowDisk(_captureDir));
@@ -253,7 +255,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     _emit(const PerformanceRecorderRendering(percent: 0));
     final completer = Completer<void>();
     _renderPoller?.cancel();
-    _renderPoller = Timer.periodic(renderPollInterval, (_) {
+    _renderPoller = Timer.periodic(_renderPollInterval, (_) {
       _pollRender(dir, completer);
     });
     _pollRender(dir, completer);
