@@ -2018,6 +2018,50 @@ class LoopyEngineBindings {
   late final _le_engine_set_output_enabled = _le_engine_set_output_enabledPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Arms performance-recording capture: allocates the master + per-monitor
+  /// rings, freezes the captured input set from whichever inputs are currently
+  /// monitored, and publishes them to the audio thread. Idempotent (a second call
+  /// while already armed is a no-op success). Returns LE_OK, LE_ERR_NOT_RUNNING
+  /// (not configured), or LE_ERR_INVALID (no output enabled to capture, or
+  /// allocation failure).
+  int le_perf_arm(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_perf_arm(
+      engine,
+    );
+  }
+
+  late final _le_perf_armPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_perf_arm',
+      );
+  late final _le_perf_arm = _le_perf_armPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// Disarms performance-recording capture: tells the audio thread to stop
+  /// writing, then frees the rings only after a published-quiescent handshake
+  /// confirms it has (so there is never a use-after-free or an audio-thread
+  /// free) — mirroring the plugin-slot teardown handshake. Idempotent (a second
+  /// call while already disarmed is a no-op success). Returns LE_OK, or
+  /// LE_ERR_DEVICE if the callback could not be confirmed quiescent (a stalled
+  /// device; the rings are left retracted and are reclaimed by a later retry or
+  /// at le_engine_destroy).
+  int le_perf_disarm(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_perf_disarm(
+      engine,
+    );
+  }
+
+  late final _le_perf_disarmPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_perf_disarm',
+      );
+  late final _le_perf_disarm = _le_perf_disarmPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
   /// ---- effect-chain fingerprints (control thread; FX divergence detection) ---- *
   /// An order-sensitive 64-bit hash of a lane's / monitor's PUBLISHED effect chain:
   /// for each of the a_fx_count active entries, its type, plus (for a built-in) its
@@ -2671,6 +2715,13 @@ enum le_command_code {
   /// control thread already swapped a_live.
   LE_CMD_REDO_FROM_EMPTY(40),
 
+  /// begin publishing to the perf capture rings
+  LE_CMD_PERF_ARM(41),
+
+  /// stop; control frees the rings after a quiescent
+  /// handshake once the audio thread acks this
+  LE_CMD_PERF_DISARM(42),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -2711,6 +2762,8 @@ enum le_command_code {
     38 => LE_CMD_DUB_SHADOW,
     39 => LE_CMD_UNDO_TO_EMPTY,
     40 => LE_CMD_REDO_FROM_EMPTY,
+    41 => LE_CMD_PERF_ARM,
+    42 => LE_CMD_PERF_DISARM,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -3025,6 +3078,18 @@ final class le_snapshot extends ffi.Struct {
   /// le_engine_set_output_enabled.
   @ffi.Uint32()
   external int output_enabled_mask;
+
+  /// 0/1: the RT taps are live
+  @ffi.Int32()
+  external int perf_armed;
+
+  /// frames processed since the most recent arm
+  @ffi.Uint64()
+  external int perf_frames;
+
+  /// dropped capture frames (ring full) since arm
+  @ffi.Uint32()
+  external int perf_overruns;
 
   /// number of usable tracks (<= LE_MAX_TRACKS)
   @ffi.Int32()

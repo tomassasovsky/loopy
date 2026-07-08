@@ -188,6 +188,31 @@ void le_engine_set_lane_count_unsafe_for_test(le_engine* engine,
 void le_engine_lane_fx_chain_for_test(le_engine* engine, int32_t channel,
                                       int32_t lane, float* l, float* r);
 
+/* ---- performance-recording capture test seams ----
+ * Part 1 has no drain thread (that lands in part 2), so these are the only way
+ * to read back what le_perf_arm's rings actually captured — draining the
+ * master/monitor rings for a native test's bit-parity assertions. Not part of
+ * the FFI surface. */
+
+/* Pops up to `max_frames` frames (each `le_engine_perf_master_channels_for_test`
+ * samples wide) from the master capture ring into `out` (interleaved),
+ * returning the number of frames popped. 0 if not armed or the ring is empty.
+ */
+int32_t le_engine_perf_master_pop_for_test(le_engine* engine, float* out,
+                                           int32_t max_frames);
+
+/* The master ring's frame width (1 or 2), or 0 if never armed. Lets a test
+ * interpret le_engine_perf_master_pop_for_test's interleaving without
+ * hardcoding the channel count the current output-enable state produced. */
+int32_t le_engine_perf_master_channels_for_test(le_engine* engine);
+
+/* Pops up to `max_frames` STEREO frames from monitor input [input]'s capture
+ * ring into `out` (interleaved l, r), returning the number of frames popped. 0
+ * if [input] was not captured (out of range, or not in the frozen mask) or the
+ * ring is empty. */
+int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
+                                            float* out, int32_t max_frames);
+
 #ifdef __cplusplus
 }
 #endif

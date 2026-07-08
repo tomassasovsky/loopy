@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio_ring.h"  /* le_audio_ring_init (performance-recording rings) */
 #include "engine_core.h" /* le_push, valid_channel, le_lanes_active, le_*_reset */
 #include "engine_fx.h"   /* le_fx_ensure_hann, LE_PV_N / LE_PV_BINS */
 #include "engine_private.h"
@@ -960,4 +961,213 @@ int32_t le_engine_set_lane_mute(le_engine* engine, int32_t channel, int32_t lane
                      (le_command){.code = LE_CMD_SET_LANE_MUTE,
                                   .lanef = {channel, lane,
                                             muted ? 1.0f : 0.0f}});
+}
+
+/* ---- performance recording (arm/disarm the RT capture taps) ----
+ * Control-thread lifecycle for le_perf_arm/disarm (loopy_engine_api.h): ring
+ * allocation/free lives here, following the control-allocates/publish pattern
+ * le_post_dub_shadows and the FX delay lines use for RT-owned buffers, and
+ * (for the free side) the plugin-slot quiescent-teardown handshake
+ * (engine_plugin.c's clear_slot). */
+
+#if defined(_WIN32)
+#include <windows.h>
+static void le_perf_sleep_ms(int ms) { Sleep((DWORD)ms); }
+#else
+#include <time.h>
+static void le_perf_sleep_ms(int ms) {
+  struct timespec t = {ms / 1000, (long)(ms % 1000) * 1000000L};
+  nanosleep(&t, NULL);
+}
+#endif
+
+/* The handshake budget: two processed-buffer boundaries prove the audio thread
+ * has drained LE_CMD_PERF_DISARM (cleared its local `armed` flag) and made its
+ * last ring push, so the frees below can never race it; the 1 ms-per-spin cap
+ * bounds teardown so it can never hang on a stalled device (mirrors
+ * engine_plugin.c's clear_slot). */
+#define LE_PERF_QUIESCE_BOUNDARIES 2
+#define LE_PERF_QUIESCE_MAX_SPINS 200
+
+static size_t le_perf_next_pow2(size_t n) {
+  size_t p = 1;
+  while (p < n) p <<= 1;
+  return p;
+}
+
+/* Ring capacity in SAMPLES for `channels` at `sample_rate`: at least
+ * LE_PERF_CAPTURE_SECONDS of audio, rounded up to the power of two
+ * le_audio_ring requires. */
+static size_t le_perf_ring_capacity(int32_t channels, int32_t sample_rate) {
+  const size_t want =
+      (size_t)channels * (size_t)sample_rate * LE_PERF_CAPTURE_SECONDS;
+  return le_perf_next_pow2(want < 2 ? 2 : want);
+}
+
+/* The first one or two ENABLED output channels, in ascending index order — the
+ * master capture pair (mono when only one is enabled). Returns the count found
+ * (0, 1, or 2); out_ch[1] is left at -1 when only one is found. */
+static int le_perf_first_enabled_pair(le_engine* e, int32_t out_ch[2]) {
+  out_ch[0] = -1;
+  out_ch[1] = -1;
+  const uint32_t mask =
+      atomic_load_explicit(&e->a_output_enabled_mask, memory_order_relaxed);
+  int found = 0;
+  for (int32_t c = 0; c < e->out_channels && c < LE_MAX_CHANNELS; ++c) {
+    if (!(mask & (1u << c))) continue;
+    out_ch[found++] = c;
+    if (found == 2) break;
+  }
+  return found;
+}
+
+/* Frees every ring allocated by an arm attempt that never reached the audio
+ * thread (the command was never pushed, or push failed) — plain control-thread
+ * cleanup, not a quiescent teardown, since nothing was published. */
+static void le_perf_free_unpublished(le_engine* e, uint32_t monitors_done) {
+  free(e->perf.master_ring.buffer);
+  e->perf.master_ring = (le_audio_ring){0};
+  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+    if (monitors_done & (1u << c)) {
+      free(e->perf.monitor_ring[c].buffer);
+      e->perf.monitor_ring[c] = (le_audio_ring){0};
+    }
+  }
+}
+
+int32_t le_perf_arm(le_engine* engine) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+    return LE_OK; /* already armed: idempotent */
+  }
+
+  int32_t out_ch[2];
+  const int found = le_perf_first_enabled_pair(engine, out_ch);
+  if (found == 0) return LE_ERR_INVALID; /* nothing enabled to capture */
+
+  const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
+  const size_t master_cap = le_perf_ring_capacity(found, sr);
+  float* master_buf = (float*)malloc(master_cap * sizeof(float));
+  if (master_buf == NULL) return LE_ERR_INVALID;
+  le_audio_ring_init(&engine->perf.master_ring, master_buf, master_cap);
+  engine->perf.master_channels = found;
+  engine->perf.master_out_ch[0] = out_ch[0];
+  engine->perf.master_out_ch[1] = out_ch[1];
+
+  /* The monitor capture set is frozen at arm: whichever inputs are enabled
+   * right now, and no others — an input enabled later is logged, not tapped
+   * (umbrella scope for this part). Every captured monitor ring is stereo
+   * (the monitor's own chain, e.g. a reverb, may decorrelate l/r). */
+  uint32_t input_mask = 0;
+  const size_t monitor_cap = le_perf_ring_capacity(2, sr);
+  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+    if (!load_i32(&engine->monitors[c].a_enabled)) continue;
+    float* buf = (float*)malloc(monitor_cap * sizeof(float));
+    if (buf == NULL) {
+      le_perf_free_unpublished(engine, input_mask);
+      return LE_ERR_INVALID;
+    }
+    le_audio_ring_init(&engine->perf.monitor_ring[c], buf, monitor_cap);
+    input_mask |= (1u << c);
+  }
+  engine->perf.input_mask = input_mask;
+
+  atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
+  atomic_store_explicit(&engine->a_perf_overruns, 0u, memory_order_relaxed);
+
+  /* Push-then-mutate would be backwards here: the ring set must be fully
+   * published (visible via the command ring's release/acquire pairing) BEFORE
+   * the audio thread may touch it, so every field above is written first and
+   * this push is what makes them visible. */
+  const int32_t rc = le_push(engine, LE_CMD_PERF_ARM, 0, 0.0f);
+  if (rc != LE_OK) {
+    le_perf_free_unpublished(engine, input_mask);
+    engine->perf.input_mask = 0;
+    return rc;
+  }
+  return LE_OK;
+}
+
+int32_t le_perf_disarm(le_engine* engine) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_perf_armed, memory_order_acquire)) {
+    return LE_OK; /* already disarmed: idempotent */
+  }
+  const int32_t rc = le_push(engine, LE_CMD_PERF_DISARM, 0, 0.0f);
+  if (rc != LE_OK) return rc; /* ring full: caller retries; still armed */
+
+  /* Quiescent handshake (mirrors engine_plugin.c's clear_slot): wait for the
+   * audio thread to cycle past two buffer boundaries after it pops the disarm
+   * command, so no in-flight ring push can race the frees below. Only
+   * meaningful while a device is actually driving the callback; a stopped or
+   * never-started engine (the native test pump) has no concurrent writer, so
+   * the wait is skipped and teardown is immediate. */
+  if (load_i32(&engine->a_running)) {
+    uint64_t last =
+        atomic_load_explicit(&engine->a_frames, memory_order_acquire);
+    int boundaries = 0;
+    for (int spins = 0; spins < LE_PERF_QUIESCE_MAX_SPINS &&
+                        boundaries < LE_PERF_QUIESCE_BOUNDARIES;
+         ++spins) {
+      le_perf_sleep_ms(1);
+      const uint64_t now =
+          atomic_load_explicit(&engine->a_frames, memory_order_acquire);
+      if (now != last) {
+        ++boundaries;
+        last = now;
+      }
+    }
+    if (boundaries < LE_PERF_QUIESCE_BOUNDARIES) {
+      /* The callback is stalled — do NOT free (a possible in-flight push
+       * would be a use-after-free). The rings stay retracted (armed == 0, so
+       * nothing dispatches to them again) and allocated; a later successful
+       * disarm (once the callback recovers) or le_engine_destroy reclaims
+       * them. */
+      return LE_ERR_DEVICE;
+    }
+  }
+
+  free(engine->perf.master_ring.buffer);
+  engine->perf.master_ring = (le_audio_ring){0};
+  for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+    if (engine->perf.input_mask & (1u << c)) {
+      free(engine->perf.monitor_ring[c].buffer);
+      engine->perf.monitor_ring[c] = (le_audio_ring){0};
+    }
+  }
+  engine->perf.input_mask = 0;
+  return LE_OK;
+}
+
+/* ---- performance-recording capture test seams (engine_internal.h) ---- *
+ * Part 1 has no drain thread; these drain the rings directly for native-test
+ * bit-parity assertions only. Single-threaded in tests (le_engine_process is
+ * called synchronously, never concurrently with these), so no ring-pop race
+ * against the audio-thread push side. */
+
+int32_t le_engine_perf_master_pop_for_test(le_engine* engine, float* out,
+                                           int32_t max_frames) {
+  if (engine == NULL || out == NULL || max_frames <= 0) return 0;
+  const int32_t ch = engine->perf.master_channels;
+  if (ch <= 0) return 0;
+  const size_t popped = le_audio_ring_pop(&engine->perf.master_ring, out,
+                                          (size_t)max_frames * (size_t)ch);
+  return (int32_t)(popped / (size_t)ch);
+}
+
+int32_t le_engine_perf_master_channels_for_test(le_engine* engine) {
+  return engine == NULL ? 0 : engine->perf.master_channels;
+}
+
+int32_t le_engine_perf_monitor_pop_for_test(le_engine* engine, int32_t input,
+                                            float* out, int32_t max_frames) {
+  if (engine == NULL || out == NULL || max_frames <= 0) return 0;
+  if (input < 0 || input >= LE_MAX_INPUTS) return 0;
+  if (!(engine->perf.input_mask & (1u << input))) return 0;
+  const size_t popped = le_audio_ring_pop(&engine->perf.monitor_ring[input],
+                                          out, (size_t)max_frames * 2);
+  return (int32_t)(popped / 2);
 }

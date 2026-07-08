@@ -493,6 +493,35 @@ abstract interface class EnginePluginHosting {
   EngineResult pluginStateSet(PluginSlotHandle slot, Uint8List state);
 }
 
+/// Performance-recording capture (part 1 of the DAW-export stack): arming and
+/// disarming the RT-safe audio-thread taps that copy the post-limiter master
+/// output and each actively-monitored input into lock-free capture rings.
+///
+/// This slice has no drain thread and no file I/O — arming just starts the
+/// taps; status is read back via [EngineSnapshot] ([EngineSnapshot.isPerfArmed]
+/// / [EngineSnapshot.perfFrames] / [EngineSnapshot.perfOverruns]), the same way
+/// every other engine status surfaces. A later part drains the rings to disk
+/// for a multitrack DAW export.
+abstract interface class EnginePerformanceCapture {
+  /// Arms performance-recording capture: allocates the master + per-monitor
+  /// rings, freezes the set of captured inputs to whichever are currently
+  /// monitored, and publishes them to the audio thread. Idempotent — calling
+  /// this while already armed is a no-op success. Returns
+  /// [EngineResult.notRunning] if the engine is not configured, or
+  /// [EngineResult.invalid] when nothing is enabled to capture (every output
+  /// disabled) or the rings could not be allocated.
+  EngineResult perfArm();
+
+  /// Disarms performance-recording capture: signals the audio thread to stop
+  /// writing, then frees the rings once a quiescent handshake confirms it has
+  /// (never a use-after-free / audio-thread free). Idempotent — calling this
+  /// while already disarmed is a no-op success. Returns
+  /// [EngineResult.device] if the callback could not be confirmed quiescent (a
+  /// stalled device); the rings are left retracted and are reclaimed by a
+  /// later retry or when the engine is disposed.
+  EngineResult perfDisarm();
+}
+
 /// The data-layer boundary over the native audio engine, composed from the
 /// role interfaces above (interface-segregation: a consumer can depend on the
 /// slice it needs — [SessionIo], [EngineMetering], … — instead of the whole
@@ -511,4 +540,5 @@ abstract interface class AudioEngine
         EffectsControl,
         MonitorControl,
         EnginePluginHosting,
+        EnginePerformanceCapture,
         SessionIo {}

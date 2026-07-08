@@ -91,6 +91,62 @@ void main() {
       expect(engine.snapshot().masterGain, 1);
     });
 
+    group('performance recording capture', () {
+      test('requires the engine to be running', () {
+        expect(engine.perfArm(), EngineResult.notRunning);
+      });
+
+      test('arms, disarms, and is idempotent both ways', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().isPerfArmed, isFalse);
+
+        expect(engine.perfArm(), EngineResult.ok);
+        expect(engine.snapshot().isPerfArmed, isTrue);
+        expect(engine.perfArm(), EngineResult.ok); // already armed: no-op
+
+        expect(engine.perfDisarm(), EngineResult.ok);
+        expect(engine.snapshot().isPerfArmed, isFalse);
+        expect(engine.perfDisarm(), EngineResult.ok); // already disarmed: no-op
+      });
+
+      test('perfFrames advances while armed and stays 0 when disarmed', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().perfFrames, 0);
+
+        engine
+          ..perfArm()
+          ..snapshot(); // advances frames by one buffer
+        expect(engine.snapshot().perfFrames, greaterThan(0));
+
+        engine.perfDisarm();
+        final frozen = engine.snapshot().perfFrames;
+        engine.snapshot();
+        expect(engine.snapshot().perfFrames, frozen); // no longer advancing
+      });
+
+      test('the mock models no ring capacity: overruns stay 0', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..perfArm();
+        for (var i = 0; i < 5; i++) {
+          engine.snapshot();
+        }
+        expect(engine.snapshot().perfOverruns, 0);
+      });
+
+      test('a fresh start disarms and resets frames', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..perfArm()
+          ..snapshot()
+          ..stop()
+          ..start(engine.defaultConfig);
+        final snapshot = engine.snapshot();
+        expect(snapshot.isPerfArmed, isFalse);
+        expect(snapshot.perfFrames, 0);
+      });
+    });
+
     test('reflects lane routing in snapshots', () {
       engine
         ..start(engine.defaultConfig)
