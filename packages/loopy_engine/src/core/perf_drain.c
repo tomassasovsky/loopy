@@ -23,6 +23,7 @@
 
 #include "audio_ring.h"      /* le_audio_ring_pop */
 #include "engine_private.h"  /* le_engine, le_perf_capture, LE_MAX_INPUTS */
+#include "perf_log_ring.h"   /* le_perf_log_ring_pop (performance event log) */
 
 #if defined(_WIN32)
 #include <direct.h> /* _mkdir */
@@ -43,6 +44,24 @@
 #define LE_PD_FULL_PATH_MAX (LE_PD_PATH_MAX + 32)
 #define LE_PD_JSON_BUF 32768 /* generous for LE_PD_MAX_GAPS entries + fields */
 #define LE_PD_SCRATCH_SAMPLES 2048 /* per-drain-cycle pop buffer, in samples */
+
+/* events.log wire format (docs/design/performance-event-log-format.md): a
+ * 12-byte header (4-byte magic "PLEV", uint32 version, int32 sample_rate)
+ * followed by fixed-size 28-byte entries (uint64 frame, int32 code, 16 bytes
+ * of raw union payload — le_command's union has no internal padding of its
+ * own, every arm being plain 4-byte-aligned int32_t/float/uint32_t fields).
+ * The 28 bytes ARE dumped from memory (frame via one memcpy, code + union via
+ * two more) — what le_pd_write_log_entry avoids is `sizeof(le_perf_log_entry)`
+ * itself, which is 32 (not 28): the struct's 8-byte alignment (from its
+ * uint64_t frame) pads 4 trailing bytes onto the end that a naive
+ * `fwrite(&entry, sizeof(entry), 1, f)` would write as uninitialised garbage.
+ * Writing exactly 28 explicit bytes sidesteps that trailing pad; it is not a
+ * claim that every byte is otherwise reinterpreted independent of this
+ * process's compiler — this is a private, same-process wire format (both
+ * sides compiled together), not a cross-language ABI. Part 9's .als
+ * generator is meant to parse the resulting bytes without importing engine
+ * code, using the per-code arm layout documented in the format doc. */
+#define LE_PD_EVENTS_ENTRY_BYTES 28 /* 8 (frame) + 4 (code) + 16 (union payload) */
 
 /* ---- portable thread + sleep shim (extends engine_plugin.c's
  * control_sleep_ms one-file-branch-by-platform style to a real joinable
@@ -160,6 +179,12 @@ struct le_perf_drain {
   le_pd_file master_file;
   le_pd_file monitor_file[LE_MAX_INPUTS]; /* valid iff input_mask bit set */
 
+  /* Performance event log (part 3): append-only, header written once at
+   * start; every subsequent drain cycle appends whatever both perf-log rings
+   * have accumulated since the last cycle. Never reopened/truncated mid-
+   * session, unlike the sidecar. */
+  FILE* events_file;
+
   le_pd_gap gaps[LE_PD_MAX_GAPS];
   int gap_count;
 };
@@ -190,6 +215,48 @@ static int le_pd_write(FILE* f, const void* data, size_t bytes) {
  * failed and this is unreached, or there is genuinely nothing forced to
  * fail). */
 static int le_pd_flush(FILE* f) { return fflush(f) == 0; }
+
+/* Writes events.log's 12-byte header once, right after the file is created:
+ * magic "PLEV", a uint32 version (bump if the entry layout ever changes), and
+ * the session's sample rate (so a reader can convert frame -> seconds without
+ * cross-referencing the sidecar). */
+static int le_pd_write_events_header(FILE* f, int32_t sample_rate) {
+  static const char magic[4] = {'P', 'L', 'E', 'V'};
+  const uint32_t version = 1;
+  if (!le_pd_write(f, magic, sizeof(magic))) return 0;
+  if (!le_pd_write(f, &version, sizeof(version))) return 0;
+  if (!le_pd_write(f, &sample_rate, sizeof(sample_rate))) return 0;
+  return 1;
+}
+
+/* Serializes one log entry into the fixed 28-byte on-disk record: frame,
+ * code, then the union's raw 16 bytes taken directly from memory (every
+ * le_command union arm is laid out as plain int32_t/float/uint32_t fields
+ * with no arm exceeding 16 bytes, so this is a faithful, code-agnostic copy —
+ * the reader interprets those 16 bytes per the audited table's per-code arm
+ * documentation, the same way apply_command does in-process). */
+static int le_pd_write_log_entry(FILE* f, const le_perf_log_entry* entry) {
+  unsigned char buf[LE_PD_EVENTS_ENTRY_BYTES];
+  memcpy(buf, &entry->frame, sizeof(entry->frame));
+  memcpy(buf + sizeof(entry->frame), &entry->cmd.code,
+        sizeof(entry->cmd.code));
+  memcpy(buf + sizeof(entry->frame) + sizeof(entry->cmd.code),
+        ((const char*)&entry->cmd) + sizeof(entry->cmd.code),
+        LE_PD_EVENTS_ENTRY_BYTES - sizeof(entry->frame) -
+            sizeof(entry->cmd.code));
+  return le_pd_write(f, buf, sizeof(buf));
+}
+
+/* Drains everything currently available from a perf-log ring (either
+ * log_ring or log_ctrl_ring) into events.log, one entry at a time — these
+ * rings carry one event per pop, unlike the bulk-sample le_audio_ring above. */
+static int le_pd_drain_log_ring(FILE* f, le_perf_log_ring* ring) {
+  le_perf_log_entry entry;
+  while (le_perf_log_ring_pop(ring, &entry)) {
+    if (!le_pd_write_log_entry(f, &entry)) return 0;
+  }
+  return 1;
+}
 
 /* Drains everything currently available from `ring` (a le_audio_ring of
  * `channels`-wide frames) into `pf`'s file, looping until the ring reports
@@ -399,6 +466,19 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
     }
   }
 
+  /* Performance event log (part 3): drain both perf-log rings — the audio-
+   * thread-producer log_ring first, then the control-thread-producer
+   * log_ctrl_ring — and append every entry to events.log. Order between the
+   * two streams is a file-write-order interleaving, not a global frame sort
+   * (see docs/design/performance-event-log-format.md): each stream is
+   * monotonic in frame on its own, but a control-side param change and an
+   * audio-thread command from the same drain interval can land in either
+   * order in the file. */
+  if (ok && !le_pd_drain_log_ring(d->events_file, &e->perf.log_ring)) ok = 0;
+  if (ok && !le_pd_drain_log_ring(d->events_file, &e->perf.log_ctrl_ring)) {
+    ok = 0;
+  }
+
   /* The PCM files stay open for the whole capture session (never closed
    * until disarm), so without an explicit flush here their buffered writes
    * would sit invisible to any other reader (a crash-consistency check, or
@@ -410,6 +490,7 @@ static int le_pd_drain_cycle(le_perf_drain* d) {
     if (!(e->perf.input_mask & (1u << c))) continue;
     if (!le_pd_flush(d->monitor_file[c].f)) ok = 0;
   }
+  if (ok && !le_pd_flush(d->events_file)) ok = 0;
 
   /* Write the sidecar (with the disk_full marker, if this cycle just failed)
    * BEFORE publishing d->disk_full — le_perf_drain_self_stopped_for_test
@@ -480,8 +561,22 @@ le_perf_drain* le_perf_drain_start(le_engine* engine, const char* capture_dir) {
     }
   }
 
+  snprintf(path, sizeof(path), "%s/events.log", d->capture_dir);
+  d->events_file = fopen(path, "wb");
+  if (d->events_file == NULL ||
+      !le_pd_write_events_header(d->events_file, engine->sample_rate)) {
+    if (d->events_file != NULL) fclose(d->events_file);
+    fclose(d->master_file.f);
+    for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
+      if (d->monitor_file[c].f != NULL) fclose(d->monitor_file[c].f);
+    }
+    free(d);
+    return NULL;
+  }
+
   atomic_store_explicit(&d->running, 1, memory_order_release);
   if (!le_pd_thread_start(&d->thread, d)) {
+    fclose(d->events_file);
     fclose(d->master_file.f);
     for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
       if (d->monitor_file[c].f != NULL) fclose(d->monitor_file[c].f);
@@ -505,5 +600,6 @@ void le_perf_drain_stop(le_perf_drain* drain, le_perf_stop_reason reason) {
   for (int32_t c = 0; c < LE_MAX_INPUTS; ++c) {
     if (drain->monitor_file[c].f != NULL) fclose(drain->monitor_file[c].f);
   }
+  if (drain->events_file != NULL) fclose(drain->events_file);
   free(drain);
 }
