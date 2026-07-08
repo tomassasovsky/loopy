@@ -17,6 +17,7 @@ import 'package:loopy_engine/loopy_engine.dart'
 import 'package:midi_client/midi_client.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -66,6 +67,7 @@ void main() {
     late MidiDeviceRepository midiDeviceRepository;
     late SettingsRepository settings;
     late SessionRepository sessionRepository;
+    late PerformanceRepository performanceRepository;
 
     setUp(() {
       repository = LooperRepository(
@@ -75,6 +77,10 @@ void main() {
       controllerRepository = ControllerRepository(sources: const []);
       settings = SettingsRepository(store: FakeKeyValueStore());
       sessionRepository = SessionRepository(engine: FakeAudioEngine());
+      performanceRepository = PerformanceRepository(
+        engine: FakeAudioEngine(),
+        exportsRoot: () async => '.',
+      );
       // No MIDI backend by default; the MIDI-specific test below wires its own.
       midiDeviceRepository = MidiDeviceRepository(
         source: null,
@@ -97,6 +103,7 @@ void main() {
           settings: settings,
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
         ),
       );
@@ -124,6 +131,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
         ),
       );
@@ -251,6 +259,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
         ),
       );
@@ -305,6 +314,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
         ),
       );
@@ -356,6 +366,7 @@ void main() {
           settings: settings,
           waveformWindow: windowService,
           sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
           displayCount: () => 1,
         ),
@@ -382,6 +393,7 @@ void main() {
           settings: settings,
           waveformWindow: NoopWaveformWindowService(),
           sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
           exportDirectory: () async => '.',
           audioRecoveryConfig: const EngineConfig(playbackDeviceId: 'absent'),
         ),

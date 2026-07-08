@@ -12,6 +12,8 @@ dependencies:
   bloc: ^9.2.1
   controller_repository:
     path: packages/controller_repository
+  daw_export:
+    path: packages/daw_export
   desktop_multi_window: ^0.3.0
   equatable: ^2.1.0
   flutter:
@@ -27,6 +29,8 @@ dependencies:
   path_provider: ^2.1.6
   pedal_repository:
     path: packages/pedal_repository
+  performance_repository:
+    path: packages/performance_repository
   routing_graph:
     path: packages/routing_graph
   session_repository:

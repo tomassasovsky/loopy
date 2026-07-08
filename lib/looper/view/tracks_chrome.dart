@@ -7,6 +7,7 @@ import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
+import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:loopy/window/window_chrome.dart';
@@ -63,6 +64,9 @@ class TracksToolbar extends StatelessWidget {
         const SizedBox(width: 12),
         BankSwitch(active: activeBank),
         const Spacer(),
+        const ArmedIndicator(),
+        const PerfRecordButton(),
+        const SizedBox(width: 4),
         // Play/Stop All — state-aware toggle mirroring `Space`.
         IconButton(
           key: const Key('tracks_playStopAll'),

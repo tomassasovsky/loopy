@@ -776,5 +776,51 @@
         }
     },
     "pedalSimEncoderSemantics": "Encoder, master volume",
-    "pedalSimNoLoop": "—"
+    "pedalSimNoLoop": "—",
+    "perfArm": "Arm performance recording",
+    "perfDisarm": "Disarm performance recording",
+    "perfArmedElapsed": "Recording {elapsed}",
+    "@perfArmedElapsed": {
+        "description": "Elapsed-time readout shown while performance recording is armed.",
+        "placeholders": {
+            "elapsed": {
+                "type": "String"
+            }
+        }
+    },
+    "perfFinalizing": "Finalizing capture…",
+    "perfRendering": "Rendering… {percent}%",
+    "@perfRendering": {
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "perfDone": "Capture saved",
+    "perfRevealMacos": "Show in Finder",
+    "perfRevealWindows": "Show in File Explorer",
+    "perfRevealOther": "Show in file manager",
+    "perfPartial": "Some tracks failed to render, but the rest of the capture is intact.",
+    "perfStoppedDiskFull": "Capture stopped early — the disk ran out of space.",
+    "perfStoppedDeviceChange": "Capture stopped early — the audio device changed.",
+    "perfCaptureGlitch": "Dropped audio frames detected during capture.",
+    "perfDiscarded": "Capture was too short to keep — discarded.",
+    "perfLowDisk": "Low disk space — the capture may run out of room.",
+    "perfRecoveryFound": "A capture wasn't saved properly last time. Recover it?",
+    "perfRecoveryRecover": "Recover",
+    "perfRecoveryDiscard": "Discard",
+    "perfArmDisabledRendering": "Can't arm while the previous capture is still rendering.",
+    "perfRenameTitle": "Rename capture",
+    "perfRenameHint": "Capture name",
+    "perfRenameInvalid": "Enter a valid name.",
+    "perfRenameDuplicate": "A capture named “{name}” already exists.",
+    "@perfRenameDuplicate": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "perfRenameButton": "Rename"
 }

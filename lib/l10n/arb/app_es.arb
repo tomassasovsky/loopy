@@ -684,5 +684,50 @@
         }
     },
     "pedalSimEncoderSemantics": "Encoder, volumen general",
-    "pedalSimNoLoop": "—"
+    "pedalSimNoLoop": "—",
+    "perfArm": "Armar grabación de actuación",
+    "perfDisarm": "Desarmar grabación de actuación",
+    "perfArmedElapsed": "Grabando {elapsed}",
+    "@perfArmedElapsed": {
+        "placeholders": {
+            "elapsed": {
+                "type": "String"
+            }
+        }
+    },
+    "perfFinalizing": "Finalizando captura…",
+    "perfRendering": "Renderizando… {percent}%",
+    "@perfRendering": {
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "perfDone": "Captura guardada",
+    "perfRevealMacos": "Mostrar en Finder",
+    "perfRevealWindows": "Mostrar en el Explorador de archivos",
+    "perfRevealOther": "Mostrar en el gestor de archivos",
+    "perfPartial": "Algunas pistas no se pudieron renderizar, pero el resto de la captura está intacto.",
+    "perfStoppedDiskFull": "La captura se detuvo antes de tiempo — el disco se quedó sin espacio.",
+    "perfStoppedDeviceChange": "La captura se detuvo antes de tiempo — cambió el dispositivo de audio.",
+    "perfCaptureGlitch": "Se detectaron cuadros de audio perdidos durante la captura.",
+    "perfDiscarded": "La captura era demasiado corta para conservarla — descartada.",
+    "perfLowDisk": "Poco espacio en disco — la captura podría quedarse sin espacio.",
+    "perfRecoveryFound": "Una captura no se guardó correctamente la última vez. ¿Recuperarla?",
+    "perfRecoveryRecover": "Recuperar",
+    "perfRecoveryDiscard": "Descartar",
+    "perfArmDisabledRendering": "No se puede armar mientras se renderiza la captura anterior.",
+    "perfRenameTitle": "Renombrar captura",
+    "perfRenameHint": "Nombre de la captura",
+    "perfRenameInvalid": "Ingresa un nombre válido.",
+    "perfRenameDuplicate": "Ya existe una captura llamada “{name}”.",
+    "@perfRenameDuplicate": {
+        "placeholders": {
+            "name": {
+                "type": "String"
+            }
+        }
+    },
+    "perfRenameButton": "Renombrar"
 }

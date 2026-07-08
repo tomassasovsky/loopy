@@ -5,6 +5,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/session/session.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -40,6 +41,7 @@ class LooperPage extends StatelessWidget {
           create: (context) => SessionCubit(
             repository: context.read<SessionRepository>(),
             looper: context.read<LooperRepository>(),
+            performance: context.read<PerformanceRepository>(),
             exportDirectory: exportDirectory,
           ),
         ),

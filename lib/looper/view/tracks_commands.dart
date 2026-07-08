@@ -11,6 +11,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
+import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session.dart';
 import 'package:loopy/window/window_chrome.dart';
 
@@ -120,8 +121,8 @@ class TracksCommands {
   /// pass through to OS / menu shortcuts.
   ///
   /// Both modes: `M` switch mode · `S` settings · `G` signal · `F` fullscreen ·
-  /// `Space` play/pause all · `C` clear all · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y`
-  /// (or `Shift+Z`) redo.
+  /// `Space` play/pause all · `C` clear all · `A` arm/disarm performance
+  /// recording · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo.
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
   /// Play mode: `1`–`8` select + mute/unmute.
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
@@ -203,6 +204,13 @@ class TracksCommands {
     // empties (redo can reinstate it layer by layer).
     if (key == LogicalKeyboardKey.keyU) {
       undo(selected);
+      return KeyEventResult.handled;
+    }
+    // `A` arms/disarms performance recording — routes through the same
+    // repository call the toolbar button dispatches, so the two paths never
+    // drift.
+    if (key == LogicalKeyboardKey.keyA) {
+      unawaited(context.read<PerformanceRecorderCubit>().toggleArm());
       return KeyEventResult.handled;
     }
 
@@ -312,6 +320,78 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SnackBar(
         key: const Key('tracks_session_snackbar'),
         content: Semantics(liveRegion: true, child: Text(message)),
+      ),
+    );
+}
+
+/// Reacts to a settled [PerformanceRecorderCubit] transition: prompts for
+/// crash-recovery salvage (D-SALVAGE) once at boot, opens the completion
+/// sheet when a capture finishes, or — for the short-capture auto-discard,
+/// which has no result to show — surfaces a SnackBar notice instead (no
+/// ephemeral state; this reacts to an ordinary field on the settled
+/// [PerformanceRecorderCompleted] transition). Wired as the `TracksView`'s
+/// performance [BlocListener].
+void onPerformanceRecorderState(
+  BuildContext context,
+  PerformanceRecorderState state,
+) {
+  if (state is PerformanceRecorderIdle && state.recoveryDirectory != null) {
+    unawaited(_promptPerformanceRecovery(context));
+    return;
+  }
+  if (state is PerformanceRecorderCompleted) {
+    if (state.discarded) {
+      _showPerformanceDiscarded(context);
+    } else {
+      unawaited(showPerformanceCompletionSheet(context));
+    }
+  }
+}
+
+Future<void> _promptPerformanceRecovery(BuildContext context) async {
+  final l10n = context.l10n;
+  final cubit = context.read<PerformanceRecorderCubit>();
+  // Not dismissible (barrier tap / Esc / back) — the prompt only ever appears
+  // once per crashed capture (the listener's `listenWhen` guards against
+  // re-firing for the same state), so a silent dismiss would leave the cubit
+  // stuck in `recoveryDirectory != null` forever, permanently disabling arm.
+  final recover = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        key: const Key('perfRecovery_dialog'),
+        title: Text(l10n.perfRecoveryFound),
+        actions: [
+          TextButton(
+            key: const Key('perfRecovery_discard'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.perfRecoveryDiscard),
+          ),
+          TextButton(
+            key: const Key('perfRecovery_recover'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.perfRecoveryRecover),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (recover == null) return;
+  await (recover ? cubit.recoverBootCapture() : cubit.discardBootCapture());
+}
+
+void _showPerformanceDiscarded(BuildContext context) {
+  ScaffoldMessenger.of(context)
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        key: const Key('tracks_perfDiscarded_snackbar'),
+        content: Semantics(
+          liveRegion: true,
+          child: Text(context.l10n.perfDiscarded),
+        ),
       ),
     );
 }
