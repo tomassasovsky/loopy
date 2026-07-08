@@ -101,4 +101,49 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework Foundation \
     -o "$OUT/loopy_plugin_slot_tests.exe"
   "$OUT/loopy_plugin_slot_tests.exe"
+
+  # GUID-drift regression test (umbrella D-GUID) for the "Loopy Delay" VST3
+  # plugin (vst3/delay) — independently hardcodes the same 16 bytes ids.h
+  # declares, so an accidental edit to a minted GUID fails loudly here
+  # instead of silently breaking every .als export referencing it.
+  echo "== building vst3 delay GUID-drift test =="
+  $CXX -std=c++17 -Ithird_party/vst3sdk -Ivst3/delay \
+    vst3/delay/test_vst3_delay_ids.cpp \
+    -o "$OUT/loopy_vst3_delay_ids_tests.exe"
+  "$OUT/loopy_vst3_delay_ids_tests.exe"
+
+  # Wrapper-level tests (umbrella Testing Strategy: "part 2/3 add
+  # wrapper-level tests — parameter round-trip, default values match
+  # le_fx_defaults"). Instantiates Processor/Controller directly (no dlopen,
+  # no real host) against the same SDK helper sources vst3/CMakeLists.txt's
+  # sdk/sdk_common targets compile.
+  echo "== building vst3 delay wrapper tests =="
+  VST3_SDK_SRC="third_party/vst3sdk/pluginterfaces/base/coreiids.cpp \
+    third_party/vst3sdk/pluginterfaces/base/funknown.cpp \
+    third_party/vst3sdk/pluginterfaces/base/ustring.cpp \
+    third_party/vst3sdk/public.sdk/source/vst/vstinitiids.cpp \
+    third_party/vst3sdk/public.sdk/source/vst/vstcomponent.cpp \
+    third_party/vst3sdk/public.sdk/source/vst/vstcomponentbase.cpp \
+    third_party/vst3sdk/public.sdk/source/vst/vstaudioeffect.cpp \
+    third_party/vst3sdk/public.sdk/source/vst/vstbus.cpp \
+    third_party/vst3sdk/public.sdk/source/vst/vsteditcontroller.cpp \
+    third_party/vst3sdk/public.sdk/source/vst/vstparameters.cpp \
+    third_party/vst3sdk/public.sdk/source/common/commoniids.cpp \
+    third_party/vst3sdk/public.sdk/source/common/pluginview.cpp \
+    third_party/vst3sdk/public.sdk/source/common/memorystream.cpp \
+    third_party/vst3sdk/base/source/fobject.cpp \
+    third_party/vst3sdk/base/source/fstring.cpp \
+    third_party/vst3sdk/base/source/fdebug.cpp \
+    third_party/vst3sdk/base/source/updatehandler.cpp \
+    third_party/vst3sdk/base/source/baseiids.cpp \
+    third_party/vst3sdk/base/thread/source/flock.cpp"
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio -Ivst3/delay \
+    vst3/delay/test_vst3_delay_wrapper.cpp \
+    vst3/delay/processor.cpp vst3/delay/controller.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_delay_wrapper_tests.exe"
+  "$OUT/loopy_vst3_delay_wrapper_tests.exe"
 fi
