@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
+#include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
@@ -54,6 +55,16 @@ extern "C" {
  * undo layer is evicted and its slot recycled. Only the slot POINTER tables are
  * sized by this (2 KB per lane), not audio. */
 #define LE_POOL_SLOTS 256
+
+/* Retired-layer staging (part 5, D-LAYER): this ring is engine-wide, shared
+ * by every track, so it must cover the worst case across ALL of them, not
+ * just one — LE_MAX_TRACKS * LE_POOL_SLOTS, i.e. every slot on every track
+ * retiring before the drain thread's next ~250ms cycle, still fits without
+ * dropping a layer. (One usable slot is reserved to distinguish full from
+ * empty, per the ring's own invariant.) Already a power of two, as the ring
+ * requires — entries are small (a few pointers + ints), so the larger table
+ * costs ~200 KB, cheap for a one-time static allocation. */
+#define LE_LAYER_STAGING_RING_CAPACITY (LE_MAX_TRACKS * (unsigned)LE_POOL_SLOTS)
 
 /* Undo-layer buffers are sized to the track's ACTUAL loop length rounded up to
  * this quantum (frames), not to max_loop_frames — a 2 s loop's undo layer
@@ -381,6 +392,16 @@ typedef struct le_perf_capture {
   le_perf_log_ring log_ctrl_ring;
   le_perf_log_entry log_ctrl_storage[LE_PERF_LOG_CTRL_RING_CAPACITY];
 
+  /* Retired-layer persistence (part 5, D-LAYER): every completed overdub
+   * pass's PCM, copied into a fresh heap buffer the moment it retires —
+   * before pool eviction, a track clear, or redo-invalidation can reclaim
+   * its slot and let a later write destroy it. Control-thread-producer
+   * (le_stage_retired_layer, engine_commands.c), drained by perf_drain.c
+   * into numbered layer files + sidecar manifest entries. Re-initialised on
+   * every arm, same as the two rings above. */
+  le_layer_staging_ring layer_staging_ring;
+  le_staged_layer layer_staging_storage[LE_LAYER_STAGING_RING_CAPACITY];
+
   /* The capture-to-disk drain thread (perf_drain.h), spawned by le_perf_arm
    * right after the ring set above is published and joined by le_perf_disarm
    * before the rings are freed. Opaque here (perf_drain.c owns the
@@ -488,6 +509,11 @@ struct le_engine {
    * part does. */
   _Atomic uint32_t a_perf_log_overruns;
   _Atomic uint32_t a_perf_log_ctrl_overruns;
+  /* Retired-layer staging drops (part 5) — the staging ring rejected a
+   * layer (LE_LAYER_STAGING_RING_CAPACITY exceeded), so its PCM was freed
+   * unpersisted instead of queued for the drain thread. Same rationale as
+   * the two atomics above: not surfaced via le_snapshot yet. */
+  _Atomic uint32_t a_perf_layer_overruns;
   le_perf_capture perf;
 
   /* Tracks. */
