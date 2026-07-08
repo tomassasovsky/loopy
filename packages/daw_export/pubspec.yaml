@@ -1,0 +1,20 @@
+name: daw_export
+description: >-
+  Generates an Ableton Live 12 .als set (gzipped XML) from a finalized
+  performance-recording capture — one audio track per non-empty Loopy track
+  plus one per live-input stem, arrangement-view clips at capture t=0,
+  session-view loop clips per lane. Pure Dart, no Flutter dependency, so it
+  never imports performance_repository or loopy_engine (own input model,
+  consumes only the documented performance.json format).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  meta: ^1.16.0
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^10.2.0
