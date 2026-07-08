@@ -8077,6 +8077,374 @@ static void test_perf_render_missing_or_corrupt_manifest(void) {
   le_engine_destroy(e2);
 }
 
+/* ---- perf_render: the wet pass + master reconstruction (part 8) ---- */
+
+/* Reads track `channel`'s rendered WET stem (as opposed to test_read_stem's
+ * dry stem), same fixed-format WAV reader convention. */
+static int32_t test_read_wet_stem(const char* dir, int32_t channel, float* out,
+                                  int32_t out_cap) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/stems/wet/track%d.wav", dir, channel);
+  FILE* f = fopen(path, "rb");
+  if (f == NULL) return 0;
+  unsigned char header[44];
+  if (fread(header, 1, sizeof(header), f) != sizeof(header)) {
+    fclose(f);
+    return 0;
+  }
+  uint32_t data_bytes;
+  memcpy(&data_bytes, header + 40, 4);
+  const int32_t frames = (int32_t)(data_bytes / sizeof(float));
+  const int32_t n = frames < out_cap ? frames : out_cap;
+  const size_t got = fread(out, sizeof(float), (size_t)n, f);
+  fclose(f);
+  return (int32_t)got;
+}
+
+/* Acceptance: a chain with a mid-performance param sweep renders the sweep
+ * at the logged frames. DRIVE (stateless: tanhf(x*drive)*level, no memory
+ * across samples) is chosen deliberately so the expected output at every
+ * frame is a pure, hand-computable function of that frame's own params —
+ * no DSP internals to approximate. armSnapshot seeds the chain already
+ * engaged (so the arm-time param values apply to the FIRST few frames, not
+ * defaults); one LE_PLOG_SET_LANE_FX_PARAM sweeps `drive` mid-capture. */
+static void test_perf_render_wet_fx_sweep(void) {
+  printf("test_perf_render_wet_fx_sweep\n");
+  const char* dir = render_test_dir("wet-sweep");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 12;
+  const uint64_t sweep_frame = 6;
+  const float dry_value = 0.5f;
+  const float drive0 = 0.2f, level0 = 0.6f;
+  const float drive1 = 0.9f, level1 = 0.6f;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float base[4] = {dry_value, dry_value, dry_value, dry_value};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, base, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+          "\"limiterCeiling\": 0.99, \"tracks\": [{\"channel\": 0, "
+          "\"volume\": 1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, "
+          "\"deferred\": false, \"pcmRef\": \"loops/track0-lane0.wav\", "
+          "\"effects\": [{\"type\": 1, \"params\": [%f, %f, 0.0, 0.0]}]}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames, (double)drive0,
+          (double)level0);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    /* fx.index packs (slot << 8 | param); fx.type carries the float value
+     * bit-cast to int32 (LE_PLOG_SET_LANE_FX_PARAM, perf_log_ring.h). */
+    uint32_t drive_bits;
+    memcpy(&drive_bits, &drive1, sizeof(drive_bits));
+    test_write_log_entry(
+        lf, sweep_frame,
+        (le_command){.code = LE_PLOG_SET_LANE_FX_PARAM,
+                    .fx = {0, 0, LE_PLOG_FX_PARAM_PACK(0, 0),
+                            (int32_t)drive_bits}});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK);
+  CHECK(done == 1);
+
+  float wet[16];
+  const int32_t got = test_read_wet_stem(dir, 0, wet, 16);
+  CHECK(got == (int32_t)capture_frames);
+  for (int32_t i = 0; i < got; ++i) {
+    const float drive = (uint64_t)i < sweep_frame ? drive0 : drive1;
+    const float level = (uint64_t)i < sweep_frame ? level0 : level1;
+    const float expected = tanhf(dry_value * (1.0f + drive * 29.0f)) * level;
+    CHECK(fabsf(wet[i] - expected) < 1e-5f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance (coverage): a chain with TWO concurrently active slots (both
+ * stateless DRIVE, so the series composition is still hand-computable) runs
+ * both in order, and a mid-performance LE_CMD_SET_LANE_FX_COUNT shrink
+ * disables the second slot from its logged frame onward without touching
+ * its retained type/params (matching the live engine: count only gates how
+ * many chain entries fx_apply_chain iterates, it never clears a slot beyond
+ * the new count). */
+static void test_perf_render_wet_multi_slot_and_count_shrink(void) {
+  printf("test_perf_render_wet_multi_slot_and_count_shrink\n");
+  const char* dir = render_test_dir("wet-multi-slot");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 8;
+  const uint64_t shrink_frame = 4;
+  const float dry_value = 0.5f;
+  const float d0 = 0.3f, l0 = 0.7f;
+  const float d1 = 0.6f, l1 = 0.5f;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float base[4] = {dry_value, dry_value, dry_value, dry_value};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, base, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"volume\": 1.0, "
+          "\"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": false, "
+          "\"pcmRef\": \"loops/track0-lane0.wav\", \"effects\": "
+          "[{\"type\": 1, \"params\": [%f, %f, 0.0, 0.0]}, "
+          "{\"type\": 1, \"params\": [%f, %f, 0.0, 0.0]}]}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames, (double)d0, (double)l0,
+          (double)d1, (double)l1);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    test_write_log_entry(
+        lf, shrink_frame,
+        (le_command){.code = LE_CMD_SET_LANE_FX_COUNT,
+                    .fxcount = {0, 0, 1}});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK);
+  CHECK(done == 1);
+
+  float wet[16];
+  const int32_t got = test_read_wet_stem(dir, 0, wet, 16);
+  CHECK(got == (int32_t)capture_frames);
+  for (int32_t i = 0; i < got; ++i) {
+    const float stage0 = tanhf(dry_value * (1.0f + d0 * 29.0f)) * l0;
+    const float expected = (uint64_t)i < shrink_frame
+                               ? tanhf(stage0 * (1.0f + d1 * 29.0f)) * l1
+                               : stage0;
+    CHECK(fabsf(wet[i] - expected) < 1e-5f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance: a hosted plugin slot renders as dry passthrough in the wet
+ * pass (D-RENDER, umbrella plan) — the render's fresh le_fx_state never
+ * publishes a live plugin instance, so fx_apply_chain's own documented NULL
+ * behavior (fx_plugin_process) already produces this with no special-casing
+ * in perf_render.c; this proves that end-to-end against the real renderer. */
+static void test_perf_render_wet_plugin_passthrough(void) {
+  printf("test_perf_render_wet_plugin_passthrough\n");
+  const char* dir = render_test_dir("wet-plugin");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 8;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float base[4] = {0.3f, -0.4f, 0.7f, -0.2f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, base, loop_len, sr);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"volume\": 1.0, "
+          "\"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": false, "
+          "\"pcmRef\": \"loops/track0-lane0.wav\", \"effects\": "
+          "[{\"type\": 8, \"plugin\": {\"uid\": \"test.plugin\"}}]}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+  int32_t done = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, NULL) == LE_OK);
+  CHECK(done == 1);
+
+  float dry[16];
+  const int32_t dry_got = test_read_stem(dir, 0, dry, 16);
+  float wet[16];
+  const int32_t wet_got = test_read_wet_stem(dir, 0, wet, 16);
+  CHECK(dry_got == (int32_t)capture_frames);
+  CHECK(wet_got == (int32_t)capture_frames);
+  for (int32_t i = 0; i < dry_got && i < wet_got; ++i) {
+    CHECK(fabsf(wet[i] - dry[i]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Acceptance (the hard gate): drives a REAL engine through a scripted
+ * performance under the fixed golden-parity protocol — arm from silence, no
+ * monitor inputs, no plugin slots — with overdubbing intentionally absent
+ * (arm-image phase alignment against an already-playing track is a
+ * documented, separate, pre-existing gap perf_render.c's arm-image handling
+ * calls out; arming from silence sidesteps it, matching the plan's own fixed
+ * protocol) but real FX engagement/sweep, a volume ride, a mute/unmute, a
+ * master-gain change, and the limiter, all via the actual public API so
+ * events.log holds genuine engine-emitted entries rather than a hand-typed
+ * approximation. Compares the offline-reconstructed master
+ * (stems/wet/master.wav) against the live-captured master (master.pcm)
+ * sample-by-sample. */
+static void test_perf_render_golden_master_parity(void) {
+  printf("test_perf_render_golden_master_parity\n");
+  const char* dir = render_test_dir("golden");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+
+  /* Arm from silence: nothing recorded yet, no master loop defined. */
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Record fresh while armed, then finalize to PLAYING — le_loop_clock_set_
+   * length (loop_clock.c) resets the master phase to 0 exactly at this
+   * finalize frame, so the fresh content is phase-aligned by construction
+   * (no arm-image / clockFrame concern here at all). */
+  float out[64];
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize -> PLAYING */
+  drain(e);
+  process_const(e, 0.6f, loop_len, out);
+  process_const(e, 0.6f, loop_len, out);
+
+  /* Scripted performance: FX engage + sweep, volume ride, mute/unmute,
+   * master gain, limiter — every command below is real, applied to the
+   * live engine, not a hand-authored log fixture. */
+  CHECK(le_engine_set_lane_fx(e, 0, 0, 0, LE_FX_DRIVE) == LE_OK);
+  CHECK(le_engine_set_lane_fx_count(e, 0, 0, 1) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 0, 0.9f) == LE_OK);
+  CHECK(le_engine_set_lane_fx_param(e, 0, 0, 0, 1, 0.8f) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+
+  CHECK(le_engine_set_lane_volume(e, 0, 0, 0.5f) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 1) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_set_lane_mute(e, 0, 0, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+
+  CHECK(le_engine_set_master_gain(e, 0.7f) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+
+  CHECK(le_engine_set_limiter(e, 1, 0.4f) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  process_const(e, 0.6f, loop_len, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  CHECK(capture_frames > 0);
+
+  /* Export the settled lane for the disarm-snapshot's pcmRef — bit-identical
+   * to what the engine actually holds, exactly what performance_repository's
+   * real _captureSettledLanes does at disarm. */
+  float exported[8];
+  const int32_t exported_n = le_engine_export_track_lane(e, 0, 0, exported, 8);
+  CHECK(exported_n == loop_len);
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, exported, loop_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* blocks until the final flush + close */
+
+  char manifest[1200];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+          "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+          "\"disarmSnapshot\": {\"tracks\": [{\"channel\": 0, \"volume\": "
+          "1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, \"deferred\": "
+          "false, \"pcmRef\": \"track0-lane0.wav\", \"effects\": []}]}]}, "
+          "\"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  int32_t done = 0, track_count = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(track_count == 1);
+  int32_t channel = -1, succeeded = 0;
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 0);
+  CHECK(succeeded == 1);
+
+  char master_pcm_path[700];
+  snprintf(master_pcm_path, sizeof(master_pcm_path), "%s/master.pcm", dir);
+  FILE* mf = fopen(master_pcm_path, "rb");
+  CHECK(mf != NULL);
+  float* live = (float*)malloc((size_t)capture_frames * sizeof(float));
+  size_t live_n = 0;
+  if (mf != NULL) {
+    live_n = fread(live, sizeof(float), (size_t)capture_frames, mf);
+    fclose(mf);
+  }
+  CHECK(live_n == capture_frames);
+
+  char master_wav_path[700];
+  snprintf(master_wav_path, sizeof(master_wav_path), "%s/stems/wet/master.wav",
+          dir);
+  FILE* wf = fopen(master_wav_path, "rb");
+  CHECK(wf != NULL);
+  float* offline = (float*)malloc((size_t)capture_frames * sizeof(float));
+  size_t offline_n = 0;
+  if (wf != NULL) {
+    unsigned char header[44];
+    if (fread(header, 1, sizeof(header), wf) == sizeof(header)) {
+      offline_n = fread(offline, sizeof(float), (size_t)capture_frames, wf);
+    }
+    fclose(wf);
+  }
+  CHECK(offline_n == capture_frames);
+
+  if (live_n == capture_frames && offline_n == capture_frames) {
+    for (uint64_t f = 0; f < capture_frames; ++f) {
+      CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
+    }
+  }
+
+  free(live);
+  free(offline);
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -8280,6 +8648,10 @@ int main(void) {
   test_perf_render_concurrent_with_live_engine();
   test_perf_render_partial_success();
   test_perf_render_missing_or_corrupt_manifest();
+  test_perf_render_wet_fx_sweep();
+  test_perf_render_wet_multi_slot_and_count_shrink();
+  test_perf_render_wet_plugin_passthrough();
+  test_perf_render_golden_master_parity();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
