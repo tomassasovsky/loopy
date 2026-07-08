@@ -39,6 +39,14 @@ class Processor : public Steinberg::Vst::AudioEffect {
   Steinberg::tresult PLUGIN_API setState(Steinberg::IBStream* state) SMTG_OVERRIDE;
   Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream* state) SMTG_OVERRIDE;
 
+  // Test-only: the ring capacity setupProcessing() most recently computed.
+  // Lets wrapper tests assert the ring actually scales with sample rate
+  // (cap_'s own comment below) instead of only checking that *some*
+  // non-silent output comes out — a weaker check that the pre-fix
+  // fixed-48000 cap would also have passed at 96 kHz, since a partially
+  // dropped comb/allpass network still produces a nonzero, finite tail.
+  int ringCapacityForTesting() const { return cap_; }
+
  private:
   // Ring capacity in samples for the slot's single packed comb/allpass
   // buffer (delay[slot][0] — delay[slot][1] is unused by reverb), sized to
