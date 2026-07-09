@@ -201,4 +201,27 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_vst3_reverb_parity_tests.exe"
   "$OUT/loopy_vst3_reverb_parity_tests.exe"
+
+  # Same GUID-drift + golden-parity test pair as Delay/Reverb, repeated for
+  # "Loopy Echo" (part 5) — no wrapper-level test file this time, since the
+  # umbrella's Testing Strategy scopes parts 5-9 to exactly these two test
+  # layers per new plugin.
+  echo "== building vst3 echo GUID-drift test =="
+  $CXX -std=c++17 -Ithird_party/vst3sdk -Ivst3/echo \
+    vst3/echo/test_vst3_echo_ids.cpp \
+    -o "$OUT/loopy_vst3_echo_ids_tests.exe"
+  "$OUT/loopy_vst3_echo_ids_tests.exe"
+
+  echo "== building vst3 echo parity harness =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio \
+    -Ivst3/echo -Ivst3/test \
+    vst3/test/host_harness.cpp vst3/test/test_echo_parity.cpp \
+    vst3/echo/processor.cpp vst3/echo/controller.cpp vst3/echo/factory.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    third_party/vst3sdk/public.sdk/source/main/pluginfactory.cpp \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_echo_parity_tests.exe"
+  "$OUT/loopy_vst3_echo_parity_tests.exe"
 fi
