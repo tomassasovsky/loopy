@@ -55,6 +55,17 @@
  * buffer) would be invisible to the mono matrix alone — runChannelCrossCheck
  * (host_harness.cpp) closes this gap with one genuinely asymmetric
  * L-impulse/R-silence case per plugin.
+ *
+ * VARIABLE PARAM WIDTH (part 6): originally hardcoded to exactly 3 params
+ * (fine for Delay/Reverb/Echo, parts 2/3/5). Widened here to
+ * ParityConfig::paramCount (<= LE_FX_PARAMS, engine_fx.h's own per-slot
+ * param-array width) so Drive/Filter/Tremolo (2 params, parts 6-8) and
+ * Octaver (4 params, part 9) fit without a second widening. ParamSpec::params
+ * and ParamCombo::values are sized to LE_FX_PARAMS (the true upper bound —
+ * one array per engine chain slot); runHosted/runDirect (host_harness.cpp)
+ * only ever read the first `paramCount` entries, so a config that leaves
+ * `paramCount` at its default (below) can omit the rest without them being
+ * touched.
  */
 #pragma once
 
@@ -75,20 +86,22 @@ extern "C" {
 
 namespace loopy_vst3_test {
 
-// One of a plugin's three user-facing params (Time/Feedback/Mix or
-// Size/Damping/Mix). Fixed at 3: both part 2/3 plugins happen to use exactly
-// 3 of engine_fx.h's LE_FX_PARAMS (4) slots — a future plugin with a
-// different param count would need this struct (and ParamCombo below)
-// widened first, this isn't a generic N-param design.
+// One of a plugin's user-facing params (e.g. Time/Feedback/Mix, or Drive's
+// Drive/Level). ParityConfig::paramCount says how many of these (and of
+// ParamCombo::values below) a given plugin actually uses.
 struct ParamSpec {
   Steinberg::Vst::ParamID id;
   const char* name;
 };
 
-// One param-value combination to sweep.
+// One param-value combination to sweep. Sized to LE_FX_PARAMS (the engine's
+// own per-slot param-array width) so every effect's widest case (Octaver, 4
+// params, part 9) fits without a further widening; a plugin with fewer
+// params just leaves the trailing values at their aggregate-init default of
+// 0.0f, which runHosted/runDirect never read past paramCount anyway.
 struct ParamCombo {
   const char* label;
-  float values[3];
+  float values[LE_FX_PARAMS];
 };
 
 // Computes the ring capacity (samples) the plugin under test allocates for a
@@ -111,8 +124,15 @@ using CapFn = int (*)(double sampleRate);
 struct ParityConfig {
   const char* pluginName;
   Steinberg::IPluginFactory* (*getFactory)();
-  int32_t fxType;  // LE_FX_DELAY or LE_FX_REVERB
-  ParamSpec params[3];
+  int32_t fxType;  // LE_FX_DELAY, LE_FX_REVERB, LE_FX_ECHO, LE_FX_DRIVE, ...
+  // Defaults to 3 (the width every ParityConfig used before this field
+  // existed) so test_delay_parity.cpp/test_reverb_parity.cpp/
+  // test_echo_parity.cpp (parts 2, 3, 5) — which never set this field —
+  // keep compiling and passing unmodified against this widened harness, the
+  // part 6 regression gate proving the widening is behavior-preserving.
+  // Every new plugin (2 or 4 params) must set this explicitly.
+  int paramCount = 3;
+  ParamSpec params[LE_FX_PARAMS];
   ParamCombo combos[5];
   CapFn computeCap;
 };

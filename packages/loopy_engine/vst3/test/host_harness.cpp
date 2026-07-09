@@ -86,9 +86,10 @@ const NamedSignal kSignals[] = {
 // combo is queued once, on the first block only (matching how a host would
 // apply a static, non-automated param set for an offline render).
 bool runHosted(IPluginFactory* factory, const char* processorCid,
-              const ParamSpec params[3], const ParamCombo& combo, double sr,
-              const std::vector<float>& inLSignal, const std::vector<float>& inRSignal,
-              int blockSize, std::vector<float>& outL, std::vector<float>& outR) {
+              const ParamSpec* params, int paramCount, const ParamCombo& combo,
+              double sr, const std::vector<float>& inLSignal,
+              const std::vector<float>& inRSignal, int blockSize,
+              std::vector<float>& outL, std::vector<float>& outR) {
   FUnknown* unk = nullptr;
   if (factory->createInstance(processorCid, IAudioProcessor::iid, (void**)&unk) !=
           kResultOk ||
@@ -123,9 +124,7 @@ bool runHosted(IPluginFactory* factory, const char* processorCid,
     outR.assign(n, 0.0f);
 
     FakeParameterChanges changes;
-    changes.add(params[0].id, combo.values[0]);
-    changes.add(params[1].id, combo.values[1]);
-    changes.add(params[2].id, combo.values[2]);
+    for (int i = 0; i < paramCount; ++i) changes.add(params[i].id, combo.values[i]);
 
     int pos = 0;
     bool first = true;
@@ -197,9 +196,11 @@ bool runDirect(int32_t fxType, const ParamCombo& combo, int cap, double sr,
   int32_t types[LE_FX_MAX] = {};
   types[0] = fxType;
   float params[LE_FX_MAX][LE_FX_PARAMS] = {};
-  params[0][0] = combo.values[0];
-  params[0][1] = combo.values[1];
-  params[0][2] = combo.values[2];
+  // Copies the full LE_FX_PARAMS width regardless of the plugin's own
+  // paramCount — ParamCombo::values beyond a narrower plugin's paramCount are
+  // 0.0f by aggregate-init construction (host_harness.h), matching what an
+  // unused trailing engine param slot already defaults to.
+  for (int i = 0; i < LE_FX_PARAMS; ++i) params[0][i] = combo.values[i];
 
   const int n = static_cast<int>(inLSignal.size());
   outL.assign(n, 0.0f);
@@ -254,8 +255,8 @@ int runChannelCrossCheck(IPluginFactory* factory, const char* processorCid,
       continue;
     }
     std::vector<float> hostedL, hostedR;
-    if (!runHosted(factory, processorCid, config.params, combo, sr, inL, inR, n,
-                   hostedL, hostedR)) {
+    if (!runHosted(factory, processorCid, config.params, config.paramCount, combo,
+                   sr, inL, inR, n, hostedL, hostedR)) {
       std::printf("  FAIL: %s channel-cross combo=%s: hosted run failed\n",
                   config.pluginName, combo.label);
       failures++;
@@ -335,8 +336,9 @@ int runParityTests(const ParityConfig& config) {
 
         for (int blockSize : blockSizes) {
           std::vector<float> hostedL, hostedR;
-          const bool ok = runHosted(factory, processorCid, config.params, combo,
-                                    sr, signal, signal, blockSize, hostedL, hostedR);
+          const bool ok = runHosted(factory, processorCid, config.params,
+                                    config.paramCount, combo, sr, signal, signal,
+                                    blockSize, hostedL, hostedR);
           if (!ok) {
             std::printf(
                 "  FAIL: %s %s sr=%.0f combo=%s block=%d: hosted run failed\n",
