@@ -1,3 +1,5 @@
+import 'package:daw_export/src/daw_effect.dart';
+import 'package:daw_export/src/device_chain_resolver.dart';
 import 'package:meta/meta.dart';
 
 /// A DAW project ready to be rendered to an Ableton Live 12 `.als` set
@@ -39,6 +41,8 @@ class DawTrack {
     this.arrangementClip,
     this.sessionClips = const [],
     this.automationLanes = const [],
+    this.deviceChain,
+    this.deviceChainFallbackReason,
   });
 
   /// The track's display name in Ableton (e.g. `Track 0` or `Input 1`).
@@ -61,6 +65,21 @@ class DawTrack {
   /// At most one lane per [AutomationTarget] — a caller building this by
   /// hand should not emit two lanes for the same target on the same track.
   final List<AutomationLane> automationLanes;
+
+  /// The channel's resolved real Loopy VST3 device chain (part 10,
+  /// `device_chain_resolver.dart`'s [resolveDeviceChain]), or `null` when no
+  /// chain could be honestly resolved (see [deviceChainFallbackReason]) —
+  /// today's existing wet-bounce export is the fallback for a `null` chain
+  /// (umbrella D-NO-STOCK-DEVICES). Non-null but *empty* for a channel with
+  /// no effects on any lane at all — a real, resolved "nothing to emit"
+  /// outcome, distinct from a fallback.
+  final List<DawEffect>? deviceChain;
+
+  /// Why [deviceChain] is `null`, or `null` if it resolved (including to an
+  /// empty chain) — set only when effects existed but couldn't be honestly
+  /// represented as a single device chain. Never set for a channel with no
+  /// effects at all, since there is nothing to explain there.
+  final DeviceChainFallbackReason? deviceChainFallbackReason;
 }
 
 /// Which Ableton mixer parameter an [AutomationLane] targets.

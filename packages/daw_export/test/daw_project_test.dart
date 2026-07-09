@@ -69,5 +69,41 @@ void main() {
       expect(clip.fileRef, 'loops/track0-lane2.wav');
       expect(clip.lengthSeconds, 2.0);
     });
+
+    test(
+      'deviceChain/deviceChainFallbackReason default to null (a track built '
+      'by hand, or every pre-part-10 fixture, has neither)',
+      () {
+        const track = DawTrack(name: 'Track 0');
+        expect(track.deviceChain, isNull);
+        expect(track.deviceChainFallbackReason, isNull);
+      },
+    );
+
+    test(
+      'DawTrack carries an explicit deviceChain and fallback reason verbatim',
+      () {
+        const track = DawTrack(
+          name: 'Track 0',
+          deviceChain: [
+            DawEffect(type: kFxDelay, params: [0.35, 0.35, 0.35, 0.0]),
+          ],
+        );
+        expect(track.deviceChain, [
+          const DawEffect(type: kFxDelay, params: [0.35, 0.35, 0.35, 0.0]),
+        ]);
+        expect(track.deviceChainFallbackReason, isNull);
+
+        const fallbackTrack = DawTrack(
+          name: 'Track 1',
+          deviceChainFallbackReason: DeviceChainFallbackReason.mixedLaneChains,
+        );
+        expect(fallbackTrack.deviceChain, isNull);
+        expect(
+          fallbackTrack.deviceChainFallbackReason,
+          DeviceChainFallbackReason.mixedLaneChains,
+        );
+      },
+    );
   });
 }
