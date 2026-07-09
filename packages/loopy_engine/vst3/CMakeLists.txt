@@ -1,7 +1,8 @@
-# vst3/CMakeLists.txt — standalone project building "Loopy Delay" (part 2),
-# "Loopy Reverb" (part 3), "Loopy Echo" (part 5), "Loopy Drive" (part 6),
-# "Loopy Filter" (part 7), and "Loopy Tremolo" (part 8) as real .vst3
-# bundles. An independent build
+# vst3/CMakeLists.txt — standalone project building all seven Loopy FX VST3
+# plugins as real .vst3 bundles: "Loopy Delay" (part 2), "Loopy Reverb"
+# (part 3), "Loopy Echo" (part 5), "Loopy Drive" (part 6), "Loopy Filter"
+# (part 7), "Loopy Tremolo" (part 8), and "Loopy Octaver" (part 9) — the
+# full built-in effect set (umbrella D-ALL-EFFECTS). An independent build
 # (umbrella: "New: VST3 plugin artifacts (independent build)"), not folded
 # into loopy_engine's own SHARED-library build — pulls in the engine/src
 # project via add_subdirectory only to reuse loopy_dsp_core (part 1) and the
@@ -40,9 +41,8 @@ add_compile_definitions(
   "$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>"
 )
 
-# Only loopy_vst3_delay / loopy_vst3_reverb / loopy_vst3_echo / loopy_vst3_drive /
-# loopy_vst3_filter / loopy_vst3_tremolo are ever requested as build targets
-# (below), so this pulls loopy_dsp_core's definition into scope
+# Only the seven loopy_vst3_* targets defined below are ever requested as
+# build targets, so this pulls loopy_dsp_core's definition into scope
 # without also having to build ../src's own loopy_engine SHARED target
 # (which has its own, unrelated per-OS device/MIDI dependencies out of scope
 # here).
@@ -298,3 +298,30 @@ target_link_options(loopy_vst3_tremolo PRIVATE
   "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
 )
 loopy_vst3_add_bundle(loopy_vst3_tremolo "Loopy Tremolo" "${CMAKE_CURRENT_SOURCE_DIR}/tremolo")
+
+# --- loopy_vst3_octaver: "Loopy Octaver" (part 9) ---------------------------
+add_library(loopy_vst3_octaver MODULE
+  octaver/processor.cpp
+  octaver/controller.cpp
+  octaver/factory.cpp
+)
+set_target_properties(loopy_vst3_octaver PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  PREFIX ""
+  SUFFIX ""
+  OUTPUT_NAME "Loopy Octaver"
+)
+target_include_directories(loopy_vst3_octaver PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/octaver"
+)
+target_link_libraries(loopy_vst3_octaver PRIVATE
+  loopy_dsp_core
+  core_plugin_disabled_stub
+  sdk
+  sdk_common
+)
+target_link_options(loopy_vst3_octaver PRIVATE
+  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+)
+loopy_vst3_add_bundle(loopy_vst3_octaver "Loopy Octaver" "${CMAKE_CURRENT_SOURCE_DIR}/octaver")
