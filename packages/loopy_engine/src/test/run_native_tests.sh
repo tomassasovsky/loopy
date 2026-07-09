@@ -138,7 +138,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     third_party/vst3sdk/base/source/baseiids.cpp \
     third_party/vst3sdk/base/thread/source/flock.cpp"
   # shellcheck disable=SC2086
-  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio -Ivst3/delay \
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio -Ivst3/delay -Ivst3/test \
     vst3/delay/test_vst3_delay_wrapper.cpp \
     vst3/delay/processor.cpp vst3/delay/controller.cpp \
     src/core/engine_fx.c src/core/plugin_disabled.c \
@@ -158,7 +158,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
 
   echo "== building vst3 reverb wrapper tests =="
   # shellcheck disable=SC2086
-  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio -Ivst3/reverb \
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio -Ivst3/reverb -Ivst3/test \
     vst3/reverb/test_vst3_reverb_wrapper.cpp \
     vst3/reverb/processor.cpp vst3/reverb/controller.cpp \
     src/core/engine_fx.c src/core/plugin_disabled.c \
@@ -166,4 +166,39 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_vst3_reverb_wrapper_tests.exe"
   "$OUT/loopy_vst3_reverb_wrapper_tests.exe"
+
+  # Golden-parity audio-diff harness (part 4, umbrella D-VALIDATE): drives
+  # each plugin's real GetPluginFactory()->createInstance()->process() path
+  # (vst3/test/host_harness.cpp) and diffs its output against a direct
+  # fx_apply_chain call over the identical signal/params, across a fixed
+  # signal x sample-rate x param-combo x block-size matrix. One binary per
+  # plugin — each factory.cpp defines a global (non-namespaced)
+  # GetPluginFactory(), so Delay's and Reverb's can't link into the same
+  # binary. Needs pluginfactory.cpp (unlike the wrapper tests above, which
+  # instantiate Processor/Controller directly and never touch the factory).
+  echo "== building vst3 delay parity harness =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio \
+    -Ivst3/delay -Ivst3/test \
+    vst3/test/host_harness.cpp vst3/test/test_delay_parity.cpp \
+    vst3/delay/processor.cpp vst3/delay/controller.cpp vst3/delay/factory.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    third_party/vst3sdk/public.sdk/source/main/pluginfactory.cpp \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_delay_parity_tests.exe"
+  "$OUT/loopy_vst3_delay_parity_tests.exe"
+
+  echo "== building vst3 reverb parity harness =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio \
+    -Ivst3/reverb -Ivst3/test \
+    vst3/test/host_harness.cpp vst3/test/test_reverb_parity.cpp \
+    vst3/reverb/processor.cpp vst3/reverb/controller.cpp vst3/reverb/factory.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    third_party/vst3sdk/public.sdk/source/main/pluginfactory.cpp \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_reverb_parity_tests.exe"
+  "$OUT/loopy_vst3_reverb_parity_tests.exe"
 fi
