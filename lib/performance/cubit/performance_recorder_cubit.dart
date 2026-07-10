@@ -155,7 +155,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
           reason,
         ),
     };
-    _emit(PerformanceRecorderCompleted(renamed));
+    _emit(PerformanceRecorderCompleted(renamed, tracks: current.tracks));
   }
 
   /// Arms or disarms depending on the current state; a no-op while
@@ -270,7 +270,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   }
 
   Future<void> _finishRender(String dir) async {
-    await _writeDawExports(dir);
+    final tracks = await _writeDawExports(dir);
     _captureDir = null;
     final anyFailed = _performance.renderTrackStatuses.any((s) => !s.succeeded);
     final stoppedEarly = _readStoppedEarly(dir);
@@ -282,10 +282,58 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     } else {
       result = PerformanceRecordDone(dir);
     }
-    _emit(PerformanceRecorderCompleted(result));
+    _emit(PerformanceRecorderCompleted(result, tracks: tracks));
   }
 
-  Future<void> _writeDawExports(String dir) async {
+  /// Re-runs `.als`/`fx-chains.txt` generation from the capture directory's
+  /// already-persisted `performance.json` — no engine, no re-render, no
+  /// audio-file writes
+  /// (part 11, D-REEXPORT). Useful after installing Loopy's VST3 plugins (a
+  /// fresh export can then resolve a live device chain a prior export
+  /// couldn't, though resolution itself never depended on local plugin
+  /// installation — only on the manifest's own effects data) or simply to
+  /// regenerate without re-recording. A no-op when not currently
+  /// [PerformanceRecorderCompleted] with a delivered result, mirroring
+  /// [renameCompletedCapture]'s own guard. Failures (a malformed manifest
+  /// `buildAls` rejects, or a file-write error) are caught and surfaced via
+  /// [PerformanceRecorderCompleted.reExportFailed] rather than left
+  /// uncaught — this is a user-triggered background action, not something
+  /// that should crash the cubit.
+  Future<void> reExport() async {
+    final current = state;
+    if (current is! PerformanceRecorderCompleted) return;
+    final result = current.result;
+    if (result == null) return;
+    final dir = switch (result) {
+      PerformanceRecordDone(:final path) => path,
+      PerformanceRecordPartial(:final path) => path,
+      PerformanceRecordStoppedEarly(:final path) => path,
+    };
+    _emit(
+      PerformanceRecorderCompleted(
+        result,
+        tracks: current.tracks,
+        isReExporting: true,
+      ),
+    );
+    try {
+      final tracks = await _writeDawExports(dir);
+      _emit(PerformanceRecorderCompleted(result, tracks: tracks));
+    } on Object {
+      _emit(
+        PerformanceRecorderCompleted(
+          result,
+          tracks: current.tracks,
+          reExportFailed: true,
+        ),
+      );
+    }
+  }
+
+  /// Reads [dir]'s manifest and writes `.als`/`fx-chains.txt` from it,
+  /// returning the resolved [DawTrack]s (empty when the manifest couldn't be
+  /// read) for the caller to carry on [PerformanceRecorderCompleted.tracks].
+  Future<List<DawTrack>> _writeDawExports(String dir) async {
     final project = DawManifestReader.read(dir);
     if (project != null) {
       await File('$dir/project.als').writeAsBytes(buildAls(project));
@@ -294,6 +342,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
     if (chains != null) {
       await File('$dir/fx-chains.txt').writeAsString(chains);
     }
+    return project?.tracks ?? const [];
   }
 
   PerformanceStopReason? _readStoppedEarly(String dir) {

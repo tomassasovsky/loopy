@@ -7,7 +7,14 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
 import 'package:loopy_engine/loopy_engine.dart'
-    show PerformanceRenderProgress, PerformanceRenderTrackStatus;
+    show
+        EngineSnapshot,
+        LaneSnapshot,
+        LatencyState,
+        PerformanceRenderProgress,
+        PerformanceRenderTrackStatus,
+        TrackSnapshot,
+        TrackState;
 import 'package:performance_repository/performance_repository.dart';
 
 import '../../helpers/helpers.dart';
@@ -116,6 +123,24 @@ void main() {
     File('$dir/events.log').writeAsBytesSync(bytes.toBytes());
     writeManifest(dir, finalized: false);
     return dir;
+  }
+
+  /// Arms, disarms, and waits for a full [PerformanceRecorderCompleted] with
+  /// a [PerformanceRecordDone] result — the shared "already-finished
+  /// capture" starting point for [renameCompletedCapture] and [reExport]
+  /// tests alike, both of which act on a state past the render pipeline.
+  Future<PerformanceRecorderCubit> completedCubit() async {
+    engine.renderStatuses = const [
+      PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+    ];
+    final cubit = build();
+    addTearDown(cubit.close);
+    await armWithLog(performance);
+    await pumpEventQueue();
+    clock = clock.add(const Duration(seconds: 5));
+    await cubit.toggleArm();
+    await waitForCompleted(cubit);
+    return cubit;
   }
 
   group('load', () {
@@ -441,6 +466,66 @@ void main() {
     );
   });
 
+  group('export summary (tracks)', () {
+    test(
+      'a fresh completion (not re-export) populates tracks from a real '
+      "settled lane, proving _finishRender's own read-and-assign wiring — "
+      'not just reExport()',
+      () async {
+        engine
+          ..nextSnapshot = const EngineSnapshot(
+            isRunning: true,
+            sampleRate: 48000,
+            bufferFrames: 128,
+            framesProcessed: 0,
+            xrunCount: 0,
+            inputRms: 0,
+            inputPeak: 0,
+            outputRms: 0,
+            latencyState: LatencyState.idle,
+            measuredLatencyMs: -1,
+            tracks: [
+              TrackSnapshot(
+                state: TrackState.stopped,
+                volume: 1,
+                muted: false,
+                lengthFrames: 4800,
+                undoDepth: 0,
+                rms: 0,
+                peak: 0,
+                lanes: [
+                  LaneSnapshot(
+                    inputChannel: 0,
+                    outputMask: 0x1,
+                    volume: 1,
+                    muted: false,
+                    lengthFrames: 4800,
+                    rms: 0,
+                    peak: 0,
+                  ),
+                ],
+              ),
+            ],
+          )
+          ..laneExports[(0, 0)] = Float32List.fromList([0.1, 0.2, 0.3])
+          ..renderStatuses = const [
+            PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+          ];
+        final cubit = build();
+        addTearDown(cubit.close);
+        await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+
+        expect(completed.tracks, hasLength(1));
+        expect(completed.tracks.single.name, 'Track 0');
+      },
+    );
+  });
+
   group('short-capture auto-discard', () {
     test(
       'an armed period under 2s with no events.log auto-discards without '
@@ -514,20 +599,6 @@ void main() {
   });
 
   group('renameCompletedCapture', () {
-    Future<PerformanceRecorderCubit> completedCubit() async {
-      engine.renderStatuses = const [
-        PerformanceRenderTrackStatus(channel: 0, succeeded: true),
-      ];
-      final cubit = build();
-      addTearDown(cubit.close);
-      await armWithLog(performance);
-      await pumpEventQueue();
-      clock = clock.add(const Duration(seconds: 5));
-      await cubit.toggleArm();
-      await waitForCompleted(cubit);
-      return cubit;
-    }
-
     test('renames via the repository and updates the result path', () async {
       final cubit = await completedCubit();
       final before = cubit.state as PerformanceRecorderCompleted;
@@ -554,6 +625,185 @@ void main() {
           cubit.renameCompletedCapture('Taken'),
           throwsA(isA<PerformanceNameCollision>()),
         );
+      },
+    );
+
+    test('preserves the export summary tracks across a rename', () async {
+      final cubit = await completedCubit();
+      final path =
+          ((cubit.state as PerformanceRecorderCompleted).result!
+                  as PerformanceRecordDone)
+              .path;
+      Directory('$path/stems/wet').createSync(recursive: true);
+      File('$path/stems/wet/track0.wav').writeAsBytesSync([0]);
+      File('$path/performance.json').writeAsStringSync(
+        jsonEncode({
+          'slug': 'perf-x',
+          'sample_rate': 48000,
+          'capture_frames': 4800,
+          'channel_layout': {'master_channels': 2, 'captured_inputs': <int>[]},
+          'overrun_count': 0,
+          'overrun_gaps': <Map<String, dynamic>>[],
+          'layers': <Map<String, dynamic>>[],
+          'finalized': true,
+          'armSnapshot': {
+            'tracks': [
+              {
+                'channel': 0,
+                'lanes': [
+                  {
+                    'lane': 0,
+                    'deferred': false,
+                    'pcmRef': 'stems/wet/track0.wav',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      );
+      await cubit.reExport();
+      final before = cubit.state as PerformanceRecorderCompleted;
+      expect(before.tracks, hasLength(1));
+
+      await cubit.renameCompletedCapture('Renamed Take');
+
+      final after = cubit.state as PerformanceRecorderCompleted;
+      expect(after.tracks, before.tracks);
+    });
+  });
+
+  group('reExport', () {
+    test('is a no-op when not currently Completed', () async {
+      final cubit = build();
+      addTearDown(cubit.close);
+      await cubit.reExport();
+      expect(cubit.state, isA<PerformanceRecorderIdle>());
+    });
+
+    test(
+      'regenerates project.als/fx-chains.txt without touching audio files',
+      () async {
+        final cubit = await completedCubit();
+        final path =
+            ((cubit.state as PerformanceRecorderCompleted).result!
+                    as PerformanceRecordDone)
+                .path;
+        final wavFile = File('$path/stems/wet/track0.wav')
+          ..createSync(recursive: true)
+          ..writeAsBytesSync([1, 2, 3, 4]);
+        final beforeBytes = wavFile.readAsBytesSync();
+        final beforeModified = wavFile.lastModifiedSync();
+        // Written by the original finish-render pass — reExport should
+        // still find it (proving it's re-invoking the same generation step,
+        // not something new).
+        expect(File('$path/project.als').existsSync(), isTrue);
+
+        await cubit.reExport();
+
+        expect(wavFile.readAsBytesSync(), beforeBytes);
+        expect(wavFile.lastModifiedSync(), beforeModified);
+        expect(File('$path/project.als').existsSync(), isTrue);
+      },
+    );
+
+    test('emits isReExporting: true, then false, around the call', () async {
+      final cubit = await completedCubit();
+      // expectLater + emitsInOrder (not a manual listen/cancel) so this
+      // waits for both emissions regardless of exactly when the second
+      // one's microtask lands relative to `reExport()`'s own Future
+      // resolving — a manual `listen`-then-`cancel` right after `await
+      // cubit.reExport()` is a real race here, since _writeDawExports does
+      // genuine (non-microtask) file I/O.
+      final expectation = expectLater(
+        cubit.stream,
+        emitsInOrder([
+          isA<PerformanceRecorderCompleted>().having(
+            (s) => s.isReExporting,
+            'isReExporting',
+            isTrue,
+          ),
+          isA<PerformanceRecorderCompleted>().having(
+            (s) => s.isReExporting,
+            'isReExporting',
+            isFalse,
+          ),
+        ]),
+      );
+
+      await cubit.reExport();
+      await expectation;
+    });
+
+    test(
+      're-reads the manifest fresh — a manifest that gained real track data '
+      'since the original export is reflected in tracks',
+      () async {
+        final cubit = await completedCubit();
+        final path =
+            ((cubit.state as PerformanceRecorderCompleted).result!
+                    as PerformanceRecordDone)
+                .path;
+        expect((cubit.state as PerformanceRecorderCompleted).tracks, isEmpty);
+
+        Directory('$path/stems/wet').createSync(recursive: true);
+        File('$path/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('$path/performance.json').writeAsStringSync(
+          jsonEncode({
+            'slug': 'perf-x',
+            'sample_rate': 48000,
+            'capture_frames': 4800,
+            'channel_layout': {
+              'master_channels': 2,
+              'captured_inputs': <int>[],
+            },
+            'overrun_count': 0,
+            'overrun_gaps': <Map<String, dynamic>>[],
+            'layers': <Map<String, dynamic>>[],
+            'finalized': true,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+
+        await cubit.reExport();
+
+        final after = cubit.state as PerformanceRecorderCompleted;
+        expect(after.tracks, hasLength(1));
+      },
+    );
+
+    test(
+      'a write failure sets reExportFailed and leaves tracks unchanged',
+      () async {
+        final cubit = await completedCubit();
+        final before = cubit.state as PerformanceRecorderCompleted;
+        final path = (before.result! as PerformanceRecordDone).path;
+        // Replace the file reExport would overwrite with a directory of the
+        // same name, so the write throws a real FileSystemException instead
+        // of silently succeeding — the simplest reliable way to force an
+        // I/O failure without mocking dart:io.
+        File('$path/project.als').deleteSync();
+        Directory('$path/project.als').createSync();
+
+        await cubit.reExport();
+
+        final after = cubit.state as PerformanceRecorderCompleted;
+        expect(after.reExportFailed, isTrue);
+        expect(after.isReExporting, isFalse);
+        expect(after.tracks, before.tracks);
       },
     );
   });
