@@ -637,14 +637,24 @@ class LooperRepository {
   /// take (D3).
   EngineResult record({int channel = 0}) {
     final snapshot = _engine.snapshot();
-    if (channel >= 0 &&
-        channel < snapshot.tracks.length &&
-        snapshot.tracks[channel].state == TrackState.empty) {
+    final state = channel >= 0 && channel < snapshot.tracks.length
+        ? snapshot.tracks[channel].state
+        : null;
+    if (state == TrackState.empty) {
       _snapshotMonitorChainsOntoLanes(channel);
       // The engine unmutes every lane on a record-from-empty (a fresh take is
       // always audible); forget the remembered mutes too, or a device
       // reconnect would replay them and silence the take mid-performance.
       _forgetLaneMutes(channel);
+    } else if (state == TrackState.playing) {
+      // An overdub onto a live loop must be audible too — you're recording into
+      // it. Unlike record-from-empty the engine does NOT auto-unmute here, so
+      // unmute every lane explicitly; forget the remembered mutes for the same
+      // reconnect-replay reason as above.
+      _forgetLaneMutes(channel);
+      for (var lane = 0; lane < laneCount(channel); lane++) {
+        _engine.setLaneMute(muted: false, channel: channel, lane: lane);
+      }
     }
     return _engine.record(channel: channel);
   }
@@ -936,13 +946,31 @@ class LooperRepository {
   int monitorChainFingerprint(int input) =>
       trackChainFingerprint(_monitorEffects[input] ?? const []);
 
-  /// Sets track [channel]'s playback gain (`0..1`). Convenience for lane 0.
-  EngineResult setVolume(double volume, {int channel = 0}) =>
-      setLaneVolume(volume, channel: channel, lane: 0);
+  /// Sets track [channel]'s playback gain (`0..1`) on **every lane of it**. A
+  /// track-level volume is a whole-track control, so a multi-lane track scales
+  /// all its lanes together, not just lane 0. Returns the last failing lane's
+  /// result, or [EngineResult.ok] if all lanes succeed.
+  EngineResult setVolume(double volume, {int channel = 0}) {
+    var result = EngineResult.ok;
+    for (var lane = 0; lane < laneCount(channel); lane++) {
+      final r = setLaneVolume(volume, channel: channel, lane: lane);
+      if (r != EngineResult.ok) result = r;
+    }
+    return result;
+  }
 
-  /// Mutes or unmutes track [channel]. Convenience for lane 0.
-  EngineResult setMute({required bool muted, int channel = 0}) =>
-      setLaneMute(muted: muted, channel: channel, lane: 0);
+  /// Mutes or unmutes track [channel] — **every lane of it**. A track-level
+  /// mute is a whole-track control, so a multi-lane track silences (or
+  /// restores) all its lanes, not just lane 0. Returns the last failing lane's
+  /// result, or [EngineResult.ok] if all lanes succeed.
+  EngineResult setMute({required bool muted, int channel = 0}) {
+    var result = EngineResult.ok;
+    for (var lane = 0; lane < laneCount(channel); lane++) {
+      final r = setLaneMute(muted: muted, channel: channel, lane: lane);
+      if (r != EngineResult.ok) result = r;
+    }
+    return result;
+  }
 
   /// Routes track [channel]'s lane 0 record source to the input channels in
   /// [mask]. A lane records a single input, so the lowest set bit is used
