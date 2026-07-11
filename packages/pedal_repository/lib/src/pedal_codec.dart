@@ -21,7 +21,7 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// F0 7D <ver> <type=STATE> <packed payload…> <checksum> F7
 /// ```
 ///
-/// The **logical payload** is 16 bytes, 7-bit packed before transmission:
+/// The **logical payload** is 17 bytes, 7-bit packed before transmission:
 ///
 /// | byte  | meaning                                                  |
 /// |-------|----------------------------------------------------------|
@@ -32,6 +32,7 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | 3     | armed track (0..7)                                       |
 /// | 4..11 | [PedalTrackLed] index for tracks 0..7                    |
 /// | 12..15| loop length, microseconds, unsigned 32-bit little-endian |
+/// | 16    | master gain, unsigned 0..255 (`round(masterGain * 255)`) |
 ///
 /// The mode bit encodes [PedalMode]: `0` = rec, `1` = play. The checksum is the
 /// XOR of every packed payload byte, masked to 7 bits.
@@ -62,7 +63,7 @@ abstract final class PedalCodec {
   static const loopTopPulse = 0xFA;
 
   /// The number of logical (unpacked) payload bytes in a state frame.
-  static const _payloadLength = 16;
+  static const _payloadLength = 17;
 
   // ---------------------------------------------------------------------------
   // loopy → pedal
@@ -87,6 +88,7 @@ abstract final class PedalCodec {
     payload[13] = (us >> 8) & 0xFF;
     payload[14] = (us >> 16) & 0xFF;
     payload[15] = (us >> 24) & 0xFF;
+    payload[16] = (frame.masterGain.clamp(0.0, 1.0) * 255).round();
 
     final packed = _pack7(payload);
     final out = BytesBuilder()
@@ -139,7 +141,13 @@ abstract final class PedalCodec {
     }
 
     final payload = _unpack7(packed);
-    if (payload.length != _payloadLength) return null;
+    // Accept the current 17-byte payload and the legacy 16-byte one (pre master
+    // gain); a legacy frame decodes with unity gain. Anything else is
+    // malformed.
+    if (payload.length != _payloadLength &&
+        payload.length != _payloadLength - 1) {
+      return null;
+    }
 
     final flags = payload[0];
     final colorIndex = payload[1];
@@ -172,6 +180,8 @@ abstract final class PedalCodec {
       isGoodbye: flags & 0x04 != 0,
       performanceArmed: flags & 0x08 != 0,
       loopLengthMicros: loopLengthMicros,
+      masterGain:
+          payload.length >= _payloadLength ? payload[16] / 255.0 : 1.0,
     );
   }
 

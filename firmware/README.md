@@ -133,17 +133,19 @@ covered by the manual per-OS smoke pass.
 
 ## Protocol summary
 
-State frame (loopy → pedal), 25 bytes:
+State frame (loopy → pedal), 26 bytes:
 
 ```
-F0 7D <ver=01> <type=01> <19 packed payload bytes> <checksum> F7
+F0 7D <ver=01> <type=01> <20 packed payload bytes> <checksum> F7
 ```
 
-The 16-byte logical payload (flags · global color · bank · armed track · 8 track
-LEDs · loop length µs) is 7-bit packed and XOR-checksummed. Loop-top is the
-single real-time byte `0xFA`. Footswitches send a fixed Note (NoteOn press /
-NoteOff release); the encoder sends relative CC `0x10`. See `pedal_protocol.h`
-and loopy's `PedalCodec` for the authoritative field table.
+The 17-byte logical payload (flags · global color · bank · armed track · 8 track
+LEDs · loop length µs · master gain) is 7-bit packed and XOR-checksummed. The
+decoder also accepts the legacy 16-byte payload (pre master-gain), decoding it
+with unity gain, so an old pedal/app still interoperates. Loop-top is the single
+real-time byte `0xFA`. Footswitches send a fixed Note (NoteOn press / NoteOff
+release); the encoder sends relative CC `0x10`. See `pedal_protocol.h` and
+loopy's `PedalCodec` for the authoritative field table.
 
 ## D-PEDAL addendum: performance-recording arm/disarm
 

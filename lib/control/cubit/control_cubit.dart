@@ -507,6 +507,9 @@ class ControlCubit extends Cubit<ControlState> {
   void encoderTurned(int delta) {
     _masterGain = (_masterGain + delta * _encoderStep).clamp(0.0, 1.0);
     _looper.setMasterGain(_masterGain);
+    // Push a fresh frame so the pedal ring reflects the new gain (the volume
+    // meter is driven by the frame value, not a local echo).
+    _pushProjected();
   }
 
   // ---------------------------------------------------------------------------
@@ -686,6 +689,7 @@ class ControlCubit extends Cubit<ControlState> {
       state,
       clearFadeActive: _clearHeld,
       performanceArmed: _performanceArmed,
+      masterGain: _masterGain,
     );
     if (frame == _lastFrame) return; // diff: only push on change
     _lastFrame = frame;

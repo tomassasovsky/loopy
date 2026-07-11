@@ -945,6 +945,22 @@ void main() {
         expect(frame.trackLeds[1], PedalTrackLed.off);
       });
 
+      test('an encoder turn pushes the new master gain in the frame', () async {
+        pedal.bind('out');
+        setEngine(_tracksWith(const [Track()]));
+        await pumpEventQueue();
+        transport.sent.clear();
+
+        // -8 detents at step 1/64 -> gain 0.875 (the pedal renders this).
+        transport.emit(0xB0, PedalCodec.encoderCc, 64 - 8);
+        await pumpEventQueue();
+
+        expect(transport.sent, isNotEmpty);
+        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        expect(frame, isNotNull);
+        expect(frame!.masterGain, closeTo(0.875, 0.01));
+      });
+
       test('a stored-intent change re-projects without a looper tick', () {
         pedal.bind('out');
         setEngine(_emptyTracks());
