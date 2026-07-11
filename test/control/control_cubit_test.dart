@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
@@ -132,6 +133,7 @@ void main() {
         pedal: pedal,
         settings: settings,
         performance: performance,
+        keepAliveInterval: Duration.zero, // deterministic: no heartbeat re-push
       );
       setEngine(_emptyTracks());
     });
@@ -601,6 +603,7 @@ void main() {
             pedal: pedal,
             settings: settings,
             performance: recordingPerformance,
+            keepAliveInterval: Duration.zero,
           );
           addTearDown(armedCubit.close);
 
@@ -643,6 +646,7 @@ void main() {
           pedal: pedal,
           settings: settings,
           performance: unarmedPerformance,
+          keepAliveInterval: Duration.zero,
         );
         addTearDown(unarmedCubit.close);
 
@@ -945,6 +949,22 @@ void main() {
         expect(frame.trackLeds[1], PedalTrackLed.off);
       });
 
+      test('an encoder turn pushes the new master gain in the frame', () async {
+        pedal.bind('out');
+        setEngine(_tracksWith(const [Track()]));
+        await pumpEventQueue();
+        transport.sent.clear();
+
+        // -8 detents at step 1/64 -> gain 0.875 (the pedal renders this).
+        transport.emit(0xB0, PedalCodec.encoderCc, 64 - 8);
+        await pumpEventQueue();
+
+        expect(transport.sent, isNotEmpty);
+        final frame = PedalCodec.decodeFrame(transport.sent.last);
+        expect(frame, isNotNull);
+        expect(frame!.masterGain, closeTo(0.875, 0.01));
+      });
+
       test('a stored-intent change re-projects without a looper tick', () {
         pedal.bind('out');
         setEngine(_emptyTracks());
@@ -956,6 +976,30 @@ void main() {
         expect(frame!.selectedTrack, 3);
         expect(frame.trackLeds[3], PedalTrackLed.red);
         expect(frame.trackLeds[0], PedalTrackLed.off);
+      });
+
+      test('re-pushes the current frame on the keep-alive heartbeat', () {
+        fakeAsync((async) {
+          pedal.bind('out');
+          final beat = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: performance,
+            keepAliveInterval: const Duration(milliseconds: 500),
+          );
+          setEngine(_emptyTracks()); // sync stream delivers state to `beat`
+          async.flushMicrotasks();
+          transport.sent.clear();
+
+          // Nothing changes, but the heartbeat keeps re-sending the frame so
+          // the pedal's link watchdog can tell "idle" from "disconnected".
+          async.elapse(const Duration(seconds: 3));
+          expect(transport.sent.length, greaterThanOrEqualTo(3));
+
+          unawaited(beat.close()); // cancel the periodic timer
+          async.flushMicrotasks();
+        });
       });
 
       test('a rebind force-pushes the CURRENT state', () async {

@@ -46,6 +46,7 @@ class ControlCubit extends Cubit<ControlState> {
     required PedalRepository pedal,
     required SettingsRepository settings,
     required PerformanceRepository performance,
+    Duration keepAliveInterval = const Duration(seconds: 1),
   }) : _looper = looper,
        _pedal = pedal,
        _settings = settings,
@@ -55,6 +56,17 @@ class ControlCubit extends Cubit<ControlState> {
     _eventsSub = _pedal.events.listen(_handleEvent);
     _statusSub = _pedal.statusChanges.listen(_onBindStatus);
     _perfStatusSub = _performance.captureStatus.listen(_onPerformanceStatus);
+    // Re-push the current frame on a slow heartbeat so the pedal can tell a
+    // live link (frames still arriving) from a dropped one (USB unplugged / app
+    // closed) and blank its LEDs. Only on-change pushes happen otherwise, so a
+    // stopped, idle loop would look identical to a dead link without this.
+    // Pass Duration.zero to disable (tests drive frames explicitly).
+    if (keepAliveInterval > Duration.zero) {
+      _keepAliveTimer = Timer.periodic(
+        keepAliveInterval,
+        (_) => _pushProjected(force: true),
+      );
+    }
   }
 
   final LooperRepository _looper;
@@ -76,6 +88,7 @@ class ControlCubit extends Cubit<ControlState> {
   // channel is LATCHED at press time: an on-screen click mid-hold must not
   // retarget the action the foot already committed to.
   Duration _longPress = const Duration(milliseconds: 500);
+  Timer? _keepAliveTimer;
   Timer? _undoTimer;
   bool _undoArmed = false;
   bool _undoHandled = false;
@@ -507,6 +520,9 @@ class ControlCubit extends Cubit<ControlState> {
   void encoderTurned(int delta) {
     _masterGain = (_masterGain + delta * _encoderStep).clamp(0.0, 1.0);
     _looper.setMasterGain(_masterGain);
+    // Push a fresh frame so the pedal ring reflects the new gain (the volume
+    // meter is driven by the frame value, not a local echo).
+    _pushProjected();
   }
 
   // ---------------------------------------------------------------------------
@@ -678,7 +694,10 @@ class ControlCubit extends Cubit<ControlState> {
     _lastPosition = position;
   }
 
-  void _pushProjected() {
+  /// Projects and pushes the current LED frame. Diffs against the last push so
+  /// steady state is silent; [force] re-sends unchanged (the keep-alive uses it
+  /// so the pedal's link watchdog keeps seeing frames while idle).
+  void _pushProjected({bool force = false}) {
     final looperState = _looperState;
     if (looperState == null) return;
     final frame = projectFrame(
@@ -686,8 +705,9 @@ class ControlCubit extends Cubit<ControlState> {
       state,
       clearFadeActive: _clearHeld,
       performanceArmed: _performanceArmed,
+      masterGain: _masterGain,
     );
-    if (frame == _lastFrame) return; // diff: only push on change
+    if (!force && frame == _lastFrame) return; // diff: only push on change
     _lastFrame = frame;
     _pedal.pushState(frame);
   }
@@ -739,6 +759,7 @@ class ControlCubit extends Cubit<ControlState> {
 
   @override
   Future<void> close() async {
+    _keepAliveTimer?.cancel();
     _undoTimer?.cancel();
     _modeTimer?.cancel();
     await _looperSub.cancel();

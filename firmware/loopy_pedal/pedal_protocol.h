@@ -78,6 +78,7 @@ typedef struct pedal_frame {
   uint8_t armed_track; /* 0..7 */
   uint8_t track_leds[PEDAL_TRACK_COUNT];
   uint32_t loop_length_micros;
+  uint8_t master_gain; /* engine master output gain, 0..255 (255 = unity) */
 } pedal_frame;
 
 #ifdef __cplusplus

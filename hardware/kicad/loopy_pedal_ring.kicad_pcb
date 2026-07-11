@@ -208,13 +208,13 @@
 				)
 			)
 		)
-		(property "Value" "RotaryEncoder_Switch"
-			(at 0 11.25 0)
-			(layer "F.Fab")
+		(property "Value" "EC11"
+			(at -11.9825 -5.0175 0)
+			(layer "F.SilkS")
 			(uuid "ed51231b-b65b-43a8-ba03-da6e32ceda3c")
 			(effects
 				(font
-					(size 1 1)
+					(size 0.8 0.8)
 					(thickness 0.15)
 				)
 			)
@@ -764,8 +764,7 @@
 		)
 		(property "Value" "NEOPIXEL"
 			(at 0 2.6 0)
-			(layer "F.Fab")
-			(hide yes)
+			(layer "F.SilkS")
 			(uuid "443c97e7-566b-4c2a-80a5-1bfe02932fb6")
 			(effects
 				(font
@@ -889,13 +888,12 @@
 			)
 		)
 		(property "Value" "RINGPINS"
-			(at 0 15 0)
-			(layer "F.Fab")
-			(hide yes)
+			(at 12 -5 0)
+			(layer "F.SilkS")
 			(uuid "e0212c1a-fe80-4161-b017-bdb5493c6701")
 			(effects
 				(font
-					(size 1 1)
+					(size 0.8 0.8)
 					(thickness 0.15)
 				)
 			)
@@ -1131,8 +1129,7 @@
 		)
 		(property "Value" "NeoPixel16"
 			(at 0 25 0)
-			(layer "F.Fab")
-			(hide yes)
+			(layer "F.SilkS")
 			(uuid "368540ab-9f22-41ed-9c5a-3ac9b58fe43d")
 			(effects
 				(font
@@ -1208,12 +1205,12 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 2.5 -2.5 0)
-			(layer "B.Fab")
+			(at 0 6 0)
+			(layer "B.SilkS")
 			(uuid "1aa20fb1-a7aa-420b-be85-7010ea9f09d4")
 			(effects
 				(font
-					(size 1 1)
+					(size 0.8 0.8)
 					(thickness 0.15)
 				)
 				(justify mirror)
@@ -1402,12 +1399,12 @@
 			)
 		)
 		(property "Value" "10k"
-			(at 5.08 -2.37 0)
-			(layer "B.Fab")
+			(at -5.92 4.3923 0)
+			(layer "B.SilkS")
 			(uuid "8ce60f8c-191a-42d3-8169-c690601c5243")
 			(effects
 				(font
-					(size 1 1)
+					(size 0.8 0.8)
 					(thickness 0.15)
 				)
 				(justify mirror)
@@ -1586,9 +1583,9 @@
 				(justify mirror)
 			)
 		)
-		(property "Value" "Conn_01x08"
+		(property "Value" "JST-XH 8P"
 			(at 8.75 -4.6 0)
-			(layer "B.Fab")
+			(layer "B.SilkS")
 			(uuid "36f995e1-39d5-4b1a-981b-1d1479531ae9")
 			(effects
 				(font
@@ -1921,7 +1918,7 @@
 		)
 		(property "Value" "10k"
 			(at 5.08 -2.37 90)
-			(layer "B.Fab")
+			(layer "B.SilkS")
 			(uuid "ff1144f1-5711-4c98-9946-038a0b3fc83d")
 			(effects
 				(font
@@ -2106,7 +2103,7 @@
 		)
 		(property "Value" "100nF"
 			(at 2.5 -2.5 0)
-			(layer "B.Fab")
+			(layer "B.SilkS")
 			(uuid "3d9e04bd-02e6-4e42-b0d8-ffbfd1070e54")
 			(effects
 				(font
@@ -2300,7 +2297,7 @@
 		)
 		(property "Value" "470uF"
 			(at 1.75 -5.25 0)
-			(layer "B.Fab")
+			(layer "B.SilkS")
 			(uuid "fc150eae-9dd8-4db7-ae57-c00752c00737")
 			(effects
 				(font

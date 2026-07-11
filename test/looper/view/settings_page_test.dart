@@ -80,6 +80,7 @@ void main() {
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      keepAliveInterval: Duration.zero,
     );
     addTearDown(control.close);
     // The Audio tab embeds the pedal output picker, driven by PedalCubit.

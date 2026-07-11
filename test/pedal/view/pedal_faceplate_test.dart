@@ -103,6 +103,7 @@ void main() {
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      keepAliveInterval: Duration.zero,
     );
     // NOT awaited: awaiting ControlCubit.close() here deadlocks (a
     // Flutter-test-binding stream-cancel interaction, tracked separately —
