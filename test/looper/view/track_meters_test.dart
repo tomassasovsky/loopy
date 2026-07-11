@@ -46,6 +46,7 @@ void main() {
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      keepAliveInterval: Duration.zero,
     );
     addTearDown(control.close);
   });

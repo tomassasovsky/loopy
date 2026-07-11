@@ -70,6 +70,7 @@ void main() {
                   pedal: PedalRepository(const NoopPedalTransport()),
                   settings: settings,
                   performance: performanceRepository,
+                  keepAliveInterval: Duration.zero,
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),

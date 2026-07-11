@@ -42,6 +42,7 @@ void main() {
         4, // armed
         ...[1, 1, 1, 1, 0, 0, 0, 0], // green x4 then off
         0x60, 0xE3, 0x16, 0x00, // 1_500_000 µs LE
+        153, // master gain 153/255
       ]);
       expect(PedalCodec.encodeFrame(frame), reference);
     });

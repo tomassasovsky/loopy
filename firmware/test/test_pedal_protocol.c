@@ -110,6 +110,7 @@ static void test_decode_fields_playing_bankb(void) {
   for (int i = 0; i < 4; i++) CHECK(f.track_leds[i] == PEDAL_LED_GREEN);
   for (int i = 4; i < 8; i++) CHECK(f.track_leds[i] == PEDAL_LED_OFF);
   CHECK(f.loop_length_micros == 1500000u);
+  CHECK(f.master_gain == 153); /* 153/255 ~= 0.6, the frame's masterGain */
 }
 
 static void test_decode_fields_clear_fade(void) {

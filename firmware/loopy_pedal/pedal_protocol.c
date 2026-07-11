@@ -8,7 +8,8 @@
  */
 #include "pedal_protocol.h"
 
-#define PEDAL_PAYLOAD_LEN 16
+#define PEDAL_PAYLOAD_LEN 17
+#define PEDAL_PAYLOAD_LEN_LEGACY 16 /* pre master-gain frames (decode as unity) */
 
 /* Packs `len` 8-bit bytes into 7-bit-clean bytes: each group of up to 7 data
  * bytes is preceded by one byte carrying their high bits (MIDI SysEx style). */
@@ -66,6 +67,7 @@ int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
   payload[13] = (uint8_t)((us >> 8) & 0xFFu);
   payload[14] = (uint8_t)((us >> 16) & 0xFFu);
   payload[15] = (uint8_t)((us >> 24) & 0xFFu);
+  payload[16] = frame->master_gain;
 
   uint8_t packed[24];
   const int packed_len = pedal_pack7(payload, PEDAL_PAYLOAD_LEN, packed);
@@ -99,7 +101,10 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
   }
 
   uint8_t payload[PEDAL_PAYLOAD_LEN];
-  if (pedal_unpack7(packed, packed_len, payload) != PEDAL_PAYLOAD_LEN) return 0;
+  /* Accept the current 17-byte payload and the legacy 16-byte one (pre master
+   * gain); a legacy frame decodes with unity gain. Anything else is malformed. */
+  const int plen = pedal_unpack7(packed, packed_len, payload);
+  if (plen != PEDAL_PAYLOAD_LEN && plen != PEDAL_PAYLOAD_LEN_LEGACY) return 0;
 
   const uint8_t color = payload[1];
   const uint8_t bank = payload[2];
@@ -125,6 +130,7 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
                             ((uint32_t)payload[13] << 8) |
                             ((uint32_t)payload[14] << 16) |
                             ((uint32_t)payload[15] << 24);
+  out->master_gain = (plen >= PEDAL_PAYLOAD_LEN) ? payload[16] : 255u;
   return 1;
 }
 

@@ -277,6 +277,7 @@ class _Harness {
       pedal: pedalRepo,
       settings: settings,
       performance: performance,
+      keepAliveInterval: Duration.zero,
     );
     cubit = PedalCubit(
       pedal: pedalRepo,

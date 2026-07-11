@@ -104,7 +104,16 @@ pm[16] += ring_data       # D15 -> ring buffer
 pm[17] += encA            # A0
 pm[18] += encB            # A1
 pm[19] += encSW           # A2
-# pm[20] A3 -- spare / unconnected
+# A3 -> LED-rail power sense. A 100k/47k divider from +9V (RAW rail) lets the
+# firmware gate the WS2812 data lines when 9 V is absent — without it the module
+# drives the strips' DIN at 5 V while +5V_LED is off, phantom-powering them
+# through their input protection diodes (out of spec; stresses the first LED).
+# The module back-feeds RAW from USB VBUS, so A3 reads ~1.6 V on USB-only and
+# ~2.8 V with 9 V; the 32U4 sketch (LED_POWER_SENSE) thresholds between them.
+led_pwr_sense = Net("LED_PWR_SENSE")
+pm[20] += led_pwr_sense   # A3
+R("100k")[1, 2] += v9, led_pwr_sense
+R("47k")[1, 2] += led_pwr_sense, gnd
 pm[21] += v5              # VCC: regulated 5 V OUTPUT of the module's onboard reg
 #                           (also powers the 5 V logic: U1 buffer, U2 opto)
 pm[22] += rst             # RST: faceplate reset button + ICSP (J20/J21)
@@ -180,6 +189,9 @@ Part("Device", "D", value="1N4148",
      ref="D3")[1, 2] += opto[1], opto[2]
 opto[6] += v5
 opto[5] += gnd
+# U2 local decoupling (added in layout revision; placed next to U2 in the PCB).
+# Explicit ref so it appends as C16 without renumbering C1..C15.
+Part("Device", "C", value="100nF", footprint=C_FP, ref="C16")[1, 2] += v5, gnd
 R("10k")[1, 2] += v5, opto[4]
 opto[4] += midi_in_opto
 midi_in_opto += uart_rx       # opto out straight to D0/RX (no merge gate)
@@ -198,9 +210,12 @@ Part("Device", "D", value="1N5817", footprint=DO41, ref="D1")[1, 2] += v9, vin_r
 Part("Device", "D", value="P6KE13A", footprint=DO41, ref="D2")[1, 2] += v9, gnd
 CP("100uF", "Capacitor_THT:CP_Radial_D6.3mm_P2.50mm")[1, 2] += v9, gnd
 
+# The MP1584EN mini-buck mounts flat on its own ~23x17mm pad pattern (loopy footprint)
+# instead of standing on a 1x4 header. Pads 1=VIN(+9V) 2=GND 3=VOUT(+5V_LED) 4=GND,
+# each a pair of holes. VERIFY the pad pitch against your actual module before fab.
 buck = Part("Connector_Generic", "Conn_01x04",
-            footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
-            ref="J8", value="BUCK_5V")
+            footprint="loopy:BuckModule_MP1584",
+            ref="J8", value="MP1584")
 buck[1] += v9
 buck[2] += gnd
 buck[3] += v5led

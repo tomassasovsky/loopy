@@ -83,9 +83,22 @@ There is **no buck→logic OR-diode** (D4 removed). Modes:
 
 | Connected | MCU + logic 5 V | LED ring |
 |---|---|---|
-| USB only | USB (VBUS→VCC); buck off | dark |
+| USB only | USB (VBUS→VCC); buck off | dark (gated — see below) |
 | 9 V only (standalone) | RAW → onboard reg → VCC (5.0 V) | lit (buck) |
 | USB + 9 V | module arbitrates USB vs RAW-reg | lit (buck) |
+
+> **Phantom-power gate (learned on the first build).** "USB-only = dark" is NOT
+> automatic: with the buck off, the MCU/buffer still drive the WS2812 data lines
+> at 5 V while `+5V_LED` floats, so current leaks through each first LED's DIN
+> protection diode and **phantom-powers the strips** (measured ~4.4 V idle on
+> `+5V_LED`, sagging under load — out of spec, stresses that diode). Fix: a
+> **100k/47k divider from `+9V` to A3** (`LED_PWR_SENSE`) lets the firmware sense
+> the 9 V supply and hold the data lines LOW when it is absent (32U4 sketch
+> `LED_POWER_SENSE`). NOTE: the Pro Micro back-feeds `RAW`/`+9V` from USB VBUS
+> (RAW ≈ VBUS on USB — per the SparkFun schematic, a family trait, not clone-
+> specific), so A3 reads ~1.6 V on USB-only vs ~2.8 V with 9 V — the firmware threshold
+> sits between them, not at 0. The first fabricated boards lack this divider (add
+> it as a 2-resistor hand-mod, or set `LED_POWER_SENSE 0` to accept the phantom).
 
 This gives a solid 5.0 V on `VCC` (no diode-drop margin worry) and isolates the MCU
 supply from the ~1 A of LED switching noise. Trade-off: it ties you to ≥7 V-rated
@@ -98,8 +111,10 @@ the `+9V` rail feeding both the buck and `RAW`.
   Schottky + electrolytics — fully discrete.
 
 **Built with Option A.** `9 V → buck → +5V_LED` (LED ring only); `9 V → RAW →
-onboard reg → VCC` (MCU + logic). On USB-only there's no 9 V, so the LEDs stay dark
-and the module runs from USB. The buck is required for the LED ring in standalone.
+onboard reg → VCC` (MCU + logic). On USB-only the module runs from USB and the
+LEDs stay dark **only because the firmware gates them** off the A3 9 V-sense (see
+the phantom-power note above); without that gate they glow of their own accord.
+The buck is required for the LED ring in standalone.
 
 ## 4. Ring / encoder board — module-hosting, all-THT respin
 
@@ -167,10 +182,13 @@ otherwise fully through-hole:
    pad 1=TX next to USB-C … 24=RAW) with a real 3D model from g200kg
    (`sparkfun_pro_micro.x3d`, offset-calibrated). DIP buffer + opto, Schottky
    reverse-prot, buck-module header, THT discretes; 16U2/MocoLUFA/merge-gate/
-   ORing/USB-section deleted. Netlist against KiCad 9 libs: **43 components,
-   31 nets, ERC 0 errors**. `main_board.py` is cross-platform (Win/macOS/Linux
-   symbol paths). (`ring_board.py` untouched.) Power: `RAW` left unconnected;
-   buck 5 V feeds module `VCC` + logic through OR-diode **D4** (clone-safe, §3).
+   ORing/USB-section deleted. Netlist ERC **0 errors**. `main_board.py` is
+   cross-platform (Win/macOS/Linux symbol paths). (`ring_board.py` untouched.)
+   Power: **`RAW` = reverse-protected `+9V`** → the module's onboard reg makes
+   `VCC`; the buck feeds **only** `+5V_LED` (no D4 OR-diode). A **100k/47k divider
+   from `+9V` to A3** (`LED_PWR_SENSE`) drives the firmware's phantom-power gate
+   (§3). *(The first fabricated boards, rev Y4, predate this divider — it is a
+   2-resistor hand-mod there; the source now has it for the next spin.)*
 2. ✅ **Placed (functional zones), routed, poured, verified** via a scripted
    pipeline (gitignored `_*.py`/`_*.sh`). **Only the external connectors are
    edge-mounted and overhang the bottom edge** — barrel (rot 90) + 2× DIN-5 MIDI

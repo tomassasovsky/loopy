@@ -43,6 +43,8 @@ Map<String, PedalStateFrame> goldenFrames() {
     ),
 
     // Play mode, bank B, tracks 1-4 playing, a 1.5 s loop, armed track 5.
+    // masterGain 153/255 (~0.6) exercises the gain byte at a non-unity value;
+    // n/255 keeps the double round-trip exact for the golden decode assertion.
     'playing_bankb': PedalStateFrame(
       globalColor: GlobalColor.amber,
       trackLeds: leds(const [
@@ -56,6 +58,7 @@ Map<String, PedalStateFrame> goldenFrames() {
       mode: PedalMode.play,
       loopLengthMicros: 1500000,
       clearFadeActive: false,
+      masterGain: 153 / 255,
     ),
 
     // Clear fade in progress — exercises the clearFadeActive flag and a long

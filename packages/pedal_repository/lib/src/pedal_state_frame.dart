@@ -54,9 +54,14 @@ class PedalStateFrame extends Equatable {
     required this.clearFadeActive,
     this.isGoodbye = false,
     this.performanceArmed = false,
+    this.masterGain = 1,
   }) : assert(
          trackLeds.length == trackCount,
          'a frame must carry exactly $trackCount track LEDs',
+       ),
+       assert(
+         masterGain >= 0.0 && masterGain <= 1.0,
+         'masterGain must be in 0.0..1.0',
        ),
        assert(
          activeBank == 0 || activeBank == 1,
@@ -125,6 +130,13 @@ class PedalStateFrame extends Equatable {
   /// (looper recording), so the performer can tell the two apart eyes-free.
   final bool performanceArmed;
 
+  /// The engine's master output gain, `0.0`..`1.0` (the value the encoder
+  /// adjusts). The firmware shows it briefly on the ring as a volume meter
+  /// whenever it changes. Quantized to a single 0..255 byte on the wire, so the
+  /// pedal renders exactly what the app applies (no local drift). Unity by
+  /// default.
+  final double masterGain;
+
   /// Returns a copy with the given fields replaced.
   PedalStateFrame copyWith({
     GlobalColor? globalColor,
@@ -136,6 +148,7 @@ class PedalStateFrame extends Equatable {
     bool? clearFadeActive,
     bool? isGoodbye,
     bool? performanceArmed,
+    double? masterGain,
   }) {
     return PedalStateFrame(
       globalColor: globalColor ?? this.globalColor,
@@ -147,6 +160,7 @@ class PedalStateFrame extends Equatable {
       clearFadeActive: clearFadeActive ?? this.clearFadeActive,
       isGoodbye: isGoodbye ?? this.isGoodbye,
       performanceArmed: performanceArmed ?? this.performanceArmed,
+      masterGain: masterGain ?? this.masterGain,
     );
   }
 
@@ -161,6 +175,7 @@ class PedalStateFrame extends Equatable {
     clearFadeActive,
     isGoodbye,
     performanceArmed,
+    masterGain,
   ];
 
   @override
@@ -170,5 +185,5 @@ class PedalStateFrame extends Equatable {
       'bank: $activeBank, selected: $selectedTrack, '
       'mode: ${mode.name}, loopUs: $loopLengthMicros, '
       'clearFade: $clearFadeActive, goodbye: $isGoodbye, '
-      'performanceArmed: $performanceArmed)';
+      'performanceArmed: $performanceArmed, masterGain: $masterGain)';
 }
