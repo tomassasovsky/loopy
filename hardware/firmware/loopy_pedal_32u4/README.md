@@ -61,10 +61,24 @@ Two WS2812 strips, each rendered from loopy's state frame:
   |---|---|---|---|---|---|---|---|
   | role | mode/global | Tr1 | Tr2 | Tr3 | Tr4 | clear-fade | bank |
 
-> **Power:** both strips run off the **`+5V_LED`** rail, which the on-board buck
-> makes from the **9 V barrel**. On **USB-only** there is no 9 V, the buck is off,
-> and the LEDs stay **dark by design** (`main_board.py`). Connect the 9 V
-> (centre-negative) supply to see the boot self-test and any LED output.
+> **Power + phantom gate:** both strips run off the **`+5V_LED`** rail, which the
+> on-board buck makes from the **9 V barrel** — connect the 9 V (centre-negative)
+> supply to light them. On **USB-only** the buck is off, but the strips would
+> otherwise **phantom-power** through their DIN diodes (the MCU drives the data at
+> 5 V while the rail floats). So the firmware **gates the LED output on a 9 V
+> sense**: a **100k/47k divider from `+9V` to A3** (`LED_PWR_SENSE` in
+> `main_board.py`); with no 9 V it holds the data lines LOW and clears the strips.
+> Values (the Pro Micro back-feeds `RAW` from USB — RAW ≈ VBUS, per the SparkFun
+> schematic, not clone-specific — so A3 never reaches 0):
+>
+> | | A3 (analogRead) | strips |
+> |---|---|---|
+> | USB only | ~335 (~1.6 V) | dark (gated) |
+> | + 9 V | ~580 (~2.8 V) | driven; self-test on connect |
+>
+> `#define LED_POWER_SENSE 0` in the sketch if the divider isn't fitted (LEDs
+> always driven — they will phantom-glow on USB-only). Tune `kLedPowerThreshold`
+> (default 450) if your board reads differently.
 
 ## Build
 

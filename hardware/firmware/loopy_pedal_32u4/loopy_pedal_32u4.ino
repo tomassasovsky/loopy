@@ -70,6 +70,18 @@ static const uint8_t kEncoderClk = A0;
 static const uint8_t kEncoderDat = A1;
 static const uint8_t kEncoderSw = A2;
 
+// LED-rail power gate. Without the +5V_LED rail (9 V absent), driving the WS2812
+// data lines phantom-powers the strips through their DIN protection diodes — so
+// we only drive them when 9 V is present, sensed on A3 via a divider (100k from
+// RAW/+9V to A3, 47k A3 to GND). NOTE: the Pro Micro back-feeds RAW from USB VBUS
+// (RAW ≈ VBUS on USB — per the SparkFun schematic, a family trait, not clone-
+// specific), so A3 does NOT reach 0 on USB-only — it reads ~335 counts, vs ~580
+// with the 9 V supply; the threshold sits between the two (not near 0). Set
+// LED_POWER_SENSE 0 if the divider isn't fitted (LEDs always driven, as before).
+#define LED_POWER_SENSE 1
+static const uint8_t kLedPowerSensePin = A3;
+static const int kLedPowerThreshold = 450; // USB back-feed ~335 | 9 V ~580
+
 static const unsigned long kDebounceMs = 25; // foot-switch contact debounce
 static const uint8_t kMidiChannel = 0; // channel 1 (0-based on the wire)
 
@@ -322,7 +334,26 @@ static void renderVolumeBar() {
 // eyes-free from looper-recording's own SOLID red. 400 ms half-period.
 static const unsigned long kBlinkHalfPeriodMs = 400;
 
+// True when the LED rail is powered (9 V present, read via the A3 divider). With
+// LED_POWER_SENSE 0 (no divider fitted) it is always true — the pre-gate behavior.
+static bool ledsPowered() {
+#if LED_POWER_SENSE
+  return analogRead(kLedPowerSensePin) > kLedPowerThreshold;
+#else
+  return true;
+#endif
+}
+
 static void render() {
+  // Gate on the LED rail: with no 9 V the strips are unpowered — hold the data
+  // lines LOW so we don't phantom-power the WS2812s through their DIN diodes.
+  if (!ledsPowered()) {
+    digitalWrite(kRingPin, LOW);
+    digitalWrite(kIndPin, LOW);
+    pollMidiIn();
+    return;
+  }
+
   // A recent encoder turn takes over the ring as a volume meter; otherwise it
   // shows the loop-position playhead. Signed compare is millis()-wrap safe.
   if ((long)(g_gainShownUntilMs - millis()) > 0) {
@@ -433,26 +464,10 @@ static void pollEncoder() {
 
 // ---- lifecycle --------------------------------------------------------------
 
-void setup() {
-  Serial1.begin(31250); // DIN-5 MIDI @ standard baud
-  FastLED.addLeds<WS2812B, kRingPin, GRB>(g_ring, kRingCount);
-  FastLED.addLeds<WS2812B, kIndPin, GRB>(g_ind, kIndCount);
-  FastLED.setBrightness(64);
-
-  for (uint8_t i = 0; i < PEDAL_BTN_COUNT; i++) {
-    pinMode(kButtonPins[i], INPUT_PULLUP);
-    g_btnStable[i] = false; // released at boot
-    g_btnLastRaw[i] = false;
-    g_btnRawSinceMs[i] = 0;
-  }
-  pinMode(kEncoderClk, INPUT_PULLUP);
-  pinMode(kEncoderDat, INPUT_PULLUP);
-  pinMode(kEncoderSw, INPUT_PULLUP);
-  g_encState = R_START;
-
-  // Startup self-test: a green comet sweeps the ring then the indicator strip so
-  // the builder sees the pedal is alive and both strips are wired before loopy
-  // binds. (Needs the +5V_LED rail — i.e. the 9 V supply — to actually light.)
+// A green comet sweeps the ring then the indicator strip — run whenever the LED
+// rail powers up (boot with 9 V, or a hot-plug) so the strips visibly wake up and
+// re-latch a clean first frame after power-on. Only call while the rail is up.
+static void ledSelfTest() {
   for (uint8_t i = 0; i < kRingCount; i++) {
     g_ring[i] = CRGB(0, 24, 0);
     FastLED.show();
@@ -469,9 +484,57 @@ void setup() {
   FastLED.show();
 }
 
+// Push several BLACK frames — holding the data line low does NOT turn off a
+// WS2812 (it latches its last frame), so when 9 V drops we must actively clear
+// the strips while the rail cap still has enough charge to latch the frame.
+static void ledClear() {
+  for (uint8_t i = 0; i < kRingCount; i++) g_ring[i] = CRGB::Black;
+  for (uint8_t i = 0; i < kIndCount; i++) g_ind[i] = CRGB::Black;
+  for (uint8_t n = 0; n < 4; n++) {
+    FastLED.show();
+    delay(5);
+  }
+}
+
+void setup() {
+  Serial1.begin(31250); // DIN-5 MIDI @ standard baud
+  FastLED.addLeds<WS2812B, kRingPin, GRB>(g_ring, kRingCount);
+  FastLED.addLeds<WS2812B, kIndPin, GRB>(g_ind, kIndCount);
+  FastLED.setBrightness(64);
+
+  for (uint8_t i = 0; i < PEDAL_BTN_COUNT; i++) {
+    pinMode(kButtonPins[i], INPUT_PULLUP);
+    g_btnStable[i] = false; // released at boot
+    g_btnLastRaw[i] = false;
+    g_btnRawSinceMs[i] = 0;
+  }
+  pinMode(kEncoderClk, INPUT_PULLUP);
+  pinMode(kEncoderDat, INPUT_PULLUP);
+  pinMode(kEncoderSw, INPUT_PULLUP);
+  g_encState = R_START;
+  pinMode(kLedPowerSensePin, INPUT); // 9V-rail sense divider on A3
+
+  // Hold the WS2812 data lines LOW until the LED rail is powered — loop() runs the
+  // self-test on the rising edge (boot-with-9V or a hot-plug), so a USB-only boot
+  // never phantom-powers the strips through their DIN diodes.
+  digitalWrite(kRingPin, LOW);
+  digitalWrite(kIndPin, LOW);
+}
+
 void loop() {
   pollMidiIn();
   pollButtons();
   pollEncoder();
+
+  // Track the LED rail's power edges. Rising (9 V connected, at boot or hot-plug):
+  // sweep the self-test so the strips visibly wake up. Falling (9 V removed):
+  // clear to black NOW, while the rail cap can still latch it, so they go dark
+  // instead of holding their last lit frame.
+  static bool wasPowered = false;
+  const bool nowPowered = ledsPowered();
+  if (nowPowered && !wasPowered) ledSelfTest();
+  else if (!nowPowered && wasPowered) ledClear();
+  wasPowered = nowPowered;
+
   render(); // polls MIDI around show()
 }

@@ -104,7 +104,16 @@ pm[16] += ring_data       # D15 -> ring buffer
 pm[17] += encA            # A0
 pm[18] += encB            # A1
 pm[19] += encSW           # A2
-# pm[20] A3 -- spare / unconnected
+# A3 -> LED-rail power sense. A 100k/47k divider from +9V (RAW rail) lets the
+# firmware gate the WS2812 data lines when 9 V is absent — without it the module
+# drives the strips' DIN at 5 V while +5V_LED is off, phantom-powering them
+# through their input protection diodes (out of spec; stresses the first LED).
+# The module back-feeds RAW from USB VBUS, so A3 reads ~1.6 V on USB-only and
+# ~2.8 V with 9 V; the 32U4 sketch (LED_POWER_SENSE) thresholds between them.
+led_pwr_sense = Net("LED_PWR_SENSE")
+pm[20] += led_pwr_sense   # A3
+R("100k")[1, 2] += v9, led_pwr_sense
+R("47k")[1, 2] += led_pwr_sense, gnd
 pm[21] += v5              # VCC: regulated 5 V OUTPUT of the module's onboard reg
 #                           (also powers the 5 V logic: U1 buffer, U2 opto)
 pm[22] += rst             # RST: faceplate reset button + ICSP (J20/J21)
