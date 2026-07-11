@@ -2293,6 +2293,76 @@ void main() {
       expect(engine.laneCount.containsKey(2), isFalse);
     });
 
+    test('setMute on a multi-lane track mutes EVERY lane, not just lane 0', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneCount(channel: 2, count: 3);
+      addTearDown(repo.dispose);
+
+      repo.setMute(muted: true, channel: 2);
+      expect(engine.laneMute[(2, 0)], isTrue);
+      expect(engine.laneMute[(2, 1)], isTrue);
+      expect(engine.laneMute[(2, 2)], isTrue);
+
+      // Unmute spans the whole track too.
+      repo.setMute(muted: false, channel: 2);
+      expect(engine.laneMute[(2, 0)], isFalse);
+      expect(engine.laneMute[(2, 1)], isFalse);
+      expect(engine.laneMute[(2, 2)], isFalse);
+    });
+
+    test('setVolume on a multi-lane track sets EVERY lane, not just lane 0',
+        () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneCount(channel: 2, count: 3);
+      addTearDown(repo.dispose);
+
+      repo.setVolume(0.4, channel: 2);
+      expect(engine.laneVol[(2, 0)], 0.4);
+      expect(engine.laneVol[(2, 1)], 0.4);
+      expect(engine.laneVol[(2, 2)], 0.4);
+    });
+
+    test('clearing a muted multi-lane track unmutes every lane (so a later '
+        'record/overdub is audible)', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneCount(channel: 1, count: 2)
+        ..setMute(muted: true, channel: 1);
+      addTearDown(repo.dispose);
+      expect(engine.laneMute[(1, 0)], isTrue);
+      expect(engine.laneMute[(1, 1)], isTrue);
+
+      // The clear path (engine clear + track-level unmute, as the bloc/cubit do).
+      repo
+        ..clear(channel: 1)
+        ..setMute(muted: false, channel: 1);
+
+      // Regression: lane 1 must not stay muted (only lane 0 got it before).
+      expect(engine.laneMute[(1, 0)], isFalse);
+      expect(engine.laneMute[(1, 1)], isFalse);
+    });
+
+    test('recording onto a PLAYING track (overdub) unmutes every lane, like a '
+        'fresh take does', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneCount(channel: 0, count: 2)
+        ..setMute(muted: true);
+      addTearDown(repo.dispose);
+      expect(engine.laneMute[(0, 0)], isTrue);
+      expect(engine.laneMute[(0, 1)], isTrue);
+
+      // Track 0 is playing -> this record() starts an overdub.
+      engine.nextSnapshot = _playingSnapshot;
+      repo.record();
+
+      expect(engine.laneMute[(0, 0)], isFalse);
+      expect(engine.laneMute[(0, 1)], isFalse);
+      expect(engine.calls, contains('record'));
+    });
+
     test('detectLoopback forwards the engine result', () {
       engine.loopback = const le.LoopbackInfo(
         available: true,
