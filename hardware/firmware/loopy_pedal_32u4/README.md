@@ -61,6 +61,15 @@ Two WS2812 strips, each rendered from loopy's state frame:
   |---|---|---|---|---|---|---|---|
   | role | mode/global | Tr1 | Tr2 | Tr3 | Tr4 | clear-fade | bank |
 
+> **Link watchdog:** loopy re-sends the current state frame on a **~1 Hz
+> heartbeat** while bound (`ControlCubit`'s `keepAliveInterval`), not only on
+> change. So the firmware treats a gap of `kLinkTimeoutMs` (2.5 s) with **no
+> frame** as a dropped link — USB unplugged or the app closed — and **blanks both
+> strips** instead of freezing on the last lit frame. It resumes automatically:
+> the next frame refreshes the watchdog and normal rendering picks up where the
+> app left off. (This is why the heartbeat exists — without it a stopped, idle
+> loop would look identical to a dead link.)
+
 > **Power + phantom gate:** both strips run off the **`+5V_LED`** rail, which the
 > on-board buck makes from the **9 V barrel** — connect the 9 V (centre-negative)
 > supply to light them. On **USB-only** the buck is off, but the strips would

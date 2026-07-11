@@ -94,6 +94,13 @@ static uint8_t g_sysexLen = 0;
 static bool g_inSysex = false;
 static unsigned long g_lastLoopTopMs = 0; // time of the last loop-top pulse
 
+// Link watchdog. loopy pushes a state frame at least ~1 Hz while bound (a
+// keep-alive re-send, not only on change), so a longer silence means the link
+// dropped — USB unplugged or the app closed. We then blank the strips and hold
+// them dark; rendering resumes on its own the moment a fresh frame arrives.
+static unsigned long g_lastFrameMs = 0;           // millis() of the last valid frame
+static const unsigned long kLinkTimeoutMs = 2500; // frame silence before we blank
+
 // ---- button / encoder debounce state ----------------------------------------
 
 static bool g_btnStable[PEDAL_BTN_COUNT];  // last debounced (reported) state
@@ -182,6 +189,7 @@ static void handleSysex(const uint8_t* msg, int len) {
     g_frameGainSeen = true;
     g_frame = decoded;
     g_haveFrame = true;
+    g_lastFrameMs = millis(); // pet the link watchdog
   }
   // A malformed frame is silently dropped; the last good frame is retained.
 }
@@ -350,6 +358,19 @@ static void render() {
   if (!ledsPowered()) {
     digitalWrite(kRingPin, LOW);
     digitalWrite(kIndPin, LOW);
+    pollMidiIn();
+    return;
+  }
+
+  // Link watchdog: if the state-frame stream has gone quiet the app/USB link is
+  // down — blank both strips and hold them dark instead of freezing on the last
+  // frame. A fresh frame refreshes g_lastFrameMs, so the render below simply
+  // resumes when the app reconnects and we regain frame state.
+  if (g_haveFrame && (long)(millis() - g_lastFrameMs) >= (long)kLinkTimeoutMs) {
+    for (uint8_t i = 0; i < kRingCount; i++) g_ring[i] = CRGB::Black;
+    for (uint8_t i = 0; i < kIndCount; i++) g_ind[i] = CRGB::Black;
+    pollMidiIn();
+    FastLED.show();
     pollMidiIn();
     return;
   }
