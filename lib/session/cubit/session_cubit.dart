@@ -211,6 +211,7 @@ class SessionCubit extends Cubit<SessionState> {
     SessionSampleRateMismatch() => SessionError.sampleRateMismatch,
     SessionUnsupportedVersion() => SessionError.unsupportedVersion,
     SessionNameCollision() => SessionError.nameCollision,
+    SessionCorruptLayers() => SessionError.corruptLayers,
   };
 }
 

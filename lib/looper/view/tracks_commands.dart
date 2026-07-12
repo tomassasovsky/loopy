@@ -306,8 +306,11 @@ void showSessionOutcome(BuildContext context, SessionState state) {
       SessionError.sampleRateMismatch => l10n.sessionErrorSampleRate,
       SessionError.unsupportedVersion => l10n.sessionErrorUnsupportedVersion,
       // nameCollision gets a dedicated inline message in the manager UI; here
-      // (legacy path) it falls back to the generic error.
+      // (legacy path) it falls back to the generic error. corruptLayers is a
+      // rare corrupt/foreign-bundle refusal — the generic message (carrying the
+      // exception's own description) is sufficient.
       SessionError.nameCollision ||
+      SessionError.corruptLayers ||
       SessionError.unknown ||
       null => l10n.sessionErrorGeneric(state.errorMessage ?? ''),
     },

@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:loopy_engine/loopy_engine.dart';
 import 'package:session_repository/session_repository.dart';
 
 import 'helpers/fake_session_engine.dart';
@@ -164,6 +166,45 @@ void main() {
       await repo().duplicateSession('Ghost', 'New');
       expect(Directory('${root.path}/New').existsSync(), isFalse);
     });
+
+    test(
+      'a duplicate carries no orphan layer WAVs from a shrinking re-save',
+      () async {
+        SessionRepository repoWith(AudioEngine e) =>
+            SessionRepository(engine: e, sessionsRoot: () async => root.path);
+        final dir = await repo().bundlePath('Source');
+
+        // Save a 3-layer history, then re-save single-layer (prunes L1/L2).
+        await repoWith(
+          FakeSessionEngine()..seedLayers(
+            0,
+            [
+              Float32List.fromList([1, 1, 1, 1]),
+              Float32List.fromList([2, 2, 2, 2]),
+              Float32List.fromList([3, 3, 3, 3]),
+            ],
+            undoDepth: 1,
+            redoDepth: 1,
+          ),
+        ).save(dir);
+        await repoWith(
+          FakeSessionEngine()..seedTrack(0, Float32List.fromList([9, 9, 9, 9])),
+        ).save(dir);
+
+        await repo().duplicateSession('Source', 'Copy');
+
+        final copy = Directory('${root.path}/Copy');
+        final wavs = copy
+            .listSync()
+            .whereType<File>()
+            .map((f) => f.path.split(RegExp(r'[/\\]')).last)
+            .where((n) => n.endsWith('.wav'))
+            .toSet();
+        expect(wavs, contains('track0_lane0_L0.wav'));
+        expect(wavs, isNot(contains('track0_lane0_L1.wav')));
+        expect(wavs, isNot(contains('track0_lane0_L2.wav')));
+      },
+    );
 
     test('throws ArgumentError when the new name is invalid', () async {
       makeBundle('Source');
