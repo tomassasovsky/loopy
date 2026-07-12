@@ -353,8 +353,14 @@ class LooperRepository {
         .join('|');
     if (signature == _lastAttemptSignature) return; // already tried this set
     _lastAttemptSignature = signature;
+    // Release the dead device with a RAW stop (not stopEngine(), which would
+    // clear _intendRunning and disarm this supervisor), then reopen through
+    // startEngine — NOT a raw _engine.start — so the remembered rig (lanes,
+    // monitors, mix, effects, output gate, hosted plugins) is re-applied to the
+    // freshly-configured engine. A raw start comes back at engine defaults,
+    // silently dropping the live rig on every reconnect.
     _engine.stop();
-    if (_engine.start(engineConfigToEngine(config)).isOk) {
+    if (startEngine(config).isOk) {
       _stopReconnectPolling();
     }
   }
