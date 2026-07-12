@@ -738,6 +738,71 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  Float32List exportLayer(int channel, int lane, int ordinal) {
+    _checkAlive();
+    // Every layer of a lane shares the loop length; get_lane reports it.
+    _bindings.le_engine_get_lane(_engine, channel, lane, _lanePtr);
+    final frames = _lanePtr.ref.length_frames;
+    if (frames <= 0) return Float32List(0);
+    final buf = calloc<Float>(frames);
+    try {
+      final n = _bindings.le_engine_export_layer(
+        _engine,
+        channel,
+        lane,
+        ordinal,
+        buf,
+        frames,
+      );
+      if (n <= 0) return Float32List(0);
+      return Float32List.fromList(buf.asTypedList(n));
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  EngineResult importLayer(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) {
+    _checkAlive();
+    final frames = pcm.length;
+    if (frames <= 0) return EngineResult.invalid;
+    final buf = calloc<Float>(pcm.length);
+    try {
+      buf.asTypedList(pcm.length).setAll(0, pcm);
+      return EngineResult.fromCode(
+        _bindings.le_engine_import_layer(
+          _engine,
+          channel,
+          lane,
+          ordinal,
+          buf,
+          frames,
+        ),
+      );
+    } finally {
+      calloc.free(buf);
+    }
+  }
+
+  @override
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_finalize_layers(
+        _engine,
+        channel,
+        undoCount,
+        redoCount,
+      ),
+    );
+  }
+
+  @override
   EngineResult commitSession(int baseFrames) {
     _checkAlive();
     return EngineResult.fromCode(

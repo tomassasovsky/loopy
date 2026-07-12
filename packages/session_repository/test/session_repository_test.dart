@@ -151,11 +151,12 @@ void main() {
     expect(bundle.session.tracks[1].multiple, 2);
     expect(bundle.session.tracks[1].lanes.single.muted, isTrue);
     expect(bundle.session.tracks[1].lanes.single.volume, 0.5);
-    expect(bundle.laneStems[(0, 0)], Float32List.fromList([1, 1, 1, 1]));
-    expect(
-      bundle.laneStems[(1, 0)],
+    expect(bundle.laneStems[(0, 0)], [
+      Float32List.fromList([1, 1, 1, 1]),
+    ]);
+    expect(bundle.laneStems[(1, 0)], [
       Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]),
-    );
+    ]);
   });
 
   test('save then read round-trips a multi-lane track per lane', () async {
@@ -180,8 +181,65 @@ void main() {
     expect(track.lanes[1].muted, isTrue);
     expect(track.lanes[1].outputMask, 0x2);
     expect(track.lanes[1].inputChannel, 1);
-    expect(bundle.laneStems[(0, 0)], Float32List.fromList([1, 1, 1, 1]));
-    expect(bundle.laneStems[(0, 1)], Float32List.fromList([2, 2, 2, 2]));
+    expect(bundle.laneStems[(0, 0)], [
+      Float32List.fromList([1, 1, 1, 1]),
+    ]);
+    expect(bundle.laneStems[(0, 1)], [
+      Float32List.fromList([2, 2, 2, 2]),
+    ]);
+  });
+
+  test(
+    "save then read round-trips a lane's full overdub layer stack",
+    () async {
+      final undo0 = Float32List.fromList([1, 1, 1, 1]);
+      final live = Float32List.fromList([2, 2, 2, 2]);
+      final redo0 = Float32List.fromList([3, 3, 3, 3]);
+      final source = FakeSessionEngine()
+        ..seedLayers(0, [undo0, live, redo0], undoDepth: 1, redoDepth: 1);
+      final dir = '${tempDir.path}/layers';
+      await repoFor(source).save(dir);
+
+      // One WAV per layer.
+      expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
+      expect(File('$dir/track0_lane0_L1.wav').existsSync(), isTrue);
+      expect(File('$dir/track0_lane0_L2.wav').existsSync(), isTrue);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      final lane = bundle.session.tracks.single.lanes.single;
+      expect(lane.undoCount, 1);
+      expect(lane.redoCount, 1);
+      expect(lane.liveIndex, 1);
+      // The layers round-trip in ordinal order (undo → live → redo).
+      expect(bundle.laneStems[(0, 0)], [undo0, live, redo0]);
+    },
+  );
+
+  test('re-saving with fewer layers prunes the orphaned layer WAVs', () async {
+    final dir = '${tempDir.path}/prune';
+    // First save: a 3-layer history.
+    await repoFor(
+      FakeSessionEngine()..seedLayers(
+        0,
+        [
+          Float32List.fromList([1, 1, 1, 1]),
+          Float32List.fromList([2, 2, 2, 2]),
+          Float32List.fromList([3, 3, 3, 3]),
+        ],
+        undoDepth: 1,
+        redoDepth: 1,
+      ),
+    ).save(dir);
+    expect(File('$dir/track0_lane0_L2.wav').existsSync(), isTrue);
+
+    // Re-save the same bundle with a single-layer (no-history) track.
+    await repoFor(
+      FakeSessionEngine()..seedTrack(0, Float32List.fromList([9, 9, 9, 9])),
+    ).save(dir);
+
+    expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
+    expect(File('$dir/track0_lane0_L1.wav').existsSync(), isFalse);
+    expect(File('$dir/track0_lane0_L2.wav').existsSync(), isFalse);
   });
 
   test('mixdown sums unmuted tracks over the LCM period', () async {
@@ -287,9 +345,8 @@ void main() {
 
     final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
-    expect(
-      bundle.laneStems[(0, 0)],
+    expect(bundle.laneStems[(0, 0)], [
       Float32List.fromList([0.1, -0.2, 0.3, -0.4]),
-    );
+    ]);
   });
 }

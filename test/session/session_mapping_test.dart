@@ -92,7 +92,10 @@ void main() {
             ],
           ),
         ]),
-        laneStems: {(0, 0): l0, (0, 1): l1},
+        laneStems: {
+          (0, 0): [l0],
+          (0, 1): [l1],
+        },
       );
 
       final rig = rigFromBundle(bundle);
@@ -117,7 +120,9 @@ void main() {
           ),
         ]),
         // Lane 1 has no decoded audio.
-        laneStems: {(0, 0): l0},
+        laneStems: {
+          (0, 0): [l0],
+        },
       );
 
       final rig = rigFromBundle(bundle);
@@ -144,7 +149,9 @@ void main() {
         ]),
         // Only track 0's audio decoded.
         laneStems: {
-          (0, 0): Float32List.fromList([1, 1, 1, 1]),
+          (0, 0): [
+            Float32List.fromList([1, 1, 1, 1]),
+          ],
         },
       );
 

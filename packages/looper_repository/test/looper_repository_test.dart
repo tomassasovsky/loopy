@@ -2507,7 +2507,8 @@ void main() {
           containsAllInOrder(<String>[
             'clear',
             'clear',
-            'importTrackLane',
+            'importLayer',
+            'finalizeLayers',
             'commitSession',
             'setLaneVolume',
             'setLaneMute',
@@ -2530,7 +2531,7 @@ void main() {
         clearPollInterval: Duration.zero,
       );
 
-      expect(engine.calls, isNot(contains('importTrackLane')));
+      expect(engine.calls, isNot(contains('importLayer')));
       expect(engine.calls, isNot(contains('commitSession')));
       expect(engine.committedBaseFrames, isNull);
     });
@@ -2787,6 +2788,48 @@ void main() {
         expect(engine.laneOutput[(0, 1)], 0x2);
         expect(engine.laneCount[0], 2);
         expect(repo.laneCount(0), 2);
+      },
+    );
+
+    test(
+      'imports every overdub layer in order and finalizes the undo/redo stacks',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(1);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final undo0 = Float32List.fromList([1, 1, 1, 1]);
+        final live = Float32List.fromList([2, 2, 2, 2]);
+        final redo0 = Float32List.fromList([3, 3, 3, 3]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [undo0, live, redo0],
+                    volume: 1,
+                    muted: false,
+                    outputMask: 0x3,
+                    inputChannel: 0,
+                    undoCount: 1,
+                    redoCount: 1,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.importedLayers[(0, 0, 0)], undo0);
+        expect(engine.importedLayers[(0, 0, 1)], live);
+        expect(engine.importedLayers[(0, 0, 2)], redo0);
+        // The reconstructed stacks are published with the shared depths.
+        expect(engine.finalizedLayers[0], (1, 1));
       },
     );
   });

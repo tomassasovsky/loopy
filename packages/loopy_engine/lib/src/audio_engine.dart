@@ -396,6 +396,28 @@ abstract interface class SessionIo {
   /// [EngineResult.invalid] if the track is not empty.
   EngineResult importTrackLane(int channel, int lane, Float32List pcm);
 
+  /// Copies track [channel]'s lane [lane] overdub layer at [ordinal] out for
+  /// session export, or an empty list for an empty layer / out-of-range
+  /// argument. Ordinals run oldest→newest: `[0, undoDepth)` are the undo
+  /// snapshots, `undoDepth` is the live buffer, then the redo snapshots.
+  /// Read-only — call when not capturing.
+  Float32List exportLayer(int channel, int lane, int ordinal);
+
+  /// Stages [pcm] as track [channel]'s lane [lane] layer at [ordinal] into an
+  /// EMPTY track (the ordinal is the pool slot). Call once per `(lane,
+  /// ordinal)` with ordinals contiguous from 0, then [finalizeLayers], then
+  /// [commitSession]. Returns [EngineResult.invalid] for a non-empty track or
+  /// an out-of-range ordinal.
+  EngineResult importLayer(int channel, int lane, int ordinal, Float32List pcm);
+
+  /// Publishes a track reconstructed via [importLayer]: rebuilds the undo/redo
+  /// stacks and points playback at the live buffer (layer [undoCount]), every
+  /// active lane in lockstep. `undoCount + 1 + redoCount` layers must already
+  /// be staged on every active lane. Returns [EngineResult.invalid] for a
+  /// non-empty track, a layer count past the pool cap, or a torn (missing-slot
+  /// or mismatched-length) reconstruction.
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount);
+
   /// Establishes the master loop at [baseFrames] and starts every imported
   /// track playing at its whole-loop multiple.
   EngineResult commitSession(int baseFrames);

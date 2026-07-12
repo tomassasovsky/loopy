@@ -556,6 +556,21 @@ class MockAudioEngine implements AudioEngine {
       _requireRunning();
 
   @override
+  Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+
+  @override
+  EngineResult importLayer(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) => _requireRunning();
+
+  @override
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+      _requireRunning();
+
+  @override
   EngineResult commitSession(int baseFrames) => _requireRunning();
 
   /// The `captureDir` passed to the most recent [perfArm] call, for test

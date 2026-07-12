@@ -7,24 +7,29 @@ class _FakeLane {
   int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
-  int lengthFrames = 0;
-  Float32List pcm = Float32List(0);
+
+  /// Ordinal-ordered layer buffers (undo… live … redo). Its length matches the
+  /// owning track's `undoDepth + 1 + redoDepth`; a single-layer lane holds just
+  /// the live buffer.
+  List<Float32List> layers = [Float32List(0)];
 }
 
 class _FakeTrack {
   TrackState state = TrackState.empty;
   int multiple = 1;
+  int lengthFrames = 0;
+  int undoDepth = 0;
+  int redoDepth = 0;
   final List<_FakeLane> lanes = [_FakeLane()];
+
+  int get liveIndex => undoDepth;
 
   // Lane-0 conveniences (the single-lane accessors the setters/seed use).
   double get volume => lanes[0].volume;
   set volume(double v) => lanes[0].volume = v;
   bool get muted => lanes[0].muted;
   set muted(bool m) => lanes[0].muted = m;
-  int get lengthFrames => lanes[0].lengthFrames;
-  set lengthFrames(int n) => lanes[0].lengthFrames = n;
-  Float32List get pcm => lanes[0].pcm;
-  set pcm(Float32List p) => lanes[0].pcm = p;
+  Float32List liveOf(int lane) => lanes[lane].layers[liveIndex];
 }
 
 /// A stateful in-memory [AudioEngine] that models the looper state, settings,
@@ -56,10 +61,39 @@ class FakeSessionEngine implements AudioEngine {
     final frames = pcm.length ~/ channels;
     final track = _tracks[channel]
       ..state = TrackState.playing
-      ..multiple = multiple;
-    track.lanes[0]
-      ..pcm = pcm
+      ..multiple = multiple
       ..lengthFrames = frames
+      ..undoDepth = 0
+      ..redoDepth = 0;
+    track.lanes[0]
+      ..layers = [pcm]
+      ..volume = volume
+      ..muted = muted
+      ..inputChannel = 0;
+    masterLength = frames ~/ multiple;
+  }
+
+  /// Seeds a playing single-lane track with an ordinal-ordered [layers] stack
+  /// and its shared [undoDepth] / [redoDepth] — exercises overdub-layer capture.
+  /// The live buffer is `layers[undoDepth]`.
+  void seedLayers(
+    int channel,
+    List<Float32List> layers, {
+    int undoDepth = 0,
+    int redoDepth = 0,
+    int multiple = 1,
+    double volume = 1,
+    bool muted = false,
+  }) {
+    final frames = layers[undoDepth].length ~/ channels;
+    final track = _tracks[channel]
+      ..state = TrackState.playing
+      ..multiple = multiple
+      ..lengthFrames = frames
+      ..undoDepth = undoDepth
+      ..redoDepth = redoDepth;
+    track.lanes[0]
+      ..layers = List.of(layers)
       ..volume = volume
       ..muted = muted
       ..inputChannel = 0;
@@ -82,8 +116,7 @@ class FakeSessionEngine implements AudioEngine {
       track.lanes.add(_FakeLane());
     }
     track.lanes[lane]
-      ..pcm = pcm
-      ..lengthFrames = pcm.length ~/ channels
+      ..layers = [pcm]
       ..volume = volume
       ..muted = muted
       ..outputMask = outputMask
@@ -110,7 +143,8 @@ class FakeSessionEngine implements AudioEngine {
           volume: t.volume,
           muted: t.muted,
           lengthFrames: t.lengthFrames,
-          undoDepth: 0,
+          undoDepth: t.undoDepth,
+          redoDepth: t.redoDepth,
           rms: 0,
           peak: 0,
           multiple: t.multiple,
@@ -122,7 +156,7 @@ class FakeSessionEngine implements AudioEngine {
                 outputMask: lane.outputMask,
                 volume: lane.volume,
                 muted: lane.muted,
-                lengthFrames: lane.lengthFrames,
+                lengthFrames: t.lengthFrames,
                 rms: 0,
                 peak: 0,
               ),
@@ -139,13 +173,22 @@ class FakeSessionEngine implements AudioEngine {
 
   @override
   Float32List exportTrack(int channel) =>
-      Float32List.fromList(_tracks[channel].pcm);
+      Float32List.fromList(_tracks[channel].liveOf(0));
 
   @override
   Float32List exportTrackLane(int channel, int lane) {
-    final lanes = _tracks[channel].lanes;
-    if (lane < 0 || lane >= lanes.length) return Float32List(0);
-    return Float32List.fromList(lanes[lane].pcm);
+    final track = _tracks[channel];
+    if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
+    return Float32List.fromList(track.liveOf(lane));
+  }
+
+  @override
+  Float32List exportLayer(int channel, int lane, int ordinal) {
+    final track = _tracks[channel];
+    if (lane < 0 || lane >= track.lanes.length) return Float32List(0);
+    final layers = track.lanes[lane].layers;
+    if (ordinal < 0 || ordinal >= layers.length) return Float32List(0);
+    return Float32List.fromList(layers[ordinal]);
   }
 
   @override
@@ -159,11 +202,26 @@ class FakeSessionEngine implements AudioEngine {
     while (track.lanes.length <= lane) {
       track.lanes.add(_FakeLane());
     }
-    track.lanes[lane]
-      ..pcm = Float32List.fromList(pcm)
-      ..lengthFrames = pcm.length ~/ channels;
+    track.lanes[lane].layers = [Float32List.fromList(pcm)];
+    track.lengthFrames = pcm.length ~/ channels;
     return EngineResult.ok;
   }
+
+  @override
+  EngineResult importLayer(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) {
+    // Not exercised by the session repository (importing is the looper's job);
+    // an inert success keeps the interface satisfied.
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+      EngineResult.ok;
 
   @override
   EngineResult commitSession(int baseFrames) {
@@ -184,6 +242,9 @@ class FakeSessionEngine implements AudioEngine {
     _tracks[channel]
       ..state = TrackState.empty
       ..multiple = 1
+      ..lengthFrames = 0
+      ..undoDepth = 0
+      ..redoDepth = 0
       ..lanes.clear();
     _tracks[channel].lanes.add(_FakeLane());
     if (_tracks.every((t) => t.state == TrackState.empty)) masterLength = 0;

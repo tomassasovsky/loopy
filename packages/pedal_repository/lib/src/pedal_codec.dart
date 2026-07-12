@@ -180,8 +180,7 @@ abstract final class PedalCodec {
       isGoodbye: flags & 0x04 != 0,
       performanceArmed: flags & 0x08 != 0,
       loopLengthMicros: loopLengthMicros,
-      masterGain:
-          payload.length >= _payloadLength ? payload[16] / 255.0 : 1.0,
+      masterGain: payload.length >= _payloadLength ? payload[16] / 255.0 : 1.0,
     );
   }
 

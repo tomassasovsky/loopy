@@ -67,16 +67,18 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
   for (final track in bundle.session.tracks) {
     final lanes = <SessionRigLane>[];
     for (final lane in track.lanes) {
-      final pcm = bundle.laneStems[(track.channel, lane.lane)];
-      if (pcm == null) continue;
+      final layers = bundle.laneStems[(track.channel, lane.lane)];
+      if (layers == null || layers.isEmpty) continue;
       lanes.add(
         SessionRigLane(
           lane: lane.lane,
-          layers: [pcm],
+          layers: layers,
           volume: lane.volume,
           muted: lane.muted,
           outputMask: lane.outputMask,
           inputChannel: lane.inputChannel,
+          undoCount: lane.undoCount,
+          redoCount: lane.redoCount,
         ),
       );
     }

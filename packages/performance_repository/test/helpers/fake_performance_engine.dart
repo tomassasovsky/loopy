@@ -148,6 +148,21 @@ class FakePerformanceEngine implements AudioEngine {
       EngineResult.ok;
 
   @override
+  Float32List exportLayer(int channel, int lane, int ordinal) => Float32List(0);
+
+  @override
+  EngineResult importLayer(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) => EngineResult.ok;
+
+  @override
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) =>
+      EngineResult.ok;
+
+  @override
   EngineResult commitSession(int baseFrames) => EngineResult.ok;
 
   @override

@@ -446,20 +446,27 @@ class FakeAudioEngine implements AudioEngine {
     return Float32List(0);
   }
 
-  /// Lane-0 PCM passed to [importTrackLane], keyed by channel — the primary
-  /// import, kept for the single-lane assertions existing tests make.
+  /// Lane-0 live PCM passed to [importLayer], keyed by channel — kept for the
+  /// single-lane assertions existing tests make.
   final Map<int, Float32List> importedTracks = {};
 
-  /// PCM passed to [importTrackLane], keyed by `(channel, lane)`.
+  /// Live-buffer (ordinal 0) PCM passed to [importLayer], keyed by
+  /// `(channel, lane)`. Sufficient for the single-layer restore assertions.
   final Map<(int, int), Float32List> importedLanes = {};
 
-  /// Result returned by [importTrackLane] once any [importFailCountdown] is
-  /// spent.
+  /// Every layer PCM passed to [importLayer], keyed by
+  /// `(channel, lane, ordinal)`.
+  final Map<(int, int, int), Float32List> importedLayers = {};
+
+  /// `(undoCount, redoCount)` passed to [finalizeLayers], keyed by channel.
+  final Map<int, (int, int)> finalizedLayers = {};
+
+  /// Result returned by [importLayer] once any [importFailCountdown] is spent.
   EngineResult importResult = EngineResult.ok;
 
-  /// If `> 0`, the primary (lane 0) import returns [EngineResult.invalid] this
-  /// many times (decrementing) before honoring [importResult] — exercises the
-  /// posted-clear ack retry in `applySession`.
+  /// If `> 0`, the first import (lane 0, ordinal 0) returns
+  /// [EngineResult.invalid] this many times (decrementing) before honoring
+  /// [importResult] — exercises the posted-clear ack retry in `applySession`.
   int importFailCountdown = 0;
 
   @override
@@ -467,18 +474,43 @@ class FakeAudioEngine implements AudioEngine {
       importTrackLane(channel, 0, pcm);
 
   @override
-  EngineResult importTrackLane(int channel, int lane, Float32List pcm) {
-    calls.add('importTrackLane');
-    // Only the primary (lane 0) import races the clear ack in applySession.
-    if (lane == 0 && importFailCountdown > 0) {
+  EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
+      importLayer(channel, lane, 0, pcm);
+
+  @override
+  Float32List exportLayer(int channel, int lane, int ordinal) {
+    calls.add('exportLayer');
+    return Float32List(0);
+  }
+
+  @override
+  EngineResult importLayer(
+    int channel,
+    int lane,
+    int ordinal,
+    Float32List pcm,
+  ) {
+    calls.add('importLayer');
+    // Only the very first import (lane 0, ordinal 0) races the clear ack.
+    if (lane == 0 && ordinal == 0 && importFailCountdown > 0) {
       importFailCountdown--;
       return EngineResult.invalid;
     }
     if (importResult.isOk) {
-      importedLanes[(channel, lane)] = pcm;
-      if (lane == 0) importedTracks[channel] = pcm;
+      importedLayers[(channel, lane, ordinal)] = pcm;
+      if (ordinal == 0) {
+        importedLanes[(channel, lane)] = pcm;
+        if (lane == 0) importedTracks[channel] = pcm;
+      }
     }
     return importResult;
+  }
+
+  @override
+  EngineResult finalizeLayers(int channel, int undoCount, int redoCount) {
+    calls.add('finalizeLayers');
+    finalizedLayers[channel] = (undoCount, redoCount);
+    return EngineResult.ok;
   }
 
   /// Base frames passed to the last [commitSession].

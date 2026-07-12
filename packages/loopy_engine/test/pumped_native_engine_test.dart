@@ -139,6 +139,86 @@ void main() {
     expect(engine.importTrackLane(0, 0, lane0), EngineResult.invalid);
   }, skip: skip);
 
+  test('overdub layers round-trip through the real FFI', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+
+    expect(
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 1,
+          outputChannels: 1,
+          maxLoopFrames: 48000,
+        ),
+      ),
+      EngineResult.ok,
+    );
+
+    void settle() {
+      for (var k = 0; k < 64; k++) {
+        if (!engine.snapshot().tracks.first.layerInFlight) break;
+        engine.pump(frames: 256);
+      }
+    }
+
+    // Base 0.5, two +0.25 overdubs → 1.0 (undoDepth 2); undo once → live 0.75,
+    // undoDepth 1, redoDepth 1 — a track with BOTH undo and redo history.
+    expect(engine.record(), EngineResult.ok);
+    engine.pump(frames: 256, input: 0.5);
+    expect(engine.record(), EngineResult.ok); // finalize -> PLAYING
+    engine.pump(frames: 0);
+    for (var p = 0; p < 2; p++) {
+      expect(engine.record(), EngineResult.ok); // punch in
+      engine.pump(frames: 256, input: 0.25);
+      expect(engine.record(), EngineResult.ok); // punch out
+      settle();
+    }
+    expect(engine.undo(), EngineResult.ok);
+    engine.pump(frames: 0);
+    var s = engine.snapshot();
+    expect(s.tracks.first.undoDepth, 1);
+    expect(s.tracks.first.redoDepth, 1);
+
+    // Export the timeline: 0 = undo (0.5), 1 = live (0.75), 2 = redo (1.0).
+    final l0 = engine.exportLayer(0, 0, 0);
+    final l1 = engine.exportLayer(0, 0, 1);
+    final l2 = engine.exportLayer(0, 0, 2);
+    expect(l0, everyElement(closeTo(0.5, 1e-6)));
+    expect(l1, everyElement(closeTo(0.75, 1e-6)));
+    expect(l2, everyElement(closeTo(1.0, 1e-6)));
+
+    // Rebuild the track from the exported layers and commit.
+    expect(engine.clear(), EngineResult.ok);
+    engine.pump(frames: 0);
+    expect(engine.importLayer(0, 0, 0, l0), EngineResult.ok);
+    expect(engine.importLayer(0, 0, 1, l1), EngineResult.ok);
+    expect(engine.importLayer(0, 0, 2, l2), EngineResult.ok);
+    expect(engine.finalizeLayers(0, 1, 1), EngineResult.ok);
+    expect(engine.commitSession(256), EngineResult.ok);
+    engine.pump(frames: 0);
+
+    s = engine.snapshot();
+    expect(s.tracks.first.state, TrackState.playing);
+    expect(s.tracks.first.undoDepth, 1);
+    expect(s.tracks.first.redoDepth, 1);
+
+    // Both restored stacks work: undo peels to 0.5, then redo climbs to the
+    // reconstructed redo snapshot (1.0).
+    expect(engine.undo(), EngineResult.ok);
+    engine.pump(frames: 0);
+    s = engine.snapshot();
+    expect(s.tracks.first.undoDepth, 0);
+    expect(s.tracks.first.redoDepth, 2);
+    // Redo twice climbs to the reconstructed redo snapshot (1.0).
+    expect(engine.redo(), EngineResult.ok);
+    engine.pump(frames: 0);
+    expect(engine.redo(), EngineResult.ok);
+    engine.pump(frames: 0);
+    final live = engine.snapshot().tracks.first.undoDepth; // live ordinal
+    expect(engine.exportLayer(0, 0, live), everyElement(closeTo(1.0, 1e-6)));
+  }, skip: skip);
+
   test(
     'performance-recording capture arms via the real FFI and advances frames',
     () {
