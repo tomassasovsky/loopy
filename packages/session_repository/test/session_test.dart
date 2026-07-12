@@ -205,5 +205,72 @@ void main() {
         throwsA(isA<SessionUnsupportedVersion>()),
       );
     });
+
+    test('rejects a lane whose layer count disagrees with its undo/redo', () {
+      // undoCount 2 + live + redoCount 0 claims 3 layers but lists 1.
+      final json = session.toJson();
+      final lane0 =
+          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
+              as List;
+      (lane0.first as Map<String, dynamic>)
+        ..['undoCount'] = 2
+        ..['redoCount'] = 0;
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionCorruptLayers>()),
+      );
+    });
+
+    test('rejects a lane claiming more layers than the pool cap', () {
+      final json = session.toJson();
+      final lane0 =
+          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
+              as List;
+      (lane0.first as Map<String, dynamic>)
+        ..['undoCount'] = SessionLane.maxLayers
+        ..['redoCount'] = 0
+        ..['layers'] = [
+          for (var i = 0; i < SessionLane.maxLayers + 1; i++)
+            {'file': 'x$i.wav'},
+        ];
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionCorruptLayers>()),
+      );
+    });
+
+    test('rejects a lane with a negative undo/redo count', () {
+      final json = session.toJson();
+      final lane0 =
+          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
+              as List;
+      (lane0.first as Map<String, dynamic>)
+        ..['undoCount'] = -1
+        ..['redoCount'] = 1
+        // length matches undoCount+1+redoCount (== 1) so only the negativity
+        // branch can reject this.
+        ..['layers'] = [
+          {'file': 'x.wav'},
+        ];
+      expect(
+        () => Session.fromJson(json),
+        throwsA(isA<SessionCorruptLayers>()),
+      );
+    });
+
+    test('accepts a lane at exactly the pool cap', () {
+      final json = session.toJson();
+      final lane0 =
+          ((json['tracks'] as List).first as Map<String, dynamic>)['lanes']
+              as List;
+      (lane0.first as Map<String, dynamic>)
+        ..['undoCount'] = SessionLane.maxLayers - 1
+        ..['redoCount'] = 0
+        ..['layers'] = [
+          for (var i = 0; i < SessionLane.maxLayers; i++) {'file': 'x$i.wav'},
+        ];
+      final loaded = Session.fromJson(json);
+      expect(loaded.tracks.first.lanes.first.layers, hasLength(256));
+    });
   });
 }

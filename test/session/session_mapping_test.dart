@@ -105,6 +105,56 @@ void main() {
       expect(rig.tracks.single.lanes[1].livePcm, l1);
     });
 
+    test('maps a multi-lane track with per-lane overdub history', () {
+      // Two lanes, each a 3-layer stack (undo 1, live, redo 1) — the per-lane
+      // layer zip must keep each lane's ordered layers + undo/redo counts.
+      SessionLane historyLane(int index, List<String> files) => SessionLane(
+        lane: index,
+        volume: 1,
+        muted: false,
+        outputMask: 0x3,
+        inputChannel: index,
+        undoCount: 1,
+        redoCount: 1,
+        layers: [for (final f in files) SessionLayer(file: f)],
+      );
+      final l0 = [
+        Float32List.fromList([1]),
+        Float32List.fromList([2]),
+        Float32List.fromList([3]),
+      ];
+      final l1 = [
+        Float32List.fromList([4]),
+        Float32List.fromList([5]),
+        Float32List.fromList([6]),
+      ];
+      final bundle = (
+        session: sessionWith([
+          SessionTrack(
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 1,
+            lanes: [
+              historyLane(0, ['t0_l0_L0.wav', 't0_l0_L1.wav', 't0_l0_L2.wav']),
+              historyLane(1, ['t0_l1_L0.wav', 't0_l1_L1.wav', 't0_l1_L2.wav']),
+            ],
+          ),
+        ]),
+        laneStems: {(0, 0): l0, (0, 1): l1},
+      );
+
+      final rig = rigFromBundle(bundle);
+      final lanes = rig.tracks.single.lanes;
+      expect(lanes, hasLength(2));
+      expect(lanes[0].layers, l0);
+      expect(lanes[0].undoCount, 1);
+      expect(lanes[0].redoCount, 1);
+      expect(lanes[0].liveIndex, 1);
+      expect(lanes[1].layers, l1);
+      expect(lanes[1].undoCount, 1);
+      expect(lanes[1].livePcm, l1[1]);
+    });
+
     test('drops a lane whose PCM is missing but keeps its siblings', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (

@@ -52,6 +52,32 @@ class SessionUnsupportedVersion extends SessionException {
       'unsupported session version $version (supports up to $supported)';
 }
 
+/// A track lane's overdub-layer stack is structurally invalid — its declared
+/// `undoCount + 1 + redoCount` does not match its layer list, or the count
+/// exceeds the engine's per-lane pool cap. A corrupt or foreign bundle fails
+/// loudly on load rather than mid-apply.
+class SessionCorruptLayers extends SessionException {
+  /// Creates a [SessionCorruptLayers].
+  const SessionCorruptLayers({
+    required this.channel,
+    required this.lane,
+    required this.reason,
+  });
+
+  /// Track channel of the offending lane.
+  final int channel;
+
+  /// Lane index of the offending lane.
+  final int lane;
+
+  /// A short description of what was wrong.
+  final String reason;
+
+  @override
+  String toString() =>
+      'session track $channel lane $lane has a corrupt layer stack: $reason';
+}
+
 /// A save-as / rename targeted a name whose folder [slug] already exists in the
 /// sessions catalog. Named sessions never silently overwrite, so the caller
 /// must pick another name.

@@ -53,6 +53,9 @@ enum SessionError {
   /// A save-as / rename targeted a name whose slug already exists.
   nameCollision,
 
+  /// The session bundle's overdub-layer data is corrupt or foreign.
+  corruptLayers,
+
   /// Any other failure (I/O, engine, etc.); see [SessionState.errorMessage].
   unknown,
 }

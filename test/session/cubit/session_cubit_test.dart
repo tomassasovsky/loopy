@@ -147,6 +147,25 @@ void main() {
             .having((s) => s.error, 'error', SessionError.unsupportedVersion),
       ],
     );
+
+    blocTest<SessionCubit, SessionState>(
+      'loadNamed classifies a corrupt overdub-layer stack',
+      setUp: () => stubRead(
+        const SessionCorruptLayers(
+          channel: 0,
+          lane: 0,
+          reason: 'layer count mismatch',
+        ),
+      ),
+      build: build,
+      act: (cubit) => cubit.loadNamed('X'),
+      expect: () => [
+        const SessionState(status: SessionStatus.working),
+        isA<SessionState>()
+            .having((s) => s.status, 'status', SessionStatus.failure)
+            .having((s) => s.error, 'error', SessionError.corruptLayers),
+      ],
+    );
   });
 
   group('named sessions', () {
