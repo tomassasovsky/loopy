@@ -2430,6 +2430,140 @@ class LoopyEngineBindings {
         )
       >();
 
+  /// Copies up to `max_frames` frames of track `channel`'s lane `lane` layer at
+  /// `ordinal` into `out`. Ordinals run oldest→newest: `[0, undo_depth)` are the
+  /// undo snapshots, `undo_depth` is the live buffer, and the next `redo_depth`
+  /// are the redo snapshots. Returns the frames written (the loop length, clamped
+  /// to `max_frames`), 0 for an empty layer, or LE_ERR_INVALID for an out-of-range
+  /// channel/lane/ordinal or non-positive `max_frames`. Control thread; call when
+  /// the track is not capturing.
+  int le_engine_export_layer(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int ordinal,
+    ffi.Pointer<ffi.Float> out,
+    int max_frames,
+  ) {
+    return _le_engine_export_layer(
+      engine,
+      channel,
+      lane,
+      ordinal,
+      out,
+      max_frames,
+    );
+  }
+
+  late final _le_engine_export_layerPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_export_layer');
+  late final _le_engine_export_layer = _le_engine_export_layerPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
+  /// Loads `frames` mono frames into track `channel`'s lane `lane` at layer
+  /// `ordinal` (which becomes the pool slot index), staging a reconstruction into
+  /// an EMPTY track. Call once per (lane, ordinal) — ordinals contiguous from 0 —
+  /// then le_engine_finalize_layers, then le_engine_commit_session. Importing a
+  /// lane >= the active count activates it. Returns LE_OK, or LE_ERR_INVALID for a
+  /// non-EMPTY track, an `ordinal` past the pool cap, or an oversized `frames`.
+  int le_engine_import_layer(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    int ordinal,
+    ffi.Pointer<ffi.Float> pcm,
+    int frames,
+  ) {
+    return _le_engine_import_layer(
+      engine,
+      channel,
+      lane,
+      ordinal,
+      pcm,
+      frames,
+    );
+  }
+
+  late final _le_engine_import_layerPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_import_layer');
+  late final _le_engine_import_layer = _le_engine_import_layerPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          int,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
+      >();
+
+  /// Publishes a track reconstructed by le_engine_import_layer: rebuilds the
+  /// undo/redo stacks (slot index == ordinal), points a_live at the live buffer
+  /// (slot `undo_count`), and republishes the undo/redo depths — every active lane
+  /// in lockstep. `undo_count + 1 + redo_count` layers must already be staged on
+  /// every active lane at the same loop length. Returns LE_OK, or LE_ERR_INVALID
+  /// for a non-EMPTY track, a layer count past LE_POOL_SLOTS, or a torn/partial
+  /// reconstruction (a missing slot or mismatched lane length).
+  int le_engine_finalize_layers(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int undo_count,
+    int redo_count,
+  ) {
+    return _le_engine_finalize_layers(
+      engine,
+      channel,
+      undo_count,
+      redo_count,
+    );
+  }
+
+  late final _le_engine_finalize_layersPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_finalize_layers');
+  late final _le_engine_finalize_layers = _le_engine_finalize_layersPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
+
   /// Establishes the master loop at `base_frames` and starts every imported track
   /// (EMPTY with a loaded length) playing at its whole-loop multiple
   /// (length / base_frames). Posts a command; returns LE_OK or an le_result error.

@@ -842,41 +842,55 @@ class LooperRepository {
       final importRetries = clearPollAttempts < _maxImportAckRetries
           ? clearPollAttempts
           : _maxImportAckRetries;
-      final primary = track.lanes.first;
-      var result = _engine.importTrackLane(
-        track.channel,
-        primary.lane,
-        primary.livePcm,
-      );
-      for (
-        var attempt = 0;
-        !result.isOk && attempt < importRetries;
-        attempt++
-      ) {
-        await Future<void>.delayed(clearPollInterval);
-        result = _engine.importTrackLane(
-          track.channel,
-          primary.lane,
-          primary.livePcm,
-        );
-      }
-      if (!result.isOk) {
-        throw StateError(
-          'failed to import track ${track.channel}: ${result.name}',
-        );
-      }
-      for (final lane in track.lanes.skip(1)) {
-        final r = _engine.importTrackLane(
-          track.channel,
-          lane.lane,
-          lane.livePcm,
-        );
-        if (!r.isOk) {
-          throw StateError(
-            'failed to import track ${track.channel} lane ${lane.lane}: '
-            '${r.name}',
+      // Stage every layer of every lane, then finalize to rebuild the shared
+      // undo/redo stacks. Only the very first import into the track can race
+      // the just-posted clear's ack, so retry that one; the rest follow while
+      // the track stays EMPTY.
+      var first = true;
+      for (final lane in track.lanes) {
+        for (var ordinal = 0; ordinal < lane.layers.length; ordinal++) {
+          final pcm = lane.layers[ordinal];
+          var result = _engine.importLayer(
+            track.channel,
+            lane.lane,
+            ordinal,
+            pcm,
           );
+          if (first) {
+            for (
+              var attempt = 0;
+              !result.isOk && attempt < importRetries;
+              attempt++
+            ) {
+              await Future<void>.delayed(clearPollInterval);
+              result = _engine.importLayer(
+                track.channel,
+                lane.lane,
+                ordinal,
+                pcm,
+              );
+            }
+            first = false;
+          }
+          if (!result.isOk) {
+            throw StateError(
+              'failed to import track ${track.channel} lane ${lane.lane} '
+              'layer $ordinal: ${result.name}',
+            );
+          }
         }
+      }
+      // undo/redo depths are track-wide (shared across lanes) — take lane 0's.
+      final primary = track.lanes.first;
+      final finalized = _engine.finalizeLayers(
+        track.channel,
+        primary.undoCount,
+        primary.redoCount,
+      );
+      if (!finalized.isOk) {
+        throw StateError(
+          'failed to finalize track ${track.channel}: ${finalized.name}',
+        );
       }
     }
     // An empty session (or a legacy save carrying a ghost grid with no
