@@ -1,28 +1,68 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
 
-/// One track's restored audio and mix inside a [SessionRig].
+/// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
+///
+/// Carries the lane's ordered audio [layers] (part 1 restores one live buffer;
+/// the undo/redo layers are a later revision) plus its routing/mix. [liveIndex]
+/// (== [undoCount]) selects the currently playing buffer.
 @immutable
-class SessionRigTrack {
-  /// Creates a [SessionRigTrack].
-  const SessionRigTrack({
-    required this.channel,
-    required this.pcm,
+class SessionRigLane {
+  /// Creates a [SessionRigLane].
+  const SessionRigLane({
+    required this.lane,
+    required this.layers,
     required this.volume,
     required this.muted,
+    required this.outputMask,
+    required this.inputChannel,
+    this.undoCount = 0,
+    this.redoCount = 0,
   });
 
-  /// Track channel index.
-  final int channel;
+  /// Lane index within the track.
+  final int lane;
 
-  /// The track's mono loop PCM (lane 0; multi-lane stems are a follow-up).
-  final Float32List pcm;
+  /// The lane's mono audio buffers, oldest undo → live → newest redo.
+  final List<Float32List> layers;
 
   /// Playback gain in `0..1`.
   final double volume;
 
-  /// Whether the track is muted.
+  /// Whether the lane is muted.
   final bool muted;
+
+  /// Bitmask of output channels this lane plays to (bit c => output c).
+  final int outputMask;
+
+  /// Hardware input channel this lane records (`-1` = none).
+  final int inputChannel;
+
+  /// Number of leading [layers] that are undo snapshots.
+  final int undoCount;
+
+  /// Number of trailing [layers] that are redo snapshots.
+  final int redoCount;
+
+  /// Index into [layers] of the live (currently playing) buffer.
+  int get liveIndex => undoCount;
+
+  /// The lane's live (currently playing) buffer.
+  Float32List get livePcm => layers[liveIndex];
+}
+
+/// One track's restored lanes inside a [SessionRig].
+@immutable
+class SessionRigTrack {
+  /// Creates a [SessionRigTrack].
+  const SessionRigTrack({required this.channel, required this.lanes});
+
+  /// Track channel index.
+  final int channel;
+
+  /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
+  /// first — it is the primary import that resets the track's undo state.
+  final List<SessionRigLane> lanes;
 }
 
 /// One hardware input's live-monitor configuration inside a [SessionRig].

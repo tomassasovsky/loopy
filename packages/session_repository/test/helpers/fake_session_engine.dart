@@ -2,13 +2,29 @@ import 'dart:typed_data';
 
 import 'package:loopy_engine/loopy_engine.dart';
 
-class _FakeTrack {
-  TrackState state = TrackState.empty;
+class _FakeLane {
+  int inputChannel = -1;
+  int outputMask = 0x3;
   double volume = 1;
   bool muted = false;
-  int multiple = 1;
   int lengthFrames = 0;
   Float32List pcm = Float32List(0);
+}
+
+class _FakeTrack {
+  TrackState state = TrackState.empty;
+  int multiple = 1;
+  final List<_FakeLane> lanes = [_FakeLane()];
+
+  // Lane-0 conveniences (the single-lane accessors the setters/seed use).
+  double get volume => lanes[0].volume;
+  set volume(double v) => lanes[0].volume = v;
+  bool get muted => lanes[0].muted;
+  set muted(bool m) => lanes[0].muted = m;
+  int get lengthFrames => lanes[0].lengthFrames;
+  set lengthFrames(int n) => lanes[0].lengthFrames = n;
+  Float32List get pcm => lanes[0].pcm;
+  set pcm(Float32List p) => lanes[0].pcm = p;
 }
 
 /// A stateful in-memory [AudioEngine] that models the looper state, settings,
@@ -28,8 +44,8 @@ class FakeSessionEngine implements AudioEngine {
   /// must wait out.
   int layerInFlightPolls = 0;
 
-  /// Seeds a playing track with [pcm] and sets the base loop length from it.
-  /// Seed consistent tracks (same base) — the last call wins.
+  /// Seeds a playing track with [pcm] on lane 0 and sets the base loop length
+  /// from it. Seed consistent tracks (same base) — the last call wins.
   void seedTrack(
     int channel,
     Float32List pcm, {
@@ -38,14 +54,40 @@ class FakeSessionEngine implements AudioEngine {
     bool muted = false,
   }) {
     final frames = pcm.length ~/ channels;
-    _tracks[channel]
+    final track = _tracks[channel]
       ..state = TrackState.playing
+      ..multiple = multiple;
+    track.lanes[0]
       ..pcm = pcm
       ..lengthFrames = frames
-      ..multiple = multiple
       ..volume = volume
-      ..muted = muted;
+      ..muted = muted
+      ..inputChannel = 0;
     masterLength = frames ~/ multiple;
+  }
+
+  /// Adds a further lane [lane] to an already-seeded playing track, so a
+  /// multi-lane capture can be exercised. Lanes must share the track's length.
+  void seedLane(
+    int channel,
+    int lane,
+    Float32List pcm, {
+    double volume = 1,
+    bool muted = false,
+    int outputMask = 0x3,
+    int? inputChannel,
+  }) {
+    final track = _tracks[channel];
+    while (track.lanes.length <= lane) {
+      track.lanes.add(_FakeLane());
+    }
+    track.lanes[lane]
+      ..pcm = pcm
+      ..lengthFrames = pcm.length ~/ channels
+      ..volume = volume
+      ..muted = muted
+      ..outputMask = outputMask
+      ..inputChannel = inputChannel ?? lane;
   }
 
   @override
@@ -73,6 +115,18 @@ class FakeSessionEngine implements AudioEngine {
           peak: 0,
           multiple: t.multiple,
           layerInFlight: i == 0 && _consumeInFlightPoll(),
+          lanes: [
+            for (final lane in t.lanes)
+              LaneSnapshot(
+                inputChannel: lane.inputChannel,
+                outputMask: lane.outputMask,
+                volume: lane.volume,
+                muted: lane.muted,
+                lengthFrames: lane.lengthFrames,
+                rms: 0,
+                peak: 0,
+              ),
+          ],
         ),
     ],
   );
@@ -88,14 +142,24 @@ class FakeSessionEngine implements AudioEngine {
       Float32List.fromList(_tracks[channel].pcm);
 
   @override
-  Float32List exportTrackLane(int channel, int lane) =>
-      lane == 0 ? Float32List.fromList(_tracks[channel].pcm) : Float32List(0);
+  Float32List exportTrackLane(int channel, int lane) {
+    final lanes = _tracks[channel].lanes;
+    if (lane < 0 || lane >= lanes.length) return Float32List(0);
+    return Float32List.fromList(lanes[lane].pcm);
+  }
 
   @override
-  EngineResult importTrack(int channel, Float32List pcm) {
+  EngineResult importTrack(int channel, Float32List pcm) =>
+      importTrackLane(channel, 0, pcm);
+
+  @override
+  EngineResult importTrackLane(int channel, int lane, Float32List pcm) {
     final track = _tracks[channel];
     if (track.state != TrackState.empty) return EngineResult.invalid;
-    track
+    while (track.lanes.length <= lane) {
+      track.lanes.add(_FakeLane());
+    }
+    track.lanes[lane]
       ..pcm = Float32List.fromList(pcm)
       ..lengthFrames = pcm.length ~/ channels;
     return EngineResult.ok;
@@ -119,11 +183,9 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult clear({int channel = 0}) {
     _tracks[channel]
       ..state = TrackState.empty
-      ..lengthFrames = 0
       ..multiple = 1
-      ..volume = 1
-      ..muted = false
-      ..pcm = Float32List(0);
+      ..lanes.clear();
+    _tracks[channel].lanes.add(_FakeLane());
     if (_tracks.every((t) => t.state == TrackState.empty)) masterLength = 0;
     return EngineResult.ok;
   }

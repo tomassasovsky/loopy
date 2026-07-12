@@ -1,16 +1,18 @@
 /*
  * engine_session.c — session persistence (export / import / commit).
  *
- * THREAD OWNERSHIP: control thread. Export reads, and import fills, lane 0's loop
+ * THREAD OWNERSHIP: control thread. Export reads, and import fills, a lane's loop
  * buffer directly — safe because both target a track the audio thread is not
  * recording (export when not capturing; import only into an EMPTY track, whose
  * buffers the audio thread does not touch). Commit is the one ring-posted step
  * (le_push), so the audio thread establishes the master and starts the imported
- * tracks in lockstep. Split out of engine.c (S1); behaviour unchanged.
+ * tracks in lockstep. Split out of engine.c (S1).
  *
  * Lane buffers are mono (one sample per frame), so a stem is just the loop
  * samples; routing to channels is a playback concern, not stored. Export/import
- * operate on lane 0 — multi-lane stems are a later revision.
+ * address any lane: le_engine_export_track / le_engine_import_track are the
+ * lane-0 conveniences over the _lane variants. Per-overdub-layer export/import
+ * (undo/redo persistence) is a later revision.
  */
 #include <stdint.h>
 #include <string.h>
@@ -51,17 +53,19 @@ int32_t le_engine_export_track_lane(le_engine* engine, int32_t channel,
   return n;
 }
 
-int32_t le_engine_import_track(le_engine* engine, int32_t channel,
-                               const float* pcm, int32_t frames) {
+int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
+                                    int32_t lane, const float* pcm,
+                                    int32_t frames) {
   if (engine == NULL || pcm == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
     return LE_ERR_NOT_RUNNING;
   }
   if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
   if (frames <= 0) return LE_ERR_INVALID;
   le_track* t = &engine->tracks[channel];
   /* Importing targets an empty track: its buffers are not read by the audio
-   * thread, so the control thread can fill lane 0 directly. An undone-to-empty
+   * thread, so the control thread can fill any lane directly. An undone-to-empty
    * track qualifies, but its redo stack must go first — the live buffer being
    * overwritten IS the redo-top snapshot, so advertising canRedo afterwards
    * would resurrect the imported content, not the undone take. */
@@ -76,12 +80,27 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   /* Reject (rather than silently truncate) a stem that exceeds the buffer cap,
    * so a corrupted/foreign loop fails loudly instead of loading clipped. */
   if (frames > engine->max_loop_frames) return LE_ERR_INVALID;
-  t->redo_count = 0;
-  t->empty_len = 0;
-  store_i32(&t->a_redo_depth, 0);
-  le_lane* ln = &t->lanes[0];
+  /* Lane 0 is the primary import: it resets the track's redo/empty accounting
+   * (a fresh session take has no undo history). Additional lanes only fill
+   * their own buffer — they share the track's one undo span, so they must not
+   * touch its stacks. Growing lane_count activates the imported lane for
+   * playback after commit; a newly activated lane defaults to its standard
+   * record route (input == lane index) but is NEVER reset for lane 0, whose
+   * buffer/config we are filling here. */
+  if (lane == 0) {
+    t->redo_count = 0;
+    t->empty_len = 0;
+    store_i32(&t->a_redo_depth, 0);
+    t->start_iter = 0;
+  }
+  if (lane >= t->lane_count) {
+    for (int32_t l = t->lane_count; l <= lane; ++l) {
+      le_lane_reset(&t->lanes[l], l);
+    }
+    t->lane_count = lane + 1;
+  }
+  le_lane* ln = &t->lanes[lane];
   const int live = load_i32(&ln->a_live);
-  if (ln->pool[live] == NULL) return LE_ERR_INVALID;
   /* The import target must hold the full cap (a later capture over it can
    * grow to max_loop_frames, and the tail is zeroed to the cap below); undo
    * may have left a quantized snapshot slot live. Track is EMPTY: safe. */
@@ -95,8 +114,12 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
     memset(ln->pool[live] + span, 0, (cap - span) * sizeof(float));
   }
   store_i32(&ln->a_len, frames);
-  t->start_iter = 0;
   return LE_OK;
+}
+
+int32_t le_engine_import_track(le_engine* engine, int32_t channel,
+                               const float* pcm, int32_t frames) {
+  return le_engine_import_track_lane(engine, channel, 0, pcm, frames);
 }
 
 int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {

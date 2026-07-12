@@ -415,6 +415,10 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;
 
   @override
+  EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
+      EngineResult.ok;
+
+  @override
   EngineResult commitSession(int baseFrames) => EngineResult.ok;
 
   // --- Performance recording capture ---
