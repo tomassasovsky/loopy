@@ -61,6 +61,14 @@ Two WS2812 strips, each rendered from loopy's state frame:
   |---|---|---|---|---|---|---|---|
   | role | mode/global | Tr1 | Tr2 | Tr3 | Tr4 | clear-fade | bank |
 
+Both strips are **gamma-corrected** (a 2.8 curve, `showGamma()`): a WS2812's duty
+cycle is linear but the eye's brightness response is not, so the ring's rotating
+hump and the volume-meter fade would otherwise look top-heavy. The correction runs
+at output into a separate display buffer, so the frozen-playhead ring holds steady
+instead of decaying. Note it shifts hand-picked mixed colors (e.g. amber
+`255,150,0`) and dims the mid-range — re-tune the nominal colors or
+`FastLED.setBrightness` if you want them brighter.
+
 > **Link watchdog:** loopy re-sends the current state frame on a **~1 Hz
 > heartbeat** while bound (`ControlCubit`'s `keepAliveInterval`), not only on
 > change. So the firmware treats a gap of `kLinkTimeoutMs` (2.5 s) with **no
@@ -110,7 +118,10 @@ Compile + upload in one step (`upload` alone does **not** accept
 # on-hardware the module enumerates as an ATmega32U4 (Leonardo core), so the
 # leonardo FQBN is correct and avoids needing the SparkFun package.
 PORT=$(ls /dev/cu.usbmodem* | head -1)
-arduino-cli cache clean          # REQUIRED once — see the gotcha below
+# REQUIRED when changing the build properties below — see the gotcha. Delete the
+# cached compiled core so it rebuilds with the new PID/product baked in; a plain
+# `arduino-cli cache clean` may NOT evict it (its cache key omits these props).
+rm -rf "$(arduino-cli config get build_cache.path)"/cores/arduino_avr_leonardo_*
 arduino-cli compile --upload -p "$PORT" \
   --fqbn arduino:avr:leonardo \
   --build-property 'build.pid=0x7D00' \
@@ -135,12 +146,16 @@ from before the PID change; remove it there with **Remove Device** if it bothers
 you.
 
 > **Gotcha:** `USB_PRODUCT` / `build.pid` live in the cached `core.a`, and
-> arduino-cli's core cache key does **not** include these build properties — so
-> after changing them the change is silently ignored until you wipe the cache.
-> Run `arduino-cli cache clean` before the build (verify with
-> `strings <build>/…​.ino.elf | grep -i vamp`). macOS shows the product string as
-> the USB *Product Name*; the *Vendor Name* stays "Arduino LLC" (derived from the
-> VID, not the `iManufacturer` string).
+> arduino-cli's core-cache key does **not** include these build properties — so
+> after changing them the change is silently ignored while the stale core is
+> reused. `arduino-cli cache clean` did **not** evict it here (arduino-cli 1.5.1);
+> deleting the cached core directory directly (the `rm -rf …/cores/arduino_avr_leonardo_*`
+> above) is what forces the rebuild. Verify the new identity baked in with
+> `arduino-cli compile … --verbose | grep USB_PRODUCT` (expect `-DUSB_PID=0x7D00`
+> and `-DUSB_PRODUCT="VAMP Loopstation"`), or check the enumerated device's VID/PID
+> after flashing. macOS shows the product string as the USB *Product Name*; the
+> *Vendor Name* stays "Arduino LLC" (derived from the VID, not the `iManufacturer`
+> string).
 
 ## Verify
 

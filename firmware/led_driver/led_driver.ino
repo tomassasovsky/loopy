@@ -41,13 +41,19 @@ static uint8_t g_trackCount = 0;
 static uint8_t g_tracks[TRACK_LEDS];
 static unsigned long g_frameMs = 0;  // millis() when the last frame arrived
 
+// Colors are gamma-corrected (strip.gamma32) so brightness reads perceptually
+// even: a WS2812's duty cycle is linear but the eye's response is not, so without
+// it the ring's dim head and the amber mix look top-heavy. gamma32(0) == 0, so
+// "off" stays off.
 static uint32_t colorOf(uint8_t code) {
+  uint32_t c;
   switch (code) {
-    case 1: return strip.Color(0, 160, 0);    // green
-    case 2: return strip.Color(180, 0, 0);    // red
-    case 3: return strip.Color(180, 90, 0);   // amber
-    default: return 0;                         // off
+    case 1: c = strip.Color(0, 160, 0); break;   // green
+    case 2: c = strip.Color(180, 0, 0); break;   // red
+    case 3: c = strip.Color(180, 90, 0); break;  // amber
+    default: return 0;                            // off
   }
+  return strip.gamma32(c);
 }
 
 // Parse one STATE frame from a buffer that starts at the byte after the length
@@ -121,7 +127,7 @@ static void render() {
     // ring is never dark mid-loop.
     strip.setPixelColor(head % RING_LEDS, colorOf(g_global == 0 ? 1 : g_global));
   } else {
-    strip.setPixelColor(0, strip.Color(10, 10, 10));
+    strip.setPixelColor(0, strip.gamma32(strip.Color(10, 10, 10)));
   }
   // Per-track indicators.
   for (uint8_t i = 0; i < TRACK_LEDS; i++) {

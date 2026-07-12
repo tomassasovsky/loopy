@@ -39,7 +39,8 @@
 // RING strip: the 16-LED NeoPixel ring on D15 (loop-position playhead).
 static const uint8_t kRingPin = 15;
 static const uint8_t kRingCount = 16;
-static CRGB g_ring[kRingCount];
+static CRGB g_ring[kRingCount];     // logical ring frame the renderer writes
+static CRGB g_ringOut[kRingCount];  // gamma-corrected copy FastLED clocks out
 
 // INDICATOR strip: 7 LEDs on D16, in this order (the off-board strip is wired to
 // follow it): mode/global, the active bank's Tr1..Tr4, clear-fade, bank.
@@ -49,7 +50,8 @@ static const uint8_t kIndMode = 0;    // global transport-activity color
 static const uint8_t kIndTrack0 = 1;  // active-bank tracks 1..4 = LEDs 1..4
 static const uint8_t kIndClear = 5;   // lit during a clear fade
 static const uint8_t kIndBank = 6;    // lit when bank B is active
-static CRGB g_ind[kIndCount];
+static CRGB g_ind[kIndCount];     // logical indicator frame the renderer writes
+static CRGB g_indOut[kIndCount];  // gamma-corrected copy FastLED clocks out
 
 // The 10 footswitches, indexed by PEDAL_BTN_* (recPlay, stop, undo, mode,
 // track1..4, clear, bank); active-low with INPUT_PULLUP. THT board wiring.
@@ -342,6 +344,56 @@ static void renderVolumeBar() {
 // eyes-free from looper-recording's own SOLID red. 400 ms half-period.
 static const unsigned long kBlinkHalfPeriodMs = 400;
 
+// ---- perceptual gamma correction --------------------------------------------
+
+// A WS2812's duty cycle is linear but the eye's brightness response is not, so a
+// linear ramp looks top-heavy: the dim steps of the ring's rotating brightness
+// hump (and the volume-meter fade) crowd together while the bright end barely
+// changes. We map every channel through a gamma 2.8 curve at OUTPUT time
+// (g_ring/g_ind -> g_ringOut/g_indOut) so the ramp reads evenly. Doing it into
+// SEPARATE display buffers — not in place — matters: the frozen-playhead ring
+// holds its last logical frame without redrawing, so an in-place correction
+// would darken it a little more every show() until it decays to black. Copying
+// from the untouched logical frame each time is idempotent.
+//
+// The table is mirrored in firmware/loopy_pedal — keep the two in sync.
+static const uint8_t kGamma8[256] PROGMEM = {
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,
+    1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,
+    2,   3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   5,   5,   5,
+    5,   6,   6,   6,   6,   7,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,
+   10,  10,  11,  11,  11,  12,  12,  13,  13,  13,  14,  14,  15,  15,  16,  16,
+   17,  17,  18,  18,  19,  19,  20,  20,  21,  21,  22,  22,  23,  24,  24,  25,
+   25,  26,  27,  27,  28,  29,  29,  30,  31,  32,  32,  33,  34,  35,  35,  36,
+   37,  38,  39,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  50,
+   51,  52,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  66,  67,  68,
+   69,  70,  72,  73,  74,  75,  77,  78,  79,  81,  82,  83,  85,  86,  87,  89,
+   90,  92,  93,  95,  96,  98,  99, 101, 102, 104, 105, 107, 109, 110, 112, 114,
+  115, 117, 119, 120, 122, 124, 126, 127, 129, 131, 133, 135, 137, 138, 140, 142,
+  144, 146, 148, 150, 152, 154, 156, 158, 160, 162, 164, 167, 169, 171, 173, 175,
+  177, 180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
+  215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255,
+};
+static inline uint8_t gamma8(uint8_t x) { return pgm_read_byte(&kGamma8[x]); }
+
+// Gamma-correct both logical frames into their display buffers, then latch. A
+// drop-in replacement for FastLED.show() — global brightness is still applied by
+// show() itself.
+static void showGamma() {
+  for (uint8_t i = 0; i < kRingCount; i++) {
+    g_ringOut[i].r = gamma8(g_ring[i].r);
+    g_ringOut[i].g = gamma8(g_ring[i].g);
+    g_ringOut[i].b = gamma8(g_ring[i].b);
+  }
+  for (uint8_t i = 0; i < kIndCount; i++) {
+    g_indOut[i].r = gamma8(g_ind[i].r);
+    g_indOut[i].g = gamma8(g_ind[i].g);
+    g_indOut[i].b = gamma8(g_ind[i].b);
+  }
+  FastLED.show();
+}
+
 // True when the LED rail is powered (9 V present, read via the A3 divider). With
 // LED_POWER_SENSE 0 (no divider fitted) it is always true — the pre-gate behavior.
 static bool ledsPowered() {
@@ -370,7 +422,7 @@ static void render() {
     for (uint8_t i = 0; i < kRingCount; i++) g_ring[i] = CRGB::Black;
     for (uint8_t i = 0; i < kIndCount; i++) g_ind[i] = CRGB::Black;
     pollMidiIn();
-    FastLED.show();
+    showGamma();
     pollMidiIn();
     return;
   }
@@ -404,7 +456,7 @@ static void render() {
 
   // Poll MIDI immediately before and after the interrupt-blocking show().
   pollMidiIn();
-  FastLED.show();
+  showGamma();
   pollMidiIn();
 }
 
@@ -491,18 +543,18 @@ static void pollEncoder() {
 static void ledSelfTest() {
   for (uint8_t i = 0; i < kRingCount; i++) {
     g_ring[i] = CRGB(0, 24, 0);
-    FastLED.show();
+    showGamma();
     delay(15);
     g_ring[i] = CRGB::Black;
   }
-  FastLED.show();
+  showGamma();
   for (uint8_t i = 0; i < kIndCount; i++) {
     g_ind[i] = CRGB(0, 24, 0);
-    FastLED.show();
+    showGamma();
     delay(40);
     g_ind[i] = CRGB::Black;
   }
-  FastLED.show();
+  showGamma();
 }
 
 // Push several BLACK frames — holding the data line low does NOT turn off a
@@ -512,15 +564,15 @@ static void ledClear() {
   for (uint8_t i = 0; i < kRingCount; i++) g_ring[i] = CRGB::Black;
   for (uint8_t i = 0; i < kIndCount; i++) g_ind[i] = CRGB::Black;
   for (uint8_t n = 0; n < 4; n++) {
-    FastLED.show();
+    showGamma();
     delay(5);
   }
 }
 
 void setup() {
   Serial1.begin(31250); // DIN-5 MIDI @ standard baud
-  FastLED.addLeds<WS2812B, kRingPin, GRB>(g_ring, kRingCount);
-  FastLED.addLeds<WS2812B, kIndPin, GRB>(g_ind, kIndCount);
+  FastLED.addLeds<WS2812B, kRingPin, GRB>(g_ringOut, kRingCount);
+  FastLED.addLeds<WS2812B, kIndPin, GRB>(g_indOut, kIndCount);
   FastLED.setBrightness(64);
 
   for (uint8_t i = 0; i < PEDAL_BTN_COUNT; i++) {

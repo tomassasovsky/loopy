@@ -37,7 +37,8 @@ static const uint8_t kModeLed = 12;   // global transport-activity color
 static const uint8_t kTrackLed0 = 13; // active-bank tracks 1..4 = LEDs 13..16
 static const uint8_t kClearLed = 17;  // lit during a clear fade
 static const uint8_t kBankLed = 18;   // lit when bank B is active
-static CRGB g_leds[kNumLeds];
+static CRGB g_leds[kNumLeds];  // logical frame the renderer writes (nominal color)
+static CRGB g_out[kNumLeds];   // gamma-corrected copy FastLED actually clocks out
 
 // The 10 footswitches, indexed by PEDAL_BTN_* (recPlay, stop, undo, mode,
 // track1..4, clear, bank); active-low with INPUT_PULLUP. Matches the original
@@ -241,6 +242,49 @@ static void renderRing() {
 // the on-screen simulator's `_BlinkingLed` (400 ms) for parity.
 static const unsigned long kBlinkHalfPeriodMs = 400;
 
+// ---- perceptual gamma correction --------------------------------------------
+
+// A WS2812's duty cycle is linear but the eye's brightness response is not, so a
+// linear ramp looks top-heavy: the dim steps of the ring's rotating brightness
+// hump crowd together while the bright end barely changes. We map every channel
+// through a gamma 2.8 curve at OUTPUT time (g_leds -> g_out) so the ramp reads
+// evenly. Doing it into a SEPARATE display buffer — not in place — matters: the
+// frozen-playhead ring holds its last logical frame without redrawing, so an
+// in-place correction would darken it a little more every show() until it decays
+// to black. Copying from the untouched logical frame each time is idempotent.
+//
+// The table is mirrored in hardware/firmware/loopy_pedal_32u4 — keep them in sync.
+static const uint8_t kGamma8[256] PROGMEM = {
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,
+    1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,
+    2,   3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   5,   5,   5,
+    5,   6,   6,   6,   6,   7,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,
+   10,  10,  11,  11,  11,  12,  12,  13,  13,  13,  14,  14,  15,  15,  16,  16,
+   17,  17,  18,  18,  19,  19,  20,  20,  21,  21,  22,  22,  23,  24,  24,  25,
+   25,  26,  27,  27,  28,  29,  29,  30,  31,  32,  32,  33,  34,  35,  35,  36,
+   37,  38,  39,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,  50,
+   51,  52,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  66,  67,  68,
+   69,  70,  72,  73,  74,  75,  77,  78,  79,  81,  82,  83,  85,  86,  87,  89,
+   90,  92,  93,  95,  96,  98,  99, 101, 102, 104, 105, 107, 109, 110, 112, 114,
+  115, 117, 119, 120, 122, 124, 126, 127, 129, 131, 133, 135, 137, 138, 140, 142,
+  144, 146, 148, 150, 152, 154, 156, 158, 160, 162, 164, 167, 169, 171, 173, 175,
+  177, 180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
+  215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255,
+};
+static inline uint8_t gamma8(uint8_t x) { return pgm_read_byte(&kGamma8[x]); }
+
+// Gamma-correct the logical frame into the display buffer, then latch it. Drop-in
+// replacement for FastLED.show() — global brightness is still applied by show().
+static void showGamma() {
+  for (uint8_t i = 0; i < kNumLeds; i++) {
+    g_out[i].r = gamma8(g_leds[i].r);
+    g_out[i].g = gamma8(g_leds[i].g);
+    g_out[i].b = gamma8(g_leds[i].b);
+  }
+  FastLED.show();
+}
+
 static void render() {
   renderRing(); // the loop-position ring, LEDs 0..11
   if (g_haveFrame) {
@@ -274,7 +318,7 @@ static void render() {
 
   // Poll MIDI immediately before and after the interrupt-blocking show().
   pollMidiIn();
-  FastLED.show();
+  showGamma();
   pollMidiIn();
 }
 
@@ -320,7 +364,7 @@ static void pollEncoder() {
 
 void setup() {
   Serial.begin(31250); // serial MIDI (dualMocoLUFA on the 16U2)
-  FastLED.addLeds<WS2812B, kLedPin, GRB>(g_leds, kNumLeds);
+  FastLED.addLeds<WS2812B, kLedPin, GRB>(g_out, kNumLeds);
   FastLED.setBrightness(64);
 
   for (uint8_t i = 0; i < PEDAL_BTN_COUNT; i++) {
@@ -336,11 +380,11 @@ void setup() {
   // Brief startup sweep so the user sees the pedal is alive before loopy binds.
   for (uint8_t i = 0; i < kNumLeds; i++) {
     g_leds[i] = CRGB(0, 24, 0);
-    FastLED.show();
+    showGamma();
     delay(15);
     g_leds[i] = CRGB::Black;
   }
-  FastLED.show();
+  showGamma();
 }
 
 void loop() {
