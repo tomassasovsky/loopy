@@ -245,7 +245,7 @@ void main() {
         stubCatalog();
         when(() => repository.read(any())).thenAnswer(
           (_) async =>
-              (session: _session, laneStems: <(int, int), Float32List>{}),
+              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {});
       },
@@ -277,7 +277,7 @@ void main() {
         stubCatalog();
         when(() => repository.read(any())).thenAnswer(
           (_) async =>
-              (session: _session, laneStems: <(int, int), Float32List>{}),
+              (session: _session, laneStems: <(int, int), List<Float32List>>{}),
         );
         when(() => looper.applySession(any())).thenAnswer((_) async {});
       },

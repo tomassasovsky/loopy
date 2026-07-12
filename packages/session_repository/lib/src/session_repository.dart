@@ -12,10 +12,11 @@ import 'package:session_repository/src/session_name.dart';
 import 'package:wav_codec/wav_codec.dart';
 
 /// The decoded contents of a `.loopy` session bundle: the manifest plus each
-/// lane's live-buffer PCM, keyed by `(channel, lane)`.
+/// lane's ordinal-ordered layer PCM (undo… live … redo), keyed by
+/// `(channel, lane)`.
 typedef SessionBundle = ({
   Session session,
-  Map<(int, int), Float32List> laneStems,
+  Map<(int, int), List<Float32List>> laneStems,
 });
 
 /// The effect-chain data a [SessionRepository.save] persists that the engine
@@ -201,12 +202,16 @@ class SessionRepository {
     final captured = _capture();
     await Directory(directory).create(recursive: true);
 
+    final written = <String>{};
     for (final track in captured.tracks) {
       for (final lane in track.lanes) {
-        for (final layer in lane.layers) {
-          await File('$directory/${layer.file}').writeAsBytes(
+        final layerPcm = captured.laneStems[(track.channel, lane.lane)]!;
+        for (var o = 0; o < lane.layers.length; o++) {
+          final file = lane.layers[o].file;
+          written.add(file);
+          await File('$directory/$file').writeAsBytes(
             WavCodec.encodeFloat32(
-              samples: captured.laneStems[(track.channel, lane.lane)]!,
+              samples: layerPcm[o],
               sampleRate: captured.snapshot.sampleRate,
               channels: 1,
             ),
@@ -230,7 +235,32 @@ class SessionRepository {
         ),
       );
     }
+    // The per-track file set is variable (lanes × layers shrink between saves),
+    // so a re-save would otherwise leave orphaned layer WAVs. The just-written
+    // manifest is the source of truth; prune every layer file it does not
+    // reference. Non-layer files (the manifest, the mixdown) are untouched.
+    await _pruneOrphanLayers(directory, written);
     return session;
+  }
+
+  /// The pattern of a bundle's per-layer WAV filenames
+  /// (`track{c}_lane{l}_L{n}.wav`).
+  static final RegExp _layerFilePattern = RegExp(
+    r'^track\d+_lane\d+_L\d+\.wav$',
+  );
+
+  /// Deletes every layer WAV in [directory] not in the [keep] set — the
+  /// orphans a shrinking re-save leaves behind.
+  Future<void> _pruneOrphanLayers(String directory, Set<String> keep) async {
+    final dir = Directory(directory);
+    if (!dir.existsSync()) return;
+    for (final entity in dir.listSync()) {
+      if (entity is! File) continue;
+      final name = _basename(entity.path);
+      if (_layerFilePattern.hasMatch(name) && !keep.contains(name)) {
+        entity.deleteSync();
+      }
+    }
   }
 
   /// Reads and validates the `.loopy` bundle [directory]: decodes the manifest
@@ -260,16 +290,16 @@ class SessionRepository {
       );
     }
 
-    // Decode each lane's live buffer (`layers[liveIndex]`). Part 1 restores the
-    // live audio per lane; the undo/redo layers are a later revision.
-    final laneStems = <(int, int), Float32List>{};
+    // Decode every lane's layers in ordinal order (undo… live … redo).
+    final laneStems = <(int, int), List<Float32List>>{};
     for (final track in session.tracks) {
       for (final lane in track.lanes) {
-        final live = lane.layers[lane.liveIndex];
-        final bytes = await File('$directory/${live.file}').readAsBytes();
-        laneStems[(track.channel, lane.lane)] = WavCodec.decodeFloat32(
-          bytes,
-        ).samples;
+        final layers = <Float32List>[];
+        for (final layer in lane.layers) {
+          final bytes = await File('$directory/${layer.file}').readAsBytes();
+          layers.add(WavCodec.decodeFloat32(bytes).samples);
+        }
+        laneStems[(track.channel, lane.lane)] = layers;
       }
     }
     return (session: session, laneStems: laneStems);
@@ -289,17 +319,22 @@ class SessionRepository {
     );
   }
 
-  /// Exports every lane of every track as a separate live-buffer WAV in
-  /// [directory], named as in a saved bundle (`track{c}_lane{l}_L0.wav`).
+  /// Exports every lane of every track as a separate WAV in [directory]. A
+  /// stem is the lane's live (currently playing) buffer only — the undo/redo
+  /// history is not part of a flat stems export — so each file is named
+  /// `track{c}_lane{l}_L0.wav` regardless of the lane's undo depth.
   Future<void> exportStems(String directory) async {
     await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
     for (final track in captured.tracks) {
       for (final lane in track.lanes) {
-        await File('$directory/${lane.layers.first.file}').writeAsBytes(
+        final layerPcm = captured.laneStems[(track.channel, lane.lane)]!;
+        await File(
+          '$directory/track${track.channel}_lane${lane.lane}_L0.wav',
+        ).writeAsBytes(
           WavCodec.encodeFloat32(
-            samples: captured.laneStems[(track.channel, lane.lane)]!,
+            samples: layerPcm[lane.liveIndex],
             sampleRate: captured.snapshot.sampleRate,
             channels: 1,
           ),
@@ -308,14 +343,17 @@ class SessionRepository {
     }
   }
 
-  /// Reads the engine snapshot and each settled track's per-lane PCM once.
+  /// Reads the engine snapshot and each settled track's per-lane overdub layers
+  /// once.
   ///
-  /// Every active lane's live buffer is exported into its own layer (part 1
-  /// writes exactly one live layer per lane; the undo/redo layers are a later
-  /// revision). A track with no non-empty lane is skipped.
+  /// Every active lane's full pool history is exported: the `undoDepth` undo
+  /// snapshots, the live buffer, then the `redoDepth` redo snapshots (the
+  /// undo/redo depths are track-wide, so every lane carries the same count). A
+  /// lane whose live buffer is empty is skipped, and a track left with no lane
+  /// is dropped.
   _Capture _capture() {
     final snapshot = _engine.snapshot();
-    final laneStems = <(int, int), Float32List>{};
+    final laneStems = <(int, int), List<Float32List>>{};
     final tracks = <SessionTrack>[];
     for (var i = 0; i < snapshot.tracks.length; i++) {
       final track = snapshot.tracks[i];
@@ -326,13 +364,29 @@ class SessionRepository {
         continue;
       }
       if (track.lengthFrames <= 0) continue;
-      // A settled track always publishes its active lanes (>= 1); a lane whose
-      // buffer is empty is skipped, and a track left with no lane is dropped.
+      final undoCount = track.undoDepth;
+      final redoCount = track.redoDepth;
+      final total = undoCount + 1 + redoCount;
       final lanes = <SessionLane>[];
       for (var l = 0; l < track.lanes.length; l++) {
-        final pcm = _engine.exportTrackLane(i, l);
-        if (pcm.isEmpty) continue;
-        laneStems[(i, l)] = pcm;
+        // The live layer sits at ordinal `undoCount`; skip a lane whose live
+        // buffer is empty (nothing recorded on it).
+        final live = _engine.exportLayer(i, l, undoCount);
+        if (live.isEmpty) continue;
+        final layerPcm = <Float32List>[];
+        final layerFiles = <SessionLayer>[];
+        for (var ordinal = 0; ordinal < total; ordinal++) {
+          final pcm = ordinal == undoCount
+              ? live
+              : _engine.exportLayer(i, l, ordinal);
+          if (pcm.isEmpty) break; // torn history — drop this lane
+          layerPcm.add(pcm);
+          layerFiles.add(
+            SessionLayer(file: 'track${i}_lane${l}_L$ordinal.wav'),
+          );
+        }
+        if (layerPcm.length != total) continue;
+        laneStems[(i, l)] = layerPcm;
         final laneSnap = track.lanes[l];
         lanes.add(
           SessionLane(
@@ -341,7 +395,9 @@ class SessionRepository {
             muted: laneSnap.muted,
             outputMask: laneSnap.outputMask,
             inputChannel: laneSnap.inputChannel,
-            layers: [SessionLayer(file: 'track${i}_lane${l}_L0.wav')],
+            layers: layerFiles,
+            undoCount: undoCount,
+            redoCount: redoCount,
           ),
         );
       }
@@ -384,8 +440,10 @@ class SessionRepository {
     for (final track in captured.tracks) {
       for (final lane in track.lanes) {
         if (lane.muted) continue;
-        final pcm = captured.laneStems[(track.channel, lane.lane)];
-        if (pcm == null || pcm.isEmpty) continue;
+        final layerPcm = captured.laneStems[(track.channel, lane.lane)];
+        if (layerPcm == null) continue;
+        final pcm = layerPcm[lane.liveIndex]; // mix the live buffer per lane
+        if (pcm.isEmpty) continue;
         active.add((pcm, lane.volume));
       }
     }
@@ -445,6 +503,6 @@ class _Capture {
   });
 
   final EngineSnapshot snapshot;
-  final Map<(int, int), Float32List> laneStems;
+  final Map<(int, int), List<Float32List>> laneStems;
   final List<SessionTrack> tracks;
 }
