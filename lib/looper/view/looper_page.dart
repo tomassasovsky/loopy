@@ -46,11 +46,17 @@ class LooperPage extends StatelessWidget {
           ),
         ),
       ],
-      // While the on-screen pedal is the bound output, the Tracks view is
-      // reframed as the pedal top plate (with the TracksView embedded in
-      // its main screen); otherwise the faceplate renders the TracksView
-      // full-screen as usual. The gate lives in [PedalFaceplate].
-      child: const PedalFaceplate(),
+      // A session load applies its monitors straight to the engine, bypassing
+      // the MonitorCubit (provided app-wide, an ancestor here); this listener
+      // re-projects the cubit from the repository afterwards so the FX dock and
+      // persisted settings follow the loaded session.
+      child: const SessionMonitorSyncListener(
+        // While the on-screen pedal is the bound output, the Tracks view is
+        // reframed as the pedal top plate (with the TracksView embedded in
+        // its main screen); otherwise the faceplate renders the TracksView
+        // full-screen as usual. The gate lives in [PedalFaceplate].
+        child: PedalFaceplate(),
+      ),
     );
   }
 }

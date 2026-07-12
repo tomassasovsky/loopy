@@ -2311,18 +2311,20 @@ void main() {
       expect(engine.laneMute[(2, 2)], isFalse);
     });
 
-    test('setVolume on a multi-lane track sets EVERY lane, not just lane 0',
-        () {
-      final repo = buildRepo()
-        ..startEngine(const EngineConfig())
-        ..setLaneCount(channel: 2, count: 3);
-      addTearDown(repo.dispose);
+    test(
+      'setVolume on a multi-lane track sets EVERY lane, not just lane 0',
+      () {
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setLaneCount(channel: 2, count: 3);
+        addTearDown(repo.dispose);
 
-      repo.setVolume(0.4, channel: 2);
-      expect(engine.laneVol[(2, 0)], 0.4);
-      expect(engine.laneVol[(2, 1)], 0.4);
-      expect(engine.laneVol[(2, 2)], 0.4);
-    });
+        repo.setVolume(0.4, channel: 2);
+        expect(engine.laneVol[(2, 0)], 0.4);
+        expect(engine.laneVol[(2, 1)], 0.4);
+        expect(engine.laneVol[(2, 2)], 0.4);
+      },
+    );
 
     test('clearing a muted multi-lane track unmutes every lane (so a later '
         'record/overdub is audible)', () {
@@ -2664,7 +2666,7 @@ void main() {
 
   group('chain and monitor read accessors', () {
     test(
-      'allLaneEffects and allMonitorEffects expose the remembered chains',
+      'allLaneEffects and allMonitors expose the remembered chains',
       () {
         final repo = buildRepo()
           ..setLaneEffects(
@@ -2684,14 +2686,58 @@ void main() {
           (lanes[(1, 2)]!.single as BuiltInEffect).type,
           TrackEffectType.drive,
         );
-        final monitors = repo.allMonitorEffects();
+        final monitors = repo.allMonitors();
         expect(monitors.keys, [3]);
         expect(
-          (monitors[3]!.single as BuiltInEffect).type,
+          (monitors[3]!.effects.single as BuiltInEffect).type,
           TrackEffectType.echo,
         );
       },
     );
+
+    test('allMonitors captures an enabled DRY monitor (no FX chain)', () {
+      // The regression that dropped dry monitors on save: an enabled input with
+      // an empty chain must still be enumerated so it round-trips through a
+      // session save/load.
+      final repo = buildRepo()
+        ..setMonitorInputEnabled(input: 2, enabled: true)
+        ..setMonitorOutput(input: 2, mask: 0x2);
+      addTearDown(repo.dispose);
+
+      final monitors = repo.allMonitors();
+      expect(monitors.keys, [2]);
+      expect(monitors[2]!.enabled, isTrue);
+      expect(monitors[2]!.outputMask, 0x2);
+      expect(monitors[2]!.effects, isEmpty);
+    });
+
+    test('allMonitors omits inputs equal to the disabled default', () {
+      // Touching a monitor back to the default (or a no-op setter) leaves no
+      // meaningful state, so it must not bloat the enumeration / bundle.
+      final repo = buildRepo()
+        ..setMonitorInputEnabled(input: 1, enabled: true)
+        ..setMonitorInputEnabled(input: 1, enabled: false)
+        ..setMonitorOutput(input: 1, mask: 0x3) // the default mask
+        ..setMonitorVolume(input: 1, volume: 1) // unity (default)
+        ..setMonitorMute(input: 1, muted: false); // default
+      addTearDown(repo.dispose);
+
+      expect(repo.allMonitors(), isEmpty);
+    });
+
+    test('allMonitors captures volume / mute / output-varied monitors', () {
+      final repo = buildRepo()
+        ..setMonitorVolume(input: 0, volume: 0.4)
+        ..setMonitorMute(input: 1, muted: true)
+        ..setMonitorOutput(input: 2, mask: 0x1);
+      addTearDown(repo.dispose);
+
+      final monitors = repo.allMonitors();
+      expect(monitors.keys.toSet(), {0, 1, 2});
+      expect(monitors[0]!.volume, closeTo(0.4, 1e-6));
+      expect(monitors[1]!.muted, isTrue);
+      expect(monitors[2]!.outputMask, 0x1);
+    });
 
     test(
       'monitor config getters read the remembered intent (with defaults)',

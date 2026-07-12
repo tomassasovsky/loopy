@@ -20,14 +20,17 @@ SessionChains chainsFromLooper(LooperRepository looper) => SessionChains(
       ),
   ],
   monitors: [
-    for (final entry in looper.allMonitorEffects().entries)
+    // Every CONFIGURED monitor, not just inputs carrying an FX chain — a
+    // dry-but-enabled monitor must round-trip too, or it would be dropped on
+    // save and disabled on the next load.
+    for (final monitor in looper.allMonitors().values)
       SessionMonitor(
-        input: entry.key,
-        enabled: looper.monitorEnabled(entry.key),
-        outputMask: looper.monitorOutput(entry.key),
-        volume: looper.monitorVolume(entry.key),
-        muted: looper.monitorMuted(entry.key),
-        encoded: encodeTrackEffects(entry.value),
+        input: monitor.input,
+        enabled: monitor.enabled,
+        outputMask: monitor.outputMask,
+        volume: monitor.volume,
+        muted: monitor.muted,
+        encoded: encodeTrackEffects(monitor.effects),
       ),
   ],
 );
