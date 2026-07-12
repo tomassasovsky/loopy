@@ -122,6 +122,143 @@ int32_t le_engine_import_track(le_engine* engine, int32_t channel,
   return le_engine_import_track_lane(engine, channel, 0, pcm, frames);
 }
 
+/* Maps an export ordinal (0 = oldest undo layer ... undo_count = live ...
+ * up to undo_count+redo_count = newest redo layer) to the pool slot that holds
+ * it. The linear timeline is undo_stack[0..undo_count) then a_live then the
+ * redo stack read newest-adjacent-first (redo_stack[redo_count-1] is the layer
+ * immediately above live — see le_undo_swap in engine_commands.c). Returns -1
+ * for an ordinal past the end. */
+static int32_t le_layer_slot_for_ordinal(const le_track* t, int32_t ordinal,
+                                          int32_t live) {
+  const int32_t undo_c = t->undo_count;
+  const int32_t redo_c = t->redo_count;
+  if (ordinal < undo_c) return t->undo_stack[ordinal];
+  if (ordinal == undo_c) return live;
+  const int32_t j = ordinal - undo_c - 1; /* 0-based into the post-live run */
+  if (j >= redo_c) return -1;
+  return t->redo_stack[redo_c - 1 - j];
+}
+
+int32_t le_engine_export_layer(le_engine* engine, int32_t channel, int32_t lane,
+                               int32_t ordinal, float* out, int32_t max_frames) {
+  if (engine == NULL || out == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  if (ordinal < 0 || max_frames <= 0) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  if (ordinal >= t->undo_count + 1 + t->redo_count) return LE_ERR_INVALID;
+  le_lane* ln = &t->lanes[lane];
+  /* a_live is written in lockstep across lanes, so any lane's copy names the
+   * shared live slot; the undo/redo stacks are track-owned slot indices. */
+  const int32_t slot =
+      le_layer_slot_for_ordinal(t, ordinal, load_i32(&ln->a_live));
+  if (slot < 0) return LE_ERR_INVALID;
+  int32_t n = load_i32(&ln->a_len);
+  if (n > max_frames) n = max_frames;
+  if (n <= 0) return 0;
+  if (ln->pool[slot] == NULL) return 0;
+  memcpy(out, ln->pool[slot], (size_t)n * sizeof(float));
+  return n;
+}
+
+int32_t le_engine_import_layer(le_engine* engine, int32_t channel, int32_t lane,
+                               int32_t ordinal, const float* pcm,
+                               int32_t frames) {
+  if (engine == NULL || pcm == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (lane < 0 || lane >= LE_MAX_LANES) return LE_ERR_INVALID;
+  /* The slot index IS the ordinal (le_engine_finalize_layers rebuilds the
+   * stacks on the same numbering), so it must fit the pool (R1 cap). */
+  if (ordinal < 0 || ordinal >= LE_POOL_SLOTS) return LE_ERR_INVALID;
+  if (frames <= 0 || frames > engine->max_loop_frames) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return LE_ERR_INVALID;
+  }
+  /* Activate the lane if this is the first layer landing on it; a grown lane
+   * takes its standard record route (input == lane index). Never reset a lane
+   * already being filled. */
+  if (lane >= t->lane_count) {
+    for (int32_t l = t->lane_count; l <= lane; ++l) {
+      le_lane_reset(&t->lanes[l], l);
+    }
+    t->lane_count = lane + 1;
+  }
+  le_lane* ln = &t->lanes[lane];
+  /* Undo/redo layers are quantized to the loop length (as the live rig sizes
+   * them); no path record-grows an imported slot, so full max_loop_frames is
+   * unnecessary. The final size must be allocated BEFORE the copy — a later
+   * ensure_slot to a larger size frees and re-zeroes the buffer. */
+  int32_t want =
+      ((frames + LE_LAYER_QUANTUM - 1) / LE_LAYER_QUANTUM) * LE_LAYER_QUANTUM;
+  if (want > engine->max_loop_frames) want = engine->max_loop_frames;
+  if (!le_lane_ensure_slot(ln, ordinal, want)) return LE_ERR_INVALID;
+  memcpy(ln->pool[ordinal], pcm, (size_t)frames * sizeof(float));
+  if (frames < want) {
+    memset(ln->pool[ordinal] + frames, 0,
+           (size_t)(want - frames) * sizeof(float));
+  }
+  /* Every layer of a lane shares the loop length; set it idempotently. */
+  store_i32(&ln->a_len, frames);
+  return LE_OK;
+}
+
+int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
+                                  int32_t undo_count, int32_t redo_count) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (undo_count < 0 || redo_count < 0) return LE_ERR_INVALID;
+  const int32_t total = undo_count + 1 + redo_count;
+  if (total > LE_POOL_SLOTS) return LE_ERR_INVALID; /* R1 cap */
+  le_track* t = &engine->tracks[channel];
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY) return LE_ERR_INVALID;
+  if (t->state_cmds_posted >
+      atomic_load_explicit(&t->a_state_acks, memory_order_acquire)) {
+    return LE_ERR_INVALID;
+  }
+  const int32_t lanes = le_lanes_active(t);
+  const int32_t len = load_i32(&t->lanes[0].a_len);
+  if (len <= 0) return LE_ERR_INVALID;
+  /* Every active lane must hold the full layer set at the same length (the
+   * stacks are shared in lockstep) — reject a torn/partial reconstruction
+   * rather than publish it. */
+  for (int32_t l = 0; l < lanes; ++l) {
+    if (load_i32(&t->lanes[l].a_len) != len) return LE_ERR_INVALID;
+    for (int32_t s = 0; s < total; ++s) {
+      /* Every restored slot must be allocated AND large enough to hold the loop
+       * length: a mismatched-length stage (differing frames per ordinal) could
+       * leave a slot shorter than `len`, which playback/export would then read
+       * past. Reject rather than publish an out-of-bounds layer. */
+      if (t->lanes[l].pool[s] == NULL) return LE_ERR_INVALID;
+      if (t->lanes[l].pool_cap[s] < len) return LE_ERR_INVALID;
+    }
+  }
+  /* Slot index == ordinal: undo layers occupy [0, undo_count), the live buffer
+   * sits at undo_count, and the redo layers occupy the top slots newest-last
+   * (mirror of le_layer_slot_for_ordinal). */
+  for (int32_t i = 0; i < undo_count; ++i) t->undo_stack[i] = i;
+  t->undo_count = undo_count;
+  for (int32_t k = 0; k < redo_count; ++k) {
+    t->redo_stack[k] = undo_count + redo_count - k;
+  }
+  t->redo_count = redo_count;
+  t->empty_len = 0;
+  t->start_iter = 0;
+  const int32_t live = undo_count;
+  for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, live);
+  store_i32(&t->a_undo_depth, undo_count);
+  store_i32(&t->a_redo_depth, redo_count);
+  return LE_OK;
+}
+
 int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {
   return le_push(engine, LE_CMD_COMMIT_SESSION, base_frames, 0.0f);
 }

@@ -272,6 +272,23 @@ static void drain(le_engine* e) {
   process_const(e, 0.0f, 0, out); /* frames=0 just drains the ring */
 }
 
+/* Processes silent blocks until no track has an overdub layer in flight — the
+ * punch-out fade tail must fully retire before undo/redo (a tap during it only
+ * queues) or an export (it would copy a mid-fade buffer). Bounded. */
+static void settle_layers(le_engine* e) {
+  float out[64];
+  le_snapshot s;
+  for (int k = 0; k < 256; ++k) {
+    le_engine_get_snapshot(e, &s);
+    int busy = 0;
+    for (int32_t t = 0; t < s.track_count; ++t) {
+      if (s.tracks[t].layer_in_flight) busy = 1;
+    }
+    if (!busy) return;
+    process_const(e, 0.0f, LOOP_N, out);
+  }
+}
+
 static void test_looper_record_then_play(void) {
   printf("test_looper_record_then_play\n");
   le_engine* e = make_configured_engine();
@@ -6188,6 +6205,303 @@ static void test_import_track_lane_multi_lane_roundtrip(void) {
   le_engine_destroy(e);
 }
 
+/* ---- overdub-layer (undo/redo) persistence ---- */
+
+/* Full timeline round-trip: two overdub passes then one undo leaves an undo
+ * layer, a live buffer, and a redo layer; export all three, tear down, rebuild
+ * via import_layer + finalize_layers + commit, and assert the live playback AND
+ * the reconstructed undo/redo replay all reproduce the original takes. */
+static void test_layer_export_import_roundtrip(void) {
+  printf("test_layer_export_import_roundtrip\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Base 1.0, then two +0.5 overdubs: live 1.0 -> 1.5 -> 2.0. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  for (int layer = 0; layer < 2; ++layer) {
+    le_engine_record(e, 0);
+    process_const(e, 0.5f, LOOP_N, out);
+    le_engine_record(e, 0);
+    drain(e);
+  }
+  settle_layers(e); /* punch envelope quiet before undo/export */
+
+  /* Undo once so there is both undo (1) and redo (1) history to persist. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].redo_depth == 1);
+
+  /* Export the whole timeline: ordinal 0 = 1.0 (undo), 1 = 1.5 (live),
+   * 2 = 2.0 (redo). */
+  float layers[3][64];
+  for (int o = 0; o < 3; ++o) {
+    CHECK(le_engine_export_layer(e, 0, 0, o, layers[o], 64) == LOOP_N);
+  }
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(layers[0][i] - 1.0f) < 1e-6f);
+    CHECK(fabsf(layers[1][i] - 1.5f) < 1e-6f);
+    CHECK(fabsf(layers[2][i] - 2.0f) < 1e-6f);
+  }
+  /* A past-the-end ordinal is rejected, distinct from an empty layer. */
+  CHECK(le_engine_export_layer(e, 0, 0, 3, layers[0], 64) == LE_ERR_INVALID);
+
+  /* Tear down to EMPTY, then rebuild from the exported layers. */
+  le_engine_clear(e, 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  for (int o = 0; o < 3; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, layers[o], LOOP_N) == LE_OK);
+  }
+  CHECK(le_engine_finalize_layers(e, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].redo_depth == 1);
+
+  /* Live plays 1.5; undo -> 1.0 (redo now 2); redo twice -> 1.5 -> 2.0. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 2);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* import_layer / finalize_layers reject bad reconstructions rather than
+ * publishing a torn track: past-cap ordinals, over-cap layer counts, an
+ * unstaged track, and a partial (missing-slot) reconstruction. */
+static void test_layer_import_rejects_bad_reconstruction(void) {
+  printf("test_layer_import_rejects_bad_reconstruction\n");
+  le_engine* e = make_configured_engine();
+  float pcm[LOOP_N] = {0.5f, 0.5f, 0.5f, 0.5f};
+
+  /* An ordinal past the pool cap is rejected. */
+  CHECK(le_engine_import_layer(e, 0, 0, LE_POOL_SLOTS, pcm, LOOP_N) ==
+        LE_ERR_INVALID);
+  /* A layer count past the pool cap is rejected. */
+  CHECK(le_engine_finalize_layers(e, 0, LE_POOL_SLOTS, 0) == LE_ERR_INVALID);
+  /* Finalizing a track with nothing staged (a_len 0) is rejected. */
+  CHECK(le_engine_finalize_layers(e, 0, 0, 0) == LE_ERR_INVALID);
+
+  /* Stage one layer, then a finalize claiming a missing second slot fails. */
+  CHECK(le_engine_import_layer(e, 0, 0, 0, pcm, LOOP_N) == LE_OK);
+  CHECK(le_engine_finalize_layers(e, 0, 1, 0) == LE_ERR_INVALID); /* slot 1 gone */
+  /* The matching finalize (one live layer, no undo/redo) succeeds. */
+  CHECK(le_engine_finalize_layers(e, 0, 0, 0) == LE_OK);
+
+  le_engine_destroy(e);
+}
+
+/* Layers persist per lane and undo in lockstep across lanes: a two-lane track
+ * with one overdub pass exports both layers of both lanes, rebuilds, and both
+ * lanes undo together back to their pre-overdub content. */
+static void test_layer_multi_lane_roundtrip(void) {
+  printf("test_layer_multi_lane_roundtrip\n");
+  le_engine* e = make_two_lane_engine(); /* both lanes route to out 0 */
+  float out[2 * LOOP_N];
+  float in[2 * LOOP_N];
+  le_snapshot s;
+
+  record_two_lane(e, 1.0f, 2.0f); /* lane 0 = 1.0, lane 1 = 2.0 */
+  /* One overdub pass: +0.5 into lane 0, +0.25 into lane 1. */
+  for (int i = 0; i < LOOP_N; ++i) {
+    in[i * 2 + 0] = 0.5f;
+    in[i * 2 + 1] = 0.25f;
+  }
+  le_engine_record(e, 0);
+  le_engine_process(e, out, in, LOOP_N);
+  le_engine_record(e, 0);
+  drain(e);
+  settle_layers(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  /* Export both layers (ordinal 0 = pre-overdub, 1 = live) of each lane. */
+  float l0[2][64];
+  float l1[2][64];
+  for (int o = 0; o < 2; ++o) {
+    CHECK(le_engine_export_layer(e, 0, 0, o, l0[o], 64) == LOOP_N);
+    CHECK(le_engine_export_layer(e, 0, 1, o, l1[o], 64) == LOOP_N);
+  }
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(l0[0][i] - 1.0f) < 1e-6f);
+    CHECK(fabsf(l0[1][i] - 1.5f) < 1e-6f);
+    CHECK(fabsf(l1[0][i] - 2.0f) < 1e-6f);
+    CHECK(fabsf(l1[1][i] - 2.25f) < 1e-6f);
+  }
+
+  le_engine_clear(e, 0);
+  drain(e);
+
+  /* Rebuild: 2 lanes x 2 layers (undo 1, redo 0). */
+  for (int o = 0; o < 2; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, l0[o], LOOP_N) == LE_OK);
+    CHECK(le_engine_import_layer(e, 0, 1, o, l1[o], LOOP_N) == LE_OK);
+  }
+  CHECK(le_engine_finalize_layers(e, 0, 1, 0) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].lane_count == 2);
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  /* Live: lane0 (1.5) + lane1 (2.25) summed on out 0 = 3.75. */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.75f) < 1e-6f);
+  /* Undo peels both lanes in lockstep: 1.0 + 2.0 = 3.0. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Overdubbing AFTER a reconstruction must not corrupt the restored layers: the
+ * preceding clear pre-arms dub shadow slots, and a multi-layer rebuild then
+ * occupies low pool slots — if a stale shadow collides with a restored slot,
+ * the next overdub would write a pre-pass image over a restored layer. Rebuild
+ * (undo 1, redo 1), commit, punch a fresh overdub, and assert undo peels back
+ * through the new layer to the restored ones intact. */
+static void test_layer_overdub_after_reload_no_corruption(void) {
+  printf("test_layer_overdub_after_reload_no_corruption\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Base 1.0, two +0.5 overdubs -> live 2.0 (undo 2); undo once -> 1.5. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  for (int layer = 0; layer < 2; ++layer) {
+    le_engine_record(e, 0);
+    process_const(e, 0.5f, LOOP_N, out);
+    le_engine_record(e, 0);
+    drain(e);
+  }
+  settle_layers(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+
+  float layers[3][64];
+  for (int o = 0; o < 3; ++o) {
+    CHECK(le_engine_export_layer(e, 0, 0, o, layers[o], 64) == LOOP_N);
+  }
+
+  le_engine_clear(e, 0);
+  drain(e);
+  for (int o = 0; o < 3; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, layers[o], LOOP_N) == LE_OK);
+  }
+  CHECK(le_engine_finalize_layers(e, 0, 1, 1) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+
+  /* Punch a fresh +0.25 overdub over the reloaded track -> live 1.75. */
+  le_engine_record(e, 0);
+  process_const(e, 0.25f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  settle_layers(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 2); /* restored undo + the new pass */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.75f) < 1e-6f);
+
+  /* Undo the new pass -> the reconstructed live (1.5), NOT a corrupted layer. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  /* Undo again -> the original restored undo layer (1.0). */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Reconstruct a track with TWO redo layers, exercising finalize's redo-stack
+ * formula (redo_stack[k] = undo_count + redo_count - k) at redo_count == 2 —
+ * the single-redo round-trip only covers redo_stack[0] = undo_count + 1. */
+static void test_layer_reconstruct_two_redo(void) {
+  printf("test_layer_reconstruct_two_redo\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Base 1.0, three +0.5 overdubs -> 2.5 (undo 3); undo twice -> live 1.5,
+   * redo 2. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  for (int layer = 0; layer < 3; ++layer) {
+    le_engine_record(e, 0);
+    process_const(e, 0.5f, LOOP_N, out);
+    le_engine_record(e, 0);
+    drain(e);
+  }
+  settle_layers(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].redo_depth == 2);
+
+  /* Export 4 layers: 1.0 (undo), 1.5 (live), 2.0 then 2.5 (redo, oldest→new). */
+  float layers[4][64];
+  for (int o = 0; o < 4; ++o) {
+    CHECK(le_engine_export_layer(e, 0, 0, o, layers[o], 64) == LOOP_N);
+  }
+  CHECK(fabsf(layers[2][0] - 2.0f) < 1e-6f);
+  CHECK(fabsf(layers[3][0] - 2.5f) < 1e-6f);
+
+  le_engine_clear(e, 0);
+  drain(e);
+  for (int o = 0; o < 4; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, layers[o], LOOP_N) == LE_OK);
+  }
+  CHECK(le_engine_finalize_layers(e, 0, 1, 2) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].redo_depth == 2);
+  /* Redo twice climbs the stack in the right order: 1.5 -> 2.0 -> 2.5. */
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 1.5f) < 1e-6f);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  process_const(e, 0.0f, LOOP_N, out);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i] - 2.5f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
 /* ---- multi-lane tracks ---- */
 
 /* Configures a 2-in/2-out engine, gives track 0 two lanes recording inputs 0
@@ -8572,6 +8886,11 @@ int main(void) {
   test_session_export_import_roundtrip();
   test_export_track_lane_multi_lane();
   test_import_track_lane_multi_lane_roundtrip();
+  test_layer_export_import_roundtrip();
+  test_layer_import_rejects_bad_reconstruction();
+  test_layer_multi_lane_roundtrip();
+  test_layer_reconstruct_two_redo();
+  test_layer_overdub_after_reload_no_corruption();
   test_target_multiple_forces_length();
   test_default_multiple_applies_to_inheriting_tracks();
   test_fixed_multiple_auto_finalizes();
