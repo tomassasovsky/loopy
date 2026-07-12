@@ -6129,6 +6129,65 @@ static void test_export_track_lane_multi_lane(void) {
   le_engine_destroy(e);
 }
 
+/* le_engine_import_track_lane restores a multi-lane track: a two-lane loop is
+ * exported per lane, torn down, then reloaded lane-by-lane and committed. Both
+ * lanes play back their own content summed on the shared output — the multi-lane
+ * counterpart of test_session_export_import_roundtrip (which is lane-0 only).
+ * (Uses the two-lane helpers defined just below in the multi-lane section.) */
+static le_engine* make_two_lane_engine(void);
+static void record_two_lane(le_engine* e, float a, float b);
+static void test_import_track_lane_multi_lane_roundtrip(void) {
+  printf("test_import_track_lane_multi_lane_roundtrip\n");
+  le_engine* e = make_two_lane_engine(); /* both lanes route to out 0 */
+  float out[2 * LOOP_N];
+  le_snapshot s;
+
+  record_two_lane(e, 1.0f, 2.0f); /* lane 0 = 1.0, lane 1 = 2.0 */
+
+  float lane0[64];
+  float lane1[64];
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 64) == LOOP_N);
+  CHECK(le_engine_export_track_lane(e, 0, 1, lane1, 64) == LOOP_N);
+
+  /* Tear the track down to EMPTY (which also collapses lane_count back to 1). */
+  le_engine_clear(e, 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* Reload both lanes: lane 0 primary, lane 1 grows lane_count and fills. */
+  CHECK(le_engine_import_track_lane(e, 0, 0, lane0, LOOP_N) == LE_OK);
+  CHECK(le_engine_import_track_lane(e, 0, 1, lane1, LOOP_N) == LE_OK);
+  CHECK(le_engine_commit_session(e, LOOP_N) == LE_OK);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].lane_count == 2);
+
+  /* Both lanes reproduce their content, summed (not merged) on out 0: 1+2 == 3. */
+  float zin[2 * LOOP_N] = {0};
+  le_engine_process(e, out, zin, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(out[i * 2 + 0] - 3.0f) < 1e-6f);
+
+  /* Importing into a non-empty (now PLAYING) track is rejected on any lane. */
+  CHECK(le_engine_import_track_lane(e, 0, 0, lane0, LOOP_N) == LE_ERR_INVALID);
+  CHECK(le_engine_import_track_lane(e, 0, 1, lane1, LOOP_N) == LE_ERR_INVALID);
+
+  /* Argument validation mirrors the export sibling. */
+  le_engine_clear(e, 0);
+  drain(e);
+  CHECK(le_engine_import_track_lane(e, 0, 0, lane0, 0) == LE_ERR_INVALID);
+  CHECK(le_engine_import_track_lane(e, 0, -1, lane0, LOOP_N) == LE_ERR_INVALID);
+  CHECK(le_engine_import_track_lane(e, 0, LE_MAX_LANES, lane0, LOOP_N) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_import_track_lane(e, -1, 0, lane0, LOOP_N) == LE_ERR_INVALID);
+  CHECK(le_engine_import_track_lane(e, 0, 0, NULL, LOOP_N) == LE_ERR_INVALID);
+  CHECK(le_engine_import_track_lane(NULL, 0, 0, lane0, LOOP_N) == LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
 /* ---- multi-lane tracks ---- */
 
 /* Configures a 2-in/2-out engine, gives track 0 two lanes recording inputs 0
@@ -8512,6 +8571,7 @@ int main(void) {
   test_multi_lane_loop_multiple();
   test_session_export_import_roundtrip();
   test_export_track_lane_multi_lane();
+  test_import_track_lane_multi_lane_roundtrip();
   test_target_multiple_forces_length();
   test_default_multiple_applies_to_inheriting_tracks();
   test_fixed_multiple_auto_finalizes();

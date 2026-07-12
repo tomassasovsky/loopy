@@ -35,8 +35,8 @@ void main() {
     final session = await repoFor(engine).save(dir);
 
     expect(File('$dir/${Session.manifestName}').existsSync(), isTrue);
-    expect(File('$dir/track0.wav').existsSync(), isTrue);
-    expect(File('$dir/track1.wav').existsSync(), isTrue);
+    expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
+    expect(File('$dir/track1_lane0_L0.wav').existsSync(), isTrue);
     expect(File('$dir/${SessionRepository.mixdownName}').existsSync(), isTrue);
     expect(session.baseLengthFrames, 4);
     expect(session.tracks, hasLength(2));
@@ -82,7 +82,7 @@ void main() {
       // leaves the cleared engine free to define a fresh loop length.
       final bundle = await repoFor(FakeSessionEngine()).read(dir);
       expect(bundle.session.baseLengthFrames, 0);
-      expect(bundle.stems, isEmpty);
+      expect(bundle.laneStems, isEmpty);
     },
   );
 
@@ -149,10 +149,39 @@ void main() {
     expect(bundle.session.baseLengthFrames, 4);
     expect(bundle.session.tracks, hasLength(2));
     expect(bundle.session.tracks[1].multiple, 2);
-    expect(bundle.session.tracks[1].muted, isTrue);
-    expect(bundle.session.tracks[1].volume, 0.5);
-    expect(bundle.stems[0], Float32List.fromList([1, 1, 1, 1]));
-    expect(bundle.stems[1], Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]));
+    expect(bundle.session.tracks[1].lanes.single.muted, isTrue);
+    expect(bundle.session.tracks[1].lanes.single.volume, 0.5);
+    expect(bundle.laneStems[(0, 0)], Float32List.fromList([1, 1, 1, 1]));
+    expect(
+      bundle.laneStems[(1, 0)],
+      Float32List.fromList([2, 2, 2, 2, 3, 3, 3, 3]),
+    );
+  });
+
+  test('save then read round-trips a multi-lane track per lane', () async {
+    final source = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..seedLane(
+        0,
+        1,
+        Float32List.fromList([2, 2, 2, 2]),
+        volume: 0.5,
+        muted: true,
+        outputMask: 0x2,
+        inputChannel: 1,
+      );
+    final dir = '${tempDir.path}/multilane';
+    await repoFor(source).save(dir);
+
+    final bundle = await repoFor(FakeSessionEngine()).read(dir);
+    final track = bundle.session.tracks.single;
+    expect(track.lanes, hasLength(2));
+    expect(track.lanes[1].volume, 0.5);
+    expect(track.lanes[1].muted, isTrue);
+    expect(track.lanes[1].outputMask, 0x2);
+    expect(track.lanes[1].inputChannel, 1);
+    expect(bundle.laneStems[(0, 0)], Float32List.fromList([1, 1, 1, 1]));
+    expect(bundle.laneStems[(0, 1)], Float32List.fromList([2, 2, 2, 2]));
   });
 
   test('mixdown sums unmuted tracks over the LCM period', () async {
@@ -171,6 +200,36 @@ void main() {
     expect(wav.frames, 4); // lcm(2, 4)
     for (final sample in wav.samples) {
       expect(sample, closeTo(1.5, 1e-6));
+    }
+  });
+
+  test('mixdown sums both lanes of a multi-lane track', () async {
+    // Two lanes on ONE track must both contribute — summed, never merged.
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..seedLane(0, 1, Float32List.fromList([0.25, 0.25, 0.25, 0.25]));
+    final path = '${tempDir.path}/mix.wav';
+
+    await repoFor(engine).exportMixdown(path);
+    final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
+
+    expect(wav.frames, 4);
+    for (final sample in wav.samples) {
+      expect(sample, closeTo(1.25, 1e-6)); // 1.0 (lane 0) + 0.25 (lane 1)
+    }
+  });
+
+  test('mixdown excludes a muted lane of a multi-lane track', () async {
+    final engine = FakeSessionEngine()
+      ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+      ..seedLane(0, 1, Float32List.fromList([9, 9, 9, 9]), muted: true);
+    final path = '${tempDir.path}/mix.wav';
+
+    await repoFor(engine).exportMixdown(path);
+    final wav = WavCodec.decodeFloat32(File(path).readAsBytesSync());
+
+    for (final sample in wav.samples) {
+      expect(sample, closeTo(1, 1e-6)); // only lane 0 contributes
     }
   });
 
@@ -195,8 +254,8 @@ void main() {
 
     await repoFor(engine).exportStems(dir);
 
-    expect(File('$dir/track0.wav').existsSync(), isTrue);
-    expect(File('$dir/track1.wav').existsSync(), isFalse);
+    expect(File('$dir/track0_lane0_L0.wav').existsSync(), isTrue);
+    expect(File('$dir/track1_lane0_L0.wav').existsSync(), isFalse);
   });
 
   test('read throws when the bundle is missing', () async {
@@ -229,7 +288,7 @@ void main() {
     final bundle = await repoFor(FakeSessionEngine()).read(dir);
 
     expect(
-      bundle.stems[0],
+      bundle.laneStems[(0, 0)],
       Float32List.fromList([0.1, -0.2, 0.3, -0.4]),
     );
   });

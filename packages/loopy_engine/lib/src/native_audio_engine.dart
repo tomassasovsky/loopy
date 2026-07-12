@@ -711,16 +711,26 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
-  EngineResult importTrack(int channel, Float32List pcm) {
+  EngineResult importTrack(int channel, Float32List pcm) =>
+      importTrackLane(channel, 0, pcm);
+
+  @override
+  EngineResult importTrackLane(int channel, int lane, Float32List pcm) {
     _checkAlive();
-    // Per-track buffers are mono: one sample per frame.
+    // Per-lane buffers are mono: one sample per frame.
     final frames = pcm.length;
     if (frames <= 0) return EngineResult.invalid;
     final buf = calloc<Float>(pcm.length);
     try {
       buf.asTypedList(pcm.length).setAll(0, pcm);
       return EngineResult.fromCode(
-        _bindings.le_engine_import_track(_engine, channel, buf, frames),
+        _bindings.le_engine_import_track_lane(
+          _engine,
+          channel,
+          lane,
+          buf,
+          frames,
+        ),
       );
     } finally {
       calloc.free(buf);

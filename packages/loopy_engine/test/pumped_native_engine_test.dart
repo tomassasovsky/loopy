@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy_engine/loopy_engine.dart';
@@ -102,6 +103,40 @@ void main() {
     // covered directly by test_export_track_lane_multi_lane in
     // test_engine_core.c.
     expect(engine.exportTrackLane(0, 7), isEmpty);
+  }, skip: skip);
+
+  test('importTrackLane restores multiple lanes through the real FFI', () {
+    final engine = PumpedNativeEngine();
+    addTearDown(engine.dispose);
+
+    expect(
+      engine.start(
+        const EngineConfig(
+          sampleRate: 48000,
+          inputChannels: 2,
+          outputChannels: 2,
+          maxLoopFrames: 48000,
+        ),
+      ),
+      EngineResult.ok,
+    );
+
+    // Reload two lanes from Dart PCM into a fresh, empty track and commit.
+    final lane0 = Float32List.fromList(List<double>.filled(64, 0.5));
+    final lane1 = Float32List.fromList(List<double>.filled(64, -0.25));
+    expect(engine.importTrackLane(0, 0, lane0), EngineResult.ok);
+    expect(engine.importTrackLane(0, 1, lane1), EngineResult.ok);
+    expect(engine.commitSession(64), EngineResult.ok);
+    engine.pump(frames: 0);
+
+    final s = engine.snapshot();
+    expect(s.tracks.first.state, TrackState.playing);
+    expect(s.tracks.first.laneCount, 2);
+    expect(engine.exportTrackLane(0, 0), everyElement(closeTo(0.5, 1e-6)));
+    expect(engine.exportTrackLane(0, 1), everyElement(closeTo(-0.25, 1e-6)));
+
+    // Importing into the now-committed (non-empty) track is rejected.
+    expect(engine.importTrackLane(0, 0, lane0), EngineResult.invalid);
   }, skip: skip);
 
   test(
