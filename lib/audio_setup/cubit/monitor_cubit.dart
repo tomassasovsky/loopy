@@ -101,6 +101,49 @@ class MonitorCubit extends Cubit<MonitorState> {
     );
   }
 
+  /// Re-projects the per-input monitors from the [LooperRepository] (the single
+  /// owner) after a session load applied them straight to the engine, past this
+  /// cubit. Without this the dock would keep showing the PREVIOUS session's
+  /// monitors and re-apply them on the next edit, and the persisted settings
+  /// would drift from the loaded session (a wrong boot restore).
+  ///
+  /// Re-persists every configured monitor and resets inputs dropped since the
+  /// last state to the disabled default — the same value-level reset
+  /// `LooperRepository.applySession` applies to undefined monitors, so the next
+  /// boot restores an inert (disabled, unrouted-to-nothing) monitor rather than
+  /// the pre-load leftover. Reads only from the repository; never re-applies to
+  /// the engine (the load already did), so it cannot desync engine vs cache.
+  Future<void> syncFromRepository() async {
+    final applied = _repository.allMonitors();
+    final dropped = state.inputs.keys
+        .where((input) => !applied.containsKey(input))
+        .toList();
+    // Any open editor-sync poll is keyed to a chain index the load reseated.
+    state.inputs.keys.forEach(_cancelEditorTimers);
+    emit(MonitorState(inputs: applied));
+    await Future.wait([
+      for (final monitor in applied.values) _persistMonitor(monitor),
+      for (final input in dropped) _persistMonitor(InputMonitor(input: input)),
+    ]);
+  }
+
+  /// Persists every field of [monitor] (the five monitor settings keys). Shared
+  /// by [syncFromRepository]'s apply + reset paths so they never diverge from
+  /// the set of persisted fields.
+  Future<void> _persistMonitor(InputMonitor monitor) async {
+    await _settings.saveMonitorInputEnabled(
+      monitor.input,
+      enabled: monitor.enabled,
+    );
+    await _settings.saveMonitorOutput(monitor.input, monitor.outputMask);
+    await _settings.saveMonitorVolume(monitor.input, monitor.volume);
+    await _settings.saveMonitorMute(monitor.input, muted: monitor.muted);
+    await _settings.saveMonitorEffects(
+      monitor.input,
+      encodeTrackEffects(monitor.effects),
+    );
+  }
+
   /// Enables or disables monitoring of hardware [input], applying and
   /// persisting the change.
   Future<void> setEnabled(int input, {required bool enabled}) async {

@@ -3,4 +3,5 @@
 library;
 
 export 'cubit/session_cubit.dart';
+export 'view/session_monitor_sync_listener.dart';
 export 'view/sessions_manager_dialog.dart';

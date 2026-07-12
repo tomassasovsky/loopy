@@ -37,7 +37,7 @@ void main() {
       ..startEngine(
         const EngineConfig(
           sampleRate: 48000,
-          inputChannels: 1,
+          inputChannels: 2,
           outputChannels: 1,
           maxLoopFrames: 48000,
         ),
@@ -89,13 +89,20 @@ void main() {
       ..setMonitorEffects(
         input: 0,
         effects: [BuiltInEffect(type: TrackEffectType.filter)],
-      );
+      )
+      // A DRY monitor: enabled + routed, NO FX chain. It carries no entry in
+      // the effects map, so it was historically dropped on save (the bug) —
+      // assert it survives the round-trip.
+      ..setMonitorInputEnabled(input: 1, enabled: true)
+      ..setMonitorOutput(input: 1, mask: 0x1);
     engine.pump(frames: 0);
 
     final dir = '${tempDir.path}/take';
     final saved = await session.save(dir, chains: chainsFromLooper(looper));
     expect(saved.laneChains, isNotEmpty);
-    expect(saved.monitors, isNotEmpty);
+    // BOTH monitors are captured: the FX chain on input 0 AND the dry monitor
+    // on input 1 (the regression would have saved only input 0).
+    expect(saved.monitors.map((m) => m.input).toSet(), {0, 1});
 
     // Wipe the rig to something DIFFERENT, so a failed load would show.
     await looper.applySession(
@@ -105,6 +112,7 @@ void main() {
     engine.pump(frames: 0);
     expect(looper.laneEffects(0, 0), isEmpty);
     expect(looper.monitorEffects(0), isEmpty);
+    expect(looper.monitorEnabled(1), isFalse); // dry monitor cleared too
 
     // Load the saved bundle back through the one apply path.
     final bundle = await session.read(dir);
@@ -125,6 +133,11 @@ void main() {
       (looper.monitorEffects(0).single as BuiltInEffect).type,
       TrackEffectType.filter,
     );
+    // The dry monitor is restored: enabled + routed, still no FX — the fix for
+    // "some inputs stop monitoring after a session change".
+    expect(looper.monitorEnabled(1), isTrue);
+    expect(looper.monitorOutput(1), 0x1);
+    expect(looper.monitorEffects(1), isEmpty);
 
     // Engine and cache agree — no leftover, no drift (fingerprint-verified).
     expect(
