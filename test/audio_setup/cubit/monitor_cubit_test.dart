@@ -222,6 +222,112 @@ void main() {
       },
     );
 
+    group('syncFromRepository', () {
+      blocTest<MonitorCubit, MonitorState>(
+        're-projects the repository monitors into state and persists them',
+        setUp: () {
+          when(repository.allMonitors).thenReturn({
+            2: InputMonitor(
+              input: 2,
+              enabled: true,
+              outputMask: 0x2,
+              volume: 0.4,
+              muted: true,
+              effects: [BuiltInEffect(type: TrackEffectType.delay)],
+            ),
+          });
+        },
+        build: build,
+        act: (cubit) => cubit.syncFromRepository(),
+        verify: (cubit) async {
+          final monitor = cubit.state.forInput(2);
+          expect(monitor.enabled, isTrue);
+          expect(monitor.outputMask, 0x2);
+          expect(monitor.volume, 0.4);
+          expect(monitor.muted, isTrue);
+          expect(
+            (monitor.effects.single as BuiltInEffect).type,
+            TrackEffectType.delay,
+          );
+          // All five fields are persisted, so the next boot restores THIS set.
+          expect(await settings.loadMonitorInputEnabled(2), isTrue);
+          expect(await settings.loadMonitorOutput(2), 0x2);
+          expect(await settings.loadMonitorVolume(2), 0.4);
+          expect(await settings.loadMonitorMute(2), isTrue);
+          expect(await settings.loadMonitorEffects(2), isNotNull);
+          // The load already applied to the engine; the re-sync only READS the
+          // repository — it must never push back, or it could desync the two.
+          verifyNever(
+            () => repository.setMonitorInputEnabled(
+              input: any(named: 'input'),
+              enabled: any(named: 'enabled'),
+            ),
+          );
+          verifyNever(
+            () => repository.setMonitorOutput(
+              input: any(named: 'input'),
+              mask: any(named: 'mask'),
+            ),
+          );
+          verifyNever(
+            () => repository.setMonitorVolume(
+              input: any(named: 'input'),
+              volume: any(named: 'volume'),
+            ),
+          );
+          verifyNever(
+            () => repository.setMonitorMute(
+              input: any(named: 'input'),
+              muted: any(named: 'muted'),
+            ),
+          );
+          verifyNever(
+            () => repository.setMonitorEffects(
+              input: any(named: 'input'),
+              effects: any(named: 'effects'),
+            ),
+          );
+        },
+      );
+
+      blocTest<MonitorCubit, MonitorState>(
+        'resets ALL persisted fields for inputs dropped since the last state',
+        setUp: () async {
+          // A prior session left input 5 configured (enabled + non-default
+          // routing / volume / mute) in settings AND cubit state.
+          await settings.saveMonitorInputEnabled(5, enabled: true);
+          await settings.saveMonitorOutput(5, 0x2);
+          await settings.saveMonitorVolume(5, 0.3);
+          await settings.saveMonitorMute(5, muted: true);
+          await settings.saveMonitorEffects(
+            5,
+            encodeTrackEffects([BuiltInEffect(type: TrackEffectType.reverb)]),
+          );
+          // The freshly loaded session defines no monitors.
+          when(repository.allMonitors).thenReturn(const {});
+        },
+        build: build,
+        // Seed input 5 into state so it counts as "previously present".
+        act: (cubit) async {
+          await cubit.setEnabled(5, enabled: true);
+          await cubit.syncFromRepository();
+        },
+        verify: (cubit) async {
+          expect(cubit.state.inputs, isEmpty);
+          // Every field is reset to the disabled default — no lingering
+          // outputMask / volume / mute to resurrect the monitor on next boot.
+          expect(await settings.loadMonitorInputEnabled(5), isFalse);
+          expect(await settings.loadMonitorOutput(5), 0x3);
+          expect(await settings.loadMonitorVolume(5), 1.0);
+          expect(await settings.loadMonitorMute(5), isFalse);
+          expect(
+            await settings.loadMonitorEffects(5),
+            encodeTrackEffects(const []),
+          );
+        },
+      );
+    });
+
     group('monitor effects', () {
       blocTest<MonitorCubit, MonitorState>(
         'addEffect appends a default drive, applies, and persists',
