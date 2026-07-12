@@ -117,7 +117,7 @@ union inline as `rememberedMonitors`
 ([looper_repository.dart:862-869](../../packages/looper_repository/lib/src/looper_repository.dart)).
 Replace that inline union with `allMonitors().keys.toList()` (snapshot before the reset loop mutates the
 maps). Resetting a monitor already equal to the disabled default is a no-op, so omitting default-equal
-inputs is behaviourally identical — and removes the second place the union could drift.
+inputs is behaviorally identical — and removes the second place the union could drift.
 
 ### Change 2 — `chainsFromLooper` enumerates all monitors
 
@@ -213,7 +213,7 @@ BlocListener<SessionCubit, SessionState>(
 |------|------|
 | `packages/looper_repository/test/looper_repository_test.dart` | New `allMonitors()` tests: returns enabled **dry** monitors; omits pure-default inputs; includes FX/mute/volume/output-varied inputs. **Migrate** the existing `allMonitorEffects()` test (~:2687) onto `allMonitors()` |
 | `test/session/session_fx_roundtrip_test.dart` | Extend round-trip: stage an **enabled dry** monitor on a second input (no FX) alongside the existing FX monitor; assert `monitorEnabled` + routing survive save→clear→load (fuzz-tagged, self-skips without `LOOPY_ENGINE_LIB`) |
-| `test/session/cubit/session_cubit_test.dart` | **Regression guard (critical):** add `when(looper.allMonitors).thenReturn(const {})` to the shared `setUp` — the save tests (`saveAs`/`save`, ~:166/:212/:445) now call `allMonitors()` and would throw on an unstubbed mock |
+| `test/session/cubit/session_cubit_test.dart` | **Regression guard (critical):** add `when(looper.allMonitors).thenReturn(const {})` to the shared `setUp` — the save tests (`saveAs`/`save`, ~:166/:212/:445) now call `allMonitors()` and would throw on a mock without that stub |
 | `test/audio_setup/cubit/monitor_cubit_test.dart` | `syncFromRepository()` re-projects repo monitors into state, persists **all five** fields, and resets **all five** persisted fields for inputs dropped since the last state |
 | `test/app/…` (widget test) | Bridge: pump the shell, drive a `loaded` `SessionState`, assert `MonitorCubit` state re-projects. (Not `session_cubit_test` — the wire lives in the widget tree.) |
 
