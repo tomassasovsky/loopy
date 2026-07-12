@@ -150,6 +150,13 @@ class LooperRepository {
   /// reconnects. Unity (`1.0`) until set.
   double _masterGain = 1;
 
+  /// The record-latency compensation offset (frames), last set explicitly or
+  /// captured from an engine measurement. Remembered and re-applied on every
+  /// (re)start so a device change / reconnect keeps the round-trip compensation
+  /// — a fresh start resets the engine's offset to 0. Zero (no compensation)
+  /// until set or measured.
+  int _recordOffset = 0;
+
   /// Per-track active lane count (absent => 1). Remembered and re-applied on
   /// every successful (re)start.
   final Map<int, int> _laneCount = {};
@@ -268,6 +275,14 @@ class LooperRepository {
   void _poll() {
     final snapshot = _engine.snapshot();
     _superviseDevice(devicePresent: snapshot.devicePresent);
+    // A measurement auto-sets the engine's offset (it never flows through
+    // setRecordOffset), so mirror it into the remembered value here — otherwise
+    // a restart would re-apply a stale offset. Guard on > 0 so a transient zero
+    // during a restart / in-flight measurement can't clobber a good value; an
+    // explicit "no compensation" (0) still lands via setRecordOffset.
+    if (snapshot.recordOffsetFrames > 0) {
+      _recordOffset = snapshot.recordOffsetFrames;
+    }
     final next = _project(snapshot);
     if (next == _last) return;
     _last = next;
@@ -455,6 +470,7 @@ class LooperRepository {
         ..setAutoRecord(enabled: _autoRecord)
         ..setDefaultMultiple(multiple: _defaultMultiple)
         ..setMasterGain(_masterGain)
+        ..setRecordOffset(_recordOffset)
         // Master peak limiter on by default: a fresh start resets it to off, so
         // re-assert it here (like the rest) to guard the summed output against
         // driver clipping. No UI yet — this is a safety default.
@@ -1117,8 +1133,14 @@ class LooperRepository {
   Float32List readTrackWaveform(int channel) =>
       _engine.readTrackVisual(channel);
 
-  /// Sets the record-offset latency compensation in frames.
-  EngineResult setRecordOffset(int frames) => _engine.setRecordOffset(frames);
+  /// Sets the record-offset latency compensation in frames. Remembered and
+  /// re-applied on every (re)start (device change / reconnect) so the
+  /// compensation survives — a fresh engine start resets it to 0.
+  EngineResult setRecordOffset(int frames) {
+    _recordOffset = frames < 0 ? 0 : frames;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setRecordOffset(_recordOffset);
+  }
 
   /// Overrides quantize for track [channel]: `null` inherits the global
   /// default, `false` forces it off, `true` forces it on. Remembered and
