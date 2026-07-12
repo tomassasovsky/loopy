@@ -602,11 +602,6 @@ struct le_engine {
   float* lat_buf;      /* envelope capture (control-thread allocated) */
   int32_t lat_buf_cap; /* capacity in frames */
   int32_t lat_buf_pos; /* write head during a measurement */
-  /* Per-input monitor enable-states saved when a measurement begins, so the
-   * temporary monitor suppression (which avoids out->cable->in->monitor->out
-   * feedback during the pulse) is restored when the measurement finishes.
-   * Audio-thread-local: written/read only on the device callback. */
-  int32_t lat_saved_monitor_enabled[LE_MAX_INPUTS];
 
   char device_name[256];
 

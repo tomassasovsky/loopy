@@ -630,14 +630,14 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&e->a_latency_state, LE_LATENCY_MEASURING);
       /* A loopback measurement requires a physical out->in cable, which forms a
        * feedback loop with input monitoring (out -> cable -> in -> monitor ->
-       * out). With loop gain > 1 that runs away to clipping and can overload the
-       * interface. Suppress every per-input monitor for the duration of the
-       * measurement, saving each one's state so it is restored when the
-       * measurement finishes (see le_latency_resolve completion below). */
-      for (int c = 0; c < LE_MAX_INPUTS; ++c) {
-        e->lat_saved_monitor_enabled[c] = load_i32(&e->monitors[c].a_enabled);
-        store_i32(&e->monitors[c].a_enabled, 0);
-      }
+       * out). No explicit monitor suppression is needed — and we must NOT touch
+       * m->a_enabled here: while measuring, the pulse path takes over the output
+       * and `continue`s each frame (see le_engine_process), bypassing
+       * mix_monitors_frame entirely, so no monitored input ever reaches the
+       * output during the pulse. Snapshotting + zeroing a_enabled here (and
+       * restoring it at completion) used to revert a saved-monitor enable that
+       * the launch restore applies asynchronously mid-measurement, leaving that
+       * input silent until a manual toggle. lat_active alone is the gate. */
       break;
     }
     case LE_CMD_RECORD:
@@ -1427,12 +1427,10 @@ static inline int process_input_frame(le_engine* e, const float* in, float* out,
     if (e->lat_buf == NULL || e->lat_buf_pos >= e->lat_buf_cap) {
       le_latency_resolve(e, sr);
       e->lat_active = 0;
-      /* Restore the per-input monitors suppressed at measurement start, so
-       * monitoring resumes once the pulse is done (both on a resolved peak and
-       * on a timeout — both reach this completion). */
-      for (int c = 0; c < LE_MAX_INPUTS; ++c) {
-        store_i32(&e->monitors[c].a_enabled, e->lat_saved_monitor_enabled[c]);
-      }
+      /* No monitor enable state to restore: the measurement never touched
+       * a_enabled (see the LE_CMD_MEASURE_LATENCY comment). Monitoring resumes
+       * on its own now that lat_active is clear and the per-frame mix — which
+       * the pulse path bypassed — runs again. */
     }
     for (int c = 0; c < ch_out; ++c) {
       out[f * ch_out + c] = broadcast;
