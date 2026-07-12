@@ -3051,6 +3051,58 @@ static void test_latency_restores_monitoring(void) {
   le_engine_destroy(e);
 }
 
+/* Regression: a monitor enabled DURING a measurement must stay enabled after it
+ * completes. On launch the saved monitors are restored asynchronously and can
+ * land mid-measurement (after the pulse has started). The measurement must not
+ * revert that enable — it never touches a_enabled, relying on the pulse path's
+ * per-frame mix bypass to silence monitoring while measuring. Reproduces the
+ * "some inputs don't monitor on program open until toggled" bug. */
+static void test_latency_keeps_monitor_enabled_set_mid_measurement(void) {
+  printf("test_latency_keeps_monitor_enabled_set_mid_measurement\n");
+  enum { SR = 48000, CAP = SR / 10 };
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, SR, 2, 2, 100000);
+  le_engine_set_excluded_input_mask_for_test(e, 0x2u); /* ch1 = loopback */
+
+  /* Begin measuring FIRST (input 0 not yet monitored — the launch race: the
+   * suppression snapshot, if any, is taken before the monitor is restored). */
+  CHECK(le_engine_begin_latency_for_test(e) == LE_OK);
+  drain(e); /* applies MEASURE: lat_active = 1 */
+
+  /* Now enable monitoring of input 0 -> output 0, mid-measurement. */
+  CHECK(le_engine_set_monitor_input(e, 0, 1) == LE_OK);
+  CHECK(le_engine_set_monitor_input_output(e, 0, 0x1) == LE_OK);
+  drain(e); /* applies the enable while lat_active is still 1 */
+
+  /* Run the capture window to completion over silence (resolves to TIMEOUT; the
+   * completion path — which used to revert a_enabled — runs regardless). */
+  float* out = calloc((size_t)CAP * 2, sizeof(float));
+  float* in = calloc((size_t)CAP * 2, sizeof(float));
+  CHECK(out != NULL && in != NULL);
+  le_engine_process(e, out, in, CAP);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.latency_state != LE_LATENCY_MEASURING); /* measurement finished */
+
+  /* Monitoring set mid-measurement must have survived: input 0 is audible on
+   * output 0. Before the fix, the completion restore reverted a_enabled to the
+   * pre-measurement snapshot (0) and this read 0. */
+  float out2[2 * LOOP_N];
+  float in2[2 * LOOP_N];
+  for (int i = 0; i < LOOP_N; ++i) {
+    in2[i * 2 + 0] = 1.0f;
+    in2[i * 2 + 1] = 0.0f;
+  }
+  le_engine_process(e, out2, in2, LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) {
+    CHECK(fabsf(out2[i * 2 + 0] - 1.0f) < 1e-6f);
+  }
+
+  free(out);
+  free(in);
+  le_engine_destroy(e);
+}
+
 /* A clean (no-FX) monitor chain is never printed into a recording: a track
  * records its raw input even while that input is being monitored clean. */
 static void test_monitor_clean_chain_not_recorded(void) {
@@ -8473,6 +8525,7 @@ int main(void) {
   test_monitor_volume();
   test_monitor_mute();
   test_latency_restores_monitoring();
+  test_latency_keeps_monitor_enabled_set_mid_measurement();
   test_monitor_clean_chain_not_recorded();
   test_monitor_input_not_recorded();
   test_two_monitored_inputs_dont_interfere();
