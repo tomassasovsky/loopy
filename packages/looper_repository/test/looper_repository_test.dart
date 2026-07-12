@@ -2844,6 +2844,44 @@ void main() {
       expect(engine.lastConfig?.playbackDeviceId, 'out-1');
     });
 
+    test('a reconnect re-applies the remembered rig (lanes + monitors)',
+        () async {
+      engine.nextSnapshot = runningSnapshot(devicePresent: true);
+      final repo = buildSupervised()
+        ..startEngine(const EngineConfig(playbackDeviceId: 'out-1'))
+        // Stage some live rig state: a monitor enable + a lane routing.
+        ..setMonitorInputEnabled(input: 0, enabled: true)
+        ..setLaneOutput(channel: 0, lane: 0, mask: 0x2);
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+
+      final monitorReapplyBefore =
+          engine.calls.where((c) => c == 'setMonitorInputEnabled').length;
+      final laneReapplyBefore =
+          engine.calls.where((c) => c == 'setLaneOutput').length;
+
+      // Device lost, then reappears → reconnect.
+      engine.nextSnapshot = runningSnapshot(devicePresent: false);
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+      engine.devices = const [pinned];
+      reconnectTicker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(startCount(), 2); // reconnected
+      // The reconnect went through startEngine, so the freshly-started engine
+      // received the remembered rig again — it did not come back at defaults.
+      expect(
+        engine.calls.where((c) => c == 'setMonitorInputEnabled').length,
+        greaterThan(monitorReapplyBefore),
+      );
+      expect(
+        engine.calls.where((c) => c == 'setLaneOutput').length,
+        greaterThan(laneReapplyBefore),
+      );
+    });
+
     test('never restarts the system default on transient loss', () async {
       engine.nextSnapshot = runningSnapshot(devicePresent: true);
       final repo = buildSupervised()
