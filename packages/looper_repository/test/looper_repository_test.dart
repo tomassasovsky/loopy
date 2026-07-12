@@ -644,6 +644,69 @@ void main() {
       expect(engine.lastMasterGain, 0.0);
     });
 
+    test('setRecordOffset is deferred until running, then re-applied', () {
+      final repo = buildRepo();
+      expect(repo.setRecordOffset(240), EngineResult.ok);
+      expect(engine.lastRecordOffset, isNull); // not pushed while stopped
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastRecordOffset, 240); // re-applied on start
+    });
+
+    test('setRecordOffset re-applies on every restart (device change)', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setRecordOffset(240);
+      expect(engine.lastRecordOffset, 240);
+
+      // A restart (reconnect / device switch) resets the engine's offset to 0,
+      // so the remembered compensation must be pushed again.
+      engine.lastRecordOffset = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastRecordOffset, 240);
+    });
+
+    test('setRecordOffset clamps a negative to zero', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setRecordOffset(-5);
+      expect(engine.lastRecordOffset, 0);
+    });
+
+    test('an engine-measured offset is captured from the poll and re-applied '
+        'on restart', () async {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      final sub = repo.looperState.listen((_) {});
+      addTearDown(sub.cancel);
+
+      // A measurement auto-sets the engine's offset (not via setRecordOffset);
+      // the poll must mirror it into the remembered value.
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        recordOffsetFrames: 240,
+      );
+      ticker.add(null);
+      await Future<void>.delayed(Duration.zero);
+
+      // A restart re-applies the CAPTURED offset, not a stale zero.
+      engine.lastRecordOffset = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastRecordOffset, 240);
+    });
+
     test('a per-lane effects chain is deferred then re-applied on start', () {
       final repo = buildRepo()
         ..setTrackEffects(
@@ -2257,8 +2320,13 @@ void main() {
       expect(repo.engineVersion, 'fake-engine');
     });
 
-    test('setRecordOffset forwards to the engine', () {
-      buildRepo().setRecordOffset(480);
+    test('setRecordOffset forwards to the engine while running', () {
+      // Now a cached setter (deferred until running, re-applied on restart), so
+      // it forwards while the engine is up — the deferred/restart paths are
+      // covered in the audio-config group.
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setRecordOffset(480);
       expect(engine.calls, contains('setRecordOffset'));
       expect(engine.lastRecordOffset, 480);
     });
