@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:looper_repository/src/models/audio_config.dart';
 import 'package:looper_repository/src/models/engine_status.dart';
+import 'package:looper_repository/src/models/input_monitor.dart';
 import 'package:looper_repository/src/models/lane.dart';
 import 'package:looper_repository/src/models/looper_state.dart';
 import 'package:looper_repository/src/models/plugin_descriptor.dart'
@@ -860,13 +861,10 @@ class LooperRepository {
     // enabled under session A would keep monitoring under session B (the F2
     // leftover class). Reset to the disabled defaults, then apply the rig's.
     final definedMonitors = {for (final m in rig.monitors) m.input};
-    final rememberedMonitors = {
-      ..._monitorInputEnabled.keys,
-      ..._monitorOutput.keys,
-      ..._monitorVolume.keys,
-      ..._monitorMute.keys,
-      ..._monitorEffects.keys,
-    };
+    // Snapshot the configured inputs before the reset loop mutates the maps.
+    // Resetting a monitor already at the disabled default is a no-op, so the
+    // default-omitting `allMonitors()` covers every input that needs clearing.
+    final rememberedMonitors = allMonitors().keys.toList();
     for (final input in rememberedMonitors) {
       if (definedMonitors.contains(input)) continue;
       setMonitorInputEnabled(input: input, enabled: false);
@@ -914,11 +912,38 @@ class LooperRepository {
       entry.key: List<TrackEffect>.unmodifiable(entry.value),
   };
 
-  /// Every remembered non-empty monitor effect chain, keyed by input.
-  Map<int, List<TrackEffect>> allMonitorEffects() => {
-    for (final entry in _monitorEffects.entries)
-      entry.key: List<TrackEffect>.unmodifiable(entry.value),
-  };
+  /// Every **configured** live monitor, keyed by input — the union of all
+  /// remembered monitor state (enable / routing / mix / effects), not just
+  /// inputs that carry an FX chain. A monitor equal to the disabled default is
+  /// omitted, so an absent input reads back as the disabled default on load.
+  ///
+  /// The single monitor-enumeration source of truth: a session save captures
+  /// this (so a dry-but-enabled monitor round-trips), the MonitorCubit
+  /// re-projects from it after a session load, and [applySession]'s reset walks
+  /// its keys.
+  Map<int, InputMonitor> allMonitors() {
+    final inputs = <int>{
+      ..._monitorInputEnabled.keys,
+      ..._monitorOutput.keys,
+      ..._monitorVolume.keys,
+      ..._monitorMute.keys,
+      ..._monitorEffects.keys,
+    };
+    final result = <int, InputMonitor>{};
+    for (final input in inputs) {
+      final monitor = InputMonitor(
+        input: input,
+        enabled: monitorEnabled(input),
+        outputMask: monitorOutput(input),
+        volume: monitorVolume(input),
+        muted: monitorMuted(input),
+        effects: monitorEffects(input),
+      );
+      // Skip inputs equal to the disabled default (no state worth persisting).
+      if (monitor != InputMonitor(input: input)) result[input] = monitor;
+    }
+    return result;
+  }
 
   /// Whether hardware [input]'s live monitor is enabled (remembered intent).
   bool monitorEnabled(int input) => _monitorInputEnabled[input] ?? false;
