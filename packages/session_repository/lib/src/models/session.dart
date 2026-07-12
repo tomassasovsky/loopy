@@ -99,6 +99,11 @@ class SessionLane {
   /// buffer).
   final int redoCount;
 
+  /// Maximum layers a lane can hold, mirroring the engine's `LE_POOL_SLOTS`
+  /// (one live buffer plus up to 255 undo/redo snapshots). A bundle claiming
+  /// more is rejected on load.
+  static const int maxLayers = 256;
+
   /// Index into [layers] of the live (currently playing) buffer.
   int get liveIndex => undoCount;
 
@@ -176,8 +181,35 @@ class SessionTrack {
               layers: [SessionLayer(file: json['stem'] as String)],
             ),
           ];
+    final channel = (json['channel'] as num).toInt();
+    for (final lane in lanes) {
+      final expected = lane.undoCount + 1 + lane.redoCount;
+      if (lane.undoCount < 0 || lane.redoCount < 0) {
+        throw SessionCorruptLayers(
+          channel: channel,
+          lane: lane.lane,
+          reason: 'negative undo/redo count',
+        );
+      }
+      if (lane.layers.length != expected) {
+        throw SessionCorruptLayers(
+          channel: channel,
+          lane: lane.lane,
+          reason:
+              '${lane.layers.length} layers but undoCount+1+redoCount == '
+              '$expected',
+        );
+      }
+      if (expected > SessionLane.maxLayers) {
+        throw SessionCorruptLayers(
+          channel: channel,
+          lane: lane.lane,
+          reason: '$expected layers exceeds the ${SessionLane.maxLayers} cap',
+        );
+      }
+    }
     return SessionTrack(
-      channel: (json['channel'] as num).toInt(),
+      channel: channel,
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       lanes: lanes,
