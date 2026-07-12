@@ -470,11 +470,16 @@ class LooperRepository {
         ..setAutoRecord(enabled: _autoRecord)
         ..setDefaultMultiple(multiple: _defaultMultiple)
         ..setMasterGain(_masterGain)
-        ..setRecordOffset(_recordOffset)
         // Master peak limiter on by default: a fresh start resets it to off, so
         // re-assert it here (like the rest) to guard the summed output against
         // driver clipping. No UI yet — this is a safety default.
         ..setLimiter(enabled: true);
+      // Re-apply the remembered record offset only when there IS compensation
+      // to restore: a fresh start already defaults to 0, so pushing 0 is a
+      // no-op that also clobbers the auto-measure boot path (which measures
+      // instead of restoring). A device change / reconnect with a real offset
+      // still gets it back.
+      if (_recordOffset > 0) _engine.setRecordOffset(_recordOffset);
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
