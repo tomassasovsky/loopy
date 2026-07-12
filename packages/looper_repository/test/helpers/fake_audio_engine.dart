@@ -446,25 +446,38 @@ class FakeAudioEngine implements AudioEngine {
     return Float32List(0);
   }
 
-  /// PCM passed to [importTrack], keyed by channel.
+  /// Lane-0 PCM passed to [importTrackLane], keyed by channel — the primary
+  /// import, kept for the single-lane assertions existing tests make.
   final Map<int, Float32List> importedTracks = {};
 
-  /// Result returned by [importTrack] once any [importFailCountdown] is spent.
+  /// PCM passed to [importTrackLane], keyed by `(channel, lane)`.
+  final Map<(int, int), Float32List> importedLanes = {};
+
+  /// Result returned by [importTrackLane] once any [importFailCountdown] is
+  /// spent.
   EngineResult importResult = EngineResult.ok;
 
-  /// If `> 0`, [importTrack] returns [EngineResult.invalid] this many times
-  /// (decrementing) before honoring [importResult] — exercises the
+  /// If `> 0`, the primary (lane 0) import returns [EngineResult.invalid] this
+  /// many times (decrementing) before honoring [importResult] — exercises the
   /// posted-clear ack retry in `applySession`.
   int importFailCountdown = 0;
 
   @override
-  EngineResult importTrack(int channel, Float32List pcm) {
-    calls.add('importTrack');
-    if (importFailCountdown > 0) {
+  EngineResult importTrack(int channel, Float32List pcm) =>
+      importTrackLane(channel, 0, pcm);
+
+  @override
+  EngineResult importTrackLane(int channel, int lane, Float32List pcm) {
+    calls.add('importTrackLane');
+    // Only the primary (lane 0) import races the clear ack in applySession.
+    if (lane == 0 && importFailCountdown > 0) {
       importFailCountdown--;
       return EngineResult.invalid;
     }
-    if (importResult.isOk) importedTracks[channel] = pcm;
+    if (importResult.isOk) {
+      importedLanes[(channel, lane)] = pcm;
+      if (lane == 0) importedTracks[channel] = pcm;
+    }
     return importResult;
   }
 

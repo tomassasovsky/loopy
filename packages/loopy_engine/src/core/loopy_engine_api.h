@@ -1133,9 +1133,23 @@ LE_EXPORT int32_t le_engine_export_track_lane(le_engine* engine,
 /* Loads `frames` mono frames of PCM into track `channel`'s buffer and records
  * the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
  * tail is zeroed. The track starts playing on le_engine_commit_session. Returns
- * LE_OK or an le_result error. */
+ * LE_OK or an le_result error. Equivalent to le_engine_import_track_lane with
+ * lane == 0. */
 LE_EXPORT int32_t le_engine_import_track(le_engine* engine, int32_t channel,
                                          const float* pcm, int32_t frames);
+
+/* Loads `frames` mono frames of PCM into track `channel`'s lane `lane`, the
+ * multi-lane restore counterpart of le_engine_export_track_lane. The track must
+ * be EMPTY (LE_ERR_INVALID otherwise); the unfilled tail is zeroed. Importing a
+ * lane >= the current active count grows lane_count to activate it for playback
+ * (the new lane takes its standard record route, input == lane index). Lane 0 is
+ * the primary import and resets the track's redo/empty accounting; additional
+ * lanes only fill their own buffer (they share the track's one undo span). Call
+ * lane 0 first, then each further lane, then le_engine_commit_session. Returns
+ * LE_OK or an le_result error. */
+LE_EXPORT int32_t le_engine_import_track_lane(le_engine* engine, int32_t channel,
+                                              int32_t lane, const float* pcm,
+                                              int32_t frames);
 
 /* Establishes the master loop at `base_frames` and starts every imported track
  * (EMPTY with a loaded length) playing at its whole-loop multiple

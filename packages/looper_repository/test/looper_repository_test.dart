@@ -2464,6 +2464,28 @@ void main() {
       tracks: [for (var i = 0; i < count; i++) const TrackSnapshot.empty()],
     );
 
+    /// A single-lane (lane 0) rig track holding one live layer of [pcm].
+    SessionRigTrack rigTrack(
+      int channel,
+      Float32List pcm, {
+      double volume = 1,
+      bool muted = false,
+      int outputMask = 0x3,
+      int inputChannel = 0,
+    }) => SessionRigTrack(
+      channel: channel,
+      lanes: [
+        SessionRigLane(
+          lane: 0,
+          layers: [pcm],
+          volume: volume,
+          muted: muted,
+          outputMask: outputMask,
+          inputChannel: inputChannel,
+        ),
+      ],
+    );
+
     test(
       'clears every track, imports stems, commits, and applies mix',
       () async {
@@ -2475,9 +2497,7 @@ void main() {
         await repo.applySession(
           SessionRig(
             baseLengthFrames: 4,
-            tracks: [
-              SessionRigTrack(channel: 0, pcm: pcm, volume: 0.5, muted: true),
-            ],
+            tracks: [rigTrack(0, pcm, volume: 0.5, muted: true)],
           ),
           clearPollInterval: Duration.zero,
         );
@@ -2487,7 +2507,7 @@ void main() {
           containsAllInOrder(<String>[
             'clear',
             'clear',
-            'importTrack',
+            'importTrackLane',
             'commitSession',
             'setLaneVolume',
             'setLaneMute',
@@ -2510,7 +2530,7 @@ void main() {
         clearPollInterval: Duration.zero,
       );
 
-      expect(engine.calls, isNot(contains('importTrack')));
+      expect(engine.calls, isNot(contains('importTrackLane')));
       expect(engine.calls, isNot(contains('commitSession')));
       expect(engine.committedBaseFrames, isNull);
     });
@@ -2529,12 +2549,7 @@ void main() {
         SessionRig(
           baseLengthFrames: 4,
           tracks: [
-            SessionRigTrack(
-              channel: 0,
-              pcm: Float32List.fromList([1, 1, 1, 1]),
-              volume: 0.5,
-              muted: false,
-            ),
+            rigTrack(0, Float32List.fromList([1, 1, 1, 1]), volume: 0.5),
           ],
         ),
         clearPollInterval: Duration.zero,
@@ -2673,12 +2688,7 @@ void main() {
 
         final pcm = Float32List.fromList([1, 1, 1, 1]);
         await repo.applySession(
-          SessionRig(
-            baseLengthFrames: 4,
-            tracks: [
-              SessionRigTrack(channel: 0, pcm: pcm, volume: 1, muted: false),
-            ],
-          ),
+          SessionRig(baseLengthFrames: 4, tracks: [rigTrack(0, pcm)]),
           clearPollInterval: Duration.zero,
         );
 
@@ -2717,12 +2727,7 @@ void main() {
           SessionRig(
             baseLengthFrames: 4,
             tracks: [
-              SessionRigTrack(
-                channel: 0,
-                pcm: Float32List.fromList([1, 1, 1, 1]),
-                volume: 1,
-                muted: false,
-              ),
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
             ],
           ),
           clearPollInterval: Duration.zero,
@@ -2730,6 +2735,60 @@ void main() {
         throwsStateError,
       );
     });
+
+    test(
+      'imports every lane of a multi-lane track and restores per-lane mix',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(1);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        final lane0 = Float32List.fromList([1, 1, 1, 1]);
+        final lane1 = Float32List.fromList([2, 2, 2, 2]);
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              SessionRigTrack(
+                channel: 0,
+                lanes: [
+                  SessionRigLane(
+                    lane: 0,
+                    layers: [lane0],
+                    volume: 0.5,
+                    muted: false,
+                    outputMask: 0x1,
+                    inputChannel: 0,
+                  ),
+                  SessionRigLane(
+                    lane: 1,
+                    layers: [lane1],
+                    volume: 0.25,
+                    muted: true,
+                    outputMask: 0x2,
+                    inputChannel: 1,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.importedLanes[(0, 0)], lane0);
+        expect(engine.importedLanes[(0, 1)], lane1);
+        expect(engine.laneVol[(0, 0)], 0.5);
+        expect(engine.laneVol[(0, 1)], 0.25);
+        expect(engine.laneMute[(0, 1)], isTrue);
+        // Per-lane routing is restored too, not just the mix.
+        expect(engine.laneInput[(0, 0)], 0);
+        expect(engine.laneInput[(0, 1)], 1);
+        expect(engine.laneOutput[(0, 0)], 0x1);
+        expect(engine.laneOutput[(0, 1)], 0x2);
+        expect(engine.laneCount[0], 2);
+        expect(repo.laneCount(0), 2);
+      },
+    );
   });
 
   group('chain and monitor read accessors', () {

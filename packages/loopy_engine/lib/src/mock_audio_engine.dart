@@ -552,6 +552,10 @@ class MockAudioEngine implements AudioEngine {
   EngineResult importTrack(int channel, Float32List pcm) => _requireRunning();
 
   @override
+  EngineResult importTrackLane(int channel, int lane, Float32List pcm) =>
+      _requireRunning();
+
+  @override
   EngineResult commitSession(int baseFrames) => _requireRunning();
 
   /// The `captureDir` passed to the most recent [perfArm] call, for test

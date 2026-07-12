@@ -819,9 +819,12 @@ class LooperRepository {
     for (var channel = 0; channel < trackCount; channel++) {
       clear(channel: channel);
     }
-    // The session's mix replaces the remembered per-lane mix wholesale: purge
-    // it all (not just the mutes [clear] forgot) so the restart replay carries
-    // only the loaded values, then re-set from the rig below.
+    // The session's per-lane config replaces the remembered one wholesale:
+    // purge it all (not just the mutes [clear] forgot) so the restart replay
+    // carries only the loaded values, then re-set from the rig below.
+    _laneCount.clear();
+    _laneInput.clear();
+    _laneOutput.clear();
     _laneVolume.clear();
     _laneMute.clear();
     if (!await _awaitCleared(clearPollInterval, clearPollAttempts)) {
@@ -833,23 +836,47 @@ class LooperRepository {
       // import that races a pending state flip and expects a trivial retry. The
       // ack lands within a buffer or two, so cap the retry low (NOT the full
       // clear budget, which — times track count — could stall a load for
-      // seconds on a genuinely bad stem before surfacing the error).
+      // seconds on a genuinely bad stem before surfacing the error). Only the
+      // first (lane 0) import can race the clear ack; once it lands the track
+      // stays EMPTY until commit, so sibling lanes import without retry.
       final importRetries = clearPollAttempts < _maxImportAckRetries
           ? clearPollAttempts
           : _maxImportAckRetries;
-      var result = _engine.importTrack(track.channel, track.pcm);
+      final primary = track.lanes.first;
+      var result = _engine.importTrackLane(
+        track.channel,
+        primary.lane,
+        primary.livePcm,
+      );
       for (
         var attempt = 0;
         !result.isOk && attempt < importRetries;
         attempt++
       ) {
         await Future<void>.delayed(clearPollInterval);
-        result = _engine.importTrack(track.channel, track.pcm);
+        result = _engine.importTrackLane(
+          track.channel,
+          primary.lane,
+          primary.livePcm,
+        );
       }
       if (!result.isOk) {
         throw StateError(
           'failed to import track ${track.channel}: ${result.name}',
         );
+      }
+      for (final lane in track.lanes.skip(1)) {
+        final r = _engine.importTrackLane(
+          track.channel,
+          lane.lane,
+          lane.livePcm,
+        );
+        if (!r.isOk) {
+          throw StateError(
+            'failed to import track ${track.channel} lane ${lane.lane}: '
+            '${r.name}',
+          );
+        }
       }
     }
     // An empty session (or a legacy save carrying a ghost grid with no
@@ -862,12 +889,30 @@ class LooperRepository {
       }
     }
 
-    // Session stems are lane-0-only for now (full multi-lane stems are a
-    // follow-up), so restore mix settings onto lane 0 — through the cached
-    // setters, so `_laneVolume` / `_laneMute` stay truthful.
+    // Restore per-lane routing / mix through the cached setters so the caches
+    // stay truthful (and a restart replays them). Lane count first — so an
+    // added lane is activated — then per-lane input / output / volume / mute.
     for (final track in rig.tracks) {
-      setLaneVolume(track.volume, channel: track.channel, lane: 0);
-      setLaneMute(muted: track.muted, channel: track.channel, lane: 0);
+      // Activate up to the highest imported lane index — not the lane *count* —
+      // so a non-contiguous set (a middle lane dropped on capture/decode) does
+      // not deactivate the top lane the imports just filled.
+      final laneCount =
+          track.lanes.map((l) => l.lane).reduce((a, b) => a > b ? a : b) + 1;
+      setLaneCount(channel: track.channel, count: laneCount);
+      for (final lane in track.lanes) {
+        setLaneInput(
+          channel: track.channel,
+          lane: lane.lane,
+          inputChannel: lane.inputChannel,
+        );
+        setLaneOutput(
+          channel: track.channel,
+          lane: lane.lane,
+          mask: lane.outputMask,
+        );
+        setLaneVolume(lane.volume, channel: track.channel, lane: lane.lane);
+        setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
+      }
     }
 
     // Chains: reset every remembered chain the rig does not define, then

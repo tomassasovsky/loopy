@@ -2077,12 +2077,13 @@ class LoopyEngineBindings {
       .asFunction<int Function(ffi.Pointer<le_engine>)>();
 
   /// Starts an offline render of the finalized capture at `capture_dir`: spawns
-  /// a worker thread that writes `stems/dry/track<channel>.wav` under
-  /// `capture_dir` for every non-empty track, with poll-based progress. Returns
-  /// LE_OK once the worker thread is launched (this call never blocks on the
-  /// render itself), LE_ERR_INVALID for a null engine/capture_dir or an empty
-  /// capture_dir, or LE_ERR_ALREADY_RUNNING if a render is already active on
-  /// this engine.
+  /// a worker thread that writes `stems/dry/track<channel>.wav` +
+  /// `stems/wet/track<channel>.wav` under `capture_dir` for every non-empty
+  /// track, then `stems/wet/master.wav` once every channel has been processed,
+  /// with poll-based progress. Returns LE_OK once the worker thread is
+  /// launched (this call never blocks on the render itself), LE_ERR_INVALID
+  /// for a null engine/capture_dir or an empty capture_dir, or
+  /// LE_ERR_ALREADY_RUNNING if a render is already active on this engine.
   int le_perf_render_begin(
     ffi.Pointer<le_engine> engine,
     ffi.Pointer<ffi.Char> capture_dir,
@@ -2150,8 +2151,11 @@ class LoopyEngineBindings {
   /// Reads render result `index`'s (0..track_count-1, from the most recent
   /// le_perf_render_poll) track channel and outcome (`*succeeded`: 1 if its
   /// stem was written, 0 on a per-stem failure — the umbrella's "partial
-  /// success" posture: one failed stem does not abort the others). Returns
-  /// LE_OK, or LE_ERR_INVALID for a null engine / out-of-range index.
+  /// success" posture: one failed stem does not abort the others). `*succeeded`
+  /// reflects BOTH the dry and wet stem for that channel — either one failing
+  /// marks the track failed, since a wet stem with no matching dry source is
+  /// not a usable partial result. Returns LE_OK, or LE_ERR_INVALID for a null
+  /// engine / out-of-range index.
   int le_perf_render_track_status(
     ffi.Pointer<le_engine> engine,
     int index,
@@ -2346,7 +2350,8 @@ class LoopyEngineBindings {
   /// Loads `frames` mono frames of PCM into track `channel`'s buffer and records
   /// the length. The track must be EMPTY (LE_ERR_INVALID otherwise); the unfilled
   /// tail is zeroed. The track starts playing on le_engine_commit_session. Returns
-  /// LE_OK or an le_result error.
+  /// LE_OK or an le_result error. Equivalent to le_engine_import_track_lane with
+  /// lane == 0.
   int le_engine_import_track(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -2375,6 +2380,54 @@ class LoopyEngineBindings {
   late final _le_engine_import_track = _le_engine_import_trackPtr
       .asFunction<
         int Function(ffi.Pointer<le_engine>, int, ffi.Pointer<ffi.Float>, int)
+      >();
+
+  /// Loads `frames` mono frames of PCM into track `channel`'s lane `lane`, the
+  /// multi-lane restore counterpart of le_engine_export_track_lane. The track must
+  /// be EMPTY (LE_ERR_INVALID otherwise); the unfilled tail is zeroed. Importing a
+  /// lane >= the current active count grows lane_count to activate it for playback
+  /// (the new lane takes its standard record route, input == lane index). Lane 0 is
+  /// the primary import and resets the track's redo/empty accounting; additional
+  /// lanes only fill their own buffer (they share the track's one undo span). Call
+  /// lane 0 first, then each further lane, then le_engine_commit_session. Returns
+  /// LE_OK or an le_result error.
+  int le_engine_import_track_lane(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int lane,
+    ffi.Pointer<ffi.Float> pcm,
+    int frames,
+  ) {
+    return _le_engine_import_track_lane(
+      engine,
+      channel,
+      lane,
+      pcm,
+      frames,
+    );
+  }
+
+  late final _le_engine_import_track_lanePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(
+            ffi.Pointer<le_engine>,
+            ffi.Int32,
+            ffi.Int32,
+            ffi.Pointer<ffi.Float>,
+            ffi.Int32,
+          )
+        >
+      >('le_engine_import_track_lane');
+  late final _le_engine_import_track_lane = _le_engine_import_track_lanePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<le_engine>,
+          int,
+          int,
+          ffi.Pointer<ffi.Float>,
+          int,
+        )
       >();
 
   /// Establishes the master loop at `base_frames` and starts every imported track

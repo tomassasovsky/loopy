@@ -12,8 +12,11 @@ import 'package:session_repository/src/session_name.dart';
 import 'package:wav_codec/wav_codec.dart';
 
 /// The decoded contents of a `.loopy` session bundle: the manifest plus each
-/// track's stem PCM, keyed by channel.
-typedef SessionBundle = ({Session session, Map<int, Float32List> stems});
+/// lane's live-buffer PCM, keyed by `(channel, lane)`.
+typedef SessionBundle = ({
+  Session session,
+  Map<(int, int), Float32List> laneStems,
+});
 
 /// The effect-chain data a [SessionRepository.save] persists that the engine
 /// snapshot alone cannot supply: the lane chains and monitor configurations.
@@ -199,13 +202,17 @@ class SessionRepository {
     await Directory(directory).create(recursive: true);
 
     for (final track in captured.tracks) {
-      await File('$directory/${track.stem}').writeAsBytes(
-        WavCodec.encodeFloat32(
-          samples: captured.stems[track.channel]!,
-          sampleRate: captured.snapshot.sampleRate,
-          channels: 1,
-        ),
-      );
+      for (final lane in track.lanes) {
+        for (final layer in lane.layers) {
+          await File('$directory/${layer.file}').writeAsBytes(
+            WavCodec.encodeFloat32(
+              samples: captured.laneStems[(track.channel, lane.lane)]!,
+              sampleRate: captured.snapshot.sampleRate,
+              channels: 1,
+            ),
+          );
+        }
+      }
     }
 
     final session = _sessionFrom(captured, chains);
@@ -227,7 +234,7 @@ class SessionRepository {
   }
 
   /// Reads and validates the `.loopy` bundle [directory]: decodes the manifest
-  /// and every referenced stem WAV. Pure I/O — the engine is never driven;
+  /// and every lane's live-buffer WAV. Pure I/O — the engine is never driven;
   /// the caller (the bloc layer) hands the result to the looper repository's
   /// `applySession`, the one apply path.
   ///
@@ -253,12 +260,19 @@ class SessionRepository {
       );
     }
 
-    final stems = <int, Float32List>{};
+    // Decode each lane's live buffer (`layers[liveIndex]`). Part 1 restores the
+    // live audio per lane; the undo/redo layers are a later revision.
+    final laneStems = <(int, int), Float32List>{};
     for (final track in session.tracks) {
-      final bytes = await File('$directory/${track.stem}').readAsBytes();
-      stems[track.channel] = WavCodec.decodeFloat32(bytes).samples;
+      for (final lane in track.lanes) {
+        final live = lane.layers[lane.liveIndex];
+        final bytes = await File('$directory/${live.file}').readAsBytes();
+        laneStems[(track.channel, lane.lane)] = WavCodec.decodeFloat32(
+          bytes,
+        ).samples;
+      }
     }
-    return (session: session, stems: stems);
+    return (session: session, laneStems: laneStems);
   }
 
   /// Exports a single mixed-down WAV of the current session to [path].
@@ -275,30 +289,33 @@ class SessionRepository {
     );
   }
 
-  /// Exports each track's loop as a separate stem WAV in [directory].
+  /// Exports every lane of every track as a separate live-buffer WAV in
+  /// [directory], named as in a saved bundle (`track{c}_lane{l}_L0.wav`).
   Future<void> exportStems(String directory) async {
     await _awaitLayersSettled();
     final captured = _capture();
     await Directory(directory).create(recursive: true);
     for (final track in captured.tracks) {
-      await File('$directory/${track.stem}').writeAsBytes(
-        WavCodec.encodeFloat32(
-          samples: captured.stems[track.channel]!,
-          sampleRate: captured.snapshot.sampleRate,
-          channels: 1,
-        ),
-      );
+      for (final lane in track.lanes) {
+        await File('$directory/${lane.layers.first.file}').writeAsBytes(
+          WavCodec.encodeFloat32(
+            samples: captured.laneStems[(track.channel, lane.lane)]!,
+            sampleRate: captured.snapshot.sampleRate,
+            channels: 1,
+          ),
+        );
+      }
     }
   }
 
-  /// Reads the engine snapshot and each non-empty track's PCM once.
+  /// Reads the engine snapshot and each settled track's per-lane PCM once.
   ///
-  /// Export is **lane-0 only** for this pass: `exportTrack` returns the track's
-  /// primary lane PCM and the per-track [SessionTrack] mix mirrors lane 0. Full
-  /// multi-lane stems are a documented follow-up.
+  /// Every active lane's live buffer is exported into its own layer (part 1
+  /// writes exactly one live layer per lane; the undo/redo layers are a later
+  /// revision). A track with no non-empty lane is skipped.
   _Capture _capture() {
     final snapshot = _engine.snapshot();
-    final stems = <int, Float32List>{};
+    final laneStems = <(int, int), Float32List>{};
     final tracks = <SessionTrack>[];
     for (var i = 0; i < snapshot.tracks.length; i++) {
       final track = snapshot.tracks[i];
@@ -309,21 +326,36 @@ class SessionRepository {
         continue;
       }
       if (track.lengthFrames <= 0) continue;
-      final pcm = _engine.exportTrack(i);
-      if (pcm.isEmpty) continue;
-      stems[i] = pcm;
+      // A settled track always publishes its active lanes (>= 1); a lane whose
+      // buffer is empty is skipped, and a track left with no lane is dropped.
+      final lanes = <SessionLane>[];
+      for (var l = 0; l < track.lanes.length; l++) {
+        final pcm = _engine.exportTrackLane(i, l);
+        if (pcm.isEmpty) continue;
+        laneStems[(i, l)] = pcm;
+        final laneSnap = track.lanes[l];
+        lanes.add(
+          SessionLane(
+            lane: l,
+            volume: laneSnap.volume,
+            muted: laneSnap.muted,
+            outputMask: laneSnap.outputMask,
+            inputChannel: laneSnap.inputChannel,
+            layers: [SessionLayer(file: 'track${i}_lane${l}_L0.wav')],
+          ),
+        );
+      }
+      if (lanes.isEmpty) continue;
       tracks.add(
         SessionTrack(
           channel: i,
-          volume: track.volume,
-          muted: track.muted,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
-          stem: 'track$i.wav',
+          lanes: lanes,
         ),
       );
     }
-    return _Capture(snapshot: snapshot, stems: stems, tracks: tracks);
+    return _Capture(snapshot: snapshot, laneStems: laneStems, tracks: tracks);
   }
 
   Session _sessionFrom(_Capture captured, SessionChains chains) {
@@ -344,31 +376,32 @@ class SessionRepository {
     );
   }
 
-  /// Sums the unmuted tracks (at their gains) over the session period — the LCM
-  /// of the track lengths, so every track's loop closes cleanly.
+  /// Sums every unmuted lane (at its gain) over the session period — the LCM of
+  /// the lane lengths, so every lane's loop closes cleanly. Lanes are summed,
+  /// never merged: a two-lane track contributes both lanes to the mix.
   Float32List _mixdown(_Capture captured) {
-    const channels = 1; // per-track buffers are mono
-    final active = captured.tracks.where((t) => !t.muted).toList();
-    if (active.isEmpty || channels <= 0) return Float32List(0);
+    final active = <(Float32List, double)>[];
+    for (final track in captured.tracks) {
+      for (final lane in track.lanes) {
+        if (lane.muted) continue;
+        final pcm = captured.laneStems[(track.channel, lane.lane)];
+        if (pcm == null || pcm.isEmpty) continue;
+        active.add((pcm, lane.volume));
+      }
+    }
+    if (active.isEmpty) return Float32List(0);
 
     var period = 1;
-    for (final track in active) {
-      final frames = captured.stems[track.channel]!.length ~/ channels;
-      if (frames > 0) period = _lcm(period, frames);
+    for (final (pcm, _) in active) {
+      period = _lcm(period, pcm.length);
     }
 
-    final mix = Float32List(period * channels);
-    for (final track in active) {
-      final pcm = captured.stems[track.channel]!;
-      final frames = pcm.length ~/ channels;
+    final mix = Float32List(period);
+    for (final (pcm, volume) in active) {
+      final frames = pcm.length;
       if (frames == 0) continue;
-      final volume = track.volume;
       for (var f = 0; f < period; f++) {
-        final srcFrame = (f % frames) * channels;
-        final dstFrame = f * channels;
-        for (var c = 0; c < channels; c++) {
-          mix[dstFrame + c] += pcm[srcFrame + c] * volume;
-        }
+        mix[f] += pcm[f % frames] * volume;
       }
     }
     return mix;
@@ -407,11 +440,11 @@ int _lcm(int a, int b) => (a == 0 || b == 0) ? 0 : (a ~/ _gcd(a, b)) * b;
 class _Capture {
   const _Capture({
     required this.snapshot,
-    required this.stems,
+    required this.laneStems,
     required this.tracks,
   });
 
   final EngineSnapshot snapshot;
-  final Map<int, Float32List> stems;
+  final Map<(int, int), Float32List> laneStems;
   final List<SessionTrack> tracks;
 }

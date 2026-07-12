@@ -384,8 +384,17 @@ abstract interface class SessionIo {
 
   /// Loads mono [pcm] into the EMPTY track [channel] for a session restore.
   /// Pair with [commitSession] to establish the master and play. Returns
-  /// [EngineResult.invalid] if the track is not empty.
+  /// [EngineResult.invalid] if the track is not empty. Equivalent to
+  /// [importTrackLane] with `lane == 0`.
   EngineResult importTrack(int channel, Float32List pcm);
+
+  /// Loads mono [pcm] into lane [lane] of the EMPTY track [channel] for a
+  /// multi-lane session restore — the import counterpart of [exportTrackLane].
+  /// Importing a lane beyond the current active count activates it for
+  /// playback. Import lane 0 first (it resets the track's redo/empty state),
+  /// then each further lane, then [commitSession]. Returns
+  /// [EngineResult.invalid] if the track is not empty.
+  EngineResult importTrackLane(int channel, int lane, Float32List pcm);
 
   /// Establishes the master loop at [baseFrames] and starts every imported
   /// track playing at its whole-loop multiple.
