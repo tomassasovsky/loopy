@@ -56,6 +56,19 @@ void main() {
       expect(find.text('+6.0 dB'), findsOneWidget);
     });
 
+    testWidgets('exposes its label as the slider accessible name', (
+      tester,
+    ) async {
+      // WCAG 4.1.2: the knob must announce WHAT it controls, not only its
+      // value. The label ("VOL" here; a param name for a hosted-plugin knob)
+      // is the slider node's accessible name; its value is the readout.
+      await tester.pumpApp(build(value: 1, max: 2, onChanged: (_) {}));
+
+      final node = tester.getSemantics(find.byType(SignalKnob));
+      expect(node.label, 'VOL');
+      expect(node.value, '0.0 dB');
+    });
+
     testWidgets('arrow keys nudge the focused knob', (tester) async {
       double? changed;
       await tester.pumpApp(build(value: 0.5, onChanged: (v) => changed = v));

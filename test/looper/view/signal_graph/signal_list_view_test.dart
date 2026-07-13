@@ -84,6 +84,21 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets(
+      'every tap target has a semantic label (labeledTapTargetGuideline)',
+      (tester) async {
+        // The regression net for this surface's hand-labeling: a tappable node
+        // added without a Semantics label (an icon-only IconButton, a bare
+        // GestureDetector, a FocusableTapTarget with no label) fails it.
+        // A track with a lane exercises the routing chips, mute, and knob.
+        final handle = tester.ensureSemantics();
+        seed(stateWith());
+        await pump(tester);
+        await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+        handle.dispose();
+      },
+    );
+
     testWidgets('renders an input/output row per channel and a track row', (
       tester,
     ) async {
