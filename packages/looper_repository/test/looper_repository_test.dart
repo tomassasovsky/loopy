@@ -2631,6 +2631,35 @@ void main() {
       expect(engine.monitorInputEnabled[1], isFalse);
     });
 
+    test("resets a leftover track's lane count/routing the rig omits — the "
+        "engine must not keep session A's lanes for a record", () async {
+      engine.nextSnapshot = clearedSnapshot(2);
+      // Session A configured track 0 with two lanes recording inputs 3 and 5.
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLaneCount(channel: 0, count: 2)
+        ..setLaneInput(channel: 0, lane: 0, inputChannel: 3)
+        ..setLaneInput(channel: 0, lane: 1, inputChannel: 5)
+        ..setLaneOutput(channel: 0, lane: 0, mask: 0x4);
+      addTearDown(repo.dispose);
+      expect(engine.laneCount[0], 2);
+
+      // Session B leaves track 0 empty (defines no track 0). `clear` does not
+      // reset the engine's lane_count/routing, so without the countermand a
+      // record into track 0 would record 2 lanes on inputs 3+5.
+      await repo.applySession(
+        const SessionRig(),
+        clearPollInterval: Duration.zero,
+      );
+
+      // Engine reset to a single fresh lane (lane 0 records input 0 to the
+      // first output pair), matching the purged cache — no session-A leftover.
+      expect(engine.laneCount[0], 1);
+      expect(engine.laneInput[(0, 0)], 0);
+      expect(engine.laneOutput[(0, 0)], 0x3);
+      expect(repo.laneCount(0), 1);
+    });
+
     test(
       'applies the rig chains and monitors through the cached setters',
       () async {

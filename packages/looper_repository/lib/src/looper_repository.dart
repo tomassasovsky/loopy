@@ -831,6 +831,28 @@ class LooperRepository {
       throw StateError('engine did not clear before applying the session');
     }
 
+    // Countermand the live engine's leftover lane count/routing. `clear` above
+    // resets a track's audio/state/mutes but NOT its lane_count or per-lane
+    // input/output, and the cache purge only fixes the restart replay — so a
+    // track this session leaves empty would still RECORD the prior session's
+    // lane count/inputs (the record path reads the cache, but the engine records
+    // at its own stale lane_count). Reset every track to the fresh configure
+    // defaults (lane_count 1; lane 0 records input 0 to the first output pair,
+    // matching le_lane_reset) so the engine agrees with the purged caches; the
+    // rig restore below re-grows and re-routes the tracks this session defines.
+    // Safe before the import — le_engine_import_track_lane fills any
+    // empty-track lane buffer directly and never reads lane_count.
+    if (_intendRunning) {
+      for (var channel = 0; channel < trackCount; channel++) {
+        _engine
+          ..setLaneInput(channel: channel, lane: 0, inputChannel: 0)
+          ..setLaneOutput(channel: channel, lane: 0, mask: 0x3)
+          ..setLaneVolume(1, channel: channel)
+          ..setLaneMute(muted: false, channel: channel)
+          ..setLaneCount(channel: channel, count: 1);
+      }
+    }
+
     for (final track in rig.tracks) {
       // A clear posted just above may not be acked yet — the engine rejects an
       // import that races a pending state flip and expects a trivial retry. The
