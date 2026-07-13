@@ -458,6 +458,10 @@
     "worktree",
     "worktrees",
     "writeups",
-    "xattr"
+    "xattr",
+    "allpass",
+    "constexpr",
+    "DCMAKE",
+    "samplerate"
   ]
 }
