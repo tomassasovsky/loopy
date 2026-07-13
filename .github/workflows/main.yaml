@@ -158,6 +158,25 @@ jobs:
       - run: flutter pub get
       - run: flutter build macos --debug --flavor development --target lib/main_development.dart
 
+  # Build the seven Loopy FX VST3 plugins (packages/loopy_engine/vst3) and run
+  # their CTest suite: GUID-drift, wrapper parameter round-trip, golden-parity
+  # vs the engine DSP, and a per-plugin dlopen load-smoke against the assembled
+  # bundle. This is the FIRST CI coverage of the plugins — they previously built
+  # only in a Darwin-gated block of run_native_tests.sh that ran on no runner
+  # (that block was removed; CTest is now the single definition). macOS only for
+  # now: the CMake project is macOS-gated (Windows = part 13, Linux = part 14,
+  # which add sibling vst3-plugins-{windows,linux} jobs). Debug config gives the
+  # SDK its expected DEVELOPMENT=1. cmake ships on the macos-latest image.
+  vst3-plugins-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure + build + test the VST3 plugins
+        run: |
+          cmake -S packages/loopy_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/vst3
+          ctest --test-dir build/vst3 --output-on-failure
+
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
     with:
