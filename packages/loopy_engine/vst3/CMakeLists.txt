@@ -74,7 +74,13 @@ endif()
 # without also having to build ../src's own loopy_engine SHARED target
 # (which has its own, unrelated per-OS device/MIDI dependencies out of scope
 # here).
-add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_BINARY_DIR}/engine_src")
+# EXCLUDE_FROM_ALL: pull in loopy_dsp_core's definition without adding ../src's
+# own loopy_engine SHARED target to the default build. That SHARED lib builds on
+# macOS via the CocoaPods podspec (Classes/ forwarders), NOT this CMake, so a
+# plain `cmake --build` (all) of this project must not try to link it — it only
+# needs loopy_dsp_core + core_plugin_disabled_stub, which build on demand when
+# the plugin/test targets reference them.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../src" "${CMAKE_CURRENT_BINARY_DIR}/engine_src" EXCLUDE_FROM_ALL)
 
 # --- core_plugin_disabled_stub: satisfies le_plugin_slot_process (D-LINK) ---
 # engine_fx.c's LE_FX_PLUGIN row calls this unconditionally, with no #ifdef
