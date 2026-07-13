@@ -1,0 +1,132 @@
+#include "processor.h"
+
+#include <cstdlib>
+
+#include "pluginterfaces/base/fstrdefs.h"
+#include "pluginterfaces/base/ibstream.h"
+#include "pluginterfaces/vst/ivstparameterchanges.h"
+#include "pluginterfaces/vst/vstspeaker.h"
+
+using namespace Steinberg;
+using namespace Steinberg::Vst;
+
+namespace loopy_vst3_echo {
+
+Processor::Processor() { setControllerClass(kControllerUID); }
+
+Processor::~Processor() = default;
+
+tresult PLUGIN_API Processor::initialize(FUnknown* context) {
+  tresult result = AudioEffect::initialize(context);
+  if (result != kResultOk) return result;
+
+  addAudioInput(STR16("Stereo In"), Vst::SpeakerArr::kStereo);
+  addAudioOutput(STR16("Stereo Out"), Vst::SpeakerArr::kStereo);
+
+  types_[0] = LE_FX_ECHO;
+  le_fx_defaults(LE_FX_ECHO, params_[0]);
+  if (le_fx_prepare(&fx_, 0, LE_FX_ECHO, kEchoCapFrames) != LE_OK) {
+    return kResultFalse;
+  }
+  return kResultOk;
+}
+
+tresult PLUGIN_API Processor::terminate() {
+  // Slot 0 is fixed to LE_FX_ECHO for this processor's whole lifetime (only
+  // fx_stereo_ring_prepare's delay[0][0]/[1] rings are ever allocated), so
+  // le_fx_free_octaver here is a defensive no-op (its buffers are already
+  // NULL, and free(NULL) is a no-op) — called anyway for parity with the
+  // engine's own full slot-teardown pattern (engine.c's le_lane_reset /
+  // le_monitor_input_reset), in case a future change to this file's scope
+  // ever reuses fx_ for a different effect type.
+  free(fx_.delay[0][0]);
+  fx_.delay[0][0] = nullptr;
+  free(fx_.delay[0][1]);
+  fx_.delay[0][1] = nullptr;
+  le_fx_free_octaver(&fx_, 0);
+  return AudioEffect::terminate();
+}
+
+tresult PLUGIN_API Processor::setActive(TBool state) {
+  if (state) le_fx_entry_reset(&fx_, 0);
+  return AudioEffect::setActive(state);
+}
+
+tresult PLUGIN_API Processor::process(ProcessData& data) {
+  // Drain queued param changes (last point per queue wins — block-rate, not
+  // sample-accurate automation; matches D-SEAM's "drive the existing DSP
+  // as-is" scope for this pilot).
+  if (IParameterChanges* changes = data.inputParameterChanges) {
+    const int32 count = changes->getParameterCount();
+    for (int32 i = 0; i < count; ++i) {
+      IParamValueQueue* queue = changes->getParameterData(i);
+      if (!queue) continue;
+      const int32 points = queue->getPointCount();
+      if (points <= 0) continue;
+      int32 sampleOffset = 0;
+      ParamValue value = 0.0;
+      if (queue->getPoint(points - 1, sampleOffset, value) != kResultTrue) continue;
+      switch (queue->getParameterId()) {
+        case kTimeId: params_[0][0] = static_cast<float>(value); break;
+        case kFeedbackId: params_[0][1] = static_cast<float>(value); break;
+        case kMixId: params_[0][2] = static_cast<float>(value); break;
+        default: break;
+      }
+    }
+  }
+
+  if (data.numSamples <= 0 || data.numInputs == 0 || data.numOutputs == 0) {
+    return kResultOk;
+  }
+
+  AudioBusBuffers& in = data.inputs[0];
+  AudioBusBuffers& out = data.outputs[0];
+  if (in.numChannels == 0 || out.numChannels == 0 || !in.channelBuffers32 ||
+      !out.channelBuffers32) {
+    return kResultOk;
+  }
+
+  // initialize() declares a stereo bus, but this processor never overrides
+  // setBusArrangements — the AudioEffect base accepts whatever arrangement a
+  // host renegotiates for an existing bus (public.sdk/source/vst/
+  // vstaudioeffect.cpp), so a host can still hand us a mono bus at process
+  // time. A mono source seeds l == r (fx_apply_chain's own documented
+  // convention — engine_fx.h), so that case is handled by aliasing channel 1
+  // onto channel 0 rather than a special-cased mono path.
+  Sample32* inL = in.channelBuffers32[0];
+  Sample32* inR = in.numChannels > 1 ? in.channelBuffers32[1] : inL;
+  Sample32* outL = out.channelBuffers32[0];
+  Sample32* outR = out.numChannels > 1 ? out.channelBuffers32[1] : outL;
+
+  const int sr = static_cast<int>(processSetup.sampleRate);
+  for (int32 i = 0; i < data.numSamples; ++i) {
+    float l = inL[i];
+    float r = inR[i];
+    fx_apply_chain(&fx_, sr, kEchoCapFrames, &l, &r, 1, types_, params_);
+    outL[i] = l;
+    if (outR != outL) outR[i] = r;
+  }
+  return kResultOk;
+}
+
+tresult PLUGIN_API Processor::setState(IBStream* state) {
+  if (!state) return kInvalidArgument;
+  float saved[LE_FX_PARAMS];
+  const int32 n = static_cast<int32>(sizeof(saved));
+  int32 read = 0;
+  if (state->read(saved, n, &read) != kResultOk || read != n) return kResultFalse;
+  for (int32 i = 0; i < LE_FX_PARAMS; ++i) params_[0][i] = saved[i];
+  return kResultOk;
+}
+
+tresult PLUGIN_API Processor::getState(IBStream* state) {
+  if (!state) return kInvalidArgument;
+  int32 written = 0;
+  const int32 n = static_cast<int32>(sizeof(params_[0]));
+  if (state->write(params_[0], n, &written) != kResultOk || written != n) {
+    return kResultFalse;
+  }
+  return kResultOk;
+}
+
+}  // namespace loopy_vst3_echo
