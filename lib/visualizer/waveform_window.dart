@@ -7,7 +7,60 @@ import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/visualizer/waveform_window_channel.dart';
 import 'package:loopy/visualizer/widgets/waveform_view.dart';
 import 'package:loopy/window/window_chrome.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
+
+/// Where the output-waveform window should sit: **full-bleed on a secondary
+/// display** when one is present (the intended second-screen setup), else the
+/// windowed fallback from [args]. Pure over the screen list so it can be
+/// unit-tested without a real multi-monitor desktop.
+@visibleForTesting
+({Offset position, Size size, bool fullscreen}) waveformWindowPlacement({
+  required List<({String id, Offset position, Size size})> screens,
+  required String primaryId,
+  required WaveformWindowArgs args,
+}) {
+  for (final screen in screens) {
+    if (screen.id != primaryId) {
+      return (position: screen.position, size: screen.size, fullscreen: true);
+    }
+  }
+  return (
+    position: Offset(args.x, args.y),
+    size: Size(args.width, args.height),
+    fullscreen: false,
+  );
+}
+
+/// Resolves [waveformWindowPlacement] against the live displays, falling back
+/// to the windowed layout if the display query fails (never leave the output
+/// window unplaced).
+Future<({Offset position, Size size, bool fullscreen})> _resolvePlacement(
+  WaveformWindowArgs args,
+) async {
+  try {
+    final displays = await screenRetriever.getAllDisplays();
+    final primary = await screenRetriever.getPrimaryDisplay();
+    return waveformWindowPlacement(
+      screens: [
+        for (final d in displays)
+          (
+            id: d.id,
+            position: d.visiblePosition ?? Offset.zero,
+            size: d.visibleSize ?? d.size,
+          ),
+      ],
+      primaryId: primary.id,
+      args: args,
+    );
+  } on Object {
+    return (
+      position: Offset(args.x, args.y),
+      size: Size(args.width, args.height),
+      fullscreen: false,
+    );
+  }
+}
 
 /// A loop waveform frame pushed from the main window: the loop peaks plus the
 /// playhead position.
@@ -59,16 +112,27 @@ Future<void> runWaveformWindow(WindowController controller) async {
 
   await windowManager.ensureInitialized();
   await configureLoopyDesktopWindow(title: title);
-  await windowManager.setPosition(Offset(args.x, args.y));
-  await windowManager.setSize(Size(args.width, args.height));
+
+  // Full-bleed on a second monitor when there is one (move it there first, then
+  // fullscreen so the OS fullscreens it on that display — not the primary);
+  // otherwise the windowed fallback.
+  final placement = await _resolvePlacement(args);
+  await windowManager.setBounds(
+    null,
+    position: placement.position,
+    size: placement.size,
+  );
   await windowManager.waitUntilReadyToShow(
     WindowOptions(
-      size: Size(args.width, args.height),
+      size: placement.size,
       title: title,
       backgroundColor: const Color(0xFF06060A),
     ),
     () async {
       await windowManager.show();
+      if (placement.fullscreen) {
+        await windowManager.setFullScreen(true);
+      }
     },
   );
 
