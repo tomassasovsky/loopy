@@ -20,11 +20,8 @@ project(loopy_vst3_plugins LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT APPLE AND NOT WIN32)
-  message(FATAL_ERROR
-    "packages/loopy_engine/vst3 builds on macOS (parts 2-9) and Windows "
-    "(part 13). The Linux port lands in part 14 of the 17-part VST3 plan.")
-endif()
+# macOS (parts 2-9), Windows (part 13), and Linux (part 14) all build. Any other
+# platform falls through the else() branches below to the Linux layout.
 
 if(MSVC)
   # The vendored SDK + engine core use strncpy/sprintf-style calls; silence the
@@ -34,6 +31,14 @@ if(MSVC)
   # _USE_MATH_DEFINES makes <math.h> expose M_PI etc. (the parity harness's test
   # signal generator uses M_PI) — MSVC gates them behind this, unlike libc++/glibc.
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES)
+endif()
+
+if(UNIX AND NOT APPLE)
+  # Linux VST3 (.so): export only the SMTG_EXPORT_SYMBOL factory entry points
+  # (GetPluginFactory, ModuleEntry/Exit) and keep everything else internal — the
+  # equivalent of the macOS -exported_symbols_list whitelist. Static deps are
+  # already -fPIC (POSITION_INDEPENDENT_CODE ON), so linking them into a .so is fine.
+  add_compile_options(-fvisibility=hidden)
 endif()
 
 get_filename_component(LOOPY_VST3_SDK_DIR
@@ -54,9 +59,9 @@ add_compile_definitions(
 # --- Per-OS build layer (parts 13/14) ---------------------------------------
 # The DSP and every plugin TU are portable C++17; only three things differ per
 # OS, each with a first-class SDK equivalent already vendored. These variables
-# isolate that layer so the plugin/target blocks below stay OS-agnostic. The
-# WIN32/else() values are defined now but not reached until the guard above is
-# lifted (Windows = part 13, Linux = part 14); today only the APPLE branch runs.
+# isolate that layer so the plugin/target blocks below stay OS-agnostic. All
+# three branches are live now (APPLE = macmain/.vst3-in-MacOS, WIN32 = dllmain/
+# .vst3 DLL, else = linuxmain/.so).
 if(APPLE)
   set(LOOPY_VST3_MODULE_ENTRY
     "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macmain.cpp")
@@ -133,6 +138,11 @@ set_target_properties(sdk_common PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(sdk_common PUBLIC "${LOOPY_VST3_SDK_DIR}")
 if(APPLE)
   target_link_libraries(sdk_common PUBLIC "-framework CoreFoundation")
+elseif(UNIX)
+  # The SDK's base/thread/source/flock.cpp uses pthreads; dl covers the loader
+  # path. (On macOS both live in libSystem; on Windows they're in the CRT.)
+  find_package(Threads REQUIRED)
+  target_link_libraries(sdk_common PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 endif()
 
 # --- sdk: the AudioEffect/EditController/factory helper layer ---
