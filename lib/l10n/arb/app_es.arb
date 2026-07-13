@@ -729,5 +729,37 @@
             }
         }
     },
-    "perfRenameButton": "Renombrar"
+    "perfRenameButton": "Renombrar",
+    "perfExportSummaryTitle": "Exportación",
+    "@perfExportSummaryTitle": {
+        "description": "Heading above the per-track export summary on the performance-completion sheet."
+    },
+    "perfExportTrackLive": "Plugins en vivo",
+    "@perfExportTrackLive": {
+        "description": "Per-track export summary label: this track exported with a live, editable Loopy VST3 device chain."
+    },
+    "perfExportTrackBounced": "Audio mezclado",
+    "@perfExportTrackBounced": {
+        "description": "Per-track export summary label: this track exported as bounced (wet) audio, with no live device chain."
+    },
+    "perfExportReasonMixedLanes": "Exportado como audio — las pistas de este canal tenían cadenas de efectos distintas.",
+    "@perfExportReasonMixedLanes": {
+        "description": "Fallback reason shown under a bounced-audio track: its lanes didn't all share the same effects chain."
+    },
+    "perfExportReasonThirdPartyPlugin": "Exportado como audio — este canal usa un plugin de terceros.",
+    "@perfExportReasonThirdPartyPlugin": {
+        "description": "Fallback reason shown under a bounced-audio track: its chain includes a hosted third-party plugin, which can't be exported live."
+    },
+    "perfExportReasonUnrepresented": "Exportado como audio — este canal usa un efecto que aún no se puede exportar en vivo.",
+    "@perfExportReasonUnrepresented": {
+        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Loopy version doesn't recognize as exportable."
+    },
+    "perfExportReExport": "Reexportar",
+    "@perfExportReExport": {
+        "description": "Button label: regenerate .als/fx-chains.txt from this already-finalized capture without re-recording."
+    },
+    "perfExportReExportFailed": "No se pudo regenerar la exportación.",
+    "@perfExportReExportFailed": {
+        "description": "Error message shown when re-export fails."
+    }
 }

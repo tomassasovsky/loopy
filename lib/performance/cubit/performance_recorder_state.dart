@@ -147,16 +147,26 @@ class PerformanceRecorderRendering extends PerformanceRecorderState {
 /// signal (< 2s captured with zero logged events) — a `BlocListener` reacts
 /// to it to show a notice, matching the plan's "no ephemeral state" rule:
 /// this is a ordinary field on an ordinary transition, not a one-shot state
-/// of its own.
+/// of its own. [reExportFailed] follows the same "ordinary field" rule
+/// (part 11) — it clears on the very next transition rather than needing an
+/// explicit dismiss.
 class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// Creates a [PerformanceRecorderCompleted] with a delivered [result].
-  const PerformanceRecorderCompleted(this.result) : discarded = false;
+  const PerformanceRecorderCompleted(
+    this.result, {
+    this.tracks = const [],
+    this.isReExporting = false,
+    this.reExportFailed = false,
+  }) : discarded = false;
 
   /// Creates a [PerformanceRecorderCompleted] for a capture too short to
   /// deliver (< 2 s, nothing logged) — auto-discarded rather than finalized.
   const PerformanceRecorderCompleted.discardedShort()
     : result = null,
-      discarded = true;
+      discarded = true,
+      tracks = const [],
+      isReExporting = false,
+      reExportFailed = false;
 
   /// The capture's outcome, or `null` when [discarded].
   final PerformanceRecordResult? result;
@@ -165,6 +175,32 @@ class PerformanceRecorderCompleted extends PerformanceRecorderState {
   /// rather than delivered.
   final bool discarded;
 
+  /// Every exported channel's `daw_export` [DawTrack], carrying
+  /// [DawTrack.deviceChain]/[DawTrack.deviceChainFallbackReason] — the
+  /// per-track export summary (part 11) is rendered straight from this,
+  /// with no separate app-layer summary model. Populated by the same
+  /// `DawManifestReader.read` call the cubit already makes to build
+  /// `.als`/`fx-chains.txt`; empty when [discarded] or when the manifest
+  /// couldn't be read.
+  final List<DawTrack> tracks;
+
+  /// Whether [PerformanceRecorderCubit.reExport] is currently running —
+  /// lets the completion sheet disable the re-export button / show a
+  /// spinner instead of allowing overlapping re-export calls.
+  final bool isReExporting;
+
+  /// Whether the most recent [PerformanceRecorderCubit.reExport] call threw
+  /// (a bad manifest fixture, or a file-I/O failure writing `.als`/
+  /// `fx-chains.txt`) — [tracks] is left at its pre-attempt value in that
+  /// case, never partially updated.
+  final bool reExportFailed;
+
   @override
-  List<Object?> get props => [result, discarded];
+  List<Object?> get props => [
+    result,
+    discarded,
+    tracks,
+    isReExporting,
+    reExportFailed,
+  ];
 }
