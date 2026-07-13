@@ -158,6 +158,13 @@ add_library(sdk STATIC
 )
 set_target_properties(sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(sdk PUBLIC sdk_common)
+if(UNIX AND NOT APPLE)
+  # On Linux, pluginfactory.cpp calls InjectCreateTimerFunction (Linux-gated) to
+  # wire up a fallback timer; its definition lives in base/source/timer.cpp.
+  # macOS/Windows don't take that path, so the file is only added here — keeping
+  # their already-shipped bundles/link sets unchanged.
+  target_sources(sdk PRIVATE "${LOOPY_VST3_SDK_DIR}/base/source/timer.cpp")
+endif()
 
 # --- Local dev-install: OFF by default so CI stays clean. -------------------
 option(LOOPY_VST3_DEV_INSTALL
