@@ -54,3 +54,17 @@ confirm them.
 When an item passes, tick it and (optionally) note the interface/OS used. If one
 fails, capture the symptom — those become software bugs to file, since the code
 paths themselves are unit-/integration-covered but never hardware-exercised.
+
+## Results — 2026-07-13 (first bench pass)
+- **#2 ASIO full-count: ✅ PASS** — 18 in / 20 out on a Clarett OctoPre+ (Windows).
+  Validates the whole multichannel/ASIO effort (previously build-verified only).
+- **#3 MIDI foot-pedal: ✅ PASS** — footswitches + encoder + on-screen mirroring.
+- **#4 LED gamma on 9 V: ✅ PASS** — ramps read even; confirms PR #158.
+- **#1 latency: ⚠️ 15.15 ms** — over the 10 ms gate, but it's the *monitoring*
+  path (recording stays tight via latency compensation) and buffer-dependent.
+  Re-measure at 128 frames; if still >10 ms it's the interface floor and the gate
+  should be revised to ≤16 ms. Not a correctness bug.
+- **#5 waveform window: ⚠️ works, but should go full-screen on the 2nd monitor.**
+  Addressed — the output window now detects a secondary display, moves onto it,
+  and fullscreens (windowed fallback when there's one screen). Needs a re-check
+  on the 2-monitor bench.
