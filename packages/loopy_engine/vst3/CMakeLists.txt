@@ -41,6 +41,34 @@ add_compile_definitions(
   "$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>"
 )
 
+# --- Per-OS build layer (parts 13/14) ---------------------------------------
+# The DSP and every plugin TU are portable C++17; only three things differ per
+# OS, each with a first-class SDK equivalent already vendored. These variables
+# isolate that layer so the plugin/target blocks below stay OS-agnostic. The
+# WIN32/else() values are defined now but not reached until the guard above is
+# lifted (Windows = part 13, Linux = part 14); today only the APPLE branch runs.
+if(APPLE)
+  set(LOOPY_VST3_MODULE_ENTRY
+    "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macmain.cpp")
+  set(LOOPY_VST3_MODULE_SUFFIX "")
+  # macOS whitelists exported symbols via a linker list.
+  set(LOOPY_VST3_EXPORT_LINK_OPTS
+    "-exported_symbols_list"
+    "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp")
+elseif(WIN32)
+  set(LOOPY_VST3_MODULE_ENTRY
+    "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/dllmain.cpp")
+  set(LOOPY_VST3_MODULE_SUFFIX ".vst3")
+  # Windows exports via SMTG_EXPORT_SYMBOL (__declspec(dllexport)) — no .def.
+  set(LOOPY_VST3_EXPORT_LINK_OPTS "")
+else()
+  set(LOOPY_VST3_MODULE_ENTRY
+    "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/linuxmain.cpp")
+  set(LOOPY_VST3_MODULE_SUFFIX ".so")
+  # Linux exports via SMTG_EXPORT_SYMBOL (visibility("default")) — no .lds.
+  set(LOOPY_VST3_EXPORT_LINK_OPTS "")
+endif()
+
 # Only the seven loopy_vst3_* targets defined below are ever requested as
 # build targets, so this pulls loopy_dsp_core's definition into scope
 # without also having to build ../src's own loopy_engine SHARED target
@@ -80,10 +108,16 @@ add_library(sdk_common STATIC
   "${LOOPY_VST3_SDK_DIR}/pluginterfaces/base/ustring.cpp"
   "${LOOPY_VST3_SDK_DIR}/public.sdk/source/common/commoniids.cpp"
   "${LOOPY_VST3_SDK_DIR}/public.sdk/source/vst/vstinitiids.cpp"
+  # memorystream.cpp is needed by the wrapper tests' MemoryStream round-trip
+  # (test_vst3_*_wrapper.cpp). Unreferenced by the plugin MODULE targets, so it
+  # is not pulled into any .vst3 — the assembled bundles stay byte-identical.
+  "${LOOPY_VST3_SDK_DIR}/public.sdk/source/common/memorystream.cpp"
 )
 set_target_properties(sdk_common PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(sdk_common PUBLIC "${LOOPY_VST3_SDK_DIR}")
-target_link_libraries(sdk_common PUBLIC "-framework CoreFoundation")
+if(APPLE)
+  target_link_libraries(sdk_common PUBLIC "-framework CoreFoundation")
+endif()
 
 # --- sdk: the AudioEffect/EditController/factory helper layer ---
 add_library(sdk STATIC
@@ -94,7 +128,7 @@ add_library(sdk STATIC
   "${LOOPY_VST3_SDK_DIR}/public.sdk/source/vst/vsteditcontroller.cpp"
   "${LOOPY_VST3_SDK_DIR}/public.sdk/source/vst/vstparameters.cpp"
   "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/pluginfactory.cpp"
-  "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macmain.cpp"
+  "${LOOPY_VST3_MODULE_ENTRY}"
 )
 set_target_properties(sdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(sdk PUBLIC sdk_common)
@@ -111,31 +145,131 @@ option(LOOPY_VST3_DEV_INSTALL
 # 2) and loopy_vst3_reverb (part 3) rather than duplicating this per plugin.
 function(loopy_vst3_add_bundle target display_name source_dir)
   set(bundle "${CMAKE_CURRENT_BINARY_DIR}/${display_name}.vst3")
-  add_custom_command(TARGET ${target} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle}/Contents/MacOS"
-    COMMAND ${CMAKE_COMMAND} -E copy
-      "$<TARGET_FILE:${target}>" "${bundle}/Contents/MacOS/${display_name}"
-    COMMAND ${CMAKE_COMMAND} -E copy
-      "${source_dir}/Info.plist" "${bundle}/Contents/Info.plist"
-    COMMAND /bin/sh -c "printf 'BNDL????' > '${bundle}/Contents/PkgInfo'"
-    # Ad-hoc dev-signed for local build/test; real Developer ID signing +
-    # hardened runtime + notarization for distribution is part 12 (D-SIGN).
-    COMMAND codesign -f -s - "${bundle}"
-    COMMENT "Assembling ${display_name}.vst3 bundle"
-    VERBATIM
-  )
-  if(LOOPY_VST3_DEV_INSTALL)
+  if(APPLE)
+    # macOS bundle: Contents/MacOS/<name> + Info.plist + PkgInfo, ad-hoc signed.
+    set(module_in_bundle "${bundle}/Contents/MacOS/${display_name}")
     add_custom_command(TARGET ${target} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/Library/Audio/Plug-Ins/VST3"
-      COMMAND ${CMAKE_COMMAND} -E rm -rf
-        "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/${display_name}.vst3"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${bundle}" "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/${display_name}.vst3"
-      COMMENT "Installing ${display_name}.vst3 to ~/Library/Audio/Plug-Ins/VST3"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle}/Contents/MacOS"
+      COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE:${target}>" "${module_in_bundle}"
+      COMMAND ${CMAKE_COMMAND} -E copy
+        "${source_dir}/Info.plist" "${bundle}/Contents/Info.plist"
+      COMMAND /bin/sh -c "printf 'BNDL????' > '${bundle}/Contents/PkgInfo'"
+      # Ad-hoc dev-signed for local build/test; real Developer ID signing +
+      # hardened runtime + notarization for distribution is part 12 (D-SIGN).
+      COMMAND codesign -f -s - "${bundle}"
+      COMMENT "Assembling ${display_name}.vst3 bundle"
+      VERBATIM
+    )
+    if(LOOPY_VST3_DEV_INSTALL)
+      add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{HOME}/Library/Audio/Plug-Ins/VST3"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+          "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/${display_name}.vst3"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+          "${bundle}" "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/${display_name}.vst3"
+        COMMENT "Installing ${display_name}.vst3 to ~/Library/Audio/Plug-Ins/VST3"
+        VERBATIM
+      )
+    endif()
+  elseif(WIN32)
+    # Windows bundle folder: Contents/x86_64-win/<name>.vst3 (the DLL). No
+    # codesign / Info.plist / PkgInfo. (Part 13 — not reached until the guard
+    # above is lifted.)
+    set(module_in_bundle "${bundle}/Contents/x86_64-win/${display_name}.vst3")
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle}/Contents/x86_64-win"
+      COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE:${target}>" "${module_in_bundle}"
+      COMMENT "Assembling ${display_name}.vst3 bundle"
+      VERBATIM
+    )
+  else()
+    # Linux bundle folder: Contents/x86_64-linux/<name>.so. (Part 14.)
+    set(module_in_bundle "${bundle}/Contents/x86_64-linux/${display_name}.so")
+    add_custom_command(TARGET ${target} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle}/Contents/x86_64-linux"
+      COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE:${target}>" "${module_in_bundle}"
+      COMMENT "Assembling ${display_name}.vst3 bundle"
       VERBATIM
     )
   endif()
+  # Required load smoke: dlopen/LoadLibrary the ASSEMBLED module and resolve
+  # GetPluginFactory — the only check that exercises the export table + the
+  # per-OS bundle layout (the parity tests link factory.cpp in-process).
+  add_test(NAME vst3_${target}_load COMMAND load_smoke "${module_in_bundle}")
 endfunction()
+
+# ---------------------------------------------------------------------------
+# Tests (CTest) — the single build definition for the plugin test suite.
+# Migrated verbatim (same sources, includes, link sets) from the Darwin-gated
+# vst3 block that used to live in packages/loopy_engine/src/test/
+# run_native_tests.sh; that block was removed so the two can never drift. Run
+# on macOS/Windows/Linux by the vst3-plugins-* CI jobs. Configure with
+# -DCMAKE_BUILD_TYPE=Debug to match the shell harness's DEVELOPMENT=1.
+# ---------------------------------------------------------------------------
+enable_testing()
+
+# The load smoke helper (registered per-plugin by loopy_vst3_add_bundle above).
+add_executable(load_smoke "${CMAKE_CURRENT_SOURCE_DIR}/test/load_smoke.cpp")
+if(NOT WIN32 AND NOT APPLE)
+  target_link_libraries(load_smoke PRIVATE ${CMAKE_DL_LIBS})
+endif()
+
+# Include dirs shared by the wrapper + parity tests (mirrors the shell recipe).
+set(LOOPY_VST3_TEST_INC
+  "${LOOPY_VST3_SDK_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src/core"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../src/miniaudio"
+)
+
+# GUID-drift test: standalone — only the plugin's ids.h, no SDK link.
+function(loopy_vst3_add_ids_test fx)
+  add_executable(test_vst3_${fx}_ids "${fx}/test_vst3_${fx}_ids.cpp")
+  target_include_directories(test_vst3_${fx}_ids PRIVATE
+    "${LOOPY_VST3_SDK_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/${fx}")
+  add_test(NAME vst3_${fx}_ids COMMAND test_vst3_${fx}_ids)
+endfunction()
+
+# Wrapper test: instantiates Processor/Controller directly (no factory). Needs
+# MemoryStream (now in sdk_common). DEVELOPMENT/RELEASE comes from the global
+# config-based define at the top of this file.
+function(loopy_vst3_add_wrapper_test fx)
+  add_executable(test_vst3_${fx}_wrapper
+    "${fx}/test_vst3_${fx}_wrapper.cpp"
+    "${fx}/processor.cpp" "${fx}/controller.cpp")
+  target_include_directories(test_vst3_${fx}_wrapper PRIVATE
+    ${LOOPY_VST3_TEST_INC}
+    "${CMAKE_CURRENT_SOURCE_DIR}/${fx}" "${CMAKE_CURRENT_SOURCE_DIR}/test")
+  target_link_libraries(test_vst3_${fx}_wrapper PRIVATE
+    loopy_dsp_core core_plugin_disabled_stub sdk sdk_common)
+  add_test(NAME vst3_${fx}_wrapper COMMAND test_vst3_${fx}_wrapper)
+endfunction()
+
+# Golden-parity harness: drives the real factory->createInstance->process path
+# (host_harness.cpp) and diffs against fx_apply_chain. One binary per plugin —
+# each factory.cpp defines a global GetPluginFactory, so they can't co-link.
+# sdk already compiles pluginfactory.cpp.
+function(loopy_vst3_add_parity_test fx)
+  add_executable(test_vst3_${fx}_parity
+    "test/host_harness.cpp" "test/test_${fx}_parity.cpp"
+    "${fx}/processor.cpp" "${fx}/controller.cpp" "${fx}/factory.cpp")
+  target_include_directories(test_vst3_${fx}_parity PRIVATE
+    ${LOOPY_VST3_TEST_INC}
+    "${CMAKE_CURRENT_SOURCE_DIR}/${fx}" "${CMAKE_CURRENT_SOURCE_DIR}/test")
+  target_link_libraries(test_vst3_${fx}_parity PRIVATE
+    loopy_dsp_core core_plugin_disabled_stub sdk sdk_common)
+  add_test(NAME vst3_${fx}_parity COMMAND test_vst3_${fx}_parity)
+endfunction()
+
+foreach(fx delay reverb echo drive filter tremolo octaver)
+  loopy_vst3_add_ids_test(${fx})
+  loopy_vst3_add_parity_test(${fx})
+endforeach()
+# Wrapper-level tests exist only for Delay (part 2) and Reverb (part 3).
+loopy_vst3_add_wrapper_test(delay)
+loopy_vst3_add_wrapper_test(reverb)
 
 # --- loopy_vst3_delay: "Loopy Delay" (part 2) -------------------------------
 add_library(loopy_vst3_delay MODULE
@@ -147,7 +281,7 @@ set_target_properties(loopy_vst3_delay PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   PREFIX ""
-  SUFFIX ""
+  SUFFIX "${LOOPY_VST3_MODULE_SUFFIX}"
   OUTPUT_NAME "Loopy Delay"
 )
 target_include_directories(loopy_vst3_delay PRIVATE
@@ -160,7 +294,7 @@ target_link_libraries(loopy_vst3_delay PRIVATE
   sdk_common
 )
 target_link_options(loopy_vst3_delay PRIVATE
-  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+  ${LOOPY_VST3_EXPORT_LINK_OPTS}
 )
 loopy_vst3_add_bundle(loopy_vst3_delay "Loopy Delay" "${CMAKE_CURRENT_SOURCE_DIR}/delay")
 
@@ -174,7 +308,7 @@ set_target_properties(loopy_vst3_reverb PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   PREFIX ""
-  SUFFIX ""
+  SUFFIX "${LOOPY_VST3_MODULE_SUFFIX}"
   OUTPUT_NAME "Loopy Reverb"
 )
 target_include_directories(loopy_vst3_reverb PRIVATE
@@ -187,7 +321,7 @@ target_link_libraries(loopy_vst3_reverb PRIVATE
   sdk_common
 )
 target_link_options(loopy_vst3_reverb PRIVATE
-  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+  ${LOOPY_VST3_EXPORT_LINK_OPTS}
 )
 loopy_vst3_add_bundle(loopy_vst3_reverb "Loopy Reverb" "${CMAKE_CURRENT_SOURCE_DIR}/reverb")
 
@@ -201,7 +335,7 @@ set_target_properties(loopy_vst3_echo PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   PREFIX ""
-  SUFFIX ""
+  SUFFIX "${LOOPY_VST3_MODULE_SUFFIX}"
   OUTPUT_NAME "Loopy Echo"
 )
 target_include_directories(loopy_vst3_echo PRIVATE
@@ -214,7 +348,7 @@ target_link_libraries(loopy_vst3_echo PRIVATE
   sdk_common
 )
 target_link_options(loopy_vst3_echo PRIVATE
-  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+  ${LOOPY_VST3_EXPORT_LINK_OPTS}
 )
 loopy_vst3_add_bundle(loopy_vst3_echo "Loopy Echo" "${CMAKE_CURRENT_SOURCE_DIR}/echo")
 
@@ -228,7 +362,7 @@ set_target_properties(loopy_vst3_drive PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   PREFIX ""
-  SUFFIX ""
+  SUFFIX "${LOOPY_VST3_MODULE_SUFFIX}"
   OUTPUT_NAME "Loopy Drive"
 )
 target_include_directories(loopy_vst3_drive PRIVATE
@@ -241,7 +375,7 @@ target_link_libraries(loopy_vst3_drive PRIVATE
   sdk_common
 )
 target_link_options(loopy_vst3_drive PRIVATE
-  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+  ${LOOPY_VST3_EXPORT_LINK_OPTS}
 )
 loopy_vst3_add_bundle(loopy_vst3_drive "Loopy Drive" "${CMAKE_CURRENT_SOURCE_DIR}/drive")
 
@@ -255,7 +389,7 @@ set_target_properties(loopy_vst3_filter PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   PREFIX ""
-  SUFFIX ""
+  SUFFIX "${LOOPY_VST3_MODULE_SUFFIX}"
   OUTPUT_NAME "Loopy Filter"
 )
 target_include_directories(loopy_vst3_filter PRIVATE
@@ -268,7 +402,7 @@ target_link_libraries(loopy_vst3_filter PRIVATE
   sdk_common
 )
 target_link_options(loopy_vst3_filter PRIVATE
-  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+  ${LOOPY_VST3_EXPORT_LINK_OPTS}
 )
 loopy_vst3_add_bundle(loopy_vst3_filter "Loopy Filter" "${CMAKE_CURRENT_SOURCE_DIR}/filter")
 
@@ -282,7 +416,7 @@ set_target_properties(loopy_vst3_tremolo PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   PREFIX ""
-  SUFFIX ""
+  SUFFIX "${LOOPY_VST3_MODULE_SUFFIX}"
   OUTPUT_NAME "Loopy Tremolo"
 )
 target_include_directories(loopy_vst3_tremolo PRIVATE
@@ -295,7 +429,7 @@ target_link_libraries(loopy_vst3_tremolo PRIVATE
   sdk_common
 )
 target_link_options(loopy_vst3_tremolo PRIVATE
-  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+  ${LOOPY_VST3_EXPORT_LINK_OPTS}
 )
 loopy_vst3_add_bundle(loopy_vst3_tremolo "Loopy Tremolo" "${CMAKE_CURRENT_SOURCE_DIR}/tremolo")
 
@@ -309,7 +443,7 @@ set_target_properties(loopy_vst3_octaver PROPERTIES
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
   PREFIX ""
-  SUFFIX ""
+  SUFFIX "${LOOPY_VST3_MODULE_SUFFIX}"
   OUTPUT_NAME "Loopy Octaver"
 )
 target_include_directories(loopy_vst3_octaver PRIVATE
@@ -322,6 +456,6 @@ target_link_libraries(loopy_vst3_octaver PRIVATE
   sdk_common
 )
 target_link_options(loopy_vst3_octaver PRIVATE
-  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+  ${LOOPY_VST3_EXPORT_LINK_OPTS}
 )
 loopy_vst3_add_bundle(loopy_vst3_octaver "Loopy Octaver" "${CMAKE_CURRENT_SOURCE_DIR}/octaver")
