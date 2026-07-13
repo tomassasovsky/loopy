@@ -20,10 +20,20 @@ project(loopy_vst3_plugins LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT APPLE)
+if(NOT APPLE AND NOT WIN32)
   message(FATAL_ERROR
-    "packages/loopy_engine/vst3 is macOS-only for now — parts 2-9 of the "
-    "17-part VST3 plan. Windows/Linux ports land in parts 13-14.")
+    "packages/loopy_engine/vst3 builds on macOS (parts 2-9) and Windows "
+    "(part 13). The Linux port lands in part 14 of the 17-part VST3 plan.")
+endif()
+
+if(MSVC)
+  # The vendored SDK + engine core use strncpy/sprintf-style calls; silence the
+  # CRT deprecation warnings-as-noise (mirrors src/CMakeLists.txt). The C11
+  # atomics flag the engine core needs is applied by loopy_dsp_core itself
+  # (PRIVATE, in src/CMakeLists.txt) and rides in via add_subdirectory above.
+  # _USE_MATH_DEFINES makes <math.h> expose M_PI etc. (the parity harness's test
+  # signal generator uses M_PI) — MSVC gates them behind this, unlike libc++/glibc.
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES)
 endif()
 
 get_filename_component(LOOPY_VST3_SDK_DIR

@@ -1,14 +1,13 @@
 /*
  * test_vst3_tremolo_ids.cpp — GUID-drift regression test (umbrella D-GUID).
  *
- * Independently hardcodes the same 16 bytes ids.h declares, transcribed
- * separately rather than reused from ids.h's own macros — the point is to
- * catch an accidental edit to ids.h itself, so this test must not share the
- * literal it is checking against. Byte order matches INLINE_UID's own
- * splitting of each 32-bit word (MSB first), independent of COM_COMPATIBLE.
- *
- * Wired into run_native_tests.sh (macOS-only section, alongside the other
- * plugin-hosting tests already built there).
+ * Independently transcribes the same four 32-bit identity words ids.h declares
+ * (a separate copy, NOT reused from ids.h's macros) and rebuilds the expected
+ * TUID through the SDK's own INLINE_UID — so an accidental edit to ids.h's
+ * literals is still caught, while the byte comparison stays correct on every OS:
+ * INLINE_UID applies the COM_COMPATIBLE byte order on Windows and the plain
+ * MSB-first order on macOS/Linux, exactly as kProcessorUID/kControllerUID are
+ * built. (A raw hardcoded 16-byte array only matches one platform's order.)
  */
 #include <cstdio>
 #include <cstring>
@@ -26,19 +25,15 @@ int g_failures = 0;
 
 static void test_processor_uid_unchanged() {
   std::printf("test_processor_uid_unchanged\n");
-  const unsigned char expected[16] = {
-      0x2D, 0x8D, 0x41, 0x87, 0x3B, 0xDF, 0x80, 0x21,
-      0x0F, 0xE2, 0x47, 0x0F, 0xA5, 0xD3, 0x9A, 0xA0,
-  };
+  const ::Steinberg::TUID expected =
+      INLINE_UID(0x2D8D4187, 0x3BDF8021, 0x0FE2470F, 0xA5D39AA0);
   CHECK(std::memcmp(loopy_vst3_tremolo::kProcessorUID, expected, 16) == 0);
 }
 
 static void test_controller_uid_unchanged() {
   std::printf("test_controller_uid_unchanged\n");
-  const unsigned char expected[16] = {
-      0x41, 0x9C, 0xC1, 0xE4, 0x65, 0x7A, 0x31, 0x71,
-      0x7E, 0x31, 0xB5, 0xC5, 0x1B, 0x05, 0x6A, 0x8E,
-  };
+  const ::Steinberg::TUID expected =
+      INLINE_UID(0x419CC1E4, 0x657A3171, 0x7E31B5C5, 0x1B056A8E);
   CHECK(std::memcmp(loopy_vst3_tremolo::kControllerUID, expected, 16) == 0);
 }
 
