@@ -1,6 +1,6 @@
 # vst3/CMakeLists.txt — standalone project building "Loopy Delay" (part 2),
-# "Loopy Reverb" (part 3), and "Loopy Echo" (part 5) as real .vst3 bundles.
-# An independent build
+# "Loopy Reverb" (part 3), "Loopy Echo" (part 5), and "Loopy Drive" (part 6)
+# as real .vst3 bundles. An independent build
 # (umbrella: "New: VST3 plugin artifacts (independent build)"), not folded
 # into loopy_engine's own SHARED-library build — pulls in the engine/src
 # project via add_subdirectory only to reuse loopy_dsp_core (part 1) and the
@@ -39,8 +39,8 @@ add_compile_definitions(
   "$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>"
 )
 
-# Only loopy_vst3_delay / loopy_vst3_reverb / loopy_vst3_echo are ever
-# requested as build targets (below), so this pulls loopy_dsp_core's
+# Only loopy_vst3_delay / loopy_vst3_reverb / loopy_vst3_echo / loopy_vst3_drive
+# are ever requested as build targets (below), so this pulls loopy_dsp_core's
 # definition into scope
 # without also having to build ../src's own loopy_engine SHARED target
 # (which has its own, unrelated per-OS device/MIDI dependencies out of scope
@@ -118,7 +118,7 @@ function(loopy_vst3_add_bundle target display_name source_dir)
       "${source_dir}/Info.plist" "${bundle}/Contents/Info.plist"
     COMMAND /bin/sh -c "printf 'BNDL????' > '${bundle}/Contents/PkgInfo'"
     # Ad-hoc dev-signed for local build/test; real Developer ID signing +
-    # hardened runtime + notarization for distribution is part 7 (D-SIGN).
+    # hardened runtime + notarization for distribution is part 12 (D-SIGN).
     COMMAND codesign -f -s - "${bundle}"
     COMMENT "Assembling ${display_name}.vst3 bundle"
     VERBATIM
@@ -216,3 +216,30 @@ target_link_options(loopy_vst3_echo PRIVATE
   "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
 )
 loopy_vst3_add_bundle(loopy_vst3_echo "Loopy Echo" "${CMAKE_CURRENT_SOURCE_DIR}/echo")
+
+# --- loopy_vst3_drive: "Loopy Drive" (part 6) -------------------------------
+add_library(loopy_vst3_drive MODULE
+  drive/processor.cpp
+  drive/controller.cpp
+  drive/factory.cpp
+)
+set_target_properties(loopy_vst3_drive PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  PREFIX ""
+  SUFFIX ""
+  OUTPUT_NAME "Loopy Drive"
+)
+target_include_directories(loopy_vst3_drive PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/drive"
+)
+target_link_libraries(loopy_vst3_drive PRIVATE
+  loopy_dsp_core
+  core_plugin_disabled_stub
+  sdk
+  sdk_common
+)
+target_link_options(loopy_vst3_drive PRIVATE
+  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+)
+loopy_vst3_add_bundle(loopy_vst3_drive "Loopy Drive" "${CMAKE_CURRENT_SOURCE_DIR}/drive")
