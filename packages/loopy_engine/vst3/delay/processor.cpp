@@ -32,18 +32,13 @@ tresult PLUGIN_API Processor::initialize(FUnknown* context) {
 }
 
 tresult PLUGIN_API Processor::terminate() {
-  // Slot 0 is fixed to LE_FX_DELAY for this processor's whole lifetime (only
-  // fx_stereo_ring_prepare's delay[0][0]/[1] rings are ever allocated), so
-  // le_fx_free_octaver here is a defensive no-op (its buffers are already
-  // NULL, and free(NULL) is a no-op) — called anyway for parity with the
-  // engine's own full slot-teardown pattern (engine.c's le_lane_reset /
-  // le_monitor_input_reset), in case a future change to this file's scope
-  // ever reuses fx_ for a different effect type.
+  // Slot 0 is fixed to LE_FX_DELAY for this processor's whole lifetime — only
+  // fx_stereo_ring_prepare's delay[0][0]/[1] rings are ever allocated (no
+  // octaver buffers for this type), so only those two need freeing here.
   free(fx_.delay[0][0]);
   fx_.delay[0][0] = nullptr;
   free(fx_.delay[0][1]);
   fx_.delay[0][1] = nullptr;
-  le_fx_free_octaver(&fx_, 0);
   return AudioEffect::terminate();
 }
 

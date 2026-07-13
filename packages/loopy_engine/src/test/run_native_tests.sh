@@ -224,4 +224,26 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_vst3_echo_parity_tests.exe"
   "$OUT/loopy_vst3_echo_parity_tests.exe"
+
+  # Same GUID-drift + golden-parity test pair, repeated for "Loopy Drive"
+  # (part 6) — the first plugin to exercise the widened (part 6) harness at a
+  # narrower paramCount=2 than Delay/Reverb/Echo's fixed 3.
+  echo "== building vst3 drive GUID-drift test =="
+  $CXX -std=c++17 -Ithird_party/vst3sdk -Ivst3/drive \
+    vst3/drive/test_vst3_drive_ids.cpp \
+    -o "$OUT/loopy_vst3_drive_ids_tests.exe"
+  "$OUT/loopy_vst3_drive_ids_tests.exe"
+
+  echo "== building vst3 drive parity harness =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio \
+    -Ivst3/drive -Ivst3/test \
+    vst3/test/host_harness.cpp vst3/test/test_drive_parity.cpp \
+    vst3/drive/processor.cpp vst3/drive/controller.cpp vst3/drive/factory.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    third_party/vst3sdk/public.sdk/source/main/pluginfactory.cpp \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_drive_parity_tests.exe"
+  "$OUT/loopy_vst3_drive_parity_tests.exe"
 fi
