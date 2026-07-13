@@ -370,6 +370,242 @@ void main() {
       },
     );
 
+    test(
+      'a channel whose single lane has an effects chain resolves a device '
+      'chain and prefers the dry stem over wet',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                      'effects': [
+                        {
+                          'type': 3,
+                          'params': [0.35, 0.35, 0.35, 0.0],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final project = DawManifestReader.read(dir.path);
+        final track = project!.tracks.single;
+        expect(track.deviceChain, [
+          const DawEffect(type: 3, params: [0.35, 0.35, 0.35, 0.0]),
+        ]);
+        expect(track.deviceChainFallbackReason, isNull);
+        expect(track.arrangementClip!.fileRef, 'stems/dry/track0.wav');
+      },
+    );
+
+    test(
+      'a channel with mixed-lane effects chains exports exactly like today '
+      '— wet-preferred, no device chain',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'a.wav',
+                      'effects': [
+                        {
+                          'type': 3,
+                          'params': [0.35, 0.35, 0.35, 0.0],
+                        },
+                      ],
+                    },
+                    {
+                      'lane': 1,
+                      'deferred': false,
+                      'pcmRef': 'b.wav',
+                      'effects': [
+                        {
+                          'type': 7,
+                          'params': [0.5, 0.5, 0.35, 0.0],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final project = DawManifestReader.read(dir.path);
+        final track = project!.tracks.single;
+        expect(track.deviceChain, isNull);
+        expect(
+          track.deviceChainFallbackReason,
+          DeviceChainFallbackReason.mixedLaneChains,
+        );
+        expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+      },
+    );
+
+    test(
+      'a channel that resolves a device chain but has no dry stem falls '
+      'all the way back to wet-preferred with no device chain (D-WETDRY)',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        // Deliberately no stems/dry/track0.wav.
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                      'effects': [
+                        {
+                          'type': 3,
+                          'params': [0.35, 0.35, 0.35, 0.0],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final project = DawManifestReader.read(dir.path);
+        final track = project!.tracks.single;
+        expect(track.deviceChain, isNull);
+        expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+      },
+    );
+
+    test(
+      'a channel with no effects on its only lane resolves an empty '
+      'device chain but keeps the existing wet-preferred stem behavior',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final project = DawManifestReader.read(dir.path);
+        final track = project!.tracks.single;
+        expect(track.deviceChain, isEmpty);
+        expect(track.deviceChainFallbackReason, isNull);
+        expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+      },
+    );
+
+    test(
+      'a channel whose chain includes a hosted plugin entry falls back '
+      'exactly like today — wet-preferred, no device chain',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        Directory('${dir.path}/stems/dry').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/stems/dry/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                      'effects': [
+                        {
+                          'type': 8,
+                          'plugin': {'format': 0, 'id': 'AABB', 'version': 0},
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        final project = DawManifestReader.read(dir.path);
+        final track = project!.tracks.single;
+        expect(track.deviceChain, isNull);
+        expect(
+          track.deviceChainFallbackReason,
+          DeviceChainFallbackReason.thirdPartyPlugin,
+        );
+        expect(track.arrangementClip!.fileRef, 'stems/wet/track0.wav');
+      },
+    );
+
     test('a track with no logged gestures gets no automation lanes', () {
       Directory('${dir.path}/stems/wet').createSync(recursive: true);
       File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);

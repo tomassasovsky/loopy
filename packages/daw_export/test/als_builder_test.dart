@@ -525,5 +525,201 @@ void main() {
         );
       },
     );
+
+    test(
+      'a track with deviceChain: null (every existing fixture, unchanged) '
+      'emits no <Devices> block at all — the part-10 regression guard',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/wet/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+            ),
+          ],
+        );
+        final xml = _decompress(buildAls(project));
+        expect(xml, isNot(contains('<Devices>')));
+        expect(xml, isNot(contains('Vst3PluginDevice')));
+      },
+    );
+
+    test(
+      'a track with an empty (resolved-but-no-effects) deviceChain also '
+      'emits no <Devices> block',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/dry/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              deviceChain: [],
+            ),
+          ],
+        );
+        final xml = _decompress(buildAls(project));
+        expect(xml, isNot(contains('<Devices>')));
+      },
+    );
+
+    test(
+      'a single-effect device chain emits one Vst3PluginDevice referencing '
+      "the plugin's permanent class id, with its param values in order",
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/dry/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              deviceChain: [
+                DawEffect(type: kFxDelay, params: [0.35, 0.35, 0.35, 0.0]),
+              ],
+            ),
+          ],
+        );
+        final xml = _decompress(buildAls(project));
+        expect(xml, contains('<Devices>'));
+        expect(
+          RegExp('<Vst3PluginDevice').allMatches(xml),
+          hasLength(1),
+        );
+        expect(
+          xml,
+          contains('<Uid Value="${loopyVst3Plugins[kFxDelay]!.classId}"/>'),
+        );
+        // Delay's controller registers exactly 3 real parameters
+        // (Time/Feedback/Mix) — the 4th, always-present padding slot
+        // (kTrackEffectParams) is NOT emitted, since it doesn't correspond
+        // to any parameter Delay's own controller.cpp registers.
+        final paramValues = RegExp(
+          r'<ParameterValue Value="([\d.]+)"/>',
+        ).allMatches(xml).map((m) => double.parse(m.group(1)!)).toList();
+        expect(paramValues, [0.35, 0.35, 0.35]);
+        expect(xml, contains('<NumParameters Value="3"/>'));
+      },
+    );
+
+    test(
+      'a plugin with fewer real parameters than the always-4-wide padded '
+      'params array emits only its real parameter count, not the padding',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/dry/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              // Drive's controller registers exactly 2 real parameters
+              // (Drive/Level); the trailing two entries are the manifest's
+              // always-4-wide padding, unused by Drive.
+              deviceChain: [
+                DawEffect(type: kFxDrive, params: [0.5, 0.8, 0.0, 0.0]),
+              ],
+            ),
+          ],
+        );
+        final xml = _decompress(buildAls(project));
+        expect(
+          RegExp('<PluginFloatParameter').allMatches(xml),
+          hasLength(2),
+        );
+        final paramValues = RegExp(
+          r'<ParameterValue Value="([\d.]+)"/>',
+        ).allMatches(xml).map((m) => double.parse(m.group(1)!)).toList();
+        expect(paramValues, [0.5, 0.8]);
+        expect(xml, contains('<NumParameters Value="2"/>'));
+      },
+    );
+
+    test(
+      'a multi-effect device chain emits one Vst3PluginDevice per entry, '
+      'in the same order as the resolved chain',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/dry/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              deviceChain: [
+                DawEffect(type: kFxDrive, params: [0.5, 0.8, 0.0, 0.0]),
+                DawEffect(type: kFxDelay, params: [0.35, 0.35, 0.35, 0.0]),
+                DawEffect(type: kFxReverb, params: [0.5, 0.5, 0.35, 0.0]),
+              ],
+            ),
+          ],
+        );
+        final xml = _decompress(buildAls(project));
+        expect(
+          RegExp('<Vst3PluginDevice').allMatches(xml),
+          hasLength(3),
+        );
+        // Order-sensitive: Drive's Uid appears before Delay's, which
+        // appears before Reverb's — not just "all three present somewhere."
+        final driveIndex = xml.indexOf(loopyVst3Plugins[kFxDrive]!.classId);
+        final delayIndex = xml.indexOf(loopyVst3Plugins[kFxDelay]!.classId);
+        final reverbIndex = xml.indexOf(loopyVst3Plugins[kFxReverb]!.classId);
+        expect(driveIndex, greaterThan(-1));
+        expect(delayIndex, greaterThan(driveIndex));
+        expect(reverbIndex, greaterThan(delayIndex));
+      },
+    );
+
+    test(
+      'every Id in a device-chain-bearing track stays internally consistent '
+      'with the rest of the Id/PointeeId scheme',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/dry/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              deviceChain: [
+                DawEffect(type: kFxFilter, params: [0.5, 0.2, 0.0, 0.0]),
+              ],
+              automationLanes: [
+                AutomationLane(
+                  target: AutomationTarget.volume,
+                  breakpoints: [AutomationBreakpoint(beat: 0, value: 0.8)],
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final xml = _decompress(buildAls(project));
+        final ids = _allIds(xml);
+        final nextPointeeId = int.parse(
+          RegExp(r'<NextPointeeId Value="(\d+)"/>').firstMatch(xml)!.group(1)!,
+        );
+        expect(ids, everyElement(lessThan(nextPointeeId)));
+        final idList = RegExp(
+          r'Id="(\d+)"',
+        ).allMatches(xml).map((m) => int.parse(m.group(1)!)).toList();
+        expect(idList.toSet().length, idList.length);
+      },
+    );
   });
 }
