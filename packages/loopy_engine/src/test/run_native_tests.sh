@@ -268,4 +268,28 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_vst3_filter_parity_tests.exe"
   "$OUT/loopy_vst3_filter_parity_tests.exe"
+
+  # Same GUID-drift + golden-parity test pair, repeated for "Loopy Tremolo"
+  # (part 8) — reuses the part-6-generalized harness unchanged (also a
+  # paramCount=2 effect); the harness's own block-size sweep doubles as the
+  # LFO block-boundary-phase check across the min (slowest) / max (fastest)
+  # Rate combos.
+  echo "== building vst3 tremolo GUID-drift test =="
+  $CXX -std=c++17 -Ithird_party/vst3sdk -Ivst3/tremolo \
+    vst3/tremolo/test_vst3_tremolo_ids.cpp \
+    -o "$OUT/loopy_vst3_tremolo_ids_tests.exe"
+  "$OUT/loopy_vst3_tremolo_ids_tests.exe"
+
+  echo "== building vst3 tremolo parity harness =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio \
+    -Ivst3/tremolo -Ivst3/test \
+    vst3/test/host_harness.cpp vst3/test/test_tremolo_parity.cpp \
+    vst3/tremolo/processor.cpp vst3/tremolo/controller.cpp vst3/tremolo/factory.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    third_party/vst3sdk/public.sdk/source/main/pluginfactory.cpp \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_tremolo_parity_tests.exe"
+  "$OUT/loopy_vst3_tremolo_parity_tests.exe"
 fi
