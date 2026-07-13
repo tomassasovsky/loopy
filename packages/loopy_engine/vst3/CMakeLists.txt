@@ -1,5 +1,6 @@
-# vst3/CMakeLists.txt — standalone project building "Loopy Delay" (part 2)
-# and "Loopy Reverb" (part 3) as real .vst3 bundles. An independent build
+# vst3/CMakeLists.txt — standalone project building "Loopy Delay" (part 2),
+# "Loopy Reverb" (part 3), and "Loopy Echo" (part 5) as real .vst3 bundles.
+# An independent build
 # (umbrella: "New: VST3 plugin artifacts (independent build)"), not folded
 # into loopy_engine's own SHARED-library build — pulls in the engine/src
 # project via add_subdirectory only to reuse loopy_dsp_core (part 1) and the
@@ -38,8 +39,9 @@ add_compile_definitions(
   "$<$<NOT:$<CONFIG:Debug>>:RELEASE=1>"
 )
 
-# Only loopy_vst3_delay / loopy_vst3_reverb are ever requested as build
-# targets (below), so this pulls loopy_dsp_core's definition into scope
+# Only loopy_vst3_delay / loopy_vst3_reverb / loopy_vst3_echo are ever
+# requested as build targets (below), so this pulls loopy_dsp_core's
+# definition into scope
 # without also having to build ../src's own loopy_engine SHARED target
 # (which has its own, unrelated per-OS device/MIDI dependencies out of scope
 # here).
@@ -187,3 +189,30 @@ target_link_options(loopy_vst3_reverb PRIVATE
   "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
 )
 loopy_vst3_add_bundle(loopy_vst3_reverb "Loopy Reverb" "${CMAKE_CURRENT_SOURCE_DIR}/reverb")
+
+# --- loopy_vst3_echo: "Loopy Echo" (part 5) ---------------------------------
+add_library(loopy_vst3_echo MODULE
+  echo/processor.cpp
+  echo/controller.cpp
+  echo/factory.cpp
+)
+set_target_properties(loopy_vst3_echo PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  PREFIX ""
+  SUFFIX ""
+  OUTPUT_NAME "Loopy Echo"
+)
+target_include_directories(loopy_vst3_echo PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/echo"
+)
+target_link_libraries(loopy_vst3_echo PRIVATE
+  loopy_dsp_core
+  core_plugin_disabled_stub
+  sdk
+  sdk_common
+)
+target_link_options(loopy_vst3_echo PRIVATE
+  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+)
+loopy_vst3_add_bundle(loopy_vst3_echo "Loopy Echo" "${CMAKE_CURRENT_SOURCE_DIR}/echo")
