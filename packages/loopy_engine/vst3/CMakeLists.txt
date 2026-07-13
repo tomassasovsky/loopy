@@ -1,6 +1,7 @@
 # vst3/CMakeLists.txt — standalone project building "Loopy Delay" (part 2),
-# "Loopy Reverb" (part 3), "Loopy Echo" (part 5), "Loopy Drive" (part 6), and
-# "Loopy Filter" (part 7) as real .vst3 bundles. An independent build
+# "Loopy Reverb" (part 3), "Loopy Echo" (part 5), "Loopy Drive" (part 6),
+# "Loopy Filter" (part 7), and "Loopy Tremolo" (part 8) as real .vst3
+# bundles. An independent build
 # (umbrella: "New: VST3 plugin artifacts (independent build)"), not folded
 # into loopy_engine's own SHARED-library build — pulls in the engine/src
 # project via add_subdirectory only to reuse loopy_dsp_core (part 1) and the
@@ -40,8 +41,8 @@ add_compile_definitions(
 )
 
 # Only loopy_vst3_delay / loopy_vst3_reverb / loopy_vst3_echo / loopy_vst3_drive /
-# loopy_vst3_filter are ever requested as build targets (below), so this pulls
-# loopy_dsp_core's definition into scope
+# loopy_vst3_filter / loopy_vst3_tremolo are ever requested as build targets
+# (below), so this pulls loopy_dsp_core's definition into scope
 # without also having to build ../src's own loopy_engine SHARED target
 # (which has its own, unrelated per-OS device/MIDI dependencies out of scope
 # here).
@@ -270,3 +271,30 @@ target_link_options(loopy_vst3_filter PRIVATE
   "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
 )
 loopy_vst3_add_bundle(loopy_vst3_filter "Loopy Filter" "${CMAKE_CURRENT_SOURCE_DIR}/filter")
+
+# --- loopy_vst3_tremolo: "Loopy Tremolo" (part 8) ---------------------------
+add_library(loopy_vst3_tremolo MODULE
+  tremolo/processor.cpp
+  tremolo/controller.cpp
+  tremolo/factory.cpp
+)
+set_target_properties(loopy_vst3_tremolo PROPERTIES
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
+  PREFIX ""
+  SUFFIX ""
+  OUTPUT_NAME "Loopy Tremolo"
+)
+target_include_directories(loopy_vst3_tremolo PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/tremolo"
+)
+target_link_libraries(loopy_vst3_tremolo PRIVATE
+  loopy_dsp_core
+  core_plugin_disabled_stub
+  sdk
+  sdk_common
+)
+target_link_options(loopy_vst3_tremolo PRIVATE
+  "-exported_symbols_list" "${LOOPY_VST3_SDK_DIR}/public.sdk/source/main/macexport.exp"
+)
+loopy_vst3_add_bundle(loopy_vst3_tremolo "Loopy Tremolo" "${CMAKE_CURRENT_SOURCE_DIR}/tremolo")
