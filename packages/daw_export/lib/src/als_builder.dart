@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:daw_export/src/daw_effect.dart';
 import 'package:daw_export/src/daw_project.dart';
+import 'package:daw_export/src/loopy_vst3_plugins.dart';
 
 /// The fixed pointee id Ableton Live conventionally assigns to the main
 /// track's tempo automation target — the main track's `Tempo` element wires
@@ -65,6 +67,19 @@ class _IdAllocator {
 /// this part's own test suite can enforce (Id/Pointee consistency, relative
 /// paths, warp-off, beat math, track/clip counts) is verified regardless of
 /// that pending real-world fidelity check.
+///
+/// Part 10's `<Devices>`/`Vst3PluginDevice` device-chain shape
+/// ([_deviceChainXml]) carries the SAME "unverified against a real save"
+/// caveat as the rest of this file, but with meaningfully LOWER confidence
+/// than the base clip/automation XML above: unlike `AudioClip`/
+/// `AutomationEnvelope` (extensively documented in public Live-Set-format
+/// reverse-engineering writeups), a hosted-VST3 device's exact element/
+/// attribute names are not — this shape is a best-effort reconstruction
+/// from the same "Manual + AutomationTarget" pattern this file's own
+/// Volume/Tempo/TrackActivator blocks already use, not a transcription of
+/// anything independently confirmed. Treat it as the single
+/// highest-priority item in `test/corpus/README.md`'s pending real-Ableton
+/// capture list.
 Uint8List buildAls(DawProject project) {
   final allocator = _IdAllocator();
   final buffer = StringBuffer()
@@ -135,6 +150,11 @@ void _writeAudioTrack(
 </TrackActivator>''');
     }
     buffer.writeln('</Mixer>');
+  }
+
+  final deviceChain = track.deviceChain;
+  if (deviceChain != null && deviceChain.isNotEmpty) {
+    buffer.writeln(_deviceChainXml(deviceChain, allocator));
   }
 
   buffer
@@ -229,6 +249,81 @@ AutomationLane? _laneFor(DawTrack track, AutomationTarget target) {
     );
   }
   return matches.isEmpty ? null : matches.single;
+}
+
+/// Emits `<Devices>` — one `Vst3PluginDevice` block per [chain] entry, in
+/// order — for a track whose channel resolved a non-empty real Loopy VST3
+/// device chain (`device_chain_resolver.dart`'s `resolveDeviceChain`, part
+/// 10). See this file's own top doc comment for why this shape carries
+/// meaningfully lower confidence than the rest of the builder: it is a
+/// best-effort reconstruction (the same `Manual`+`AutomationTarget` pattern
+/// already proven correct for Volume/Tempo/TrackActivator above), not a
+/// transcription of anything independently confirmed against a real Live
+/// 12 save.
+///
+/// Every effect entry's [DawEffect.type] is guaranteed to have a
+/// [loopyVst3Plugins] entry — `resolveDeviceChain` only ever resolves a
+/// chain out of types it already confirmed are representable built-in
+/// codes, so an unknown type here would indicate that invariant broke, not
+/// a case to silently skip.
+String _deviceChainXml(List<DawEffect> chain, _IdAllocator allocator) {
+  final buffer = StringBuffer()..writeln('<Devices>');
+  for (final effect in chain) {
+    final ref = loopyVst3Plugins[effect.type];
+    if (ref == null) {
+      throw StateError(
+        'DawEffect.type ${effect.type} has no loopyVst3Plugins entry — '
+        'resolveDeviceChain should never resolve a chain containing a type '
+        'this builder cannot map to a plugin.',
+      );
+    }
+    final deviceId = allocator.next();
+    final onTargetId = allocator.next();
+    buffer.writeln('''
+<Vst3PluginDevice Id="$deviceId">
+<On>
+<Manual Value="true"/>
+<AutomationTarget Id="$onTargetId">
+<LockEnvelope Value="0"/>
+</AutomationTarget>
+</On>
+<ParametersListWrapper>
+<Parameters>''');
+    // effect.params is always padded to kTrackEffectParams (4) in the
+    // persisted manifest (BuiltInEffect's own convention), regardless of how
+    // many of those slots this specific plugin's controller actually
+    // registers — emit only ref.paramCount entries, matching the real
+    // RangeParameter/StringListParameter set (D-PARAM's "must agree
+    // exactly"); the trailing padding values don't correspond to any
+    // parameter the plugin or Ableton knows about.
+    for (var i = 0; i < ref.paramCount; i++) {
+      final paramId = allocator.next();
+      // A shorter-than-expected params list (a malformed/older-format
+      // manifest entry) defaults the missing tail to 0.0 rather than
+      // throwing — matching this package's established graceful-degrade
+      // convention (DawManifestReader.read's own doc comment) over a hard
+      // failure for a data-quality issue, not a logic bug.
+      final value = i < effect.params.length ? effect.params[i] : 0.0;
+      buffer.writeln('''
+<PluginFloatParameter Id="$paramId">
+<ParameterId Value="$i"/>
+<ParameterValue Value="$value"/>
+</PluginFloatParameter>''');
+    }
+    buffer.writeln('''
+</Parameters>
+</ParametersListWrapper>
+<PluginDesc>
+<Vst3PluginInfo>
+<Uid Value="${ref.classId}"/>
+<Category Value="${_xmlEscape(ref.subcategory)}"/>
+<NumParameters Value="${ref.paramCount}"/>
+</Vst3PluginInfo>
+</PluginDesc>
+</Vst3PluginDevice>''');
+  }
+  buffer.writeln('</Devices>');
+  return buffer.toString();
 }
 
 /// A continuous (ramp-interpolated) automation envelope — used for
