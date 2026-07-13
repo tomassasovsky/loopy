@@ -1,14 +1,13 @@
 /*
  * test_vst3_octaver_ids.cpp — GUID-drift regression test (umbrella D-GUID).
  *
- * Independently hardcodes the same 16 bytes ids.h declares, transcribed
- * separately rather than reused from ids.h's own macros — the point is to
- * catch an accidental edit to ids.h itself, so this test must not share the
- * literal it is checking against. Byte order matches INLINE_UID's own
- * splitting of each 32-bit word (MSB first), independent of COM_COMPATIBLE.
- *
- * Wired into run_native_tests.sh (macOS-only section, alongside the other
- * plugin-hosting tests already built there).
+ * Independently transcribes the same four 32-bit identity words ids.h declares
+ * (a separate copy, NOT reused from ids.h's macros) and rebuilds the expected
+ * TUID through the SDK's own INLINE_UID — so an accidental edit to ids.h's
+ * literals is still caught, while the byte comparison stays correct on every OS:
+ * INLINE_UID applies the COM_COMPATIBLE byte order on Windows and the plain
+ * MSB-first order on macOS/Linux, exactly as kProcessorUID/kControllerUID are
+ * built. (A raw hardcoded 16-byte array only matches one platform's order.)
  */
 #include <cstdio>
 #include <cstring>
@@ -26,19 +25,15 @@ int g_failures = 0;
 
 static void test_processor_uid_unchanged() {
   std::printf("test_processor_uid_unchanged\n");
-  const unsigned char expected[16] = {
-      0x3D, 0x52, 0x24, 0x47, 0x83, 0x39, 0x0B, 0x64,
-      0x15, 0xC6, 0xCB, 0x7A, 0x50, 0x8C, 0xE9, 0x93,
-  };
+  const ::Steinberg::TUID expected =
+      INLINE_UID(0x3D522447, 0x83390B64, 0x15C6CB7A, 0x508CE993);
   CHECK(std::memcmp(loopy_vst3_octaver::kProcessorUID, expected, 16) == 0);
 }
 
 static void test_controller_uid_unchanged() {
   std::printf("test_controller_uid_unchanged\n");
-  const unsigned char expected[16] = {
-      0x89, 0xC9, 0xDB, 0x02, 0xE3, 0xC9, 0x04, 0x1B,
-      0xF9, 0x27, 0xEC, 0x11, 0x70, 0x88, 0x09, 0x26,
-  };
+  const ::Steinberg::TUID expected =
+      INLINE_UID(0x89C9DB02, 0xE3C9041B, 0xF927EC11, 0x70880926);
   CHECK(std::memcmp(loopy_vst3_octaver::kControllerUID, expected, 16) == 0);
 }
 
