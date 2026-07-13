@@ -23,29 +23,32 @@
 #include <stdint.h>
 #include <string.h>
 
-/* MSVC rejects the C11 `_Atomic` keyword in C++ translation units, and its
- * <stdatomic.h> provides no keyword-compatible fallback. The only C++ includers
- * of this header (transitively, via engine_fx.h) are the VST3 plugins under
- * packages/loopy_engine/vst3/: they use the DSP types (le_fx_state, LE_FX_MAX,
- * ...) but never perform atomic operations on the published snapshot fields. On
- * MSVC x64 an atomic scalar/pointer has the same size and alignment as its plain
- * counterpart, so collapsing `_Atomic` to nothing for those TUs keeps every
- * struct layout — and the DSP ABI with loopy_dsp_core's C build — identical.
- * clang/gcc accept `_Atomic` in C++, so this is MSVC-only; the engine's own C
- * build (and every non-MSVC C++ consumer) always sees real C11 atomics. Must sit
- * after <stdatomic.h> (so its own definitions are unaffected) and before the
- * engine headers below (which also use the keyword). */
-#if defined(__cplusplus) && defined(_MSC_VER)
+/* Both MSVC and GCC reject the C11 `_Atomic` keyword in C++ translation units,
+ * and neither exposes a keyword-compatible <stdatomic.h> fallback there — it is a
+ * Clang extension. The only C++ includers of this header (transitively, via
+ * engine_fx.h) are the VST3 plugins under packages/loopy_engine/vst3/: they use
+ * the DSP types (le_fx_state, LE_FX_MAX, ...) but never perform atomic operations
+ * on the published snapshot fields. An atomic scalar/pointer has the same size and
+ * alignment as its plain counterpart on the targeted ABIs, so collapsing `_Atomic`
+ * to nothing for those TUs keeps every struct layout — and the DSP ABI with
+ * loopy_dsp_core's C build — identical. Guarded to non-Clang C++ (Clang accepts
+ * `_Atomic` in C++, so macOS is untouched); the engine's own C build always sees
+ * real C11 atomics. Must sit after <stdatomic.h> and before the engine headers
+ * below (which use the keyword too). */
+#if defined(__cplusplus) && !defined(__clang__)
 #undef _Atomic
 #define _Atomic
-/* MSVC's <stdatomic.h> also omits the C11 free-function atomic API in C++ mode.
- * The only call sites reachable from these TUs are the `static inline` snapshot
- * accessors below (load_i32/store_i32/store_f32/load_f32), which the plugins
- * never call but MSVC still parses. Map the handful of ops used to plain
- * accesses for these TUs only — safe because the plugin reads DSP state
+/* MSVC's and GCC's <stdatomic.h> also omit the C11 free-function atomic API in
+ * C++ mode. The only call sites reachable from these TUs are the `static inline`
+ * snapshot accessors below (load_i32/store_i32/store_f32/load_f32), which the
+ * plugins never call but the compiler still parses. Map the handful of ops used
+ * to plain accesses for these TUs only — safe because a plugin reads DSP state
  * synchronously (no cross-thread publication happens in a plugin TU). */
+#undef memory_order_relaxed
 #define memory_order_relaxed 0
+#undef atomic_load_explicit
 #define atomic_load_explicit(slot, mo) (*(slot))
+#undef atomic_store_explicit
 #define atomic_store_explicit(slot, v, mo) ((void)(*(slot) = (v)))
 #endif
 

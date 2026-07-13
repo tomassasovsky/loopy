@@ -193,6 +193,27 @@ jobs:
           cmake --build build/vst3 --config Debug
           ctest --test-dir build/vst3 -C Debug --output-on-failure
 
+  # Linux port (part 14): the same seven plugins + CTest suite with gcc/clang. The
+  # default generator on ubuntu is single-config (Makefiles), so the build type is
+  # CMAKE_BUILD_TYPE (Debug gives the SDK its DEVELOPMENT=1), like the macOS job.
+  vst3-plugins-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C/C++ build dependencies
+        run: |
+          sudo apt-get update
+          # libasound2-dev: the engine's src/CMakeLists.txt (pulled in via
+          # add_subdirectory) runs find_package(ALSA REQUIRED) at configure time
+          # even though EXCLUDE_FROM_ALL means its ALSA-linking loopy_engine target
+          # is never built here — matches build-linux / native-tests.
+          sudo apt-get install -y build-essential cmake libasound2-dev
+      - name: Configure + build + test the VST3 plugins
+        run: |
+          cmake -S packages/loopy_engine/vst3 -B build/vst3 -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/vst3
+          ctest --test-dir build/vst3 --output-on-failure
+
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
     with:
