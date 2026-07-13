@@ -34,7 +34,6 @@ const _recordMeterColors = <LooperMeterState, Color>{
 };
 
 /// Track meter (peak bar) color per meter state while in **play** mode.
-// TODO(loopy): differentiate from record mode as desired.
 const _playMeterColors = <LooperMeterState, Color>{
   LooperMeterState.empty: Color(0xFF2C313A),
   LooperMeterState.recording: Color(0xFFFF1744),
