@@ -192,6 +192,38 @@ void main() {
       });
     }, skip: skip);
 
+    test('clearing a take drops its FX chain so a later dry record does not '
+        'inherit it, cache == engine (leftover-from-previous-config)', () {
+      _inHarness((h, fa) {
+        // Config A: monitor [reverb, delay], record a take onto the lane.
+        h
+          ..run(const [
+            _SetMonitorChain(0, [3, 2]),
+          ], fa) // reverb, delay
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
+
+        // Erase the take and go dry (a config change), then re-record from
+        // empty: the fresh dry take must NOT resurrect A's chain.
+        h
+          ..run(const [_Tap(PedalButton.clear)], fa)
+          ..run(const [
+            _SetMonitorChain(0, []),
+          ], fa) // dry monitor
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].lanes[0].effects, isEmpty);
+        expect(h.fxFingerprintViolation(), isNull);
+      });
+    }, skip: skip);
+
     test('monitor FX set then record-from-empty in the SAME turn (no drain) '
         'still lands on the take, cache == engine (snapshot race)', () {
       _inHarness((h, fa) {

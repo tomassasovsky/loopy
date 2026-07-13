@@ -1867,6 +1867,51 @@ void main() {
       );
     });
 
+    test('clear drops the take FX chain so a dry re-record does not inherit it '
+        '(leftover-from-previous-config fix)', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final persisted = <(int, int)>[];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..onLaneChainChanged = (channel, lane) {
+          persisted.add((channel, lane));
+        }
+        // Config A: monitor [reverb, delay], record onto the lane.
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.delay),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      expect(repo.laneEffects(0, 0), hasLength(2));
+
+      // Erase the take and go dry (a config change), then re-record.
+      repo
+        ..clear()
+        ..setMonitorEffects(input: 0, effects: const [])
+        ..record();
+
+      // The fresh dry take is dry — A's chain did not survive the clear — and
+      // the emptied chain was persisted (so a restart can't replay it).
+      expect(repo.laneEffects(0, 0), isEmpty);
+      expect(persisted, contains((0, 0)));
+    });
+
     test('record captures the monitor plugin state onto the lane (D-P1)', () {
       engine
         ..nextState = Uint8List.fromList([1, 2, 3, 4])

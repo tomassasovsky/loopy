@@ -773,8 +773,25 @@ class LooperRepository {
 
   /// Erases track [channel] (resets the master if all tracks empty). The
   /// engine unmutes every lane; the remembered mutes are forgotten to match.
+  ///
+  /// The take's FX chains are dropped too (cache + engine): a cleared track is
+  /// empty, so a subsequent record-from-empty through a *dry* monitor must land
+  /// a dry take — not inherit the erased take's chain (the "leftover from a
+  /// previous config" bug). This mirrors [applySession]'s chain reset; it does
+  /// NOT touch routing (`_laneInput` / `_laneOutput` / `_laneVolume`), which is
+  /// the track's config, not the take.
   EngineResult clear({int channel = 0}) {
     _forgetLaneMutes(channel);
+    final clearedLanes = [
+      for (final key in _laneEffects.keys)
+        if (key.$1 == channel) key.$2,
+    ];
+    for (final lane in clearedLanes) {
+      setLaneEffects(channel: channel, lane: lane, effects: const []);
+      // Persist the emptied chain (F3): without this, settings keeps the erased
+      // take's chain and a restart replays it onto the fresh take.
+      onLaneChainChanged?.call(channel, lane);
+    }
     return _engine.clear(channel: channel);
   }
 
