@@ -177,6 +177,22 @@ jobs:
           cmake --build build/vst3
           ctest --test-dir build/vst3 --output-on-failure
 
+  # Windows port (part 13): the same seven plugins + CTest suite on MSVC. The
+  # default generator on windows-latest is multi-config (Visual Studio), so the
+  # build type is chosen at build/test time (--config / -C Debug) rather than via
+  # CMAKE_BUILD_TYPE. shell: bash so any failing step fails the job (set -e),
+  # matching the macOS job. cmake ships on the windows-latest image.
+  vst3-plugins-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure + build + test the VST3 plugins
+        shell: bash
+        run: |
+          cmake -S packages/loopy_engine/vst3 -B build/vst3
+          cmake --build build/vst3 --config Debug
+          ctest --test-dir build/vst3 -C Debug --output-on-failure
+
   spell-check:
     uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/spell_check.yml@v1
     with:

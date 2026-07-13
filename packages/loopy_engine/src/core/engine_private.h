@@ -23,6 +23,32 @@
 #include <stdint.h>
 #include <string.h>
 
+/* MSVC rejects the C11 `_Atomic` keyword in C++ translation units, and its
+ * <stdatomic.h> provides no keyword-compatible fallback. The only C++ includers
+ * of this header (transitively, via engine_fx.h) are the VST3 plugins under
+ * packages/loopy_engine/vst3/: they use the DSP types (le_fx_state, LE_FX_MAX,
+ * ...) but never perform atomic operations on the published snapshot fields. On
+ * MSVC x64 an atomic scalar/pointer has the same size and alignment as its plain
+ * counterpart, so collapsing `_Atomic` to nothing for those TUs keeps every
+ * struct layout — and the DSP ABI with loopy_dsp_core's C build — identical.
+ * clang/gcc accept `_Atomic` in C++, so this is MSVC-only; the engine's own C
+ * build (and every non-MSVC C++ consumer) always sees real C11 atomics. Must sit
+ * after <stdatomic.h> (so its own definitions are unaffected) and before the
+ * engine headers below (which also use the keyword). */
+#if defined(__cplusplus) && defined(_MSC_VER)
+#undef _Atomic
+#define _Atomic
+/* MSVC's <stdatomic.h> also omits the C11 free-function atomic API in C++ mode.
+ * The only call sites reachable from these TUs are the `static inline` snapshot
+ * accessors below (load_i32/store_i32/store_f32/load_f32), which the plugins
+ * never call but MSVC still parses. Map the handful of ops used to plain
+ * accesses for these TUs only — safe because the plugin reads DSP state
+ * synchronously (no cross-thread publication happens in a plugin TU). */
+#define memory_order_relaxed 0
+#define atomic_load_explicit(slot, mo) (*(slot))
+#define atomic_store_explicit(slot, v, mo) ((void)(*(slot) = (v)))
+#endif
+
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
@@ -166,7 +192,10 @@ typedef struct le_fx_state {
    * (engine_plugin.c); the audio thread only loads it (fx_plugin_process). A
    * NULL or not-ready slot renders dry passthrough — no plugin is ever created
    * or freed on the audio thread (D-LIFE). */
-  _Atomic(le_plugin_slot*) plugin[LE_FX_MAX];
+  /* NB: keyword form (`*_Atomic`), not the `_Atomic(...)` functional form, so
+   * the MSVC-C++ `#define _Atomic` shim above collapses it cleanly. Identical
+   * C11 semantics: an atomic array of pointers to le_plugin_slot. */
+  le_plugin_slot *_Atomic plugin[LE_FX_MAX];
 } le_fx_state;
 
 /* One recordable input lane — the fundamental unit of captured audio.
