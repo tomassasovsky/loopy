@@ -135,6 +135,23 @@ void main() {
     ),
   );
 
+  testWidgets(
+    'every tap target on the performance surface is labeled '
+    '(labeledTapTargetGuideline)',
+    (tester) async {
+      // The regression net for the Big Picture's hand-labeling: any tappable
+      // node added without a semantic name — an icon-only IconButton with no
+      // tooltip, a bare GestureDetector, a FocusableTapTarget with no label —
+      // fails this. Locks in the transport controls, track tiles, mode toggle,
+      // and bank switch.
+      final handle = tester.ensureSemantics();
+      seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
+      await pump(tester);
+      await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+      handle.dispose();
+    },
+  );
+
   testWidgets('renders a tile per track', (tester) async {
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
