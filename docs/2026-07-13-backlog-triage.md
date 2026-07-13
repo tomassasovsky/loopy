@@ -65,7 +65,7 @@ hand-rolled CMake against the vendored SDK (`third_party/vst3sdk`, 363 files).
 | # | Item | Verdict | Evidence |
 |---|------|---------|----------|
 | D1 | **`worktree-refactor+audio-engine-robustness`** | ✅ **DROPPED** (worktree + local + **remote** branch deleted; SHA `b6b0afb` if ever needed) | Verification **overturned** the earlier "cherry-pick the reliability wins" idea: master *already has the whole branch*. The `core/` refactor, `engine_process.c`, `engine_fx.c`, typed command union, FX vtable, and role interfaces are all present on master. So are every reliability follow-up — P1 xrun (`engine_snapshot.dart` `xrunCount`), P2 CI native-tests (`main.yaml:104` `native-tests` job), P3 ASIO recovery, P5 FX prepare/defaults vtable (`fx_*_prepare`/`fx_*_defaults`), P6 per-step limiter (`le_process_master_step`, extracted for unit-testing). Master reimplemented all 23 commits independently as cleaner PRs. Nothing unique remained. |
-| D2 | **`loopy-midi` worktree** (`feat/midi-device-selection`) | ✅ **DROPPED** (worktree + local branch removed) | Clean tree, 12 ahead / 161 behind — all pre-squash originals of merged work (#30, multi-lane, pedal docs via #35). The only doc deltas vs master were cosmetic "real-time"↔"realtime" hyphenation. Nothing to preserve. |
+| D2 | **`loopy-midi` worktree** (`feat/midi-device-selection`) | ✅ **DROPPED** (worktree + local branch removed) | Clean tree, 12 ahead / 161 behind — all pre-squash originals of merged work (#30, multi-lane, pedal docs via #35). The only doc deltas vs master were a cosmetic hyphenation of "real-time". Nothing to preserve. |
 
 ## DEFER — relevant, not urgent (several hardware-gated)
 
