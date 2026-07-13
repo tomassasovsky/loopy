@@ -246,4 +246,26 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_vst3_drive_parity_tests.exe"
   "$OUT/loopy_vst3_drive_parity_tests.exe"
+
+  # Same GUID-drift + golden-parity test pair, repeated for "Loopy Filter"
+  # (part 7) — reuses the part-6-generalized harness unchanged (also a
+  # paramCount=2 effect).
+  echo "== building vst3 filter GUID-drift test =="
+  $CXX -std=c++17 -Ithird_party/vst3sdk -Ivst3/filter \
+    vst3/filter/test_vst3_filter_ids.cpp \
+    -o "$OUT/loopy_vst3_filter_ids_tests.exe"
+  "$OUT/loopy_vst3_filter_ids_tests.exe"
+
+  echo "== building vst3 filter parity harness =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio \
+    -Ivst3/filter -Ivst3/test \
+    vst3/test/host_harness.cpp vst3/test/test_filter_parity.cpp \
+    vst3/filter/processor.cpp vst3/filter/controller.cpp vst3/filter/factory.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    third_party/vst3sdk/public.sdk/source/main/pluginfactory.cpp \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_filter_parity_tests.exe"
+  "$OUT/loopy_vst3_filter_parity_tests.exe"
 fi
