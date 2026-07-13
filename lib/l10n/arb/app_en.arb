@@ -822,5 +822,37 @@
             }
         }
     },
-    "perfRenameButton": "Rename"
+    "perfRenameButton": "Rename",
+    "perfExportSummaryTitle": "Export",
+    "@perfExportSummaryTitle": {
+        "description": "Heading above the per-track export summary on the performance-completion sheet."
+    },
+    "perfExportTrackLive": "Live plugins",
+    "@perfExportTrackLive": {
+        "description": "Per-track export summary label: this track exported with a live, editable Loopy VST3 device chain."
+    },
+    "perfExportTrackBounced": "Bounced audio",
+    "@perfExportTrackBounced": {
+        "description": "Per-track export summary label: this track exported as bounced (wet) audio, with no live device chain."
+    },
+    "perfExportReasonMixedLanes": "Exported as audio — this track's lanes had different effects chains.",
+    "@perfExportReasonMixedLanes": {
+        "description": "Fallback reason shown under a bounced-audio track: its lanes didn't all share the same effects chain."
+    },
+    "perfExportReasonThirdPartyPlugin": "Exported as audio — this track uses a third-party plugin.",
+    "@perfExportReasonThirdPartyPlugin": {
+        "description": "Fallback reason shown under a bounced-audio track: its chain includes a hosted third-party plugin, which can't be exported live."
+    },
+    "perfExportReasonUnrepresented": "Exported as audio — this track uses an effect that can't be exported live yet.",
+    "@perfExportReasonUnrepresented": {
+        "description": "Fallback reason shown under a bounced-audio track: its chain includes an effect type this Loopy version doesn't recognize as exportable."
+    },
+    "perfExportReExport": "Re-export",
+    "@perfExportReExport": {
+        "description": "Button label: regenerate .als/fx-chains.txt from this already-finalized capture without re-recording."
+    },
+    "perfExportReExportFailed": "Couldn't regenerate the export.",
+    "@perfExportReExportFailed": {
+        "description": "Error message shown when re-export fails."
+    }
 }

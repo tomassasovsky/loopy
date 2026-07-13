@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/performance/cubit/performance_recorder_cubit.dart';
+import 'package:loopy/performance/view/export_device_chain_summary.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -94,42 +95,75 @@ class PerformanceCompletionSheet extends StatelessWidget {
       child: Padding(
         key: const Key('perfCompletion_sheet'),
         padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(l10n.perfDone, style: theme.textTheme.titleMedium),
-            if (message != null) ...[
-              const SizedBox(height: 8),
-              Text(message),
-            ],
-            const SizedBox(height: 4),
-            Text(_basename(path), style: theme.textTheme.bodySmall),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                TextButton.icon(
-                  key: const Key('perfCompletion_reveal'),
-                  onPressed: () => unawaited(_reveal(path)),
-                  icon: const Icon(Icons.folder_open),
-                  label: Text(_revealLabel(l10n)),
-                ),
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  key: const Key('perfCompletion_rename'),
-                  onPressed: () => unawaited(_rename(context, path)),
-                  icon: const Icon(Icons.drive_file_rename_outline),
-                  label: Text(l10n.perfRenameButton),
-                ),
-                const Spacer(),
-                TextButton(
-                  key: const Key('perfCompletion_close'),
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(l10n.done),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.perfDone, style: theme.textTheme.titleMedium),
+              if (message != null) ...[
+                const SizedBox(height: 8),
+                Text(message),
+              ],
+              const SizedBox(height: 4),
+              Text(_basename(path), style: theme.textTheme.bodySmall),
+              if (state.tracks.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                ExportDeviceChainSummary(tracks: state.tracks),
+              ],
+              if (state.reExportFailed) ...[
+                const SizedBox(height: 8),
+                Text(
+                  l10n.perfExportReExportFailed,
+                  style: TextStyle(color: theme.colorScheme.error),
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('perfCompletion_reExport'),
+                  onPressed: state.isReExporting
+                      ? null
+                      : () => unawaited(
+                          context.read<PerformanceRecorderCubit>().reExport(),
+                        ),
+                  icon: state.isReExporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  label: Text(l10n.perfExportReExport),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  TextButton.icon(
+                    key: const Key('perfCompletion_reveal'),
+                    onPressed: () => unawaited(_reveal(path)),
+                    icon: const Icon(Icons.folder_open),
+                    label: Text(_revealLabel(l10n)),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    key: const Key('perfCompletion_rename'),
+                    onPressed: () => unawaited(_rename(context, path)),
+                    icon: const Icon(Icons.drive_file_rename_outline),
+                    label: Text(l10n.perfRenameButton),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    key: const Key('perfCompletion_close'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(l10n.done),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

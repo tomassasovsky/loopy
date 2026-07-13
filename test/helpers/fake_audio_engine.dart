@@ -408,8 +408,14 @@ class FakeAudioEngine implements AudioEngine {
   @override
   Float32List exportTrack(int channel) => Float32List(0);
 
+  /// PCM returned by [exportTrackLane], keyed by `(channel, lane)` — empty
+  /// (the pre-existing default) unless a test seeds it, matching a real
+  /// engine reporting nothing settled to export for that lane.
+  final Map<(int, int), Float32List> laneExports = {};
+
   @override
-  Float32List exportTrackLane(int channel, int lane) => Float32List(0);
+  Float32List exportTrackLane(int channel, int lane) =>
+      laneExports[(channel, lane)] ?? Float32List(0);
 
   @override
   EngineResult importTrack(int channel, Float32List pcm) => EngineResult.ok;

@@ -1,4 +1,5 @@
 import 'package:bloc_test/bloc_test.dart';
+import 'package:daw_export/daw_export.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -206,4 +207,141 @@ void main() {
       expect(find.text(strings.perfRenameDuplicate('Taken')), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'no export summary is shown when the completed state has no tracks',
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+        ),
+      );
+      expect(find.byKey(const Key('exportSummary')), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a live-plugin track shows its name and the live-plugins label',
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              deviceChain: [
+                DawEffect(type: 3, params: [0.35, 0.35, 0.35, 0.0]),
+              ],
+            ),
+          ],
+        ),
+      );
+      final strings = await l10n();
+
+      expect(find.byKey(const Key('exportSummary')), findsOneWidget);
+      expect(find.text('Track 0'), findsOneWidget);
+      expect(find.text(strings.perfExportTrackLive), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a bounced track with a fallback reason shows the bounced label and '
+    'the specific reason',
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+          tracks: [
+            DawTrack(
+              name: 'Track 1',
+              deviceChainFallbackReason:
+                  DeviceChainFallbackReason.mixedLaneChains,
+            ),
+          ],
+        ),
+      );
+      final strings = await l10n();
+
+      expect(find.text(strings.perfExportTrackBounced), findsOneWidget);
+      expect(find.text(strings.perfExportReasonMixedLanes), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a bounced track with no effects at all shows no fallback callout',
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+          tracks: [DawTrack(name: 'Track 2', deviceChain: [])],
+        ),
+      );
+      final strings = await l10n();
+
+      expect(find.text(strings.perfExportTrackBounced), findsOneWidget);
+      expect(find.text(strings.perfExportReasonMixedLanes), findsNothing);
+      expect(
+        find.text(strings.perfExportReasonThirdPartyPlugin),
+        findsNothing,
+      );
+      expect(
+        find.text(strings.perfExportReasonUnrepresented),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('the re-export button calls cubit.reExport when tapped', (
+    tester,
+  ) async {
+    when(() => cubit.reExport()).thenAnswer((_) async {});
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordDone('/exports/perf-1'),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('perfCompletion_reExport')));
+    await tester.pumpAndSettle();
+
+    verify(() => cubit.reExport()).called(1);
+  });
+
+  testWidgets(
+    'the re-export button is disabled while a re-export is in progress',
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-1'),
+          isReExporting: true,
+        ),
+      );
+
+      final button = tester.widget<TextButton>(
+        find.byKey(const Key('perfCompletion_reExport')),
+      );
+      expect(button.onPressed, isNull);
+    },
+  );
+
+  testWidgets('a failed re-export shows the failure message', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      const PerformanceRecorderCompleted(
+        PerformanceRecordDone('/exports/perf-1'),
+        reExportFailed: true,
+      ),
+    );
+    final strings = await l10n();
+
+    expect(find.text(strings.perfExportReExportFailed), findsOneWidget);
+  });
 }
