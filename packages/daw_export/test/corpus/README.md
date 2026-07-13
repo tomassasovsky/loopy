@@ -74,7 +74,7 @@ entry, referencing the plugin by its permanent class GUID
 (`loopy_vst3_plugins.dart`). **This is the single least-verified piece of
 XML in this entire package** — meaningfully more uncertain than the
 tempo/clip/automation XML above. Those are extensively documented in public
-Live-Set-format reverse-engineering writeups; a hosted-VST3 device's exact
+Live-Set-format reverse-engineering write-ups; a hosted-VST3 device's exact
 element/attribute names are not. `_deviceChainXml`'s shape (`On`/
 `AutomationTarget`, `ParametersListWrapper`/`Parameters`/
 `PluginFloatParameter`, `PluginDesc`/`Vst3PluginInfo`/`Uid`) is a best-effort
