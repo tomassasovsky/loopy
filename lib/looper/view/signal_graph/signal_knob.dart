@@ -99,6 +99,12 @@ class SignalKnob extends StatelessWidget {
     final read = readoutBuilder ?? _readout;
     return Semantics(
       slider: true,
+      // The accessible NAME (WCAG 4.1.2). Without it a screen reader announces
+      // only the value ("+6.0 dB, slider") with no indication of what the knob
+      // controls; the caption Text below is a sibling node, not part of the
+      // slider. `label` is the same short caption shown under the knob (e.g.
+      // "VOL", or a hosted-plugin parameter's name).
+      label: label,
       value: read(v),
       increasedValue: read((v + 0.05 * max).clamp(0.0, max)),
       decreasedValue: read((v - 0.05 * max).clamp(0.0, max)),
@@ -167,25 +173,32 @@ class SignalKnob extends StatelessWidget {
           // Captions stay single-line + centred so the column keeps the knob's
           // footprint even in a fixed-width slot (an FX device card); a wide
           // readout ellipsises rather than wrapping and shoving the layout.
-          SizedBox(
-            width: size * 1.5,
-            child: Text(
-              label.toUpperCase(),
-              style: signalMono(color: surface.textTertiary, size: 9),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+          // Both are decorative duplicates of the slider's own `label` (name)
+          // and `value` — excluded from semantics so a screen reader announces
+          // each once, from the slider node, not again as loose Text.
+          ExcludeSemantics(
+            child: SizedBox(
+              width: size * 1.5,
+              child: Text(
+                label.toUpperCase(),
+                style: signalMono(color: surface.textTertiary, size: 9),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
             ),
           ),
           const SizedBox(height: 2),
-          SizedBox(
-            width: size * 1.5,
-            child: Text(
-              read(v),
-              style: signalMono(color: surface.textSecondary, size: 10.5),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+          ExcludeSemantics(
+            child: SizedBox(
+              width: size * 1.5,
+              child: Text(
+                read(v),
+                style: signalMono(color: surface.textSecondary, size: 10.5),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
             ),
           ),
         ],
