@@ -824,6 +824,105 @@ void main() {
     });
   });
 
+  group('keyboard-shortcut help', () {
+    testWidgets('the chrome carries a labelled help button', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      expect(find.byKey(const Key('tracks_shortcutsHelp')), findsOneWidget);
+      expect(find.byTooltip(l10n.a11yShortcutsHelp), findsWidgets);
+    });
+
+    testWidgets('the help button opens the legend dialog', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('shortcutsHelp_dialog')), findsOneWidget);
+    });
+
+    testWidgets('the ? key (Shift+/) opens the legend dialog', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.slash);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('shortcutsHelp_dialog')), findsOneWidget);
+    });
+
+    testWidgets('the legend lists a known shortcut', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      // The Space chip and its description both render.
+      expect(find.text('Space'), findsOneWidget);
+      expect(find.text(l10n.shortcutPlayStopAll), findsOneWidget);
+    });
+
+    testWidgets('a row is a single merged Semantics node', (tester) async {
+      final handle = tester.ensureSemantics();
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
+      await tester.pumpAndSettle();
+
+      final l10n = await AppLocalizations.delegate.load(const Locale('en'));
+      final node = tester.getSemantics(
+        find.byKey(const Key('shortcutRow_clear')),
+      );
+      // Reads as "<keys>: <description>", not two loose fragments.
+      expect(node.label, 'C: ${l10n.clearAllTooltip}');
+      handle.dispose();
+    });
+
+    testWidgets('the modifier chip shows ⌘ on macOS', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('shortcutRow_undo')),
+          matching: find.text('⌘Z'),
+        ),
+        findsOneWidget,
+      );
+      // Reset inline: the foundation-var invariant runs at the end of the test
+      // body, before tearDown callbacks.
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('the modifier chip shows Ctrl off macOS', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('tracks_shortcutsHelp')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('shortcutRow_undo')),
+          matching: find.text('Ctrl+Z'),
+        ),
+        findsOneWidget,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    });
+  });
+
   group('session menu', () {
     testWidgets('the session button is present and accessibly labelled', (
       tester,
