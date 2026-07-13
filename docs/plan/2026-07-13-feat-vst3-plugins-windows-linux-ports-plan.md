@@ -1,6 +1,7 @@
 # feat: Windows & Linux VST3 plugin ports (loopy-fx-vst3-plugins parts 13–14)
 
-**Status:** Planned · **Date:** 2026-07-13 · **Type:** enhancement (build/packaging + CI)
+**Status:** ✅ Shipped — parts 13 (#159 foundation, #160 Windows) and 14 (#161 Linux)
+all merged to master. · **Date:** 2026-07-13 · **Type:** enhancement (build/packaging + CI)
 **Series:** `loopy-fx-vst3-plugins` 17-part umbrella — this is **parts 13 (Windows)
 and 14 (Linux)**. Part 12 (macOS notarization) and parts 15–17 (undefined) are
 **out of scope**.
@@ -266,6 +267,10 @@ bundle layout, and one CI matrix row.
       cspell passes with the new VST3 terms added.
 
 ## Out-of-scope follow-ups (tracked, not done here)
-- Part 12: macOS notarization / Developer-ID signing.
+- Part 12: macOS notarization / Developer-ID signing — **not required, and dropped
+  unless a paid Apple Developer Program is available.** The build already ad-hoc
+  signs (`codesign -s -`), which loads locally; for distribution, document the
+  one-time `xattr -dr com.apple.quarantine "Loopy <fx>.vst3"` step instead of
+  notarizing. Windows/Linux have no equivalent requirement.
 - Parts 15–17: needs a brainstorm (installer/packaging, CLAP, pluginval gate, more DAWs).
 - Release-artifact bundling of the built `.vst3`s.
