@@ -292,4 +292,29 @@ if [ "$(uname -s)" = "Darwin" ]; then
     -framework CoreFoundation \
     -o "$OUT/loopy_vst3_tremolo_parity_tests.exe"
   "$OUT/loopy_vst3_tremolo_parity_tests.exe"
+
+  # Same GUID-drift + golden-parity test pair, repeated for "Loopy Octaver"
+  # (part 9) — the last of the seven built-in effects (D-ALL-EFFECTS), and
+  # the only one to use all 4 of the part-6-generalized harness's param
+  # slots. Unlike parts 6-8, Octaver's cap must scale with sample rate (like
+  # Reverb, part 3) — its own smoothing/crossfade time constants assume
+  # cap == sample rate — and it reports non-zero getLatencySamples().
+  echo "== building vst3 octaver GUID-drift test =="
+  $CXX -std=c++17 -Ithird_party/vst3sdk -Ivst3/octaver \
+    vst3/octaver/test_vst3_octaver_ids.cpp \
+    -o "$OUT/loopy_vst3_octaver_ids_tests.exe"
+  "$OUT/loopy_vst3_octaver_ids_tests.exe"
+
+  echo "== building vst3 octaver parity harness =="
+  # shellcheck disable=SC2086
+  $CXX -std=c++17 -DDEVELOPMENT=1 -Ithird_party/vst3sdk -Isrc/core -Isrc/miniaudio \
+    -Ivst3/octaver -Ivst3/test \
+    vst3/test/host_harness.cpp vst3/test/test_octaver_parity.cpp \
+    vst3/octaver/processor.cpp vst3/octaver/controller.cpp vst3/octaver/factory.cpp \
+    src/core/engine_fx.c src/core/plugin_disabled.c \
+    third_party/vst3sdk/public.sdk/source/main/pluginfactory.cpp \
+    $VST3_SDK_SRC \
+    -framework CoreFoundation \
+    -o "$OUT/loopy_vst3_octaver_parity_tests.exe"
+  "$OUT/loopy_vst3_octaver_parity_tests.exe"
 fi
