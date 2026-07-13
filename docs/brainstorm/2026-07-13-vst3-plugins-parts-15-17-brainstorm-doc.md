@@ -22,16 +22,16 @@ Run a real host-grade validator against each built bundle in the
 - **Why:** cheapest, highest-confidence quality win. Catches real-host issues the
   load-smoke can't — state save/restore, parameter bounds, thread-safety,
   bus/channel arrangements, allocation-on-audio-thread. Pure CI, no product design.
-- **How:** vendor/download `pluginval` (Tracktion, cross-platform, free) and run
-  `pluginval --validate "Loopy Delay.vst3"` per plugin per OS. Gate on strictness
-  level. macOS/Windows binaries exist; Linux builds from source.
+- **How:** vendor/download `pluginval` (a free, cross-platform plugin validator)
+  and run `pluginval --validate "Loopy Delay.vst3"` per plugin per OS. Gate on
+  strictness level. macOS/Windows binaries exist; Linux builds from source.
 - **Size:** small–medium (CI + a script). Self-contained.
 
 ### B. CLAP builds of the seven plugins
 The CLAP SDK is **already vendored** (`third_party/clap/include`), and the DSP is
 shared portable C++ — so a second entry point per plugin yields CLAP `.clap`
 artifacts.
-- **Why:** CLAP is the modern open plugin format (Bitwig, Reaper, FL, etc.); MIT,
+- **Why:** CLAP is the modern open plugin format with broad host support; MIT,
   no Steinberg agreement, cleaner threading model. Broadens host reach for free-ish.
 - **How:** mirror the `vst3/` project — a `clap/` CMake building each plugin's
   processor against the CLAP entry API + a per-OS `.clap` bundle; reuse
@@ -48,7 +48,7 @@ the quarantine-clear step), a Windows zip, a Linux tarball.
   the `Contents/…` bundles + a per-OS INSTALL note. No notarization (dropped).
 - **Size:** small–medium. Depends on nothing but the built bundles.
 
-### Also-rans (lower fit)
+### Also considered (lower fit)
 - **Custom plugin editor GUI** — the plugins ship the generic host parameter view.
   A branded editor is a large native-UI effort per format; low ROI vs. A/B/C.
 - **Factory presets** — small, but the FX are simple (2–3 params); marginal value.
