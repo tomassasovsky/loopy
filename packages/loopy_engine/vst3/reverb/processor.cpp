@@ -34,8 +34,7 @@ tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
   tresult result = AudioEffect::setupProcessing(newSetup);
   if (result != kResultOk) return result;
 
-  int newCap = static_cast<int>(processSetup.sampleRate + 0.5);
-  if (newCap < 1) newCap = 1;
+  const int newCap = computeRingCapacity(processSetup.sampleRate);
   if (newCap != cap_) {
     // Sample rate changed since the ring was last sized (or this is the
     // first call) — free and let le_fx_prepare below reallocate at the new

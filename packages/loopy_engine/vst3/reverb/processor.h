@@ -47,6 +47,15 @@ class Processor : public Steinberg::Vst::AudioEffect {
   // dropped comb/allpass network still produces a nonzero, finite tail.
   int ringCapacityForTesting() const { return cap_; }
 
+  // The cap_ formula itself, exposed so callers that need to know the ring
+  // size without a live Processor instance (the golden-parity harness,
+  // vst3/test/) can call the exact same computation setupProcessing() uses
+  // below, instead of re-deriving it as a duplicated literal formula.
+  static int computeRingCapacity(double sampleRate) {
+    const int cap = static_cast<int>(sampleRate + 0.5);
+    return cap < 1 ? 1 : cap;
+  }
+
  private:
   // Ring capacity in samples for the slot's single packed comb/allpass
   // buffer (delay[slot][0] — delay[slot][1] is unused by reverb), sized to

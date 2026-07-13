@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "controller.h"
+#include "fake_parameter_changes.h"
 #include "pluginterfaces/vst/ivstparameterchanges.h"
 #include "processor.h"
 #include "public.sdk/source/common/memorystream.h"
@@ -37,6 +38,7 @@ using loopy_vst3_reverb::kDampingId;
 using loopy_vst3_reverb::kMixId;
 using loopy_vst3_reverb::kSizeId;
 using loopy_vst3_reverb::Processor;
+using loopy_vst3_test::FakeParameterChanges;
 
 int g_failures = 0;
 #define CHECK(cond)                                              \
@@ -47,62 +49,7 @@ int g_failures = 0;
     }                                                              \
   } while (0)
 
-// Minimal test-only IParamValueQueue/IParameterChanges — Processor::process()
-// only ever calls getParameterCount/getParameterData/getParameterId/
-// getPointCount/getPoint, so that is all this stub needs to implement
-// correctly; queryInterface is never exercised by the code under test.
 namespace {
-
-class FakeParamQueue : public IParamValueQueue {
- public:
-  FakeParamQueue(ParamID id, ParamValue v) : id_(id), value_(v) {}
-
-  ParamID PLUGIN_API getParameterId() SMTG_OVERRIDE { return id_; }
-  int32 PLUGIN_API getPointCount() SMTG_OVERRIDE { return 1; }
-  tresult PLUGIN_API getPoint(int32 index, int32& sampleOffset,
-                              ParamValue& value) SMTG_OVERRIDE {
-    if (index != 0) return kResultFalse;
-    sampleOffset = 0;
-    value = value_;
-    return kResultTrue;
-  }
-  tresult PLUGIN_API addPoint(int32, ParamValue, int32&) SMTG_OVERRIDE {
-    return kNotImplemented;
-  }
-  tresult PLUGIN_API queryInterface(const TUID, void**) SMTG_OVERRIDE {
-    return kNoInterface;
-  }
-  uint32 PLUGIN_API addRef() SMTG_OVERRIDE { return 1; }
-  uint32 PLUGIN_API release() SMTG_OVERRIDE { return 1; }
-
- private:
-  ParamID id_;
-  ParamValue value_;
-};
-
-class FakeParameterChanges : public IParameterChanges {
- public:
-  void add(ParamID id, ParamValue v) { queues_.emplace_back(id, v); }
-
-  int32 PLUGIN_API getParameterCount() SMTG_OVERRIDE {
-    return static_cast<int32>(queues_.size());
-  }
-  IParamValueQueue* PLUGIN_API getParameterData(int32 index) SMTG_OVERRIDE {
-    if (index < 0 || index >= static_cast<int32>(queues_.size())) return nullptr;
-    return &queues_[index];
-  }
-  IParamValueQueue* PLUGIN_API addParameterData(const ParamID&, int32&) SMTG_OVERRIDE {
-    return nullptr;
-  }
-  tresult PLUGIN_API queryInterface(const TUID, void**) SMTG_OVERRIDE {
-    return kNoInterface;
-  }
-  uint32 PLUGIN_API addRef() SMTG_OVERRIDE { return 1; }
-  uint32 PLUGIN_API release() SMTG_OVERRIDE { return 1; }
-
- private:
-  std::vector<FakeParamQueue> queues_;
-};
 
 // Drives one silent block through `proc` so any queued param changes apply.
 void processSilentBlock(IAudioProcessor* proc, IParameterChanges* changes) {

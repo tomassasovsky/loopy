@@ -35,15 +35,17 @@ class Processor : public Steinberg::Vst::AudioEffect {
   Steinberg::tresult PLUGIN_API setState(Steinberg::IBStream* state) SMTG_OVERRIDE;
   Steinberg::tresult PLUGIN_API getState(Steinberg::IBStream* state) SMTG_OVERRIDE;
 
- private:
   // Fixed delay-ring capacity in samples, matching the live engine's own
   // default when no per-track override is set
   // (le_fx_prepare_entry, engine_commands.c). Not sample-rate-scaled — this
   // is a pre-existing property of fx_delay's own normalized-time mapping
   // (engine_fx.c), not something this wrapper adjusts (D-SEAM: drive the
-  // existing DSP as-is, never reimplement it).
+  // existing DSP as-is, never reimplement it). Public so the golden-parity
+  // harness (vst3/test/) can reference this exact constant instead of
+  // re-deriving it as a duplicated literal.
   static constexpr int kDelayCapFrames = 48000;
 
+ private:
   le_fx_state fx_{};
   int32_t types_[LE_FX_MAX] = {};
   float params_[LE_FX_MAX][LE_FX_PARAMS] = {};
