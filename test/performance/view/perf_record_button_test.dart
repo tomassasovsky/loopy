@@ -123,4 +123,29 @@ void main() {
 
     verify(cubit.toggleArm).called(1);
   });
+
+  testWidgets(
+    'completed: enabled, and tapping it dispatches toggleArm (D-REARM — '
+    'the button stays wired for this state, not just visually enabled; the '
+    'cubit-level toggleArm tests in performance_recorder_cubit_test.dart are '
+    'what prove arming again actually succeeds)',
+    (tester) async {
+      await pump(
+        tester,
+        const PerformanceRecorderCompleted(
+          PerformanceRecordDone('/exports/perf-x'),
+        ),
+      );
+
+      final button = tester.widget<IconButton>(
+        find.byKey(const Key('tracks_perfRecord')),
+      );
+      expect(button.onPressed, isNotNull);
+
+      await tester.tap(find.byKey(const Key('tracks_perfRecord')));
+      await tester.pump();
+
+      verify(cubit.toggleArm).called(1);
+    },
+  );
 }
