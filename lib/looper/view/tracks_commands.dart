@@ -10,6 +10,7 @@ import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session.dart';
@@ -138,6 +139,14 @@ class TracksCommands {
     final mode = overlay.state.mode;
     final l10n = context.l10n;
     final selected = overlay.state.cursor;
+
+    // `?` (Shift+/) opens the keyboard-shortcut legend — the same discoverable
+    // help the chrome's keyboard button surfaces, for pointer-free users.
+    if ((key == LogicalKeyboardKey.slash && keyboard.isShiftPressed) ||
+        event.character == '?') {
+      unawaited(showShortcutsHelp(context));
+      return KeyEventResult.handled;
+    }
 
     if (keyboard.isMetaPressed || keyboard.isControlPressed) {
       if (key == LogicalKeyboardKey.keyZ) {
