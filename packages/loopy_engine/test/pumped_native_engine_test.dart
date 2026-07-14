@@ -139,6 +139,45 @@ void main() {
     expect(engine.importTrackLane(0, 0, lane0), EngineResult.invalid);
   }, skip: skip);
 
+  test(
+    'pump processes real frames on a 2-channel engine without corruption',
+    () {
+      final engine = PumpedNativeEngine();
+      addTearDown(engine.dispose);
+
+      expect(
+        engine.start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+            maxLoopFrames: 48000,
+          ),
+        ),
+        EngineResult.ok,
+      );
+
+      // Record a real block of nonzero frames (not just frames: 0) on a
+      // 2-channel engine — this is the exact path that overflowed the old
+      // frames-sized (not frames*channels-sized) native buffers.
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 256, input: 0.5);
+      expect(engine.record(), EngineResult.ok); // finalize -> PLAYING
+      engine.pump(frames: 0);
+
+      final s = engine.snapshot();
+      expect(s.tracks.first.state, TrackState.playing);
+      expect(s.tracks.first.lengthFrames, 256);
+
+      // Round-trip through export to confirm the recorded samples are the
+      // expected constant, not corrupted/garbage from an undersized buffer.
+      final lane0 = engine.exportTrackLane(0, 0);
+      expect(lane0.length, 256);
+      expect(lane0, everyElement(closeTo(0.5, 1e-6)));
+    },
+    skip: skip,
+  );
+
   test('overdub layers round-trip through the real FFI', () {
     final engine = PumpedNativeEngine();
     addTearDown(engine.dispose);
