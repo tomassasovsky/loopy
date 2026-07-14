@@ -459,6 +459,7 @@
     "worktrees",
     "writeups",
     "xattr",
+    "engineperformancecapture",
     "catchable",
     "diagnosability",
     "misparse",
