@@ -21,6 +21,15 @@ jobs:
     with:
       flutter_version: "3.44.x"
       run_bloc_lint: true
+      # format_directories/analyze_directories default to "lib test", which
+      # only covers the root app. Glob in every package's lib/ + test/ too, so
+      # `dart format --set-exit-if-changed` and `flutter analyze` actually gate
+      # the 13 packages/* (daw_export, loopy_engine, etc.) instead of silently
+      # skipping them. The glob is spliced into a plain bash step by the
+      # reusable workflow, so it self-expands as packages are added/removed —
+      # no need to edit this list when packages/* changes.
+      format_directories: "lib test packages/*/lib packages/*/test"
+      analyze_directories: "lib test packages/*/lib packages/*/test"
       # Keep the 90% gate for real logic, but exclude platform / entrypoint glue
       # that can't be meaningfully unit-tested: the custom window chrome
       # (window_manager), the desktop_multi_window output-waveform sub-window,
