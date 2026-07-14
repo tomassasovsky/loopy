@@ -459,6 +459,12 @@
     "worktrees",
     "writeups",
     "xattr",
-    "pipefail"
+    "pipefail",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
