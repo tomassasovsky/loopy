@@ -105,10 +105,9 @@ struct ParamCombo {
 };
 
 // Computes the ring capacity (samples) the plugin under test allocates for a
-// given sample rate — Delay uses a fixed 48000 regardless of sr
-// (loopy_vst3_delay::Processor::kDelayCapFrames, a separate, not-yet-fixed
-// finding); Reverb and Echo both scale with sr
-// (loopy_vst3_reverb::Processor::computeRingCapacity,
+// given sample rate — Delay, Reverb, and Echo all scale their ring to the
+// real negotiated sample rate (loopy_vst3_delay::Processor::computeRingCapacity;
+// loopy_vst3_reverb::Processor::computeRingCapacity;
 // loopy_vst3_echo::Processor::computeRingCapacity). Passed in so this
 // harness's direct fx_apply_chain comparison uses the exact cap the hosted
 // path actually used — a cap mismatch would itself cause a spurious
