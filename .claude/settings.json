@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[tracking] Substantive work (feature/multi-step/multi-session) needs a GitHub issue with stage:* + autonomy:* labels; new session with no ticket must create one. PRs need Closes #N; ready-to-merge only when CI is green AND /code-review is clean. Trivial one-liners skip the issue. Contract: docs/TRACKING.md'"
+          }
+        ]
+      }
+    ]
+  }
+}
