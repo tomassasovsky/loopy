@@ -480,6 +480,7 @@
     "reencoded",
     "rlen",
     "millis",
-    "sandboxed"
+    "sandboxed",
+    "isclosed"
   ]
 }
