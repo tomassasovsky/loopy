@@ -465,7 +465,8 @@
     "worktrees",
     "writeups",
     "xattr",
-    "fsanitize",
+    "podspecs",
+    "staticlib",
     "catchable",
     "diagnosability",
     "misparse",
@@ -488,6 +489,7 @@
     "greppable",
     "izing",
     "opensource",
-    "pipefail"
+    "pipefail",
+    "fsanitize"
   ]
 }
