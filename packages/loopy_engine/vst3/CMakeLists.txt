@@ -300,9 +300,11 @@ foreach(fx delay reverb echo drive filter tremolo octaver)
   loopy_vst3_add_ids_test(${fx})
   loopy_vst3_add_parity_test(${fx})
 endforeach()
-# Wrapper-level tests exist only for Delay (part 2) and Reverb (part 3).
+# Wrapper-level tests exist for Delay (part 2), Reverb (part 3), and Echo
+# (added alongside its sample-rate-scaled-ring fix).
 loopy_vst3_add_wrapper_test(delay)
 loopy_vst3_add_wrapper_test(reverb)
+loopy_vst3_add_wrapper_test(echo)
 
 # --- loopy_vst3_delay: "Loopy Delay" (part 2) -------------------------------
 add_library(loopy_vst3_delay MODULE
