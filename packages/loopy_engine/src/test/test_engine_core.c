@@ -8024,13 +8024,11 @@ static void test_write_manifest(const char* dir, const char* body) {
   fclose(f);
 }
 
-/* Reads track `channel`'s rendered dry stem and returns its frame count (0 if
- * the file is missing/unreadable), filling `out` (caller-sized) with its
- * samples. */
-static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
-                              int32_t out_cap) {
-  char path[700];
-  snprintf(path, sizeof(path), "%s/stems/dry/track%d.wav", dir, channel);
+/* Shared fixed-format WAV reader backing test_read_stem/test_read_wet_stem/
+ * test_read_master_stem below: reads a 44-byte canonical WAV header written
+ * by le_pr_write_wav_mono, then up to `out_cap` float samples, returning the
+ * frame count actually read (0 if the file is missing/unreadable). */
+static int32_t test_read_wav_fixed(const char* path, float* out, int32_t out_cap) {
   FILE* f = fopen(path, "rb");
   if (f == NULL) return 0;
   unsigned char header[44];
@@ -8045,6 +8043,16 @@ static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
   const size_t got = fread(out, sizeof(float), (size_t)n, f);
   fclose(f);
   return (int32_t)got;
+}
+
+/* Reads track `channel`'s rendered dry stem and returns its frame count (0 if
+ * the file is missing/unreadable), filling `out` (caller-sized) with its
+ * samples. */
+static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
+                              int32_t out_cap) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/stems/dry/track%d.wav", dir, channel);
+  return test_read_wav_fixed(path, out, out_cap);
 }
 
 /* Polls until the render finishes or `max_polls` is exceeded (each poll ~1ms
@@ -8510,20 +8518,7 @@ static int32_t test_read_wet_stem(const char* dir, int32_t channel, float* out,
                                   int32_t out_cap) {
   char path[700];
   snprintf(path, sizeof(path), "%s/stems/wet/track%d.wav", dir, channel);
-  FILE* f = fopen(path, "rb");
-  if (f == NULL) return 0;
-  unsigned char header[44];
-  if (fread(header, 1, sizeof(header), f) != sizeof(header)) {
-    fclose(f);
-    return 0;
-  }
-  uint32_t data_bytes;
-  memcpy(&data_bytes, header + 40, 4);
-  const int32_t frames = (int32_t)(data_bytes / sizeof(float));
-  const int32_t n = frames < out_cap ? frames : out_cap;
-  const size_t got = fread(out, sizeof(float), (size_t)n, f);
-  fclose(f);
-  return (int32_t)got;
+  return test_read_wav_fixed(path, out, out_cap);
 }
 
 /* Reads the reconstructed master (stems/wet/master.wav), same fixed-format
@@ -8532,20 +8527,7 @@ static int32_t test_read_master_stem(const char* dir, float* out,
                                      int32_t out_cap) {
   char path[700];
   snprintf(path, sizeof(path), "%s/stems/wet/master.wav", dir);
-  FILE* f = fopen(path, "rb");
-  if (f == NULL) return 0;
-  unsigned char header[44];
-  if (fread(header, 1, sizeof(header), f) != sizeof(header)) {
-    fclose(f);
-    return 0;
-  }
-  uint32_t data_bytes;
-  memcpy(&data_bytes, header + 40, 4);
-  const int32_t frames = (int32_t)(data_bytes / sizeof(float));
-  const int32_t n = frames < out_cap ? frames : out_cap;
-  const size_t got = fread(out, sizeof(float), (size_t)n, f);
-  fclose(f);
-  return (int32_t)got;
+  return test_read_wav_fixed(path, out, out_cap);
 }
 
 /* Acceptance: a chain with a mid-performance param sweep renders the sweep
