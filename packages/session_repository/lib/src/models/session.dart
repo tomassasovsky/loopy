@@ -76,7 +76,7 @@ class SessionLane {
   /// Lane index within the track.
   final int lane;
 
-  /// Playback gain in `0..1`.
+  /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
 
   /// Whether the lane is muted.
@@ -337,7 +337,8 @@ class SessionMonitor {
   /// Bitmask of output channels the monitor plays to.
   final int outputMask;
 
-  /// Monitor output gain in `0..1`.
+  /// Monitor output gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above
+  /// unity).
   final double volume;
 
   /// Whether the monitor is muted.
