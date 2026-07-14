@@ -488,6 +488,7 @@
     "subosito",
     "greppable",
     "izing",
-    "opensource"
+    "opensource",
+    "pipefail"
   ]
 }
