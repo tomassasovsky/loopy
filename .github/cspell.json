@@ -483,6 +483,8 @@
     "sandboxed",
     "isclosed",
     "accum",
-    "fopen"
+    "fopen",
+    "narratively",
+    "oneline"
   ]
 }
