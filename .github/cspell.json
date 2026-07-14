@@ -459,6 +459,12 @@
     "worktrees",
     "writeups",
     "xattr",
-    "ryaml"
+    "ryaml",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
