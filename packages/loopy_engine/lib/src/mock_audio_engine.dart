@@ -367,7 +367,7 @@ class MockAudioEngine implements AudioEngine {
   }) {
     final result = _requireRunning();
     if (!result.isOk) return result;
-    _tracks[channel].laneAt(lane).volume = volume.clamp(0, 1);
+    _tracks[channel].laneAt(lane).volume = volume.clamp(0.0, LE_MAX_GAIN);
     return EngineResult.ok;
   }
 

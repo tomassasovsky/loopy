@@ -91,7 +91,7 @@ typedef enum le_command_code {
   LE_CMD_PLAY = 4,      /* resume playback */
   LE_CMD_CLEAR = 5,     /* erase the track, back to empty */
   LE_CMD_UNDO = 6,      /* remove the last overdub layer */
-  LE_CMD_SET_VOLUME = 7,/* arg_f = 0..1 */
+  LE_CMD_SET_VOLUME = 7,/* arg_f = 0..LE_MAX_GAIN */
   LE_CMD_SET_MUTE = 8,  /* arg_f = 0 (unmute) or 1 (mute) */
   LE_CMD_SET_RECORD_OFFSET = 13, /* arg_i = round-trip latency in frames */
   LE_CMD_SET_INPUT_MASK = 14,    /* route a track's record sources (arg_f =
@@ -123,7 +123,7 @@ typedef enum le_command_code {
                                 * arg_i = output bitmask. */
   LE_CMD_SET_LANE_VOLUME = 28, /* lane playback gain.
                                 * arg_i = channel*LE_MAX_LANES + lane,
-                                * arg_f = 0..1. */
+                                * arg_f = 0..LE_MAX_GAIN. */
   LE_CMD_SET_LANE_MUTE = 29,   /* lane mute.
                                 * arg_i = channel*LE_MAX_LANES + lane,
                                 * arg_f = 0/1. */
@@ -149,7 +149,7 @@ typedef enum le_command_code {
   LE_CMD_SET_MONITOR_INPUT_OUTPUT = 33, /* input monitor playback destinations.
                                          * trackmask arm: channel = input, mask. */
   LE_CMD_SET_MONITOR_INPUT_VOLUME = 34, /* input monitor gain.
-                                         * arg_i = input, arg_f = 0..1. */
+                                         * arg_i = input, arg_f = 0..LE_MAX_GAIN. */
   LE_CMD_SET_MONITOR_INPUT_MUTE = 35,   /* input monitor mute.
                                          * arg_i = input, arg_f = 0/1. */
   LE_CMD_SET_MASTER_GAIN = 36, /* global post-mix output gain. arg_f = 0..1. */
@@ -322,7 +322,7 @@ typedef struct le_config {
 typedef struct le_lane_snapshot {
   int32_t input_channel; /* hardware input this lane records (-1 = none) */
   uint32_t output_mask;  /* bitmask of output channels this lane plays to */
-  float volume;          /* 0..1 */
+  float volume;          /* 0..LE_MAX_GAIN */
   int32_t muted;         /* 0/1 */
   int32_t length_frames; /* frames captured into this lane's buffer */
   float rms;             /* 0..1 */
@@ -338,7 +338,7 @@ typedef struct le_lane_snapshot {
  * with le_engine_get_lane. */
 typedef struct le_track_snapshot {
   int32_t state;         /* le_track_state */
-  float volume;          /* lane 0 volume, 0..1 */
+  float volume;          /* lane 0 volume, 0..LE_MAX_GAIN */
   int32_t muted;         /* lane 0 mute, 0/1 */
   int32_t length_frames; /* frames captured (== multiple * master length) */
   int32_t multiple;      /* track length in whole base loops (>= 1) */
@@ -822,7 +822,8 @@ LE_EXPORT int32_t le_engine_set_lane_input(le_engine* engine, int32_t channel,
 LE_EXPORT int32_t le_engine_set_lane_output(le_engine* engine, int32_t channel,
                                             int32_t lane, int32_t mask);
 
-/* Sets lane [lane] of track [channel]'s playback gain, clamped to 0..1. */
+/* Sets lane [lane] of track [channel]'s playback gain, clamped to
+ * 0..LE_MAX_GAIN (2.0, +6.02 dB headroom above unity). */
 LE_EXPORT int32_t le_engine_set_lane_volume(le_engine* engine, int32_t channel,
                                             int32_t lane, float volume);
 
@@ -946,7 +947,8 @@ LE_EXPORT int32_t le_engine_set_monitor_input_output(le_engine* engine,
                                                      int32_t input, int32_t mask);
 
 /* Sets hardware input [input]'s monitor output gain to [volume] (clamped to
- * 0..1). The default is 1.0 (unity). */
+ * 0..LE_MAX_GAIN, i.e. 2.0/+6.02 dB headroom above unity). The default is 1.0
+ * (unity). */
 LE_EXPORT int32_t le_engine_set_monitor_input_volume(le_engine* engine,
                                                      int32_t input, float volume);
 

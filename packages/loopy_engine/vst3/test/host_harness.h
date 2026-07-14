@@ -106,13 +106,15 @@ struct ParamCombo {
 
 // Computes the ring capacity (samples) the plugin under test allocates for a
 // given sample rate — Delay uses a fixed 48000 regardless of sr
-// (loopy_vst3_delay::Processor::kDelayCapFrames); Reverb scales with sr
-// (loopy_vst3_reverb::Processor::computeRingCapacity, part 3's fix). Passed
-// in so this harness's direct fx_apply_chain comparison uses the exact cap
-// the hosted path actually used — a cap mismatch would itself cause a
-// spurious divergence unrelated to any real bug. Each ParityConfig sources
-// this from the plugin's own processor.h rather than re-deriving the
-// formula, so the two can't silently drift apart.
+// (loopy_vst3_delay::Processor::kDelayCapFrames, a separate, not-yet-fixed
+// finding); Reverb and Echo both scale with sr
+// (loopy_vst3_reverb::Processor::computeRingCapacity,
+// loopy_vst3_echo::Processor::computeRingCapacity). Passed in so this
+// harness's direct fx_apply_chain comparison uses the exact cap the hosted
+// path actually used — a cap mismatch would itself cause a spurious
+// divergence unrelated to any real bug. Each ParityConfig sources this from
+// the plugin's own processor.h rather than re-deriving the formula, so the
+// two can't silently drift apart.
 using CapFn = int (*)(double sampleRate);
 
 // Configuration for one plugin's parity suite. Exactly 5 combos: default,
