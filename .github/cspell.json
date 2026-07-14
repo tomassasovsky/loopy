@@ -459,6 +459,12 @@
     "worktrees",
     "writeups",
     "xattr",
-    "isclosed"
+    "isclosed",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
