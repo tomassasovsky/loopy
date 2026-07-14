@@ -460,6 +460,12 @@
     "writeups",
     "xattr",
     "millis",
-    "sandboxed"
+    "sandboxed",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
