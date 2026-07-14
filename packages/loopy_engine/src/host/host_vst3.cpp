@@ -679,7 +679,7 @@ class Vst3Host final : public loopy::IPluginHost {
     // IS the controller for a single-component effect, otherwise a separate
     // class instantiated from getControllerClassId. Null is tolerated (the
     // plugin simply exposes no in-app params / editor).
-    bool separateController = false;
+    separateController_ = false;
     if (component_->queryInterface(IEditController::iid,
                                    reinterpret_cast<void**>(&controller_)) !=
         kResultOk) {
@@ -690,7 +690,7 @@ class Vst3Host final : public loopy::IPluginHost {
           factory_->createInstance(reinterpret_cast<FIDString>(ctrlCid),
                                    IEditController::iid, &cobj) == kResultOk) {
         controller_ = static_cast<IEditController*>(cobj);
-        separateController = true;
+        separateController_ = true;
       }
     }
     if (controller_) {
@@ -702,11 +702,11 @@ class Vst3Host final : public loopy::IPluginHost {
       // IConnectionPoint would be a self-connect, which the VST3 SDK's own
       // reference host explicitly avoids (see plugprovider.cpp's
       // `if (res && !isSingleComponent) return connectComponents();`).
-      if (separateController) {
+      if (separateController_) {
         controller_->initialize(&hostApp_);
       }
       controller_->setComponentHandler(&componentHandler_);
-      if (separateController) {
+      if (separateController_) {
         connectComponentAndController();
       }
     }
@@ -1037,7 +1037,11 @@ class Vst3Host final : public loopy::IPluginHost {
     if (processor_) processor_->setProcessing(false);
     if (component_) component_->setActive(false);
     if (controller_) {
-      controller_->terminate();
+      // Single-component plugins: controller_ IS component_, whose terminate()
+      // is called below — calling it here too would double-terminate the same
+      // underlying object against its one initialize() call (see loadImpl's
+      // matching guard on controller_->initialize()).
+      if (separateController_) controller_->terminate();
       controller_->release();
       controller_ = nullptr;
     }
@@ -1082,6 +1086,12 @@ class Vst3Host final : public loopy::IPluginHost {
   IComponent* component_ = nullptr;
   IAudioProcessor* processor_ = nullptr;
   IEditController* controller_ = nullptr;
+  // True only when controller_ is a distinct object from component_ (created
+  // from getControllerClassId). Mirrors the SDK's plugprovider.cpp
+  // `controllerIsComponent` check: a single-component plugin's controller_ IS
+  // component_, so it must get exactly one initialize()/terminate() pair, not
+  // one per pointer.
+  bool separateController_ = false;
   int32 channels_ = 2;  // negotiated channel count (1 = mono-adapted, 2 = stereo)
   bool firstProcess_ = true;  // one-shot diagnostic trace gate (see process())
   bool crashed_ = false;  // load SEH-faulted: unload() must not touch the plugin
