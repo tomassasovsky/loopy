@@ -59,6 +59,14 @@ packages/
   looper_repository/   REPO  — owns the engine; EngineSnapshot → LooperState
   settings_repository/ REPO  — per-device latency calibration persistence
   local_storage_client/ DATA — KeyValueStore (shared_preferences)
+  session_repository/  REPO  — save/restore .loopy session bundles (manifest + WAV stems)
+  performance_repository/ REPO — performance-recording capture lifecycle (arm/finalize/recover)
+  wav_codec/           DATA  — 32-bit-float WAV encode/decode (pure Dart, no Flutter dep)
+  daw_export/          DATA  — pure-Dart Ableton Live 12 (.als) exporter for a performance capture
+  midi_client/         DATA  — native USB-MIDI device client (ControllerSource) over the FFI seam
+  midi_device_repository/ REPO — MIDI device enumeration/selection + hotplug (audio-independent)
+  pedal_repository/    REPO  — hardware pedal (footswitch/LED) protocol over MIDI SysEx
+  routing_graph/       UI KIT — reusable routing-graph canvas/wires/cards + theme (Signal, FX editor)
 lib/
   app/        App + MultiRepositoryProvider (looper, controller, settings)
   looper/     LooperBloc + Chewie-2 track grid (home)
@@ -281,9 +289,14 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   edit type + sliders. `LooperRepository` remembers the chain and re-applies on
   (re)start (structural vs. granular-param paths); persisted per channel.
   Designed plugin-ready — a hosted VST3/CLAP plugin is just another effect type.
-  **VST3 SDK went MIT (VST 3.8, Oct 2025)**, so a host is no longer licence- or
-  GPL-blocked; it remains a gated follow-up (needs the SDK vendored to compile +
-  plugin-editor child-window embedding).
+  **VST3 SDK went MIT (VST 3.8, Oct 2025)**, clearing the licence/GPL block, and
+  **the host has since shipped**: vendored VST3 + CLAP SDKs, plugin
+  discovery/scan/catalog, slot lifecycle + sealed `TrackEffect` topology guard,
+  dynamic parameter UI, native editor windows (NSWindow on macOS, HWND on
+  Windows) with two-way param sync, and state persistence with missing-plugin
+  resilience. A plugin browser ("+" → Add effect/Add plugin…) replaced the old
+  debug seam. **macOS and Windows hosting are feature-complete; Linux (X11)
+  hosting is the one remaining gap**, deferred to on-platform work.
 - **Windows + Linux native — portable foundation (PR1).** Generated the Linux GTK
   app scaffold (`linux/`); `flutter build linux --debug -t lib/main_development.dart`
   compiles + bundles `libloopy_engine.so` (miniaudio dlopen()s the audio backend at
@@ -476,6 +489,45 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   `LaneNode` moved into `signal_graph/`. Built in 3 stacked phases (scaffold →
   rich node + dock → deletions); ~1.3k lines of old-surface tests removed with
   their load-bearing coverage migrated onto the `signal_*` tests.
+- **Loopy FX plugins** — Loopy's own built-in effects, shipped *as* real,
+  installable VST3 plugins for third-party DAWs (distinct from the plugin
+  *host* above — this ships Loopy's own DSP as third-party VST3 plugins).
+  Seven native plugins share one `packages/loopy_engine/vst3/` build —
+  **Delay, Reverb, Echo, Drive, Filter, Tremolo, Octaver** — each wrapping
+  the same engine DSP core the looper uses, so behavior can't drift from the
+  in-app effect, checked by a **golden-parity audio-diff harness**. **macOS,
+  Windows, and Linux all build and test all 7 plugins**, each via its own CI
+  job (`vst3-plugins-macos`/`-windows`/`-linux`) running the shared CTest
+  gate. Parts 15-17 (further effects/polish) are not yet started.
+- **Performance recording** (12-part plan). Captures a full live performance
+  to disk, sample-accurately: RT-safe audio-thread taps write into lock-free
+  rings, a control-thread drain thread streams them to a per-run event log
+  (`wav_codec` for the WAV side, new `performance_repository` for capture
+  lifecycle — arm/finalize/recover-unfinalized/rename/discard), surfaced by a
+  recorder UI + app state (record/play toolbar affordance).
+- **Performance recording — pedal firmware parity.** The pedal has no spare
+  footswitch, so arm/disarm rides the existing MODE button via a
+  tap-vs-long-press split (tap still toggles Rec/Play; a ≥500 ms hold
+  arms/disarms), with a blinking-red MODE LED when armed on the on-screen
+  `PedalFaceplate` simulator.
+- **DAW export.** New `daw_export` package (pure Dart, no Flutter/engine
+  dependency) turns a completed performance capture into a real **Ableton
+  Live 12 `.als`** project: one audio track per non-empty track/live-input
+  stem, arrangement-view clips at capture start, session-view loop clips per
+  lane, and volume/mute **automation envelopes** thinned from the event log.
+  Its newest piece (device-chain export) resolves a channel's per-lane
+  effects into a single **real Loopy VST3 device chain** embedded in the
+  `.als` when every lane agrees on one representable chain, falling back to
+  the wet-bounce stem export otherwise (mixed lanes, a third-party plugin, or
+  an unrepresented effect type). **Known gap:** `PerformanceRepository.arm()`
+  is not yet called with real per-lane chains at either call site
+  (`performance_recorder_cubit.dart`, `control_cubit.dart`), so the shipped
+  app always takes the wet-bounce fallback today — wiring real chains
+  through is a small separate follow-up. Also **note:** the presentation
+  layer (`PerformanceRecorderCubit`, `export_device_chain_summary.dart`)
+  currently imports `daw_export` and does its own file I/O directly rather
+  than going through `performance_repository` — an accepted, documented
+  layering shortcut, not yet folded into the repository.
 
 ---
 
@@ -529,11 +581,19 @@ remains open — see "On-hardware validations" below.
   are done). Screen-reader labels, focus order, keyboard-nav a11y tests.
 - **Raspberry Pi GPIO backend** — the `ControllerSourceKind.gpio` seam exists but
   there's no `gpio_client` package / libgpiod binding yet. _(Not started.)_
+- **VST3 FX plugins — parts 15-17** — further built-in effects/polish beyond
+  the 7 already shipped (Delay/Reverb/Echo/Drive/Filter/Tremolo/Octaver) and
+  their Windows/Linux builds; brainstormed
+  (`docs/brainstorm/2026-07-13-vst3-plugins-parts-15-17-brainstorm-doc.md`)
+  but not planned or built yet.
 
 ### Deferred (need hardware / 2nd display)
 - `midi_client` — real USB-MIDI binding **SHIPPED** (PRs #39/#40/#42): native
   `le_midi_*` capture seam → `MidiControllerSource` → `ControllerRepository`,
   with a device-selection UI. Hardware-gated only for a live-pedal smoke test.
+- **VST3/CLAP plugin hosting — Linux (X11) port.** See the "Effects chain"
+  Done entry above for macOS/Windows status; Linux needs an X11 embedding
+  target, deferred to on-platform work.
 - Secondary-window **visualizer** (`desktop_multi_window`) — wired end-to-end in
   code (`runWaveformWindow`, `WaveformWindowService`, frame IPC); needs a 2nd
   display for a live visual confirmation.
@@ -554,13 +614,19 @@ remains open — see "On-hardware validations" below.
 native (all C tests: incl. mid-loop record, transport reset single- &
 multi-track, loop multiples, loop-viz, per-track effects DSP, session
 export/import roundtrip, **single-chain monitor + record-FX snapshot +
-RT-safety + structural output gate**) · plugin 38 · controller 14 ·
-looper_repository 83 · settings 63 · session_repository 17 · local_storage 1 ·
-app 358 excl. author-only `screenshots`-tagged goldens (auto-start/first-run,
-big-picture settings + access, banks + A/B, performance keyboard,
-functional-settings, **Signal three-list surface: SignalRows flatten +
-single-lane collapse + tags, routing-chip toggle + picker, capture re-assign,
-tap-to-trace dim/clear, output gate + a11y, no-active-outputs notice,
-responsive stacking, contextual dock**, session menu). `flutter analyze` clean;
+RT-safety + structural output gate**) · VST3 CTest gate (16 wired: 7
+plugin-id + 7 parity + 2 wrapper, plus a per-plugin load-smoke check) ·
+loopy_engine (dart, the FFI/plugin layer — was labeled "plugin") 138 (~7
+skipped) · controller_repository 18 · looper_repository 184 (~6 skipped) ·
+settings_repository 65 · session_repository 57 · local_storage_client 1 ·
+performance_repository 56 · pedal_repository 116 · midi_device_repository 22 ·
+routing_graph 45 · wav_codec 5 · daw_export 79 · app 737 (~13 skipped) excl.
+author-only `screenshots`-tagged goldens (auto-start/first-run, big-picture
+settings + access, banks + A/B, performance keyboard, functional-settings,
+**Signal three-list surface: SignalRows flatten + single-lane collapse +
+tags, routing-chip toggle + picker, capture re-assign, tap-to-trace
+dim/clear, output gate + a11y, no-active-outputs notice, responsive
+stacking, contextual dock**, session menu, **performance recorder UI +
+pedal arm/disarm**, **DAW device-chain export**). `flutter analyze` clean;
 macOS app builds end-to-end. `LE_MAX_TRACKS = 8`, `LE_MAX_CHANNELS = 32`,
 `LE_FX_MAX = 8`, `kMaxOutputs = 8`.
