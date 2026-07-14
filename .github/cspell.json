@@ -462,6 +462,12 @@
     "allpass",
     "constexpr",
     "DCMAKE",
-    "samplerate"
+    "samplerate",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
