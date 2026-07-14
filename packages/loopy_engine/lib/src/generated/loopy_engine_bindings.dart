@@ -1363,7 +1363,8 @@ class LoopyEngineBindings {
   late final _le_engine_set_lane_output = _le_engine_set_lane_outputPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int, int)>();
 
-  /// Sets lane [lane] of track [channel]'s playback gain, clamped to 0..1.
+  /// Sets lane [lane] of track [channel]'s playback gain, clamped to
+  /// 0..LE_MAX_GAIN (2.0, +6.02 dB headroom above unity).
   int le_engine_set_lane_volume(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -1848,7 +1849,8 @@ class LoopyEngineBindings {
           .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// Sets hardware input [input]'s monitor output gain to [volume] (clamped to
-  /// 0..1). The default is 1.0 (unity).
+  /// 0..LE_MAX_GAIN, i.e. 2.0/+6.02 dB headroom above unity). The default is 1.0
+  /// (unity).
   int le_engine_set_monitor_input_volume(
     ffi.Pointer<le_engine> engine,
     int input,
@@ -2989,7 +2991,7 @@ enum le_command_code {
   /// remove the last overdub layer
   LE_CMD_UNDO(6),
 
-  /// arg_f = 0..1
+  /// arg_f = 0..LE_MAX_GAIN
   LE_CMD_SET_VOLUME(7),
 
   /// arg_f = 0 (unmute) or 1 (mute)
@@ -3038,7 +3040,7 @@ enum le_command_code {
 
   /// lane playback gain.
   /// arg_i = channel*LE_MAX_LANES + lane,
-  /// arg_f = 0..1.
+  /// arg_f = 0..LE_MAX_GAIN.
   LE_CMD_SET_LANE_VOLUME(28),
 
   /// lane mute.
@@ -3065,7 +3067,7 @@ enum le_command_code {
   LE_CMD_SET_MONITOR_INPUT_OUTPUT(33),
 
   /// input monitor gain.
-  /// arg_i = input, arg_f = 0..1.
+  /// arg_i = input, arg_f = 0..LE_MAX_GAIN.
   LE_CMD_SET_MONITOR_INPUT_VOLUME(34),
 
   /// input monitor mute.
@@ -3256,7 +3258,7 @@ final class le_lane_snapshot extends ffi.Struct {
   @ffi.Uint32()
   external int output_mask;
 
-  /// 0..1
+  /// 0..LE_MAX_GAIN
   @ffi.Float()
   external double volume;
 
@@ -3289,7 +3291,7 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int state;
 
-  /// lane 0 volume, 0..1
+  /// lane 0 volume, 0..LE_MAX_GAIN
   @ffi.Float()
   external double volume;
 
