@@ -25,9 +25,33 @@ tresult PLUGIN_API Processor::initialize(FUnknown* context) {
 
   types_[0] = LE_FX_ECHO;
   le_fx_defaults(LE_FX_ECHO, params_[0]);
-  if (le_fx_prepare(&fx_, 0, LE_FX_ECHO, kEchoCapFrames) != LE_OK) {
-    return kResultFalse;
+  // The ring itself is sized in setupProcessing(), once the host's real
+  // sample rate is known — see processor.h's cap_ comment.
+  return kResultOk;
+}
+
+tresult PLUGIN_API Processor::setupProcessing(ProcessSetup& newSetup) {
+  tresult result = AudioEffect::setupProcessing(newSetup);
+  if (result != kResultOk) return result;
+
+  const int newCap = computeRingCapacity(processSetup.sampleRate);
+  if (newCap != cap_) {
+    // Sample rate changed since the ring was last sized (or this is the
+    // first call) — free both channels and let le_fx_prepare below
+    // reallocate at the new size. fx_alloc_ring only allocates when the
+    // pointer is NULL, so without this the ring would silently stay sized
+    // to the OLD rate. Like Delay (and unlike Reverb, which packs both
+    // stereo banks into a single delay[0][0] buffer), Echo's
+    // fx_stereo_ring_prepare allocates one ring per channel (engine_fx.c) —
+    // both must be freed here or [1] would leak on every sample-rate
+    // change.
+    free(fx_.delay[0][0]);
+    fx_.delay[0][0] = nullptr;
+    free(fx_.delay[0][1]);
+    fx_.delay[0][1] = nullptr;
+    cap_ = newCap;
   }
+  if (le_fx_prepare(&fx_, 0, LE_FX_ECHO, cap_) != LE_OK) return kResultFalse;
   return kResultOk;
 }
 
@@ -97,7 +121,7 @@ tresult PLUGIN_API Processor::process(ProcessData& data) {
   for (int32 i = 0; i < data.numSamples; ++i) {
     float l = inL[i];
     float r = inR[i];
-    fx_apply_chain(&fx_, sr, kEchoCapFrames, &l, &r, 1, types_, params_);
+    fx_apply_chain(&fx_, sr, cap_, &l, &r, 1, types_, params_);
     outL[i] = l;
     if (outR != outL) outR[i] = r;
   }
