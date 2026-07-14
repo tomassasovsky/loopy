@@ -465,8 +465,7 @@
     "worktrees",
     "writeups",
     "xattr",
-    "millis",
-    "sandboxed",
+    "isclosed",
     "catchable",
     "diagnosability",
     "misparse",
@@ -477,6 +476,8 @@
     "ryaml",
     "sublist",
     "reencoded",
-    "rlen"
+    "rlen",
+    "millis",
+    "sandboxed"
   ]
 }
