@@ -460,6 +460,12 @@
     "writeups",
     "xattr",
     "podspecs",
-    "staticlib"
+    "staticlib",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
