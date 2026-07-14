@@ -35,7 +35,7 @@ class Track extends Equatable {
   /// Current state-machine phase.
   final TrackState state;
 
-  /// Playback gain in `0..1`.
+  /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
 
   /// Whether the track is muted.

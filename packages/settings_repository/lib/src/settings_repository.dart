@@ -468,8 +468,9 @@ class SettingsRepository {
   Future<int> loadMonitorInputDry(int input) async =>
       await _store.getInt(_monitorInputDryKey(input)) ?? 0;
 
-  /// Loads hardware [input]'s legacy monitor output gain (`0..1`), or `null` if
-  /// it was never saved. Read only by the v2 lane migration.
+  /// Loads hardware [input]'s legacy monitor output gain (`0..LE_MAX_GAIN`,
+  /// 2.0, +6.02 dB headroom above unity), or `null` if it was never saved.
+  /// Read only by the v2 lane migration.
   Future<double?> loadMonitorInputVolume(int input) =>
       _store.getDouble(_monitorInputVolKey(input));
 
@@ -507,12 +508,14 @@ class SettingsRepository {
   Future<void> saveMonitorOutput(int input, int mask) =>
       _store.setInt(_monitorOutKey(input), mask);
 
-  /// Loads hardware [input]'s monitor output gain (`0..1`), or `null` if never
-  /// saved (the caller defaults to unity `1.0`).
+  /// Loads hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
+  /// +6.02 dB headroom above unity), or `null` if never saved (the caller
+  /// defaults to unity `1.0`).
   Future<double?> loadMonitorVolume(int input) =>
       _store.getDouble(_monitorVolKey(input));
 
-  /// Saves hardware [input]'s monitor output gain (`0..1`).
+  /// Saves hardware [input]'s monitor output gain (`0..LE_MAX_GAIN`, 2.0,
+  /// +6.02 dB headroom above unity).
   Future<void> saveMonitorVolume(int input, double volume) =>
       _store.setDouble(_monitorVolKey(input), volume);
 

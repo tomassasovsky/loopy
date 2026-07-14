@@ -1096,7 +1096,8 @@ class LooperRepository {
   int monitorChainFingerprint(int input) =>
       trackChainFingerprint(_monitorEffects[input] ?? const []);
 
-  /// Sets track [channel]'s playback gain (`0..1`) on **every lane of it**. A
+  /// Sets track [channel]'s playback gain (`0..LE_MAX_GAIN`, 2.0, +6.02 dB
+  /// headroom above unity) on **every lane of it**. A
   /// track-level volume is a whole-track control, so a multi-lane track scales
   /// all its lanes together, not just lane 0. Returns the last failing lane's
   /// result, or [EngineResult.ok] if all lanes succeed.
@@ -1181,8 +1182,9 @@ class LooperRepository {
     return _engine.setLaneOutput(channel: channel, lane: lane, mask: mask);
   }
 
-  /// Sets lane [lane] of track [channel]'s playback gain (`0..1`). Remembered
-  /// and re-applied on every (re)start.
+  /// Sets lane [lane] of track [channel]'s playback gain (`0..LE_MAX_GAIN`,
+  /// 2.0, +6.02 dB headroom above unity). Remembered and re-applied on every
+  /// (re)start.
   EngineResult setLaneVolume(
     double volume, {
     required int channel,
@@ -1225,8 +1227,9 @@ class LooperRepository {
     return _engine.setMonitorInputOutput(input: input, mask: mask);
   }
 
-  /// Sets monitor [input]'s output gain ([volume], `0..1`). Remembered and
-  /// re-applied on every (re)start; takes effect immediately while running.
+  /// Sets monitor [input]'s output gain ([volume], `0..LE_MAX_GAIN`, 2.0,
+  /// +6.02 dB headroom above unity). Remembered and re-applied on every
+  /// (re)start; takes effect immediately while running.
   EngineResult setMonitorVolume({required int input, required double volume}) {
     _monitorVolume[input] = volume;
     if (!_intendRunning) return EngineResult.ok;
