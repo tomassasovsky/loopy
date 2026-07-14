@@ -465,12 +465,13 @@
     "worktrees",
     "writeups",
     "xattr",
-    "engineperformancecapture",
+    "ryaml",
     "catchable",
     "diagnosability",
     "misparse",
     "rearchitect",
     "reimplementation",
-    "unrequested"
+    "unrequested",
+    "engineperformancecapture"
   ]
 }
