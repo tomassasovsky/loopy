@@ -8654,13 +8654,13 @@ static void test_perf_render_dry_write_fail_excludes_from_master(void) {
     fclose(lf);
   }
 
-  le_perf_render_force_dry_write_failure_for_test(1);
+  le_perf_render_force_dry_write_failure_for_test(0); /* fail channel 0's dry write */
 
   le_engine* e = le_engine_create();
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
   test_wait_for_render(e, 2000);
 
-  le_perf_render_force_dry_write_failure_for_test(0); /* reset before other tests run */
+  le_perf_render_force_dry_write_failure_for_test(-1); /* reset before other tests run */
 
   int32_t done = 0, track_count = 0;
   CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
@@ -8691,6 +8691,117 @@ static void test_perf_render_dry_write_fail_excludes_from_master(void) {
   CHECK(master_got == (int32_t)capture_frames);
   for (int32_t i = 0; i < master_got; ++i) {
     CHECK(master[i] == 0.0f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Regression (isolation): in a MULTI-channel render, forcing one channel's
+ * dry write to fail must exclude only that channel from master.wav — a
+ * second, healthy channel rendered in the same pass must still succeed and
+ * still land correctly in master.wav. This is the channel-selective
+ * counterpart to test_perf_render_dry_write_fail_excludes_from_master (which
+ * only proves the single-channel case): the earlier single-channel test
+ * cannot distinguish a per-channel gate from a process-wide one, since
+ * failing "every channel" and failing "the only channel" look identical. */
+static void test_perf_render_multi_channel_dry_fail_isolated(void) {
+  printf("test_perf_render_multi_channel_dry_fail_isolated\n");
+  const char* dir = render_test_dir("dry-fail-multi");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 4;
+  const float healthy_value = 0.4f;
+  const float failing_value = 0.3f;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float content0[4] = {healthy_value, healthy_value, healthy_value,
+                             healthy_value};
+  char wav_path0[700];
+  snprintf(wav_path0, sizeof(wav_path0), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path0, content0, loop_len, sr);
+  const float content1[4] = {failing_value, failing_value, failing_value,
+                             failing_value};
+  char wav_path1[700];
+  snprintf(wav_path1, sizeof(wav_path1), "%s/track1-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path1, content1, loop_len, sr);
+
+  char manifest[1500];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+          "\"limiterCeiling\": 0.99, \"tracks\": ["
+          "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, "
+          "\"lanes\": [{\"lane\": 0, \"deferred\": false, "
+          "\"pcmRef\": \"loops/track0-lane0.wav\", \"effects\": []}]}, "
+          "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, "
+          "\"lanes\": [{\"lane\": 0, \"deferred\": false, "
+          "\"pcmRef\": \"loops/track1-lane0.wav\", \"effects\": []}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    fclose(lf);
+  }
+
+  le_perf_render_force_dry_write_failure_for_test(1); /* only channel 1 */
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  le_perf_render_force_dry_write_failure_for_test(-1); /* reset before other tests run */
+
+  int32_t done = 0, track_count = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(track_count == 2);
+
+  int good = 0, bad = 0;
+  for (int i = 0; i < track_count; ++i) {
+    int32_t channel = -1, succeeded = -1;
+    CHECK(le_perf_render_track_status(e, i, &channel, &succeeded) == LE_OK);
+    if (channel == 0) {
+      CHECK(succeeded == 1); /* channel 0's dry write was untouched */
+      good++;
+    } else if (channel == 1) {
+      CHECK(succeeded == 0); /* channel 1's dry write was forced to fail */
+      bad++;
+    }
+  }
+  CHECK(good == 1);
+  CHECK(bad == 1);
+
+  /* Both channels' wet stems land on disk with real content regardless of
+   * status — the forced failure only ever touches channel 1's dry write. */
+  float wet0[4];
+  CHECK(test_read_wet_stem(dir, 0, wet0, 4) == (int32_t)capture_frames);
+  for (int32_t i = 0; i < (int32_t)capture_frames; ++i) {
+    CHECK(fabsf(wet0[i] - healthy_value) < 1e-5f);
+  }
+  float wet1[4];
+  CHECK(test_read_wet_stem(dir, 1, wet1, 4) == (int32_t)capture_frames);
+  for (int32_t i = 0; i < (int32_t)capture_frames; ++i) {
+    CHECK(fabsf(wet1[i] - failing_value) < 1e-5f);
+  }
+
+  /* master.wav must contain channel 0's healthy content and nothing from
+   * channel 1: if it were 0.7f (healthy_value + failing_value), the gate
+   * would be leaking the failed channel in; if it were 0.0f, the gate would
+   * be over-excluding the healthy channel too (e.g. a process-wide flag
+   * instead of a per-channel one). */
+  float master[4];
+  CHECK(test_read_master_stem(dir, master, (int32_t)capture_frames) ==
+       (int32_t)capture_frames);
+  for (int32_t i = 0; i < (int32_t)capture_frames; ++i) {
+    CHECK(fabsf(master[i] - healthy_value) < 1e-5f);
   }
 
   le_engine_destroy(e);
@@ -9175,6 +9286,7 @@ int main(void) {
   test_perf_render_missing_or_corrupt_manifest();
   test_perf_render_wet_fx_sweep();
   test_perf_render_dry_write_fail_excludes_from_master();
+  test_perf_render_multi_channel_dry_fail_isolated();
   test_perf_render_wet_multi_slot_and_count_shrink();
   test_perf_render_wet_plugin_passthrough();
   test_perf_render_golden_master_parity();

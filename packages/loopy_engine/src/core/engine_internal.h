@@ -232,12 +232,14 @@ void le_perf_drain_force_write_failure_for_test(int enabled);
 
 /* ---- perf-render test seams (perf_render.c; part 8) ---- */
 
-/* Forces the offline render worker's dry-stem write (only) to fail for every
- * channel, deterministically simulating a transient I/O error on that one
- * write without touching the filesystem or the wet-stem write. Process-
- * global, disabled by default; a test must re-disable it (pass 0) before the
- * next test runs. Not part of the FFI surface. */
-void le_perf_render_force_dry_write_failure_for_test(int enabled);
+/* Forces the offline render worker's dry-stem write (only) to fail for a
+ * single channel, deterministically simulating a transient I/O error on that
+ * one write without touching the filesystem or the wet-stem write, and
+ * without affecting any other channel's dry write in the same render. Pass
+ * the channel id to fail, or -1 to disable. Process-global, disabled (-1) by
+ * default; a test must re-disable it (pass -1) before the next test runs.
+ * Not part of the FFI surface. */
+void le_perf_render_force_dry_write_failure_for_test(int32_t channel);
 
 #ifdef __cplusplus
 }

@@ -1002,15 +1002,16 @@ static void le_pr_render_master(const le_pr_manifest* m,
 
 /* ---- worker thread ---- */
 
-/* Test-only global: forces the dry-stem write below to fail, deterministically
- * simulating a transient I/O error on that one write without touching the
- * filesystem or affecting the wet-stem write (engine_internal.h). Mirrors
- * perf_drain.c's g_pd_force_write_failure. Relaxed: a lone on/off switch a
- * test flips before/after driving a render, not raced against anything else. */
-static _Atomic int g_pr_force_dry_write_failure = 0;
+/* Test-only global: forces the dry-stem write for one specific channel below
+ * to fail, deterministically simulating a transient I/O error on that one
+ * write without touching the filesystem or affecting the wet-stem write, or
+ * any other channel's dry write in the same render (engine_internal.h). -1
+ * disables it. Relaxed: a lone value a test flips before/after driving a
+ * render, not raced against anything else. */
+static _Atomic int32_t g_pr_force_dry_write_failure_channel = -1;
 
-void le_perf_render_force_dry_write_failure_for_test(int enabled) {
-  atomic_store_explicit(&g_pr_force_dry_write_failure, enabled ? 1 : 0,
+void le_perf_render_force_dry_write_failure_for_test(int32_t channel) {
+  atomic_store_explicit(&g_pr_force_dry_write_failure_channel, channel,
                         memory_order_relaxed);
 }
 
@@ -1065,11 +1066,12 @@ static void le_pr_worker_main(void* arg) {
       if (stem != NULL) {
         char dry_path[LE_PR_FULL_PATH_MAX];
         snprintf(dry_path, sizeof(dry_path), "%s/track%d.wav", dry_dir, channel);
-        if (atomic_load_explicit(&g_pr_force_dry_write_failure,
-                                 memory_order_relaxed)) {
-          ok = 0; /* test-only: simulate a dry-write I/O failure without
-                   * touching the filesystem (le_pr_force_dry_write_failure_
-                   * for_test, below). */
+        if (atomic_load_explicit(&g_pr_force_dry_write_failure_channel,
+                                 memory_order_relaxed) == channel) {
+          ok = 0; /* test-only: simulate a dry-write I/O failure on this one
+                   * channel without touching the filesystem
+                   * (le_perf_render_force_dry_write_failure_for_test,
+                   * above). */
         } else {
           ok = le_pr_write_wav_mono(dry_path, stem,
                                     (int32_t)manifest.capture_frames,
