@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -475,6 +476,93 @@ void main() {
             .having((s) => s.currentSessionName, 'current', 'Open')
             .having((s) => s.sessions, 'sessions', summaries),
       ],
+    );
+  });
+
+  group('isClosed guard', () {
+    // These exercise `_run`'s three branches (success, `on SessionException`,
+    // `on Object`) and `refreshSessions` all closing mid-flight: the mocked
+    // repository call is left pending on a Completer, the cubit is closed
+    // while that await is outstanding, and only then is the Completer
+    // resolved — resuming the suspended action after `isClosed` is already
+    // true. Without a guard, the post-await `emit` throws `StateError`, and
+    // (for the success path) `_run`'s `on Object catch` branch re-emits
+    // unguarded too, so the error propagates out of the returned Future.
+    // Plain `test()` is used instead of `blocTest()` here because the
+    // assertion is "the returned Future completes without throwing", not a
+    // state-sequence `blocTest`'s `expect` is shaped for.
+    test(
+      'exportMixdown does not throw when the cubit closes while the '
+      'repository call is still pending (success path)',
+      () async {
+        final completer = Completer<void>();
+        when(
+          () => repository.exportMixdown(any()),
+        ).thenAnswer((_) => completer.future);
+
+        final cubit = build();
+        final future = cubit.exportMixdown();
+
+        await cubit.close();
+        completer.complete();
+
+        await expectLater(future, completes);
+      },
+    );
+
+    test(
+      'exportMixdown does not throw when the cubit closes while the '
+      'repository call is still pending (on SessionException catch)',
+      () async {
+        final completer = Completer<void>();
+        when(
+          () => repository.exportMixdown(any()),
+        ).thenAnswer((_) => completer.future);
+
+        final cubit = build();
+        final future = cubit.exportMixdown();
+
+        await cubit.close();
+        completer.completeError(const SessionNameCollision(slug: 'x'));
+
+        await expectLater(future, completes);
+      },
+    );
+
+    test(
+      'exportMixdown does not throw when the cubit closes while the '
+      'repository call is still pending (on Object catch)',
+      () async {
+        final completer = Completer<void>();
+        when(
+          () => repository.exportMixdown(any()),
+        ).thenAnswer((_) => completer.future);
+
+        final cubit = build();
+        final future = cubit.exportMixdown();
+
+        await cubit.close();
+        completer.completeError(Exception('disk full'));
+
+        await expectLater(future, completes);
+      },
+    );
+
+    test(
+      'refreshSessions does not throw when the cubit closes while the '
+      'repository call is still pending',
+      () async {
+        final completer = Completer<List<SessionSummary>>();
+        when(repository.listSessions).thenAnswer((_) => completer.future);
+
+        final cubit = build();
+        final future = cubit.refreshSessions();
+
+        await cubit.close();
+        completer.complete(const []);
+
+        await expectLater(future, completes);
+      },
     );
   });
 }
