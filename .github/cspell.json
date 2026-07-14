@@ -465,7 +465,8 @@
     "worktrees",
     "writeups",
     "xattr",
-    "sublist",
+    "reencoded",
+    "rlen",
     "catchable",
     "diagnosability",
     "misparse",
@@ -473,6 +474,7 @@
     "reimplementation",
     "unrequested",
     "engineperformancecapture",
-    "ryaml"
+    "ryaml",
+    "sublist"
   ]
 }
