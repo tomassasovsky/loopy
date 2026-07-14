@@ -78,7 +78,7 @@ final class LooperVolumeChanged extends LooperChannelEvent {
   /// Creates a [LooperVolumeChanged].
   const LooperVolumeChanged(super.channel, this.volume);
 
-  /// New gain in `0..1`.
+  /// New gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
 
   @override
@@ -164,7 +164,7 @@ final class LooperLaneVolumeChanged extends LooperLaneEvent {
   /// Creates a [LooperLaneVolumeChanged].
   const LooperLaneVolumeChanged(super.channel, super.lane, this.volume);
 
-  /// New gain in `0..1`.
+  /// New gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
 
   @override
