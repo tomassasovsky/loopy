@@ -460,6 +460,12 @@
     "writeups",
     "xattr",
     "reencoded",
-    "rlen"
+    "rlen",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
