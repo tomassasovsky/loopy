@@ -61,8 +61,11 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Reloads the saved-session catalog into state (for the picker). A quiet
   /// update — no working/success cycle.
-  Future<void> refreshSessions() async =>
-      emit(state.copyWith(sessions: await _repository.listSessions()));
+  Future<void> refreshSessions() async {
+    final sessions = await _repository.listSessions();
+    if (isClosed) return;
+    emit(state.copyWith(sessions: sessions));
+  }
 
   /// Saves the live rig as a NEW named session and makes it current. Rejects a
   /// duplicate slug with [SessionError.nameCollision] and writes nothing.
@@ -178,6 +181,7 @@ class SessionCubit extends Cubit<SessionState> {
     emit(state.copyWith(status: SessionStatus.working));
     try {
       final result = await action();
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: SessionStatus.success,
@@ -189,6 +193,7 @@ class SessionCubit extends Cubit<SessionState> {
       );
     } on SessionException catch (error) {
       // Recoverable, user-facing refusals: classify so the UI can localize.
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: SessionStatus.failure,
@@ -197,6 +202,7 @@ class SessionCubit extends Cubit<SessionState> {
         ),
       );
     } on Object catch (error) {
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: SessionStatus.failure,
