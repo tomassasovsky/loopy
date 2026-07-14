@@ -465,7 +465,7 @@
     "worktrees",
     "writeups",
     "xattr",
-    "pipefail",
+    "fsanitize",
     "catchable",
     "diagnosability",
     "misparse",
@@ -487,6 +487,7 @@
     "subosito",
     "greppable",
     "izing",
-    "opensource"
+    "opensource",
+    "pipefail"
   ]
 }
