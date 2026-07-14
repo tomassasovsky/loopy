@@ -697,11 +697,18 @@ class Vst3Host final : public loopy::IPluginHost {
       // A separate controller must be initialized with the host context and
       // synced to the component's current state, then connected so the two
       // halves talk; the editor needs a component handler set to function.
+      // The connect step only applies when the controller is a genuinely
+      // separate object: connecting a single-component plugin to itself via
+      // IConnectionPoint would be a self-connect, which the VST3 SDK's own
+      // reference host explicitly avoids (see plugprovider.cpp's
+      // `if (res && !isSingleComponent) return connectComponents();`).
       if (separateController) {
         controller_->initialize(&hostApp_);
       }
       controller_->setComponentHandler(&componentHandler_);
-      connectComponentAndController();
+      if (separateController) {
+        connectComponentAndController();
+      }
     }
     LPV_LOG("  loaded ok: controller=%p params=%d channels=%d\n",
             static_cast<void*>(controller_),
