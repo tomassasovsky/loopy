@@ -23,16 +23,27 @@ String readNativeString(
 }
 
 /// Writes [value] as a NUL-terminated UTF-8 C string into the native fixed-size
-/// char array [dst], truncating to fit (one byte reserved for the terminator).
+/// char array [dst], truncating to fit (one byte reserved for the
+/// terminator).
+///
+/// Truncation proceeds one Unicode code point (rune) at a time so a
+/// multi-byte UTF-8 character is never split at the capacity boundary: each
+/// rune's encoded bytes are appended atomically (all of them, or none),
+/// rather than cutting the encoded byte array at a raw byte count.
 void writeNativeString(
   Array<Char> dst,
   String value, {
   int capacity = kNativeStringCapacity,
 }) {
-  final bytes = utf8.encode(value);
-  final length = bytes.length < capacity - 1 ? bytes.length : capacity - 1;
-  for (var i = 0; i < length; i++) {
+  final maxBytes = capacity - 1;
+  final bytes = <int>[];
+  for (final rune in value.runes) {
+    final runeBytes = utf8.encode(String.fromCharCode(rune));
+    if (bytes.length + runeBytes.length > maxBytes) break;
+    bytes.addAll(runeBytes);
+  }
+  for (var i = 0; i < bytes.length; i++) {
     dst[i] = bytes[i];
   }
-  dst[length] = 0;
+  dst[bytes.length] = 0;
 }
