@@ -87,7 +87,7 @@ Set in `loopy_pedal.ino` to match the original "aquiles LoopStation" wiring
 
 | index | role |
 |-------|------|
-| 0–11 | the 12-LED loop-position ring (one revolution per loop) |
+| 0–11 | the 12-LED loop-position ring (fixed-cadence decorative sweep, ~700 ms/revolution; not currently synced to loop length) |
 | 12 | global / mode color |
 | 13–16 | the active bank's 4 track indicators (Tr1–Tr4) |
 | 17 | clear-fade indicator |
