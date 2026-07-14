@@ -1190,6 +1190,8 @@ class PumpedNativeEngine extends NativeAudioEngine {
   PumpedNativeEngine({super.bindings});
 
   int _sampleRate = 48000;
+  int _inputChannels = 1;
+  int _outputChannels = 1;
 
   /// Configures the engine (tracks/buffers/sample rate) WITHOUT opening a
   /// device. The engine is then fully drivable via [pump].
@@ -1197,12 +1199,14 @@ class PumpedNativeEngine extends NativeAudioEngine {
   EngineResult start(EngineConfig config) {
     _checkAlive();
     _sampleRate = config.sampleRate > 0 ? config.sampleRate : 48000;
+    _inputChannels = config.inputChannels > 0 ? config.inputChannels : 1;
+    _outputChannels = config.outputChannels > 0 ? config.outputChannels : 1;
     return EngineResult.fromCode(
       _bindings.le_engine_configure(
         _engine,
         _sampleRate,
-        config.inputChannels > 0 ? config.inputChannels : 1,
-        config.outputChannels > 0 ? config.outputChannels : 1,
+        _inputChannels,
+        _outputChannels,
         config.maxLoopFrames,
       ),
     );
@@ -1215,14 +1219,17 @@ class PumpedNativeEngine extends NativeAudioEngine {
   /// Processes [frames] frames of constant [input] through the engine's block
   /// processor — the audio callback, minus the device. `frames == 0` still
   /// drains the command/event rings and advances per-block maintenance (the
-  /// native suites' `drain` idiom).
+  /// native suites' `drain` idiom). Buffers are sized `frames * channels`
+  /// because the native side treats input/output as interleaved across the
+  /// engine's configured channel counts (set in [start]); `input` is
+  /// broadcast as a constant across every input channel.
   void pump({int frames = 512, double input = 0}) {
     _checkAlive();
     if (frames < 0) return;
-    final inPtr = calloc<Float>(frames == 0 ? 1 : frames);
-    final outPtr = calloc<Float>(frames == 0 ? 1 : frames);
+    final inPtr = calloc<Float>(frames == 0 ? 1 : frames * _inputChannels);
+    final outPtr = calloc<Float>(frames == 0 ? 1 : frames * _outputChannels);
     try {
-      for (var i = 0; i < frames; i++) {
+      for (var i = 0; i < frames * _inputChannels; i++) {
         inPtr[i] = input;
       }
       _bindings.le_engine_process(_engine, outPtr, inPtr, frames);
