@@ -465,8 +465,8 @@
     "worktrees",
     "writeups",
     "xattr",
-    "accum",
-    "fopen",
+    "narratively",
+    "oneline",
     "catchable",
     "diagnosability",
     "misparse",
@@ -480,6 +480,8 @@
     "rlen",
     "millis",
     "sandboxed",
-    "isclosed"
+    "isclosed",
+    "accum",
+    "fopen"
   ]
 }
