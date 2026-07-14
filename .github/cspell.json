@@ -478,6 +478,8 @@
     "ryaml",
     "sublist",
     "reencoded",
-    "rlen"
+    "rlen",
+    "millis",
+    "sandboxed"
   ]
 }
