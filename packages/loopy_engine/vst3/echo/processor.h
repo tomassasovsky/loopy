@@ -37,13 +37,15 @@ class Processor : public Steinberg::Vst::AudioEffect {
 
   // Fixed delay-ring capacity in samples — Echo shares the same underlying
   // delay-ring mechanism (fx->delay[slot][chan]) and normalized-time mapping
-  // as Delay (engine_fx.c's fx_echo/fx_delay), so this wrapper's buffer
-  // allocation copies Delay's fixed sizing (delay/processor.h's
-  // kDelayCapFrames) rather than Reverb's sample-rate-scaled
-  // computeRingCapacity (D-SEAM: drive the existing DSP as-is, never
-  // reimplement it). Public so the golden-parity harness (vst3/test/) can
-  // reference this exact constant instead of re-deriving it as a duplicated
-  // literal.
+  // as Delay (engine_fx.c's fx_echo/fx_delay). Delay and Reverb have since
+  // moved to a sample-rate-scaled ring (delay/processor.h's and
+  // reverb/processor.h's computeRingCapacity) — Echo has the identical
+  // fixed-cap bug (max delay time only equals 1 s at exactly 48 kHz) but is
+  // intentionally not fixed here; it's tracked separately (see the
+  // 2026-07-13 fix-delay-vst3-samplerate-scaled-ring plan's Technical
+  // Considerations, which calls out Echo as out of scope for that fix).
+  // Public so the golden-parity harness (vst3/test/) can reference this
+  // exact constant instead of re-deriving it as a duplicated literal.
   static constexpr int kEchoCapFrames = 48000;
 
  private:
