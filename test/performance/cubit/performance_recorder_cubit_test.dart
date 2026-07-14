@@ -346,6 +346,48 @@ void main() {
         expect(engine.perfArmCalls, 0);
       },
     );
+
+    test(
+      'arms again from a settled Completed state, not stuck forever '
+      '(D-REARM)',
+      () async {
+        final cubit = await completedCubit();
+        expect(cubit.state, isA<PerformanceRecorderCompleted>());
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+        expect(
+          engine.perfArmCalls,
+          2,
+          reason: 'one arm from completedCubit(), one from the re-arm',
+        );
+      },
+    );
+
+    test(
+      'arms again from a discarded-short Completed state too (D-REARM)',
+      () async {
+        final cubit = build();
+        addTearDown(cubit.close);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+        // Past the 1s double-press guard, but still under the 2s
+        // short-capture threshold, with no events.log — auto-discards.
+        clock = clock.add(const Duration(milliseconds: 1500));
+        await cubit.toggleArm();
+        final completed = await waitForCompleted(cubit);
+        expect(completed.discarded, isTrue);
+
+        await cubit.toggleArm();
+        await pumpEventQueue();
+
+        expect(cubit.state, isA<PerformanceRecorderArmed>());
+        expect(engine.perfArmCalls, 2);
+      },
+    );
   });
 
   group('reactive status-stream driving', () {
