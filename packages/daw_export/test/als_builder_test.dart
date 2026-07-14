@@ -612,6 +612,29 @@ void main() {
     );
 
     test(
+      'a deviceChain effect whose type has no loopyVst3Plugins entry throws '
+      '(signals the resolveDeviceChain invariant broke, not a skip case)',
+      () {
+        const project = DawProject(
+          tracks: [
+            DawTrack(
+              name: 'Track 0',
+              arrangementClip: DawClip(
+                fileRef: 'stems/dry/track0.wav',
+                startSeconds: 0,
+                lengthSeconds: 4,
+              ),
+              deviceChain: [
+                DawEffect(type: 9999, params: [0, 0, 0, 0]),
+              ],
+            ),
+          ],
+        );
+        expect(() => buildAls(project), throwsStateError);
+      },
+    );
+
+    test(
       'a plugin with fewer real parameters than the always-4-wide padded '
       'params array emits only its real parameter count, not the padding',
       () {
