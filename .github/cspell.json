@@ -459,6 +459,12 @@
     "worktrees",
     "writeups",
     "xattr",
-    "fsanitize"
+    "fsanitize",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }

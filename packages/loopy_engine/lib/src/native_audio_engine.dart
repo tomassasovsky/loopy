@@ -73,6 +73,14 @@ class NativeAudioEngine implements AudioEngine {
   /// reported (far more than any realistic host exposes).
   static const int _maxDevices = 64;
 
+  /// Fixed size of the native `asio_buffer_sizes[8]`/`asio_sample_rates[8]`
+  /// arrays (see `le_device_info` in loopy_engine_api.h). The accompanying
+  /// `asio_buffer_count`/`asio_sample_rate_count` fields are clamped to this
+  /// before being used as loop bounds so an out-of-range native count can
+  /// never read past the fixed-size arrays (mirrors the defensive clamp in
+  /// [pluginStateGet]).
+  static const int _maxAsioSlots = 8;
+
   final LoopyEngineBindings _bindings;
   late final Pointer<le_engine> _engine;
   late final Pointer<le_snapshot> _snapshotPtr;
@@ -223,12 +231,24 @@ class NativeAudioEngine implements AudioEngine {
             isInput: false,
             inputChannels: (outPtr + i).ref.input_channels,
             outputChannels: (outPtr + i).ref.output_channels,
+            // Clamp both counts to the arrays' fixed size before using them
+            // as loop bounds: dart:ffi's Array<T> does no bounds checking, so
+            // an out-of-range native count would otherwise read past the
+            // 8-slot arrays into adjacent struct memory.
             bufferSizes: [
-              for (var b = 0; b < (outPtr + i).ref.asio_buffer_count; b++)
+              for (
+                var b = 0;
+                b < _clampAsioCount((outPtr + i).ref.asio_buffer_count);
+                b++
+              )
                 (outPtr + i).ref.asio_buffer_sizes[b],
             ],
             sampleRates: [
-              for (var s = 0; s < (outPtr + i).ref.asio_sample_rate_count; s++)
+              for (
+                var s = 0;
+                s < _clampAsioCount((outPtr + i).ref.asio_sample_rate_count);
+                s++
+              )
                 (outPtr + i).ref.asio_sample_rates[s],
             ],
           ),
@@ -239,6 +259,12 @@ class NativeAudioEngine implements AudioEngine {
         ..free(countPtr);
     }
   }
+
+  /// Clamps a native ASIO buffer/sample-rate count to [_maxAsioSlots] so it
+  /// is always safe to use as a bound when indexing the fixed-size
+  /// `asio_buffer_sizes`/`asio_sample_rates` arrays.
+  static int _clampAsioCount(int count) =>
+      count < _maxAsioSlots ? count : _maxAsioSlots;
 
   @override
   EngineResult scanBegin({bool rescan = false}) {
