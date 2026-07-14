@@ -467,6 +467,7 @@
     "misparse",
     "rearchitect",
     "reimplementation",
-    "unrequested"
+    "unrequested",
+    "engineperformancecapture"
   ]
 }

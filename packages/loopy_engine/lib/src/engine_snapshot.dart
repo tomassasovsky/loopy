@@ -111,7 +111,7 @@ class LaneSnapshot {
   /// Bitmask of hardware output channels this lane plays to (bit c => out c).
   final int outputMask;
 
-  /// Playback gain in `0..1`.
+  /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
 
   /// Whether the lane is muted.
@@ -222,7 +222,7 @@ class TrackSnapshot {
   /// State-machine phase.
   final TrackState state;
 
-  /// Playback gain in `0..1`.
+  /// Playback gain in `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   final double volume;
 
   /// Whether the track is muted.
