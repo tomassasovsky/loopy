@@ -63,5 +63,27 @@ void main() {
         ..setRange(8, 12, 'WAVE'.codeUnits);
       expect(() => WavCodec.decodeFloat32(header), throwsFormatException);
     });
+
+    group('encodeFloat32 chunk size guard', () {
+      test('accepts dataBytes exactly at the 32-bit chunk size boundary', () {
+        expect(() => WavCodec.checkDataSize(0xFFFFFFFF - 36), returnsNormally);
+      });
+
+      test(
+        'rejects dataBytes one byte past the 32-bit chunk size boundary',
+        () {
+          expect(
+            () => WavCodec.checkDataSize(0xFFFFFFFF - 35),
+            throwsA(
+              isA<ArgumentError>().having(
+                (e) => e.message,
+                'message',
+                contains('32-bit'),
+              ),
+            ),
+          );
+        },
+      );
+    });
   });
 }

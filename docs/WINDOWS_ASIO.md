@@ -123,27 +123,29 @@ The vendored SDK uses the standard layout
 **Label probe**
 
 - Dispatch: `le_platform_excluded_input_mask` in
-  [engine_windows.c](../packages/loopy_engine/src/engine_windows.c), under
+  [engine_windows.c](../packages/loopy_engine/src/platform/engine_windows.c), under
   `#if defined(LOOPY_ENABLE_ASIO)`.
-- ASIO probe: [win_asio_labels.cpp](../packages/loopy_engine/src/win_asio_labels.cpp)
-  (+ [win_asio_labels.h](../packages/loopy_engine/src/win_asio_labels.h)).
+- ASIO probe: [win_asio_labels.cpp](../packages/loopy_engine/src/asio/win_asio_labels.cpp)
+  (+ [win_asio_labels.h](../packages/loopy_engine/src/asio/win_asio_labels.h)).
 - Portable, unit-tested mask core: `le_excluded_mask_from_names` /
   `le_label_is_loopback` in
-  [engine.c](../packages/loopy_engine/src/engine.c) (tested in
+  [engine_devices.c](../packages/loopy_engine/src/core/engine_devices.c) (tested in
   [test_engine_core.c](../packages/loopy_engine/src/test/test_engine_core.c)).
 
 **Duplex backend (Part 2)**
 
 - ASIO backend + driver enumeration:
-  [win_asio_device.cpp](../packages/loopy_engine/src/win_asio_device.cpp)
-  (+ [win_asio_device.h](../packages/loopy_engine/src/win_asio_device.h)),
+  [win_asio_device.cpp](../packages/loopy_engine/src/asio/win_asio_device.cpp)
+  (+ [win_asio_device.h](../packages/loopy_engine/src/asio/win_asio_device.h)),
   exposing `le_asio_backend` and `le_enumerate_asio_drivers`.
-- Backend selection: `le_select_backend` / `le_engine_start` in
-  [engine.c](../packages/loopy_engine/src/engine.c). The default build links no
+- Backend selection: `le_select_backend` in
+  [engine_devices.c](../packages/loopy_engine/src/core/engine_devices.c), called from
+  `le_engine_start` in
+  [engine.c](../packages/loopy_engine/src/core/engine.c). The default build links no
   ASIO symbol (the reference lives inside the `#if`); a non-ASIO build provides a
   stub `le_enumerate_asio_drivers` returning 0.
 - Pure, unit-tested bridge math: `le_deinterleave_in` / `le_interleave_out` /
-  `le_asio_pick_buffer` in [engine.c](../packages/loopy_engine/src/engine.c)
+  `le_asio_pick_buffer` in [engine_convert.c](../packages/loopy_engine/src/core/engine_convert.c)
   (tested in [test_engine_core.c](../packages/loopy_engine/src/test/test_engine_core.c)).
 - Dart stack: the `enumerateAsioDrivers` FFI marshalling
   ([native_audio_engine.dart](../packages/loopy_engine/lib/src/native_audio_engine.dart)),
