@@ -1002,6 +1002,18 @@ static void le_pr_render_master(const le_pr_manifest* m,
 
 /* ---- worker thread ---- */
 
+/* Test-only global: forces the dry-stem write below to fail, deterministically
+ * simulating a transient I/O error on that one write without touching the
+ * filesystem or affecting the wet-stem write (engine_internal.h). Mirrors
+ * perf_drain.c's g_pd_force_write_failure. Relaxed: a lone on/off switch a
+ * test flips before/after driving a render, not raced against anything else. */
+static _Atomic int g_pr_force_dry_write_failure = 0;
+
+void le_perf_render_force_dry_write_failure_for_test(int enabled) {
+  atomic_store_explicit(&g_pr_force_dry_write_failure, enabled ? 1 : 0,
+                        memory_order_relaxed);
+}
+
 static void le_pr_worker_main(void* arg) {
   le_perf_render* r = (le_perf_render*)arg;
 
@@ -1053,8 +1065,16 @@ static void le_pr_worker_main(void* arg) {
       if (stem != NULL) {
         char dry_path[LE_PR_FULL_PATH_MAX];
         snprintf(dry_path, sizeof(dry_path), "%s/track%d.wav", dry_dir, channel);
-        ok = le_pr_write_wav_mono(dry_path, stem, (int32_t)manifest.capture_frames,
-                                  manifest.sample_rate);
+        if (atomic_load_explicit(&g_pr_force_dry_write_failure,
+                                 memory_order_relaxed)) {
+          ok = 0; /* test-only: simulate a dry-write I/O failure without
+                   * touching the filesystem (le_pr_force_dry_write_failure_
+                   * for_test, below). */
+        } else {
+          ok = le_pr_write_wav_mono(dry_path, stem,
+                                    (int32_t)manifest.capture_frames,
+                                    manifest.sample_rate);
+        }
 
         int32_t wet_failed = 0;
         float* wet = le_pr_render_wet_track(&manifest, log, log_count, channel,
@@ -1066,15 +1086,19 @@ static void le_pr_worker_main(void* arg) {
               wet_path, wet, (int32_t)manifest.capture_frames,
               manifest.sample_rate);
           ok = ok && wet_ok;
-          /* A wet-write failure (e.g. disk-full mid-render) leaves that
-           * channel out of the master sum below with no separate flag on
-           * master.wav itself — the signal is `ok` above, surfaced via this
-           * channel's own `le_perf_render_track_status.succeeded == 0`, the
-           * same partial-success contract every other per-stem failure in
-           * this file already uses; a consumer checking every track's status
-           * before trusting master.wav as complete already has everything it
-           * needs. */
-          if (wet_ok && master_accum != NULL) {
+          /* Either write failing (dry OR wet) leaves this channel out of the
+           * master sum below with no separate flag on master.wav itself —
+           * the signal is `ok` above, surfaced via this channel's own
+           * `le_perf_render_track_status.succeeded == 0`, the same partial-
+           * success contract every other per-stem failure in this file
+           * already uses; a consumer checking every track's status before
+           * trusting master.wav as complete already has everything it needs.
+           * Gating on `ok` (not `wet_ok` alone) matters because a dry-write
+           * failure must exclude this channel's wet content from master.wav
+           * too, even though the wet write itself succeeded — otherwise
+           * master.wav would contain audio for a channel the render already
+           * reports as failed. */
+          if (ok && master_accum != NULL) {
             for (uint64_t f = 0; f < manifest.capture_frames; ++f) {
               master_accum[f] += wet[f];
             }
