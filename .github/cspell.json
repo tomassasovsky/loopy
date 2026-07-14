@@ -472,6 +472,7 @@
     "rearchitect",
     "reimplementation",
     "unrequested",
-    "engineperformancecapture"
+    "engineperformancecapture",
+    "ryaml"
   ]
 }
