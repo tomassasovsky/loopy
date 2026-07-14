@@ -127,9 +127,11 @@ packages/loopy_engine/*.exe
 
 # --- local tooling / scratch (not part of the repo) ---
 # Ignore .claude/ contents (settings.local.json etc.) but TRACK the shared
-# launch config so the 3D viewer is one command for anyone who clones.
+# launch config so the 3D viewer is one command for anyone who clones, and the
+# shared settings (tracking-reminder hook) so every session/agent respects it.
 .claude/*
 !.claude/launch.json
+!.claude/settings.json
 .portfolio-output/
 
 # KiCad scratch + caches. Underscore-prefixed = scratch experiments; canonical
