@@ -31,13 +31,35 @@ class WavData {
 abstract final class WavCodec {
   static const int _headerBytes = 44;
 
+  // Largest data-chunk byte count for which the RIFF chunk-size field
+  // (36 + dataBytes) still fits in an unsigned 32-bit int. Beyond this,
+  // ByteData.setUint32 would silently wrap instead of throwing.
+  static const int _maxDataBytes = 0xFFFFFFFF - 36;
+
+  /// Throws [ArgumentError] if [dataBytes] would overflow the WAV header's
+  /// 32-bit chunk-size fields. Exposed (`@visibleForTesting`) so the exact
+  /// boundary can be tested without allocating a ~4 GiB sample buffer.
+  @visibleForTesting
+  static void checkDataSize(int dataBytes) {
+    if (dataBytes > _maxDataBytes) {
+      throw ArgumentError(
+        'WAV data size of $dataBytes bytes (from `samples`) exceeds the '
+        '32-bit RIFF/data chunk-size limit of $_maxDataBytes bytes',
+      );
+    }
+  }
+
   /// Encodes interleaved [samples] as a 32-bit float WAV byte stream.
+  ///
+  /// Throws [ArgumentError] if [samples] is large enough that the WAV
+  /// header's 32-bit chunk-size fields would overflow (see [checkDataSize]).
   static Uint8List encodeFloat32({
     required Float32List samples,
     required int sampleRate,
     required int channels,
   }) {
     final dataBytes = samples.length * 4;
+    checkDataSize(dataBytes);
     final out = Uint8List(_headerBytes + dataBytes);
     final bd = ByteData.view(out.buffer);
 
