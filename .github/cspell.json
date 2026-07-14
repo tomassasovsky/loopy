@@ -465,7 +465,10 @@
     "worktrees",
     "writeups",
     "xattr",
-    "isclosed",
+    "allpass",
+    "constexpr",
+    "DCMAKE",
+    "samplerate",
     "catchable",
     "diagnosability",
     "misparse",
@@ -478,6 +481,7 @@
     "reencoded",
     "rlen",
     "millis",
-    "sandboxed"
+    "sandboxed",
+    "isclosed"
   ]
 }
