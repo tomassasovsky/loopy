@@ -37,6 +37,17 @@ jobs:
       min_coverage: 90
       coverage_excludes: "**/window_chrome.dart **/waveform_window*.dart **/run_loopy.dart **/bootstrap.dart **/session_directory.dart"
 
+  # daw_export is a pure Dart package (no Flutter dependency, plain `test`
+  # instead of `flutter_test`) so it can't ride the root flutter_package.yml
+  # job above — that job only runs the root app's own test/ dir. It gets its
+  # own dart_package.yml job instead. No bloc usage here, so bloc lint is off.
+  daw-export:
+    uses: VeryGoodOpenSource/very_good_workflows/.github/workflows/dart_package.yml@v1
+    with:
+      working_directory: packages/daw_export
+      run_bloc_lint: false
+      min_coverage: 100
+
   # Compile-only desktop guards: prove the portable engine + app keep building on
   # Windows and Linux. No audio runs (CI has no devices). Flutter is pinned to the
   # same 3.44.x as the `build` job above so the matrix can't silently drift, and
