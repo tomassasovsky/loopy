@@ -64,7 +64,7 @@ Two WS2812 strips, each rendered from loopy's state frame:
 Both strips are **gamma-corrected** (a 2.8 curve, `showGamma()`): a WS2812's duty
 cycle is linear but the eye's brightness response is not, so the ring's rotating
 hump and the volume-meter fade would otherwise look top-heavy. The correction runs
-at output into a separate display buffer, so the frozen-playhead ring holds steady
+at output into a separate display buffer, so the frozen ring holds steady
 instead of decaying. Note it shifts hand-picked mixed colors (e.g. amber
 `255,150,0`) and dims the mid-range — re-tune the nominal colors or
 `FastLED.setBrightness` if you want them brighter.
@@ -165,7 +165,7 @@ you.
 2. The pedal enumerates as a **USB-MIDI** device (no drivers). Open a MIDI monitor
    / the loopy app and watch **notes 0–9** as you press each footswitch; turning
    the encoder sends relative CC `0x10`.
-3. With the loopy app bound, its state frames drive the two strips (ring playhead,
+3. With the loopy app bound, its state frames drive the two strips (ring sweep,
    track colors, mode/clear/bank indicators). Malformed frames are dropped and the
    last good frame is kept; loopy refreshes ~1 Hz so a dropped frame self-heals.
 4. Loop **DIN OUT → DIN IN** with a cable to exercise the H11L1 opto input path;
