@@ -190,6 +190,33 @@ static void test_malformed_frames_are_rejected(void) {
   /* Not a SysEx at all. */
   const uint8_t note[3] = {0x90, 0x00, 0x7F};
   CHECK(pedal_decode_frame(note, 3, &f) == 0);
+
+  /* Out-of-range payload fields (checksum-valid, correctly-framed, but a
+   * field value the decoder must still reject). Mutate a copy of the
+   * known-good decoded frame, re-encode it (pedal_encode_frame does not
+   * itself validate ranges), and confirm decode now rejects it. */
+  uint8_t reencoded[PEDAL_FRAME_MAX_BYTES];
+  pedal_frame mutated;
+
+  mutated = f;
+  mutated.global_color = PEDAL_GLOBAL_COUNT; /* one past the last valid color */
+  int rlen = pedal_encode_frame(&mutated, reencoded);
+  CHECK(pedal_decode_frame(reencoded, rlen, &f) == 0);
+
+  mutated = f;
+  mutated.active_bank = 2; /* only 0 (A) and 1 (B) are valid */
+  rlen = pedal_encode_frame(&mutated, reencoded);
+  CHECK(pedal_decode_frame(reencoded, rlen, &f) == 0);
+
+  mutated = f;
+  mutated.armed_track = PEDAL_TRACK_COUNT; /* one past the last valid track */
+  rlen = pedal_encode_frame(&mutated, reencoded);
+  CHECK(pedal_decode_frame(reencoded, rlen, &f) == 0);
+
+  mutated = f;
+  mutated.track_leds[0] = PEDAL_LED_COUNT; /* one past the last valid LED */
+  rlen = pedal_encode_frame(&mutated, reencoded);
+  CHECK(pedal_decode_frame(reencoded, rlen, &f) == 0);
 }
 
 static void test_identity_request(void) {
