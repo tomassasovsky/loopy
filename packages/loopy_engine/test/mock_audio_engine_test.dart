@@ -91,6 +91,32 @@ void main() {
       expect(engine.snapshot().masterGain, 1);
     });
 
+    test(
+      'setLaneVolume clamps to LE_MAX_GAIN (2.0), not 0..1, mirroring the '
+      'native engine',
+      () {
+        engine.start(engine.defaultConfig);
+
+        // A boost above unity is not clamped down to 1.0 — the native engine
+        // allows up to LE_MAX_GAIN (+6 dB headroom), and the mock must match.
+        expect(engine.setLaneVolume(1.5), EngineResult.ok);
+        expect(engine.snapshot().tracks[0].volume, closeTo(1.5, 1e-6));
+
+        // Out-of-range values clamp to 0..LE_MAX_GAIN, not 0..1.
+        expect(engine.setLaneVolume(2.5), EngineResult.ok);
+        expect(engine.snapshot().tracks[0].volume, closeTo(2, 1e-6));
+        expect(engine.setLaneVolume(-1), EngineResult.ok);
+        expect(engine.snapshot().tracks[0].volume, 0);
+
+        // The explicit (channel, lane) addressing path behaves identically.
+        expect(engine.setLaneVolume(1.5, channel: 2), EngineResult.ok);
+        expect(
+          engine.snapshot().tracks[2].lanes[0].volume,
+          closeTo(1.5, 1e-6),
+        );
+      },
+    );
+
     group('performance recording capture', () {
       test('requires the engine to be running', () {
         expect(engine.perfArm('test-capture'), EngineResult.notRunning);
