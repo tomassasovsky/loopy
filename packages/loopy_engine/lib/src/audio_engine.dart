@@ -211,7 +211,8 @@ abstract interface class EngineRouting {
   /// stops playing/recording them.
   EngineResult setLaneCount({required int channel, required int count});
 
-  /// Sets lane [lane] of track [channel]'s playback gain, clamped to `0..1`.
+  /// Sets lane [lane] of track [channel]'s playback gain, clamped to
+  /// `0..LE_MAX_GAIN` (2.0, +6.02 dB headroom above unity).
   EngineResult setLaneVolume(
     double volume, {
     int channel = 0,
@@ -329,8 +330,9 @@ abstract interface class MonitorControl {
   /// (bit c => hardware output channel c).
   EngineResult setMonitorInputOutput({required int input, required int mask});
 
-  /// Sets monitor input [input]'s output gain ([volume], clamped to `0..1`).
-  /// Defaults to `1.0` (unity).
+  /// Sets monitor input [input]'s output gain ([volume], clamped to
+  /// `0..LE_MAX_GAIN`, i.e. 2.0/+6.02 dB headroom above unity). Defaults to
+  /// `1.0` (unity).
   EngineResult setMonitorInputVolume({
     required int input,
     required double volume,
