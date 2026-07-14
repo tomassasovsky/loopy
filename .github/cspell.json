@@ -29,6 +29,7 @@
     "affordances",
     "aftertouch",
     "AHCT",
+    "allpass",
     "ALSA",
     "alsamixer",
     "altset",
@@ -85,6 +86,7 @@
     "colour",
     "Colours",
     "COMMONPROGRAMFILES",
+    "constexpr",
     "Contador",
     "coreaudiod",
     "crashy",
@@ -94,6 +96,7 @@
     "danielson",
     "dartdoc",
     "datasheet",
+    "DCMAKE",
     "deburr",
     "decorrelated",
     "decorrelates",
@@ -276,6 +279,7 @@
     "PLEV",
     "PLOG",
     "pluginterfaces",
+    "plugprovider",
     "PMMA",
     "PMOS",
     "Pname",
@@ -328,8 +332,10 @@
     "rrect",
     "ruggedization",
     "Saludo",
+    "samplerate",
     "sandboxing",
     "Sasovsky",
+    "saturator",
     "scarlett",
     "schilkp",
     "Schmitt",
@@ -466,6 +472,7 @@
     "misparse",
     "rearchitect",
     "reimplementation",
-    "unrequested"
+    "unrequested",
+    "engineperformancecapture"
   ]
 }
