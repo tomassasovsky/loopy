@@ -159,23 +159,27 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   }
 
   /// Arms or disarms depending on the current state; a no-op while
-  /// finalizing/rendering/completed (no queue) or while a boot-recovery
-  /// prompt is still unresolved. The double-press guard (a disarm within 1s
-  /// of arming is ignored — the arm and disarm gestures are easy to
-  /// fat-finger back to back on the same control) lives in
+  /// finalizing/rendering (no queue) or while a boot-recovery prompt is
+  /// still unresolved. A settled [PerformanceRecorderCompleted] (delivered or
+  /// auto-discarded-short alike) arms a fresh capture exactly like
+  /// [PerformanceRecorderIdle] does — [PerformanceRepository.arm] has no
+  /// precondition beyond not already being armed, so there is no need to
+  /// route back through an explicit idle state first. The double-press guard
+  /// (a disarm within 1s of arming is ignored — the arm and disarm gestures
+  /// are easy to fat-finger back to back on the same control) lives in
   /// [PerformanceRepository.disarm] itself (D-GUARD), shared by every
   /// caller — this cubit's toolbar path and `ControlCubit`'s pedal
   /// MODE-long-press path alike — rather than duplicated here.
   Future<void> toggleArm() async {
     switch (state) {
       case PerformanceRecorderIdle(recoveryDirectory: null):
+      case PerformanceRecorderCompleted():
         await _performance.arm();
       case PerformanceRecorderArmed():
         await _performance.disarm();
       case PerformanceRecorderIdle():
       case PerformanceRecorderFinalizing():
       case PerformanceRecorderRendering():
-      case PerformanceRecorderCompleted():
         break;
     }
   }

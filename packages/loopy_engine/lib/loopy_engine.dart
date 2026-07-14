@@ -13,6 +13,7 @@ export 'src/audio_engine.dart'
         EngineException,
         EngineLifecycle,
         EngineMetering,
+        EnginePerformanceCapture,
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
