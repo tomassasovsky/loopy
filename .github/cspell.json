@@ -461,6 +461,12 @@
     "xattr",
     "greppable",
     "izing",
-    "opensource"
+    "opensource",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
