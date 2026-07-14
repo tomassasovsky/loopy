@@ -30,7 +30,7 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
   ```
   The script self-locates (no preceding `cd` needed) and builds/runs the
   engine core test suite and the MIDI test suite on every desktop OS
-  (`gcc`/`gnu11` by default, overridable via `CC`), plus, macOS-only, plugin
+  (`gcc`/`gnu11` by default, overridable via `CC`), plus macOS-only plugin
   scan/slot native tests against the vendored VST3/CLAP SDKs. Each suite
   prints "ALL PASSED"; the script exits non-zero on any compile or test
   failure.
