@@ -10,12 +10,14 @@ on:
       - master
     paths:
       - "pubspec.yaml"
+      - "pubspec.lock"
       - ".github/workflows/license_check.yaml"
   push:
     branches:
       - master
     paths:
       - "pubspec.yaml"
+      - "pubspec.lock"
       - ".github/workflows/license_check.yaml"
 
 jobs:
