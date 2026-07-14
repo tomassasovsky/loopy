@@ -30,13 +30,12 @@ int main() {
   config.combos[2] = ParamCombo{"max", {1.0f, 1.0f, 1.0f}};
   config.combos[3] = ParamCombo{"mixed1", {0.75f, 0.2f, 0.6f}};
   config.combos[4] = ParamCombo{"mixed2", {0.15f, 0.85f, 0.45f}};
-  // References the plugin's own public constant (processor.h) rather than
-  // re-deriving the literal, so the two can't silently drift apart. Fixed
-  // regardless of sample rate, matching Delay's ring sizing (Echo shares the
-  // same underlying delay-ring mechanism).
-  config.computeCap = [](double) -> int {
-    return loopy_vst3_echo::Processor::kEchoCapFrames;
-  };
+  // References the plugin's own public formula (processor.h) rather than
+  // re-deriving it, so the two can't silently drift apart. Scales with the
+  // real negotiated sample rate (matches Reverb's fix) — must match exactly,
+  // or a cap mismatch alone would cause a spurious divergence unrelated to
+  // any real bug.
+  config.computeCap = &loopy_vst3_echo::Processor::computeRingCapacity;
 
   const int failures = loopy_vst3_test::runParityTests(config);
   return failures == 0 ? 0 : 1;
