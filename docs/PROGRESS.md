@@ -26,15 +26,14 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
 - **Native engine tests** (deterministic, no device — the real safety net since
   the audio thread can't be runtime-tested here):
   ```sh
-  cd packages/loopy_engine
-  clang -std=c11 -Wall -Wextra -I src -I src/miniaudio \
-    src/test/test_engine_core.c src/engine.c src/lockfree_ring.c \
-    src/loop_clock.c src/miniaudio_impl.c src/engine_miniaudio.c \
-    src/engine_linux.c src/engine_apple.c src/engine_windows.c \
-    -framework CoreAudio -framework AudioToolbox -framework AudioUnit \
-    -framework CoreFoundation -lpthread -lm -o /tmp/loopy_core_tests
-  /tmp/loopy_core_tests
+  bash packages/loopy_engine/src/test/run_native_tests.sh
   ```
+  The script self-locates (no preceding `cd` needed) and builds/runs the
+  engine core test suite and the MIDI test suite on every desktop OS
+  (`gcc`/`gnu11` by default, overridable via `CC`), plus macOS-only plugin
+  scan/slot native tests against the vendored VST3/CLAP SDKs. Each suite
+  prints "ALL PASSED"; the script exits non-zero on any compile or test
+  failure.
 - **Regenerate FFI bindings** after touching `src/loopy_engine_api.h`:
   ```sh
   cd packages/loopy_engine

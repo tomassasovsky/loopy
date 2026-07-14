@@ -465,9 +465,7 @@
     "worktrees",
     "writeups",
     "xattr",
-    "greppable",
-    "izing",
-    "opensource",
+    "pipefail",
     "catchable",
     "diagnosability",
     "misparse",
@@ -486,6 +484,9 @@
     "fopen",
     "narratively",
     "oneline",
-    "subosito"
+    "subosito",
+    "greppable",
+    "izing",
+    "opensource"
   ]
 }
