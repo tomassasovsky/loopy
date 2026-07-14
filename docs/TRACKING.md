@@ -46,14 +46,14 @@ Decide it with three questions, in order:
 
 | Label                    | Agent does                              | Human touches it        |
 |--------------------------|-----------------------------------------|-------------------------|
-| `autonomy:auto`          | brainstorm → build → green → merge*      | never (audit after)     |
+| `autonomy:auto`          | brainstorm → build → green → **merge**   | never (audit after)     |
 | `autonomy:merge-gate`    | build → green → stop                     | clicks merge            |
 | `autonomy:plan-gate`     | brainstorm → plan → stop                 | approves direction      |
 | `autonomy:blocked-verify`| build → green in CI, but can't prove it  | validates on hardware   |
 
-\* **Current setting:** even `autonomy:auto` issues are taken to `ready-to-merge`
-but **NOT merged unattended** — the human still clicks merge. Flip this once trust
-is established (see below).
+**Auto-merge is ON** for the `auto` class — an `autonomy:auto` PR is **merged by
+the agent** (`gh pr merge --squash`) the moment it reaches `ready-to-merge`. No
+human click for that class; `merge-gate` and above still end on a human merge.
 
 **Escalation is always allowed:** if an `auto` item turns out to need an
 architecture/direction call, stop and relabel it `plan-gate` rather than pushing
@@ -79,8 +79,11 @@ enough — the code-review skill must also be clean.
 - Finished a part of an `epic`? Tick its checklist box.
 - Merged? The `Closes #N` closes the issue automatically.
 
-## To flip auto-merge on (later)
+## Auto-merge (ON)
 
-When you trust the `autonomy:auto` class to merge unattended, change the `*` rule
-above and agents may `gh pr merge --auto --squash` an `auto` PR once it's
-`ready-to-merge`. Until then, all merges are a human click.
+Agents **merge `autonomy:auto` PRs** with `gh pr merge --squash` the moment they
+reach `ready-to-merge` (CI green AND `/code-review` clean). No human click for
+that class. Everything `merge-gate` and above still ends on a human merge — those
+labels *mean* "a human owns this call" (taste, blast radius, direction).
+
+To pause auto-merge on a specific PR, relabel it `autonomy:merge-gate`.

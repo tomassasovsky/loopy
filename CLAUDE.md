@@ -35,7 +35,7 @@ flood the board with ceremony for one-liners.
 
 ### Autonomy — which gate needs a human (one label per issue, a ceiling not a mandate)
 
-- `autonomy:auto` — verifiable here + reversible + narrow → take to green (do **not** merge unattended yet; human clicks merge).
+- `autonomy:auto` — verifiable here + reversible + narrow → take to green and **merge it** (`gh pr merge --squash`) once `ready-to-merge` (CI green + `/code-review` clean). No human click.
 - `autonomy:merge-gate` — verifiable but taste / blast-radius → build, human merges.
 - `autonomy:plan-gate` — needs a direction / architecture / licensing call → stop after the plan.
 - `autonomy:blocked-verify` — hardware / device-gated; "green in CI" ≠ "works".
