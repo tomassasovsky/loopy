@@ -458,6 +458,8 @@
     "worktree",
     "worktrees",
     "writeups",
-    "xattr"
+    "xattr",
+    "millis",
+    "sandboxed"
   ]
 }
