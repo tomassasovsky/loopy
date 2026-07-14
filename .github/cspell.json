@@ -481,6 +481,8 @@
     "rlen",
     "millis",
     "sandboxed",
-    "isclosed"
+    "isclosed",
+    "accum",
+    "fopen"
   ]
 }
