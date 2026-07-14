@@ -8024,13 +8024,11 @@ static void test_write_manifest(const char* dir, const char* body) {
   fclose(f);
 }
 
-/* Reads track `channel`'s rendered dry stem and returns its frame count (0 if
- * the file is missing/unreadable), filling `out` (caller-sized) with its
- * samples. */
-static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
-                              int32_t out_cap) {
-  char path[700];
-  snprintf(path, sizeof(path), "%s/stems/dry/track%d.wav", dir, channel);
+/* Shared fixed-format WAV reader backing test_read_stem/test_read_wet_stem/
+ * test_read_master_stem below: reads a 44-byte canonical WAV header written
+ * by le_pr_write_wav_mono, then up to `out_cap` float samples, returning the
+ * frame count actually read (0 if the file is missing/unreadable). */
+static int32_t test_read_wav_fixed(const char* path, float* out, int32_t out_cap) {
   FILE* f = fopen(path, "rb");
   if (f == NULL) return 0;
   unsigned char header[44];
@@ -8045,6 +8043,16 @@ static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
   const size_t got = fread(out, sizeof(float), (size_t)n, f);
   fclose(f);
   return (int32_t)got;
+}
+
+/* Reads track `channel`'s rendered dry stem and returns its frame count (0 if
+ * the file is missing/unreadable), filling `out` (caller-sized) with its
+ * samples. */
+static int32_t test_read_stem(const char* dir, int32_t channel, float* out,
+                              int32_t out_cap) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/stems/dry/track%d.wav", dir, channel);
+  return test_read_wav_fixed(path, out, out_cap);
 }
 
 /* Polls until the render finishes or `max_polls` is exceeded (each poll ~1ms
@@ -8510,20 +8518,16 @@ static int32_t test_read_wet_stem(const char* dir, int32_t channel, float* out,
                                   int32_t out_cap) {
   char path[700];
   snprintf(path, sizeof(path), "%s/stems/wet/track%d.wav", dir, channel);
-  FILE* f = fopen(path, "rb");
-  if (f == NULL) return 0;
-  unsigned char header[44];
-  if (fread(header, 1, sizeof(header), f) != sizeof(header)) {
-    fclose(f);
-    return 0;
-  }
-  uint32_t data_bytes;
-  memcpy(&data_bytes, header + 40, 4);
-  const int32_t frames = (int32_t)(data_bytes / sizeof(float));
-  const int32_t n = frames < out_cap ? frames : out_cap;
-  const size_t got = fread(out, sizeof(float), (size_t)n, f);
-  fclose(f);
-  return (int32_t)got;
+  return test_read_wav_fixed(path, out, out_cap);
+}
+
+/* Reads the reconstructed master (stems/wet/master.wav), same fixed-format
+ * WAV reader convention as test_read_wet_stem. */
+static int32_t test_read_master_stem(const char* dir, float* out,
+                                     int32_t out_cap) {
+  char path[700];
+  snprintf(path, sizeof(path), "%s/stems/wet/master.wav", dir);
+  return test_read_wav_fixed(path, out, out_cap);
 }
 
 /* Acceptance: a chain with a mid-performance param sweep renders the sweep
@@ -8598,6 +8602,95 @@ static void test_perf_render_wet_fx_sweep(void) {
     const float level = (uint64_t)i < sweep_frame ? level0 : level1;
     const float expected = tanhf(dry_value * (1.0f + drive * 29.0f)) * level;
     CHECK(fabsf(wet[i] - expected) < 1e-5f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Regression: a dry-stem write failure must exclude that channel's wet
+ * content from master.wav even when the wet write for the SAME channel
+ * succeeds. Before this fix, the master-accumulation gate in
+ * le_pr_worker_main checked `wet_ok` alone, so a dry-write failure paired
+ * with a wet-write success still baked that channel's audio into
+ * master.wav despite le_perf_render_track_status correctly reporting the
+ * channel as failed — violating the "check every track's status before
+ * trusting master.wav" contract the surrounding code documents. Forcing
+ * only the dry write to fail (le_perf_render_force_dry_write_failure_for_test)
+ * leaves the wet write's real filesystem I/O untouched, reproducing that
+ * exact scenario deterministically. */
+static void test_perf_render_dry_write_fail_excludes_from_master(void) {
+  printf("test_perf_render_dry_write_fail_excludes_from_master\n");
+  const char* dir = render_test_dir("dry-fail-master");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const uint64_t capture_frames = 4;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+  const float content[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, content, loop_len, sr);
+
+  char manifest[1200];
+  snprintf(manifest, sizeof(manifest),
+          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+          "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+          "\"limiterCeiling\": 0.99, \"tracks\": [{\"channel\": 0, "
+          "\"volume\": 1.0, \"muted\": false, \"lanes\": [{\"lane\": 0, "
+          "\"deferred\": false, \"pcmRef\": \"loops/track0-lane0.wav\", "
+          "\"effects\": []}]}]}, "
+          "\"disarmSnapshot\": {\"tracks\": []}, \"layers\": []}",
+          sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    fclose(lf);
+  }
+
+  le_perf_render_force_dry_write_failure_for_test(1);
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 2000);
+
+  le_perf_render_force_dry_write_failure_for_test(0); /* reset before other tests run */
+
+  int32_t done = 0, track_count = 0;
+  CHECK(le_perf_render_poll(e, &done, NULL, &track_count) == LE_OK);
+  CHECK(done == 1);
+  CHECK(track_count == 1);
+
+  int32_t channel = -1, succeeded = -1;
+  CHECK(le_perf_render_track_status(e, 0, &channel, &succeeded) == LE_OK);
+  CHECK(channel == 0);
+  CHECK(succeeded == 0); /* the dry write was forced to fail */
+
+  /* The wet stem write itself is unaffected by the forced dry failure and
+   * still lands on disk with real content. */
+  float wet[4];
+  const int32_t wet_got = test_read_wet_stem(dir, 0, wet, 4);
+  CHECK(wet_got == (int32_t)capture_frames);
+  for (int32_t i = 0; i < wet_got; ++i) {
+    CHECK(fabsf(wet[i] - 0.5f) < 1e-5f);
+  }
+
+  /* ...but master.wav must NOT contain it: this channel's `ok` is 0 (the
+   * dry write failed), so the fixed gate (`if (ok && ...)`) must exclude it
+   * from the master sum even though wet_ok was 1. Before the fix (gating on
+   * `wet_ok` alone) this would have been 0.5f, not 0.0f. */
+  float master[4];
+  const int32_t master_got =
+      test_read_master_stem(dir, master, (int32_t)capture_frames);
+  CHECK(master_got == (int32_t)capture_frames);
+  for (int32_t i = 0; i < master_got; ++i) {
+    CHECK(master[i] == 0.0f);
   }
 
   le_engine_destroy(e);
@@ -9081,6 +9174,7 @@ int main(void) {
   test_perf_render_partial_success();
   test_perf_render_missing_or_corrupt_manifest();
   test_perf_render_wet_fx_sweep();
+  test_perf_render_dry_write_fail_excludes_from_master();
   test_perf_render_wet_multi_slot_and_count_shrink();
   test_perf_render_wet_plugin_passthrough();
   test_perf_render_golden_master_parity();
