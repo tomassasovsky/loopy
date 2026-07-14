@@ -460,6 +460,12 @@
     "writeups",
     "xattr",
     "narratively",
-    "oneline"
+    "oneline",
+    "catchable",
+    "diagnosability",
+    "misparse",
+    "rearchitect",
+    "reimplementation",
+    "unrequested"
   ]
 }
