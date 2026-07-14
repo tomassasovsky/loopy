@@ -33,10 +33,17 @@ A hand-written miniaudio-based looping engine exposed to Dart over FFI.
     # Build as a dynamic library so the produced framework binary is a loadable
     # Mach-O dylib. Flutter/CocoaPods default plugin frameworks to static
     # (MACH_O_TYPE=staticlib); that works for normal plugins (reached via the
-    # registrant) but breaks FFI plugins, whose symbols are only resolved at
-    # runtime via DynamicLibrary.open('loopy_engine.framework/loopy_engine').
-    # A static framework's binary is an ar archive that dlopen cannot load, and
-    # its symbols get dead-stripped since nothing references them at link time.
+    # registrant) but breaks FFI plugins. A static framework's binary is an ar
+    # archive that dlopen cannot load, and its symbols get dead-stripped since
+    # nothing references them at link time.
+    #
+    # The Dart side never opens the framework by path: _openLibrary() in
+    # native_audio_engine.dart uses DynamicLibrary.process() (dlopen(NULL)
+    # semantics) to resolve symbols from the host process's global namespace.
+    # That only works because MACH_O_TYPE=mh_dylib makes this framework's
+    # binary a real dylib whose symbols are dynamically loaded and exported
+    # into that global namespace at launch, instead of being buried in a
+    # static archive.
     'MACH_O_TYPE' => 'mh_dylib',
     'GCC_C_LANGUAGE_STANDARD' => 'gnu11',
     # The plugin include-probe (Classes/plugin_probe.cpp -> ../../src/host) is
