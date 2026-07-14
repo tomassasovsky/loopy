@@ -70,7 +70,9 @@ static uint8_t g_sysex[40];
 static uint8_t g_sysexLen = 0;
 static bool g_inSysex = false;
 
-// Loop-position interpolation: time of the last loop-top pulse + loop length.
+// Timestamp of the last loop-top pulse (0xFA) from loopy. Currently unused:
+// v1's ring (see renderRing()) is a fixed-cadence sweep independent of loop
+// length. Reserved for a possible future loop-synced rendering mode.
 static unsigned long g_lastLoopTopMs = 0;
 
 // ---- button / encoder debounce state ----------------------------------------
