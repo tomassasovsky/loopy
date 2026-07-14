@@ -490,6 +490,8 @@
     "izing",
     "opensource",
     "pipefail",
-    "fsanitize"
+    "fsanitize",
+    "OctoPre",
+    "fullscreens"
   ]
 }
