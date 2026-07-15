@@ -13,7 +13,8 @@
 //     inputs (USB + DIN) are read for bidirectional sync; outbound events and the
 //     identity reply go to BOTH.
 //   * LEDs: TWO WS2812 strips instead of one 19-LED strip —
-//       - RING (D15): the off-the-shelf 16-LED NeoPixel ring, loop-position.
+//       - RING (D15): the off-the-shelf 16-LED NeoPixel ring, a fixed-cadence
+//         decorative sweep.
 //       - INDICATOR (D16): a 7-LED strip: [mode, Tr1, Tr2, Tr3, Tr4, clear, bank].
 //   * Pin map matches main_board.py / the THT plan §1 (footswitches D2–D10/D14).
 //
@@ -36,7 +37,8 @@
 
 // ---- hardware layout — matches main_board.py / the THT plan -----------------
 
-// RING strip: the 16-LED NeoPixel ring on D15 (loop-position playhead).
+// RING strip: the 16-LED NeoPixel ring on D15 (fixed-cadence decorative
+// sweep; see renderRing()).
 static const uint8_t kRingPin = 15;
 static const uint8_t kRingCount = 16;
 static CRGB g_ring[kRingCount];     // logical ring frame the renderer writes
@@ -94,7 +96,10 @@ static bool g_haveFrame = false;  // false until the first valid frame
 static uint8_t g_sysex[40];
 static uint8_t g_sysexLen = 0;
 static bool g_inSysex = false;
-static unsigned long g_lastLoopTopMs = 0; // time of the last loop-top pulse
+// Timestamp of the last loop-top pulse (PEDAL_LOOP_TOP). Currently unused:
+// the ring (see renderRing()) is a fixed-cadence sweep independent of loop
+// length. Reserved for a possible future loop-synced rendering mode.
+static unsigned long g_lastLoopTopMs = 0;
 
 // Link watchdog. loopy pushes a state frame at least ~1 Hz while bound (a
 // keep-alive re-send, not only on change), so a longer silence means the link
@@ -318,15 +323,15 @@ static void renderRing() {
       if (b < 0.0f) b = 0.0f;
       level = (uint8_t)(b * 255.0f + 0.5f);
     }
-    // Map the logical playhead to the mirrored physical LED so the hump rotates
-    // CLOCKWISE against this ring's DIN-chain wiring order.
+    // Map the rotating hump's logical index to the mirrored physical LED so it
+    // rotates CLOCKWISE against this ring's DIN-chain wiring order.
     g_ring[(kRingCount - 1) - i] = scaled(activity, level);
   }
 }
 
 // The ring as a volume meter: a green (low) -> red (full) level bar of the local
 // gain echo, shown for kGainShowMs after each encoder turn. Fills clockwise (the
-// same sense as the loop-position hump); the top LED dims for the fractional part.
+// same sense as the ring's rotating hump); the top LED dims for the fractional part.
 static void renderVolumeBar() {
   // Authoritative gain from the frame; fall back to the local echo pre-bind.
   const float gain = g_haveFrame ? (g_frame.master_gain / 255.0f) : g_localGain;
@@ -351,7 +356,7 @@ static const unsigned long kBlinkHalfPeriodMs = 400;
 // hump (and the volume-meter fade) crowd together while the bright end barely
 // changes. We map every channel through a gamma 2.8 curve at OUTPUT time
 // (g_ring/g_ind -> g_ringOut/g_indOut) so the ramp reads evenly. Doing it into
-// SEPARATE display buffers — not in place — matters: the frozen-playhead ring
+// SEPARATE display buffers — not in place — matters: the frozen ring
 // holds its last logical frame without redrawing, so an in-place correction
 // would darken it a little more every show() until it decays to black. Copying
 // from the untouched logical frame each time is idempotent.
@@ -428,7 +433,8 @@ static void render() {
   }
 
   // A recent encoder turn takes over the ring as a volume meter; otherwise it
-  // shows the loop-position playhead. Signed compare is millis()-wrap safe.
+  // shows the ring's fixed-cadence decorative sweep. Signed compare is
+  // millis()-wrap safe.
   if ((long)(g_gainShownUntilMs - millis()) > 0) {
     renderVolumeBar();
     g_ringLastMs = millis(); // keep the hump's dt small when the bar lapses

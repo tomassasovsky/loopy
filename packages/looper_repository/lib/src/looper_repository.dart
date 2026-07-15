@@ -773,8 +773,25 @@ class LooperRepository {
 
   /// Erases track [channel] (resets the master if all tracks empty). The
   /// engine unmutes every lane; the remembered mutes are forgotten to match.
+  ///
+  /// The take's FX chains are dropped too (cache + engine): a cleared track is
+  /// empty, so a subsequent record-from-empty through a *dry* monitor must land
+  /// a dry take — not inherit the erased take's chain (the "leftover from a
+  /// previous config" bug). This mirrors [applySession]'s chain reset; it does
+  /// NOT touch routing (`_laneInput` / `_laneOutput` / `_laneVolume`), which is
+  /// the track's config, not the take.
   EngineResult clear({int channel = 0}) {
     _forgetLaneMutes(channel);
+    final clearedLanes = [
+      for (final key in _laneEffects.keys)
+        if (key.$1 == channel) key.$2,
+    ];
+    for (final lane in clearedLanes) {
+      setLaneEffects(channel: channel, lane: lane, effects: const []);
+      // Persist the emptied chain (F3): without this, settings keeps the erased
+      // take's chain and a restart replays it onto the fresh take.
+      onLaneChainChanged?.call(channel, lane);
+    }
     return _engine.clear(channel: channel);
   }
 
@@ -1079,7 +1096,8 @@ class LooperRepository {
   int monitorChainFingerprint(int input) =>
       trackChainFingerprint(_monitorEffects[input] ?? const []);
 
-  /// Sets track [channel]'s playback gain (`0..1`) on **every lane of it**. A
+  /// Sets track [channel]'s playback gain (`0..LE_MAX_GAIN`, 2.0, +6.02 dB
+  /// headroom above unity) on **every lane of it**. A
   /// track-level volume is a whole-track control, so a multi-lane track scales
   /// all its lanes together, not just lane 0. Returns the last failing lane's
   /// result, or [EngineResult.ok] if all lanes succeed.
@@ -1164,8 +1182,9 @@ class LooperRepository {
     return _engine.setLaneOutput(channel: channel, lane: lane, mask: mask);
   }
 
-  /// Sets lane [lane] of track [channel]'s playback gain (`0..1`). Remembered
-  /// and re-applied on every (re)start.
+  /// Sets lane [lane] of track [channel]'s playback gain (`0..LE_MAX_GAIN`,
+  /// 2.0, +6.02 dB headroom above unity). Remembered and re-applied on every
+  /// (re)start.
   EngineResult setLaneVolume(
     double volume, {
     required int channel,
@@ -1208,8 +1227,9 @@ class LooperRepository {
     return _engine.setMonitorInputOutput(input: input, mask: mask);
   }
 
-  /// Sets monitor [input]'s output gain ([volume], `0..1`). Remembered and
-  /// re-applied on every (re)start; takes effect immediately while running.
+  /// Sets monitor [input]'s output gain ([volume], `0..LE_MAX_GAIN`, 2.0,
+  /// +6.02 dB headroom above unity). Remembered and re-applied on every
+  /// (re)start; takes effect immediately while running.
   EngineResult setMonitorVolume({required int input, required double volume}) {
     _monitorVolume[input] = volume;
     if (!_intendRunning) return EngineResult.ok;

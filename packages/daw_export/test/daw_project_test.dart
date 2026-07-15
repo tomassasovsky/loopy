@@ -105,5 +105,11 @@ void main() {
         );
       },
     );
+
+    test('DawEffect hashCode agrees for equal effects', () {
+      const a = DawEffect(type: kFxDelay, params: [0.35, 0.35, 0.35, 0.0]);
+      const b = DawEffect(type: kFxDelay, params: [0.35, 0.35, 0.35, 0.0]);
+      expect(a.hashCode, b.hashCode);
+    });
   });
 }
