@@ -26,7 +26,7 @@ import 'package:window_manager/window_manager.dart';
 @visibleForTesting
 ({Offset position, Size size, bool fullscreen}) waveformWindowPlacement({
   required List<({String id, Offset position, Size size, double scale})>
-      screens,
+  screens,
   required String primaryId,
   required double primaryScale,
   required WaveformWindowArgs args,
