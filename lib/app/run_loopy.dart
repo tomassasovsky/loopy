@@ -49,6 +49,12 @@ Future<void> runLoopy(
   await DesktopMultiWindowWaveformService.closeOrphanWindows();
 
   await configureLoopyDesktopWindow();
+  // On a multi-display console the output waveform fills the secondary, so fill
+  // the primary with the control surface too. Single-monitor / dev runs keep a
+  // normal window. Toggle off any time with `F`.
+  await applyMainWindowFullscreen(
+    WidgetsBinding.instance.platformDispatcher.displays.length,
+  );
 
   // One engine instance, shared by the looper (which owns its lifecycle) and
   // the session repository (which only reads/writes its loop PCM). On the
