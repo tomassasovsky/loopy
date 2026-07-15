@@ -161,7 +161,8 @@ class MonitorCubit extends Cubit<MonitorState> {
     await _settings.saveMonitorOutput(input, mask);
   }
 
-  /// Sets and persists monitor [input]'s output gain (`0..1`).
+  /// Sets and persists monitor [input]'s output gain (`0..LE_MAX_GAIN`, 2.0,
+  /// +6.02 dB headroom above unity).
   Future<void> setVolume(int input, double volume) async {
     final next = state.forInput(input).copyWith(volume: volume);
     emit(state.withInput(next));

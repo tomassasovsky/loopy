@@ -6,6 +6,7 @@ import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/performance/performance.dart';
 import 'package:loopy/session/session.dart';
@@ -120,6 +121,17 @@ class TracksToolbar extends StatelessWidget {
           color: toolbarIconColor,
           icon: const Icon(Icons.settings_outlined),
           onPressed: () => unawaited(openLoopySettings()),
+        ),
+        // Opens the keyboard-shortcut legend — the primary discoverability
+        // affordance for the surface's ~15 shortcuts, also reachable by `?`.
+        IconButton(
+          key: const Key('tracks_shortcutsHelp'),
+          tooltip: l10n.a11yShortcutsHelp,
+          visualDensity: VisualDensity.compact,
+          iconSize: 20,
+          color: toolbarIconColor,
+          icon: const Icon(Icons.keyboard),
+          onPressed: () => unawaited(showShortcutsHelp(context)),
         ),
         const SizedBox(width: 4),
         const SessionMenu(),

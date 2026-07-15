@@ -150,6 +150,70 @@
             }
         }
     },
+    "a11yShortcutsHelp": "Keyboard shortcuts",
+    "@a11yShortcutsHelp": {
+        "description": "Title of the keyboard-shortcut legend dialog and tooltip of the chrome button that opens it."
+    },
+    "shortcutGroupTransport": "Transport",
+    "@shortcutGroupTransport": {
+        "description": "Group heading in the shortcut legend for global playback/record commands."
+    },
+    "shortcutGroupTracks": "Tracks",
+    "@shortcutGroupTracks": {
+        "description": "Group heading in the shortcut legend for per-track commands."
+    },
+    "shortcutGroupNavigation": "Navigation",
+    "@shortcutGroupNavigation": {
+        "description": "Group heading in the shortcut legend for view/app navigation commands."
+    },
+    "shortcutPlayStopAll": "Play or stop all tracks",
+    "@shortcutPlayStopAll": {
+        "description": "Legend description for the Space shortcut."
+    },
+    "shortcutMode": "Switch record / play mode",
+    "@shortcutMode": {
+        "description": "Legend description for the M shortcut."
+    },
+    "shortcutArm": "Arm or disarm performance recording",
+    "@shortcutArm": {
+        "description": "Legend description for the A shortcut."
+    },
+    "shortcutSelectTrack": "Select a track (mute it in play mode)",
+    "@shortcutSelectTrack": {
+        "description": "Legend description for the 1–8 number-key shortcuts."
+    },
+    "shortcutBank": "Switch bank A / B",
+    "@shortcutBank": {
+        "description": "Legend description for the B shortcut."
+    },
+    "shortcutRecord": "Record or overdub the selected track",
+    "@shortcutRecord": {
+        "description": "Legend description for the R shortcut (record mode)."
+    },
+    "shortcutPlayPause": "Play or pause the selected track",
+    "@shortcutPlayPause": {
+        "description": "Legend description for the P shortcut (record mode)."
+    },
+    "shortcutUndoOverdub": "Undo the last overdub pass",
+    "@shortcutUndoOverdub": {
+        "description": "Legend description for the U shortcut."
+    },
+    "shortcutUndo": "Undo",
+    "@shortcutUndo": {
+        "description": "Legend description for the Cmd/Ctrl+Z shortcut."
+    },
+    "shortcutRedo": "Redo",
+    "@shortcutRedo": {
+        "description": "Legend description for the Cmd/Ctrl+Y shortcut."
+    },
+    "shortcutSaveSession": "Save the open session",
+    "@shortcutSaveSession": {
+        "description": "Legend description for the Cmd/Ctrl+S shortcut."
+    },
+    "shortcutFocusTraverse": "Move focus between controls",
+    "@shortcutFocusTraverse": {
+        "description": "Legend description for the Tab shortcut."
+    },
     "a11yTrackTile": "{name}, {state}, activate to record",
     "@a11yTrackTile": {
         "placeholders": {
