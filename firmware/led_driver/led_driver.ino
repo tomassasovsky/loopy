@@ -41,10 +41,16 @@ static uint8_t g_trackCount = 0;
 static uint8_t g_tracks[TRACK_LEDS];
 static unsigned long g_frameMs = 0;  // millis() when the last frame arrived
 
-// Colors are gamma-corrected (strip.gamma32) so brightness reads perceptually
+// Colors can be gamma-corrected (strip.gamma32) so brightness reads perceptually
 // even: a WS2812's duty cycle is linear but the eye's response is not, so without
 // it the ring's dim head and the amber mix look top-heavy. gamma32(0) == 0, so
-// "off" stays off.
+// "off" stays off. It is a compile-time toggle, OFF by default: define
+// LED_GAMMA_CORRECTION=1 (an Arduino build flag / -D, or edit the line below) to
+// enable it; with it off the raw colors are sent through unmodified.
+#ifndef LED_GAMMA_CORRECTION
+#define LED_GAMMA_CORRECTION 0
+#endif
+
 static uint32_t colorOf(uint8_t code) {
   uint32_t c;
   switch (code) {
@@ -53,7 +59,11 @@ static uint32_t colorOf(uint8_t code) {
     case 3: c = strip.Color(180, 90, 0); break;  // amber
     default: return 0;                            // off
   }
+#if LED_GAMMA_CORRECTION
   return strip.gamma32(c);
+#else
+  return c;
+#endif
 }
 
 // Parse one STATE frame from a buffer that starts at the byte after the length
@@ -127,7 +137,11 @@ static void render() {
     // ring is never dark mid-loop.
     strip.setPixelColor(head % RING_LEDS, colorOf(g_global == 0 ? 1 : g_global));
   } else {
+#if LED_GAMMA_CORRECTION
     strip.setPixelColor(0, strip.gamma32(strip.Color(10, 10, 10)));
+#else
+    strip.setPixelColor(0, strip.Color(10, 10, 10));
+#endif
   }
   // Per-track indicators.
   for (uint8_t i = 0; i < TRACK_LEDS; i++) {
