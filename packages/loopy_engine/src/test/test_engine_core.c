@@ -5464,6 +5464,194 @@ static void test_new_track_autofinish_overdubs_with_rec_dub_off(void) {
   le_engine_destroy(e);
 }
 
+/* The first wrap of a defining loop that runs STRAIGHT into overdub (rec/dub on)
+ * is its own undo layer, not merged into the base: a shadow slot pre-armed
+ * during RECORDING backs the first overdub pass on write, so undo peels that
+ * pass and restores the base recording bit-exact. (Before this, the first pass
+ * went un-backed and folded into the base — undo jumped straight to empty.) */
+static void test_rec_dub_first_wrap_is_undoable_layer(void) {
+  printf("test_rec_dub_first_wrap_is_undoable_layer\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+  drain(e);
+
+  le_engine_record(e, 0);              /* defining capture pre-arms a shadow */
+  process_const(e, 1.0f, LOOP_N, out); /* base loop = 1.0 */
+  le_engine_record(e, 0);              /* record press finalizes -> OVERDUBBING */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  process_const(e, 0.5f, LOOP_N, out); /* the first wrap's overdub pass: +0.5 */
+  le_engine_record(e, 0);              /* punch out -> PLAYING */
+  drain(e);
+  settle_dub(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].undo_depth == 1); /* the first wrap IS an undoable layer */
+  check_content(e, 1.5f);             /* base + first wrap */
+
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f); /* undo restores the base recording, not empty */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  le_engine_destroy(e);
+}
+
+/* The other straight-into-overdub path: a non-defining track that auto-finalizes
+ * into overdub (fixed multiple, rec/dub off) likewise captures its first wrap as
+ * its own undo layer. */
+static void test_new_track_first_wrap_is_undoable_layer(void) {
+  printf("test_new_track_first_wrap_is_undoable_layer\n");
+  le_engine* e = make_configured_engine(); /* rec/dub off */
+  float out[64];
+  le_snapshot s;
+  float pcm[LOOP_N];
+
+  /* tr0 defines the master, to PLAYING. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  /* tr1: one base loop, auto-finalizes into overdub with no second press. */
+  le_engine_set_track_multiple(e, 1, 1);
+  le_engine_record(e, 1);              /* non-defining capture pre-arms a shadow */
+  drain(e);
+  process_const(e, 2.0f, LOOP_N, out); /* one base loop -> auto-finish into overdub */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING);
+
+  process_const(e, 0.5f, LOOP_N, out); /* tr1's first wrap overdub pass: +0.5 */
+  le_engine_stop_track(e, 1);          /* punch out -> STOPPED */
+  drain(e);
+  settle_dub(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].undo_depth == 1); /* the first wrap IS an undoable layer */
+  CHECK(le_engine_export_track(e, 1, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 2.5f) < 1e-6f);
+
+  CHECK(le_engine_undo(e, 1) == LE_OK);
+  CHECK(le_engine_export_track(e, 1, pcm, LOOP_N) == LOOP_N);
+  for (int i = 0; i < LOOP_N; ++i) CHECK(fabsf(pcm[i] - 2.0f) < 1e-6f); /* base */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].undo_depth == 0);
+
+  le_engine_destroy(e);
+}
+
+/* The first wrap's layer keeps the loop-length quantization every other layer
+ * gets. Its shadow is pre-armed while the loop is still being recorded, so it
+ * must be allocated at the full recording cap (the length is unknown then) —
+ * le_handle_retired shrinks it back once the pass retires and the length is
+ * known, preserving the captured audio. Without that, one cap-sized buffer per
+ * lane (up to minutes of floats) would stay pinned for the session. */
+static void test_first_wrap_layer_shrinks_to_quantum(void) {
+  printf("test_first_wrap_layer_shrinks_to_quantum\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 200000; /* > LE_LAYER_QUANTUM so sizes are observable */
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+  drain(e);
+
+  le_engine_record(e, 0);              /* pre-arms a CAP-sized shadow */
+  process_const(e, 1.0f, LOOP_N, out); /* tiny base loop = 1.0 */
+  le_engine_record(e, 0);              /* finalize -> OVERDUBBING */
+  drain(e);
+  process_const(e, 0.5f, LOOP_N, out); /* the first wrap's pass */
+  le_engine_record(e, 0);              /* punch out */
+  drain(e);
+  settle_dub(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  check_content(e, 1.5f);
+
+  /* Undo swaps the first wrap's layer live: its audio survived the shrink, and
+   * the slot costs one quantum — not the recording cap it was armed at. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) == LE_LAYER_QUANTUM);
+
+  le_engine_destroy(e);
+}
+
+/* A capture started from a DEFERRED arm (sound-triggered here; quantize takes
+ * the same path) is pre-armed by the RECORDING branch of le_engine_drain_events,
+ * which polls while the track is mid-capture — when a_len reads as the GROWING
+ * record position, not the final loop length. The shadow must still be sized for
+ * the WHOLE loop: this loop is deliberately longer than LE_LAYER_QUANTUM, so
+ * sizing it to the partial length would leave the first wrap's backup-on-write
+ * running past the end of the buffer (an audio-thread heap overflow). Every
+ * other loop in this suite is under one quantum, which hides that. */
+static void test_deferred_arm_first_wrap_shadow_fits_loop(void) {
+  printf("test_deferred_arm_first_wrap_shadow_fits_loop\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 400000;
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  drain(e);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* deferred arm: no immediate pre-arm */
+  drain(e);
+
+  /* Signal fires the arm and the capture runs past one quantum. Poll every
+   * block, exactly as the UI does — that is what posts the pre-armed shadow,
+   * mid-capture, off a partial a_len. */
+  const int32_t len = LE_LAYER_QUANTUM + 4000;
+  for (int32_t done = 0; done < len; done += 64) {
+    process_const(e, 1.0f, 64, out);
+    le_engine_get_snapshot(e, &s); /* drains -> RECORDING pre-arm posts here */
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  le_engine_record(e, 0); /* finalize -> OVERDUBBING (rec/dub) */
+  drain(e);
+  pump_frames(e, 1.0f, 600); /* seam-crossfade overlap -> finalize completes */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  const int32_t loop = s.tracks[0].length_frames;
+  CHECK(loop > LE_LAYER_QUANTUM); /* the whole point: > one quantum */
+
+  /* The first wrap's pass: backup-on-write covers the FULL loop. */
+  pump_frames(e, 0.5f, loop);
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  settle_layers(e);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  /* The first wrap's pass, plus a punch-tail sliver at this loop size (the
+   * punch fade is engaged) — see test_undo_layer_slot_regrows_for_longer_loop. */
+  const int32_t depth = s.tracks[0].undo_depth;
+  CHECK(depth >= 1);
+  /* Peel every layer: each one's buffer must cover the WHOLE loop. Sized off the
+   * partial length the mid-capture pre-arm saw, the first wrap's would be one
+   * quantum — short of `loop`, i.e. the pass wrote past its end. */
+  for (int32_t k = 0; k < depth; ++k) {
+    CHECK(le_engine_undo(e, 0) == LE_OK);
+    CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) >= loop);
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
+
+  le_engine_destroy(e);
+}
+
 /* Sound-activated recording arms on the press and starts only once the input
  * crosses the threshold; a second press cancels the arm. */
 static void test_auto_record_starts_on_signal(void) {
@@ -9101,6 +9289,10 @@ int main(void) {
   test_fixed_multiple_auto_finalizes();
   test_rec_dub_continues_into_overdub();
   test_new_track_autofinish_overdubs_with_rec_dub_off();
+  test_rec_dub_first_wrap_is_undoable_layer();
+  test_new_track_first_wrap_is_undoable_layer();
+  test_first_wrap_layer_shrinks_to_quantum();
+  test_deferred_arm_first_wrap_shadow_fits_loop();
   test_auto_record_starts_on_signal();
   test_quantize_track_override_forces_on();
   test_quantize_track_override_forces_off();

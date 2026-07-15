@@ -443,9 +443,11 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
       break;
     case LE_TRACK_RECORDING: {
       /* Second press finalizes. In rec/dub mode it continues into overdub
-       * instead of playback (no undo snapshot for this auto-dub layer — a
-       * later manual overdub snapshots normally). A stop press ends in
-       * playback/stopped (handle_stop), never overdub. */
+       * instead of playback; the shadow slot pre-armed during RECORDING (see
+       * le_engine_record / le_engine_drain_events) lets this first wrap's pass
+       * back up on write and retire as its own undo layer, unless the loop was
+       * too short for that post to land (then it merges — see le_dub_boundary).
+       * A stop press ends in playback/stopped (handle_stop), never overdub. */
       const int32_t end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
       if (e->clock.length == 0) {
         request_master_finalize(e, t, end, frame); /* defers for the seam crossfade */
