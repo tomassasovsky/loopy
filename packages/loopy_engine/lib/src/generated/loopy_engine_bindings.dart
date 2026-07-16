@@ -1145,6 +1145,40 @@ class LoopyEngineBindings {
   late final _le_engine_clear = _le_engine_clearPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Clear that leaves a restore point: identical to le_engine_clear, except the
+  /// track's history survives with a LE_HIST_CLEAR entry pushed on top, so the next
+  /// le_engine_undo puts the take back — content, length, multiple, state, mutes,
+  /// and the master grid if this clear reset it — with the erased take's overdub
+  /// layers still peelable beneath it. le_engine_redo then re-clears.
+  ///
+  /// Use this for a USER clear. le_engine_clear stays the destructive one, and must
+  /// remain so for its two non-user callers: session load, and the internal clear
+  /// le_engine_record posts to redefine the grid when recording onto an otherwise-
+  /// empty looper (which would otherwise leave a bogus restore point on every take).
+  ///
+  /// The restore point is dropped — and this decays to a plain clear — when the
+  /// track has nothing to restore (already empty / zero length), when a fresh
+  /// recording on this track overwrites the live slot it names, or when the pool
+  /// runs out of room for it. `undo` is never a promise, only an offer.
+  int le_engine_clear_undoable(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_clear_undoable(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_clear_undoablePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_clear_undoable');
+  late final _le_engine_clear_undoable = _le_engine_clear_undoablePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   int le_engine_undo(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -3099,6 +3133,15 @@ enum le_command_code {
   /// control thread already swapped a_live.
   LE_CMD_REDO_FROM_EMPTY(40),
 
+  /// undo of an undoable clear: reinstate a cleared
+  /// track. `restore` arm. Distinct from REDO_FROM_
+  /// EMPTY because it restores the pre-clear STATE
+  /// (which may be STOPPED) and re-establishes the
+  /// master grid a whole-rig clear reset — REDO_
+  /// FROM_EMPTY only ever reads the clock. The
+  /// control thread already swapped a_live.
+  LE_CMD_RESTORE_CLEAR(43),
+
   /// begin publishing to the perf capture rings
   LE_CMD_PERF_ARM(41),
 
@@ -3146,6 +3189,7 @@ enum le_command_code {
     38 => LE_CMD_DUB_SHADOW,
     39 => LE_CMD_UNDO_TO_EMPTY,
     40 => LE_CMD_REDO_FROM_EMPTY,
+    43 => LE_CMD_RESTORE_CLEAR,
     41 => LE_CMD_PERF_ARM,
     42 => LE_CMD_PERF_DISARM,
     100 => LE_EVT_LAYER_RETIRED,
