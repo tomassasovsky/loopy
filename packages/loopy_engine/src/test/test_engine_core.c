@@ -5586,6 +5586,125 @@ static void test_first_wrap_layer_shrinks_to_quantum(void) {
   le_engine_destroy(e);
 }
 
+/* Counts lane 0's pool slots allocated at exactly `cap` frames, excluding the
+ * live slot (a recording target is legitimately cap-sized). What remains is
+ * pre-armed/leftover shadow memory — the footprint the first-wrap feature must
+ * keep bounded. */
+static int count_cap_sized_nonlive_slots(le_engine* e, int32_t cap) {
+  const int32_t live = load_i32(&e->tracks[0].lanes[0].a_live);
+  int n = 0;
+  for (int32_t s = 0; s < LE_POOL_SLOTS; ++s) {
+    if (s == live) continue;
+    if (le_engine_lane_slot_cap_for_test(e, 0, 0, s) == cap) n++;
+  }
+  return n;
+}
+
+/* The pre-arm's memory footprint stays bounded: ONE cap-sized slot while a
+ * gated capture records (the first wrap's shadow — its spare arrives quantized
+ * after finalize), and NONE once that first wrap's layer retires (the shrink
+ * right-sizes it). A capture that stops without ever layering keeps exactly the
+ * one pre-armed slot, reclaimed on the track's next capture/clear. */
+static void test_first_wrap_prearm_footprint_bounded(void) {
+  printf("test_first_wrap_prearm_footprint_bounded\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 200000; /* > LE_LAYER_QUANTUM so cap-sized is visible */
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+  drain(e);
+
+  /* Flow A: record -> overdub one pass -> punch out. The pre-armed slot is
+   * consumed by the first wrap and shrunk at retire; the spare posted after
+   * finalize is quantized. Nothing cap-sized may remain besides live. */
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, LOOP_N, out);
+  /* Mid-capture: exactly the one pre-armed cap slot (live excluded). */
+  CHECK(count_cap_sized_nonlive_slots(e, cap) == 1);
+  le_engine_record(e, 0); /* finalize -> OVERDUBBING */
+  drain(e);
+  le_engine_get_snapshot(e, &s); /* poll: posts the quantized spare */
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(count_cap_sized_nonlive_slots(e, cap) == 0);
+  le_engine_destroy(e);
+
+  /* Flow B: record then STOP, never layering. The single pre-armed slot is the
+   * irreducible residual (whether the user will layer is unknowable at record
+   * time); it is reclaimed by the track's next capture start or clear. */
+  le_engine* e2 = le_engine_create();
+  le_engine_configure(e2, 48000, 1, 1, cap);
+  le_engine_set_rec_dub(e2, 1);
+  drain(e2);
+  le_engine_record(e2, 0);
+  process_const(e2, 1.0f, LOOP_N, out);
+  le_engine_stop_track(e2, 0);
+  drain(e2);
+  process_const(e2, 0.0f, LOOP_N, out);
+  CHECK(count_cap_sized_nonlive_slots(e2, cap) == 1);
+  le_engine_destroy(e2);
+}
+
+/* Long-loop (> LE_LAYER_QUANTUM) rec/dub flow, content-exact: the defining
+ * finalize takes the seam-crossfade deferral and still runs straight into
+ * overdub with the pre-armed shadow, and undo restores the base bit-exact.
+ * Positions near the loop top are excluded from the equality checks — the seam
+ * crossfade, the finalize->overdub handover, and the punch fade all legitimately
+ * shape the first ~2000 frames; the body of the loop must be exact. */
+static void test_rec_dub_long_loop_first_wrap_undo(void) {
+  printf("test_rec_dub_long_loop_first_wrap_undo\n");
+  le_engine* e = le_engine_create();
+  const int32_t cap = 400000;
+  le_engine_configure(e, 48000, 1, 1, cap);
+  float out[64];
+  le_snapshot s;
+
+  CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);
+  drain(e);
+
+  const int32_t len = LE_LAYER_QUANTUM + 2000; /* > one quantum */
+  le_engine_record(e, 0);
+  pump_frames(e, 1.0f, len);
+  le_engine_record(e, 0); /* finalize (deferred for the seam crossfade) */
+  drain(e);
+  pump_frames(e, 1.0f, 600); /* crossfade overlap -> finalize -> OVERDUBBING */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[0].length_frames == len);
+
+  pump_frames(e, 0.5f, len); /* the first wrap's pass */
+  le_engine_record(e, 0);    /* punch out */
+  drain(e);
+  pump_frames(e, 0.0f, 600); /* punch fade tail decays */
+  settle_layers(e);
+  drain(e);
+
+  float* pcm = (float*)malloc((size_t)len * sizeof(float));
+  CHECK(pcm != NULL);
+  const int32_t body = 2000; /* first frames shaped by seam/handover/fade */
+
+  CHECK(le_engine_export_track(e, 0, pcm, len) == len);
+  for (int32_t i = body; i < len; ++i) CHECK(fabsf(pcm[i] - 1.5f) < 1e-6f);
+
+  /* Peel every layer (the punch fade may commit a tail sliver as a second
+   * layer at this loop size): the body must return to the base exactly. */
+  le_engine_get_snapshot(e, &s);
+  const int32_t depth = s.tracks[0].undo_depth;
+  CHECK(depth >= 1);
+  for (int32_t k = 0; k < depth; ++k) CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_export_track(e, 0, pcm, len) == len);
+  for (int32_t i = body; i < len; ++i) CHECK(fabsf(pcm[i] - 1.0f) < 1e-6f);
+
+  free(pcm);
+  le_engine_destroy(e);
+}
+
 /* A capture started from a DEFERRED arm (sound-triggered here; quantize takes
  * the same path) is pre-armed by the RECORDING branch of le_engine_drain_events,
  * which polls while the track is mid-capture — when a_len reads as the GROWING
@@ -9293,6 +9412,8 @@ int main(void) {
   test_new_track_first_wrap_is_undoable_layer();
   test_first_wrap_layer_shrinks_to_quantum();
   test_deferred_arm_first_wrap_shadow_fits_loop();
+  test_first_wrap_prearm_footprint_bounded();
+  test_rec_dub_long_loop_first_wrap_undo();
   test_auto_record_starts_on_signal();
   test_quantize_track_override_forces_on();
   test_quantize_track_override_forces_off();

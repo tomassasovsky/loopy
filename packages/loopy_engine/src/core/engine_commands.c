@@ -102,18 +102,27 @@ static int32_t le_layer_slot_frames(const le_engine* engine, int32_t len) {
   return want > engine->max_loop_frames ? engine->max_loop_frames : want;
 }
 
-/* Tops the track's posted shadow slots up to LE_DUB_SHADOWS (control thread):
+/* Tops the track's posted shadow slots up to `target` (control thread):
  * acquires a free pool slot, lazily allocates its buffer on every active lane,
  * and posts it via LE_CMD_DUB_SHADOW. Push-then-mutate: the slot only becomes
  * `outstanding` once the ring accepted the command (a lazily allocated buffer
  * stays in the pool either way). The audio thread arms the slot as its next
  * shadow; the ring's release/acquire publishes the fresh buffers, exactly like
- * the fx delay-line pattern. */
-static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
+ * the fx delay-line pattern.
+ *
+ * `target` is LE_DUB_SHADOWS (armed + spare) for a running dub session, but 1
+ * for a pre-arm during RECORDING: the length is not settled there, so each slot
+ * costs the full recording cap, and only the first wrap's pass needs one — its
+ * spare arrives from the running session's replenish right after finalize, when
+ * the length is settled and the slot is loop-length-quantized. Capped at
+ * LE_DUB_SHADOWS. */
+static void le_post_dub_shadows(le_engine* engine, int32_t channel,
+                                int32_t target) {
   le_track* t = &engine->tracks[channel];
   const int32_t lanes = le_lanes_active(t);
   const int32_t want = le_layer_slot_frames(engine, le_track_settled_len(t));
-  while (t->outstanding_count < LE_DUB_SHADOWS) {
+  if (target > LE_DUB_SHADOWS) target = LE_DUB_SHADOWS;
+  while (t->outstanding_count < target) {
     const int slot = track_acquire_slot(t);
     if (slot < 0) return; /* pool exhausted beyond eviction: skip boundaries */
     int ok = 1;
@@ -140,7 +149,15 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
  * off, only a non-defining capture (master already exists) with a fixed loop
  * multiple auto-finalizes into overdub; a defining capture, or one with an auto
  * multiple, finalizes to playback and is skipped so it never strands a pre-armed
- * slot (cap-sized, since the length is unknown until finalize). */
+ * slot (cap-sized, since the length is unknown until finalize).
+ *
+ * Known, deliberate exclusion: an auto-multiple capture that records all the
+ * way to the buffer cap rolls into overdub (advance_transport_frame's
+ * record_pos >= max_loop_frames auto-finalize) with no pre-armed slot, so that
+ * first wrap merges into the base — the pre-fix behaviour. Covering it would
+ * mean pre-arming every auto-multiple capture, stranding a cap-sized slot on
+ * the common record-to-playback flow, to benefit only a capture held for the
+ * entire cap (30 s+) without a press. */
 static int le_capture_may_overdub(le_engine* engine, int32_t channel) {
   if (engine->rec_dub) return 1;
   if (load_i32(&engine->a_master_len) <= 0) return 0;
@@ -331,7 +348,8 @@ static void le_handle_retired(le_engine* engine, const le_command* evt) {
     store_i32(&t->a_undo_depth, t->undo_count);
   }
   if (load_i32(&t->a_layer_in_flight)) {
-    le_post_dub_shadows(engine, ch); /* the dub continues: keep 2 posted */
+    /* the dub continues: keep armed + spare posted */
+    le_post_dub_shadows(engine, ch, LE_DUB_SHADOWS);
   }
 }
 
@@ -347,23 +365,26 @@ void le_engine_drain_events(le_engine* engine) {
    * guaranteed to see that event — then the stack is complete and the queued
    * taps peel the layers the user asked for.
    *
-   * The same sweep replenishes shadow slots for any in-flight session, and
-   * pre-arms them for a track that is still RECORDING but may run straight into
-   * overdub (rec/dub, fixed multiple, or a non-defining track's auto-finalize).
-   * The length is unknown until finalize, so an EMPTY-start post is cap-sized
-   * (le_post_dub_shadows); arming it BEFORE the finalize->overdub transition is
-   * what lets the first wrap's pass back up on write and retire as its own undo
-   * layer — instead of running un-backed and merging into the base. A base loop
-   * so short it finalizes before this post lands falls back to the merge, the
-   * same coherent behaviour as spare starvation. */
+   * The same sweep replenishes shadow slots for any in-flight session (armed +
+   * spare), and pre-arms ONE for a track that is still RECORDING but bound to
+   * run straight into overdub (rec/dub, or a non-defining fixed multiple). The
+   * length is not settled mid-capture, so a pre-armed slot is cap-sized
+   * (le_post_dub_shadows) — one is all the first wrap needs, and its spare
+   * comes from this same sweep's in-flight branch right after finalize, when
+   * the slot is loop-length-quantized. Arming BEFORE the finalize->overdub
+   * transition is what lets the first wrap's pass back up on write and retire
+   * as its own undo layer — instead of running un-backed and merging into the
+   * base. A base loop so short it finalizes before this post lands falls back
+   * to the merge, the same coherent behaviour as spare starvation. */
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     le_track* t = &engine->tracks[ch];
     const int in_flight =
         atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire);
     const int recording = load_i32(&t->a_state) == LE_TRACK_RECORDING;
-    if ((in_flight || (recording && le_capture_may_overdub(engine, ch))) &&
-        t->outstanding_count < LE_DUB_SHADOWS) {
-      le_post_dub_shadows(engine, ch);
+    if (in_flight) {
+      le_post_dub_shadows(engine, ch, LE_DUB_SHADOWS);
+    } else if (recording && le_capture_may_overdub(engine, ch)) {
+      le_post_dub_shadows(engine, ch, 1);
     }
     if (t->queued_undo <= 0) continue;
     if (in_flight) continue; /* still capturing/draining: keep waiting */
@@ -512,7 +533,7 @@ static void le_begin_punch_in(le_engine* engine, int32_t channel) {
   le_engine_drain_events(engine);
   le_clear_redo(t);
   t->queued_undo = 0;
-  le_post_dub_shadows(engine, channel);
+  le_post_dub_shadows(engine, channel, LE_DUB_SHADOWS);
 }
 
 int32_t le_engine_record(le_engine* engine, int32_t channel) {
@@ -614,18 +635,21 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
     le_begin_punch_in(engine, channel);
   }
   const int32_t rc = le_push(engine, LE_CMD_RECORD, channel, 0.0f);
-  /* Pre-arm the shadow slots for a fresh capture that may run straight into
-   * overdub (rec/dub, fixed multiple, non-defining auto-finalize). Posted AFTER
-   * the RECORD command so it orders behind handle_record's EMPTY-case drop of
-   * any stale armed slots — the audio thread then arms this one during
-   * RECORDING, and the finalize->overdub transition finds it already in hand, so
-   * the first wrap's pass backs up on write and becomes its own undo layer. Not
-   * done for the deferred arm paths above: their EMPTY->RECORDING transition
-   * fires later on the audio thread and would drop a slot posted now — the
-   * RECORDING branch of le_engine_drain_events pre-arms those instead. */
+  /* Pre-arm ONE shadow slot for a fresh capture that is bound to run straight
+   * into overdub (rec/dub, or a non-defining fixed multiple). Posted AFTER the
+   * RECORD command so it orders behind handle_record's EMPTY-case drop of any
+   * stale armed slots — the audio thread then arms this one during RECORDING,
+   * and the finalize->overdub transition finds it already in hand, so the first
+   * wrap's pass backs up on write and becomes its own undo layer. One slot, not
+   * LE_DUB_SHADOWS: it is cap-sized (the length is not settled until finalize),
+   * and the running session's replenish supplies the quantized spare right
+   * after finalize. Not done for the deferred arm paths above: their
+   * EMPTY->RECORDING transition fires later on the audio thread and would drop
+   * a slot posted now — the RECORDING branch of le_engine_drain_events
+   * pre-arms those instead. */
   if (rc == LE_OK && st == LE_TRACK_EMPTY &&
       le_capture_may_overdub(engine, channel)) {
-    le_post_dub_shadows(engine, channel);
+    le_post_dub_shadows(engine, channel, 1);
   }
   return rc;
 }
