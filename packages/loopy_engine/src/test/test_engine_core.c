@@ -5637,7 +5637,9 @@ static void test_first_wrap_prearm_footprint_bounded(void) {
 
   /* Flow B: record then STOP, never layering. The single pre-armed slot is the
    * irreducible residual (whether the user will layer is unknowable at record
-   * time); it is reclaimed by the track's next capture start or clear. */
+   * time). The SLOT returns to the pool on the track's next capture start or
+   * clear; its buffer stays allocated until some later use regrows or shrinks
+   * it — the pool is grow-only by design, same as every other slot. */
   le_engine* e2 = le_engine_create();
   le_engine_configure(e2, 48000, 1, 1, cap);
   le_engine_set_rec_dub(e2, 1);
@@ -5649,6 +5651,29 @@ static void test_first_wrap_prearm_footprint_bounded(void) {
   process_const(e2, 0.0f, LOOP_N, out);
   CHECK(count_cap_sized_nonlive_slots(e2, cap) == 1);
   le_engine_destroy(e2);
+
+  /* Flow C: the DEFINING capture of a fresh take must not pre-arm even when a
+   * ghost master survives an undo-to-empty (rec/dub off, fixed multiple). The
+   * record press pushes an internal grid-redefine CLEAR ahead of itself; the
+   * gate must trust the caller's corrected has_master, not the a_master_len
+   * atomic, which stays stale until the audio thread applies that CLEAR. */
+  le_engine* e3 = le_engine_create();
+  le_engine_configure(e3, 48000, 1, 1, cap);
+  le_engine_set_default_multiple(e3, 2); /* fixed multiple, rec/dub off */
+  drain(e3);
+  le_engine_record(e3, 0);
+  process_const(e3, 1.0f, LOOP_N, out);
+  le_engine_record(e3, 0); /* master defined -> PLAYING */
+  drain(e3);
+  CHECK(le_engine_undo(e3, 0) == LE_OK); /* undo to empty; master kept */
+  drain(e3);
+  le_engine_record(e3, 0); /* fresh take: internal CLEAR + defining RECORD */
+  CHECK(count_cap_sized_nonlive_slots(e3, cap) == 0); /* no stale pre-arm */
+  drain(e3);
+  le_engine_get_snapshot(e3, &s); /* poll during RECORDING: still none */
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  CHECK(count_cap_sized_nonlive_slots(e3, cap) == 0);
+  le_engine_destroy(e3);
 }
 
 /* Long-loop (> LE_LAYER_QUANTUM) rec/dub flow, content-exact: the defining
@@ -5662,7 +5687,6 @@ static void test_rec_dub_long_loop_first_wrap_undo(void) {
   le_engine* e = le_engine_create();
   const int32_t cap = 400000;
   le_engine_configure(e, 48000, 1, 1, cap);
-  float out[64];
   le_snapshot s;
 
   CHECK(le_engine_set_rec_dub(e, 1) == LE_OK);

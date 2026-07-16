@@ -157,12 +157,18 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel,
  * first wrap merges into the base — the pre-fix behaviour. Covering it would
  * mean pre-arming every auto-multiple capture, stranding a cap-sized slot on
  * the common record-to-playback flow, to benefit only a capture held for the
- * entire cap (30 s+) without a press. */
-static int le_capture_may_overdub(le_engine* engine, int32_t channel) {
+ * entire cap (30 s+) without a press.
+ *
+ * `has_master` comes from the CALLER, never re-read from a_master_len here: a
+ * caller that just pushed the internal grid-redefine CLEAR (le_engine_record's
+ * fresh-take branch) already knows the capture will be defining, while the
+ * atomic stays stale until the audio thread applies that CLEAR — re-reading it
+ * would pre-arm exactly the defining capture this gate exists to skip. */
+static int le_capture_may_overdub(le_engine* engine, int32_t channel,
+                                  int has_master) {
   if (engine->rec_dub) return 1;
-  if (load_i32(&engine->a_master_len) <= 0) return 0;
-  const int32_t ov = engine->target_multiple[channel];
-  return (ov > 0 ? ov : engine->default_multiple) > 0;
+  if (!has_master) return 0;
+  return le_effective_multiple(engine, channel) > 0;
 }
 
 /* One undo step on a track that has stacked layers (control thread): swap the
@@ -380,10 +386,17 @@ void le_engine_drain_events(le_engine* engine) {
     le_track* t = &engine->tracks[ch];
     const int in_flight =
         atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire);
-    const int recording = load_i32(&t->a_state) == LE_TRACK_RECORDING;
+    /* Effective state, not raw a_state: a CLEAR / undo-to-empty pushed but not
+     * yet applied means this track is about to be EMPTY — pre-arming it would
+     * post a cap-sized slot straight into the clear's path (the same unacked
+     * window every control-side decision in this file guards with
+     * le_effective_state). */
+    const int recording = le_effective_state(t) == LE_TRACK_RECORDING;
     if (in_flight) {
       le_post_dub_shadows(engine, ch, LE_DUB_SHADOWS);
-    } else if (recording && le_capture_may_overdub(engine, ch)) {
+    } else if (recording &&
+               le_capture_may_overdub(engine, ch,
+                                      load_i32(&engine->a_master_len) > 0)) {
       le_post_dub_shadows(engine, ch, 1);
     }
     if (t->queued_undo <= 0) continue;
@@ -648,7 +661,7 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
    * a slot posted now — the RECORDING branch of le_engine_drain_events
    * pre-arms those instead. */
   if (rc == LE_OK && st == LE_TRACK_EMPTY &&
-      le_capture_may_overdub(engine, channel)) {
+      le_capture_may_overdub(engine, channel, has_master)) {
     le_post_dub_shadows(engine, channel, 1);
   }
   return rc;

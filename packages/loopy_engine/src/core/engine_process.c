@@ -137,14 +137,9 @@ static void request_master_finalize(le_engine* e, le_track* t,
 /* Finalizes a non-defining track that recorded freely across one or more base
  * loops: rounds its length UP to the nearest whole base loop (the locked #4
  * behaviour), publishes the multiple, and moves it to `end_state`. A track that
- * captured nothing (never reached the loop top) returns to EMPTY. */
-/* Track [ch]'s effective forced loop multiple: its per-track override, or the
- * global default when it inherits (target 0). 0 means auto (round up on stop). */
-static int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
-  const int32_t ov = e->target_multiple[ch];
-  return ov > 0 ? ov : e->default_multiple;
-}
-
+ * captured nothing (never reached the loop top) returns to EMPTY. Length policy
+ * comes from le_effective_multiple (engine_private.h — shared with the control
+ * thread's first-wrap pre-arm gate, which predicts this finalize). */
 static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
                                uint64_t frame) {
   const int32_t ch = (int32_t)(t - e->tracks);
