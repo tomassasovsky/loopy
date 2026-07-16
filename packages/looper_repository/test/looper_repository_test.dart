@@ -2015,9 +2015,9 @@ void main() {
       addTearDown(repo.dispose);
 
       repo.clear();
-      // The engine reports no restore point (a fresh recording retired it, say),
-      // so the stale snapshot must stay inert rather than resurrect a chain onto
-      // a take that no longer exists.
+      // The engine reports no restore point (a fresh recording retired it),
+      // so the stale snapshot must stay inert rather than resurrect a chain
+      // onto a take that no longer exists.
       engine.undoRestoresClearResult = false;
       repo.undo();
 
@@ -2043,7 +2043,7 @@ void main() {
       addTearDown(repo.dispose);
       engine.calls.clear();
 
-      repo.applySession(const SessionRig(tracks: []));
+      unawaited(repo.applySession(const SessionRig()));
 
       expect(engine.calls, contains('clear'));
       expect(engine.calls, isNot(contains('clearUndoable')));

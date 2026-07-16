@@ -413,6 +413,7 @@ class LooperRepository {
           rms: s.tracks[i].rms,
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
+          clearRestore: s.tracks[i].clearRestore,
           redoDepth: s.tracks[i].redoDepth,
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
