@@ -128,14 +128,34 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
   }
 }
 
+/* Pushes onto the redo stack, refusing rather than running off the end.
+ *
+ * Most entries name a distinct pool slot, so live + undo + redo + outstanding <=
+ * LE_POOL_SLOTS bounds the stacks implicitly. Two pushes escape that bound by
+ * naming the ALREADY-live slot and consuming no new one: undo-to-empty's, and
+ * the clear restore point's (#219). Today the totals still fit — LE_DUB_SHADOWS
+ * keeps 2 slots outstanding while dubbing, so undo tops out at LE_POOL_SLOTS - 3
+ * and redo peaks one index short of the end — but that is a one-slot margin
+ * resting on a constant that has nothing to do with undo. Bound it explicitly
+ * instead of leaving the arrays safe by coincidence. */
+static int le_redo_push(le_track* t, le_hist_entry e) {
+  if (t->redo_count >= LE_POOL_SLOTS) return 0;
+  t->redo_stack[t->redo_count++] = e;
+  return 1;
+}
+
 /* One undo step on a track that has stacked layers (control thread): swap the
  * live pool index back to the top undo snapshot and push the previous live onto
  * the redo stack — every active lane in lockstep (the one undo span). The
- * caller has verified the track is not capturing and no layer is in flight. */
+ * caller has verified the track is not capturing and no layer is in flight.
+ *
+ * The redo push cannot fail here: it moves one entry off the undo stack for the
+ * one it adds, so the total is unchanged. Losing the redo step would still beat
+ * corrupting the struct, hence the guard rather than an assert. */
 static void le_undo_swap(le_track* t) {
   const int32_t prev = t->undo_stack[--t->undo_count].slot;
   const int32_t lanes = le_lanes_active(t);
-  t->redo_stack[t->redo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
+  (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
   store_i32(&t->a_undo_depth, t->undo_count);
   store_i32(&t->a_redo_depth, t->redo_count);
@@ -211,9 +231,13 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
     const int32_t st = le_effective_state(t);
     const int32_t len = load_i32(&t->lanes[0].a_len);
     if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || len <= 0) break;
+    /* Checked BEFORE the command is posted: an undo-to-empty whose resurrect
+     * slot did not make it onto the redo stack would empty the track with no
+     * way back — worse than declining the tap. */
+    if (t->redo_count >= LE_POOL_SLOTS) break;
     if (le_push(engine, LE_CMD_UNDO_TO_EMPTY, channel, 0.0f) != LE_OK) break;
     le_cancel_arm(engine, channel);
-    t->redo_stack[t->redo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
+    (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
     t->empty_len = len;
     le_mark_state_cmd(t, LE_TRACK_EMPTY);
     le_track_set_len(t, 0); /* coherent snapshot before the audio thread
@@ -776,7 +800,8 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   if (le_push_cmd(engine, cmd) != LE_OK) return LE_ERR_INVALID;
 
   t->undo_count--;
-  t->redo_stack[t->redo_count++] = e;
+  /* Cannot fail: one entry off the undo stack for the one added here. */
+  (void)le_redo_push(t, e);
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, e.slot);
   /* Leftover armed shadows may be sized for a different loop; the audio thread
    * drops them when the command applies (same reclaim rule as redo-from-empty:
@@ -831,13 +856,17 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || len <= 0) {
     return LE_ERR_INVALID;
   }
+  /* Checked BEFORE the command is posted: an undo-to-empty whose resurrect slot
+   * did not make it onto the redo stack would empty the track with no way back —
+   * worse than declining the tap. */
+  if (t->redo_count >= LE_POOL_SLOTS) return LE_ERR_INVALID;
   if (le_push(engine, LE_CMD_UNDO_TO_EMPTY, channel, 0.0f) != LE_OK) {
     return LE_ERR_INVALID;
   }
   /* An emptied track must not have a quantized/auto-record arm still pending —
    * it would fire a surprise fresh recording at the next loop top. */
   le_cancel_arm(engine, channel);
-  t->redo_stack[t->redo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
+  (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
   t->empty_len = len;
   le_mark_state_cmd(t, LE_TRACK_EMPTY);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
@@ -866,14 +895,15 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
    * the same undoable path, so the restore point returns to the undo stack and
    * the pair stays symmetric under repeated undo/redo. */
   if (t->redo_stack[t->redo_count - 1].kind == LE_HIST_CLEAR) {
-    t->redo_count--;
-    store_i32(&t->a_redo_depth, t->redo_count);
+    /* le_clear_track discards the whole redo branch on success (le_clear_redo),
+     * so this entry goes either way — but only pop it once the clear is actually
+     * posted. Popping first would drop the restore point on a failed push (ring
+     * full), leaving the user with neither the redo nor the undo they had. */
     const int32_t rc = le_clear_track(engine, channel, 1);
-    if (rc == LE_OK) {
-      le_plog_push_ctrl(engine,
-                        (le_command){.code = LE_PLOG_REDO, .arg_i = channel});
-    }
-    return rc;
+    if (rc != LE_OK) return rc;
+    le_plog_push_ctrl(engine,
+                      (le_command){.code = LE_PLOG_REDO, .arg_i = channel});
+    return LE_OK;
   }
   if (st == LE_TRACK_EMPTY) {
     /* Reinstate an undone-to-empty track: the redo-top slot is its base

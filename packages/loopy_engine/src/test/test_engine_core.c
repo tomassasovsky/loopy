@@ -990,6 +990,64 @@ static void test_record_over_cleared_track_drops_restore_point_grid_held(void) {
   le_engine_destroy(e);
 }
 
+/* redo_stack must not overflow when a restore point pushes the entry count past
+ * what the pool bound alone guarantees.
+ *
+ * Most stack entries name a distinct pool slot, so live + undo + redo +
+ * outstanding <= LE_POOL_SLOTS caps undo + redo at 255. The exceptions are the
+ * pushes that name the ALREADY-live slot and so consume no new one: undo-to-
+ * empty's, and (since #219) the clear restore point's. Pre-#219 there was
+ * exactly one such push and redo_count topped out at 256 — the last valid
+ * index. The restore point adds a second, which is one too many:
+ *
+ *   255 layers + 1 restore point  -> undo 256
+ *   undo the clear, peel all 255  -> redo 256   (both moves, net zero)
+ *   one more undo (to empty)      -> redo_stack[256] — past the end
+ *
+ * redo_count sits immediately after redo_stack, so the overflow corrupts the
+ * very counter that bounds it. Rare (255 overdubs, then clear, then 256 undos)
+ * but reachable, and memory corruption either way. */
+static void test_redo_stack_bounded_with_restore_point(void) {
+  printf("test_redo_stack_bounded_with_restore_point\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  /* Stack layers until eviction pins the depth at its ceiling. */
+  for (int i = 0; i < LE_POOL_SLOTS + 4; ++i) {
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    process_const(e, 0.0f, LOOP_N, out);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    drain(e);
+    settle_dub(e);
+  }
+  le_engine_get_snapshot(e, &s);
+  const int32_t depth = s.tracks[0].undo_depth;
+  CHECK(depth > 0 && depth <= LE_POOL_SLOTS);
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK); /* + the restore point */
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* restore: moves it to redo */
+  drain(e);
+
+  /* Peel everything, then keep tapping past the base into undo-to-empty. Each
+   * tap must either move an entry or refuse — never write past redo_stack. */
+  for (int i = 0; i < LE_POOL_SLOTS + 8; ++i) {
+    le_engine_undo(e, 0);
+    drain(e);
+  }
+  le_engine_get_snapshot(e, &s);
+  /* The counters are still sane: an overflow would have clobbered redo_count
+   * itself (it is the next field after redo_stack). */
+  CHECK(s.tracks[0].redo_depth >= 0);
+  CHECK(s.tracks[0].redo_depth <= LE_POOL_SLOTS);
+  CHECK(s.tracks[0].undo_depth >= 0);
+  CHECK(s.tracks[0].undo_depth <= LE_POOL_SLOTS);
+
+  le_engine_destroy(e);
+}
+
 /* Clear resets the track to its default armed-to-play state: unmuted (a
  * leftover Stop-mute never silences the next take) with all capture state
  * dropped. */
@@ -9459,6 +9517,7 @@ int main(void) {
   test_undoable_clear_of_empty_track_is_plain();
   test_cleared_sibling_does_not_hold_grid();
   test_record_over_cleared_track_drops_restore_point_grid_held();
+  test_redo_stack_bounded_with_restore_point();
   test_clear_unmutes();
   test_record_from_empty_unmutes();
   test_spare_starvation_merges_passes();
