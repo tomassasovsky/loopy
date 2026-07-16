@@ -502,9 +502,14 @@ void main() {
           'record',
           'stopTrack',
           'play',
+          // undo asks what the tap would do before making it, so it knows
+          // whether to put a cleared take's FX chains back.
+          'undoRestoresClear',
           'undo',
           'redo',
-          'clear',
+          // The user's clear leaves a way back; only session load erases
+          // outright (via the engine's plain `clear`).
+          'clearUndoable',
           'measureLatency',
           'stop',
         ]),
@@ -1910,6 +1915,138 @@ void main() {
       // the emptied chain was persisted (so a restart can't replay it).
       expect(repo.laneEffects(0, 0), isEmpty);
       expect(persisted, contains((0, 0)));
+    });
+
+    test('the user clear takes the undoable engine path', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      repo.clear();
+
+      expect(engine.calls, contains('clearUndoable'));
+      expect(engine.calls, isNot(contains('clear')));
+    });
+
+    test('undoing a clear puts the take FX chain back and re-persists it', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final persisted = <(int, int)>[];
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..onLaneChainChanged = (channel, lane) {
+          persisted.add((channel, lane));
+        }
+        ..setMonitorEffects(
+          input: 0,
+          effects: [
+            BuiltInEffect(type: TrackEffectType.reverb),
+            BuiltInEffect(type: TrackEffectType.delay),
+          ],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+      expect(repo.laneEffects(0, 0), hasLength(2));
+
+      repo.clear();
+      expect(repo.laneEffects(0, 0), isEmpty);
+
+      // The engine says this undo restores the cleared take, so the chain the
+      // clear erased comes back with it.
+      engine.undoRestoresClearResult = true;
+      persisted.clear();
+      repo.undo();
+
+      expect(repo.laneEffects(0, 0), hasLength(2));
+      expect(
+        repo.laneEffects(0, 0).map((e) => (e as BuiltInEffect).type),
+        [TrackEffectType.reverb, TrackEffectType.delay],
+      );
+      // Re-persisted, or a restart would replay the clear's emptied chain over
+      // the restored take (F3).
+      expect(persisted, contains((0, 0)));
+    });
+
+    test('an undo that peels a layer leaves the FX chain alone', () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setMonitorEffects(
+          input: 0,
+          effects: [BuiltInEffect(type: TrackEffectType.reverb)],
+        )
+        ..record();
+      addTearDown(repo.dispose);
+
+      repo.clear();
+      // The engine reports no restore point (a fresh recording retired it, say),
+      // so the stale snapshot must stay inert rather than resurrect a chain onto
+      // a take that no longer exists.
+      engine.undoRestoresClearResult = false;
+      repo.undo();
+
+      expect(repo.laneEffects(0, 0), isEmpty);
+    });
+
+    test('applySession clears destructively — a loaded session is not undoable',
+        () {
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty()],
+      );
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      addTearDown(repo.dispose);
+      engine.calls.clear();
+
+      repo.applySession(const SessionRig(tracks: []));
+
+      expect(engine.calls, contains('clear'));
+      expect(engine.calls, isNot(contains('clearUndoable')));
     });
 
     test('record captures the monitor plugin state onto the lane (D-P1)', () {

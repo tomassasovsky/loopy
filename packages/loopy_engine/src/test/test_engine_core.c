@@ -1055,6 +1055,72 @@ static void test_redo_stack_bounded_with_restore_point(void) {
   le_engine_destroy(e);
 }
 
+/* le_engine_undo_restores_clear tells a host whether the next undo puts a
+ * cleared take back (so it can restore state the engine does not own, like the
+ * take's FX chains) or merely peels a layer. It must track the stack exactly —
+ * including going false once a fresh recording retires the restore point. */
+static void test_undo_restores_clear_query(void) {
+  printf("test_undo_restores_clear_query\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  CHECK(le_engine_undo_restores_clear(e, 0) == 0); /* empty track: nothing */
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 0); /* undo would empty it */
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  settle_dub(e);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 0); /* undo would peel a layer */
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 1); /* undo would restore */
+
+  /* Consuming the restore point flips it back: the next tap peels the layer
+   * the clear had erased. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 0);
+
+  /* A plain clear never offers one. */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 0);
+
+  /* Bad channel / null engine are 0, not a crash — this is a host-facing query
+   * and the host has no way to know the track count. */
+  CHECK(le_engine_undo_restores_clear(e, -1) == 0);
+  CHECK(le_engine_undo_restores_clear(e, 9999) == 0);
+  CHECK(le_engine_undo_restores_clear(NULL, 0) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* The query must go false the moment the engine retires the restore point, or a
+ * host would put FX back onto a take that no longer exists. */
+static void test_undo_restores_clear_query_false_after_record(void) {
+  printf("test_undo_restores_clear_query_false_after_record\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* retires the restore point */
+  process_const(e, 2.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  CHECK(le_engine_undo_restores_clear(e, 0) == 0);
+
+  le_engine_destroy(e);
+}
+
 /* An EMPTY track NEVER reports undo steps, however it got there. undo_depth's
  * published contract is "available undo steps (overdub layers)", and the host
  * asserts EMPTY => undoDepth == 0 as a control invariant (lib/control/
@@ -9577,6 +9643,8 @@ int main(void) {
   test_record_over_cleared_track_drops_restore_point_grid_held();
   test_redo_stack_bounded_with_restore_point();
   test_empty_track_never_reports_undo_depth();
+  test_undo_restores_clear_query();
+  test_undo_restores_clear_query_false_after_record();
   test_clear_unmutes();
   test_record_from_empty_unmutes();
   test_spare_starvation_merges_passes();

@@ -839,6 +839,20 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   return LE_OK;
 }
 
+int32_t le_engine_undo_restores_clear(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return 0;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return 0;
+  }
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  /* Drain first, for the same reason le_engine_undo does: a retire event still
+   * in the ring would push a layer on top of the restore point, making the next
+   * tap a peel rather than a restore. Answering from the undrained stack would
+   * hand the caller a stale verdict it is about to act on. */
+  le_engine_drain_events(engine);
+  return le_history_is_cleared(&engine->tracks[channel]) ? 1 : 0;
+}
+
 int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   if (engine == NULL) return LE_ERR_INVALID;
   if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {

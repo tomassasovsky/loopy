@@ -107,6 +107,24 @@ class FakeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult clearUndoable({int channel = 0}) {
+    lastChannel = channel;
+    calls.add('clearUndoable');
+    return EngineResult.ok;
+  }
+
+  /// What the next [undo] would do. Tests set this to stand in for the engine's
+  /// restore-point bookkeeping, which the real engine owns.
+  bool undoRestoresClearResult = false;
+
+  @override
+  bool undoRestoresClear({int channel = 0}) {
+    lastChannel = channel;
+    calls.add('undoRestoresClear');
+    return undoRestoresClearResult;
+  }
+
+  @override
   EngineResult undo({int channel = 0}) {
     lastChannel = channel;
     calls.add('undo');
