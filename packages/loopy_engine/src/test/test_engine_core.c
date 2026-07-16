@@ -7926,10 +7926,11 @@ static void test_json_read_get_and_length_reject_non_objects(void) {
 /* ---- perf_render: the offline renderer (part 7) ----
  *
  * A native-only test cannot drive the full production pipeline (part 6's
- * armSnapshot/disarmSnapshot/loops/*.wav/finalized:true are all written by
- * Dart's performance_repository, never by this engine directly) — so these
- * tests hand-construct a capture directory's contents directly, mirroring
- * exactly what that pipeline produces (docs/design/performance-manifest-
+ * armSnapshot/disarmSnapshot, the loops directory .wav files, and
+ * finalized:true are all written by Dart's performance_repository, never by
+ * this engine directly) — so these tests hand-construct a capture
+ * directory's contents directly, mirroring exactly what that pipeline
+ * produces (docs/design/performance-manifest-
  * format.md, docs/design/performance-event-log-format.md), then invoke the
  * renderer against the fixture and assert on its output stems. */
 
