@@ -1,10 +1,11 @@
 # feat: make clear undoable/redoable
 
-**Status:** Planned (awaiting direction sign-off) · **Date:** 2026-07-16 · **Type:** feature (engine + repository + control)
+**Status:** Approved — in build · **Date:** 2026-07-16 · **Type:** feature (engine + repository + control)
 
-> Tracking: #219 (`stage:plan`, `autonomy:plan-gate`). Verified against `master` @ `8c97a44`.
+> Tracking: #219 (`epic`). Verified against `master` @ `8c97a44`.
 >
 > Scope fixed with the user: **full-stack restore**, **per-track + clear-all**, **audio + FX + mutes**.
+> Direction signed off, including the master-grid invalidation rule below.
 
 ## What "clear" destroys today
 
@@ -30,7 +31,7 @@ So the per-track history must become a stack of **tagged entries**, not slot ind
 
 Rejected alternative (Option B): a parallel command history in Dart. It fights the existing per-track engine model, and the audio restore still needs the engine work regardless — so it buys nothing and duplicates the invariant surface.
 
-### Entry model
+### Entry model (target state — part 1 ships the `kind`/`slot` core, part 2 adds the CLEAR payload)
 
 ```c
 typedef enum { LE_HIST_LAYER = 0, LE_HIST_CLEAR = 1 } le_hist_kind;
@@ -81,6 +82,7 @@ The repository must know an undo *restored a clear* rather than peeled a layer. 
 - **Performance recording (D-CLEAR).** `clearAll` awaits `persistLiveLanes` first; `perf_render.c:687` special-cases `LE_CMD_CLEAR` during render. A restore point must not confuse layer staging (`le_stage_retired_layer` stages regardless of generation — deliberately).
 - **`dub_generation`.** Still bumped on clear (it invalidates in-flight retire events); the restore point must not resurrect a stale in-flight layer.
 - **Memory.** Retained slots stay pinned per cleared track (256 slots/track, lazily allocated, layer-quantum sized). Clear no longer returns them to the pool until invalidation — call out in `docs/PROGRESS.md`.
+- **`redo_stack` bounds.** Only `le_handle_retired` bounds-checks a push (`undo_count < LE_POOL_SLOTS`); the redo pushes do not. Today that is safe by the pool invariant — `live + undo + redo + outstanding <= LE_POOL_SLOTS` caps `undo + redo` at 255, so undo-to-empty's extra push (it grows redo *without* popping undo) tops out at index 255. **A CLEAR restore point has that same push shape**, so part 2 must not add a second unpopped push without re-deriving the bound, or it walks off the array.
 - **`le_effective_state` / posted-but-unacked ordering.** The restore point is control-thread state; the empty→restored flip is a state command and must go through `le_mark_state_cmd` like the undo-to-empty path (`engine_commands.c:184`).
 
 ## PR breakdown (each independently mergeable)
