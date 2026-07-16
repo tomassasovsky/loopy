@@ -33,7 +33,10 @@ import '../helpers/fake_key_value_store.dart';
 /// (including 0-frame pumps that hit the drain/queued-undo windows), and
 /// explicit poll ticks so snapshot-lag races are reachable. After every step
 /// the harness settles and checks the control-surface invariant spec
-/// (lib/control/invariants.dart).
+/// (lib/control/invariants.dart) — the single-state invariants AND the
+/// transition rules, which predicate over the settled (pre, post) pair
+/// around the step (e.g. `unpark-on-start`: a record/play from a held
+/// transport must resume every content track).
 ///
 /// On failure: the seed and a shrunk, replayable action list are printed —
 /// paste the sequence into the corpus below as a permanent regression test.
@@ -241,6 +244,226 @@ void main() {
           ..settle(fa);
         expect(h.looper.tracks[0].lanes[0].effects, hasLength(2));
         expect(h.fxFingerprintViolation(), isNull);
+      });
+    }, skip: skip);
+  });
+
+  group('mute/unmute corpus (auto-unmute + unpark rules, 2026-07-16)', () {
+    test('record onto a Stop-muted parked track auto-unmutes '
+        '(capturing-never-muted)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // record
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // finalize
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.stop)], fa) // rec-stop: mute + park
+          ..settle(fa);
+        expect(h.looper.tracks[0].muted, isTrue);
+        expect(h.looper.tracks[0].state, TrackState.stopped);
+
+        // The gap this pins: a record on a muted STOPPED track used to punch
+        // into a silent overdub.
+        h
+          ..run(const [_Bloc('record', 0)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.overdubbing);
+        expect(h.looper.tracks[0].muted, isFalse);
+      });
+    }, skip: skip);
+
+    test('recording anything while parked unparks the entire loop '
+        '(unpark-on-start)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // record t0
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // finalize t0
+          ..settle(fa)
+          ..run(const [_Bloc('record', 1)], fa) // record t1
+          ..pumpLoop(fa)
+          ..run(const [_Bloc('record', 1)], fa) // finalize t1
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.stopped);
+        expect(h.looper.tracks[1].state, TrackState.stopped);
+
+        // A punch-in on t0 must resume t1 with it — recording in time with
+        // the loop requires the loop to be running.
+        h
+          ..run(const [_Bloc('record', 0)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.overdubbing);
+        expect(h.looper.tracks[1].state, TrackState.playing);
+      });
+    }, skip: skip);
+
+    test('playing anything while parked unparks the loop with mutes '
+        'preserved', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..settle(fa)
+          ..run(const [_Bloc('mute', 1)], fa) // t1 muted (still running)
+          ..run(const [_Bloc('stop', 0), _Bloc('stop', 1)], fa) // park
+          ..settle(fa);
+        expect(h.looper.tracks[1].muted, isTrue);
+        expect(h.looper.tracks[0].state, TrackState.stopped);
+        expect(h.looper.tracks[1].state, TrackState.stopped);
+
+        // Unparking un-freezes; it does not un-silence.
+        h
+          ..run(const [_Bloc('play', 0)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.looper.tracks[1].state, TrackState.playing);
+        expect(h.looper.tracks[1].muted, isTrue);
+        expect(h.looper.tracks[0].muted, isFalse);
+      });
+    }, skip: skip);
+
+    test('a deselected parked-resume member comes back muted, matching its '
+        'dark preview (parked-preview-matches-resume)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.stop)], fa) // parkAll, latch {0,1}
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.track2)], fa) // deselect t1
+          ..settle(fa);
+        expect(h.control.state.parkedResume, {0});
+        expect(h.frame.trackLeds[1], PedalTrackLed.off); // the dark promise
+
+        // Rec/Play resumes the member sounding; the engine unparks t1 too,
+        // but muted — running in phase, silent, exactly as previewed.
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.looper.tracks[0].muted, isFalse);
+        expect(h.looper.tracks[1].state, TrackState.playing);
+        expect(h.looper.tracks[1].muted, isTrue);
+        expect(h.frame.trackLeds[0], PedalTrackLed.green);
+        expect(h.frame.trackLeds[1], PedalTrackLed.off);
+      });
+    }, skip: skip);
+
+    test('mute during an overdub punches out, then lands '
+        '(capturing-never-muted)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // finalize -> playing
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // punch into overdub
+          ..run(const [_Pump(64, 0.5)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.overdubbing);
+
+        h
+          ..run(const [_MuteTrack(0, muted: true)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing); // punched out
+        expect(h.looper.tracks[0].muted, isTrue); // the mute landed
+      });
+    }, skip: skip);
+
+    test('mute during a defining recording rides the deferred seam-crossfade '
+        'finalize and lands with it', () {
+      _inHarness((h, fa) {
+        // 1200 frames >= 2 * the 480-frame seam window, so this finalize
+        // DEFERS (the track keeps RECORDING through the crossfade capture) —
+        // the widest capturing-never-muted race window there is.
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..run(const [_Pump(1200, 0.5)], fa)
+          ..run(const [_MuteTrack(0, muted: true)], fa) // punch-out + defer
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.recording); // deferring
+        expect(h.looper.tracks[0].muted, isFalse); // pending, not applied
+
+        h
+          ..run(const [_Pump(600, 0.5)], fa) // completes the crossfade
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.looper.tracks[0].muted, isTrue);
+        expect(h.looper.transport.masterLengthFrames, 1200);
+      });
+    }, skip: skip);
+
+    test('redo-from-empty while parked unparks the rest of the loop', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> rec mode (cursor 0)
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.undo)], fa) // t0 -> empty, redo-able
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.empty);
+        expect(h.looper.tracks[1].state, TrackState.stopped);
+
+        // The resurrect auto-plays — a start from a held transport, so t1
+        // must come back with it.
+        h
+          ..run(const [_LongPressUndo()], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.looper.tracks[1].state, TrackState.playing);
+      });
+    }, skip: skip);
+
+    test('a quantized punch-in armed on a muted track auto-unmutes when the '
+        'boundary fires it', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // 256-frame loop plays
+          ..settle(fa)
+          ..run(const [_SetQuantize(enabled: true)], fa)
+          ..run(const [_Bloc('record', 0)], fa) // arms for the next loop top
+          ..run(const [_MuteTrack(0, muted: true)], fa) // muted while armed
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.looper.tracks[0].muted, isTrue);
+
+        // The boundary fires the punch-in: recording starts, so the user's
+        // own rule applies — starting to record unmutes.
+        h
+          ..run(const [_Pump(256, 0.5)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.overdubbing);
+        expect(h.looper.tracks[0].muted, isFalse);
       });
     }, skip: skip);
   });
@@ -578,6 +801,32 @@ class _Reconnect extends _FuzzAction {
   String describe() => '_Reconnect()';
 }
 
+/// Direct repository-level track mute/unmute — unlike `_Bloc('mute', c)` (a
+/// snapshot-read toggle) this sets an absolute value, so shrunk repros stay
+/// deterministic and mute-during-capture windows are directly reachable.
+class _MuteTrack extends _FuzzAction {
+  const _MuteTrack(this.channel, {required this.muted});
+  final int channel;
+  final bool muted;
+  @override
+  void apply(_Harness h, FakeAsync fa) =>
+      h.repo.setMute(muted: muted, channel: channel);
+  @override
+  String describe() => '_MuteTrack($channel, muted: $muted)';
+}
+
+/// Toggles global quantized recording, reaching the armed (deferred-fire)
+/// record paths — and their interplay with mutes and parks — that the
+/// immediate paths never exercise.
+class _SetQuantize extends _FuzzAction {
+  const _SetQuantize({required this.enabled});
+  final bool enabled;
+  @override
+  void apply(_Harness h, FakeAsync fa) => h.repo.setQuantize(enabled: enabled);
+  @override
+  String describe() => '_SetQuantize(enabled: $enabled)';
+}
+
 /// A small palette of built-in types the FX actions draw from (index into
 /// [TrackEffectType.values] skipping `none`, which is a bypass, not an entry).
 const List<TrackEffectType> _fxPalette = [
@@ -676,12 +925,12 @@ List<_FuzzAction> _generate(int seed, int steps) {
   for (var i = 0; i < steps; i++) {
     final roll = rng.next(100);
     actions.add(switch (roll) {
-      < 28 => _Tap(buttons[rng.next(buttons.length)]),
-      < 34 => _Hold(buttons[rng.next(buttons.length)]),
-      < 40 => _Release(buttons[rng.next(buttons.length)]),
-      < 44 => const _LongPressUndo(),
-      < 48 => _Encoder(rng.next(17) - 8),
-      < 64 => _Bloc(
+      < 26 => _Tap(buttons[rng.next(buttons.length)]),
+      < 32 => _Hold(buttons[rng.next(buttons.length)]),
+      < 37 => _Release(buttons[rng.next(buttons.length)]),
+      < 41 => const _LongPressUndo(),
+      < 44 => _Encoder(rng.next(17) - 8),
+      < 60 => _Bloc(
         const [
           'record',
           'stop',
@@ -694,20 +943,26 @@ List<_FuzzAction> _generate(int seed, int steps) {
         ][rng.next(8)],
         rng.next(8),
       ),
-      < 70 => _Select(rng.next(8)),
-      < 74 => const _ToggleMode(),
-      < 84 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
-      < 88 => const _Tick(),
-      < 92 => _Elapse(const [5, 50, 600][rng.next(3)]),
+      < 65 => _Select(rng.next(8)),
+      < 68 => const _ToggleMode(),
+      < 78 => _Pump(const [0, 1, 17, 256, 300][rng.next(5)], 0.5),
+      < 82 => const _Tick(),
+      < 85 => _Elapse(const [5, 50, 600][rng.next(3)]),
       // FX actions (the F6 alphabet): set/clear a lane or monitor chain, or the
       // race ordering — monitor-then-record with no drain between. Input is
       // pinned to 0 (not randomized like _SetMonitorChain): a track's lane 0
       // records input 0 by default, so only a monitor on input 0 reaches the
       // recorded lane — the ordering under test.
-      < 95 => _SetLaneChain(rng.next(4), rng.next(2), types()),
-      < 97 => _SetMonitorChain(rng.next(4), types()),
-      < 99 => _SetMonitorThenRecord(0, rng.next(4), types()),
-      _ => const _Reconnect(),
+      < 88 => _SetLaneChain(rng.next(4), rng.next(2), types()),
+      < 90 => _SetMonitorChain(rng.next(4), types()),
+      < 92 => _SetMonitorThenRecord(0, rng.next(4), types()),
+      < 93 => const _Reconnect(),
+      // The mute/unpark alphabet: absolute mutes reach mute-during-capture
+      // windows the bloc toggle can only hit by luck, and quantize toggles
+      // open the armed (deferred-fire) record paths and their interplay with
+      // mutes and parks.
+      < 98 => _MuteTrack(rng.next(8), muted: rng.next(2) == 0),
+      _ => _SetQuantize(enabled: rng.next(2) == 0),
     });
   }
   return actions;
@@ -721,6 +976,9 @@ String? _replay(List<_FuzzAction> actions) {
     final h = _Harness(fa);
     try {
       for (var i = 0; i < actions.length; i++) {
+        // The settled state BEFORE this step — the transition rules predicate
+        // over (pre, post) pairs around one action.
+        final pre = h.looper;
         try {
           actions[i].apply(h, fa);
           fa.flushMicrotasks();
@@ -731,7 +989,12 @@ String? _replay(List<_FuzzAction> actions) {
           failure = 'step $i (${actions[i].describe()}): $e';
           return;
         }
-        final violations = checkControlInvariants(h.context);
+        final violations = checkControlInvariants(h.context)
+          ..addAll(
+            checkControlTransitionRules(
+              LooperTransition(pre: pre, post: h.looper),
+            ),
+          );
         if (violations.isNotEmpty) {
           failure = 'step $i (${actions[i].describe()}): ${violations.first}';
           return;

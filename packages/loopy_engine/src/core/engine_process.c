@@ -82,8 +82,89 @@ static inline void le_plog_push(le_engine* e, uint64_t frame, le_command cmd) {
   }
 }
 
+/* Whether the transport is HELD: no track is playing, recording, or
+ * overdubbing, so the loop clock sits at the top (advance_transport_frame's
+ * idle branch). The audio-thread twin of le_transport_active on the control
+ * side — the unpark rule below fires only from this state. */
+static int le_transport_held(le_engine* e) {
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    const int32_t st = load_i32(&e->tracks[c].a_state);
+    if (st == LE_TRACK_PLAYING || st == LE_TRACK_RECORDING ||
+        st == LE_TRACK_OVERDUBBING) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+/* The unpark rule: starting to record or play ANYTHING while the transport is
+ * held resumes the entire loop — every stopped content track returns to
+ * PLAYING with its mute preserved (mute silences, park freezes; unparking
+ * un-freezes). Callers latch le_transport_held BEFORE mutating state and call
+ * this after the start lands. Each resume logs a synthetic LE_CMD_PLAY so a
+ * performance-log replay reproduces the resumes a live listener heard. */
+static void le_unpark_stopped(le_engine* e, uint64_t frame) {
+  for (int32_t c = 0; c < e->track_count; ++c) {
+    le_track* t = &e->tracks[c];
+    if (load_i32(&t->a_state) != LE_TRACK_STOPPED) continue;
+    if (load_i32(&t->lanes[0].a_len) <= 0) continue;
+    store_i32(&t->a_state, LE_TRACK_PLAYING);
+    le_plog_push(e, frame, (le_command){.code = LE_CMD_PLAY, .arg_i = c});
+  }
+}
+
+/* The auto-unmute rule, at the one point every capture start funnels through
+ * (immediate presses, quantized fires, sound-activated triggers): a muted
+ * track unmutes the moment it starts recording — a capture is never silent.
+ * Clears any pending mute too (the capture start supersedes it). Lanes that
+ * actually flip log a synthetic unmute so a perf-log replay matches. */
+static void le_capture_start_unmute(le_engine* e, le_track* t,
+                                    uint64_t frame) {
+  const int32_t ch = (int32_t)(t - e->tracks);
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    t->lanes[l].pending_mute = 0;
+    if (load_i32(&t->lanes[l].a_muted) == 0) continue;
+    store_i32(&t->lanes[l].a_muted, 0);
+    le_plog_push(e, frame,
+                 (le_command){.code = LE_CMD_SET_LANE_MUTE,
+                              .lanef = {ch, l, 0.0f}});
+  }
+}
+
+/* Lands the mutes deferred during a capture (LE_CMD_SET_LANE_MUTE's capturing
+ * branch) now that the capture is ending. Returns the (possibly overridden)
+ * end state: a pending mute forces OVERDUBBING down to PLAYING — the user
+ * asked for silence mid-take, so the capture must not continue into a rec/dub
+ * auto-overdub over it. `apply` = 0 drops the pendings without muting (the
+ * nothing-captured -> EMPTY path: a mute on no content is meaningless, and an
+ * empty track always comes back unmuted). Applied lanes log the mute at the
+ * landing frame, keeping the perf-log replay faithful. */
+static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
+                                        int32_t end_state, int apply,
+                                        uint64_t frame) {
+  const int32_t ch = (int32_t)(t - e->tracks);
+  int any = 0;
+  for (int32_t l = 0; l < LE_MAX_LANES; ++l) {
+    if (!t->lanes[l].pending_mute) continue;
+    t->lanes[l].pending_mute = 0;
+    any = 1;
+    if (!apply) continue;
+    store_i32(&t->lanes[l].a_muted, 1);
+    le_plog_push(e, frame,
+                 (le_command){.code = LE_CMD_SET_LANE_MUTE,
+                              .lanef = {ch, l, 1.0f}});
+  }
+  if (any && apply && end_state == LE_TRACK_OVERDUBBING) {
+    return LE_TRACK_PLAYING;
+  }
+  return end_state;
+}
+
 static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
                             uint64_t frame) {
+  /* A mute deferred during the take lands with the finalize (and blocks a
+   * rec/dub continuation into OVERDUBBING — see le_consume_pending_mutes). */
+  end_state = le_consume_pending_mutes(e, t, end_state, 1, frame);
   const int32_t len = t->record_pos > 0 ? t->record_pos : 1;
   /* The master loop length is established (or re-established, on a hand-off
    * finalize) right here — this is the live-record-path call site for the
@@ -150,6 +231,9 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
   const int32_t ch = (int32_t)(t - e->tracks);
   const int32_t base = e->clock.length > 0 ? e->clock.length : 1;
   if (t->record_pos <= 0) { /* nothing captured */
+    /* Drop (not apply) any mute deferred during the void take: an EMPTY
+     * track always comes back unmuted. */
+    le_consume_pending_mutes(e, t, end_state, 0, frame);
     store_i32(&t->a_state, LE_TRACK_EMPTY);
     le_track_set_len(t, 0);
     store_i32(&t->a_multiple, 1);
@@ -158,6 +242,9 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
                 (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
     return;
   }
+  /* A mute deferred during the take lands with the finalize (and blocks a
+   * rec/dub continuation into OVERDUBBING — see le_consume_pending_mutes). */
+  end_state = le_consume_pending_mutes(e, t, end_state, 1, frame);
   /* A forced multiple fixes the length to exactly K base loops; 0 (auto) rounds
    * up to whole base loops based on how much was recorded. */
   const int32_t forced = le_effective_multiple(e, ch);
@@ -402,6 +489,9 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
  * hand-off), then advances this track's state machine. */
 static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
+  /* Latched BEFORE any state mutation: a capture start from a held transport
+   * unparks the whole loop (le_unpark_stopped) after it lands. */
+  const int was_held = le_transport_held(e);
   close_active_capture(e, ch, frame);
   le_track* t = &e->tracks[ch];
   switch (load_i32(&t->a_state)) {
@@ -440,6 +530,10 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
        * the exact sample index from inside the per-frame loop). */
       le_plog_push(e, frame,
                   (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
+      /* Auto-unmute + unpark: a capture never starts silent, and starting one
+       * from a held transport resumes the whole loop. */
+      le_capture_start_unmute(e, t, frame);
+      if (was_held) le_unpark_stopped(e, frame);
       break;
     case LE_TRACK_RECORDING: {
       /* Second press finalizes. In rec/dub mode it continues into overdub
@@ -457,12 +551,18 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
     case LE_TRACK_PLAYING:
     case LE_TRACK_STOPPED:
       /* Punch-in: arm the per-pass layer capture (the shadow slots were posted
-       * by le_engine_record before this command). */
+       * by le_engine_record before this command). Auto-unmute first — an
+       * overdub over a Stop-muted (or parked-muted) track must be audible —
+       * and unpark the loop when this start is what wakes a held transport. */
+      le_capture_start_unmute(e, t, frame);
       store_i32(&t->a_state, LE_TRACK_OVERDUBBING);
       le_dub_session_start(e, t);
+      if (was_held) le_unpark_stopped(e, frame);
       break;
     case LE_TRACK_OVERDUBBING:
       store_i32(&t->a_state, LE_TRACK_PLAYING);
+      /* Punch-out is a capture end: land any mute deferred during the dub. */
+      le_consume_pending_mutes(e, t, LE_TRACK_PLAYING, 1, frame);
       break;
     default:
       break;
@@ -481,15 +581,51 @@ static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
     }
   } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING) {
     store_i32(&t->a_state, LE_TRACK_STOPPED);
+    /* Stopping an overdub ends its capture: land any deferred mute. */
+    le_consume_pending_mutes(e, t, LE_TRACK_STOPPED, 1, frame);
   }
 }
 
-static void handle_play(le_engine* e, int32_t ch) {
+static void handle_play(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
+  const int was_held = le_transport_held(e);
   le_track* t = &e->tracks[ch];
   if (load_i32(&t->a_state) == LE_TRACK_STOPPED) {
     store_i32(&t->a_state, LE_TRACK_PLAYING);
+    /* Playing anything from a held transport unparks the entire loop. */
+    if (was_held) le_unpark_stopped(e, frame);
   }
+}
+
+/* Applies one lane-mute command, capture-aware. Muting a CAPTURING track
+ * punches the capture out (mirroring rec-stop's finalize-then-mute — recording
+ * into silence is never meaningful) and defers the mute itself to the capture
+ * end via pending_mute, so a capturing track is never observed muted: the
+ * mute lands exactly when the capture ends (le_consume_pending_mutes),
+ * including across a deferred master-finalize crossfade. The punch-out is
+ * logged as the RECORD it is; the deferred mute logs when it lands. Unmutes
+ * (and mutes on non-capturing tracks) apply immediately and log verbatim. */
+static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
+                              int muting, const le_command* cmd,
+                              uint64_t frame) {
+  le_track* t = &e->tracks[ch];
+  le_lane* ln = &t->lanes[lane];
+  const int32_t st = load_i32(&t->a_state);
+  if (muting &&
+      (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING)) {
+    ln->pending_mute = 1;
+    /* A master finalize already deferring (xfade_capture > 0) will consume
+     * the pending at its completion — no second punch-out. */
+    if (t->xfade_capture == 0) {
+      le_plog_push(e, frame,
+                   (le_command){.code = LE_CMD_RECORD, .arg_i = ch});
+      handle_record(e, ch, frame);
+    }
+    return;
+  }
+  ln->pending_mute = 0;
+  store_i32(&ln->a_muted, muting ? 1 : 0);
+  le_plog_push(e, frame, *cmd);
 }
 
 static void handle_clear(le_engine* e, int32_t ch) {
@@ -517,9 +653,11 @@ static void handle_clear(le_engine* e, int32_t ch) {
   t->dub_gen_audio++;
   atomic_store_explicit(&t->a_layer_in_flight, 0, memory_order_release);
   /* A cleared track comes back unmuted: the next recording is always audible
-   * rather than silently muted by a leftover Stop. */
+   * rather than silently muted by a leftover Stop (or a pending mid-capture
+   * mute whose capture this clear just destroyed). */
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     store_i32(&t->lanes[l].a_muted, 0);
+    t->lanes[l].pending_mute = 0;
   }
   atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
   /* Undo/redo stacks and each lane's a_live are reset by le_engine_clear on the
@@ -670,7 +808,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       break;
     case LE_CMD_PLAY:
       le_plog_push(e, frame, *cmd);
-      handle_play(e, cmd->arg_i);
+      handle_play(e, cmd->arg_i, frame);
       break;
     case LE_CMD_CLEAR:
       le_plog_push(e, frame, *cmd);
@@ -709,6 +847,11 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       t->pending_record = 0;
       t->od_gain = 0.0f;
       t->xfade_capture = 0;
+      /* The capture (if any) is gone: a mute deferred during it must not
+       * ambush some future capture's end. */
+      for (int l = 0; l < LE_MAX_LANES; ++l) {
+        t->lanes[l].pending_mute = 0;
+      }
       store_i32(&t->a_pending, 0);
       store_i32(&t->a_state, LE_TRACK_EMPTY);
       le_track_set_len(t, 0);
@@ -731,6 +874,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (!valid_channel(e, ch)) break;
       le_track* t = &e->tracks[ch];
       if (load_i32(&t->a_state) == LE_TRACK_EMPTY && len > 0) {
+        const int was_held = le_transport_held(e);
         /* The restored loop may differ in length from whatever the leftover
          * armed shadows were sized for — drop them (control reclaimed). */
         le_dub_drop_armed(t);
@@ -744,6 +888,9 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         /* The from-EMPTY edge case of redo (LE_PLOG_REDO — see the UNDO_TO_
          * EMPTY case above for why every redo path logs the same code). */
         le_plog_push(e, frame, (le_command){.code = LE_PLOG_REDO, .arg_i = ch});
+        /* A resurrect that starts playback from a held transport unparks the
+         * whole loop, like any other start. */
+        if (was_held) le_unpark_stopped(e, frame);
       }
       atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
       break;
@@ -762,9 +909,9 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     }
     case LE_CMD_SET_MUTE:
       if (valid_channel(e, cmd->arg_i)) {
-        le_plog_push(e, frame, *cmd);
-        store_i32(&e->tracks[cmd->arg_i].lanes[0].a_muted,
-                  cmd->arg_f != 0.0f ? 1 : 0);
+        /* Track-addressed mute maps to lane 0 (backward compatibility),
+         * capture-aware like the per-lane command below. */
+        le_apply_mute_cmd(e, cmd->arg_i, 0, cmd->arg_f != 0.0f, cmd, frame);
       }
       break;
     case LE_CMD_SET_MASTER_GAIN: {
@@ -896,9 +1043,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       const int32_t ch = cmd->lanef.channel;
       const int32_t lane = cmd->lanef.lane;
       if (!valid_channel(e, ch) || lane < 0 || lane >= LE_MAX_LANES) break;
-      le_plog_push(e, frame, *cmd);
-      store_i32(&e->tracks[ch].lanes[lane].a_muted,
-                cmd->lanef.value != 0.0f ? 1 : 0);
+      le_apply_mute_cmd(e, ch, lane, cmd->lanef.value != 0.0f, cmd, frame);
       break;
     }
     /* ---- per-input live monitor ----

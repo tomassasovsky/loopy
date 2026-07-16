@@ -289,7 +289,8 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Rec mode: advance the cursor track through record / overdub / play. A
   /// muted track is first unmuted and brought back: overdub if its loop still
-  /// runs, plain resume if it was the parked sole track.
+  /// runs, plain resume if it was parked (the engine unparks the rest of the
+  /// loop with it — starting anything resumes everything).
   void _recAdvance(int channel) {
     final track = _trackAt(channel);
     if (track != null && track.muted) {
@@ -317,6 +318,18 @@ class ControlCubit extends Cubit<ControlState> {
                 if (_playable(track)) track.channel,
             };
       if (resume.isEmpty) return; // nothing recorded yet
+      // The engine unparks the ENTIRE loop on the first play (starting
+      // anything resumes everything), so a deselected member must be muted
+      // BEFORE any play rides the ring: it comes back running-but-silent —
+      // exactly what its dark parked LED promised — and stays in phase for a
+      // later unmute, instead of staying frozen.
+      for (final track in _tracks) {
+        if (_playable(track) &&
+            !resume.contains(track.channel) &&
+            !track.muted) {
+          _looper.setMute(muted: true, channel: track.channel);
+        }
+      }
       for (final channel in resume) {
         _looper
           ..setMute(muted: false, channel: channel)

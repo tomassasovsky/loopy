@@ -218,6 +218,12 @@ typedef struct le_lane {
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
   _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
   _Atomic int32_t a_muted;         /* per-lane mute */
+  int32_t pending_mute; /* audio-thread-local: a mute that arrived while the
+                         * track was capturing. Applied (into a_muted) when the
+                         * capture ends — a capturing track is never muted, so
+                         * the mute punches the capture out and lands with the
+                         * finalize (see LE_CMD_SET_LANE_MUTE / the finalize
+                         * helpers in engine_process.c). */
 
   float* pool[LE_POOL_SLOTS]; /* lazily allocated loop buffers */
   int32_t pool_cap[LE_POOL_SLOTS]; /* allocated frames per slot (0 = none).
