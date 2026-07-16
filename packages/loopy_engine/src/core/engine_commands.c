@@ -397,6 +397,11 @@ void le_engine_drain_events(le_engine* engine) {
     } else if (recording &&
                le_capture_may_overdub(engine, ch,
                                       load_i32(&engine->a_master_len) > 0)) {
+      /* The a_master_len read is safe here BECAUSE effective state said
+       * RECORDING: that required acquiring the ack of every pending state
+       * command, and handle_clear stores its master reset before its ack's
+       * release — so a defining capture behind an internal grid-redefine
+       * clear always reads 0, never the dead grid's stale length. */
       le_post_dub_shadows(engine, ch, 1);
     }
     if (t->queued_undo <= 0) continue;
