@@ -48,10 +48,10 @@ static int track_acquire_slot(le_track* t) {
     if (i == live) continue;
     int used = 0;
     for (int k = 0; k < t->undo_count && !used; ++k) {
-      if (t->undo_stack[k] == i) used = 1;
+      if (t->undo_stack[k].slot == i) used = 1;
     }
     for (int k = 0; k < t->redo_count && !used; ++k) {
-      if (t->redo_stack[k] == i) used = 1;
+      if (t->redo_stack[k].slot == i) used = 1;
     }
     for (int k = 0; k < t->outstanding_count && !used; ++k) {
       if (t->outstanding_slots[k] == i) used = 1;
@@ -60,7 +60,7 @@ static int track_acquire_slot(le_track* t) {
   }
   /* Pool full: evict the oldest undo entry (bottom of the stack). */
   if (t->undo_count > 0) {
-    const int slot = t->undo_stack[0];
+    const int slot = t->undo_stack[0].slot;
     for (int k = 1; k < t->undo_count; ++k) {
       t->undo_stack[k - 1] = t->undo_stack[k];
     }
@@ -121,9 +121,9 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
  * the redo stack — every active lane in lockstep (the one undo span). The
  * caller has verified the track is not capturing and no layer is in flight. */
 static void le_undo_swap(le_track* t) {
-  const int32_t prev = t->undo_stack[--t->undo_count];
+  const int32_t prev = t->undo_stack[--t->undo_count].slot;
   const int32_t lanes = le_lanes_active(t);
-  t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
+  t->redo_stack[t->redo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
   store_i32(&t->a_undo_depth, t->undo_count);
   store_i32(&t->a_redo_depth, t->redo_count);
@@ -179,7 +179,7 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
     if ((st != LE_TRACK_PLAYING && st != LE_TRACK_STOPPED) || len <= 0) break;
     if (le_push(engine, LE_CMD_UNDO_TO_EMPTY, channel, 0.0f) != LE_OK) break;
     le_cancel_arm(engine, channel);
-    t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
+    t->redo_stack[t->redo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
     t->empty_len = len;
     le_mark_state_cmd(t, LE_TRACK_EMPTY);
     le_track_set_len(t, 0); /* coherent snapshot before the audio thread
@@ -275,7 +275,7 @@ static void le_handle_retired(le_engine* engine, const le_command* evt) {
     }
   }
   if (t->undo_count < LE_POOL_SLOTS) {
-    t->undo_stack[t->undo_count++] = evt->evt.slot;
+    t->undo_stack[t->undo_count++] = le_hist_layer(evt->evt.slot);
     store_i32(&t->a_undo_depth, t->undo_count);
   }
   if (load_i32(&t->a_layer_in_flight)) {
@@ -669,7 +669,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   /* An emptied track must not have a quantized/auto-record arm still pending —
    * it would fire a surprise fresh recording at the next loop top. */
   le_cancel_arm(engine, channel);
-  t->redo_stack[t->redo_count++] = load_i32(&t->lanes[0].a_live);
+  t->redo_stack[t->redo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
   t->empty_len = len;
   le_mark_state_cmd(t, LE_TRACK_EMPTY);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
@@ -715,7 +715,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
         LE_OK) {
       return LE_ERR_INVALID;
     }
-    const int32_t next = t->redo_stack[--t->redo_count];
+    const int32_t next = t->redo_stack[--t->redo_count].slot;
     for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
     t->empty_len = 0;
     /* Leftover armed shadows may be sized for a different loop; the audio
@@ -727,9 +727,9 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
     store_i32(&t->a_redo_depth, t->redo_count);
     return LE_OK;
   }
-  const int32_t next = t->redo_stack[--t->redo_count];
+  const int32_t next = t->redo_stack[--t->redo_count].slot;
   const int32_t lanes = le_lanes_active(t);
-  t->undo_stack[t->undo_count++] = load_i32(&t->lanes[0].a_live);
+  t->undo_stack[t->undo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
   store_i32(&t->a_undo_depth, t->undo_count);
   store_i32(&t->a_redo_depth, t->redo_count);
