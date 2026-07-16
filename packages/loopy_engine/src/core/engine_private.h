@@ -278,8 +278,16 @@ typedef struct {
   int32_t slot; /* the pool slot this entry names */
 } le_hist_entry;
 
+/* Plain member assignment rather than the designated initializer the rest of the
+ * engine's C uses: engine_fx.h includes this header, and each VST3 plugin's
+ * processor.h pulls engine_fx.h into a C++17 TU to reuse the FX kernels.
+ * Designated initializers are C++20 — gcc/clang accept them in C++17 as an
+ * extension, MSVC rejects them (error C7555), so everything reachable from
+ * engine_fx.h must stay C++17-clean or the Windows plugin build breaks. */
 static inline le_hist_entry le_hist_layer(int32_t slot) {
-  le_hist_entry e = {.kind = LE_HIST_LAYER, .slot = slot};
+  le_hist_entry e;
+  e.kind = LE_HIST_LAYER;
+  e.slot = slot;
   return e;
 }
 
