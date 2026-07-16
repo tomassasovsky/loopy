@@ -33,6 +33,10 @@ dependencies:
     path: packages/performance_repository
   routing_graph:
     path: packages/routing_graph
+  # Multi-monitor detection: the output-waveform window goes full-bleed on a
+  # secondary display when one is present. Already resolved (transitive via
+  # window_manager); declared direct so we can import its display API.
+  screen_retriever: ^0.2.0
   session_repository:
     path: packages/session_repository
   settings_repository:
