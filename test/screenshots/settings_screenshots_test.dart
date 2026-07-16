@@ -158,9 +158,14 @@ void main() {
       exportsRoot: () async => '.',
     );
     addTearDown(performance.dispose);
+    // Disposed here rather than by PedalCubit (its lifecycle owner in the real
+    // app, and in settings_page_test): the cubit above is a mock, so its close
+    // is a no-op and would leave the transport and event streams open.
+    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    addTearDown(pedalRepo.dispose);
     control = ControlCubit(
       looper: repository,
-      pedal: PedalRepository(const NoopPedalTransport()),
+      pedal: pedalRepo,
       settings: settings,
       performance: performance,
       keepAliveInterval: Duration.zero,
