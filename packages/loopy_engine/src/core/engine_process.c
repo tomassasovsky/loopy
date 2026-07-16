@@ -614,6 +614,14 @@ static void le_apply_mute_cmd(le_engine* e, int32_t ch, int32_t lane,
   if (muting &&
       (st == LE_TRACK_RECORDING || st == LE_TRACK_OVERDUBBING)) {
     ln->pending_mute = 1;
+    /* The punch-out supersedes any armed (quantized) action on this track —
+     * exactly as apply_command's LE_CMD_RECORD case clears it for a real
+     * press. A stale arm would re-fire at the next loop top on the now-
+     * PLAYING track and start a spurious overdub (whose capture-start
+     * auto-unmute would then override the very mute being applied here). */
+    t->pending_record = 0;
+    t->pending_trigger = 0;
+    store_i32(&t->a_pending, 0);
     /* A master finalize already deferring (xfade_capture > 0) will consume
      * the pending at its completion — no second punch-out. */
     if (t->xfade_capture == 0) {

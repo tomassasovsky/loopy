@@ -442,6 +442,72 @@ void main() {
       });
     }, skip: skip);
 
+    test('mute punch-out clears a pending quantized arm — no spurious '
+        'overdub at the next loop top', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // 256 grid, t0 playing
+          ..settle(fa)
+          ..run(const [_SetQuantize(enabled: true)], fa)
+          ..run(const [_Bloc('record', 1)], fa) // arms a quantized START
+          ..run(const [_Pump(256, 0.5)], fa) // fires: t1 recording
+          ..run(const [_Pump(64, 0.5)], fa) // capture something real
+          ..settle(fa);
+        expect(h.looper.tracks[1].state, TrackState.recording);
+
+        // Arm the quantized FINALIZE, then mute before the boundary: the
+        // mute punches out now and must also clear the arm — a stale arm
+        // would re-fire at the loop top and start an overdub whose
+        // capture-start auto-unmute overrides this very mute.
+        h
+          ..run(const [_Bloc('record', 1)], fa) // arm finalize at loop top
+          ..run(const [_MuteTrack(1, muted: true)], fa) // punch out + mute
+          ..settle(fa)
+          ..run(const [_Pump(256, 0.5)], fa) // cross the boundary
+          ..settle(fa);
+        expect(h.looper.tracks[1].state, TrackState.playing);
+        expect(h.looper.tracks[1].muted, isTrue); // the mute stuck
+      });
+    }, skip: skip);
+
+    test('play-mode Rec/Play resume leaves a live capture alone (does not '
+        'punch it out as a deselected member)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Bloc('record', 1)], fa)
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.stop)], fa) // park, latch {0,1}
+          ..settle(fa)
+          // A fresh take on empty t2 while parked: it records (unparking 0
+          // and 1), then the user stops 0 and 1 again mid-take.
+          ..run(const [_Bloc('record', 2)], fa)
+          ..run(const [_Pump(64, 0.5)], fa)
+          ..run(const [_Bloc('stop', 0), _Bloc('stop', 1)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[2].state, TrackState.recording);
+
+        // Rec/Play resumes the latched members. Track 2 is NOT a deselected
+        // member — it is a live take, and must keep recording unmuted.
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.looper.tracks[1].state, TrackState.playing);
+        expect(h.looper.tracks[2].state, TrackState.recording);
+        expect(h.looper.tracks[2].muted, isFalse);
+      });
+    }, skip: skip);
+
     test('a quantized punch-in armed on a muted track auto-unmutes when the '
         'boundary fires it', () {
       _inHarness((h, fa) {

@@ -322,9 +322,13 @@ class ControlCubit extends Cubit<ControlState> {
       // anything resumes everything), so a deselected member must be muted
       // BEFORE any play rides the ring: it comes back running-but-silent —
       // exactly what its dark parked LED promised — and stays in phase for a
-      // later unmute, instead of staying frozen.
+      // later unmute, instead of staying frozen. A CAPTURING track is not a
+      // deselected member — it is a live take (isParked ignores `recording`,
+      // so one can be running under a parked transport) and muting it would
+      // punch it out; leave it alone.
       for (final track in _tracks) {
         if (_playable(track) &&
+            !track.isCapturing &&
             !resume.contains(track.channel) &&
             !track.muted) {
           _looper.setMute(muted: true, channel: track.channel);
