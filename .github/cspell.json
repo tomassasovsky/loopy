@@ -544,6 +544,8 @@
     "vstcomponent",
     "vsteditcontroller",
     "vstparameters",
-    "vstsinglecomponenteffect"
+    "vstsinglecomponenteffect",
+    "OctoPre",
+    "fullscreens"
   ]
 }
