@@ -35,6 +35,7 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->length_frames = load_i32(&l0->a_len);
   out->multiple = load_i32(&tr->a_multiple);
   out->undo_depth = load_i32(&tr->a_undo_depth);
+  out->clear_restore = load_i32(&tr->a_clear_restore);
   out->redo_depth = load_i32(&tr->a_redo_depth);
   out->rms = load_f32(&l0->a_rms_bits);
   out->peak = load_f32(&l0->a_peak_bits);
@@ -187,6 +188,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->length_frames = 0;
     out->multiple = 1;
     out->undo_depth = 0;
+    out->clear_restore = 0;
     out->redo_depth = 0;
     out->rms = 0.0f;
     out->peak = 0.0f;

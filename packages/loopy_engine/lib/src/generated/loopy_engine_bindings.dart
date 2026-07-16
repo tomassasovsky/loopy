@@ -3351,9 +3351,19 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int multiple;
 
-  /// available undo steps (overdub layers)
+  /// available undo steps (overdub layers). A track
+  /// cleared via le_engine_clear_undoable reads 0 here
+  /// even though its erased take's layers are still held:
+  /// they are not peelable until the restore point above
+  /// them is undone. See clear_restore.
   @ffi.Int32()
   external int undo_depth;
+
+  /// 1 when the next le_engine_undo restores a cleared
+  /// take rather than peeling a layer — i.e. "undo would
+  /// do something" on a track whose undo_depth is 0.
+  @ffi.Int32()
+  external int clear_restore;
 
   /// available redo steps
   @ffi.Int32()

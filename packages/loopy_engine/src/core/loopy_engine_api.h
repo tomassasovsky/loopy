@@ -349,7 +349,14 @@ typedef struct le_track_snapshot {
   int32_t muted;         /* lane 0 mute, 0/1 */
   int32_t length_frames; /* frames captured (== multiple * master length) */
   int32_t multiple;      /* track length in whole base loops (>= 1) */
-  int32_t undo_depth;    /* available undo steps (overdub layers) */
+  int32_t undo_depth;    /* available undo steps (overdub layers). A track
+                          * cleared via le_engine_clear_undoable reads 0 here
+                          * even though its erased take's layers are still held:
+                          * they are not peelable until the restore point above
+                          * them is undone. See clear_restore. */
+  int32_t clear_restore; /* 1 when the next le_engine_undo restores a cleared
+                          * take rather than peeling a layer — i.e. "undo would
+                          * do something" on a track whose undo_depth is 0. */
   int32_t redo_depth;    /* available redo steps */
   float rms;             /* lane 0 RMS, 0..1 */
   float peak;            /* lane 0 peak, 0..1 */

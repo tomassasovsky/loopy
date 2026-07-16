@@ -385,8 +385,13 @@ typedef struct le_track {
                             * before a clear is dropped, never re-pushed */
 
   _Atomic int32_t a_state;
-  _Atomic int32_t a_undo_depth; /* published undo_count */
-  _Atomic int32_t a_redo_depth; /* published redo_count */
+  _Atomic int32_t a_undo_depth; /* published PEELABLE layer count — see
+                                 * le_publish_undo_depth: a cleared track's
+                                 * stack is not peelable until its restore point
+                                 * is undone, so this reads 0 there */
+  _Atomic int32_t a_clear_restore; /* published: 1 when the next undo restores a
+                                    * cleared take rather than peeling a layer */
+  _Atomic int32_t a_redo_depth;    /* published redo_count */
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the

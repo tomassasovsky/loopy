@@ -34,6 +34,35 @@
 #include "perf_drain.h"     /* le_perf_drain_start/stop (capture-to-disk thread) */
 #include "perf_log_ring.h"  /* le_perf_log_ring_push (control-side event log) */
 
+/* Whether the track's history is entirely erased-take material — i.e. its top
+ * entry is a clear restore point, so everything on the stack belongs to a take
+ * the user cleared. Such history yields to a fresh recording (it never outranks
+ * one), which is what le_grid_still_needed and le_drop_clear_history rely on. */
+static int le_history_is_cleared(const le_track* t) {
+  return t->undo_count > 0 &&
+         t->undo_stack[t->undo_count - 1].kind == LE_HIST_CLEAR;
+}
+
+/* Republishes what the host may read off a snapshot: how many overdub layers
+ * undo can peel RIGHT NOW, and whether the next undo restores a cleared take.
+ *
+ * a_undo_depth is not the raw entry count. Its published contract is "available
+ * undo steps (overdub layers)" (loopy_engine_api.h), and a cleared track's
+ * layers are not steps yet — they sit under a restore point and only become
+ * peelable once it is undone. Publishing the raw count there would report peel
+ * depth on an EMPTY track, breaking both that contract and the host's
+ * EMPTY => undoDepth == 0 invariant. The restore point gets its own flag
+ * instead, so "undo does something" stays answerable without conflating the two.
+ *
+ * The pair is stored non-atomically with respect to each other; a host reading
+ * between them sees at worst a stale flag on the next poll, the same tolerance
+ * every other published depth already carries. */
+static void le_publish_undo_depth(le_track* t) {
+  const int cleared = le_history_is_cleared(t);
+  store_i32(&t->a_undo_depth, cleared ? 0 : t->undo_count);
+  store_i32(&t->a_clear_restore, cleared ? 1 : 0);
+}
+
 /* Returns a pool slot INDEX that is neither the (shared) live index, nor
  * referenced by either undo/redo stack, nor posted to the audio thread as a
  * shadow (outstanding). The same index names the snapshot in every lane — the
@@ -77,7 +106,7 @@ static int track_acquire_slot(le_track* t) {
       t->undo_stack[k - 1] = t->undo_stack[k];
     }
     t->undo_count--;
-    store_i32(&t->a_undo_depth, t->undo_count);
+    le_publish_undo_depth(t);
     return slot;
   }
   return -1;
@@ -157,7 +186,7 @@ static void le_undo_swap(le_track* t) {
   const int32_t lanes = le_lanes_active(t);
   (void)le_redo_push(t, le_hist_layer(load_i32(&t->lanes[0].a_live)));
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, prev);
-  store_i32(&t->a_undo_depth, t->undo_count);
+  le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
 }
 
@@ -170,14 +199,6 @@ static void le_clear_redo(le_track* t) {
   store_i32(&t->a_redo_depth, 0);
 }
 
-/* Whether the track's history is entirely erased-take material — i.e. its top
- * entry is a clear restore point, so everything on the stack belongs to a take
- * the user cleared. Such history yields to a fresh recording (it never outranks
- * one), which is what le_grid_still_needed and le_drop_clear_history rely on. */
-static int le_history_is_cleared(const le_track* t) {
-  return t->undo_count > 0 &&
-         t->undo_stack[t->undo_count - 1].kind == LE_HIST_CLEAR;
-}
 
 /* Drops a track's clear restore point(s) and the erased take beneath them
  * (control thread). A fresh capture on this track is about to record into the
@@ -189,7 +210,7 @@ static int le_history_is_cleared(const le_track* t) {
 static void le_drop_clear_history(le_track* t) {
   if (!le_history_is_cleared(t)) return;
   t->undo_count = 0;
-  store_i32(&t->a_undo_depth, 0);
+  le_publish_undo_depth(t);
 }
 
 /* The track's effective state for control-side decisions: the target of a
@@ -334,7 +355,7 @@ static void le_handle_retired(le_engine* engine, const le_command* evt) {
   }
   if (t->undo_count < LE_POOL_SLOTS) {
     t->undo_stack[t->undo_count++] = le_hist_layer(evt->evt.slot);
-    store_i32(&t->a_undo_depth, t->undo_count);
+    le_publish_undo_depth(t);
   }
   if (load_i32(&t->a_layer_in_flight)) {
     le_post_dub_shadows(engine, ch); /* the dub continues: keep 2 posted */
@@ -722,7 +743,7 @@ static int32_t le_clear_track(le_engine* engine, int32_t channel,
     t->undo_count = 0;
   }
   le_clear_redo(t);
-  store_i32(&t->a_undo_depth, t->undo_count);
+  le_publish_undo_depth(t);
   /* Reclaim every shadow slot the audio thread holds: it drops them when the
    * CLEAR applies, and any later re-post travels the command ring behind that
    * CLEAR, so a reclaimed slot can never be armed twice. The generation bump
@@ -811,7 +832,7 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
   le_mark_state_cmd(t, e.state);
   le_track_set_len(t, e.len); /* coherent snapshot before the audio applies */
   store_i32(&t->a_multiple, e.multiple);
-  store_i32(&t->a_undo_depth, t->undo_count);
+  le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
                     (le_command){.code = LE_PLOG_UNDO, .arg_i = channel});
@@ -942,7 +963,7 @@ int32_t le_engine_redo(le_engine* engine, int32_t channel) {
   const int32_t lanes = le_lanes_active(t);
   t->undo_stack[t->undo_count++] = le_hist_layer(load_i32(&t->lanes[0].a_live));
   for (int32_t l = 0; l < lanes; ++l) store_i32(&t->lanes[l].a_live, next);
-  store_i32(&t->a_undo_depth, t->undo_count);
+  le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
                     (le_command){.code = LE_PLOG_REDO, .arg_i = channel});
