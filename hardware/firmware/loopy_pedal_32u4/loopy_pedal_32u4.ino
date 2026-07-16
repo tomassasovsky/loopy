@@ -362,6 +362,15 @@ static const unsigned long kBlinkHalfPeriodMs = 400;
 // from the untouched logical frame each time is idempotent.
 //
 // The table is mirrored in firmware/loopy_pedal — keep the two in sync.
+//
+// Compile-time toggle, OFF by default: define LED_GAMMA_CORRECTION=1 (an Arduino
+// build flag / -D, or edit the line below) to enable the perceptual ramp. When
+// off, showGamma() copies the logical frames straight through with no correction.
+#ifndef LED_GAMMA_CORRECTION
+#define LED_GAMMA_CORRECTION 0
+#endif
+
+#if LED_GAMMA_CORRECTION
 static const uint8_t kGamma8[256] PROGMEM = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,
@@ -381,11 +390,15 @@ static const uint8_t kGamma8[256] PROGMEM = {
   215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255,
 };
 static inline uint8_t gamma8(uint8_t x) { return pgm_read_byte(&kGamma8[x]); }
+#endif  // LED_GAMMA_CORRECTION
 
-// Gamma-correct both logical frames into their display buffers, then latch. A
-// drop-in replacement for FastLED.show() — global brightness is still applied by
-// show() itself.
+// Copy both logical frames into their display buffers, then latch. A drop-in
+// replacement for FastLED.show() — global brightness is still applied by show()
+// itself. With LED_GAMMA_CORRECTION on, each channel is mapped through the gamma
+// curve; with it off (the default) the frames are copied through unmodified.
+// Either way we copy into g_ringOut/g_indOut, the buffers FastLED clocks out.
 static void showGamma() {
+#if LED_GAMMA_CORRECTION
   for (uint8_t i = 0; i < kRingCount; i++) {
     g_ringOut[i].r = gamma8(g_ring[i].r);
     g_ringOut[i].g = gamma8(g_ring[i].g);
@@ -396,6 +409,10 @@ static void showGamma() {
     g_indOut[i].g = gamma8(g_ind[i].g);
     g_indOut[i].b = gamma8(g_ind[i].b);
   }
+#else
+  for (uint8_t i = 0; i < kRingCount; i++) g_ringOut[i] = g_ring[i];
+  for (uint8_t i = 0; i < kIndCount; i++) g_indOut[i] = g_ind[i];
+#endif
   FastLED.show();
 }
 
