@@ -262,6 +262,27 @@ typedef struct le_monitor_input {
   le_fx_state fx;
 } le_monitor_input;
 
+/* What one history entry represents. LE_HIST_LAYER is a retired overdub pass;
+ * the CLEAR restore point (#219) lands on top of this enum in a follow-up. */
+typedef enum {
+  LE_HIST_LAYER = 0, /* a retired overdub pass, named by its pool slot */
+} le_hist_kind;
+
+/* One entry on a track's undo/redo history (control-thread-owned). A bare pool
+ * index cannot say what it represents, which is why this is a tagged struct
+ * rather than the int32_t it replaced: the undoable-clear work (#219) needs a
+ * restore point — pre-clear live slot plus the length/multiple/state/mutes to
+ * put back — to sit on the same stack as the layers it was pushed above. */
+typedef struct {
+  int32_t kind; /* le_hist_kind */
+  int32_t slot; /* the pool slot this entry names */
+} le_hist_entry;
+
+static inline le_hist_entry le_hist_layer(int32_t slot) {
+  le_hist_entry e = {.kind = LE_HIST_LAYER, .slot = slot};
+  return e;
+}
+
 /* One looper track: a multi-lane container that owns the transport, the shared
  * latency-compensated write head, and one undo span across all its lanes.
  *
@@ -275,13 +296,13 @@ typedef struct le_track {
                        * int, like track_count — not an atomic, not a ring
                        * command (set before the first record into a new lane). */
 
-  /* Control-thread-owned undo/redo stacks of pool indices, shared by all lanes
-   * (the same slot index names the snapshot in every lane). Layers arrive on the
-   * undo stack via LE_EVT_LAYER_RETIRED events the audio thread emits at each
-   * completed overdub pass (see the dub_* capture state below). */
-  int32_t undo_stack[LE_POOL_SLOTS];
+  /* Control-thread-owned undo/redo stacks, shared by all lanes (the same slot
+   * index names the snapshot in every lane). Layers arrive on the undo stack via
+   * LE_EVT_LAYER_RETIRED events the audio thread emits at each completed overdub
+   * pass (see the dub_* capture state below). */
+  le_hist_entry undo_stack[LE_POOL_SLOTS];
   int undo_count;
-  int32_t redo_stack[LE_POOL_SLOTS];
+  le_hist_entry redo_stack[LE_POOL_SLOTS];
   int redo_count;
 
   /* ---- per-pass layer capture (audio-thread-local unless noted) ----
