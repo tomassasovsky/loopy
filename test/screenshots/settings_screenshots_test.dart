@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
+import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
@@ -18,6 +19,8 @@ import 'package:loopy/theme/theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:pedal_repository/pedal_repository.dart';
+import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -88,6 +91,7 @@ void main() {
   late AudioSetupCubit audioSetup;
   late MidiDeviceRepository midi;
   late PedalCubit pedal;
+  late ControlCubit control;
 
   const runningAudio = AudioSetupState(
     status: AudioSetupStatus.running,
@@ -145,6 +149,28 @@ void main() {
       const Stream<PedalState>.empty(),
       initialState: const PedalState(),
     );
+    // The real control cubit: the View section reads the looper-wide default
+    // mode from it. Its `const ControlState()` default (LooperMode.record) is
+    // what the golden captures, so no stubbing is needed — only the keep-alive
+    // timer has to go, or it would pump frames under golden capture.
+    final performance = PerformanceRepository(
+      engine: FakeAudioEngine(),
+      exportsRoot: () async => '.',
+    );
+    addTearDown(performance.dispose);
+    // Disposed here rather than by PedalCubit (its lifecycle owner in the real
+    // app, and in settings_page_test): the cubit above is a mock, so its close
+    // is a no-op and would leave the transport and event streams open.
+    final pedalRepo = PedalRepository(const NoopPedalTransport());
+    addTearDown(pedalRepo.dispose);
+    control = ControlCubit(
+      looper: repository,
+      pedal: pedalRepo,
+      settings: settings,
+      performance: performance,
+      keepAliveInterval: Duration.zero,
+    );
+    addTearDown(control.close);
   });
 
   Future<void> pump(WidgetTester tester) async {
@@ -205,6 +231,7 @@ void main() {
                 ),
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
+              BlocProvider<ControlCubit>.value(value: control),
             ],
             child: const SettingsPage(),
           ),
