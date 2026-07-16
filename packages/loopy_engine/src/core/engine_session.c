@@ -132,11 +132,11 @@ static int32_t le_layer_slot_for_ordinal(const le_track* t, int32_t ordinal,
                                           int32_t live) {
   const int32_t undo_c = t->undo_count;
   const int32_t redo_c = t->redo_count;
-  if (ordinal < undo_c) return t->undo_stack[ordinal];
+  if (ordinal < undo_c) return t->undo_stack[ordinal].slot;
   if (ordinal == undo_c) return live;
   const int32_t j = ordinal - undo_c - 1; /* 0-based into the post-live run */
   if (j >= redo_c) return -1;
-  return t->redo_stack[redo_c - 1 - j];
+  return t->redo_stack[redo_c - 1 - j].slot;
 }
 
 int32_t le_engine_export_layer(le_engine* engine, int32_t channel, int32_t lane,
@@ -244,10 +244,10 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
   /* Slot index == ordinal: undo layers occupy [0, undo_count), the live buffer
    * sits at undo_count, and the redo layers occupy the top slots newest-last
    * (mirror of le_layer_slot_for_ordinal). */
-  for (int32_t i = 0; i < undo_count; ++i) t->undo_stack[i] = i;
+  for (int32_t i = 0; i < undo_count; ++i) t->undo_stack[i] = le_hist_layer(i);
   t->undo_count = undo_count;
   for (int32_t k = 0; k < redo_count; ++k) {
-    t->redo_stack[k] = undo_count + redo_count - k;
+    t->redo_stack[k] = le_hist_layer(undo_count + redo_count - k);
   }
   t->redo_count = redo_count;
   t->empty_len = 0;
