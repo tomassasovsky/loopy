@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/model/looper_mode.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 // The effect models come from the looper_repository barrel (the domain types
 // setLaneEffects expects); hide the engine-package originals to disambiguate.
@@ -439,6 +440,60 @@ void main() {
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.playing);
         expect(h.looper.tracks[1].state, TrackState.playing);
+      });
+    }, skip: skip);
+
+    test('a live capture survives the Rec->Play mode switch and keeps '
+        'recording until Rec/Play finalizes it back in Rec mode '
+        '(2026-07-16)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // start a fresh take
+          ..run(const [_Pump(100, 0.5)], fa)
+          ..settle(fa) // the cubit's polled snapshot sees the capture
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..settle(fa);
+        // The mode toggle is a view change, not a transport action: the
+        // take must still be recording (it used to be force-finalized).
+        expect(h.looper.tracks[0].state, TrackState.recording);
+        expect(h.control.state.mode, LooperMode.play);
+
+        // It keeps ACCUMULATING through play mode...
+        h
+          ..run(const [_Pump(100, 0.5)], fa)
+          ..run(const [_Tap(PedalButton.mode)], fa) // back to rec mode
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.recording);
+
+        // ...and the user's own Rec/Play finalizes it at the FULL length:
+        // both halves of the capture, either side of the round-trip.
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
+        expect(h.looper.transport.masterLengthFrames, 200);
+      });
+    }, skip: skip);
+
+    test('an overdub survives the Rec->Play mode switch (2026-07-16)', () {
+      _inHarness((h, fa) {
+        h
+          ..run(const [_Tap(PedalButton.recPlay)], fa)
+          ..pumpLoop(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // loop plays
+          ..settle(fa)
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // punch into overdub
+          ..run(const [_Pump(64, 0.5)], fa)
+          ..settle(fa) // the cubit's polled snapshot sees the overdub
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.overdubbing);
+
+        h
+          ..run(const [_Tap(PedalButton.mode)], fa) // back to rec mode
+          ..run(const [_Tap(PedalButton.recPlay)], fa) // punch out
+          ..settle(fa);
+        expect(h.looper.tracks[0].state, TrackState.playing);
       });
     }, skip: skip);
 

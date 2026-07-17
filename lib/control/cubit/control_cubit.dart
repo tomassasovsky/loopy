@@ -121,7 +121,15 @@ class ControlCubit extends Cubit<ControlState> {
   Future<void>? _loadFuture;
 
   List<Track> get _tracks => _l.tracks;
-  LooperState get _l => _looper.state;
+
+  /// The looper truth every intent method reads: the last POLLED snapshot —
+  /// the SAME one the frame projection and the invariant spec are defined
+  /// over. `LooperRepository.state` is a live engine read; deciding intent
+  /// from it while projecting from the polled copy let the two skew inside
+  /// one emit whenever an engine change landed between polls (e.g. a record
+  /// starting right before a mode toggle), tripping the projection-time
+  /// invariant assert. Live read only before the first poll arrives.
+  LooperState get _l => _looperState ?? _looper.state;
 
   Track? _trackAt(int channel) =>
       channel >= 0 && channel < _tracks.length ? _tracks[channel] : null;
@@ -204,11 +212,14 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Applies [next] with its entry side effects; a no-op when already there.
   ///
-  /// Entering Play finalizes any capture and previews the whole content set:
-  /// `parkedResume` = every track holding (or finishing) a loop, so Rec/Play
-  /// resumes them all and the parked LEDs show it — including stopped and
-  /// muted tracks, which pure `sounding` could never cover. Any mode entry
-  /// clears the stored play intent (the invalidation table).
+  /// Entering Play previews the whole content set: `parkedResume` = every
+  /// track holding (or capturing) a loop, so Rec/Play resumes them all and
+  /// the parked LEDs show it — including stopped and muted tracks, which
+  /// pure `sounding` could never cover. A LIVE CAPTURE deliberately survives
+  /// the switch: the mode toggle is a view change, not a transport action,
+  /// so a take the user did not explicitly end keeps recording until they
+  /// return to Rec mode and hit Rec/Play (or end it with an explicit Stop).
+  /// Any mode entry clears the stored play intent (the invalidation table).
   void setMode(LooperMode next) {
     if (next == state.mode) return;
     switch (next) {
@@ -221,9 +232,6 @@ class ControlCubit extends Cubit<ControlState> {
           ),
         );
       case LooperMode.play:
-        for (final track in _tracks) {
-          if (track.isCapturing) _looper.record(channel: track.channel);
-        }
         emit(
           state.copyWith(
             mode: LooperMode.play,
