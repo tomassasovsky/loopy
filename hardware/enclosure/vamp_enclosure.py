@@ -847,6 +847,11 @@ def dxf_platform(path, ph, qty, tag):
                [(x0,y1),(x1,y1)], [(x0,y1+h),(x1,y1+h)],       # rear
                [(x0,y0),(x0,y1)], [(x1,y0),(x1,y1)]]):         # left & right walls (single fold)
         _poly(msp, s, "BEND", closed=False)
+    # corner bend-relief at the 4 shelf corners where the front/rear folds cross the
+    # side-wall folds: r=3 clears both bend-allowance bands (~2.1mm each side of a line)
+    rrel = T + 1.0
+    for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
+        _circle(msp, cx, cy, 2*rrel)
     # M3 screw holes through the two in-turned foot flanges (front + rear)
     cxs = ((x0+x1)/2 + d for d in platform_foot_u(sw))
     for cx in list(cxs):
