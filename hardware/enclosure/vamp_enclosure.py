@@ -848,8 +848,12 @@ def dxf_platform(path, ph, qty, tag):
                [(x0,y0),(x0,y1)], [(x1,y0),(x1,y1)]]):         # left & right walls (single fold)
         _poly(msp, s, "BEND", closed=False)
     # corner bend-relief at the 4 shelf corners where the front/rear folds cross the
-    # side-wall folds: r=3 clears both bend-allowance bands (~2.1mm each side of a line)
-    rrel = T + 1.0
+    # side-wall folds. The radius must clear the crossing folds' bend-allowance bands
+    # yet stay a band clear of the nearby wall->flange folds at y=ff / y=y1+h -- on
+    # the short-walled FRONT platform that caps it below the base's T+1.
+    band = math.pi/4 * (RI + KF*T)          # half the flattened 90-deg bend arc
+    rrel = min(T + 1.0, h - band)
+    assert rrel >= band, f"wall h={h:.2f} too short for corner bend-relief"
     for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
         _circle(msp, cx, cy, 2*rrel)
     # M3 screw holes through the two in-turned foot flanges (front + rear)
