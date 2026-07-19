@@ -1,44 +1,42 @@
 # loopy LED strip
 
-Pedal-width WS2812B indicator-strip segment for the VAMP console: **one
-segment per indicator pedal**, sitting under that pedal's diffuser slot in the
-faceplate. One segment is a 75 x 8 mm (75 mm = the ASP-1 pedal width),
-2-layer, 1.6 mm PCB carrying **3x WS2812B 5050 addressable LEDs at 25 mm
-pitch** (each with its own 100nF 0603 decoupling cap) and **castellated
+Single-LED WS2812B indicator puck for the VAMP console: **one board per
+indicator pedal**, sitting under that pedal's small pill diffuser slot in the
+faceplate. One board is 16 x 8 mm, 2-layer, 1.6 mm, carrying **1x WS2812B
+5050 addressable LED** (with its 100nF 0603 decoupling cap) and **castellated
 half-hole pads on both 8 mm ends**.
 
 ```
- left edge                                                   right edge
- [5V ]────────── +5V rail (top long edge, 1.5 mm) ───────────────[5V ]
- [DI ]───D1──▶───D2──▶───D3────────────────────────────────────── [DO ]
- [GND]────────── GND rail (bottom long edge, 1.5 mm) ────────────[GND]
-                 + full GND pour on the bottom copper
+ left edge                                right edge
+ [5V ]──── +5V rail (top edge) ──────────────[5V ]
+ [DI ]───────────D1──────────────────────────[DO ]
+ [GND]──── GND rail (bottom edge) ───────────[GND]
+           + full GND pour on the bottom copper
 ```
 
-## How segments chain
+## How boards chain
 
-Segments daisy-chain **pedal to pedal with three short wires** (5V / DATA /
-GND, same pad order top-to-bottom on both ends — left-end DATA is the
-segment's DIN, right-end DATA its DOUT) soldered to the castellated end pads.
-The castellations also still allow butting two segments edge-to-edge into a
-continuous bar (LED1/LED3 sit 12.5 mm from their edges, so the 25 mm pitch is
-preserved across a butt seam) if a longer run is ever wanted.
+Boards daisy-chain **pedal to pedal with three short wires** (5V / DATA /
+GND, same pad order top-to-bottom on both ends — left-end DATA is DIN,
+right-end DATA is DOUT) soldered to the castellated end pads. The
+castellations also allow butting boards edge-to-edge (the LED sits 8 mm from
+each end, so a butted pair keeps a 16 mm pitch) if a bar is ever wanted.
 
 Console usage:
 
-| row           | pedals with LEDs        | segments | LEDs |
-| ------------- | ----------------------- | -------- | ---- |
-| front row     | TRACK1..TRACK4          | 4        | 12   |
-| mid row       | CLEAR, BANK             | 2        | 6    |
-| per console   |                         | 6        | 18   |
+| row           | pedals with LEDs        | boards | LEDs |
+| ------------- | ----------------------- | ------ | ---- |
+| front row     | TRACK1..TRACK4          | 4      | 4    |
+| mid row       | CLEAR, BANK             | 2      | 2    |
+| per console   |                         | 6      | 6    |
 
-Feed 5V/GND at one end (and re-feed every few segments if you extend further —
-the 1.5 mm rails are sized for a handful of segments, not metres). Data enters
-at DI on the first segment and daisy-chains through every LED.
+Feed 5V/GND once (six indicator LEDs draw ~360 mA absolute worst case, far
+less in practice). Data enters at DI on the first puck and daisy-chains
+through every LED.
 
 ## Ordering (JLCPCB)
 
-- 2-layer, 1.6 mm, any colour; the board is 75 x 8 mm — well under the
+- 2-layer, 1.6 mm, any colour; the board is 16 x 8 mm — well under the
   100 x 100 mm cheap-tier limit.
 - **Tick the "Castellated Holes" option.** The end pads are full plated 1.6 mm
   pads (0.8 mm drill) centred exactly on the board edge; the castellation
