@@ -123,7 +123,13 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
 # (5V/data/GND) on the castellated end pads.
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
-LED_SLOT_W = 45.0         # pill window per indicator pedal (one 5050 diffused behind it)
+LED_SLOT_W = 60.0         # pill window per indicator pedal (one 5050 diffused behind it)
+LED_INS_CLR   = 0.2       # diffuser-insert lateral clearance in the slot (total)
+LED_INS_PROUD = 0.4       # lens stands this far above the outer skin
+LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats on the
+                          # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
+LED_INS_FL_T  = 1.5       # shoulder thickness
+LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.0      # EC11 encoder bush
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID
@@ -1007,6 +1013,32 @@ def _platform_solid(cq, ph):
     legr = cq.Workplane("XY").box(T, sw, ph, centered=(True, True, False)).translate((sd/2-T/2,0,0))
     return shelf.union(legf).union(legr)
 
+def build_diffuser_step():
+    """LED pill diffuser INSERT (3D-print in clear/milky resin, x6 per console):
+    a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
+    shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
+    above the outer skin. The single-LED module (hardware/led_strip/ puck or an
+    off-the-shelf WS2812B breakout) nests in a shallow pocket on the back and is
+    VHB-taped over the flange, which also retains the insert."""
+    import cadquery as cq
+    lens_l = LED_SLOT_W - LED_INS_CLR
+    lens_w = LED_SLOT_H - LED_INS_CLR
+    lens_h = T + LED_INS_PROUD
+    fl_l = LED_SLOT_W + 2 * LED_INS_FLANGE
+    fl_w = LED_SLOT_H + 2 * LED_INS_FLANGE
+    lens = cq.Workplane("XY").slot2D(lens_l, lens_w).extrude(lens_h)
+    lens = lens.edges(">Z").chamfer(0.3)             # soft glow edge on the proud lip
+    ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
+    px, py, pd = LED_INS_POCKET                       # LED nest, back face
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
+                  .rect(px, py).extrude(pd))
+    step = os.path.join(OUT, "vamp_led_diffuser.step")
+    stl = os.path.join(OUT, "vamp_led_diffuser.stl")
+    cq.exporters.export(ins.val(), step)
+    cq.exporters.export(ins.val(), stl)
+    return step
+
+
 def build_step(write_parts=True):
     import cadquery as cq
     os.makedirs(OUT, exist_ok=True)
@@ -1334,6 +1366,8 @@ def main(argv):
                 print(f"    (pdf skipped: {e})")
     if "--no-step" not in argv:
         try:
+            d = build_diffuser_step()
+            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             p = build_step()
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except Exception as e:  # pragma: no cover
