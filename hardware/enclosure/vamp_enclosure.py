@@ -193,10 +193,11 @@ def dev_deduct(angle_deg):
 DEV90 = dev_deduct(90.0)              # = 1.911 for T2/RI2/K0.33 (issue #237: the old
                                       # T + K*T = 2.66 over-deducted every 90 deg bend
                                       # ~0.75mm, leaving all walls short of nominal)
-# The lap must STOP SHORT of the wall->flange bend knuckle: with real radii the
-# knuckle bulges (RI+T)(1-cos(fold)) above the flange plane, so a lap reaching
-# the wall physically cannot lie flat (issue #237, validated in Fusion).
-KNUCKLE_CLEAR = 8.5
+# The lap must STOP SHORT of the wall->flange bend knuckle: the flange's outer
+# surface starts curving (RI+T)*tan(fold/2) = 2.58 before the outside mold
+# corner, so the lap tip stops there plus a margin -- as LONG as possible while
+# still lying flat on the flange.
+KNUCKLE_CLEAR = 3.5
 FP_W = W - 2.0 * T                    # control-area width (schedule coordinate frame)
 LID_W = W - 0.2                       # lid blank full outer width: covers the wall tops,
                                       # flush with the side skins (issue #237)
@@ -227,13 +228,18 @@ YC_TRANS = _y90 - T / math.cos(_rth)            # transition OUTSIDE mold corner
                                                 # flange outer sits ONE SHEET below
                                                 # the lap outer so the lap rests ON it
 HR_FLAT = YC_TRANS - DEV90 - DD_TR              # rear wall web, developed flat
-HT_FLAT = TRANS_LEN - DD_TR                     # transition flange, developed flat
+RIDGE_CLEAR = 2.0                               # flange tip stops this short of the
+                                                # ridge mold corner (lap-bend zone)
 # along-facet axis d: from the ridge mold corner DOWN the lap/flange facet.
 # A point at flat distance f beyond a bend line lands at facet station f + DD
 # from that bend's mold corner (the straight flap starts sb past the corner but
 # only BA/2 past the line) -- so a target station d needs flat = d - DD.
 D_WALL    = (_zw - RIDGE_Z) * math.cos(_rth) + (RIDGE_Y - YC_TRANS) * math.sin(_rth)
-D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (stops short of the ridge)
+HT_FLAT   = (D_WALL - RIDGE_CLEAR) - DD_TR      # transition flange, developed flat:
+                                                # as LONG as possible (to the ridge
+                                                # clearance, NOT just TRANS_LEN --
+                                                # development stretches the facet)
+D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (= RIDGE_CLEAR)
 D_LAP_TIP = D_WALL - KNUCKLE_CLEAR              # lap tip: clear of the wall knuckle
 # screw row: centred on the lap/flange overlap, pushed down-facet if needed so
 # the PEM keeps its edge distance from the flange tip
@@ -711,7 +717,8 @@ def dxf_base(path):
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
     APEXR = 3.0                             # lap-bend relief setback at the wedge apex
-    LIPR_D, LIPR_H = 3.0, 2.0               # lip-bend relief at the wall front corners
+    LIPR_R = 3.0                            # lip-bend relief radius (quarter-round
+                                            # scoop at the wall front corners)
     tan_a, tan_th = math.tan(_ra), math.tan(_rth)
     # side-wall wedge top, FRONT segment: ON the lid underside plane, anchored at
     # the front wall outer top corner (solver Z = -DEV90, i.e. flat y = -bdd -- the
@@ -725,7 +732,7 @@ def dxf_base(path):
                        - 2.0 * T / math.cos(_rth)) - bdd
     y_step = RIDGE_Z - APEXR                # step from lid plane to flange seat,
                                             # set back from the lid's ridge knuckle
-    pf = shf_f(LIPR_D)                      # wedge height at the front relief notch
+    pf = shf_f(LIPR_R)                      # wedge height at the front relief scoop
     fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
     # the REAR flap is FULL OUTER WIDTH (like the lid): it folds up OUTSIDE the
     # side walls' rear edges and covers the corner seam from the back. The side
@@ -747,13 +754,13 @@ def dxf_base(path):
     #      reliefs for the lid's lip and lap folds (issue #237). --------------------
     turn = math.radians(90.0 - TRANS_ANGLE)     # corner turn: wedge top -> rear edge
     ft = CORNER_R * math.tan(turn / 2.0)        # fillet tangent setback
-    fb = -math.tan(turn / 4.0)                  # fillet bulge (clockwise arc)
+    fb = math.tan(turn / 4.0)                   # fillet bulge (CCW round-off)
     ax = h_corner + ft * math.sin(_rth)         # tangent on the wedge-top slope
     ay = y_edge - ft * math.cos(_rth)
     bx = h_corner - ft                          # tangent on the rear edge
     outline = [
         (0, -Hf), (BW, -Hf), (BW, 0),                                  # FRONT flap
-        (BW+pf-LIPR_H, 0), (BW+pf-LIPR_H, LIPR_D), (BW+pf, LIPR_D),    # lip-bend relief notch
+        (BW+pf-LIPR_R, 0, math.tan(math.pi/8)), (BW+pf, LIPR_R),      # lip relief (round scoop)
         (BW+h1, y_step), (BW+h1r, y_step),                             # RIGHT flap: apex step,
         (BW+ax, ay, fb), (BW+bx, y_edge),                              # wedge top ON the flange,
         (BW, y_edge),                                                  # edge clear of the rear wall
@@ -764,7 +771,7 @@ def dxf_base(path):
         (0, y_edge),                                                   # walls' rear edges
         (-bx, y_edge, fb),                                             # LEFT flap: rear edge,
         (-ax, ay), (-h1r, y_step), (-h1, y_step),                      # fillet, wedge top
-        (-pf, LIPR_D), (-pf+LIPR_H, LIPR_D), (-pf+LIPR_H, 0), (0, 0),  # lip-bend relief notch
+        (-pf, LIPR_R, math.tan(math.pi/8)), (-pf+LIPR_R, 0), (0, 0),   # lip relief (round scoop)
     ]
     msp.add_lwpolyline([(pt + (0.0,))[:3] for pt in outline], format="xyb",
                        close=True, dxfattribs={"layer": "CUT"})
