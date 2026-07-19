@@ -156,7 +156,9 @@ VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
 STANDOFF_H  = 15.0            # under-board gap: the THT leads + buck-module header pins
                               # hang ~4.5mm below the PCB, so 10mm left ~5mm of real
                               # airflow; 15mm (standard M3 brass) restores the margin
-PI_RISER_H  = 33.0            # Pi build: risers lift the Pi so its rear port stack meets the (centred) window
+PI_STACK_MID = 9.7            # USB/RJ45 stack centreline above the Pi PCB BOTTOM
+                              # (1.6 PCB + ~8.1 to the middle of the 16mm-tall stack);
+                              # PI_RISER_H is derived from it below REAR_WIN_Z
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # Main board = the manufactured V1 THT Pro Micro board (the loopy_pedal_main THT design,
 # git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
@@ -186,6 +188,11 @@ D           = FACE_RUN + TRANS_RUN + 2*T  # overall depth: +2T so the bottom pla
 # transition DROPS from the peak down to the shorter Rear panel at the very back.
 REAR_WALL_H = H_REAR - TRANS_DROP     # Rear panel height (reduced; below the peak)
 REAR_WIN_Z  = REAR_WALL_H / 2.0       # I/O window centred vertically on the rear wall
+# Pi build: risers lift the Pi so its rear port stack CENTRES in the I/O window
+# (window centre = REAR_WIN_Z up the wall ~= the same height above the bottom
+# plate). The old hardcoded 33.0 left the stack ~2.3mm low - the USB shells'
+# bottom edge hid behind the sub-panel cutout edge.
+PI_RISER_H  = REAR_WIN_Z - PI_STACK_MID
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
@@ -1124,10 +1131,15 @@ def build_step(write_parts=True):
     # representative loopy_pi_main board on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
     blk = {"MAIN_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
-    for name, cx, cy, _pat in board_mounts():
+    for name, cx, cy, pat in board_mounts():
         bx, by, bz = blk[name]
         b = cq.Workplane("XY").box(bx, by, bz, centered=(True, True, False)).translate((cy + T, cx + T, STANDOFF_H))
         addw(b, name.lower())
+        # the 4 M3 standoff posts under the board (STANDOFF_H tall, on the hole pattern)
+        for du in (-pat[0] / 2.0, pat[0] / 2.0):
+            for dv in (-pat[1] / 2.0, pat[1] / 2.0):
+                post = cq.Workplane("XY").circle(2.75).extrude(STANDOFF_H).translate((cy + T + dv, cx + T + du, 0))
+                addw(post, f"{name.lower()}_standoff_u{int(cx + du)}_d{int(cy + dv)}")
 
     asm.save(os.path.join(OUT, "vamp_assembly.step"))
     if write_parts:
