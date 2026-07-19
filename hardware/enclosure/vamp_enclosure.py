@@ -84,7 +84,7 @@ CORNER_ZR_WALL = (8.0, 40.0, 72.0)    # rear-wall leg rivets (3)
 CORNER_ZR_SIDE = (24.0, 56.0)         # side-wall leg rivets (2), interleaved with the wall leg
 CORNER_HT      = 80.0                  # rear bracket height (covers the ~90 mm rear wall)
 LID_FRONT_FL = 9.0   # front-lip flange flat (down-turned lip; rests on the front wall, no screw)
-LID_REAR_LAP = 24.0  # how far the Top plate's rear edge laps onto the transition (screw land)
+# LID_REAR_LAP (rear-lap length) is DERIVED by the rear-seam solver below
 LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to the base from below)
 # Lid -> body fixing scheme:
 #   FRONT  : the Top plate's front lip screws horizontally into the Front panel.
@@ -197,7 +197,6 @@ DEV90 = dev_deduct(90.0)              # = 1.911 for T2/RI2/K0.33 (issue #237: th
 # knuckle bulges (RI+T)(1-cos(fold)) above the flange plane, so a lap reaching
 # the wall physically cannot lie flat (issue #237, validated in Fusion).
 KNUCKLE_CLEAR = 8.5
-FL   = FLANGE - DEV90                 # flange/wing flat length after bend deduction
 FP_W = W - 2.0 * T                    # control-area width (schedule coordinate frame)
 LID_W = W - 0.2                       # lid blank full outer width: covers the wall tops,
                                       # flush with the side skins (issue #237)
@@ -245,6 +244,14 @@ SEAM_M4_V  = LID_FRONT_FL + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap M4 row (lid
 SEAM_PEM_V = HR_FLAT + (D_WALL - D_SEAM_SCREW) - DD_TR         # flange PEM row (base
                                                                # flat, from the rear
                                                                # wall bend line)
+# hard DFM guards: a parameter tweak must not silently collapse the lap/flange
+# overlap or push the screw row off the lap (holes in air pass no other check)
+assert HR_FLAT > 0 and LID_REAR_LAP > 0, "seam solver: degenerate rear seam"
+assert D_FL_TIP + PEM_EDGE <= D_SEAM_SCREW <= D_LAP_TIP - (D_M4 / 2.0 + 2.0), (
+    f"seam screw row d={D_SEAM_SCREW:.2f} outside the lap/flange overlap "
+    f"[{D_FL_TIP:.2f}, {D_LAP_TIP:.2f}] with edge margins")
+assert HR_FLAT > max(CORNER_ZR_WALL) + T + 2.0, (
+    "rear web too short: corner-bracket rivet holes cross the transition fold")
 
 def lid_top_z(v):
     """Z of the Top-plate surface at control-area depth v (0..FACE_RUN)."""
@@ -531,6 +538,22 @@ def _check():
             f"REAR_BOUNDS: {c['ref']} outside the rear wall (z<= {REAR_WALL_H:.0f})"
     return True
 
+def _bottom_vents_local(bw, bd):
+    """Intake-vent block in the clear gap between the front and CLEAR/BANK platform
+    rows (air enters here, crosses the boards, exits the rear-wall vents)."""
+    sl, sw = VENT_SLOT
+    cols, rows = 6, 5
+    gap_y = (PEDAL_ROW1_V + FSW_SLOT_D/2 + PLATFORM_MARGIN +
+             PEDAL_ROW2_V - FSW_SLOT_D/2 - PLATFORM_MARGIN) / 2.0
+    u0, v0 = bw/2 - (cols*(sl+14))/2, gap_y - (rows*VENT_PITCH)/2
+    out = []
+    for r in range(rows):
+        for c in range(cols):
+            out.append({"kind": "rect", "u": u0 + c*(sl+14), "v": v0 + r*VENT_PITCH,
+                        "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"})
+    return out
+
+
 def _bottom_vents():
     return _bottom_vents_local(W - 2*T, D - 2*T)
 
@@ -655,7 +678,7 @@ def dxf_faceplate(path):
         _circle(msp, ox + u, SEAM_M4_V, D_M4)                             # rear lap -> transition (concentric with the flange PEM row)
     _text(msp, 10, yr1+8, 8, f"VAMP LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see vamp_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
     doc.saveas(path)
-    return {"blank": (PW, yr1)}
+    return {"blank": (LW, yr1)}
 
 def dxf_overlay(path):
     """PRINTED ADHESIVE TOP-PLATE OVERLAY -- replaces silkscreen. A polycarbonate/vinyl
@@ -671,93 +694,6 @@ def dxf_overlay(path):
               wf=e.get("wf", 1.0), halign=e.get("halign", "left"))
     _text(msp, 10, FP_V + 8, 8, "VAMP TOP OVERLAY  printed adhesive (polycarbonate/vinyl); BLACK field + WHITE legend; die-cut apertures; bonded to the faceplate (no silkscreen on metal)", "NOTE")
     doc.saveas(path); return {}
-
-def dxf_front(path):
-    """FRONT panel: flat web + a small inward top ledge. The Top plate's front lip
-    screws horizontally through the web. Bottom edge WELDS to the bottom plate."""
-    doc = _doc(); msp = doc.modelspace(); L = W - 2*T
-    _poly(msp, [(0, 0), (L, 0), (L, H_FRONT + FL), (0, H_FRONT + FL)], "CUT")
-    _poly(msp, [(0, H_FRONT), (L, H_FRONT)], "BEND", closed=False)       # top fold (ledge)
-    _poly(msp, [(0, 0), (L, 0)], "WELD", closed=False)                   # bottom -> weld
-    for f in (0.18, 0.5, 0.82):                                          # front-lip screws (clearance)
-        _circle(msp, L*f, H_FRONT - 6.0, D_M4)
-    _text(msp, 10, H_FRONT + FL + 6, 8, "VAMP FRONT  2.0mm  x1  bottom WELD; web = Top-plate front-lip screws", "NOTE")
-    doc.saveas(path); return {}
-
-def dxf_rear(path):
-    """REAR panel: vertical web (reduced height) + an upward-folded TRANSITION flange
-    (the angled shoulder). The Top plate's rear lap lands on the transition and screws
-    DOWN into PEM nuts here. Web carries the I/O; bottom + sides WELD to the body."""
-    doc = _doc(); msp = doc.modelspace(); L = W - 2*T
-    tf = TRANS_LEN                                       # transition flat length
-    _poly(msp, [(0, 0), (L, 0), (L, REAR_WALL_H + tf), (0, REAR_WALL_H + tf)], "CUT")
-    _poly(msp, [(0, REAR_WALL_H), (L, REAR_WALL_H)], "BEND", closed=False)   # fold up to the transition
-    _poly(msp, [(0, 0), (L, 0)], "WELD", closed=False)                       # bottom -> weld
-    for e in ([(0,0),(0,REAR_WALL_H)], [(L,0),(L,REAR_WALL_H)]):
-        _poly(msp, e, "WELD", closed=False)                                  # side edges -> weld to side panels
-    for f in (0.18, 0.5, 0.82):                                              # PEM where the lid rear lap screws down
-        _circle(msp, L*f, REAR_WALL_H + tf - LID_REAR_LAP*0.5, PEM_M4)
-    _emit(msp, _mirror_u(rear_holes(), L))                                   # match the Y-mirrored geometry
-    _text(msp, 10, REAR_WALL_H + tf + 6, 8, f"VAMP REAR  2.0mm  x1  web {REAR_WALL_H:.0f}H + transition flange ({TRANS_ANGLE:.0f}deg); PEM = lid-lap screws", "NOTE")
-    doc.saveas(path); return {}
-
-def dxf_side(path, hand):
-    """Plain Side panel, no top flange. Profile front->rear: low front (H_FRONT) up to
-    the PEAK (H_REAR) at the control-area depth FACE_RUN, then DOWN across the transition
-    to the rear-panel top (REAR_WALL_H). The Top plate's WING tucks just inside this panel
-    for lateral alignment (no screws). Bottom edge WELDS to the bottom plate."""
-    doc = _doc(); msp = doc.modelspace()
-    _poly(msp, [(0, 0), (D, 0), (D, REAR_WALL_H), (FACE_RUN, H_REAR), (0, H_FRONT)], "CUT")
-    _poly(msp, [(0, H_FRONT), (FACE_RUN, H_REAR)], "NOTE", closed=False)     # control-area register edge (wing inside)
-    _poly(msp, [(FACE_RUN, H_REAR), (D, REAR_WALL_H)], "NOTE", closed=False) # transition edge
-    _poly(msp, [(0, 0), (D, 0)], "WELD", closed=False)                       # bottom -> weld
-    _text(msp, 20, 20, 8, f"VAMP SIDE_{hand}  2.0mm  x1  bottom WELD; peak {H_REAR:.0f} @ {FACE_RUN:.0f}, transition to rear {REAR_WALL_H:.0f}", "NOTE")
-    doc.saveas(path); return {}
-
-def dxf_bottom(path):
-    """Vented bottom plate, WELDED to the wall bottom edges (part of the lower body):
-    vents + Pi/board M3 standoff holes + rubber feet. The Pi/board are reached from
-    the top once the faceplate lid is lifted off."""
-    doc = _doc(); msp = doc.modelspace()
-    bw, bd = W - 2*T, D - 2*T
-    _poly(msp, [(0, 0), (bw, 0), (bw, bd), (0, bd)], "CUT")
-    for e in ([(0,0),(bw,0)], [(0,bd),(bw,bd)], [(0,0),(0,bd)], [(bw,0),(bw,bd)]):
-        _poly(msp, e, "WELD", closed=False)        # all 4 edges WELD to the wall bottoms
-    _emit(msp, _bottom_vents_local(bw, bd))
-    # Pi + loopy_pi_main board M3 standoff patterns (rear clear zone)
-    for name, cx, cy, (sx, sy) in board_mounts():
-        for dx in (-sx/2, sx/2):
-            for dy in (-sy/2, sy/2):
-                _circle(msp, cx+dx, cy+dy, D_M3)
-        _text(msp, cx - sx/2, cy + sy/2 + 4, 5, name, "NOTE")
-    for x in (35, bw-35):                          # rubber feet
-        for y in (35, bd-35):
-            _circle(msp, x, y, D_FOOT)
-    _text(msp, 10, bd+6, 8, "VAMP BOTTOM (WELDED to lower body)  2.0mm  x1  vented + Pi/board M3 standoffs", "NOTE")
-    doc.saveas(path); return {}
-
-def _bottom_vents_local(bw, bd):
-    """Intake-vent block in the clear gap between the front and CLEAR/BANK platform
-    rows (air enters here, crosses the boards, exits the rear-wall vents)."""
-    sl, sw = VENT_SLOT
-    cols, rows = 6, 5
-    gap_y = (PEDAL_ROW1_V + FSW_SLOT_D/2 + PLATFORM_MARGIN +
-             PEDAL_ROW2_V - FSW_SLOT_D/2 - PLATFORM_MARGIN) / 2.0
-    u0, v0 = bw/2 - (cols*(sl+14))/2, gap_y - (rows*VENT_PITCH)/2
-    out = []
-    for r in range(rows):
-        for c in range(cols):
-            out.append({"kind": "rect", "u": u0 + c*(sl+14), "v": v0 + r*VENT_PITCH,
-                        "w": sl, "h": sw, "ref": "VENT", "layer": "VENT"})
-    return out
-
-def _sideheight(y):
-    """Side-wall height at bottom-plate depth y (0..BD), profile A: rises front->peak,
-    drops peak->rear."""
-    bd = D - 2*T
-    if y <= FACE_RUN:
-        return H_FRONT + (H_REAR - H_FRONT) * (y / FACE_RUN)
-    return H_REAR + (REAR_WALL_H - H_REAR) * ((y - FACE_RUN) / (bd - FACE_RUN))
 
 def dxf_base(path):
     """ONE-PIECE BASE developed as a SINGLE flat blank: the bottom plate in the centre,
@@ -985,12 +921,12 @@ def _cut(cq, plate, feats, mapxy):
     return plate
 
 def _faceplate_flat(cq):
-    fp = cq.Workplane("XY").box(FP_V, FP_W, T, centered=False)   # X=v, Y=u
+    fp = cq.Workplane("XY").box(FP_V, LID_W, T, centered=False)  # X=v, Y=u (full-width lid)
     cuts, _ = faceplate_holes()
     for c in cuts:
         if c["kind"] == "rect":
             c["_rx"], c["_ry"] = c["h"], c["w"]
-    return _cut(cq, fp, cuts, lambda u, v: (v, u))
+    return _cut(cq, fp, cuts, lambda u, v: (v, LID_OX + u))
 
 def _rear_flat(cq):
     wall = cq.Workplane("XY").box(W-2*T, REAR_WALL_H, T, centered=False)  # X=u, Y=z
@@ -1004,8 +940,8 @@ def _transition_face(cq):
     """The angled transition shoulder, located in the body: a flat facet from the peak
     line (X=FACE_RUN, Z=H_REAR) raked DOWN to the rear-panel top (X=D, Z=REAR_WALL_H).
     +TRANS_ANGLE so the +X (rearward) end DROPS (matches the side-panel profile)."""
-    box = cq.Workplane("XY").box(TRANS_LEN, FP_W, T, centered=False)   # X along the facet
-    loc = (cq.Location(cq.Vector(FACE_RUN, T, H_REAR))
+    box = cq.Workplane("XY").box(TRANS_LEN, LID_W, T, centered=False)  # X along the facet (FULL width)
+    loc = (cq.Location(cq.Vector(FACE_RUN, (W - LID_W) / 2.0, H_REAR))
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
@@ -1043,7 +979,7 @@ def build_step(write_parts=True):
     addw(side, "side_L")
     addw(side, "side_R", cq.Location(cq.Vector(0, W - T, 0)))
     asm.add(trans, name="transition")
-    fp_loc = (cq.Location(cq.Vector(0, T, H_FRONT))
+    fp_loc = (cq.Location(cq.Vector(0, (W - LID_W) / 2.0, H_FRONT))
               * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), -SLOPE_ANGLE))
     addw(fp, "faceplate", fp_loc)
     # 10 inner platforms under the pedal slots (X = pedal v, Y = pedal u);
@@ -1202,7 +1138,7 @@ def _render_parts(cq, explode=0.0):
     """(shape, rgb) for the lower body + all representative components. Un-mirrored,
     matches the DXF. explode>0 lifts the LID parts (faceplate + screens + encoder/
     ring + LEDs) straight up while the pedals/platforms/body stay -- shows service."""
-    fp_loc = (cq.Location(cq.Vector(0, T, H_FRONT + explode))
+    fp_loc = (cq.Location(cq.Vector(0, (W - LID_W) / 2.0, H_FRONT + explode))
               * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), -SLOPE_ANGLE))
     on_fp = lambda wp: wp.val().moved(fp_loc)
     # brighter, more colourful palette (GLTF export darkens, so keep these light)
@@ -1219,14 +1155,13 @@ def _render_parts(cq, explode=0.0):
     add(on_fp(_faceplate_flat(cq)), FACE)
     # lid folded faces (all lift with the lid): front lip + two side wings (inside the
     # side panels). The rear LAP (folded onto the transition) is placed separately below.
-    for box,pos in (((T,FP_W,LID_FRONT_FL),(0,0,-LID_FRONT_FL)),          # front lip
-                    ((FP_V,T,FLANGE),(0,0,-FLANGE)),                     # left wing
-                    ((FP_V,T,FLANGE),(0,FP_W-T,-FLANGE))):              # right wing
-        add(on_fp(cq.Workplane("XY").box(*box,centered=False).translate(pos)), FACE)
+    add(on_fp(cq.Workplane("XY").box(T, LID_W, LID_FRONT_FL, centered=False)
+              .translate((0, 0, -LID_FRONT_FL))), FACE)               # front lip (full width;
+                                                                      # the lid has NO side wings)
     # rear lap: raked DOWN at the transition angle, resting on the shoulder (lifts with the lid)
     lap_loc = (cq.Location(cq.Vector(FACE_RUN, T, H_REAR + T + explode))
                * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
-    add(cq.Workplane("XY").box(LID_REAR_LAP, FP_W, T, centered=False).val().moved(lap_loc), FACE)
+    add(cq.Workplane("XY").box(LID_REAR_LAP, LID_W, T, centered=False).val().moved(lap_loc), FACE)
     cuts,_=faceplate_holes()
     for label,u,v in PEDALS:
         ph=platform_h(v); add(_platform_solid(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,0))), PLAT)
@@ -1263,8 +1198,9 @@ def _render_parts(cq, explode=0.0):
     for u in FRONT_SCREW_U:                          # Front panel, into the lid front lip
         add(cq.Solid.makeCylinder(3.5,2.5,cq.Vector(0,u+T,H_FRONT-5),cq.Vector(-1,0,0)), SCR)
     nrm = cq.Vector(math.sin(math.radians(TRANS_ANGLE)),0,math.cos(math.radians(TRANS_ANGLE)))  # transition outward normal
-    lapx = FACE_RUN + LID_REAR_LAP*0.5*math.cos(math.radians(TRANS_ANGLE))
-    lapz = H_REAR - LID_REAR_LAP*0.5*math.sin(math.radians(TRANS_ANGLE)) + T
+    # screw station from the seam solver (distance down the facet from the ridge)
+    lapx = FACE_RUN + D_SEAM_SCREW*math.cos(math.radians(TRANS_ANGLE))
+    lapz = H_REAR - D_SEAM_SCREW*math.sin(math.radians(TRANS_ANGLE)) + T
     for f in (0.18,0.5,0.82):                        # rear LAP screws down into the transition PEM
         add(cq.Solid.makeCylinder(3.3,2.8,cq.Vector(lapx,(W-2*T)*f+T,lapz),nrm), SCR)
     return P    # raw geometry (canonical layout is in the schedule); player view = camera choice
