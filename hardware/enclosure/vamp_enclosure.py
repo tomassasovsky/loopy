@@ -117,13 +117,13 @@ SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
 SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 
 # --- LEDs / encoder -----------------------------------------------------------
-# Status indicators = SMD LED strips (WS2812B), NOT through-hole LEDs: ONE
-# pedal-width strip segment per indicator pedal (hardware/led_strip/, 75 mm board,
-# 3 LEDs) stuck to the faceplate UNDERSIDE with VHB tape; a milky PMMA diffuser
-# strip sets into each slot and glows through. Segments daisy-chain pedal-to-pedal
-# with 3 wires (5V/data/GND) on the end pads.
+# Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
+# board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
+# faceplate UNDERSIDE with VHB tape; a small milky PMMA pill diffuser sets into
+# each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
+# (5V/data/GND) on the castellated end pads.
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
-LED_SLOT_W = ASP1_W       # one slot per indicator pedal, exactly the pedal width
+LED_SLOT_W = 15.0         # small pill window per indicator pedal (one 5050 behind it)
 D_ENC     = 7.0      # EC11 encoder bush
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID
@@ -365,10 +365,10 @@ def faceplate_holes():
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
-    # --- LED diffuser slots: ONE pedal-width rounded slot per indicator pedal, on
-    #     the old status-LED centre-line (a 75mm WS2812B segment under each, VHB-taped
-    #     to the faceplate underside; milky PMMA diffuser strip set into the slot).
-    #     Full-round ends: corner r = LED_SLOT_H/2.
+    # --- LED diffuser slots: ONE small pill window per indicator pedal, on the
+    #     old status-LED centre-line (a single-LED WS2812B board under each,
+    #     VHB-taped to the faceplate underside; milky PMMA pill diffuser set into
+    #     the slot). Full-round ends: corner r = LED_SLOT_H/2.
     for label, u, v in PEDALS:
         if not _has_led(label):
             continue

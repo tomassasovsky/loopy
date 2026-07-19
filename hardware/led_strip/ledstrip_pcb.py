@@ -1,13 +1,12 @@
 """loopy LED strip — parametric chainable WS2812B segment PCB.
 
-Generates a **manufacturing package** for one 75 x 8 mm pedal-width LED strip
-segment for the VAMP console: ONE segment per indicator pedal (75 mm = the
-ASP-1 pedal width, matching the faceplate's per-pedal diffuser slots), 3x
-WS2812B 5050 addressable LEDs at 25 mm pitch with per-LED 100nF decoupling,
-castellated half-hole pads on both 8 mm ends. Segments daisy-chain
-pedal-to-pedal with three short wires (5V / data / GND) soldered to the end
-pads — the castellations double as wire pads, and butting two segments
-end-to-end still works for a continuous bar.
+Generates a **manufacturing package** for one 16 x 8 mm single-LED indicator
+puck for the VAMP console: ONE board per indicator pedal (behind the
+faceplate's small pill diffuser slot), 1x WS2812B 5050 addressable LED with
+100nF decoupling, castellated half-hole pads on both 8 mm ends. Boards
+daisy-chain pedal-to-pedal with three short wires (5V / data / GND) soldered
+to the end pads — the castellations double as wire pads, and butting boards
+end-to-end still works if a bar is ever wanted.
 
 Electrical topology (one segment):
 
@@ -62,9 +61,9 @@ KICAD_FP = "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"
 # PARAMETERS — edit here; everything downstream is derived (mm, KiCad y-down)
 # ===========================================================================
 
-N_LEDS = 3  # LEDs per segment (one pedal-width segment per indicator pedal)
-LED_PITCH = 25.0  # LED-to-LED spacing; also preserved if segments are butted
-BOARD_L = N_LEDS * LED_PITCH  # 75.0 = ASP1_W — first/last LED sit PITCH/2 from an edge
+N_LEDS = 1  # ONE LED per board: a small per-pedal indicator puck
+LED_PITCH = 16.0  # board length per LED; also preserved if boards are butted
+BOARD_L = N_LEDS * LED_PITCH  # 16.0 — the LED sits PITCH/2 from each edge
 BOARD_W = 8.0
 CORNER_R = 1.0  # Edge.Cuts corner radius
 CY = BOARD_W / 2  # long-axis centreline: every LED centre sits on it
@@ -110,7 +109,10 @@ TRACK_DATA = 0.4
 TRACK_STUB = 0.6  # pad-to-rail power stubs
 TRACK_CAP = 0.5  # cap-pad-to-rail stubs (cap pad is only 0.95 wide)
 
-STITCH_XS = [20.0, 40.0, 60.0]  # GND rail -> B.Cu pour stitching vias
+# GND rail -> B.Cu pour stitching vias: one per inter-LED gap, ON the rail;
+# a 1-LED puck gets a single stitch beside the cap.
+STITCH_XS = ([LED_PITCH * (i + 1) for i in range(N_LEDS - 1)]
+             if N_LEDS >= 2 else [BOARD_L / 2.0 + 3.0])
 
 SILK_H = 0.8  # min legible silk height (see pcb-layout skill)
 SILK_T = 0.15
@@ -149,10 +151,12 @@ def _check() -> None:
     assert (VIA_Y_DIN - VIA_D / 2) - (2.35 + 0.45) >= 0.25
     assert (5.65 - 0.45) - (VIA_Y_DOUT + VIA_D / 2) >= 0.25
     # Each B.Cu hop diagonal passes the neighbouring LED's via 4.9 mm in from
-    # the hop end; keep >=0.25 mm copper clearance there.
-    hop_dx = LED_PITCH + 4.9
-    passing = (VIA_Y_DOUT - VIA_Y_DIN) * (1 - 4.9 / hop_dx)
-    assert passing >= VIA_D / 2 + TRACK_DATA / 2 + 0.25, passing
+    # the hop end; keep >=0.25 mm copper clearance there. (No hops on a 1-LED
+    # puck -- the check only applies when LEDs chain on-board.)
+    if N_LEDS >= 2:
+        hop_dx = LED_PITCH + 4.9
+        passing = (VIA_Y_DOUT - VIA_Y_DIN) * (1 - 4.9 / hop_dx)
+        assert passing >= VIA_D / 2 + TRACK_DATA / 2 + 0.25, passing
 
 
 # ===========================================================================
@@ -398,14 +402,18 @@ def build() -> pcbnew.BOARD:
     # Title fits the 12 mm corridor between LED2's DIN column and C3's bridge
     # (slightly condensed glyphs: 0.6 wide x 0.8 tall).
     # Title in the first inter-LED gap, arrow in the second (both gap-centred
-    # so they stay clear of LED and cap courtyards at any N/pitch).
-    _silk_text(board, "loopy LED strip v1", LED_PITCH, CY, w=0.6)
-    ax = 2.0 * LED_PITCH
-    _silk_line(board, ax - 4.0, CY, ax + 4.0, CY)
-    _silk_line(board, ax + 2.5, CY - 0.8, ax + 4.0, CY)
-    _silk_line(board, ax + 2.5, CY + 0.8, ax + 4.0, CY)
+    # so they stay clear of LED and cap courtyards at any N/pitch). A 1-LED
+    # puck has no gaps: the end-pad labels are the only silk that fits.
+    if N_LEDS >= 2:
+        _silk_text(board, "loopy LED strip v1", LED_PITCH, CY, w=0.6)
+    if N_LEDS >= 3:
+        ax = 2.0 * LED_PITCH
+        _silk_line(board, ax - 4.0, CY, ax + 4.0, CY)
+        _silk_line(board, ax + 2.5, CY - 0.8, ax + 4.0, CY)
+        _silk_line(board, ax + 2.5, CY + 0.8, ax + 4.0, CY)
     # Castellation labels, both ends: 5V / DI|DO / GND top to bottom.
-    for x, dname in ((3.2, "DI"), (BOARD_L - 3.2, "DO")):
+    lx = 1.8 if BOARD_L < 30 else 3.2   # end labels hug the pads on short pucks
+    for x, dname in ((lx, "DI"), (BOARD_L - lx, "DO")):
         _silk_text(board, "5V", x, CY - CAST_PITCH, h=0.8, w=0.6)
         _silk_text(board, dname, x, CY, h=0.8, w=0.6)
         _silk_text(board, "GND", x, CY + CAST_PITCH, h=0.8, w=0.6)
