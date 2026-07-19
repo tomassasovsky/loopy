@@ -610,14 +610,16 @@ def board_mounts():
 # Returns (centre_u, centre_depth, (u_span, depth_span)) for the 58x49 Pi 4 hole pattern.
 # NOTE the Pi 4's hole pattern is NOT centred on the board: along the 85 mm length the
 # holes sit 3.5/61.5 mm from the SD edge, i.e. the pattern centre is 10 mm SD-ward of the
-# board centre and 52.5 mm from the port edge. centre_depth positions the PATTERN, so the
-# port faces land at centre_depth + 52.5 + ~4 (connector overhang). bd - 52 puts them
-# ~2 mm proud of the rear wall's outer skin -- a normal panel mount -- and keeps the PCB
-# edge clear of the inside-mounted rear sub-panel plate. (bd - 42 seated the PCB itself
-# 8+ mm out through the window and through the sub-panel plane -- unbuildable.)
+# board centre; the PCB port edge is centre_depth + 52.5 and the connector faces ~4 mm
+# beyond that. Depth is bounded by the rear SUB-PANEL, which bolts against the wall's
+# INSIDE face (plate T mm thick): the PCB edge must stop short of that plate -- only the
+# connector bodies pass through its port-block cutout. bd - 56 leaves the PCB edge
+# ~1.4 mm clear of the plate and the connector faces recessed ~1.4 mm inside the wall's
+# outer skin: nothing protrudes past the panel. (bd - 42 put the PCB 8+ mm out through
+# the window; even bd - 52 left the PCB crossing the sub-panel plane.)
 def pi_mount():
     bd = D - 2*T
-    return (REAR_WIN_U, bd - 52.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
+    return (REAR_WIN_U, bd - 56.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
 
 # External Pololu D24V90F5 buck (40.6 x 20.3 mm, 4x M2 at 35.6 x 15.2 mm) — the add-on that
 # makes 5V for the Pi + screens (the in-production board is untouched). Mounted on standoffs
