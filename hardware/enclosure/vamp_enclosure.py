@@ -360,7 +360,7 @@ def faceplate_holes():
         lines = _silk_lines(label)
         if not lines:                                  # tracks carry no silk text
             continue
-        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 9.5 if led else 8.0)  # labelled pills get extra air
+        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 12.0 if led else 8.0)  # labelled pills get extra air
         infos = []                                     # (text, width-factor, displayed width)
         for ln in lines:
             est_w = SILK_H * len(ln) * SILK_CW         # natural width at the common height
@@ -624,6 +624,9 @@ def _doc():
     import ezdxf
     doc = ezdxf.new("R2018", setup=True)
     doc.units = 4  # mm
+    # bold face for printed legends (the overlay shop substitutes their Arial
+    # Bold; the DXF style just names it -- thicker strokes than the default)
+    doc.styles.add("SILKBOLD", font="arialbd.ttf")
     doc.layers.add("CUT", color=7)
     doc.layers.add("BEND", color=4, linetype="DASHED")
     doc.layers.add("ENGRAVE", color=3)
@@ -651,7 +654,10 @@ def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
 def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
     from ezdxf.enums import TextEntityAlignment
     al = TextEntityAlignment.CENTER if halign == "center" else TextEntityAlignment.LEFT
-    msp.add_text(s, height=h, dxfattribs={"layer": layer, "width": wf}).set_placement((x, y), align=al)
+    attrs = {"layer": layer, "width": wf}
+    if layer == "SILK":
+        attrs["style"] = "SILKBOLD"          # legends print BOLD
+    msp.add_text(s, height=h, dxfattribs=attrs).set_placement((x, y), align=al)
 
 def _emit(msp, feats, ox=0.0, oy=0.0):
     for f in feats:

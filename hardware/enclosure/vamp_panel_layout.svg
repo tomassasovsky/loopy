@@ -29,8 +29,8 @@
 <text x="230.1" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">STOP</text>
 <text x="331.3" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
 <text x="432.4" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
-<text x="331.3" y="158.1" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
-<text x="432.4" y="158.1" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
+<text x="331.3" y="155.6" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
+<text x="432.4" y="155.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
 <text x="44" y="526.6" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 90 mm (lowered; transition shoulder carries the lid-lap screws)</text>
 <rect x="44" y="538.6" width="846.0" height="90.0" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
 <rect x="74.0" y="560.6" width="290.0" height="46.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
