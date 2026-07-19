@@ -716,8 +716,9 @@ def dxf_base(path):
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
-    LIPR_R = 3.0                            # lip-bend relief radius (quarter-round
-                                            # scoop at the wall front corners)
+    LIPR_R = 3.0                            # lip-bend relief radius: a cove TANGENT
+                                            # to the top edge AND the front edge
+                                            # (mirrors the lid lip's roll)
     tan_a, tan_th = math.tan(_ra), math.tan(_rth)
     # side-wall wedge top, FRONT segment: ON the lid underside plane, anchored at
     # the front wall outer top corner (solver Z = -DEV90, i.e. flat y = -bdd -- the
@@ -733,7 +734,11 @@ def dxf_base(path):
     # seat plane extended forward until it intersects the lid underside plane
     y_x = ((RIDGE_Y - 2.0 * T / math.cos(_rth) + RIDGE_Z * tan_th
             - H_FRONT - bdd * tan_a) / (tan_a + tan_th))
-    pf = shf_f(LIPR_R)                      # wedge height at the front relief scoop
+    _hyp = math.hypot(1.0, tan_a)
+    h_F = (shf_f(0.0) + tan_a * LIPR_R - LIPR_R * _hyp)   # cove mouth on the front edge
+    y_T = LIPR_R * (1.0 - tan_a / _hyp)                   # tangency depth on the top line
+    h_T = shf_f(y_T)                                      # tangency height (on the line)
+    lb  = math.tan(math.radians(90.0 - SLOPE_ANGLE) / 4.0)  # cove bulge (sweep 90-slope)
     fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
     # the REAR flap is FULL OUTER WIDTH (like the lid): it folds up OUTSIDE the
     # side walls' rear edges and covers the corner seam from the back. The side
@@ -761,11 +766,9 @@ def dxf_base(path):
     bx = h_corner - ft                          # tangent on the rear edge
     outline = [
         (0, -Hf), (BW, -Hf), (BW, 0),                                  # FRONT flap
-        (BW+pf-LIPR_R, 0, -math.tan(math.pi/8)), (BW+pf, LIPR_R),     # lip relief: CONCAVE
-                                                                       # quarter-round centred on
-                                                                       # the corner (a convex arc
-                                                                       # leaves a bump in the lip
-                                                                       # bend's way)
+        (BW+h_F, 0, lb), (BW+h_T, y_T),                               # lip relief cove: tangent
+                                                                       # to the front edge, sweeps
+                                                                       # up to kiss the top line
         (BW+h_x, y_x),                                                 # RIGHT flap: crease onto
         (BW+ax, ay, fb), (BW+bx, y_edge),                              # the flange seat plane,
         (BW, y_edge),                                                  # edge clear of the rear wall
@@ -776,7 +779,7 @@ def dxf_base(path):
         (0, y_edge),                                                   # walls' rear edges
         (-bx, y_edge, fb),                                             # LEFT flap: rear edge,
         (-ax, ay), (-h_x, y_x),                                        # fillet, crease
-        (-pf, LIPR_R, -math.tan(math.pi/8)), (-pf+LIPR_R, 0), (0, 0),  # lip relief (concave)
+        (-h_T, y_T, lb), (-h_F, 0), (0, 0),                           # lip relief cove
     ]
     msp.add_lwpolyline([(pt + (0.0,))[:3] for pt in outline], format="xyb",
                        close=True, dxfattribs={"layer": "CUT"})
