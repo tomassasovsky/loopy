@@ -712,44 +712,68 @@ def dxf_base(path):
     rrel = T + 1.0                          # small bend-relief radius at each corner
     APEXR = 3.0                             # lap-bend relief setback at the wedge apex
     LIPR_D, LIPR_H = 3.0, 2.0               # lip-bend relief at the wall front corners
-    WEDGE_CLR = 0.2                         # flange->wedge-top seating clearance
     tan_a, tan_th = math.tan(_ra), math.tan(_rth)
-    # side-wall wedge top, FRONT segment: ON the lid underside plane (anchored at
-    # the front wall outer top corner; the wedge plate sits bdd behind the fold line)
+    # side-wall wedge top, FRONT segment: ON the lid underside plane, anchored at
+    # the front wall outer top corner (solver Z = -DEV90, i.e. flat y = -bdd -- the
+    # solver frame's origin is the front BEND LINE, same axis as the flat's y)
     shf_f = lambda y: (H_FRONT + (y + bdd) * tan_a) - bdd
-    # REAR segment: under the transition FLANGE underside (two sheets below the lap
-    # outer skin) minus a seating clearance, so the full-width flange rests on it
-    shf_r = lambda y: (RIDGE_Y - ((y + bdd) - RIDGE_Z) * tan_th
-                       - 2.0 * T / math.cos(_rth) - WEDGE_CLR) - bdd
-    y_step = (RIDGE_Z - bdd) - APEXR        # step from lid plane to flange relief,
+    # REAR segment: FLUSH on the transition FLANGE underside (two sheets below the
+    # lap outer skin) so the full-width flange rests on the wedge tops with no gap.
+    # RIDGE_Z is already in the flat-y frame -- adding bdd here drew the whole
+    # segment ~0.87 low (caught by hand-editing the Fusion model).
+    shf_r = lambda y: (RIDGE_Y - (y - RIDGE_Z) * tan_th
+                       - 2.0 * T / math.cos(_rth)) - bdd
+    y_step = RIDGE_Z - APEXR                # step from lid plane to flange seat,
                                             # set back from the lid's ridge knuckle
     pf = shf_f(LIPR_D)                      # wedge height at the front relief notch
-    h1, h1r, hbd = shf_f(y_step), shf_r(y_step), shf_r(BD)
     fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
+    # the side flap's REAR EDGE laps 2mm over the rear wall's cut edge (out to the
+    # rear wall OUTER plane) so the corner butt seam is hidden from the side; above
+    # the lap the edge sits on the rear fold's outer tangent plane (BD - 0.089)
+    y_lap  = BD + DEV90                     # rear-lap edge (rear wall outer plane)
+    WING_ROOT = 2.3                         # wing root relief past the transition
+                                            # hinge: clears the fold band (BA/2 =
+                                            # 1.52) -- beyond the web there is no
+                                            # wall for the band to wrap
+    CORNER_R = 2.0                          # fillet where the wedge top meets it
+    EXT_H0 = 3.0                            # lap starts above the floor-fold arc
+    h1, h1r = shf_f(y_step), shf_r(y_step)
+    h_corner = shf_r(y_lap)                 # wedge top at the lapped rear edge
 
     # ---- one closed outer CUT contour (CCW): bottom + 4 fold-up flaps; the side flaps
     #      run the full edge and BUTT the front/rear flaps at the corners. The rear
     #      flap's FLANGE section is FULL OUTER WIDTH (steps out at the hinge) so it
     #      seats on the side-wall wedge tops; the wedge tops carry bend-radius
     #      reliefs for the lid's lip and lap folds (issue #237). --------------------
+    turn = math.radians(90.0 - TRANS_ANGLE)     # corner turn: wedge top -> lap edge
+    ft = CORNER_R * math.tan(turn / 2.0)        # fillet tangent setback
+    fb = -math.tan(turn / 4.0)                  # fillet bulge (clockwise arc)
+    ax = h_corner + ft * math.sin(_rth)         # tangent on the wedge-top slope
+    ay = y_lap - ft * math.cos(_rth)
+    bx = h_corner - ft                          # tangent on the lap edge
     outline = [
         (0, -Hf), (BW, -Hf), (BW, 0),                                  # FRONT flap
         (BW+pf-LIPR_H, 0), (BW+pf-LIPR_H, LIPR_D), (BW+pf, LIPR_D),    # lip-bend relief notch
-        (BW+h1, y_step), (BW+h1r, y_step), (BW+hbd, BD),               # RIGHT flap (wedge, relieved rear)
-        (BW, BD),
-        (BW, BD+Hr), (BW+fext, BD+Hr), (BW+fext, BD+Hr+Ht),            # REAR flap: wall, then
-        (-fext, BD+Hr+Ht), (-fext, BD+Hr), (0, BD+Hr),                 # full-width flange step
-        (0, BD),
-        (-hbd, BD), (-h1r, y_step), (-h1, y_step),                     # LEFT flap (wedge, relieved rear)
+        (BW+h1, y_step), (BW+h1r, y_step),                             # RIGHT flap: apex step,
+        (BW+ax, ay, fb), (BW+bx, y_lap),                               # wedge top ON the flange
+        (BW+EXT_H0, y_lap), (BW+EXT_H0, BD), (BW, BD),                 # underside, rear-edge lap
+        (BW, BD+Hr+WING_ROOT), (BW+fext, BD+Hr+WING_ROOT),             # REAR flap: wall; wings
+        (BW+fext, BD+Hr+Ht),                                           # start a ROOT RELIEF past
+        (-fext, BD+Hr+Ht),                                             # the hinge band (the wing's
+        (-fext, BD+Hr+WING_ROOT), (0, BD+Hr+WING_ROOT),                # unsupported half-knuckle
+        (0, BD),                                                       # cannot fold)
+        (-EXT_H0, BD), (-EXT_H0, y_lap), (-bx, y_lap, fb),             # LEFT flap: rear-edge lap,
+        (-ax, ay), (-h1r, y_step), (-h1, y_step),                      # fillet, wedge top
         (-pf, LIPR_D), (-pf+LIPR_H, LIPR_D), (-pf+LIPR_H, 0), (0, 0),  # lip-bend relief notch
     ]
-    _poly(msp, outline, "CUT")
+    msp.add_lwpolyline([(pt + (0.0,))[:3] for pt in outline], format="xyb",
+                       close=True, dxfattribs={"layer": "CUT"})
 
     # ---- bend lines: fold UP 90 on the four bottom edges; rear has a 2nd fold ------
     _poly(msp, [(0, 0), (BW, 0)], "BEND", closed=False)                # front
     _poly(msp, [(0, BD), (BW, BD)], "BEND", closed=False)             # rear
-    _poly(msp, [(0, 0), (0, BD)], "BEND", closed=False)               # left
-    _poly(msp, [(BW, 0), (BW, BD)], "BEND", closed=False)             # right
+    _poly(msp, [(0, 0), (0, y_lap)], "BEND", closed=False)            # left (spans the
+    _poly(msp, [(BW, 0), (BW, y_lap)], "BEND", closed=False)          # rear-edge lap too)
     _poly(msp, [(-fext, BD+Hr), (BW+fext, BD+Hr)], "BEND", closed=False)  # rear -> transition (full flange width)
 
     # ---- corner bend-relief holes + WELD-FREE riveted corners ----------------------
