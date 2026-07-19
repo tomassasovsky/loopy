@@ -197,14 +197,50 @@ DEV90 = dev_deduct(90.0)              # = 1.911 for T2/RI2/K0.33 (issue #237: th
 # knuckle bulges (RI+T)(1-cos(fold)) above the flange plane, so a lap reaching
 # the wall physically cannot lie flat (issue #237, validated in Fusion).
 KNUCKLE_CLEAR = 8.5
-LID_REAR_LAP = TRANS_LEN - KNUCKLE_CLEAR     # rear lap: on the flange, clear of the knuckle
 FL   = FLANGE - DEV90                 # flange/wing flat length after bend deduction
-LRL  = LID_REAR_LAP                   # lid rear-lap flat length
 FP_W = W - 2.0 * T                    # control-area width (schedule coordinate frame)
 LID_W = W - 0.2                       # lid blank full outer width: covers the wall tops,
                                       # flush with the side skins (issue #237)
 LID_OX = (LID_W - FP_W) / 2.0         # schedule content offset inside the wider blank
 FP_V = L_SLOPE                        # faceplate length up the slope (control area)
+
+# --- rear-seam development solver (issue #237) --------------------------------
+# Side view of the FOLDED part: Z = depth from the front wall OUTER face,
+# Y = height above the bottom plate OUTER face. Every position is derived from
+# the flats' own developed geometry (bend lines + dev_deduct), NOT from the
+# idealized design polygon -- development shifts the real planes a couple of mm
+# from the polygon, and the seam must close on the planes the flats actually
+# produce.
+_ra, _rth = math.radians(SLOPE_ANGLE), math.radians(TRANS_ANGLE)
+DD_LIP = dev_deduct(90.0 - SLOPE_ANGLE)         # lid front-lip fold (77.5 deg)
+DD_LAP = dev_deduct(SLOPE_ANGLE + TRANS_ANGLE)  # lid rear-lap fold (36.9 deg)
+DD_TR  = dev_deduct(90.0 - TRANS_ANGLE)         # wall -> flange fold (65.6 deg)
+_bd  = D - 2.0 * T                              # bottom plate flat depth (= BD)
+# lid front mold corner (lip outer face x lid outer skin), lip hugging the wall:
+_cfy = H_FRONT - T * math.tan(_ra) + T / math.cos(_ra)
+_cfz = -DEV90 - T
+_mtop   = FP_V + DD_LIP + DD_LAP                # lid top-plate mold length
+RIDGE_Z = _cfz + _mtop * math.cos(_ra)          # lid rear mold corner (the ridge)
+RIDGE_Y = _cfy + _mtop * math.sin(_ra)
+_zw  = _bd + DEV90                              # rear wall OUTER plane depth
+_y90 = RIDGE_Y - (_zw - RIDGE_Z) * math.tan(_rth)   # lap outer  x  wall outer
+YC_TRANS = _y90 - T / math.cos(_rth)            # transition OUTSIDE mold corner: the
+                                                # flange outer sits ONE SHEET below
+                                                # the lap outer so the lap rests ON it
+HR_FLAT = YC_TRANS - DEV90 - DD_TR              # rear wall web, developed flat
+HT_FLAT = TRANS_LEN - DD_TR                     # transition flange, developed flat
+# along-facet axis d: from the ridge mold corner DOWN the lap/flange facet
+D_WALL    = (_zw - RIDGE_Z) * math.cos(_rth) + (RIDGE_Y - YC_TRANS) * math.sin(_rth)
+D_FL_TIP  = D_WALL - (HT_FLAT - DD_TR)          # flange tip (stops short of the ridge)
+D_LAP_TIP = D_WALL - KNUCKLE_CLEAR              # lap tip: clear of the wall knuckle
+# screw row: centred on the lap/flange overlap, pushed down-facet if needed so
+# the PEM keeps its edge distance from the flange tip
+D_SEAM_SCREW = max((D_FL_TIP + D_LAP_TIP) / 2.0, D_FL_TIP + PEM_EDGE)
+LID_REAR_LAP = DD_LAP + D_LAP_TIP               # lap developed flat length
+LRL = LID_REAR_LAP
+SEAM_M4_V  = LID_FRONT_FL + FP_V + DD_LAP + D_SEAM_SCREW   # lap M4 row (lid flat v)
+SEAM_PEM_V = HR_FLAT + DD_TR + (D_WALL - D_SEAM_SCREW)     # flange PEM row (base flat,
+                                                           # from the rear wall bend line)
 
 def lid_top_z(v):
     """Z of the Top-plate surface at control-area depth v (0..FACE_RUN)."""
@@ -612,7 +648,7 @@ def dxf_faceplate(path):
     for u in FRONT_SCREW_U:
         _circle(msp, ox + u, ffl/2.0, D_M4)                                # front lip -> front wall (horizontal)
     for u in (PW*0.18, PW*0.5, PW*0.82):
-        _circle(msp, ox + u, yr0 + rl/2.0, D_M4)                          # rear lap -> transition (aligned with the flange PEM row)
+        _circle(msp, ox + u, SEAM_M4_V, D_M4)                             # rear lap -> transition (concentric with the flange PEM row)
     _text(msp, 10, yr1+8, 8, f"VAMP LID  2.0mm  x1  top plate + front lip + rear lap (= {180-(SLOPE_ANGLE+TRANS_ANGLE):.0f}deg); rests on the base side walls; no top screws; legends on printed OVERLAY (see vamp_overlay); FOLD with the DRAWN side as the OUTSIDE face (canonical mirror: encoder lands on the player's LEFT)", "NOTE")
     doc.saveas(path)
     return {"blank": (PW, yr1)}
@@ -730,23 +766,26 @@ def dxf_base(path):
     # Exact bend allowance: each flap's flat extent = wall height - the 90-deg bend
     # deduction (T + K*T), so the folded OUTER dimensions come out at nominal.
     bdd = DEV90                              # exact 90-deg development (issue #237)
-    # rear wall is ONE SHEET SHORTER than nominal so the transition flange lands a
-    # sheet below the outer skin and the lid's rear lap can rest ON it (issue #237)
     Hf = H_FRONT - bdd
-    Hr = (REAR_WALL_H - T) - bdd
-    Ht = TRANS_LEN - dev_deduct(90.0 - TRANS_ANGLE)
+    Hr = HR_FLAT                             # rear web from the seam solver: the flange
+    Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
-    pk = FACE_RUN                           # peak depth
-    shf = lambda y: _sideheight(y) - bdd    # side-wall flat height (bend-deducted)
-    pf, pkh = shf(0.0), H_REAR - bdd        # front / peak side heights (front segment)
-    # rear segment of the side-wall top edge sits at the FLANGE UNDERSIDE so the
-    # full-width flange rests on it (lap sheet + flange sheet below the skin):
-    fdrop = T + T / math.cos(math.radians(TRANS_ANGLE))
-    pkh_r = pkh - fdrop
-    pr_r  = (REAR_WALL_H - bdd) - fdrop
-    fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
-    APEXR = 3.0                             # lap-bend relief at the wedge apex
+    APEXR = 3.0                             # lap-bend relief setback at the wedge apex
     LIPR_D, LIPR_H = 3.0, 2.0               # lip-bend relief at the wall front corners
+    WEDGE_CLR = 0.2                         # flange->wedge-top seating clearance
+    tan_a, tan_th = math.tan(_ra), math.tan(_rth)
+    # side-wall wedge top, FRONT segment: ON the lid underside plane (anchored at
+    # the front wall outer top corner; the wedge plate sits bdd behind the fold line)
+    shf_f = lambda y: (H_FRONT + (y + bdd) * tan_a) - bdd
+    # REAR segment: under the transition FLANGE underside (two sheets below the lap
+    # outer skin) minus a seating clearance, so the full-width flange rests on it
+    shf_r = lambda y: (RIDGE_Y - ((y + bdd) - RIDGE_Z) * tan_th
+                       - 2.0 * T / math.cos(_rth) - WEDGE_CLR) - bdd
+    y_step = (RIDGE_Z - bdd) - APEXR        # step from lid plane to flange relief,
+                                            # set back from the lid's ridge knuckle
+    pf = shf_f(LIPR_D)                      # wedge height at the front relief notch
+    h1, h1r, hbd = shf_f(y_step), shf_r(y_step), shf_r(BD)
+    fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
 
     # ---- one closed outer CUT contour (CCW): bottom + 4 fold-up flaps; the side flaps
     #      run the full edge and BUTT the front/rear flaps at the corners. The rear
@@ -756,12 +795,12 @@ def dxf_base(path):
     outline = [
         (0, -Hf), (BW, -Hf), (BW, 0),                                  # FRONT flap
         (BW+pf-LIPR_H, 0), (BW+pf-LIPR_H, LIPR_D), (BW+pf, LIPR_D),    # lip-bend relief notch
-        (BW+pkh, pk-APEXR), (BW+pkh_r, pk-APEXR), (BW+pr_r, BD),       # RIGHT flap (wedge, relieved rear)
+        (BW+h1, y_step), (BW+h1r, y_step), (BW+hbd, BD),               # RIGHT flap (wedge, relieved rear)
         (BW, BD),
         (BW, BD+Hr), (BW+fext, BD+Hr), (BW+fext, BD+Hr+Ht),            # REAR flap: wall, then
         (-fext, BD+Hr+Ht), (-fext, BD+Hr), (0, BD+Hr),                 # full-width flange step
         (0, BD),
-        (-pr_r, BD), (-pkh_r, pk-APEXR), (-pkh, pk-APEXR),             # LEFT flap (wedge, relieved rear)
+        (-hbd, BD), (-h1r, y_step), (-h1, y_step),                     # LEFT flap (wedge, relieved rear)
         (-pf, LIPR_D), (-pf+LIPR_H, LIPR_D), (-pf+LIPR_H, 0), (0, 0),  # lip-bend relief notch
     ]
     _poly(msp, outline, "CUT")
@@ -822,12 +861,13 @@ def dxf_base(path):
         c["v"] = BD + c["v"]                                           # rear z -> depth on the flap
     _emit(msp, io)
     for f in (0.18, 0.5, 0.82):
-        _circle(msp, BW*f, BD + Hr + Ht - LID_REAR_LAP*0.5, PEM_M4)    # lid-lap PEM on the transition
+        _circle(msp, BW*f, BD + SEAM_PEM_V, PEM_M4)                    # lid-lap PEM on the transition
+                                                                       # (concentric with the lap M4s)
 
     _text(msp, 8, BD+Hr+Ht+10, 9,
           f"VAMP BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
           "NOTE")
-    doc.saveas(path); return {"blank": (BW + 2*pkh, BD + Hf + Hr + Ht)}
+    doc.saveas(path); return {"blank": (BW + 2*h1, BD + Hf + Hr + Ht)}
 
 def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
     """Internal L-bracket that joins a vertical corner WITHOUT welding: one leg pop-rivets to
