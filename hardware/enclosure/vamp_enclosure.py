@@ -354,8 +354,9 @@ def faceplate_holes():
                      "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
         led = _has_led(label)   # (slot cutouts below replace the old per-pedal LED holes;
                                 #  the flag still sets the label offset, unchanged)
-        # silkscreen label ABOVE the pedal (rear side); each line sized so its WIDTH spans
-        # ~one pedal (height from the bold char-advance factor ~0.66). u = centred left edge.
+        # silkscreen label ABOVE the pedal (rear side); every line is drawn at
+        # EXACTLY the pill width (LED_SLOT_W) so labels and LED pills read as one
+        # family of bars: common cap height, width factor forces the advance.
         lines = _silk_lines(label)
         if not lines:                                  # tracks carry no silk text
             continue
@@ -363,7 +364,7 @@ def faceplate_holes():
         infos = []                                     # (text, width-factor, displayed width)
         for ln in lines:
             est_w = SILK_H * len(ln) * SILK_CW         # natural width at the common height
-            infos.append((ln, min(1.0, FSW_SLOT_W / est_w), min(est_w, FSW_SLOT_W)))
+            infos.append((ln, LED_SLOT_W / est_w, LED_SLOT_W))
         left_x = u - max(d for _, _, d in infos) / 2.0   # multiline: flush-left, block centred
         for k, (ln, wf, disp_w) in enumerate(infos):
             vpos = v_lbl + (len(lines)-1-k)*(SILK_H*1.15)
