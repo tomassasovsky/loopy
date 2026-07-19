@@ -123,7 +123,7 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
 # (5V/data/GND) on the castellated end pads.
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
-LED_SLOT_W = 15.0         # small pill window per indicator pedal (one 5050 behind it)
+LED_SLOT_W = 45.0         # pill window per indicator pedal (one 5050 diffused behind it)
 D_ENC     = 7.0      # EC11 encoder bush
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID

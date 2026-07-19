@@ -34,6 +34,13 @@ Feed 5V/GND once (six indicator LEDs draw ~360 mA absolute worst case, far
 less in practice). Data enters at DI on the first puck and daisy-chains
 through every LED.
 
+## Buy instead of build
+
+Off-the-shelf single-WS2812B modules (round or square breakout pucks, sold in
+tens for pocket change) are electrically identical — 5V/DIN/GND/DOUT, one
+5050 — and drop into the same slots and wiring. This board exists for a
+cleaner form factor and castellated wire pads; use whichever is at hand.
+
 ## Ordering (JLCPCB)
 
 - 2-layer, 1.6 mm, any colour; the board is 16 x 8 mm — well under the
