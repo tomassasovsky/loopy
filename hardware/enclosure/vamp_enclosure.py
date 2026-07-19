@@ -716,7 +716,6 @@ def dxf_base(path):
     Hr = HR_FLAT                             # rear web from the seam solver: the flange
     Ht = HT_FLAT                             # outer lands ONE SHEET below the lap outer
     rrel = T + 1.0                          # small bend-relief radius at each corner
-    APEXR = 3.0                             # lap-bend relief setback at the wedge apex
     LIPR_R = 3.0                            # lip-bend relief radius (quarter-round
                                             # scoop at the wall front corners)
     tan_a, tan_th = math.tan(_ra), math.tan(_rth)
@@ -730,8 +729,10 @@ def dxf_base(path):
     # segment ~0.87 low (caught by hand-editing the Fusion model).
     shf_r = lambda y: (RIDGE_Y - (y - RIDGE_Z) * tan_th
                        - 2.0 * T / math.cos(_rth)) - bdd
-    y_step = RIDGE_Z - APEXR                # step from lid plane to flange seat,
-                                            # set back from the lid's ridge knuckle
+    # the two top segments meet in a single CREASE (no apex step): the flange
+    # seat plane extended forward until it intersects the lid underside plane
+    y_x = ((RIDGE_Y - 2.0 * T / math.cos(_rth) + RIDGE_Z * tan_th
+            - H_FRONT - bdd * tan_a) / (tan_a + tan_th))
     pf = shf_f(LIPR_R)                      # wedge height at the front relief scoop
     fext  = (LID_W - BW) / 2.0              # flange side extension past the wall webs
     # the REAR flap is FULL OUTER WIDTH (like the lid): it folds up OUTSIDE the
@@ -744,7 +745,7 @@ def dxf_base(path):
     ROOT_REL = 2.6                          # overhang root relief past the rear
                                             # fold band (BA90/2 = 2.09 + margin)
     CORNER_R = 2.0                          # fillet where the wedge top meets it
-    h1, h1r = shf_f(y_step), shf_r(y_step)
+    h_x = shf_f(y_x)                        # crease height (= shf_r(y_x))
     h_corner = shf_r(y_edge)                # wedge top at the rear edge
 
     # ---- one closed outer CUT contour (CCW): bottom + 4 fold-up flaps; the side flaps
@@ -761,8 +762,8 @@ def dxf_base(path):
     outline = [
         (0, -Hf), (BW, -Hf), (BW, 0),                                  # FRONT flap
         (BW+pf-LIPR_R, 0, math.tan(math.pi/8)), (BW+pf, LIPR_R),      # lip relief (round scoop)
-        (BW+h1, y_step), (BW+h1r, y_step),                             # RIGHT flap: apex step,
-        (BW+ax, ay, fb), (BW+bx, y_edge),                              # wedge top ON the flange,
+        (BW+h_x, y_x),                                                 # RIGHT flap: crease onto
+        (BW+ax, ay, fb), (BW+bx, y_edge),                              # the flange seat plane,
         (BW, y_edge),                                                  # edge clear of the rear wall
         (BW, BD+ROOT_REL), (BW+fext, BD+ROOT_REL),                     # REAR flap: FULL OUTER
         (BW+fext, BD+Hr+Ht),                                           # WIDTH from the overhang
@@ -770,7 +771,7 @@ def dxf_base(path):
         (-fext, BD+ROOT_REL), (0, BD+ROOT_REL),                        # fold OUTSIDE the side
         (0, y_edge),                                                   # walls' rear edges
         (-bx, y_edge, fb),                                             # LEFT flap: rear edge,
-        (-ax, ay), (-h1r, y_step), (-h1, y_step),                      # fillet, wedge top
+        (-ax, ay), (-h_x, y_x),                                        # fillet, crease
         (-pf, LIPR_R, math.tan(math.pi/8)), (-pf+LIPR_R, 0), (0, 0),   # lip relief (round scoop)
     ]
     msp.add_lwpolyline([(pt + (0.0,))[:3] for pt in outline], format="xyb",
@@ -838,7 +839,7 @@ def dxf_base(path):
     _text(msp, 8, BD+Hr+Ht+10, 9,
           f"VAMP BASE  2.0mm  x1  bottom + front/rear/sides fold up (bend ded {bdd:.2f}); WELD-FREE: rivet the 4 corners via L-brackets; rear 2nd fold = transition (flange FULL width, seats on the relieved side-wall tops); FOLD with the DRAWN side as the INSIDE face (canonical mirror: encoder lands on the player's LEFT)",
           "NOTE")
-    doc.saveas(path); return {"blank": (BW + 2*h1, BD + Hf + Hr + Ht)}
+    doc.saveas(path); return {"blank": (BW + 2*h_x, BD + Hf + Hr + Ht)}
 
 def dxf_corner_bracket(path, ht, wall_zs, side_zs, tag):
     """Internal L-bracket that joins a vertical corner WITHOUT welding: one leg pop-rivets to
