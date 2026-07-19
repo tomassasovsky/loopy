@@ -229,18 +229,22 @@ YC_TRANS = _y90 - T / math.cos(_rth)            # transition OUTSIDE mold corner
                                                 # the lap outer so the lap rests ON it
 HR_FLAT = YC_TRANS - DEV90 - DD_TR              # rear wall web, developed flat
 HT_FLAT = TRANS_LEN - DD_TR                     # transition flange, developed flat
-# along-facet axis d: from the ridge mold corner DOWN the lap/flange facet
+# along-facet axis d: from the ridge mold corner DOWN the lap/flange facet.
+# A point at flat distance f beyond a bend line lands at facet station f + DD
+# from that bend's mold corner (the straight flap starts sb past the corner but
+# only BA/2 past the line) -- so a target station d needs flat = d - DD.
 D_WALL    = (_zw - RIDGE_Z) * math.cos(_rth) + (RIDGE_Y - YC_TRANS) * math.sin(_rth)
-D_FL_TIP  = D_WALL - (HT_FLAT - DD_TR)          # flange tip (stops short of the ridge)
+D_FL_TIP  = D_WALL - (HT_FLAT + DD_TR)          # flange tip (stops short of the ridge)
 D_LAP_TIP = D_WALL - KNUCKLE_CLEAR              # lap tip: clear of the wall knuckle
 # screw row: centred on the lap/flange overlap, pushed down-facet if needed so
 # the PEM keeps its edge distance from the flange tip
 D_SEAM_SCREW = max((D_FL_TIP + D_LAP_TIP) / 2.0, D_FL_TIP + PEM_EDGE)
-LID_REAR_LAP = DD_LAP + D_LAP_TIP               # lap developed flat length
+LID_REAR_LAP = D_LAP_TIP - DD_LAP               # lap developed flat length
 LRL = LID_REAR_LAP
-SEAM_M4_V  = LID_FRONT_FL + FP_V + DD_LAP + D_SEAM_SCREW   # lap M4 row (lid flat v)
-SEAM_PEM_V = HR_FLAT + DD_TR + (D_WALL - D_SEAM_SCREW)     # flange PEM row (base flat,
-                                                           # from the rear wall bend line)
+SEAM_M4_V  = LID_FRONT_FL + FP_V + (D_SEAM_SCREW - DD_LAP)     # lap M4 row (lid flat v)
+SEAM_PEM_V = HR_FLAT + (D_WALL - D_SEAM_SCREW) - DD_TR         # flange PEM row (base
+                                                               # flat, from the rear
+                                                               # wall bend line)
 
 def lid_top_z(v):
     """Z of the Top-plate surface at control-area depth v (0..FACE_RUN)."""
