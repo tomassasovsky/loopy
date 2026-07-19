@@ -141,3 +141,5 @@ hardware/kicad/fp-info-cache
 hardware/kicad/gerbers/
 hardware/kicad/*.gbr
 hardware/kicad/*.gbrjob
+__pycache__/
+*.lck

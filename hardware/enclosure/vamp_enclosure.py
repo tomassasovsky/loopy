@@ -4,7 +4,8 @@ Generates a **manufacturing package** for a wedge-shaped floor console modelled 
 the "Chewie II" / Sonnit reference (850 x 465 x 100 mm, top sloping toward the
 player), housing this repo's standalone build: a Raspberry Pi 4/5 running loopy,
 the loopy_pi_main board, ten foot pedals, the EC11 encoder + diffused LED ring,
-through-hole indicator LEDs and a 7" + 16" touchscreen pair. Branded **VAMP**.
+SMD LED-strip status indicators (WS2812B segments behind diffuser slots) and a
+7" + 16" touchscreen pair. Branded **VAMP**.
 
 Construction (see ../loopy_vamp_enclosure_design.md and
 ../../docs/plan/2026-06-27-feat-vamp-enclosure-rework-plan.md):
@@ -116,8 +117,13 @@ SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
 SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 
 # --- LEDs / encoder -----------------------------------------------------------
-D_LED     = 5.1      # 5 mm through-hole LED (cabled)
-D_LEDBZ   = 8.0      # 5 mm LED + chrome bezel (power / mode)
+# Status indicators = SMD LED strips (WS2812B), NOT through-hole LEDs: ONE
+# pedal-width strip segment per indicator pedal (hardware/led_strip/, 75 mm board,
+# 3 LEDs) stuck to the faceplate UNDERSIDE with VHB tape; a milky PMMA diffuser
+# strip sets into each slot and glows through. Segments daisy-chain pedal-to-pedal
+# with 3 wires (5V/data/GND) on the end pads.
+LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
+LED_SLOT_W = ASP1_W       # one slot per indicator pedal, exactly the pedal width
 D_ENC     = 7.0      # EC11 encoder bush
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID
@@ -340,10 +346,8 @@ def faceplate_holes():
     for label, u, v in PEDALS:
         cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2, "v": v - FSW_SLOT_D/2,
                      "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
-        led = _has_led(label)
-        if led:
-            cuts.append({"kind": "circle", "u": u, "v": v + FSW_SLOT_D/2 + LED_GAP,
-                         "d": D_LED, "ref": label + "_LED"})
+        led = _has_led(label)   # (slot cutouts below replace the old per-pedal LED holes;
+                                #  the flag still sets the label offset, unchanged)
         # silkscreen label ABOVE the pedal (rear side); each line sized so its WIDTH spans
         # ~one pedal (height from the bold char-advance factor ~0.66). u = centred left edge.
         lines = _silk_lines(label)
@@ -361,6 +365,17 @@ def faceplate_holes():
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
+    # --- LED diffuser slots: ONE pedal-width rounded slot per indicator pedal, on
+    #     the old status-LED centre-line (a 75mm WS2812B segment under each, VHB-taped
+    #     to the faceplate underside; milky PMMA diffuser strip set into the slot).
+    #     Full-round ends: corner r = LED_SLOT_H/2.
+    for label, u, v in PEDALS:
+        if not _has_led(label):
+            continue
+        vc = v + FSW_SLOT_D/2 + LED_GAP              # same centre-line the LED holes used
+        cuts.append({"kind": "rect", "u": u - LED_SLOT_W/2, "v": vc - LED_SLOT_H/2,
+                     "w": LED_SLOT_W, "h": LED_SLOT_H, "r": LED_SLOT_H/2,
+                     "ref": label + "_LEDSLOT"})
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
     cuts.append({"kind": "rect", "u": COL_U - SMALL_W/2.0, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
     s16_uc = (_row1_u(4) + _row1_u(7)) / 2.0    # centre over the 4 track pedals (row-1 right group)
