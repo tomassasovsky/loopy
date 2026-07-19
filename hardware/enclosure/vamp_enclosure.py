@@ -761,7 +761,11 @@ def dxf_base(path):
     bx = h_corner - ft                          # tangent on the rear edge
     outline = [
         (0, -Hf), (BW, -Hf), (BW, 0),                                  # FRONT flap
-        (BW+pf-LIPR_R, 0, math.tan(math.pi/8)), (BW+pf, LIPR_R),      # lip relief (round scoop)
+        (BW+pf-LIPR_R, 0, -math.tan(math.pi/8)), (BW+pf, LIPR_R),     # lip relief: CONCAVE
+                                                                       # quarter-round centred on
+                                                                       # the corner (a convex arc
+                                                                       # leaves a bump in the lip
+                                                                       # bend's way)
         (BW+h_x, y_x),                                                 # RIGHT flap: crease onto
         (BW+ax, ay, fb), (BW+bx, y_edge),                              # the flange seat plane,
         (BW, y_edge),                                                  # edge clear of the rear wall
@@ -772,7 +776,7 @@ def dxf_base(path):
         (0, y_edge),                                                   # walls' rear edges
         (-bx, y_edge, fb),                                             # LEFT flap: rear edge,
         (-ax, ay), (-h_x, y_x),                                        # fillet, crease
-        (-pf, LIPR_R, math.tan(math.pi/8)), (-pf+LIPR_R, 0), (0, 0),   # lip relief (round scoop)
+        (-pf, LIPR_R, -math.tan(math.pi/8)), (-pf+LIPR_R, 0), (0, 0),  # lip relief (concave)
     ]
     msp.add_lwpolyline([(pt + (0.0,))[:3] for pt in outline], format="xyb",
                        close=True, dxfattribs={"layer": "CUT"})
