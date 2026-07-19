@@ -153,7 +153,9 @@ REAR_WIN_U = 175.0                        # window centre u; REAR_WIN_Z set belo
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
 VENT_PITCH  = 8.0             # slot row pitch (web = pitch - slot = 4mm = 2T)
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
-STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
+STANDOFF_H  = 15.0            # under-board gap: the THT leads + buck-module header pins
+                              # hang ~4.5mm below the PCB, so 10mm left ~5mm of real
+                              # airflow; 15mm (standard M3 brass) restores the margin
 PI_RISER_H  = 33.0            # Pi build: risers lift the Pi so its rear port stack meets the (centred) window
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # Main board = the manufactured V1 THT Pro Micro board (the loopy_pedal_main THT design,
