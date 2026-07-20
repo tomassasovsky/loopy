@@ -95,9 +95,10 @@ EMP = DED90 / 2.0                         # ~1.9 mm
 BWALL_X = 32.0                            # side wall folds: skirt/wall gap
                                           # 1.5 = washer 1.0 + 0.5 float
 BWALL_Y = 44.0                            # front/rear folds (planes ~+-45.9)
-H_FRONT = 18.0                            # front wall: taped down-stop
-H_SIDE = 17.0                             # side walls: hinge pivots
-H_REAR = 16.0                             # rear wall: wire exit
+H_FRONT = 18.0                            # all walls equal height (clean);
+H_SIDE = 18.0                             # only the FRONT one gets the tape
+H_REAR = 18.0                             # (down-stop) -- sides/rear stay
+                                          # ~1mm clear through the stroke
 PIN_Y, PIN_Z = 40.0, 8.0                  # hinge pivot centre: low enough
                                           # that the screw head (O7.5 x 3.2)
                                           # passes UNDER the faceplate edge
@@ -135,36 +136,63 @@ def _circle(msp, x, y, dia, layer="CUT"):
     msp.add_circle((x, y), dia / 2.0, dxfattribs={"layer": layer})
 
 
-def _tray(msp, fx, fy, dev_side, dev_front, dev_rear, side_step=None):
-    """Shared tray outline: full-span folds meeting in O6 corner reliefs
-    (the proven enclosure pattern), kerf-trimmed front/rear flaps.
-    side_step=(sy0, sy1, extra): the side flaps run `extra` deeper over
-    that y-range (the plate's hinge zone)."""
+OV = None  # set below: side-flap wing = EMP + T (lands flush with the
+           # neighbouring wall's outer face -> LAPPED corner, no punched
+           # relief circles, no missing corner)
+
+
+def _tray(msp, fx, fy, dev_side, dev_front, dev_rear, side_step=None,
+          rear_notch=None):
+    """Shared tray outline, lapped-corner scheme: the SIDE flaps carry
+    2.9 mm wings past the front/rear fold lines so their folded edges
+    close the corners; front/rear flaps run kerf-trimmed between them.
+    Fold-line ends land on kerf-relieved outline edges (the condition the
+    fold validator accepts) -- no corner circles.
+    side_step=(sy0, sy1, extra): side flaps run `extra` deeper over that
+    y-range (the plate's hinge zone).
+    rear_notch=(half_w, depth): cable notch cut into the rear flap tip."""
     L, R = -fx, fx
     y0, y1 = -fy, fy
     K = 0.15
+    ov = EMP + T
 
     def side(xs, sgn):
+        lo, hi = y0 - ov, y1 + ov
         if not side_step:
-            return [(xs + sgn * dev_side, y0), (xs + sgn * dev_side, y1)]
+            return [(xs + sgn * dev_side, lo), (xs + sgn * dev_side, hi)]
         sy0, sy1, ex = side_step
-        return [(xs + sgn * dev_side, y0), (xs + sgn * dev_side, sy0),
+        return [(xs + sgn * dev_side, lo), (xs + sgn * dev_side, sy0),
                 (xs + sgn * (dev_side + ex), sy0),
                 (xs + sgn * (dev_side + ex), sy1),
-                (xs + sgn * dev_side, sy1), (xs + sgn * dev_side, y1)]
+                (xs + sgn * dev_side, sy1), (xs + sgn * dev_side, hi)]
 
-    pts = ([(L + K, y0), (L + K, y0 - dev_front), (R - K, y0 - dev_front),
-            (R - K, y0), (R, y0)] + side(R, +1) +
-           [(R, y1), (R - K, y1), (R - K, y1 + dev_rear),
-            (L + K, y1 + dev_rear), (L + K, y1), (L, y1)] +
+    # NW x NR corner notches at the short flaps' fold-line ends stand in
+    # for the old O6 relief circles: NR ~ the bend band, so the folded
+    # wall only loses ~0.3 mm of visible edge -- clean corners
+    NW, NR = 3.5, 5.5
+
+    tip = [(R - K, y1 + dev_rear)]
+    if rear_notch:
+        nw, nd = rear_notch
+        tip += [(nw, y1 + dev_rear), (nw, y1 + dev_rear - nd),
+                (-nw, y1 + dev_rear - nd), (-nw, y1 + dev_rear)]
+    tip += [(L + K, y1 + dev_rear)]
+    rear = ([(R - K - NW, y1), (R - K - NW, y1 + NR), (R - K, y1 + NR)]
+            + tip + [(L + K, y1 + NR), (L + K + NW, y1 + NR),
+                     (L + K + NW, y1)])
+
+    front = ([(L + K + NW, y0), (L + K + NW, y0 - NR), (L + K, y0 - NR),
+              (L + K, y0 - dev_front), (R - K, y0 - dev_front),
+              (R - K, y0 - NR), (R - K - NW, y0 - NR), (R - K - NW, y0)])
+
+    pts = (front + [(R, y0)] + side(R, +1) +
+           [(R, y1)] + rear + [(L, y1)] +
            list(reversed(side(L, -1))) + [(L, y0)])
     _poly(msp, pts, "CUT")
     for x in (L, R):
-        _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)
-    _poly(msp, [(L + K, y0), (R - K, y0)], "BEND", closed=False)
-    _poly(msp, [(L + K, y1), (R - K, y1)], "BEND", closed=False)
-    for cx, cy in ((L, y0), (R, y0), (L, y1), (R, y1)):
-        _circle(msp, cx, cy, 6.0)
+        _poly(msp, [(x, y0 - ov), (x, y1 + ov)], "BEND", closed=False)
+    _poly(msp, [(L + K + NW, y0), (R - K - NW, y0)], "BEND", closed=False)
+    _poly(msp, [(L + K + NW, y1), (R - K - NW, y1)], "BEND", closed=False)
 
 
 def dxf_base(path):
@@ -200,12 +228,14 @@ def dxf_plate(path):
     dev_r = (PED_H - REAR_BOT) - EMP                      # rear: bottom z 1
     step = (PED_H - HINGE_BOT) - EMP - dev                # hinge-zone step
     _tray(msp, TREAD_W / 2.0, TREAD_D / 2.0, dev, dev, dev_r,
-          side_step=(HINGE_Y[0], HINGE_Y[1], step))
+          side_step=(HINGE_Y[0], HINGE_Y[1], step),
+          rear_notch=(6.0, (15.0 - REAR_BOT)))          # cable notch to z15
     bore_off = (PED_H - PIN_Z) - EMP                      # bore: z = PIN_Z
     for sx in (-1, 1):
         _circle(msp, sx * (TREAD_W / 2.0 + bore_off), PIN_Y, PIN_SKIRT_D)
     msp.add_text("VAMP PEDAL PLATE v4  2.0mm  x10  inverted tray: 4 skirts "
-                 "DOWN 90, they wrap OUTSIDE the base walls (clamshell); "
+                 "DOWN 90, they wrap OUTSIDE the base walls (clamshell, "
+                 "lapped corners); cable notch in the rear skirt; "
                  "asp1_pad glues on top (hides the M4 nyloc + washer)",
                  dxfattribs={"layer": "NOTE", "height": 5}).set_placement(
                  (-TREAD_W / 2.0 - dev, TREAD_D / 2.0 + dev + 6))
@@ -287,6 +317,11 @@ def checks():
     # side/rear walls never touch the descending treadle
     assert under - travel * (PIN_Y + BWALL_Y) / hinge_arm > H_SIDE + 1.0, \
         "side walls in the travel path"
+    assert H_FRONT == H_SIDE == H_REAR, "walls should be uniform (clean look)"
+    # cable notch: wire hole passes through it; bearing edges remain
+    assert 15.0 >= WIRE_Z + 3.0 + 1.0, "cable notch below the wire hole"
+    assert (TREAD_W / 2.0 - 0.15) - 6.0 >= 20.0, \
+        "rear-skirt bearing edges too short beside the notch"
     # bore + hole edge margins in the flats
     dev = (PED_H - SKIRT_BOT) - EMP
     bore_off = (PED_H - PIN_Z) - EMP
