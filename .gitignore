@@ -143,3 +143,4 @@ hardware/kicad/*.gbr
 hardware/kicad/*.gbrjob
 __pycache__/
 *.lck
+hardware/enclosure/out/vamp_sheetmetal/
