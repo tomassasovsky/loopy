@@ -98,8 +98,9 @@ LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to
 # Measure a real ASP-1 before cutting metal. Mounted 75 across the panel (u),
 # 100 front-to-back (v), 25 body height into -Z.
 ASP1_W, ASP1_D, ASP1_H = 75.0, 100.0, 25.0    # pedal footprint W(u) x D(v) x H(z)
-FSW_SLOT_W = ASP1_W + 3.0     # slot clearance around the foot-plate (u)
-FSW_SLOT_D = ASP1_D + 3.0     # slot clearance (v)
+FSW_SLOT_W = ASP1_W + 5.0     # slot clears the clamshell skirts, which overhang
+                              # the nominal footprint ~0.9/side (silent_pedal v4)
+FSW_SLOT_D = ASP1_D + 5.0     # slot clearance (v), same clamshell overhang
 FSW_V      = 80.0             # front-row centre line (v)
 FSW_PITCH  = 80.0             # centre-to-centre across the row
 FOOTPLATE_PROUD = 10.0        # foot-plate stands this far above the sloped top (so the
@@ -114,7 +115,8 @@ INSERT_PILOT_D  = 4.0         # heat-set pilot bore
 INSERT_DEPTH    = 6.4         # pilot depth (5.7 insert + melt allowance)
 PLAT_WALL       = 3.0         # printed perimeter wall
 PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
-ASP1_MOUNT      = (55.0, 80.0)  # ASP-1 base-screw rectangle (W x D) -- PROVISIONAL until measured
+ASP1_MOUNT      = (52.0, 72.0)  # silent-pedal base-screw rectangle (W x D) --
+                                # design-controlled, pulled clear of the pedal's bend bands
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
 BIG_BEZEL  = (360.0, 224.0)   # 15.6" no-shell capacitive panel outline (glass edge-to-edge)
@@ -1038,13 +1040,14 @@ def _platform_printed(cq, ph):
             body = body.cut(cq.Workplane("XY").cylinder(
                 pil, INSERT_PILOT_D/2,
                 centered=(True, True, False)).translate((dx, dy, h - pil)))
-    # silent-pedal M4 retention screw (silent_pedal.py SPRING_XY): button
-    # head recessed under the pedal base, 38mm toward the console front --
-    # the hole orients the otherwise-symmetric pedestal
-    body = body.cut(cq.Workplane("XY").cylinder(
-        3.0, 4.5, centered=(True, True, False)).translate((-38.0, 0, h - 3.0)))
-    body = body.cut(cq.Workplane("XY").cylinder(
-        h, 2.25, centered=(True, True, False)).translate((-38.0, 0, 0)))
+    # silent-pedal reliefs in the deck top: the microswitch screws stand
+    # ~1mm proud under the pedal floor -- pocket them (mirrored both ways so
+    # the pedestal stays orientation-free)
+    for dx in (-26.0, 26.0):
+        for dy in (-11.1, 11.1):
+            body = body.cut(cq.Workplane("XY").cylinder(
+                2.0, 2.5, centered=(True, True, False)).translate(
+                (dx, dy, h - 2.0)))
     return body
 
 def build_platform_steps():
