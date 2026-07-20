@@ -16,9 +16,9 @@ Construction = what's inside a commercial sustain/footswitch pedal:
     against a washer so the joint pivots) -- same rivet tooling as the
     console's corner brackets.
   * compression SPRING at the front returns the plate UP.
-  * an M4 limiter screw through the plate's front lip rides in the flange
-    slot; a rubber grommet on its shank meets the slot's top edge at rest
-    (silent up-stop) -- the standard slotted-bracket pedal construction.
+  * up-stop = the FACEPLATE itself: two ears bent out from the skirts ride
+    under the lid on silicone tape -- rest height self-references the lid,
+    so the foot-plate always sits exactly flush+proud as designed.
   * a QUIET MICROSWITCH (Cherry DB3 / ZF D4 class "silent" lever micro,
     2-wire NO) on the floor, pressed near the end of travel -> reads as a
     plain closure on the main board's existing 2-pin JST inputs.
@@ -28,8 +28,8 @@ SILENCE (the requirement that started this):
   * DOWN-stop: the plate's front lip lands on Ø8 silicone bumpons stuck on
     the floor (positions on the ENGRAVE layer) -- plate meets the base's
     borders on rubber, never metal-on-metal.
-  * UP-stop: the limiter grommet (rubber) against the slot top -- the
-    spring return lands on rubber too.
+  * UP-stop: skirt ears + silicone tape against the faceplate underside --
+    the spring return lands on rubber too.
   * spring seats on adhesive silicone dots (marked), greased hinge screw.
 
 ENVELOPE = the console's ASP1_* placeholder (75 x 100 x 25, plate proud
@@ -43,9 +43,9 @@ TUNE (hardware is never the paper ideal):
   * travel   = LIP height vs bumpon stack (add a second bumpon to shorten).
 
 BOM per pedal (x10): quiet lever microswitch, spring, 2x Ø3.2 rivet +
-washer (pivot, set loose), M4x16+nyloc+Ø6 silicone sleeve (limiter),
+washer (pivot, set loose), silicone tape pads on the ears,
 4x M3 x 12 (to pedestal), 4x Ø8 x 2.2 bumpons, JST-XH 2-pin pigtail
-(exits the rear-wall notch, runs under the lid to the board).
+(exits the Ø6 rear-wall hole, runs under the lid to the board).
 
 Run:  ../enclosure/.venv/bin/python silent_pedal.py   -> ./out
 """
@@ -73,15 +73,19 @@ WALL_H = 16.0                             # side wall height (pin at 12)
 WALL_X = 31.0                             # wall fold lines at +-31
 PIN_Y, PIN_Z = 40.0, 12.0                 # hinge pin centre (rear, depth +40)
 PIN_D = 3.4                               # Ø3.2 pivot rivets, loose-set
-REAR_WALL_H = 16.0                        # base rear wall
-WIRE_NOTCH = (8.0, 5.0)                   # w x h, rear wall @ floor line
+REAR_WALL_H = 16.0                        # base rear wall (also 56 wide)
+
+WIRE_HOLE_Z = 9.0                         # Ø6 wire hole; edge stays 4mm clear
+                                          # of the rear fold band
 FLANGE_Y = -49.0                          # flange plane centre (folds at the
                                           # floor front edge; outermost face)
-FLANGE_H, FLANGE_W = 13.5, 60.0           # flange = full-width front wall
-LIM_SLOT = (6.5, 10.0)                    # limiter slot w x h (z 2.5..12.5);
-                                          # M4 wears a Ø6 silicone sleeve
-LIM_Z_REST = 9.5                          # limiter screw axis at rest
-LIM_SLOT_Z0 = 2.5                         # slot bottom above the floor
+FLANGE_H = 13.5                           # front wall height (full-width
+                                          # wing, enclosure-style corners)
+EAR_Y = (-26.0, -14.0)                    # up-stop ear span along the skirt
+EAR_Z = 12.5                              # ear top face; +0.5 silicone tape
+                                          # = lid underside (13.0): the LID
+                                          # is the silent up-stop
+EAR_W = 6.0                               # ear reach beyond the skirt
 SW_HOLES = 22.2                           # microswitch mount pitch (M2.3)
 SW_XY = (0.0, -26.0)
 SPRING_XY = (0.0, -38.0)                  # engrave mark, adhesive spring seat
@@ -97,6 +101,7 @@ BUMP_H = 2.2
 
 def _doc():
     d = ezdxf.new()
+    d.header['$INSUNITS'] = 4          # millimetres (Fusion imports at scale)
     for name, color in (("CUT", 7), ("BEND", 4), ("ENGRAVE", 1), ("NOTE", 3)):
         d.layers.add(name, color=color)
     return d
@@ -116,39 +121,25 @@ def dxf_base(path):
     doc = _doc(); msp = doc.modelspace()
     ww = WALL_H - DED90                    # developed wall width
     fw = FLANGE_H - DED90                  # developed flange width
+    rw = REAR_WALL_H - DED90               # developed rear wall
     L, R = -WALL_X, WALL_X                 # wall fold lines
     y0, y1 = -PED_D / 2.0, PED_D / 2.0
-    fx = FLANGE_W / 2.0
-    pts = [(L, y0), (-fx, y0), (-fx, FLANGE_Y),          # front edge, flange
-           (-fx, FLANGE_Y - fw + (FLANGE_Y - y0)) if False else (-fx, y0 - 0),
-           ]
-    # floor outline with a front flange wing between x=+-fx (fold at FLANGE_Y
-    # is INSIDE the floor; the wing hangs off the front edge y0)
-    rw = REAR_WALL_H - DED90               # developed rear wall
-    nx, nh = WIRE_NOTCH
-    pts = [(L, y0), (-fx, y0), (-fx, y0 - fw), (fx, y0 - fw), (fx, y0),
-           (R, y0), (R + ww, y0), (R + ww, y1), (fx, y1),
-           (fx, y1 + rw), (nx/2, y1 + rw),                 # rear wall wing
-           (nx/2, y1 + rw - (rw - (nh - T))) if False else (nx/2, y1 + rw),
-           (-fx, y1 + rw), (-fx, y1), (L - ww, y1), (L - ww, y0)]
-    # wire notch: cut into the rear wall at the FOLD (floor line)
-    pts = [(L, y0), (-fx, y0), (-fx, y0 - fw), (fx, y0 - fw), (fx, y0),
-           (R, y0), (R + ww, y0), (R + ww, y1), (fx, y1),
-           (fx, y1 + rw), (-fx, y1 + rw), (-fx, y1),
-           (L - ww, y1), (L - ww, y0)]
+    K = 0.15                               # butt-edge kerf (enclosure pattern)
+    # enclosure-pattern cross: FULL-SPAN fold lines meeting at the four
+    # corners, Ø6 relief punched at each intersection, flange/rear wing side
+    # edges kerf-trimmed where they butt the folded side walls
+    pts = [(L + K, y0), (L + K, y0 - fw), (R - K, y0 - fw), (R - K, y0),
+           (R, y0), (R + ww, y0), (R + ww, y1), (R, y1),
+           (R - K, y1), (R - K, y1 + rw), (L + K, y1 + rw), (L + K, y1),
+           (L, y1), (L - ww, y1), (L - ww, y0), (L, y0)]
     _poly(msp, pts, "CUT")
-    _poly(msp, [(nx/2, y1), (nx/2, y1 + nh - T), (-nx/2, y1 + nh - T),
-                (-nx/2, y1)], "CUT", closed=False)          # wire notch slot
     for x in (L, R):
-        _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)      # wall folds
-    _poly(msp, [(-fx, y0), (fx, y0)], "BEND", closed=False)       # flange fold
-    _poly(msp, [(-fx, y1), (-nx/2, y1)], "BEND", closed=False)    # rear fold
-    _poly(msp, [(nx/2, y1), (fx, y1)], "BEND", closed=False)
-    # limiter slot in the flange (z 3..13 -> flat offsets from the fold)
-    sw2, sh = LIM_SLOT[0] / 2.0, LIM_SLOT[1]
-    z0f = LIM_SLOT_Z0 - T
-    _poly(msp, [(-sw2, y0 - z0f), (sw2, y0 - z0f),
-                (sw2, y0 - z0f - sh), (-sw2, y0 - z0f - sh)], "CUT")
+        _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)      # side walls
+    _poly(msp, [(L + K, y0), (R - K, y0)], "BEND", closed=False)  # front wall
+    _poly(msp, [(L + K, y1), (R - K, y1)], "BEND", closed=False)  # rear wall
+    for cx, cy in ((L, y0), (R, y0), (L, y1), (R, y1)):
+        _circle(msp, cx, cy, 6.0)          # corner bend relief (enclosure Ø6)
+    _circle(msp, 0.0, y1 + (WIRE_HOLE_Z - T), 6.0)   # Ø6 wire exit, rear wall
     # hinge pin holes in the walls: distance from fold = PIN_Z - T (outside flat)
     for x in (R + (PIN_Z - T), L - (PIN_Z - T)):
         _circle(msp, x, PIN_Y, PIN_D)
@@ -177,23 +168,36 @@ def dxf_plate(path):
     rsw = 12.0 - DED90                     # rear skirt drop 12
     L, R = -SKIRT_X, SKIRT_X
     y0, y1 = -PLATE_D / 2.0, PLATE_D / 2.0
-    pts = [(L, y0 - lw), (R, y0 - lw), (R, y0),          # front lip
-           (R + sw, y0), (R + sw, y1),                   # right skirt
-           (R, y1), (R - 1.5, y1),                       # miter to rear skirt
-           (R - 1.5, y1 + rsw), (L + 1.5, y1 + rsw),     # rear skirt
-           (L + 1.5, y1), (L, y1),
-           (L - sw, y1), (L - sw, y0), (L, y0)]
+    lx = 33.0                              # lip span (3mm off the skirt bands)
+    rx = 32.5                              # rear skirt span
+    ey0, ey1 = EAR_Y
+    sk_ear = (23.0 - EAR_Z) - DED90        # shorter skirt at the ear segment
+    ear_out = sk_ear + (EAR_W - DED90)     # ear outer edge in the flat
+    pts = [(L, y0), (-lx, y0), (-lx, y0 - lw), (lx, y0 - lw), (lx, y0),
+           (R, y0),
+           (R + sw, y0), (R + sw, ey0),                   # right skirt (front)
+           (R + sk_ear, ey0), (R + ear_out, ey0),         # ear step out
+           (R + ear_out, ey1), (R + sk_ear, ey1),
+           (R + sw, ey1), (R + sw, y1),                   # right skirt (rear)
+           (R, y1), (rx, y1),
+           (rx, y1 + rsw), (-rx, y1 + rsw),               # rear skirt
+           (-rx, y1), (L, y1),
+           (L - sw, y1), (L - sw, ey1),                   # left skirt (rear)
+           (L - sk_ear, ey1), (L - ear_out, ey1),         # ear step out
+           (L - ear_out, ey0), (L - sk_ear, ey0),
+           (L - sw, ey0), (L - sw, y0)]
     _poly(msp, pts, "CUT")
-    _poly(msp, [(L, y0), (R, y0)], "BEND", closed=False)          # lip fold
-    _poly(msp, [(L + 1.5, y1), (R - 1.5, y1)], "BEND", closed=False)  # rear
+    _poly(msp, [(-lx, y0), (lx, y0)], "BEND", closed=False)       # lip fold
+    _poly(msp, [(-rx, y1), (rx, y1)], "BEND", closed=False)       # rear
     for x in (L, R):
         _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)      # skirt folds
+    _poly(msp, [(R + sk_ear, ey0), (R + sk_ear, ey1)], "BEND", closed=False)
+    _poly(msp, [(L - sk_ear, ey0), (L - sk_ear, ey1)], "BEND", closed=False)
     # skirt pin holes: plate underside is at 23; pin at z=12 -> 11 below,
     # hole distance from fold in the flat = 23 - PIN_Z - T
     for x in (R + (23.0 - PIN_Z - T), L - (23.0 - PIN_Z - T)):
         _circle(msp, x, PIN_Y, PIN_D)
-    # limiter screw hole in the front lip (axis at LIM_Z_REST at rest)
-    _circle(msp, 0.0, y0 - (23.0 - LIM_Z_REST - T), 4.5)
+
     msp.add_text("VAMP PEDAL PLATE  2.0mm  x10  skirts+lip DOWN 90; "
                  "asp1_pad glues on top; slides under the base rear tabs",
                  dxfattribs={"layer": "NOTE", "height": 5}).set_placement(
@@ -216,18 +220,16 @@ def build_step():
                                    centered=(True, True, False))
             .translate((sx * (WALL_X + T / 2), 0, 0)))
 
-    flange = (cq.Workplane("XY").box(FLANGE_W, T, FLANGE_H,
+    flange = (cq.Workplane("XY").box(2 * WALL_X - 0.3, T, FLANGE_H,
                                      centered=(True, True, False))
               .translate((0, FLANGE_Y - T / 2, 0)))
-    flange = flange.cut(cq.Workplane("XZ").box(LIM_SLOT[0], LIM_SLOT[1], 10)
-                        .translate((0, FLANGE_Y, LIM_SLOT_Z0 + LIM_SLOT[1] / 2)))
     base = base.union(flange)
-    rear = (cq.Workplane("XY").box(FLANGE_W, T, REAR_WALL_H,
+    rear = (cq.Workplane("XY").box(2 * WALL_X - 0.3, T, REAR_WALL_H,
                                    centered=(True, True, False))
             .translate((0, PED_D / 2 - T / 2, 0)))
-    rear = rear.cut(cq.Workplane("XY").box(WIRE_NOTCH[0], 3 * T, WIRE_NOTCH[1],
-                                           centered=(True, True, False))
-                    .translate((0, PED_D / 2 - T / 2, 0)))
+    rear = rear.cut(cq.Workplane("XZ").cylinder(3 * T, 0.3 * 10,
+                                                centered=True)
+                    .translate((0, PED_D / 2 - T / 2, WIRE_HOLE_Z)))
     base = base.union(rear)
     base = base.cut(cq.Workplane("YZ").cylinder(90, PIN_D / 2, centered=True)
                     .translate((0, PIN_Y, PIN_Z)))
@@ -258,6 +260,12 @@ def build_step():
         cq.Workplane("XY").box(PED_W - 3.0, T, 12.0,
                                centered=(True, True, False))
         .translate((0, PLATE_D / 2 + T / 2, PED_H - T - 12.0)))
+    for sx in (-1, 1):
+        plate = plate.union(
+            cq.Workplane("XY").box(EAR_W, EAR_Y[1] - EAR_Y[0], T,
+                                   centered=(True, True, False))
+            .translate((sx * (SKIRT_X + T / 2 + EAR_W / 2),
+                        (EAR_Y[0] + EAR_Y[1]) / 2, EAR_Z - T)))
     plate = plate.cut(cq.Workplane("YZ").cylinder(90, PIN_D / 2, centered=True)
                       .translate((0, PIN_Y, PIN_Z)))
     pin = (cq.Workplane("YZ").cylinder(6, 3.2, centered=True)
@@ -284,14 +292,11 @@ def checks():
     print("plate width %.1f (slot %.1f) | lip travel %.1f -> toe ~%.1f mm"
           % (plate_w, SLOT_W, travel_lip, toe))
     assert 3.5 <= travel_lip <= 7.0, "travel outside the quiet/positive range"
-    # limiter: Ø6 sleeve on the M4 rides the slot; rest = sleeve at slot top;
-    # the bumpons (down-stop) must engage BEFORE the sleeve hits slot bottom
-    slot_top = LIM_SLOT_Z0 + LIM_SLOT[1]
-    slot_travel = LIM_Z_REST - (LIM_SLOT_Z0 + 3.0)
-    assert abs((slot_top - 3.0) - LIM_Z_REST) < 0.6, "rest axis vs slot top"
-    assert travel_lip <= slot_travel - 0.2, \
-        "bumpons must stop the plate before the slot bottom does"
-    # flange must stay under the faceplate (lid line ~15 above the base floor)
+    # up-stop = the faceplate: ear top + 0.5 tape must meet the lid underside
+    lid_under = 15.0 - 2.0
+    assert abs((EAR_Z + 0.5) - lid_under) < 0.05, "ear/tape vs lid underside"
+    ear_span = 2 * (SKIRT_X + T + EAR_W)
+    assert ear_span > SLOT_W + 2.0, "ears must overlap under the faceplate"
     assert FLANGE_H <= 13.5, "flange pokes through the faceplate slot"
     # closed body: the BASE box (flange + rear wall) is the outer shell; the
     # moving lip / rear skirt planes tuck INSIDE it with >=1mm static gap
