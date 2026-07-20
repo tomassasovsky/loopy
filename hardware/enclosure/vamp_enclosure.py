@@ -98,9 +98,9 @@ LID_SIDE_LIP = 16.0  # inward lip at the bottom of each lid side wall (screws to
 # Measure a real ASP-1 before cutting metal. Mounted 75 across the panel (u),
 # 100 front-to-back (v), 25 body height into -Z.
 ASP1_W, ASP1_D, ASP1_H = 75.0, 100.0, 25.0    # pedal footprint W(u) x D(v) x H(z)
-FSW_SLOT_W = ASP1_W + 5.0     # slot clears the clamshell skirts, which overhang
-                              # the nominal footprint ~0.9/side (silent_pedal v4)
-FSW_SLOT_D = ASP1_D + 5.0     # slot clearance (v), same clamshell overhang
+FSW_SLOT_W = ASP1_W + 4.0     # slot clears the clamshell skirts (1.5mm steel
+                              # pedal, outer 75.1 -> ~1.95mm running gap)
+FSW_SLOT_D = ASP1_D + 4.0     # slot clearance (v), same clamshell overhang
 FSW_V      = 80.0             # front-row centre line (v)
 FSW_PITCH  = 80.0             # centre-to-centre across the row
 FOOTPLATE_PROUD = 10.0        # foot-plate stands this far above the sloped top (so the

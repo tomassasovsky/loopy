@@ -3,8 +3,9 @@
 VAMP silent footswitch v4 -- SHEET METAL CLAMSHELL, sustain-pedal
 construction (Artesia / M-Audio reference).
 
-Two folded 2.0 mm 5052 parts per pedal (x10), same laser+bend process as
-the enclosure (flats ride in vamp_sheetmetal.zip):
+Two folded 1.5 mm CRS STEEL parts per pedal (x10) -- the commercial
+sustain-pedal material; same vendor + powder run as the enclosure, second
+material line-item (flats ride in vamp_sheetmetal.zip):
 
   BASE  : shallow tray, floor + 4 walls UP (enclosure corner pattern).
           Front wall 18 mm = the silicone-taped DOWN-STOP; side walls
@@ -48,7 +49,7 @@ seat; greased shoulder pivots.
 
 ENVELOPE: base 70.8 x 93.8 inside the console's 75 x 100 station; plate
 skirts overhang to 76.8 x 101.8, proud through the faceplate slot
-(FSW_SLOT = footprint + 5 -> 80 x 105, 1.6 mm running clearance).
+(FSW_SLOT = footprint + 4 -> 79 x 104, ~1.95 mm running clearance).
 Mounts 4x M3 into the pedestal inserts (ASP1_MOUNT 55 x 80).
 
 TUNE: spring spec (feel), retention thread depth (rest height), tape
@@ -56,7 +57,8 @@ thickness (down-stop travel), switch lever bend (actuation point).
 
 BOM per pedal (x10): quiet lever microswitch; spring O10 x 25 free ~1.5 N/mm
 (4 mm / ~6 N preload in the 21 mm cavity, solid height < 15);
-2x M4 shoulder screw (O5 x 4) + O5 x 1 washer + PEM CLS-M4 (pivots);
+2x M4 shoulder screw (O5 x 3) + O5 x 1 washer + PEM CLS-M4 (pivots --
+CLS is the steel-sheet series, correct here);
 4x M3 x 6 (pedestal -- the insert pilots are shallow); silicone tape (front wall top + rear deck
 strip); RTV dab (spring seat); O6 grommet optional; JST-XH pigtail.
 
@@ -80,10 +82,10 @@ OUT = os.path.join(HERE, "out")
 PED_W, PED_D, PED_H = 75.0, 100.0, 25.0
 MOUNT_W, MOUNT_D = 52.0, 72.0             # ASP1_MOUNT pedestal inserts
                                           # (pulled clear of the bend bands)
-SLOT_W, SLOT_D = PED_W + 5.0, PED_D + 5.0  # faceplate slot (clamshell)
+SLOT_W, SLOT_D = PED_W + 4.0, PED_D + 4.0  # faceplate slot (clamshell)
 
-T = 2.0
-RI, KF = 2.0, 0.33
+T = 1.5                                   # 1.5mm CRS steel (commercial
+RI, KF = 1.5, 0.44                        # sustain-pedal construction)
 BA90 = math.pi / 2.0 * (RI + KF * T)
 DED90 = 2.0 * (RI + T) - BA90
 # MEASURED fold model (CenterFoldBendLinePosition, verified in Fusion):
@@ -92,14 +94,14 @@ DED90 = 2.0 * (RI + T) - BA90
 EMP = DED90 / 2.0                         # ~1.9 mm
 
 # ---------------------------------------------------------------- base (v4)
-BWALL_X = 32.0                            # side wall folds: skirt/wall gap
+BWALL_X = 32.5                            # side wall folds: skirt/wall gap
                                           # 1.5 = washer 1.0 + 0.5 float
 BWALL_Y = 44.0                            # front/rear folds (planes ~+-45.9)
 H_FRONT = 18.0                            # all walls equal height (clean);
 H_SIDE = 18.0                             # only the FRONT one gets the tape
 H_REAR = 18.0                             # (down-stop) -- sides/rear stay
                                           # ~1mm clear through the stroke
-PIN_Y, PIN_Z = 40.0, 8.0                  # hinge pivot centre: low enough
+PIN_Y, PIN_Z = 39.0, 8.0                  # hinge pivot centre: low enough
                                           # that the screw head (O7.5 x 3.2)
                                           # passes UNDER the faceplate edge
 PIN_WALL_D = 5.4                          # PEM CLS-M4 mounting hole
@@ -108,15 +110,18 @@ SW_HOLES = 22.2                           # microswitch mount pitch (M2.3)
 SW_XY = (0.0, -26.0)
 SPRING_XY = (0.0, -38.0)                  # spring seat / retention screw axis
 WIRE_Z = 11.0                             # wire hole centre height, rear wall
-TAPE_T = 1.0                              # silicone tape thickness
+TAPE_T = 1.5                              # silicone tape thickness
 
 # ---------------------------------------------------------------- plate (v4)
 TREAD_W, TREAD_D = 71.0, 96.0             # treadle = the pad footprint
 SKIRT_BOT = 6.0                           # side/front skirt bottom at rest
+PLATE_CR = 5.0                            # treadle corner radius: skirts
+                                          # pull back to the tangents, the
+                                          # 4 corner gaps get TIG + grind
 HINGE_BOT = 3.5                           # side skirts step lower at the
-HINGE_Y = (34.0, 46.0)                    # hinge zone so the low bore keeps
+HINGE_Y = (34.0, 43.0)                    # hinge zone so the low bore keeps
                                           # its edge margin (rear = no press)
-REAR_BOT = 1.0                            # rear skirt: rests on deck tape --
+REAR_BOT = 1.5                            # rear skirt: rests on deck tape --
                                           # the geometric up-stop/retention
 
 
@@ -136,70 +141,27 @@ def _circle(msp, x, y, dia, layer="CUT"):
     msp.add_circle((x, y), dia / 2.0, dxfattribs={"layer": layer})
 
 
-OV = None  # set below: side-flap wing = EMP + T (lands flush with the
-           # neighbouring wall's outer face -> LAPPED corner, no punched
-           # relief circles, no missing corner)
-
-
-def _tray(msp, fx, fy, dev_side, dev_front, dev_rear, side_step=None,
-          rear_notch=None):
-    """Shared tray outline, lapped-corner scheme: the SIDE flaps carry
-    2.9 mm wings past the front/rear fold lines so their folded edges
-    close the corners; front/rear flaps run kerf-trimmed between them.
-    Fold-line ends land on kerf-relieved outline edges (the condition the
-    fold validator accepts) -- no corner circles.
-    side_step=(sy0, sy1, extra): side flaps run `extra` deeper over that
-    y-range (the plate's hinge zone).
-    rear_notch=(half_w, depth): cable notch cut into the rear flap tip."""
-    L, R = -fx, fx
-    y0, y1 = -fy, fy
-    K = 0.15
-    ov = EMP + T
-
-    def side(xs, sgn):
-        lo, hi = y0 - ov, y1 + ov
-        if not side_step:
-            return [(xs + sgn * dev_side, lo), (xs + sgn * dev_side, hi)]
-        sy0, sy1, ex = side_step
-        return [(xs + sgn * dev_side, lo), (xs + sgn * dev_side, sy0),
-                (xs + sgn * (dev_side + ex), sy0),
-                (xs + sgn * (dev_side + ex), sy1),
-                (xs + sgn * dev_side, sy1), (xs + sgn * dev_side, hi)]
-
-    # NW x NR corner notches at the short flaps' fold-line ends stand in
-    # for the old O6 relief circles: NR ~ the bend band, so the folded
-    # wall only loses ~0.3 mm of visible edge -- clean corners
-    NW, NR = 3.5, 5.5
-
-    tip = [(R - K, y1 + dev_rear)]
-    if rear_notch:
-        nw, nd = rear_notch
-        tip += [(nw, y1 + dev_rear), (nw, y1 + dev_rear - nd),
-                (-nw, y1 + dev_rear - nd), (-nw, y1 + dev_rear)]
-    tip += [(L + K, y1 + dev_rear)]
-    rear = ([(R - K - NW, y1), (R - K - NW, y1 + NR), (R - K, y1 + NR)]
-            + tip + [(L + K, y1 + NR), (L + K + NW, y1 + NR),
-                     (L + K + NW, y1)])
-
-    front = ([(L + K + NW, y0), (L + K + NW, y0 - NR), (L + K, y0 - NR),
-              (L + K, y0 - dev_front), (R - K, y0 - dev_front),
-              (R - K, y0 - NR), (R - K - NW, y0 - NR), (R - K - NW, y0)])
-
-    pts = (front + [(R, y0)] + side(R, +1) +
-           [(R, y1)] + rear + [(L, y1)] +
-           list(reversed(side(L, -1))) + [(L, y0)])
+def dxf_base(path):
+    """Classic notched tray: 4 walls, corners open (they sit below the
+    faceplate inside the console -- invisible). Front/rear flaps inset
+    2.5 from the side fold lines so every fold ends on a free edge well
+    clear of the neighbouring bend band; folded wall ends clear the
+    adjacent wall faces by ~1mm."""
+    doc = _doc(); msp = doc.modelspace()
+    G = 2.5                                # front/rear flap end inset
+    L, R = -BWALL_X, BWALL_X
+    y0, y1 = -BWALL_Y, BWALL_Y
+    dS, dF, dRr = H_SIDE - EMP, H_FRONT - EMP, H_REAR - EMP
+    pts = [(L + G, y0), (L + G, y0 - dF), (R - G, y0 - dF), (R - G, y0),
+           (R, y0), (R + dS, y0), (R + dS, y1), (R, y1),
+           (R - G, y1), (R - G, y1 + dRr), (L + G, y1 + dRr), (L + G, y1),
+           (L, y1), (L - dS, y1), (L - dS, y0), (L, y0)]
     _poly(msp, pts, "CUT")
     for x in (L, R):
-        _poly(msp, [(x, y0 - ov), (x, y1 + ov)], "BEND", closed=False)
-    _poly(msp, [(L + K + NW, y0), (R - K - NW, y0)], "BEND", closed=False)
-    _poly(msp, [(L + K + NW, y1), (R - K - NW, y1)], "BEND", closed=False)
-
-
-def dxf_base(path):
-    doc = _doc(); msp = doc.modelspace()
-    _tray(msp, BWALL_X, BWALL_Y,
-          H_SIDE - EMP, H_FRONT - EMP, H_REAR - EMP)
-    for x in (BWALL_X + (PIN_Z - EMP), -BWALL_X - (PIN_Z - EMP)):
+        _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)
+    _poly(msp, [(L + G, y0), (R - G, y0)], "BEND", closed=False)
+    _poly(msp, [(L + G, y1), (R - G, y1)], "BEND", closed=False)
+    for x in (R + (PIN_Z - EMP), -R - (PIN_Z - EMP)):
         _circle(msp, x, PIN_Y, PIN_WALL_D)                # PEM CLS-M4 holes
     for sx in (-1, 1):
         for sy in (-1, 1):
@@ -211,31 +173,58 @@ def dxf_base(path):
     _poly(msp, [(-BWALL_X + 4, -BWALL_Y - (H_FRONT - EMP) / 2.0),
                 (BWALL_X - 4, -BWALL_Y - (H_FRONT - EMP) / 2.0)],
           "ENGRAVE", closed=False)                        # tape zone
-    msp.add_text("VAMP PEDAL BASE v4  2.0mm  x10  tray: 4 walls UP 90; "
-                 "silicone TAPE full width on the FRONT (18mm) wall top; "
+    msp.add_text("VAMP PEDAL BASE v4  1.5mm CRS STEEL  x10  tray: 4 walls "
+                 "UP 90; silicone TAPE full width on the FRONT wall top; "
                  "PEM CLS-M4 press on the INNER face at the O5.4 holes; "
                  "wire out the rear O6 hole",
                  dxfattribs={"layer": "NOTE", "height": 5}).set_placement(
-                 (-BWALL_X - (H_SIDE - EMP), BWALL_Y + (H_REAR - EMP) + 6))
+                 (-BWALL_X - dS, BWALL_Y + dRr + 6))
     doc.saveas(path)
 
 
 def dxf_plate(path):
+    """WELDED-corner shell: the treadle corners are cut at 45 (C5 weld
+    prep) so every fold line ends on a free edge >=3mm clear of the
+    neighbouring bend band; the four corner openings are TIG-filled
+    (flush at the top too) and ground smooth before powder -> completely
+    seamless corners. Everything else folds as usual."""
     doc = _doc(); msp = doc.modelspace()
     dev = (PED_H - SKIRT_BOT) - EMP                       # skirt: bottom z 6
     # (folded extents measure from the DRAWN top face at z25, not the
     # underside -- the v3 build proved this the hard way)
     dev_r = (PED_H - REAR_BOT) - EMP                      # rear: bottom z 1
     step = (PED_H - HINGE_BOT) - EMP - dev                # hinge-zone step
-    _tray(msp, TREAD_W / 2.0, TREAD_D / 2.0, dev, dev, dev_r,
-          side_step=(HINGE_Y[0], HINGE_Y[1], step),
-          rear_notch=(6.0, (15.0 - REAR_BOT)))          # cable notch to z15
+    W2, D2, CR = TREAD_W / 2.0, TREAD_D / 2.0, PLATE_CR
+    fs, ss = W2 - CR, D2 - CR                             # fold half-spans
+    nw, nd = 6.0, 15.0 - REAR_BOT                         # cable notch
+
+    pts = [(-fs, -D2), (-fs, -D2 - dev), (fs, -D2 - dev), (fs, -D2),
+           (W2, -ss),                                     # 45deg weld prep
+           (W2 + dev, -ss), (W2 + dev, HINGE_Y[0]),
+           (W2 + dev + step, HINGE_Y[0]), (W2 + dev + step, HINGE_Y[1]),
+           (W2 + dev, HINGE_Y[1]), (W2 + dev, ss), (W2, ss),
+           (fs, D2),
+           (fs, D2 + dev_r), (nw, D2 + dev_r), (nw, D2 + dev_r - nd),
+           (-nw, D2 + dev_r - nd), (-nw, D2 + dev_r), (-fs, D2 + dev_r),
+           (-fs, D2),
+           (-W2, ss),
+           (-W2 - dev, ss), (-W2 - dev, HINGE_Y[1]),
+           (-W2 - dev - step, HINGE_Y[1]), (-W2 - dev - step, HINGE_Y[0]),
+           (-W2 - dev, HINGE_Y[0]), (-W2 - dev, -ss), (-W2, -ss),
+           (-fs, -D2)]
+    _poly(msp, pts, "CUT")
+
+    _poly(msp, [(-fs, -D2), (fs, -D2)], "BEND", closed=False)
+    _poly(msp, [(-fs, D2), (fs, D2)], "BEND", closed=False)
+    for sx in (-1, 1):
+        _poly(msp, [(sx * W2, -ss), (sx * W2, ss)], "BEND", closed=False)
     bore_off = (PED_H - PIN_Z) - EMP                      # bore: z = PIN_Z
     for sx in (-1, 1):
         _circle(msp, sx * (TREAD_W / 2.0 + bore_off), PIN_Y, PIN_SKIRT_D)
-    msp.add_text("VAMP PEDAL PLATE v4  2.0mm  x10  inverted tray: 4 skirts "
-                 "DOWN 90, they wrap OUTSIDE the base walls (clamshell, "
-                 "lapped corners); cable notch in the rear skirt; "
+    msp.add_text("VAMP PEDAL PLATE v4  1.5mm CRS STEEL  x10  inverted tray: 4 skirts "
+                 "DOWN 90, wrap OUTSIDE the base walls (clamshell); R5 "
+                 "corners: TIG the 4 corner gaps + grind smooth BEFORE "
+                 "powder (seamless); cable notch in the rear skirt; "
                  "asp1_pad glues on top (hides the M4 nyloc + washer)",
                  dxfattribs={"layer": "NOTE", "height": 5}).set_placement(
                  (-TREAD_W / 2.0 - dev, TREAD_D / 2.0 + dev + 6))
@@ -320,7 +309,7 @@ def checks():
     assert H_FRONT == H_SIDE == H_REAR, "walls should be uniform (clean look)"
     # cable notch: wire hole passes through it; bearing edges remain
     assert 15.0 >= WIRE_Z + 3.0 + 1.0, "cable notch below the wire hole"
-    assert (TREAD_W / 2.0 - 0.15) - 6.0 >= 20.0, \
+    assert (TREAD_W / 2.0 - PLATE_CR) - 6.0 >= 20.0, \
         "rear-skirt bearing edges too short beside the notch"
     # bore + hole edge margins in the flats
     dev = (PED_H - SKIRT_BOT) - EMP
@@ -330,16 +319,21 @@ def checks():
     hinge_dev = (PED_H - HINGE_BOT) - EMP
     assert hinge_dev - bore_off - PIN_SKIRT_D / 2 >= 1.5, \
         "skirt bore too near the stepped edge"
-    assert HINGE_Y[0] < PIN_Y - 4.0 and HINGE_Y[1] > PIN_Y + 4.0, \
+    assert HINGE_Y[0] < PIN_Y - 4.0 and \
+        HINGE_Y[1] >= PIN_Y + PIN_SKIRT_D / 2 + 1.0, \
         "hinge step does not span the bore"
+    assert HINGE_Y[1] <= TREAD_D / 2.0 - PLATE_CR, \
+        "hinge step runs into the corner rounding"
+    # welded-corner validator margins: fold ends vs neighbour bend bands
+    assert PLATE_CR >= BA90 / 2.0 + 2.0, "corner radius under the band+2"
     # step's front end is ahead of the pivot -> it presses DOWN a little
     step_drop = travel * (PIN_Y - HINGE_Y[0]) / hinge_arm
     assert HINGE_BOT - step_drop > 1.0, "hinge step hits the deck pressed"
     assert bore_off - PIN_SKIRT_D / 2 >= 6.0, "skirt bore in the bend band"
     assert H_SIDE - PIN_Z - PIN_WALL_D / 2 >= 1.5, \
         "PEM hole too near wall top"
-    # shoulder stack: skirt 2 + washer 1 + float = shoulder 4
-    assert abs((T + 1.0 + 0.5) - 3.5) < 0.6, "shoulder length mismatch"
+    # shoulder stack: skirt 1.5 + washer 1 + float 0.5 = shoulder 3
+    assert abs((T + 1.0 + 0.5) - 3.0) < 0.3, "shoulder length mismatch"
     assert (WIRE_Z - EMP) - 3.0 >= 6.0, "wire hole in the bend band"
     assert H_REAR - EMP - (WIRE_Z - EMP) - 3.0 >= 1.5, \
         "wire hole too near wall top"

@@ -18,12 +18,14 @@ STEPs incl. the folded assembly).
 | `vamp_rear_panel_pi` | 1 | Rear I/O sub-panel (Pi build). `vamp_rear_panel_nopi` is the alternate build — order one or the other. |
 | `vamp_screen_bracket` | 8 | 4 per screen (16" + 7"). |
 | `vamp_ring_disc` | 1 | Encoder LED-ring centre disc. |
-| `silent_pedal_base` | 10 | Footswitch base tray: 4 walls up 90° (front 18 = taped down-stop, sides 16 = hinge; flats in `silent_pedal/out/`, included in the zip). |
-| `silent_pedal_plate` | 10 | Footswitch top: inverted tray, 4 skirts down 90° — clamshell wraps outside the base. |
+| `silent_pedal_base` | 10 | **1.5 mm CRS steel.** Footswitch base tray: 4 uniform 18 mm walls up 90°, open notched corners (hidden inside the console). Flats in `silent_pedal/out/`, included in the zip. |
+| `silent_pedal_plate` | 10 | **1.5 mm CRS steel.** Footswitch top: inverted tray, 4 skirts down 90°, clamshell wraps outside the base. C5 weld-prep corners: **TIG the 4 corner gaps (fill flush incl. the top) + grind smooth BEFORE powder** — seamless corners. |
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
-on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
-are laser-cut then tapped after bending (called out on the drawing).
+on each drawing) — EXCEPT the two `silent_pedal_*` parts, which are **1.5 mm
+CRS steel** (K 0.44, R1.5), the commercial footswitch material. Finish: black
+powder coat, outside faces, all parts. Front-lip M4 holes are laser-cut then
+tapped after bending (called out on the drawing).
 
 ## 2. 3D printing (FDM)
 
