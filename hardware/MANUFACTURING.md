@@ -18,8 +18,8 @@ STEPs incl. the folded assembly).
 | `vamp_rear_panel_pi` | 1 | Rear I/O sub-panel (Pi build). `vamp_rear_panel_nopi` is the alternate build — order one or the other. |
 | `vamp_screen_bracket` | 8 | 4 per screen (16" + 7"). |
 | `vamp_ring_disc` | 1 | Encoder LED-ring centre disc. |
-| `silent_pedal_base` | 10 | **1.5 mm CRS steel.** Footswitch base tray: 4 uniform 18 mm walls up 90°, open notched corners (hidden inside the console). Flats in `silent_pedal/out/`, included in the zip. |
-| `silent_pedal_plate` | 10 | **1.5 mm CRS steel.** Footswitch top: inverted tray, 4 skirts down 90°, clamshell wraps outside the base. C5 weld-prep corners: **TIG the 4 corner gaps (fill flush incl. the top) + grind smooth BEFORE powder** — seamless corners. |
+| `silent_pedal_base` | 10 | **1.5 mm CRS steel.** Footswitch base tray: 4 uniform 18 mm walls up 90°; front/rear walls fold OVER the side-wall ends (closed corners, same pattern as the `vamp_base` rear corners). Flats in `silent_pedal/out/`, included in the zip. |
+| `silent_pedal_plate` | 10 | **1.5 mm CRS steel.** Footswitch top: inverted tray, 4 skirts down 90°, clamshell wraps outside the base; front/rear skirts fold OVER the side-skirt ends — corners close fold-only, no welds, crossing reliefs hidden inside the bend arcs. |
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
 on each drawing) — EXCEPT the two `silent_pedal_*` parts, which are **1.5 mm
