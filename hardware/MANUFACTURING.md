@@ -23,7 +23,7 @@ Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
 on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
 are laser-cut then tapped after bending (called out on the drawing).
 
-## 2. 3D printing (FDM + resin)
+## 2. 3D printing (FDM)
 
 Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 
@@ -31,8 +31,8 @@ Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 |---|---|---|---|
 | `vamp_platform_front` | 8 | PETG/ASA, ≥40% infill | Pedal pedestal, 104×79×8.6. Heat-set pilots Ø4.0 both faces — use **short M3×3 inserts** (8 per pedestal). |
 | `vamp_platform_mid` | 2 | PETG/ASA, ≥40% infill | Tall (45.9) CLEAR/BANK pedestal, hollow with boss columns — standard **M3×5.7×4.6 inserts** (8 per pedestal). |
-| `vamp_led_diffuser` | 6 | Clear/milky resin | Pill lens, pushes into the faceplate slot from inside. |
-| `vamp_ring_diffuser` | 1 | Clear/milky resin | Annular lens for the encoder LED ring. |
+| `vamp_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. |
+| `vamp_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
 
 Platform top pedal-insert pattern (`ASP1_MOUNT` 55×80) is **PROVISIONAL** until
 a real ASP-1 base is measured — reprint or re-drill if it moves.
