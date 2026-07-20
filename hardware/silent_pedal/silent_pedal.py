@@ -5,12 +5,16 @@ VAMP silent footswitch -- SHEET METAL, conventional pedal construction.
 Two folded 2.0 mm 5052 parts, same process/material as the enclosure (rides
 in the same laser+bend quote package):
 
-  BASE  : floor + two upturned side walls (hinge pin holes) + an upturned
-          FRONT FLANGE with a vertical slot (the travel limiter).
-  PLATE : treadle + two down-turned side skirts (pin holes) + a front lip.
+  BASE  : floor + two side walls + a REAR wall + a full-width FRONT FLANGE
+          with a vertical slot (the travel limiter). Closed on all sides.
+  PLATE : treadle + two side skirts (hinge holes) + front lip + REAR skirt --
+          at rest the pedal reads as a solid closed body, like a commercial
+          unit. Wire exits through a notch at the rear wall's floor line.
 
 Construction = what's inside a commercial sustain/footswitch pedal:
-  * rear HINGE: M3 x 45 screw + nyloc through base walls + plate skirts.
+  * rear HINGE: 2x Ø3.2 semi-tubular/pop RIVETS (one per side, set LOOSE
+    against a washer so the joint pivots) -- same rivet tooling as the
+    console's corner brackets.
   * compression SPRING at the front returns the plate UP.
   * an M4 limiter screw through the plate's front lip rides in the flange
     slot; a rubber grommet on its shank meets the slot's top edge at rest
@@ -38,9 +42,10 @@ TUNE (hardware is never the paper ideal):
   * actuation= microswitch lever bend / shim under the switch. # TUNE
   * travel   = LIP height vs bumpon stack (add a second bumpon to shorten).
 
-BOM per pedal (x10): quiet lever microswitch, spring, M3x45+nyloc (hinge),
-M4x16+nyloc+Ø6 silicone sleeve (limiter), 4x M3 x 12 (to pedestal),
-4x Ø8 x 2.2 bumpons, JST-XH 2-pin pigtail.
+BOM per pedal (x10): quiet lever microswitch, spring, 2x Ø3.2 rivet +
+washer (pivot, set loose), M4x16+nyloc+Ø6 silicone sleeve (limiter),
+4x M3 x 12 (to pedestal), 4x Ø8 x 2.2 bumpons, JST-XH 2-pin pigtail
+(exits the rear-wall notch, runs under the lid to the board).
 
 Run:  ../enclosure/.venv/bin/python silent_pedal.py   -> ./out
 """
@@ -67,9 +72,12 @@ DED90 = 2.0 * (RI + T) - BA90             # 90-deg bend deduction
 WALL_H = 16.0                             # side wall height (pin at 12)
 WALL_X = 31.0                             # wall fold lines at +-31
 PIN_Y, PIN_Z = 40.0, 12.0                 # hinge pin centre (rear, depth +40)
-PIN_D = 3.4                               # M3 screw hinge
-FLANGE_Y = -44.0                          # front limiter flange fold line
-FLANGE_H, FLANGE_W = 13.5, 40.0           # flange height / width (centred)
+PIN_D = 3.4                               # Ø3.2 pivot rivets, loose-set
+REAR_WALL_H = 16.0                        # base rear wall
+WIRE_NOTCH = (8.0, 5.0)                   # w x h, rear wall @ floor line
+FLANGE_Y = -49.0                          # flange plane centre (folds at the
+                                          # floor front edge; outermost face)
+FLANGE_H, FLANGE_W = 13.5, 60.0           # flange = full-width front wall
 LIM_SLOT = (6.5, 10.0)                    # limiter slot w x h (z 2.5..12.5);
                                           # M4 wears a Ø6 silicone sleeve
 LIM_Z_REST = 9.5                          # limiter screw axis at rest
@@ -80,6 +88,8 @@ SPRING_XY = (0.0, -38.0)                  # engrave mark, adhesive spring seat
 BUMP_FLOOR = [(-26.0, -42.0), (26.0, -42.0)]   # under the front lip
 # ---------------------------------------------------------------- plate
 SKIRT_X = 35.5                            # skirt fold lines at +-35.5
+PLATE_D = 90.0                            # treadle depth: lip+rear skirt
+                                          # planes stay inside the 103 slot
 SKIRT_H = 13.0                            # skirt drop; pin hole lands at z=12
 LIP_H = 15.1                              # front lip drop -> ~4 mm toe travel
 BUMP_H = 2.2
@@ -101,9 +111,8 @@ def _circle(msp, x, y, dia, layer="CUT"):
 
 
 def dxf_base(path):
-    """Flat: floor 75 x 100 with two side-wall wings (+ their rear tabs).
-    Wing root = fold line at x=+-31; developed wing width = WALL_H - DED90.
-    The rear TAB folds inward from the wall TOP edge (second 90-deg fold)."""
+    """Flat: floor + side-wall wings + full-width front flange (limiter slot)
+    + rear-wall wing with a wire notch at the fold line."""
     doc = _doc(); msp = doc.modelspace()
     ww = WALL_H - DED90                    # developed wall width
     fw = FLANGE_H - DED90                  # developed flange width
@@ -115,12 +124,26 @@ def dxf_base(path):
            ]
     # floor outline with a front flange wing between x=+-fx (fold at FLANGE_Y
     # is INSIDE the floor; the wing hangs off the front edge y0)
+    rw = REAR_WALL_H - DED90               # developed rear wall
+    nx, nh = WIRE_NOTCH
     pts = [(L, y0), (-fx, y0), (-fx, y0 - fw), (fx, y0 - fw), (fx, y0),
-           (R, y0), (R + ww, y0), (R + ww, y1), (L - ww, y1), (L - ww, y0)]
+           (R, y0), (R + ww, y0), (R + ww, y1), (fx, y1),
+           (fx, y1 + rw), (nx/2, y1 + rw),                 # rear wall wing
+           (nx/2, y1 + rw - (rw - (nh - T))) if False else (nx/2, y1 + rw),
+           (-fx, y1 + rw), (-fx, y1), (L - ww, y1), (L - ww, y0)]
+    # wire notch: cut into the rear wall at the FOLD (floor line)
+    pts = [(L, y0), (-fx, y0), (-fx, y0 - fw), (fx, y0 - fw), (fx, y0),
+           (R, y0), (R + ww, y0), (R + ww, y1), (fx, y1),
+           (fx, y1 + rw), (-fx, y1 + rw), (-fx, y1),
+           (L - ww, y1), (L - ww, y0)]
     _poly(msp, pts, "CUT")
+    _poly(msp, [(nx/2, y1), (nx/2, y1 + nh - T), (-nx/2, y1 + nh - T),
+                (-nx/2, y1)], "CUT", closed=False)          # wire notch slot
     for x in (L, R):
         _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)      # wall folds
     _poly(msp, [(-fx, y0), (fx, y0)], "BEND", closed=False)       # flange fold
+    _poly(msp, [(-fx, y1), (-nx/2, y1)], "BEND", closed=False)    # rear fold
+    _poly(msp, [(nx/2, y1), (fx, y1)], "BEND", closed=False)
     # limiter slot in the flange (z 3..13 -> flat offsets from the fold)
     sw2, sh = LIM_SLOT[0] / 2.0, LIM_SLOT[1]
     z0f = LIM_SLOT_Z0 - T
@@ -147,18 +170,22 @@ def dxf_base(path):
 
 
 def dxf_plate(path):
-    """Flat: treadle 75 x 100 with two skirts (pin holes) + front lip."""
+    """Flat: treadle 75 x 98 with skirts, front lip and rear skirt."""
     doc = _doc(); msp = doc.modelspace()
     sw = SKIRT_H - DED90
     lw = LIP_H - DED90
+    rsw = 12.0 - DED90                     # rear skirt drop 12
     L, R = -SKIRT_X, SKIRT_X
-    y0, y1 = -PED_D / 2.0, PED_D / 2.0
+    y0, y1 = -PLATE_D / 2.0, PLATE_D / 2.0
     pts = [(L, y0 - lw), (R, y0 - lw), (R, y0),          # front lip
            (R + sw, y0), (R + sw, y1),                   # right skirt
-           (R, y1), (L, y1),
+           (R, y1), (R - 1.5, y1),                       # miter to rear skirt
+           (R - 1.5, y1 + rsw), (L + 1.5, y1 + rsw),     # rear skirt
+           (L + 1.5, y1), (L, y1),
            (L - sw, y1), (L - sw, y0), (L, y0)]
     _poly(msp, pts, "CUT")
     _poly(msp, [(L, y0), (R, y0)], "BEND", closed=False)          # lip fold
+    _poly(msp, [(L + 1.5, y1), (R - 1.5, y1)], "BEND", closed=False)  # rear
     for x in (L, R):
         _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)      # skirt folds
     # skirt pin holes: plate underside is at 23; pin at z=12 -> 11 below,
@@ -195,32 +222,53 @@ def build_step():
     flange = flange.cut(cq.Workplane("XZ").box(LIM_SLOT[0], LIM_SLOT[1], 10)
                         .translate((0, FLANGE_Y, LIM_SLOT_Z0 + LIM_SLOT[1] / 2)))
     base = base.union(flange)
+    rear = (cq.Workplane("XY").box(FLANGE_W, T, REAR_WALL_H,
+                                   centered=(True, True, False))
+            .translate((0, PED_D / 2 - T / 2, 0)))
+    rear = rear.cut(cq.Workplane("XY").box(WIRE_NOTCH[0], 3 * T, WIRE_NOTCH[1],
+                                           centered=(True, True, False))
+                    .translate((0, PED_D / 2 - T / 2, 0)))
+    base = base.union(rear)
     base = base.cut(cq.Workplane("YZ").cylinder(90, PIN_D / 2, centered=True)
                     .translate((0, PIN_Y, PIN_Z)))
+    # quiet microswitch body + lever (visual)
+    sw = (cq.Workplane("XY").box(20.0, 10.0, 6.5, centered=(True, True, False))
+          .translate((SW_XY[0], SW_XY[1], T)))
+    sw = sw.union(cq.Workplane("XY").box(16.0, 1.0, 0.8,
+                                         centered=(True, True, False))
+                  .rotate((0, SW_XY[1], T + 6.5), (1, 0, 0), 0)
+                  .translate((SW_XY[0] - 1, SW_XY[1] - 4.0, T + 6.5)))
     for sx in (-1, 1):
         for sy in (-1, 1):
             base = base.cut(cq.Workplane("XY").cylinder(T, 1.7,
                             centered=(True, True, False))
                             .translate((sx * MOUNT_W / 2, sy * MOUNT_D / 2, 0)))
-    plate = (cq.Workplane("XY").box(PED_W, PED_D, T,
+    plate = (cq.Workplane("XY").box(PED_W, PLATE_D, T,
                                     centered=(True, True, False))
              .translate((0, 0, PED_H - T)))
     for sx in (-1, 1):
         plate = plate.union(
-            cq.Workplane("XY").box(T, PED_D, SKIRT_H,
+            cq.Workplane("XY").box(T, PLATE_D, SKIRT_H,
                                    centered=(True, True, False))
             .translate((sx * SKIRT_X, 0, PED_H - T - SKIRT_H)))
     plate = plate.union(
         cq.Workplane("XY").box(PED_W, T, LIP_H, centered=(True, True, False))
-        .translate((0, -PED_D / 2 + T / 2, PED_H - T - LIP_H)))
+        .translate((0, -PLATE_D / 2 - T / 2, PED_H - T - LIP_H)))
+    plate = plate.union(
+        cq.Workplane("XY").box(PED_W - 3.0, T, 12.0,
+                               centered=(True, True, False))
+        .translate((0, PLATE_D / 2 + T / 2, PED_H - T - 12.0)))
     plate = plate.cut(cq.Workplane("YZ").cylinder(90, PIN_D / 2, centered=True)
                       .translate((0, PIN_Y, PIN_Z)))
-    pin = (cq.Workplane("YZ").cylinder(80, 1.5, centered=True)
-           .translate((0, PIN_Y, PIN_Z)))
+    pin = (cq.Workplane("YZ").cylinder(6, 3.2, centered=True)
+           .translate((-SKIRT_X - 1.2, PIN_Y, PIN_Z)))
+    pin = pin.union(cq.Workplane("YZ").cylinder(6, 3.2, centered=True)
+                    .translate((SKIRT_X + 1.2, PIN_Y, PIN_Z)))
     assy = cq.Assembly()
     assy.add(base.val(), name="base", color=cq.Color(0.12, 0.12, 0.12))
     assy.add(plate.val(), name="plate", color=cq.Color(0.15, 0.15, 0.15))
-    assy.add(pin.val(), name="pin", color=cq.Color(0.6, 0.6, 0.65))
+    assy.add(pin.val(), name="rivets", color=cq.Color(0.6, 0.6, 0.65))
+    assy.add(sw.val(), name="microswitch", color=cq.Color(0.45, 0.45, 0.48))
     assy.save(os.path.join(OUT, "silent_pedal_assy.step"))
     return base, plate
 
@@ -245,6 +293,14 @@ def checks():
         "bumpons must stop the plate before the slot bottom does"
     # flange must stay under the faceplate (lid line ~15 above the base floor)
     assert FLANGE_H <= 13.5, "flange pokes through the faceplate slot"
+    # closed body: the BASE box (flange + rear wall) is the outer shell; the
+    # moving lip / rear skirt planes tuck INSIDE it with >=1mm static gap
+    lip_outer = PLATE_D / 2 + T            # lip plane outer face
+    flange_inner = PED_D / 2 - T           # flange plane inner face
+    assert flange_inner - lip_outer >= 1.0, "lip fouls the front flange"
+    assert flange_inner - lip_outer >= 1.0, "rear skirt fouls the rear wall"
+    assert PED_D <= SLOT_D - 2.0 and PED_W <= SLOT_W - 2.0, \
+        "base box must pass the faceplate slot"
 
 
 def main():

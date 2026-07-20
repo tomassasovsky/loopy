@@ -2,8 +2,11 @@
 
 Two folded 2.0 mm 5052 parts per pedal (x10) -- same laser+bend+powder
 process as the enclosure; the flats ride in `vamp_sheetmetal.zip`.
-Conventional pedal construction: rear pin hinge, front return spring,
-slotted-flange travel limiter, lever microswitch.
+Conventional pedal construction: rear RIVETED hinge, front return spring,
+slotted-flange travel limiter, lever microswitch. The base folds into a
+CLOSED box (side walls + full-width front flange + rear wall); the moving
+plate's lip and rear skirt tuck inside it. Wire exits a notch at the rear
+wall's floor line and runs under the console lid to the board.
 
 ## Why it's silent
 
@@ -13,14 +16,15 @@ slotted-flange travel limiter, lever microswitch.
 | Plate hits the base going down | Front lip lands on **Ø8 silicone bumpons** stuck on the floor (ENGRAVE marks) |
 | Spring return slap going up | M4 limiter screw wears a **Ø6 silicone sleeve** that meets the flange slot's top edge |
 | Spring twang / wander | Spring seated on adhesive silicone dots (marked), greased |
-| Hinge rattle | M3 x 45 + nyloc through walls + skirts, greased, snug Ø3.4 bores |
+| Hinge rattle | 2x Ø3.2 pivot rivets (one per side, set LOOSE on a washer), greased |
 
 ## Assembly (per pedal)
 
 1. Stick 2 bumpons on the floor marks; stick silicone dots on the spring mark.
 2. Screw the microswitch to the floor (2x M2.3); solder the JST-XH pigtail.
-3. Spring on its seat; plate over it; M3 x 45 hinge screw through walls +
-   skirts, nyloc snug-not-tight, grease.
+3. Spring on its seat; plate over it; set the two Ø3.2 hinge rivets through
+   wall + skirt with a washer between (set LOOSE - the joint must pivot);
+   grease. Route the pigtail out the rear-wall notch.
 4. M4 x 16 through the lip hole + Ø6 silicone sleeve inside the flange slot,
    nyloc loose enough to slide. Rest height = sleeve against the slot top.
 5. Glue the `asp1_pad` on the treadle. Bolt to the pedestal (4x M3 x 12).

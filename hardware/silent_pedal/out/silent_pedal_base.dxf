@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461242.6810069443
+2461242.6866550925
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461242.6810069443
+2461242.6866550925
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-47
+4A
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{E73FC518-A829-447B-87B7-D9B10DFC7DD0}
+{14AAC40A-ECB9-4D8F-8A61-B3C869D0C19A}
   9
 $VERSIONGUID
   2
-{73B3ED41-69B0-4BB2-A354-A9A069287909}
+{E8A48EEE-C2E3-4F8E-B9DA-85AE960AE7A3}
   9
 $EXTNAMES
 290
@@ -1327,9 +1327,9 @@ ISM
   0
 CLASS
   1
-LAYOUT
+ACDBPLACEHOLDER
   2
-AcDbLayout
+AcDbPlaceHolder
   3
 ObjectDBX Classes
  90
@@ -1343,9 +1343,9 @@ ObjectDBX Classes
   0
 CLASS
   1
-ACDBPLACEHOLDER
+LAYOUT
   2
-AcDbPlaceHolder
+AcDbLayout
   3
 ObjectDBX Classes
  90
@@ -1801,7 +1801,7 @@ ACAD
   0
 APPID
   5
-44
+47
 330
 3
 100
@@ -1815,7 +1815,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-45
+48
 330
 3
 100
@@ -2135,7 +2135,7 @@ CUT
 100
 AcDbPolyline
  90
-10
+14
  70
 1
  10
@@ -2143,19 +2143,19 @@ AcDbPolyline
  20
 -50.0
  10
--20.0
+-30.0
  20
 -50.0
  10
--20.0
+-30.0
  20
 -59.678318229274424
  10
-20.0
+30.0
  20
 -59.678318229274424
  10
-20.0
+30.0
  20
 -50.0
  10
@@ -2168,6 +2168,22 @@ AcDbPolyline
 -50.0
  10
 43.178318229274424
+ 20
+50.0
+ 10
+30.0
+ 20
+50.0
+ 10
+30.0
+ 20
+62.178318229274424
+ 10
+-30.0
+ 20
+62.178318229274424
+ 10
+-30.0
  20
 50.0
  10
@@ -2187,19 +2203,27 @@ LWPOLYLINE
 100
 AcDbEntity
   8
-BEND
+CUT
 100
 AcDbPolyline
  90
-2
+4
  70
 0
  10
--31.0
+4.0
  20
--50.0
+50.0
  10
--31.0
+4.0
+ 20
+53.0
+ 10
+-4.0
+ 20
+53.0
+ 10
+-4.0
  20
 50.0
   0
@@ -2219,11 +2243,11 @@ AcDbPolyline
  70
 0
  10
-31.0
+-31.0
  20
 -50.0
  10
-31.0
+-31.0
  20
 50.0
   0
@@ -2243,17 +2267,89 @@ AcDbPolyline
  70
 0
  10
--20.0
+31.0
  20
 -50.0
  10
-20.0
+31.0
+ 20
+50.0
+  0
+LWPOLYLINE
+  5
+37
+330
+17
+100
+AcDbEntity
+  8
+BEND
+100
+AcDbPolyline
+ 90
+2
+ 70
+0
+ 10
+-30.0
+ 20
+-50.0
+ 10
+30.0
  20
 -50.0
   0
 LWPOLYLINE
   5
-37
+38
+330
+17
+100
+AcDbEntity
+  8
+BEND
+100
+AcDbPolyline
+ 90
+2
+ 70
+0
+ 10
+-30.0
+ 20
+50.0
+ 10
+-4.0
+ 20
+50.0
+  0
+LWPOLYLINE
+  5
+39
+330
+17
+100
+AcDbEntity
+  8
+BEND
+100
+AcDbPolyline
+ 90
+2
+ 70
+0
+ 10
+4.0
+ 20
+50.0
+ 10
+30.0
+ 20
+50.0
+  0
+LWPOLYLINE
+  5
+3A
 330
 17
 100
@@ -2285,7 +2381,7 @@ AcDbPolyline
   0
 CIRCLE
   5
-38
+3B
 330
 17
 100
@@ -2305,7 +2401,7 @@ AcDbCircle
   0
 CIRCLE
   5
-39
+3C
 330
 17
 100
@@ -2325,66 +2421,6 @@ AcDbCircle
   0
 CIRCLE
   5
-3A
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbCircle
- 10
--27.5
- 20
--40.0
- 30
-0.0
- 40
-1.7
-  0
-CIRCLE
-  5
-3B
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbCircle
- 10
--27.5
- 20
-40.0
- 30
-0.0
- 40
-1.7
-  0
-CIRCLE
-  5
-3C
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbCircle
- 10
-27.5
- 20
--40.0
- 30
-0.0
- 40
-1.7
-  0
-CIRCLE
-  5
 3D
 330
 17
@@ -2395,6 +2431,66 @@ CUT
 100
 AcDbCircle
  10
+-27.5
+ 20
+-40.0
+ 30
+0.0
+ 40
+1.7
+  0
+CIRCLE
+  5
+3E
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
+-27.5
+ 20
+40.0
+ 30
+0.0
+ 40
+1.7
+  0
+CIRCLE
+  5
+3F
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
+27.5
+ 20
+-40.0
+ 30
+0.0
+ 40
+1.7
+  0
+CIRCLE
+  5
+40
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
 27.5
  20
 40.0
@@ -2405,7 +2501,7 @@ AcDbCircle
   0
 CIRCLE
   5
-3E
+41
 330
 17
 100
@@ -2425,7 +2521,7 @@ AcDbCircle
   0
 CIRCLE
   5
-3F
+42
 330
 17
 100
@@ -2445,7 +2541,7 @@ AcDbCircle
   0
 CIRCLE
   5
-40
+43
 330
 17
 100
@@ -2465,7 +2561,7 @@ AcDbCircle
   0
 CIRCLE
   5
-41
+44
 330
 17
 100
@@ -2485,7 +2581,7 @@ AcDbCircle
   0
 CIRCLE
   5
-42
+45
 330
 17
 100
@@ -2505,7 +2601,7 @@ AcDbCircle
   0
 TEXT
   5
-43
+46
 330
 17
 100
@@ -3523,7 +3619,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-46
+49
   0
 DICTIONARYVAR
   5
@@ -3535,11 +3631,11 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-07-20T19:20:39.234396+00:00
+1.4.4 @ 2026-07-20T19:28:47.847844+00:00
   0
 DICTIONARYVAR
   5
-46
+49
 330
 2D
 100
@@ -3547,7 +3643,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-07-20T19:20:39.236227+00:00
+1.4.4 @ 2026-07-20T19:28:47.849051+00:00
   0
 ENDSEC
   0
