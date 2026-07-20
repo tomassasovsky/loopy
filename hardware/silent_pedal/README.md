@@ -6,16 +6,17 @@ sustain-pedal material; same vendor + powder run as the enclosure
 **Clamshell sustain-pedal construction** (Artesia / M-Audio reference):
 the BASE is a shallow tray -- four UNIFORM 18 mm walls (only the front
 one carries the down-stop tape, the sides hold the hinge pivots, the
-rear has the wire hole), plain open notched corners: the whole base
-sits below the faceplate inside the console, invisible. The PLATE is
-an inverted tray -- treadle sized exactly to the cast pad (96 x 71,
-the fold shoulders read as the metal rim around the pad) with skirts
-folded down on all four sides that wrap OUTSIDE the base walls. Plate
-corners are C5 weld-prep cuts: the four corner openings are TIG-FILLED
-(flush at the top too) and ground smooth before powder -> completely
-seamless corners, zero punched artefacts. The rear skirt has a 12 mm
-cable notch aligned with the wire hole. No polarity switch -- the
-board input doesn't need one.
+rear has the wire hole). The PLATE is an inverted tray -- treadle
+sized exactly to the cast pad (96 x 71, the fold shoulders read as the
+metal rim around the pad) with skirts folded down on all four sides
+that wrap OUTSIDE the base walls. CORNERS on both parts use the
+console-base pattern (the vamp_base rear corners): the front/rear
+flaps run FULL OUTER WIDTH and fold over the side flaps' end edges,
+closing every corner with metal from the same blank -- no welds, no
+filler, and the band-crossing relief (r = T+1) hides inside the bend
+arcs behind the overhanging flap, so no hole shows on any finished
+face. The rear skirt has a 12 mm cable notch aligned with the wire
+hole. No polarity switch -- the board input doesn't need one.
 
 ## Why it's silent
 
@@ -58,7 +59,7 @@ board input doesn't need one.
 
 Numbers (from the generator self-checks): walls uniform 18; clamshell
 outer 75.1 x 100.1 through the 79 x 104 faceplate slot (FSW_SLOT =
-footprint + 4); hinge pivot at (y 39, z 8) -- low enough that the screw
+footprint + 4); hinge pivot at (y 36.5, z 8) -- low enough that the screw
 head passes under the faceplate edge; side/front skirt bottoms at 6 mm
 (1.8 above the deck at full press), rear skirt rests on the deck tape
 at 1.5 mm (the geometric up-stop: lifting the front digs it in, so the
