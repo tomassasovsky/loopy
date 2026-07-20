@@ -18,8 +18,8 @@ STEPs incl. the folded assembly).
 | `vamp_rear_panel_pi` | 1 | Rear I/O sub-panel (Pi build). `vamp_rear_panel_nopi` is the alternate build — order one or the other. |
 | `vamp_screen_bracket` | 8 | 4 per screen (16" + 7"). |
 | `vamp_ring_disc` | 1 | Encoder LED-ring centre disc. |
-| `silent_pedal_base` | 10 | Footswitch base: walls up 90°, front limiter flange (flats in `silent_pedal/out/`, included in the zip). |
-| `silent_pedal_plate` | 10 | Footswitch treadle: skirts + lip down 90°. |
+| `silent_pedal_base` | 10 | Footswitch base: open tray, 4 walls up 90° (18 mm sides = hinge + down-stop; flats in `silent_pedal/out/`, included in the zip). |
+| `silent_pedal_plate` | 10 | Footswitch treadle: front lip + 2 hinge tabs down 90°. |
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
 on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
@@ -61,16 +61,17 @@ silkscreen on the metal.
 Full lists with links: **`loopy_console_shopping_list.md`** (console) and
 **`loopy_pedal_shopping_list.md`** (board THT parts). Headlines:
 
-- 15.6" 5V USB-C touch panel; APROTII 7" monitor (pedals are now printed —
+- 15.6" 5V USB-C touch panel; APROTII 7" monitor (pedals are sheet metal —
   see `silent_pedal/`: 10× QUIET lever microswitch (Cherry DB3/ZF D4 class),
-  10× spring Ø10×20 ~1.5 N/mm, 10× M3×45+nyloc (hinge), 10× M4×16+nyloc+Ø6
-  silicone sleeve (limiter), 20× Ø8×2.2 bumpons + silicone dots,
-  10× JST-XH 2-pin pigtail)
+  10× spring Ø10×20 ~1.5 N/mm, 20× Ø3.2 rivet + washer (hinge pivots, set
+  loose), 10× M4×25 button head + nyloc + silicone washer (retention),
+  silicone tape for the wall tops, 10× JST-XH 2-pin pigtail)
 - Raspberry Pi 5 + Active Cooler
 - 5V buck: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) + 9V ≥5A brick
 - 1× NeoPixel Ring 16 (authentic Adafruit, 44.5 mm OD — clones are 68 mm and won't fit)
 - Heat-set inserts: 64× M3×3 (short) + 16× M3×5.7×4.6, brass
-- Fasteners: 40× M3×8 (platform bolts, from below), 6× M4 (front lip + rear lap),
+- Fasteners: 40× M3×8 (platform bolts, from below), 40× M3×12 (pedal bases →
+  pedestal top inserts), 6× M4 (front lip + rear lap),
   10× Ø3.2 pop rivets (corner brackets), 4× M2.5×35.3 Pi risers (stack or turn —
   35.3 mm is derived, see `PI_RISER_H`), 4× M3×12 + standoffs 15 mm (main board),
   2× M4 (buck ears), PEM M4 nuts per drawing

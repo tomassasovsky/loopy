@@ -1038,6 +1038,13 @@ def _platform_printed(cq, ph):
             body = body.cut(cq.Workplane("XY").cylinder(
                 pil, INSERT_PILOT_D/2,
                 centered=(True, True, False)).translate((dx, dy, h - pil)))
+    # silent-pedal M4 retention screw (silent_pedal.py SPRING_XY): button
+    # head recessed under the pedal base, 38mm toward the console front --
+    # the hole orients the otherwise-symmetric pedestal
+    body = body.cut(cq.Workplane("XY").cylinder(
+        3.0, 4.5, centered=(True, True, False)).translate((-38.0, 0, h - 3.0)))
+    body = body.cut(cq.Workplane("XY").cylinder(
+        h, 2.25, centered=(True, True, False)).translate((-38.0, 0, 0)))
     return body
 
 def build_platform_steps():
