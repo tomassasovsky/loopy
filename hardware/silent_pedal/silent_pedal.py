@@ -72,6 +72,8 @@ DED90 = 2.0 * (RI + T) - BA90             # 90-deg bend deduction
 WALL_H = 16.0                             # side wall height (pin at 12)
 WALL_X = 31.0                             # wall fold lines at +-31
 PIN_Y, PIN_Z = 40.0, 12.0                 # hinge pin centre (rear, depth +40)
+BASE_FOLD_Y = 44.0                        # base front/rear fold lines: folded
+                                          # wall planes land at ~+-48
 PIN_D = 3.4                               # Ø3.2 pivot rivets, loose-set
 REAR_WALL_H = 16.0                        # base rear wall (also 56 wide)
 
@@ -91,10 +93,14 @@ SW_XY = (0.0, -26.0)
 SPRING_XY = (0.0, -38.0)                  # engrave mark, adhesive spring seat
 BUMP_FLOOR = [(-26.0, -42.0), (26.0, -42.0)]   # under the front lip
 # ---------------------------------------------------------------- plate
-SKIRT_X = 35.5                            # skirt fold lines at +-35.5
-PLATE_D = 90.0                            # treadle depth: lip+rear skirt
+SKIRT_X = 33.9                            # skirt folds; folded planes land
+                                          # ~4mm outboard (bend arc), so the
+                                          # skirts end at ~+-38 in the slot
+PLATE_D = 88.0                            # treadle depth: folded lip/rear
+                                          # planes land at ~+-48
                                           # planes stay inside the 103 slot
-SKIRT_H = 13.0                            # skirt drop; pin hole lands at z=12
+SKIRT_H = 17.0                            # skirt drop (dev 15.1: hosts the pin
+                                          # bore 13.5 from the fold, z=12 folded)
 LIP_H = 15.1                              # front lip drop -> ~4 mm toe travel
 BUMP_H = 2.2
 
@@ -122,12 +128,9 @@ def dxf_base(path):
     ww = WALL_H - DED90                    # developed wall width
     fw = FLANGE_H - DED90                  # developed flange width
     rw = REAR_WALL_H - DED90               # developed rear wall
-    L, R = -WALL_X, WALL_X                 # wall fold lines
-    y0, y1 = -PED_D / 2.0, PED_D / 2.0
+    L, R = -WALL_X, WALL_X                 # side wall fold lines
+    y0, y1 = -BASE_FOLD_Y, BASE_FOLD_Y     # front/rear fold lines
     K = 0.15                               # butt-edge kerf (enclosure pattern)
-    # enclosure-pattern cross: FULL-SPAN fold lines meeting at the four
-    # corners, Ø6 relief punched at each intersection, flange/rear wing side
-    # edges kerf-trimmed where they butt the folded side walls
     pts = [(L + K, y0), (L + K, y0 - fw), (R - K, y0 - fw), (R - K, y0),
            (R, y0), (R + ww, y0), (R + ww, y1), (R, y1),
            (R - K, y1), (R - K, y1 + rw), (L + K, y1 + rw), (L + K, y1),
@@ -168,8 +171,8 @@ def dxf_plate(path):
     rsw = 12.0 - DED90                     # rear skirt drop 12
     L, R = -SKIRT_X, SKIRT_X
     y0, y1 = -PLATE_D / 2.0, PLATE_D / 2.0
-    lx = 33.0                              # lip span (3mm off the skirt bands)
-    rx = 32.5                              # rear skirt span
+    lx = 31.0                              # lip span (3mm off the skirt bands)
+    rx = 31.0                              # rear skirt span
     ey0, ey1 = EAR_Y
     sk_ear = (23.0 - EAR_Z) - DED90        # shorter skirt at the ear segment
     ear_out = sk_ear + (EAR_W - DED90)     # ear outer edge in the flat
@@ -195,7 +198,8 @@ def dxf_plate(path):
     _poly(msp, [(L - sk_ear, ey0), (L - sk_ear, ey1)], "BEND", closed=False)
     # skirt pin holes: plate underside is at 23; pin at z=12 -> 11 below,
     # hole distance from fold in the flat = 23 - PIN_Z - T
-    for x in (R + (23.0 - PIN_Z - T), L - (23.0 - PIN_Z - T)):
+    ph = 13.5      # empirical: bore lands at z=12 folded (arc-after-line)
+    for x in (R + ph, L - ph):
         _circle(msp, x, PIN_Y, PIN_D)
 
     msp.add_text("VAMP PEDAL PLATE  2.0mm  x10  skirts+lip DOWN 90; "
