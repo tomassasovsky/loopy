@@ -1428,6 +1428,15 @@ def build_quote_packages():
 
     sheet = [n for n, _ in DXF_PARTS]
     pack("vamp_sheetmetal.zip", sheet, (".dxf", ".pdf"))
+    # the silent-pedal flats (x10 each) join the same laser+bend order
+    pedal_out = os.path.join(HERE, "..", "silent_pedal", "out")
+    zp = zips[-1]
+    with zipfile.ZipFile(zp, "a", zipfile.ZIP_DEFLATED) as z:
+        for n in ("silent_pedal_base", "silent_pedal_plate"):
+            for ext in (".dxf", ".pdf"):
+                pth = os.path.join(pedal_out, n + ext)
+                if os.path.exists(pth):
+                    z.write(pth, n + ext)
     pack("vamp_sheetmetal_step.zip",
          ["vamp_assembly", "vamp_base", "vamp_faceplate", "vamp_screen_bracket",
           "vamp_corner_bracket_rear", "vamp_rear_panel_pi", "vamp_ring_disc"],

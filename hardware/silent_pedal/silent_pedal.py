@@ -1,215 +1,274 @@
 #!/usr/bin/env python3
 """
-VAMP silent footswitch -- printable replacement for the 10 purchased ASP-1s.
+VAMP silent footswitch -- SHEET METAL, conventional pedal construction.
 
-SILENCE STRATEGY (the whole point):
-  * sensing = REED SWITCH + magnet: contactless (zero switch clack), fully
-    passive 2-wire -> reads as a plain closure on the main board's existing
-    2-pin JST footswitch inputs. No board or harness changes.
-  * BOTH travel stops land on silicone: Ø8 x 2.2 adhesive bumpons in printed
-    seats on the base rim (down-stop -- the plate meets the body's borders on
-    rubber, never plastic), and a silicone/EPDM M3 washer under the retention
-    screw head (up-stop, absorbs the spring return).
-  * return spring is CAPTIVE on the retention screw inside greased pockets --
-    no twang, no wander.
-  * hinge = printed knuckles + 3 mm steel pin (or a length of 3 mm filament),
-    snug bore, greased.
+Two folded 2.0 mm 5052 parts, same process/material as the enclosure (rides
+in the same laser+bend quote package):
 
-ENVELOPE = the console's ASP1_* placeholder (75 x 100 x 25, foot-plate proud
-10 mm through the 78 x 103 faceplate slot) so the faceplate, pedestals, pads
-and the whole fab package are untouched -- and the pedal dims become
-design-controlled instead of PROVISIONAL-pending-purchase.
+  BASE  : floor + two upturned side walls (hinge pin holes) + an upturned
+          FRONT FLANGE with a vertical slot (the travel limiter).
+  PLATE : treadle + two down-turned side skirts (pin holes) + a front lip.
 
-Mounting: 4x M3 down into the printed pedestal's EXISTING top heat-set
-inserts (ASP1_MOUNT 55 x 80 pattern in vamp_enclosure.py).
+Construction = what's inside a commercial sustain/footswitch pedal:
+  * rear HINGE: M3 x 45 screw + nyloc through base walls + plate skirts.
+  * compression SPRING at the front returns the plate UP.
+  * an M4 limiter screw through the plate's front lip rides in the flange
+    slot; a rubber grommet on its shank meets the slot's top edge at rest
+    (silent up-stop) -- the standard slotted-bracket pedal construction.
+  * a QUIET MICROSWITCH (Cherry DB3 / ZF D4 class "silent" lever micro,
+    2-wire NO) on the floor, pressed near the end of travel -> reads as a
+    plain closure on the main board's existing 2-pin JST inputs.
 
-FEEL/CALIBRATION KNOBS (hardware is never the ideal on paper):
-  * rest height / preload  = how far you thread the M3 retention screw.
-  * actuation point        = MAGNET_FACE_Z (post length) -- shim the magnet
-    pocket or reprint the plate; reed AT/RT varies unit to unit.  # TUNE
-  * feel                   = SPRING_RATE spec.                     # TUNE
+SILENCE (the requirement that started this):
+  * quiet-series microswitch instead of a clacking stomp switch.
+  * DOWN-stop: the plate's front lip lands on Ø8 silicone bumpons stuck on
+    the floor (positions on the ENGRAVE layer) -- plate meets the base's
+    borders on rubber, never metal-on-metal.
+  * UP-stop: the limiter grommet (rubber) against the slot top -- the
+    spring return lands on rubber too.
+  * spring seats on adhesive silicone dots (marked), greased hinge screw.
 
-BOM per pedal (x10 per console):
-  1x reed switch, KSK-1A66 / MKA-14103 class (glass 2.3Ø x ~14 mm, NO form-C)
-  1x magnet Ø5 x 2 N35 (press-fit)
-  1x compression spring Ø10 x 20 free, ~1.5 N/mm            # TUNE feel
-  1x M3 x 20 pan/button screw + silicone or EPDM M3 washer (up-stop)
-  1x M3 heat-set insert (std 5.7 x 4.6) in the spring boss
-  4x M3 x 12 (base -> pedestal inserts)
-  4x Ø8 x 2.2 self-adhesive silicone bumpons (3M SJ5312 class)
-  1x 3 mm steel rod / filament, 58 mm (hinge pin)
-  1x 2-wire JST-XH pigtail soldered to the reed
+ENVELOPE = the console's ASP1_* placeholder (75 x 100 x 25, plate proud
+10 mm through the 78 x 103 faceplate slot); mounts with 4x M3 into the
+printed pedestal's inserts (ASP1_MOUNT 55 x 80). The asp1_pad silicone pad
+glues on the treadle.
+
+TUNE (hardware is never the paper ideal):
+  * feel     = spring spec (Ø10 x 20 free, ~1.5 N/mm).        # TUNE
+  * actuation= microswitch lever bend / shim under the switch. # TUNE
+  * travel   = LIP height vs bumpon stack (add a second bumpon to shorten).
+
+BOM per pedal (x10): quiet lever microswitch, spring, M3x45+nyloc (hinge),
+M4x16+nyloc+Ø6 silicone sleeve (limiter), 4x M3 x 12 (to pedestal),
+4x Ø8 x 2.2 bumpons, JST-XH 2-pin pigtail.
 
 Run:  ../enclosure/.venv/bin/python silent_pedal.py   -> ./out
 """
 from __future__ import annotations
 import os
+import sys
 import math
-import cadquery as cq
+import ezdxf
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+OUT = os.path.join(HERE, "out")
 
 # ---------------------------------------------------------------- envelope
-PED_W, PED_D, PED_H = 75.0, 100.0, 25.0   # match ASP1_W/D/H in vamp_enclosure
-MOUNT_W, MOUNT_D = 55.0, 80.0             # = ASP1_MOUNT pedestal insert pattern
-SLOT_W, SLOT_D = 78.0, 103.0              # faceplate slot the plate moves in
+PED_W, PED_D, PED_H = 75.0, 100.0, 25.0
+MOUNT_W, MOUNT_D = 55.0, 80.0            # ASP1_MOUNT pedestal inserts
+SLOT_W, SLOT_D = 78.0, 103.0             # faceplate slot
+
+T = 2.0                                   # 5052-H32, same as the enclosure
+RI, KF = 2.0, 0.33
+BA90 = math.pi / 2.0 * (RI + KF * T)      # 90-deg bend allowance
+DED90 = 2.0 * (RI + T) - BA90             # 90-deg bend deduction
 
 # ---------------------------------------------------------------- base
-WALL = 2.5
-FLOOR = 3.0
-BASE_H = 12.0
-BUMP_D, BUMP_H, BUMP_SEAT = 8.0, 2.2, 0.8   # Ø8x2.2 bumpon, seated 0.8 deep
-BUMP_BOSS_TOP = 15.0                        # boss top -> silicone face 16.4
-BUMP_XY = [(-26.0, -34.0), (26.0, -34.0), (-26.0, 20.0), (26.0, 20.0)]
-
-# ---------------------------------------------------------------- hinge
-HINGE_Y = 44.0            # pin centre, rear
-HINGE_Z = 19.0
-TOWER_W, TOWER_D = 8.0, 10.0
-TOWER_X = 20.0            # tower centres at +-20
-PIN_D = 3.2               # 3mm pin, printed-snug
-
-# ---------------------------------------------------------------- action
-SCREW_XY = (0.0, -38.0)   # retention screw / spring column
-SPRING_OD = 10.0
-REED_XY = (14.0, -38.0)   # reed channel + magnet post centre
-REED_SLOT = (3.4, 17.0, 2.0)          # w, l, depth into floor top
-MAGNET_D, MAGNET_T = 5.0, 2.0
-MAGNET_FACE_Z = 10.5      # magnet face height at REST -> ~4 mm gap when
-                          # pressed = reed closes.               # TUNE
-PLATE_T = 4.0
-PLATE_TOP = PED_H         # 25: pad glues on top, proud height unchanged
+WALL_H = 16.0                             # side wall height (pin at 12)
+WALL_X = 31.0                             # wall fold lines at +-31
+PIN_Y, PIN_Z = 40.0, 12.0                 # hinge pin centre (rear, depth +40)
+PIN_D = 3.4                               # M3 screw hinge
+FLANGE_Y = -44.0                          # front limiter flange fold line
+FLANGE_H, FLANGE_W = 13.5, 40.0           # flange height / width (centred)
+LIM_SLOT = (6.5, 10.0)                    # limiter slot w x h (z 2.5..12.5);
+                                          # M4 wears a Ø6 silicone sleeve
+LIM_Z_REST = 9.5                          # limiter screw axis at rest
+LIM_SLOT_Z0 = 2.5                         # slot bottom above the floor
+SW_HOLES = 22.2                           # microswitch mount pitch (M2.3)
+SW_XY = (0.0, -26.0)
+SPRING_XY = (0.0, -38.0)                  # engrave mark, adhesive spring seat
+BUMP_FLOOR = [(-26.0, -42.0), (26.0, -42.0)]   # under the front lip
+# ---------------------------------------------------------------- plate
+SKIRT_X = 35.5                            # skirt fold lines at +-35.5
+SKIRT_H = 13.0                            # skirt drop; pin hole lands at z=12
+LIP_H = 15.1                              # front lip drop -> ~4 mm toe travel
+BUMP_H = 2.2
 
 
-def base():
-    b = (cq.Workplane("XY").box(PED_W, PED_D, BASE_H,
-                                centered=(True, True, False))
-         .faces(">Z").shell(-WALL))                      # open-top tray
-    # put the floor back to FLOOR thick (shell leaves WALL-thick floor)
-    b = b.union(cq.Workplane("XY").box(PED_W - 2*WALL, PED_D - 2*WALL, FLOOR,
-                                       centered=(True, True, False)))
-    # bumpon bosses fused to the side walls (the plate lands on silicone)
-    for x, y in BUMP_XY:
-        b = b.union(cq.Workplane("XY").cylinder(BUMP_BOSS_TOP, 6.0,
-                    centered=(True, True, False)).translate((x, y, 0)))
-        b = b.cut(cq.Workplane("XY").cylinder(BUMP_SEAT, BUMP_D/2 + 0.1,
-                  centered=(True, True, False))
-                  .translate((x, y, BUMP_BOSS_TOP - BUMP_SEAT)))
-    # hinge towers
-    for sx in (-1, 1):
-        t = (cq.Workplane("XY").box(TOWER_W, TOWER_D, HINGE_Z + 2.0,
-                                    centered=(True, True, False))
-             .translate((sx*TOWER_X, HINGE_Y, 0)))
-        b = b.union(t)
-    b = b.cut(cq.Workplane("YZ").cylinder(PED_W, PIN_D/2, centered=True)
-              .rotate((0, 0, 0), (0, 1, 0), 90)
-              .translate((0, HINGE_Y, HINGE_Z)))
-    # spring boss + M3 heat-set pocket (insert from the top)
-    sb = (cq.Workplane("XY").cylinder(7.0, 7.5, centered=(True, True, False))
-          .translate((SCREW_XY[0], SCREW_XY[1], 0)))
-    b = b.union(sb)
-    b = b.cut(cq.Workplane("XY").cylinder(6.4, 2.0, centered=(True, True, False))
-              .translate((SCREW_XY[0], SCREW_XY[1], 7.0 - 6.4)))
-    # reed channel + wire groove to the +X wall notch
-    rw, rl, rd = REED_SLOT
-    b = b.cut(cq.Workplane("XY").box(rw, rl, rd, centered=(True, True, False))
-              .translate((REED_XY[0], REED_XY[1], FLOOR - rd)))
-    b = b.cut(cq.Workplane("XY").box(PED_W/2 - REED_XY[0], 3.0, rd,
-                                     centered=(False, True, False))
-              .translate((REED_XY[0], REED_XY[1], FLOOR - rd)))
-    b = b.cut(cq.Workplane("XY").box(WALL + 2.0, 4.0, 5.0,
-                                     centered=(False, True, False))
-              .translate((PED_W/2 - WALL - 1.0, REED_XY[1], 0)))
-    # 4x M3 clearance + counterbore down into the pedestal inserts
+def _doc():
+    d = ezdxf.new()
+    for name, color in (("CUT", 7), ("BEND", 4), ("ENGRAVE", 1), ("NOTE", 3)):
+        d.layers.add(name, color=color)
+    return d
+
+
+def _poly(msp, pts, layer, closed=True):
+    msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": layer})
+
+
+def _circle(msp, x, y, dia, layer="CUT"):
+    msp.add_circle((x, y), dia / 2.0, dxfattribs={"layer": layer})
+
+
+def dxf_base(path):
+    """Flat: floor 75 x 100 with two side-wall wings (+ their rear tabs).
+    Wing root = fold line at x=+-31; developed wing width = WALL_H - DED90.
+    The rear TAB folds inward from the wall TOP edge (second 90-deg fold)."""
+    doc = _doc(); msp = doc.modelspace()
+    ww = WALL_H - DED90                    # developed wall width
+    fw = FLANGE_H - DED90                  # developed flange width
+    L, R = -WALL_X, WALL_X                 # wall fold lines
+    y0, y1 = -PED_D / 2.0, PED_D / 2.0
+    fx = FLANGE_W / 2.0
+    pts = [(L, y0), (-fx, y0), (-fx, FLANGE_Y),          # front edge, flange
+           (-fx, FLANGE_Y - fw + (FLANGE_Y - y0)) if False else (-fx, y0 - 0),
+           ]
+    # floor outline with a front flange wing between x=+-fx (fold at FLANGE_Y
+    # is INSIDE the floor; the wing hangs off the front edge y0)
+    pts = [(L, y0), (-fx, y0), (-fx, y0 - fw), (fx, y0 - fw), (fx, y0),
+           (R, y0), (R + ww, y0), (R + ww, y1), (L - ww, y1), (L - ww, y0)]
+    _poly(msp, pts, "CUT")
+    for x in (L, R):
+        _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)      # wall folds
+    _poly(msp, [(-fx, y0), (fx, y0)], "BEND", closed=False)       # flange fold
+    # limiter slot in the flange (z 3..13 -> flat offsets from the fold)
+    sw2, sh = LIM_SLOT[0] / 2.0, LIM_SLOT[1]
+    z0f = LIM_SLOT_Z0 - T
+    _poly(msp, [(-sw2, y0 - z0f), (sw2, y0 - z0f),
+                (sw2, y0 - z0f - sh), (-sw2, y0 - z0f - sh)], "CUT")
+    # hinge pin holes in the walls: distance from fold = PIN_Z - T (outside flat)
+    for x in (R + (PIN_Z - T), L - (PIN_Z - T)):
+        _circle(msp, x, PIN_Y, PIN_D)
+    # floor: pedestal M3s, microswitch M2.3s, spring + bumpon marks
     for sx in (-1, 1):
         for sy in (-1, 1):
-            x, y = sx*MOUNT_W/2, sy*MOUNT_D/2
-            b = b.cut(cq.Workplane("XY").cylinder(FLOOR, 1.7,
-                      centered=(True, True, False)).translate((x, y, 0)))
-            b = b.cut(cq.Workplane("XY").cylinder(FLOOR - 1.2, 3.3,
-                      centered=(True, True, False)).translate((x, y, 1.2)))
-    return b
-
-
-def plate():
-    p = (cq.Workplane("XY").box(PED_W, PED_D, PLATE_T,
-                                centered=(True, True, False))
-         .translate((0, 0, PLATE_TOP - PLATE_T)))
-    # rear notches around the towers + knuckles down to the pin
+            _circle(msp, sx * MOUNT_W / 2.0, sy * MOUNT_D / 2.0, 3.4)
     for sx in (-1, 1):
-        p = p.cut(cq.Workplane("XY").box(TOWER_W + 1.0, TOWER_D + 1.0, PLATE_T,
-                                         centered=(True, True, False))
-                  .translate((sx*TOWER_X, HINGE_Y, PLATE_TOP - PLATE_T)))
-        k = (cq.Workplane("XY").box(8.0, TOWER_D, PLATE_TOP - PLATE_T - (HINGE_Z - 2.0),
+        _circle(msp, SW_XY[0] + sx * SW_HOLES / 2.0, SW_XY[1], 2.4)
+    _circle(msp, SPRING_XY[0], SPRING_XY[1], 10.0, "ENGRAVE")   # spring seat
+    for x, y in BUMP_FLOOR:
+        _circle(msp, x, y, 8.0, "ENGRAVE")                      # bumpon marks
+    msp.add_text("VAMP PEDAL BASE  2.0mm  x10  walls UP 90, front flange UP 90"
+                 " (limiter slot); stick Ø8 bumpons on floor marks; hinge M3x45"
+                 "; M4 limiter + grommet in slot",
+                 dxfattribs={"layer": "NOTE", "height": 5}).set_placement(
+                 (L - ww, y1 + 6))
+    doc.saveas(path)
+
+
+def dxf_plate(path):
+    """Flat: treadle 75 x 100 with two skirts (pin holes) + front lip."""
+    doc = _doc(); msp = doc.modelspace()
+    sw = SKIRT_H - DED90
+    lw = LIP_H - DED90
+    L, R = -SKIRT_X, SKIRT_X
+    y0, y1 = -PED_D / 2.0, PED_D / 2.0
+    pts = [(L, y0 - lw), (R, y0 - lw), (R, y0),          # front lip
+           (R + sw, y0), (R + sw, y1),                   # right skirt
+           (R, y1), (L, y1),
+           (L - sw, y1), (L - sw, y0), (L, y0)]
+    _poly(msp, pts, "CUT")
+    _poly(msp, [(L, y0), (R, y0)], "BEND", closed=False)          # lip fold
+    for x in (L, R):
+        _poly(msp, [(x, y0), (x, y1)], "BEND", closed=False)      # skirt folds
+    # skirt pin holes: plate underside is at 23; pin at z=12 -> 11 below,
+    # hole distance from fold in the flat = 23 - PIN_Z - T
+    for x in (R + (23.0 - PIN_Z - T), L - (23.0 - PIN_Z - T)):
+        _circle(msp, x, PIN_Y, PIN_D)
+    # limiter screw hole in the front lip (axis at LIM_Z_REST at rest)
+    _circle(msp, 0.0, y0 - (23.0 - LIM_Z_REST - T), 4.5)
+    msp.add_text("VAMP PEDAL PLATE  2.0mm  x10  skirts+lip DOWN 90; "
+                 "asp1_pad glues on top; slides under the base rear tabs",
+                 dxfattribs={"layer": "NOTE", "height": 5}).set_placement(
+                 (L - sw, y1 + 6))
+    doc.saveas(path)
+
+
+def build_step():
+    """Idealized folded STEP (assembly for the Fusion doc + console)."""
+    import cadquery as cq
+    base = (cq.Workplane("XY").box(2*WALL_X + 2*T, PED_D, T,
+                                   centered=(True, True, False)))
+    for sx in (-1, 1):
+        wall = (cq.Workplane("XY").box(T, PED_D, WALL_H,
+                                       centered=(True, True, False))
+                .translate((sx * (WALL_X + T/2) - T/2 * 0, 0, 0)))
+        wall = wall.translate((sx * WALL_X + sx * T / 2 - sx * T / 2, 0, 0))
+        base = base.union(
+            cq.Workplane("XY").box(T, PED_D, WALL_H,
+                                   centered=(True, True, False))
+            .translate((sx * (WALL_X + T / 2), 0, 0)))
+
+    flange = (cq.Workplane("XY").box(FLANGE_W, T, FLANGE_H,
+                                     centered=(True, True, False))
+              .translate((0, FLANGE_Y - T / 2, 0)))
+    flange = flange.cut(cq.Workplane("XZ").box(LIM_SLOT[0], LIM_SLOT[1], 10)
+                        .translate((0, FLANGE_Y, LIM_SLOT_Z0 + LIM_SLOT[1] / 2)))
+    base = base.union(flange)
+    base = base.cut(cq.Workplane("YZ").cylinder(90, PIN_D / 2, centered=True)
+                    .translate((0, PIN_Y, PIN_Z)))
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            base = base.cut(cq.Workplane("XY").cylinder(T, 1.7,
+                            centered=(True, True, False))
+                            .translate((sx * MOUNT_W / 2, sy * MOUNT_D / 2, 0)))
+    plate = (cq.Workplane("XY").box(PED_W, PED_D, T,
                                     centered=(True, True, False))
-             .translate((sx*11.0, HINGE_Y, HINGE_Z - 2.0)))
-        p = p.union(k)
-    p = p.cut(cq.Workplane("YZ").cylinder(PED_W, PIN_D/2, centered=True)
-              .rotate((0, 0, 0), (0, 1, 0), 90)
-              .translate((0, HINGE_Y, HINGE_Z)))
-    # retention screw: Ø4.5 clearance + Ø9 counterbore (silicone washer seat)
-    p = p.cut(cq.Workplane("XY").cylinder(PLATE_T, 2.25,
-              centered=(True, True, False))
-              .translate((SCREW_XY[0], SCREW_XY[1], PLATE_TOP - PLATE_T)))
-    p = p.cut(cq.Workplane("XY").cylinder(2.5, 4.5, centered=(True, True, False))
-              .translate((SCREW_XY[0], SCREW_XY[1], PLATE_TOP - 2.5)))
-    # spring upper seat (shallow ring recess in the underside)
-    p = p.cut(cq.Workplane("XY").cylinder(1.5, SPRING_OD/2 + 0.3,
-              centered=(True, True, False))
-              .translate((SCREW_XY[0], SCREW_XY[1], PLATE_TOP - PLATE_T)))
-    # magnet post above the reed
-    post_h = PLATE_TOP - PLATE_T - MAGNET_FACE_Z
-    post = (cq.Workplane("XY").cylinder(post_h, 4.5,
-            centered=(True, True, False))
-            .translate((REED_XY[0], REED_XY[1], MAGNET_FACE_Z)))
-    p = p.union(post)
-    p = p.cut(cq.Workplane("XY").cylinder(MAGNET_T + 0.4, MAGNET_D/2 + 0.15,
-              centered=(True, True, False))
-              .translate((REED_XY[0], REED_XY[1], MAGNET_FACE_Z)))
-    return p
-
-
-def checks(b, p):
-    bb, pb = b.val().BoundingBox(), p.val().BoundingBox()
-    assert bb.xlen <= PED_W + 0.2 and bb.ylen <= PED_D + 0.2, "base oversize"
-    assert pb.zmax <= PED_H + 0.01, "plate above envelope"
-    assert pb.xlen <= SLOT_W - 2.8 and pb.ylen <= SLOT_D - 2.8, \
-        "plate won't clear the faceplate slot"
-    # travel: front bumpon face vs plate underside, projected to the toe
-    stop_z = BUMP_BOSS_TOP - BUMP_SEAT + BUMP_H
-    drop = (PLATE_TOP - PLATE_T) - stop_z
-    toe = drop * (HINGE_Y + PED_D/2) / (HINGE_Y - BUMP_XY[0][1])
-    # magnet gap at rest and pressed (at the reed x/y)
-    drop_m = drop * (HINGE_Y - REED_XY[1]) / (HINGE_Y - BUMP_XY[0][1])
-    gap_rest = MAGNET_FACE_Z - FLOOR
-    gap_press = gap_rest - drop_m
-    print("toe travel %.1f mm | magnet gap rest %.1f -> pressed %.1f mm"
-          % (toe, gap_rest, gap_press))
-    assert 3.5 <= toe <= 7.0, "toe travel outside the quiet/positive range"
-    assert gap_press <= 4.5, "magnet never gets close enough to close the reed"
-    assert gap_rest >= 6.5, "reed may stay closed at rest (release margin)"
-
-
-def export():
-    out = os.path.join(os.path.dirname(__file__), "out")
-    os.makedirs(out, exist_ok=True)
-    b, p = base(), plate()
-    checks(b, p)
-    pin = (cq.Workplane("YZ").cylinder(58.0, 1.5, centered=True)
-           .rotate((0, 0, 0), (0, 1, 0), 90).translate((0, HINGE_Y, HINGE_Z)))
-    for name, solid in (("silent_pedal_base", b), ("silent_pedal_plate", p)):
-        cq.exporters.export(solid, os.path.join(out, name + ".step"))
-        cq.exporters.export(solid, os.path.join(out, name + ".stl"))
+             .translate((0, 0, PED_H - T)))
+    for sx in (-1, 1):
+        plate = plate.union(
+            cq.Workplane("XY").box(T, PED_D, SKIRT_H,
+                                   centered=(True, True, False))
+            .translate((sx * SKIRT_X, 0, PED_H - T - SKIRT_H)))
+    plate = plate.union(
+        cq.Workplane("XY").box(PED_W, T, LIP_H, centered=(True, True, False))
+        .translate((0, -PED_D / 2 + T / 2, PED_H - T - LIP_H)))
+    plate = plate.cut(cq.Workplane("YZ").cylinder(90, PIN_D / 2, centered=True)
+                      .translate((0, PIN_Y, PIN_Z)))
+    pin = (cq.Workplane("YZ").cylinder(80, 1.5, centered=True)
+           .translate((0, PIN_Y, PIN_Z)))
     assy = cq.Assembly()
-    assy.add(b.val(), name="base", color=cq.Color(0.15, 0.15, 0.15))
-    assy.add(p.val(), name="plate", color=cq.Color(0.22, 0.22, 0.22))
+    assy.add(base.val(), name="base", color=cq.Color(0.12, 0.12, 0.12))
+    assy.add(plate.val(), name="plate", color=cq.Color(0.15, 0.15, 0.15))
     assy.add(pin.val(), name="pin", color=cq.Color(0.6, 0.6, 0.65))
-    assy.save(os.path.join(out, "silent_pedal_assy.step"))
-    for name, d in (("top", (0, 0, 1)), ("iso", (1, -1, 0.8))):
-        cq.exporters.export(
-            b.union(p), os.path.join(out, f"silent_pedal_{name}.svg"),
-            opt={"projectionDir": d, "showAxes": False,
-                 "strokeWidth": 0.4, "width": 640, "height": 480})
-    print("wrote base/plate (.step/.stl) + assy + previews in", out)
+    assy.save(os.path.join(OUT, "silent_pedal_assy.step"))
+    return base, plate
+
+
+def checks():
+    # plate + skirts must clear the faceplate slot
+    plate_w = 2 * SKIRT_X + 2 * T
+    assert plate_w <= SLOT_W - 2.0, "skirts foul the faceplate slot"
+    # toe travel: lip bottom at rest vs bumpon stack on the floor
+    lip_bot = PED_H - T - LIP_H
+    travel_lip = lip_bot - (T + BUMP_H)
+    toe = travel_lip * (PIN_Y + PED_D / 2) / (PIN_Y + PED_D / 2 - 8.0)
+    print("plate width %.1f (slot %.1f) | lip travel %.1f -> toe ~%.1f mm"
+          % (plate_w, SLOT_W, travel_lip, toe))
+    assert 3.5 <= travel_lip <= 7.0, "travel outside the quiet/positive range"
+    # limiter: Ø6 sleeve on the M4 rides the slot; rest = sleeve at slot top;
+    # the bumpons (down-stop) must engage BEFORE the sleeve hits slot bottom
+    slot_top = LIM_SLOT_Z0 + LIM_SLOT[1]
+    slot_travel = LIM_Z_REST - (LIM_SLOT_Z0 + 3.0)
+    assert abs((slot_top - 3.0) - LIM_Z_REST) < 0.6, "rest axis vs slot top"
+    assert travel_lip <= slot_travel - 0.2, \
+        "bumpons must stop the plate before the slot bottom does"
+    # flange must stay under the faceplate (lid line ~15 above the base floor)
+    assert FLANGE_H <= 13.5, "flange pokes through the faceplate slot"
+
+
+def main():
+    os.makedirs(OUT, exist_ok=True)
+    checks()
+    dxf_base(os.path.join(OUT, "silent_pedal_base.dxf"))
+    dxf_plate(os.path.join(OUT, "silent_pedal_plate.dxf"))
+    print("DXF flats: out/silent_pedal_base.dxf, out/silent_pedal_plate.dxf")
+    sys.path.insert(0, os.path.join(HERE, "..", "enclosure"))
+    try:
+        from vamp_enclosure import dxf_to_pdf
+        for n in ("silent_pedal_base", "silent_pedal_plate"):
+            dxf_to_pdf(os.path.join(OUT, n + ".dxf"),
+                       os.path.join(OUT, n + ".pdf"),
+                       title=n.replace("_", " ").upper())
+            print("PDF: out/%s.pdf" % n)
+    except Exception as e:
+        print("(pdf skipped: %s)" % e)
+    try:
+        build_step()
+        print("Folded STEP: out/silent_pedal_assy.step")
+    except Exception as e:
+        print("(step skipped: %s)" % e)
 
 
 if __name__ == "__main__":
-    export()
+    main()
