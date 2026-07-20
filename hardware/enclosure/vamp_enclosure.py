@@ -127,7 +127,7 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # --- LEDs / encoder -----------------------------------------------------------
 # Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
 # board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
-# faceplate UNDERSIDE with VHB tape; a small milky PMMA pill diffuser sets into
+# faceplate UNDERSIDE with VHB tape; a WHITE PLA pill diffuser insert sets into
 # each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
 # (5V/data/GND) on the castellated end pads.
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
@@ -391,7 +391,7 @@ def faceplate_holes():
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
     # --- LED diffuser slots: ONE small pill window per indicator pedal, on the
     #     old status-LED centre-line (a single-LED WS2812B board under each,
-    #     VHB-taped to the faceplate underside; milky PMMA pill diffuser set into
+    #     VHB-taped to the faceplate underside; white-PLA pill diffuser set into
     #     the slot). Full-round ends: corner r = LED_SLOT_H/2.
     for label, u, v in PEDALS:
         if not _has_led(label):
@@ -1053,7 +1053,7 @@ def build_platform_steps():
     return outp
 
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in clear/milky resin, x6 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
     above the outer skin. The single-LED module (hardware/led_strip/ puck or an
@@ -1079,7 +1079,7 @@ def build_diffuser_step():
 
 
 def build_ring_diffuser_step():
-    """Encoder LED-ring diffuser INSERT (3D-print in clear/milky resin, x1):
+    """Encoder LED-ring diffuser INSERT (3D-print in WHITE PLA, x1):
     the annular sibling of vamp_led_diffuser -- pushes into the faceplate's ring
     window FROM THE INSIDE, shoulder flange seats on the sheet's underside, and
     an annular pocket on the back nests the NeoPixel Ring 16 (authentic Adafruit,
