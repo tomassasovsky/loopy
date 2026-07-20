@@ -1,35 +1,35 @@
-# VAMP silent footswitch
+# VAMP silent footswitch (sheet metal)
 
-Printable replacement for the 10 purchased ASP-1 pedals. Same 75×100×25
-envelope, mounts on the printed pedestals' existing M3 inserts, wears the
-`asp1_pad` silicone pad on top. Generator: `silent_pedal.py` (cadquery) →
-`out/` STEP/STL for base + plate + assembly.
+Two folded 2.0 mm 5052 parts per pedal (x10) -- same laser+bend+powder
+process as the enclosure; the flats ride in `vamp_sheetmetal.zip`.
+Conventional pedal construction: rear pin hinge, front return spring,
+slotted-flange travel limiter, lever microswitch.
 
 ## Why it's silent
 
-| Noise source (stock pedals) | This design |
+| Noise source | This design |
 |---|---|
-| Mechanical switch clack | **Reed switch + magnet** — contactless, passive 2-wire, reads as a plain closure on the main board's 2-pin JST inputs |
-| Plate slams the body at the end of travel | Lands on **4× Ø8 silicone bumpons** seated in the base rim bosses |
-| Spring-return slap on release | Retention screw head lands on a **silicone/EPDM M3 washer** in the plate counterbore (hidden under the glued pad) |
-| Spring twang | Spring is **captive on the screw** in greased pockets |
-| Hinge rattle | Snug printed knuckles + greased 3 mm steel pin |
+| Stomp-switch clack | **Quiet-series lever microswitch** (Cherry DB3 / ZF D4 "silent" class, 2-wire NO -> plugs into the board's JST inputs unchanged) |
+| Plate hits the base going down | Front lip lands on **Ø8 silicone bumpons** stuck on the floor (ENGRAVE marks) |
+| Spring return slap going up | M4 limiter screw wears a **Ø6 silicone sleeve** that meets the flange slot's top edge |
+| Spring twang / wander | Spring seated on adhesive silicone dots (marked), greased |
+| Hinge rattle | M3 x 45 + nyloc through walls + skirts, greased, snug Ø3.4 bores |
 
 ## Assembly (per pedal)
 
-1. Melt the M3 insert into the spring boss; stick 4 bumpons in the rim seats.
-2. Lay the reed in its floor channel (dab of silicone), solder the JST-XH
-   pigtail, route out the side notch. Press the Ø5×2 magnet into the post.
-3. Plate on, slide the 58 mm pin through towers + knuckles (dab of grease).
-4. Spring over the screw, silicone washer under the head, thread into the
-   insert. **Rest height / preload = how deep you thread it.**
-5. Glue the `asp1_pad` on top (covers the screw). Bolt down with 4× M3×12.
+1. Stick 2 bumpons on the floor marks; stick silicone dots on the spring mark.
+2. Screw the microswitch to the floor (2x M2.3); solder the JST-XH pigtail.
+3. Spring on its seat; plate over it; M3 x 45 hinge screw through walls +
+   skirts, nyloc snug-not-tight, grease.
+4. M4 x 16 through the lip hole + Ø6 silicone sleeve inside the flange slot,
+   nyloc loose enough to slide. Rest height = sleeve against the slot top.
+5. Glue the `asp1_pad` on the treadle. Bolt to the pedestal (4x M3 x 12).
 
-## Tuning (hardware is never the paper ideal)
+## Tuning
 
-- **Actuation point**: `MAGNET_FACE_Z` (reprint the plate) or shim the magnet
-  pocket. Design: gap 7.5 mm at rest → 2.7 mm pressed; typical Ø5×2 N35 +
-  KSK-1A66 closes at ~4 mm, releases ~6 mm. Verify with a multimeter before
-  final assembly — reed sensitivity varies unit to unit.
-- **Feel**: spring spec (Ø10×20 free, ~1.5 N/mm) and screw preload.
-- **Travel**: 5.5 mm at the toe (bumpon boss height sets it).
+- Feel: spring spec (Ø10 x 20 free, ~1.5 N/mm).                # TUNE
+- Actuation: bend the microswitch lever / shim the switch.     # TUNE
+- Travel: ~4 mm at the toe; stack a second bumpon to shorten.
+
+Numbers (from the generator self-checks): plate 75.0 wide in the 78.0 slot,
+lip travel 3.7 mm, bumpons engage 0.3 mm before the slot bottom can.

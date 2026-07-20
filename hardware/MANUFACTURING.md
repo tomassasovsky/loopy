@@ -18,6 +18,8 @@ STEPs incl. the folded assembly).
 | `vamp_rear_panel_pi` | 1 | Rear I/O sub-panel (Pi build). `vamp_rear_panel_nopi` is the alternate build — order one or the other. |
 | `vamp_screen_bracket` | 8 | 4 per screen (16" + 7"). |
 | `vamp_ring_disc` | 1 | Encoder LED-ring centre disc. |
+| `silent_pedal_base` | 10 | Footswitch base: walls up 90°, front limiter flange (flats in `silent_pedal/out/`, included in the zip). |
+| `silent_pedal_plate` | 10 | Footswitch treadle: skirts + lip down 90°. |
 
 Material: **2.0 mm 5052-H32 aluminium**, K-factor 0.33, R2 tooling (bend notes
 on each drawing). Finish: black powder coat, outside faces. Front-lip M4 holes
@@ -33,8 +35,6 @@ Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 | `vamp_platform_mid` | 2 | PETG/ASA, ≥40% infill | Tall (45.9) CLEAR/BANK pedestal, hollow with boss columns — standard **M3×5.7×4.6 inserts** (8 per pedestal). |
 | `vamp_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. |
 | `vamp_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
-| `silent_pedal/out/silent_pedal_base` | 10 | PETG, solid walls | Silent footswitch base — reed channel, bumpon seats, M3 counterbores (see `silent_pedal/README.md`). |
-| `silent_pedal/out/silent_pedal_plate` | 10 | PETG, solid walls | Footswitch top plate — magnet post, hinge knuckles. |
 | `rc20_pad/out/asp1_pad` | 1 master | Resin/PLA master | Pedal pad master (96×71, ASP-1-sized) — print once, cast **10× silicone pads** via `asp1_pad_mould`/`asp1_pad_pourbox`. Footprint tracks the PROVISIONAL ASP-1 dims. |
 
 Platform top pedal-insert pattern (`ASP1_MOUNT` 55×80) is **PROVISIONAL** until
@@ -62,9 +62,10 @@ Full lists with links: **`loopy_console_shopping_list.md`** (console) and
 **`loopy_pedal_shopping_list.md`** (board THT parts). Headlines:
 
 - 15.6" 5V USB-C touch panel; APROTII 7" monitor (pedals are now printed —
-  see `silent_pedal/`: 10× reed switch KSK-1A66-class, 10× Ø5×2 N35 magnet,
-  10× spring Ø10×20 ~1.5 N/mm, 10× M3×20 + silicone M3 washer, 10× M3 insert,
-  40× Ø8×2.2 silicone bumpons, 3 mm rod ×580 mm, 10× JST-XH 2-pin pigtail)
+  see `silent_pedal/`: 10× QUIET lever microswitch (Cherry DB3/ZF D4 class),
+  10× spring Ø10×20 ~1.5 N/mm, 10× M3×45+nyloc (hinge), 10× M4×16+nyloc+Ø6
+  silicone sleeve (limiter), 20× Ø8×2.2 bumpons + silicone dots,
+  10× JST-XH 2-pin pigtail)
 - Raspberry Pi 5 + Active Cooler
 - 5V buck: **eleUniverse 8–36V→5V 10A IP67** (Amazon B0GGHN97TK) + 9V ≥5A brick
 - 1× NeoPixel Ring 16 (authentic Adafruit, 44.5 mm OD — clones are 68 mm and won't fit)
