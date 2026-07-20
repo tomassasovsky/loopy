@@ -33,6 +33,7 @@ Send **`enclosure/out/vamp_3dprint.zip`** (STEP + STL for each part).
 | `vamp_platform_mid` | 2 | PETG/ASA, ≥40% infill | Tall (45.9) CLEAR/BANK pedestal, hollow with boss columns — standard **M3×5.7×4.6 inserts** (8 per pedestal). |
 | `vamp_led_diffuser` | 6 | **White PLA** | Pill lens, pushes into the faceplate slot from inside. |
 | `vamp_ring_diffuser` | 1 | **White PLA** | Annular lens for the encoder LED ring. |
+| `rc20_pad/out/asp1_pad` | 1 master | Resin/PLA master | Pedal pad master (96×71, ASP-1-sized) — print once, cast **10× silicone pads** via `asp1_pad_mould`/`asp1_pad_pourbox`. Footprint tracks the PROVISIONAL ASP-1 dims. |
 
 Platform top pedal-insert pattern (`ASP1_MOUNT` 55×80) is **PROVISIONAL** until
 a real ASP-1 base is measured — reprint or re-drill if it moves.
