@@ -143,16 +143,12 @@ def _shell(msp, fx, fy, dev_side, dev_front, dev_rear,
     """The console-base corner construction (vamp_base rear corners): the
     FRONT/REAR flaps run FULL OUTER WIDTH and fold over the side flaps'
     end edges, closing each corner from the front/back; the side flaps
-    stop a kerf short of the crossing fold lines. Each overhang starts a
-    ROOT RELIEF past the fold band (beyond the centre panel there is
-    nothing for the band to wrap), and the band-crossing relief at each
-    fold intersection is only r2 -- it lives inside the bend arcs, so no
-    hole shows on any finished face."""
+    stop clear of the crossing folds' bend bands (so the folds never
+    cross -- NO corner relief holes at all; the centre panel's corners
+    stay intact metal). Each overhang starts a ROOT RELIEF past the
+    fold band (beyond the centre panel there is nothing for the band
+    to wrap)."""
     REL = BA90 / 2.0 + 0.9                # overhang root relief (~2.6)
-    CREL = T + 1.0                        # crossing relief radius (the
-                                          # console's rrel rule): swallows
-                                          # both bands, hides in the arcs
-                                          # behind the overhanging flap
     ov = EMP + T / 2                      # overhang reaches the side
                                           # skirts'/walls' outer faces
     L, R, y0, y1 = -fx, fx, -fy, fy
@@ -197,8 +193,6 @@ def _shell(msp, fx, fy, dev_side, dev_front, dev_rear,
     _poly(msp, [(-xt, y1), (xt, y1)], "BEND", closed=False)
     for x in (L, R):
         _poly(msp, [(x, -ys), (x, ys)], "BEND", closed=False)
-    for cx, cy in ((L, y0), (R, y0), (L, y1), (R, y1)):
-        _circle(msp, cx, cy, 2 * CREL)    # in-arc crossing reliefs
 
 
 def dxf_base(path):
@@ -353,10 +347,8 @@ def checks():
     ys_plate = TREAD_D / 2.0 - BA90 / 2.0 - 0.45
     assert HINGE_Y[1] <= ys_plate - 0.3, \
         "hinge step runs past the side-skirt end"
-    # console-style corners: the in-arc crossing relief must cover the
-    # band, and stay small enough to hide inside the bend arcs
-    assert BA90 / 2.0 + 0.25 <= T + 1.0 <= RI + T + 0.6, \
-        "crossing relief neither covers the band nor hides in the arc"
+    # corners need NO relief at all: the side folds stop clear of the
+    # front/rear bend bands, so the folds never cross
     # step's front end is ahead of the pivot -> it presses DOWN a little
     step_drop = travel * (PIN_Y - HINGE_Y[0]) / hinge_arm
     assert HINGE_BOT - step_drop > 1.0, "hinge step hits the deck pressed"
