@@ -10,12 +10,15 @@ rear has the wire hole). The PLATE is an inverted tray -- treadle
 sized exactly to the cast pad (96 x 71, the fold shoulders read as the
 metal rim around the pad) with skirts folded down on all four sides
 that wrap OUTSIDE the base walls. CORNERS on both parts use the
-console-base pattern (the vamp_base rear corners): the front/rear
-flaps run FULL OUTER WIDTH and fold over the side flaps' end edges,
-closing every corner with metal from the same blank -- no welds, no
-filler, and the band-crossing relief (r = T+1) hides inside the bend
-arcs behind the overhanging flap, so no hole shows on any finished
-face. The rear skirt has a 12 mm cable notch aligned with the wire
+console-base overlap pattern (the vamp_base rear corners): the
+front/rear flaps run FULL OUTER WIDTH and fold over the side flaps'
+end edges, closing every corner with metal from the same blank -- no
+welds, no filler, and NO relief holes at all: the side folds stop
+clear of the front/rear bend bands (a straight wall end cannot
+intrude into the neighbour's bend arc), so the folds never cross and
+the panel corners stay intact. The ~2 mm interior setback this leaves
+between a side wall's end and the crossing wall is fully covered by
+the overhanging flap outside. The rear skirt has a 12 mm cable notch aligned with the wire
 hole. No polarity switch -- the board input doesn't need one.
 
 ## Why it's silent
