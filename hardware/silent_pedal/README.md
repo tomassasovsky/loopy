@@ -3,13 +3,17 @@
 Two folded 2.0 mm 5052 parts per pedal (x10) -- same laser+bend+powder
 process as the enclosure; the flats ride in `vamp_sheetmetal.zip`.
 **Clamshell sustain-pedal construction** (Artesia / M-Audio reference):
-the BASE is a shallow tray (front wall 18 mm = taped down-stop, side
-walls 16 mm carry the hinge rivets, rear wall 16 mm has the wire hole);
-the PLATE is an inverted tray -- treadle sized exactly to the cast pad
-(96 x 71, the fold shoulders read as the metal rim around the pad) with
-skirts folded down on all four sides that wrap OUTSIDE the base walls,
-so the interior stays hidden through the whole travel. No polarity
-switch -- the board input doesn't need one.
+the BASE is a shallow tray -- four UNIFORM 18 mm walls (clean look;
+only the front one carries the down-stop tape, the sides hold the hinge
+pivots, the rear has the wire hole); the PLATE is an inverted tray --
+treadle sized exactly to the cast pad (96 x 71, the fold shoulders read
+as the metal rim around the pad) with skirts folded down on all four
+sides that wrap OUTSIDE the base walls. Corners are LAPPED: the side
+flaps carry 2.9 mm wings so their folded edges close each corner -- no
+punched relief circles anywhere; the fold-end relief is a 3.5 x 5.5
+notch that lives almost entirely inside the bend arc (~0.3 mm of
+visible edge). The rear skirt has a 12 mm cable notch aligned with the
+wire hole. No polarity switch -- the board input doesn't need one.
 
 ## Why it's silent
 
@@ -50,7 +54,7 @@ switch -- the board input doesn't need one.
   4.3 at the toe).
 - Actuation: bend the microswitch lever / shim the switch.     # TUNE
 
-Numbers (from the generator self-checks): clamshell outer 76.8 x 101.8
+Numbers (from the generator self-checks): walls uniform 18; clamshell outer 76.8 x 101.8
 through the 80 x 105 faceplate slot (FSW_SLOT = footprint + 5); hinge
 pivot at (y 40, z 8) -- low enough that the screw head passes under the
 faceplate edge; side/front skirt bottoms at 6 mm (1.8 above the deck at
