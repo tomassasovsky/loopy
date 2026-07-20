@@ -2,38 +2,48 @@
 
 Two folded 2.0 mm 5052 parts per pedal (x10) -- same laser+bend+powder
 process as the enclosure; the flats ride in `vamp_sheetmetal.zip`.
-Conventional pedal construction: rear RIVETED hinge, front return spring,
-slotted-flange travel limiter, lever microswitch. The base folds into a
-CLOSED box (side walls + full-width front flange + rear wall); the moving
-plate's lip and rear skirt tuck inside it. Wire exits a notch at the rear
-wall's floor line and runs under the console lid to the board.
+Real pedal architecture: the BASE is a low open tray whose 18 mm side
+walls carry the rear hinge rivets AND act as the down-stop; the PLATE is
+a flat treadle with a short front lip and two hinge tabs, every fold
+going DOWN inside the tray, so the top has clear space to travel.
+The wire routes over the low (8 mm) rear wall -- no hole, no grommet.
 
 ## Why it's silent
 
 | Noise source | This design |
 |---|---|
 | Stomp-switch clack | **Quiet-series lever microswitch** (Cherry DB3 / ZF D4 "silent" class, 2-wire NO -> plugs into the board's JST inputs unchanged) |
-| Plate hits the base going down | Front lip lands on **Ø8 silicone bumpons** stuck on the floor (ENGRAVE marks) |
-| Spring return slap going up | M4 limiter screw wears a **Ø6 silicone sleeve** that meets the flange slot's top edge |
-| Spring twang / wander | Spring seated on adhesive silicone dots (marked), greased |
-| Hinge rattle | 2x Ø3.2 pivot rivets (one per side, set LOOSE on a washer), greased |
+| Plate hits the base going down | Treadle lands on **silicone tape** stuck along the side-wall tops (ENGRAVE marks) |
+| Return slap going up | M4 retention screw inside the spring; the nyloc closes on a **silicone washer** on the treadle (hidden under the glued pad) |
+| Spring twang / wander | Spring captive on the retention screw, seated in the marked greased seat |
+| Hinge rattle | 2x O3.2 pivot rivets (one per side, set LOOSE on a washer), greased |
 
 ## Assembly (per pedal)
 
-1. Stick 2 bumpons on the floor marks; stick silicone dots on the spring mark.
+1. Stick silicone tape along both side-wall tops (ENGRAVE marks).
 2. Screw the microswitch to the floor (2x M2.3); solder the JST-XH pigtail.
-3. Spring on its seat; plate over it; set the two Ø3.2 hinge rivets through
-   wall + skirt with a washer between (set LOOSE - the joint must pivot);
-   grease. Route the pigtail out the rear-wall notch.
-4. M4 x 16 through the lip hole + Ø6 silicone sleeve inside the flange slot,
-   nyloc loose enough to slide. Rest height = sleeve against the slot top.
-5. Glue the `asp1_pad` on the treadle. Bolt to the pedestal (4x M3 x 12).
+3. Set the two O3.2 hinge rivets through wall + hinge tab with a washer
+   between (set LOOSE - the joint must pivot); grease.
+4. Bolt the base to the pedestal (4x M3 x 12). Drop the M4 x 25 button
+   head into the pedestal deck recess BEFORE seating the base: it passes
+   up through floor + spring + treadle; nyloc + silicone washer on top.
+   Thread depth sets rest height / spring preload.
+5. Route the pigtail over the low rear wall, under the console lid.
+6. Glue the `asp1_pad` on the treadle (hides the nyloc + washer).
 
 ## Tuning
 
-- Feel: spring spec (Ø10 x 20 free, ~1.5 N/mm).                # TUNE
+- Feel: spring spec (O10 x 20 free, ~1.5 N/mm).                # TUNE
+- Rest height / preload: retention-screw thread depth.         # TUNE
+- Travel: tape thickness (1 mm tape -> 4 mm at the walls).
 - Actuation: bend the microswitch lever / shim the switch.     # TUNE
-- Travel: ~4 mm at the toe; stack a second bumpon to shorten.
 
-Numbers (from the generator self-checks): plate 75.0 wide in the 78.0 slot,
-lip travel 3.7 mm, bumpons engage 0.3 mm before the slot bottom can.
+Numbers (from the generator self-checks): travel 4.0 mm at the walls /
+4.3 at the toe; hinge pin at (y 35.5, z 10); lip bottom 17 mm, still
+12.8 mm up when fully pressed (front wall is 8); wall tops pass through
+the 78-wide faceplate slot with 5 mm clearance, hidden under the pad.
+
+Flat offsets use the MEASURED fold model (CenterFoldBendLinePosition:
+folded extent = drawn + DED90/2 ~ 1.9 mm), verified against the native
+sheet-metal build in the "VAMP silent pedal" Fusion doc. A formal
+dev_deduct pass is still owed before fab.
