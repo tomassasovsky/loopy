@@ -2,35 +2,35 @@
 <rect width="934" height="699" fill="#0f1623"/>
 <text x="44" y="32" fill="#94a3b8" font-size="12" font-weight="600">VAMP TOP FACEPLATE — player view · 850 x 423 x 100 mm · welded shell · slope 12.5deg</text>
 <rect x="44" y="44" width="846.0" height="406.6" rx="9" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
-<rect x="74.0" y="335.6" width="80.0" height="105.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="174.9" y="335.6" width="80.0" height="105.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="275.7" y="335.6" width="80.0" height="105.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="376.6" y="335.6" width="80.0" height="105.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="477.4" y="335.6" width="80.0" height="105.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="578.3" y="335.6" width="80.0" height="105.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="679.1" y="335.6" width="80.0" height="105.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="780.0" y="335.6" width="80.0" height="105.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="275.7" y="165.6" width="80.0" height="105.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="376.6" y="165.6" width="80.0" height="105.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="487.4" y="320.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="588.3" y="320.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="689.1" y="320.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="790.0" y="320.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="285.7" y="150.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="386.6" y="150.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<rect x="86.4" y="76.6" width="156.0" height="88.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
-<text x="164.4" y="120.6" fill="#4a7f96" font-size="12" text-anchor="middle">7" TOUCH - waveform</text>
-<rect x="496.7" y="76.6" width="344.0" height="194.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
-<text x="668.7" y="173.6" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
-<circle cx="164.4" cy="218.1" r="29.0" fill="none" stroke="#a855f7" stroke-width="3"/>
-<circle cx="164.4" cy="218.1" r="3.5" fill="#cbd5e1"/>
-<text x="100.0" y="308.9" fill="#9fb0c8" font-size="8" text-anchor="middle">REC/</text>
-<text x="100.0" y="337.6" fill="#9fb0c8" font-size="8" text-anchor="middle">PLAY</text>
-<text x="230.9" y="337.6" fill="#9fb0c8" font-size="8" text-anchor="middle">STOP</text>
-<text x="331.7" y="337.6" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
-<text x="432.6" y="337.6" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
-<text x="331.7" y="151.6" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
-<text x="432.6" y="151.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
+<rect x="74.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="175.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="276.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="377.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="478.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="579.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="680.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="781.0" y="336.6" width="79.0" height="104.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="276.0" y="167.6" width="79.0" height="104.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="377.0" y="167.6" width="79.0" height="104.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="487.5" y="321.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="588.5" y="321.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="689.5" y="321.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="790.5" y="321.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="285.5" y="152.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="386.5" y="152.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="86.0" y="77.6" width="156.0" height="88.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
+<text x="164.0" y="121.6" fill="#4a7f96" font-size="12" text-anchor="middle">7" TOUCH - waveform</text>
+<rect x="497.0" y="77.6" width="344.0" height="194.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
+<text x="669.0" y="174.6" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
+<circle cx="164.0" cy="219.6" r="29.0" fill="none" stroke="#a855f7" stroke-width="3"/>
+<circle cx="164.0" cy="219.6" r="3.5" fill="#cbd5e1"/>
+<text x="99.5" y="309.9" fill="#9fb0c8" font-size="8" text-anchor="middle">REC/</text>
+<text x="99.5" y="338.6" fill="#9fb0c8" font-size="8" text-anchor="middle">PLAY</text>
+<text x="230.5" y="338.6" fill="#9fb0c8" font-size="8" text-anchor="middle">STOP</text>
+<text x="331.5" y="338.6" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
+<text x="432.5" y="338.6" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
+<text x="331.5" y="153.6" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
+<text x="432.5" y="153.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
 <text x="44" y="526.6" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 90 mm (lowered; transition shoulder carries the lid-lap screws)</text>
 <rect x="44" y="538.6" width="846.0" height="90.0" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
 <rect x="74.0" y="560.6" width="290.0" height="46.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
