@@ -111,6 +111,8 @@ class TrackColumn extends StatelessWidget {
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: Colors.white70,
+                    // Console: larger channel number to match the bigger name.
+                    fontSize: 40,
                   ),
                 ),
                 if (track.isMultiple)
