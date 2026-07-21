@@ -301,26 +301,33 @@ class _TrackHistoryDots extends StatelessWidget {
       return Colors.white12;
     }
 
+    // On the console the history dots (undo/redo indicators) scale up to match
+    // the larger track name; desktop keeps the compact sizes.
+    const dotSize = kConsoleMode ? 18.0 : 8.0;
+    const rowHeight = kConsoleMode ? 26.0 : 12.0;
+    const gutterSize = kConsoleMode ? 24.0 : 12.0;
+    const gapSize = kConsoleMode ? 8.0 : 4.0;
+
     Widget gutter(IconData icon, {required bool visible}) => Visibility(
       visible: visible,
       maintainSize: true,
       maintainAnimation: true,
       maintainState: true,
-      child: Icon(icon, size: 12, color: Colors.white70),
+      child: Icon(icon, size: gutterSize, color: Colors.white70),
     );
 
     return SizedBox(
-      height: 12,
+      height: rowHeight,
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          spacing: 4,
+          spacing: gapSize,
           children: [
             gutter(Icons.chevron_left, visible: page > 0),
             for (var i = 0; i < _slotsPerPage; i++)
               SizedBox.square(
-                dimension: 8,
+                dimension: dotSize,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: slotColor(start + i),
