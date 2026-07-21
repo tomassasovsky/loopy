@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
@@ -89,55 +90,82 @@ class TrackColumn extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Text(
-                '${track.channel + 1}',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: Colors.white70,
-                ),
-              ),
-              const Spacer(),
-              if (track.isMultiple)
+          if (kConsoleMode)
+            // Console mode: the foot pedals own undo/redo, so the on-screen
+            // buttons are hidden entirely and the channel number is centred.
+            // The loop-multiple badge still rides the right edge.
+            Stack(
+              alignment: Alignment.center,
+              children: [
                 Text(
-                  l10n.loopMultipleLabel(track.multiple),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.primary,
+                  '${track.channel + 1}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white70,
                   ),
                 ),
-              // Undo/Redo surface only on the selected column; the keyboard
-              // shortcut hint in each tooltip adapts to the host platform.
-              if (selected) ...[
-                IconButton(
-                  key: Key('tracks_undo_${track.channel}'),
-                  tooltip: l10n.undoTooltip(undoShortcut),
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  color: Colors.white70,
-                  icon: const Icon(Icons.undo),
-                  // Mirrors the `U` key: enabled whenever there is a layer to
-                  // peel — stacked overdub passes, or the base recording
-                  // itself (undoing it empties the track, redo-ably) — but not
-                  // mid-capture, when the engine rejects undo.
-                  onPressed:
-                      (track.hasContent || track.canUndo) && !track.isCapturing
-                      ? () => onUndo(track.channel)
-                      : null,
-                ),
-                IconButton(
-                  key: Key('tracks_redo_${track.channel}'),
-                  tooltip: l10n.redoTooltip(redoShortcut),
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  color: Colors.white70,
-                  icon: const Icon(Icons.redo),
-                  onPressed: track.canRedo && !track.isCapturing
-                      ? () => onRedo(track.channel)
-                      : null,
-                ),
+                if (track.isMultiple)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      l10n.loopMultipleLabel(track.multiple),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
               ],
-            ],
-          ),
+            )
+          else
+            Row(
+              children: [
+                Text(
+                  '${track.channel + 1}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+                const Spacer(),
+                if (track.isMultiple)
+                  Text(
+                    l10n.loopMultipleLabel(track.multiple),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                // Undo/Redo surface only on the selected column; the keyboard
+                // shortcut hint in each tooltip adapts to the host platform.
+                if (selected) ...[
+                  IconButton(
+                    key: Key('tracks_undo_${track.channel}'),
+                    tooltip: l10n.undoTooltip(undoShortcut),
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: Colors.white70,
+                    icon: const Icon(Icons.undo),
+                    // Mirrors the `U` key: enabled whenever there is a layer to
+                    // peel — stacked overdub passes, or the base recording
+                    // itself (undoing it empties the track, redo-ably) — but
+                    // not mid-capture, when the engine rejects undo.
+                    onPressed:
+                        (track.hasContent || track.canUndo) &&
+                            !track.isCapturing
+                        ? () => onUndo(track.channel)
+                        : null,
+                  ),
+                  IconButton(
+                    key: Key('tracks_redo_${track.channel}'),
+                    tooltip: l10n.redoTooltip(redoShortcut),
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: Colors.white70,
+                    icon: const Icon(Icons.redo),
+                    onPressed: track.canRedo && !track.isCapturing
+                        ? () => onRedo(track.channel)
+                        : null,
+                  ),
+                ],
+              ],
+            ),
           Expanded(
             child: FocusableTapTarget(
               key: Key('tracks_tile_${track.channel}'),
