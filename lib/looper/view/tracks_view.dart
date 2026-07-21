@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/app/loopy_navigator.dart';
+import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
@@ -99,22 +100,29 @@ class _TracksViewState extends State<TracksView> {
             child: Scaffold(
               body: SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
+                  // Console/kiosk mode hides the on-screen toolbar (the foot
+                  // pedals drive transport/mode/clear) and tightens the layout
+                  // for the fixed panel; desktop builds keep the full chrome.
+                  padding: kConsoleMode
+                      ? const EdgeInsets.symmetric(vertical: 8)
+                      : const EdgeInsets.all(18),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      TracksToolbar(
-                        mode: mode,
-                        activeBank: overlay.activeBank,
-                        anyActive: anyActive,
-                        playStopEnabled: playStopEnabled,
-                        transportEnabled: transportEnabled,
-                        onToggleMode: commands.toggleMode,
-                        onPlayStopAll: () =>
-                            commands.togglePlayAll(playing: anyActive),
-                        onClearAll: commands.clearAll,
-                      ),
-                      const SizedBox(height: 14),
+                      if (!kConsoleMode) ...[
+                        TracksToolbar(
+                          mode: mode,
+                          activeBank: overlay.activeBank,
+                          anyActive: anyActive,
+                          playStopEnabled: playStopEnabled,
+                          transportEnabled: transportEnabled,
+                          onToggleMode: commands.toggleMode,
+                          onPlayStopAll: () =>
+                              commands.togglePlayAll(playing: anyActive),
+                          onClearAll: commands.clearAll,
+                        ),
+                        const SizedBox(height: 14),
+                      ],
                       // With no first-run gate, a stopped engine lands here; a
                       // full-width affordance opens settings to (re)start it.
                       if (!state.status.isConnected) ...[
