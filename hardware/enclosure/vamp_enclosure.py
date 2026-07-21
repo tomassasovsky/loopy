@@ -118,7 +118,7 @@ ASP1_MOUNT      = (55.0, 80.0)  # ASP-1 base-screw rectangle (W x D) -- PROVISIO
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
 BIG_BEZEL  = (360.0, 224.0)   # 15.6" no-shell capacitive panel outline (glass edge-to-edge)
-BIG_W, BIG_H     = 344.0, 194.0   # 15.6" active area (344.16 x 193.59), 1920x1080 16:9 -> aperture
+BIG_W, BIG_H     = 344.0, 193.5   # 15.6" active area (344.16 x 193.59); aperture = exact 16:9 at 344 wide (was 194, ~0.5mm too tall) so a 1080p display fills it with no top/bottom slop
 BIG_DEPTH  = 8.0              # thin panel (3-6 mm); HDMI/USB driver board mounts flat inside
 SMALL_BEZEL = (165.0, 100.0)  # 7" module outline (APROTII: ears 164x99)
 SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
