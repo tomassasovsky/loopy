@@ -61,6 +61,16 @@ class TrackColumn extends StatelessWidget {
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final playMode = mode == LooperMode.play;
     final barColor = looper.meterColor(meterState, mode: mode);
+
+    // The track name label. On the console it renders at a uniform, larger
+    // size (consistent height across columns; the longest name reaches ~60% of
+    // the column width); desktop keeps the fixed text size.
+    final nameStyle = theme.textTheme.titleMedium?.copyWith(
+      color: Colors.white,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.5,
+    );
+    final nameText = Text(name, textAlign: TextAlign.center, style: nameStyle);
     // Undo/Redo shortcut hints adapt to the host platform — Loopy targets
     // Windows/Linux too, so this must not hardcode the macOS modifier.
     final isMac = defaultTargetPlatform == TargetPlatform.macOS;
@@ -207,7 +217,7 @@ class TrackColumn extends StatelessWidget {
             undoDepth: track.undoDepth + (track.hasContent ? 1 : 0),
             redoDepth: track.redoDepth,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: kConsoleMode ? 2 : 10),
           FocusableTapTarget(
             key: Key('tracks_name_${track.channel}'),
             semanticLabel: l10n.a11yRenameTrack(name),
@@ -217,15 +227,18 @@ class TrackColumn extends StatelessWidget {
               channel: track.channel,
               current: name,
             ),
-            child: Text(
-              name,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
-              ),
-            ),
+            child: kConsoleMode
+                // Fixed console name size: uniform height across columns, tuned
+                // so a 6-char name (e.g. GUITAR) reaches ~60% of the column
+                // width on the 16" panel. Hard-coded (not width-relative).
+                ? Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
+                  )
+                : nameText,
           ),
           // A discrete arm/readiness strip, shown only when the view preference
           // is on. When off the widget is absent and the tile reflows.
