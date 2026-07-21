@@ -14,6 +14,8 @@ out/*.svg
 # for instant-quote fabs. NOT produced by vamp_enclosure.py, so not part of the
 # tracked deliverable — regenerate per quote instead.
 out/quote_pkg/
+out/vamp_sheetmetal/
+out/vamp_sheetmetal_step/
 out/*.zip
 out/vamp_base.step
 out/vamp_corner_bracket_rear.step
