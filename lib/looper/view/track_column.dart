@@ -7,7 +7,7 @@ import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/track_meters.dart';
 import 'package:loopy/theme/theme.dart';
@@ -39,7 +39,7 @@ class TrackColumn extends StatelessWidget {
   final bool selected;
 
   /// The active system mode (Record vs Play).
-  final LooperMode mode;
+  final InteractionMode mode;
 
   /// Dispatches an undo for the given channel (shares the keyboard path's
   /// dispatch+announce, wired in the host view).
@@ -59,7 +59,7 @@ class TrackColumn extends StatelessWidget {
     // bar color is one table lookup on the track's meter state (muted included;
     // see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
-    final playMode = mode == LooperMode.play;
+    final playMode = mode == InteractionMode.play;
     final barColor = looper.meterColor(meterState, mode: mode);
 
     // The track name label. On the console it renders at a uniform, larger

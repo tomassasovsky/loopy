@@ -32,7 +32,7 @@ library;
 
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/cubit/control_cubit.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
 /// Everything the spec predicates over: engine truth, the stored-intent
@@ -134,7 +134,7 @@ final List<ControlInvariant> controlInvariants = [
       return 'frame bank ${c.frame.activeBank} != overlay '
           '${c.overlay.activeBank}';
     }
-    final want = c.overlay.mode == LooperMode.play
+    final want = c.overlay.mode == InteractionMode.play
         ? PedalMode.play
         : PedalMode.rec;
     if (c.frame.mode != want) {
@@ -163,7 +163,8 @@ final List<ControlInvariant> controlInvariants = [
       }
       final led = c.frame.trackLeds[t.channel];
       final isCursor =
-          c.overlay.mode == LooperMode.record && t.channel == c.overlay.cursor;
+          c.overlay.mode == InteractionMode.record &&
+          t.channel == c.overlay.cursor;
       if (!isCursor && led != PedalTrackLed.off) {
         return 'EMPTY track ${t.channel} shows $led';
       }
@@ -171,7 +172,7 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('muted-dark-in-play', (c) {
-    if (c.overlay.mode != LooperMode.play) return null;
+    if (c.overlay.mode != InteractionMode.play) return null;
     for (final t in c.looper.tracks) {
       if (t.muted &&
           t.channel < c.frame.trackLeds.length &&
@@ -187,7 +188,7 @@ final List<ControlInvariant> controlInvariants = [
   // was the original bug class; under pure derivation it is structurally
   // unreachable — this pins it against regressions in the derivation itself.
   ControlInvariant('sounding-unexcluded-green', (c) {
-    if (c.overlay.mode != LooperMode.play) return null;
+    if (c.overlay.mode != InteractionMode.play) return null;
     if (_parked(c.looper)) return null; // nothing sounds while parked
     for (final t in c.looper.tracks) {
       if (!_sounding(t) || c.overlay.excluded.contains(t.channel)) continue;
@@ -201,7 +202,9 @@ final List<ControlInvariant> controlInvariants = [
   }),
   // While parked, the LEDs preview exactly what Rec/Play resumes.
   ControlInvariant('parked-preview-matches-resume', (c) {
-    if (c.overlay.mode != LooperMode.play || !_parked(c.looper)) return null;
+    if (c.overlay.mode != InteractionMode.play || !_parked(c.looper)) {
+      return null;
+    }
     for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {
       final t = _trackAt(c.looper, ch);
       final wantGreen =
@@ -215,7 +218,7 @@ final List<ControlInvariant> controlInvariants = [
     return null;
   }),
   ControlInvariant('capturing-red-in-rec', (c) {
-    if (c.overlay.mode != LooperMode.record) return null;
+    if (c.overlay.mode != InteractionMode.record) return null;
     for (final t in c.looper.tracks) {
       if (t.isCapturing &&
           t.channel < c.frame.trackLeds.length &&

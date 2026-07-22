@@ -234,11 +234,11 @@ void main() {
     testWidgets('M toggles the tracks mode', (tester) async {
       seed(const LooperState(tracks: [Track()]));
       await pump(tester);
-      expect(control.state.mode, LooperMode.record);
+      expect(control.state.mode, InteractionMode.record);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
       await tester.pump();
-      expect(control.state.mode, LooperMode.play);
+      expect(control.state.mode, InteractionMode.play);
     });
 
     testWidgets('a number key selects that track', (tester) async {
@@ -410,14 +410,14 @@ void main() {
         barOf(tester, 0).color,
         looper.meterColor(
           LooperMeterState.recording,
-          mode: LooperMode.record,
+          mode: InteractionMode.record,
         ),
       );
       expect(
         barOf(tester, 1).color,
         looper.meterColor(
           LooperMeterState.playing,
-          mode: LooperMode.record,
+          mode: InteractionMode.record,
         ),
       );
     });
@@ -428,7 +428,7 @@ void main() {
       await pump(tester);
       expect(
         barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.playing, mode: LooperMode.play),
+        looper.meterColor(LooperMeterState.playing, mode: InteractionMode.play),
       );
     });
 
@@ -441,7 +441,7 @@ void main() {
       await pump(tester);
       expect(
         barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.muted, mode: LooperMode.record),
+        looper.meterColor(LooperMeterState.muted, mode: InteractionMode.record),
       );
     });
 
