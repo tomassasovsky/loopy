@@ -183,9 +183,17 @@ def build_pour_box():
     return outer.cut(cavity).cut(seat)
 
 
-def export(solid):
+def set_pedal(l, w):
+    """Re-target the pad to another pedal top; platforms auto-fill (traced ratios)."""
+    global PEDAL_L, PEDAL_W, PAD_L, PAD_W
+    PEDAL_L, PEDAL_W = l, w
+    PAD_L = PEDAL_L - 2 * FIT_MARGIN
+    PAD_W = PEDAL_W - 2 * FIT_MARGIN
+
+
+def export(solid, name="rc20_pad"):
     os.makedirs(OUT, exist_ok=True)
-    base = os.path.join(OUT, "rc20_pad")
+    base = os.path.join(OUT, name)
     cq.exporters.export(solid, base + ".step")
     cq.exporters.export(solid, base + ".stl")
     for name, d in (("top", (0, 0, 1)), ("front", (0, -1, 0.35)),
@@ -205,4 +213,6 @@ def export(solid):
 
 
 if __name__ == "__main__":
-    export(build())
+    export(build())                    # RC-20 master (85.9 x 62.8, measured)
+    set_pedal(100.0, 75.0)             # VAMP ASP-1 pad (footprint PROVISIONAL,
+    export(build(), name="asp1_pad")   # tracks ASP1_W/D in vamp_enclosure.py)
