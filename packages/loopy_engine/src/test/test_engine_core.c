@@ -6248,6 +6248,302 @@ static void test_deferred_arm_first_wrap_shadow_fits_loop(void) {
   le_engine_destroy(e);
 }
 
+/* ---- long-loop (> LE_LAYER_QUANTUM) audit coverage — #227 ----
+ *
+ * Nearly every looper test runs at LOOP_N = 4 frames, far below
+ * LE_LAYER_QUANTUM: any buffer sized in quanta is silently big enough there,
+ * so a sizing bug whose computed size happens to round up to one quantum is
+ * invisible (#218's shadow-slot overflow ran green through the whole suite).
+ * These variants drive the paths that size, copy, or index by loop length
+ * with a loop LONGER than one quantum, so a one-quantum buffer is short and
+ * the bug is loud — especially under the ASAN CI job added with this issue. */
+
+/* Interleaved-stereo pump for a two-lane track: lane 0 records input 0
+ * (value a), lane 1 records input 1 (value b). When cap is non-NULL, output
+ * channel 0 is appended per frame, advancing *capn (mirrors feed_const). */
+static void pump_two_lane(le_engine* e, float a, float b, int frames,
+                          float* cap, int* capn) {
+  float in[128];
+  float out[128];
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    for (int i = 0; i < n; ++i) {
+      in[i * 2 + 0] = a;
+      in[i * 2 + 1] = b;
+    }
+    le_engine_process(e, out, in, (uint32_t)n);
+    if (cap != NULL) {
+      for (int i = 0; i < n; ++i) cap[(*capn)++] = out[i * 2 + 0];
+    }
+    frames -= n;
+  }
+}
+
+/* Frames of buf[0..n) within 1e-3 of want. The punch declick fade (~480
+ * frames per edge at 48k) keeps a long-loop capture from being exactly
+ * constant, so these tests assert "almost everywhere at the level, never
+ * above it" where the short tests assert exact equality. */
+static int count_near(const float* buf, int n, float want) {
+  int hits = 0;
+  for (int i = 0; i < n; ++i) {
+    if (fabsf(buf[i] - want) < 1e-3f) hits++;
+  }
+  return hits;
+}
+
+/* Multi-lane dub capture + layer save/load slot mapping at > 1 quantum: both
+ * lanes' dub shadows and restored slots must cover the full loop, and
+ * finalize_layers' slot mapping must survive a teardown/rebuild with
+ * multi-quantum buffers. Short sibling: test_layer_multi_lane_roundtrip. */
+static void test_multi_lane_long_loop_dub_roundtrip(void) {
+  printf("test_multi_lane_long_loop_dub_roundtrip\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 2, 2, 200000);
+  le_engine_set_lane_count(e, 0, 2);
+  le_engine_set_lane_input(e, 0, 0, 0);
+  le_engine_set_lane_input(e, 0, 1, 1);
+  le_engine_set_lane_output(e, 0, 0, 0x1);
+  le_engine_set_lane_output(e, 0, 1, 0x1);
+  drain(e);
+  le_snapshot s;
+
+  /* Defining record; at this length the finalize defers ~10 ms for the seam
+   * crossfade — keep feeding through the overlap. */
+  const int32_t len = LE_LAYER_QUANTUM + 2000;
+  le_engine_record(e, 0);
+  pump_two_lane(e, 1.0f, 2.0f, len, NULL, NULL);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_two_lane(e, 1.0f, 2.0f, 600, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == len);
+
+  /* One full dub pass into both lanes. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_two_lane(e, 0.5f, 0.25f, len, NULL, NULL);
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  pump_two_lane(e, 0.0f, 0.0f, 600, NULL, NULL); /* fade tail */
+  drain(e);
+  settle_layers(e);
+  le_engine_get_snapshot(e, &s);
+  const int32_t depth = s.tracks[0].undo_depth;
+  CHECK(depth >= 1); /* the pass (+ a punch-tail sliver at this size) */
+
+  /* Live playback sums both dubbed lanes: (1+0.5) + (2+0.25) = 3.75 almost
+   * everywhere. A ~450-frame band at the seam legitimately overshoots (punch
+   * sliver + seam crossfade stack there, measured peak ~4.67) — the exact
+   * fade envelope is the short tests' job, so only a runaway bound here. */
+  float* play = malloc((size_t)len * sizeof(float));
+  CHECK(play != NULL);
+  int got = 0;
+  pump_two_lane(e, 0.0f, 0.0f, len, play, &got);
+  CHECK(got == len);
+  CHECK(count_near(play, len, 3.75f) > (len * 9) / 10);
+  for (int i = 0; i < len; ++i) CHECK(play[i] < 6.0f);
+
+  /* Export every image of both lanes (ordinal 0 = oldest undo … depth = live),
+   * tear down, rebuild, and demand byte-identical re-exports: the strongest
+   * phase-independent proof the slot mapping survived at this size. */
+  const int images = depth + 1;
+  CHECK(images <= 4);
+  float* l0[4] = {0};
+  float* l1[4] = {0};
+  for (int o = 0; o < images; ++o) {
+    l0[o] = malloc((size_t)len * sizeof(float));
+    l1[o] = malloc((size_t)len * sizeof(float));
+    CHECK(l0[o] != NULL && l1[o] != NULL);
+    CHECK(le_engine_export_layer(e, 0, 0, o, l0[o], len) == len);
+    CHECK(le_engine_export_layer(e, 0, 1, o, l1[o], len) == len);
+  }
+
+  le_engine_clear(e, 0);
+  drain(e);
+  for (int o = 0; o < images; ++o) {
+    CHECK(le_engine_import_layer(e, 0, 0, o, l0[o], len) == LE_OK);
+    CHECK(le_engine_import_layer(e, 0, 1, o, l1[o], len) == LE_OK);
+  }
+  CHECK(le_engine_finalize_layers(e, 0, depth, 0) == LE_OK);
+  CHECK(le_engine_commit_session(e, len) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].lane_count == 2);
+  CHECK(s.tracks[0].undo_depth == depth);
+
+  float* back = malloc((size_t)len * sizeof(float));
+  CHECK(back != NULL);
+  for (int o = 0; o < images; ++o) {
+    CHECK(le_engine_export_layer(e, 0, 0, o, back, len) == len);
+    CHECK(memcmp(back, l0[o], (size_t)len * sizeof(float)) == 0);
+    CHECK(le_engine_export_layer(e, 0, 1, o, back, len) == len);
+    CHECK(memcmp(back, l1[o], (size_t)len * sizeof(float)) == 0);
+  }
+
+  /* The rebuilt track still plays the dubbed sum and undoes to the base. */
+  got = 0;
+  pump_two_lane(e, 0.0f, 0.0f, len, play, &got);
+  CHECK(count_near(play, len, 3.75f) > (len * 9) / 10);
+  for (int32_t k = 0; k < depth; ++k) CHECK(le_engine_undo(e, 0) == LE_OK);
+  got = 0;
+  pump_two_lane(e, 0.0f, 0.0f, len, play, &got);
+  CHECK(count_near(play, len, 3.0f) > (len * 9) / 10);
+
+  free(back);
+  for (int o = 0; o < images; ++o) {
+    free(l0[o]);
+    free(l1[o]);
+  }
+  free(play);
+  le_engine_destroy(e);
+}
+
+/* Pool eviction with multi-quantum slots: exhausting the pool with 2-quantum
+ * layers must evict the oldest and keep running, and the survivors' buffers
+ * must still cover the whole loop. Short sibling: test_undo_pool_eviction. */
+static void test_undo_pool_eviction_long_loop(void) {
+  printf("test_undo_pool_eviction_long_loop\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 200000);
+  le_snapshot s;
+
+  const int32_t len = LE_LAYER_QUANTUM + 2000;
+  le_engine_record(e, 0);
+  pump_frames(e, 1.0f, len);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 1.0f, 600);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == len);
+
+  /* One continuous overdub held for more wraps than the pool holds; the poll
+   * tick between passes collects retires and replenishes spares. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  const int passes = LE_POOL_SLOTS + 10;
+  for (int pass = 0; pass < passes; ++pass) {
+    pump_frames(e, 0.5f, len);
+    le_engine_get_snapshot(e, &s);
+  }
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  pump_frames(e, 0.0f, 600);
+  drain(e);
+  settle_layers(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth >= LE_POOL_SLOTS - 6);
+  CHECK(s.tracks[0].undo_depth <= LE_POOL_SLOTS - 1);
+
+  /* Content sits at the additive top almost everywhere (the punch tail may
+   * carry one extra fading pass), and undo still swaps in a full-size slot. */
+  const float top = 1.0f + 0.5f * (float)passes;
+  float* pcm = malloc((size_t)len * sizeof(float));
+  CHECK(pcm != NULL);
+  CHECK(le_engine_export_track(e, 0, pcm, len) == len);
+  CHECK(count_near(pcm, len, top) > (len * 9) / 10);
+  for (int i = 0; i < len; ++i) CHECK(pcm[i] < top + 0.5f + 1e-3f);
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) >= len);
+  free(pcm);
+  le_engine_destroy(e);
+}
+
+/* Record-offset compensation writing beyond the first quantum: an impulse
+ * overdubbed deep in the second quantum (write index ~ quantum + 1000, past
+ * where a one-quantum shadow would end) lands exactly once. Short sibling:
+ * test_latency_compensation (10-frame loop). */
+static void test_record_offset_long_loop(void) {
+  printf("test_record_offset_long_loop\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 200000);
+  le_snapshot s;
+
+  const int32_t len = LE_LAYER_QUANTUM + 2000;
+  le_engine_record(e, 0);
+  pump_frames(e, 0.0f, len);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 0.0f, 600);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == len);
+
+  CHECK(le_engine_set_record_offset(e, 3) == LE_OK);
+  drain(e);
+
+  /* Punch in, run past the punch-in declick fade AND the quantum boundary,
+   * then a single hot frame; finish the pass in silence. */
+  le_engine_record(e, 0);
+  pump_frames(e, 0.0f, LE_LAYER_QUANTUM + 1000);
+  pump_frames(e, 1.0f, 1);
+  pump_frames(e, 0.0f, len - LE_LAYER_QUANTUM - 1001);
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  pump_frames(e, 0.0f, 600);
+  drain(e);
+  settle_layers(e);
+
+  /* Exactly one hot frame landed; nothing else lit up or clipped. */
+  float* pcm = malloc((size_t)len * sizeof(float));
+  CHECK(pcm != NULL);
+  CHECK(le_engine_export_track(e, 0, pcm, len) == len);
+  int hot = 0;
+  for (int i = 0; i < len; ++i) {
+    if (fabsf(pcm[i]) > 0.5f) hot++;
+    CHECK(fabsf(pcm[i]) < 1.0f + 1e-3f);
+  }
+  CHECK(hot == 1);
+  free(pcm);
+  le_engine_destroy(e);
+}
+
+/* Overdub feedback decaying a multi-quantum layer: the scale-and-sum pass
+ * must walk the full 2-quantum buffer, and undo must restore the undecayed
+ * base. Short sibling: test_overdub_feedback_decays_layers. */
+static void test_overdub_feedback_long_loop(void) {
+  printf("test_overdub_feedback_long_loop\n");
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, 48000, 1, 1, 200000);
+  le_snapshot s;
+
+  const int32_t len = LE_LAYER_QUANTUM + 2000;
+  le_engine_record(e, 0);
+  pump_frames(e, 1.0f, len);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, 1.0f, 600);
+  drain(e);
+
+  CHECK(le_engine_set_overdub_feedback(e, 0.5f) == LE_OK);
+  drain(e);
+
+  /* One silent dub pass: existing content decays to 1.0 * 0.5 everywhere. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  pump_frames(e, 0.0f, len);
+  le_engine_record(e, 0); /* punch out */
+  drain(e);
+  pump_frames(e, 0.0f, 600);
+  drain(e);
+  settle_layers(e);
+
+  float* pcm = malloc((size_t)len * sizeof(float));
+  CHECK(pcm != NULL);
+  CHECK(le_engine_export_track(e, 0, pcm, len) == len);
+  CHECK(count_near(pcm, len, 0.5f) > (len * 9) / 10);
+  for (int i = 0; i < len; ++i) CHECK(pcm[i] < 1.0f + 1e-3f);
+
+  /* Undo restores the undecayed base across the whole buffer. */
+  le_engine_get_snapshot(e, &s);
+  const int32_t depth = s.tracks[0].undo_depth;
+  CHECK(depth >= 1);
+  for (int32_t k = 0; k < depth; ++k) CHECK(le_engine_undo(e, 0) == LE_OK);
+  CHECK(le_engine_export_track(e, 0, pcm, len) == len);
+  CHECK(count_near(pcm, len, 1.0f) > (len * 9) / 10);
+  free(pcm);
+  le_engine_destroy(e);
+}
+
 /* Sound-activated recording arms on the press and starts only once the input
  * crosses the threshold; a second press cancels the arm. */
 static void test_auto_record_starts_on_signal(void) {
@@ -9004,6 +9300,86 @@ static void test_perf_render_overdub_stitching(void) {
   le_engine_destroy(e);
 }
 
+/* The stitching contract at a loop longer than one quantum (#227): the
+ * pre-pass image, the retired layer, and the stem writer all size and index
+ * by the real loop length — a one-quantum image buffer would truncate (loud
+ * under ASAN, wrong stem content without it). Short sibling above. */
+static void test_perf_render_stitching_long_loop(void) {
+  printf("test_perf_render_stitching_long_loop\n");
+  const char* dir = render_test_dir("stitch_long");
+  const int32_t sr = 48000;
+  const int32_t loop_len = LE_LAYER_QUANTUM + 2000;
+  const uint64_t capture_frames = (uint64_t)loop_len * 2;
+  const uint64_t retire_frame = (uint64_t)loop_len + 1234;
+
+  char loops_dir[700];
+  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
+  test_render_mkdir(loops_dir);
+
+  float* pre = malloc((size_t)loop_len * sizeof(float));
+  float* post = malloc((size_t)loop_len * sizeof(float));
+  CHECK(pre != NULL && post != NULL);
+  for (int32_t i = 0; i < loop_len; ++i) {
+    pre[i] = 1.0f;
+    post[i] = 2.0f;
+  }
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
+  test_write_wav_mono(wav_path, pre, loop_len, sr);
+  char layer_path[700];
+  snprintf(layer_path, sizeof(layer_path), "%s/layer-long.pcm", dir);
+  test_write_raw_pcm_mono(layer_path, post, loop_len);
+
+  char manifest[2048];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"loops/track0-lane0.wav\"}]}]}, "
+           "\"disarmSnapshot\": {\"tracks\": []}, "
+           "\"layers\": [{\"channel\": 0, \"slot\": 1, \"generation\": 0, "
+           "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
+           "\"filename\": \"layer-long.pcm\"}]}",
+           sr, (unsigned long long)capture_frames,
+           (unsigned long long)retire_frame, loop_len);
+  test_write_manifest(dir, manifest);
+
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "wb");
+  CHECK(lf != NULL);
+  if (lf != NULL) {
+    test_write_log_header(lf, sr);
+    test_write_log_entry(
+        lf, retire_frame,
+        (le_command){.code = LE_PLOG_LAYER_RETIRED,
+                     .evt = {.channel = 0, .slot = 1, .generation = 0}});
+    fclose(lf);
+  }
+
+  le_engine* e = le_engine_create();
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 20000); /* bigger stem, bigger budget */
+
+  float* stem = malloc((size_t)capture_frames * sizeof(float));
+  CHECK(stem != NULL);
+  const int32_t got = test_read_stem(dir, 0, stem, (int32_t)capture_frames);
+  CHECK(got == (int32_t)capture_frames);
+  int bad = 0;
+  for (uint64_t f = 0; f < retire_frame; ++f) {
+    if (fabsf(stem[f] - 1.0f) >= 1e-6f) bad++;
+  }
+  for (uint64_t f = retire_frame; f < capture_frames; ++f) {
+    if (fabsf(stem[f] - 2.0f) >= 1e-6f) bad++;
+  }
+  CHECK(bad == 0);
+  free(stem);
+  free(pre);
+  free(post);
+  le_engine_destroy(e);
+}
+
 /* Acceptance: a track recorded fresh while armed (absent from armSnapshot,
  * present only in disarmSnapshot) renders silence up to its logged
  * RECORD_END frame, then the disarm-snapshot content, looped. */
@@ -9891,6 +10267,10 @@ int main(void) {
   test_deferred_arm_first_wrap_shadow_fits_loop();
   test_first_wrap_prearm_footprint_bounded();
   test_rec_dub_long_loop_first_wrap_undo();
+  test_multi_lane_long_loop_dub_roundtrip();
+  test_undo_pool_eviction_long_loop();
+  test_record_offset_long_loop();
+  test_overdub_feedback_long_loop();
   test_auto_record_starts_on_signal();
   test_quantize_track_override_forces_on();
   test_quantize_track_override_forces_off();
@@ -10083,6 +10463,7 @@ int main(void) {
 
   test_perf_render_scripted_log_boundaries();
   test_perf_render_overdub_stitching();
+  test_perf_render_stitching_long_loop();
   test_perf_render_fresh_recorded_while_armed();
   test_perf_render_progress_and_cancel();
   test_perf_render_concurrent_with_live_engine();

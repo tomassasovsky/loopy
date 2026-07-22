@@ -141,6 +141,26 @@ jobs:
             -o pedal_protocol_tests
           ./pedal_protocol_tests
 
+  # The same engine/MIDI suites under AddressSanitizer (#227): the strongest
+  # net for buffer-sizing bugs — the class that stays green through every
+  # assertion until adversarial review finds it (#218's shadow-slot overflow).
+  # ASAN turns any out-of-bounds write into a red job regardless of assertion
+  # coverage. Separate from native-tests so a sanitizer-only failure is
+  # instantly distinguishable from a logic failure. The firmware protocol test
+  # is not repeated here — it is pure fixed-size parsing already covered above.
+  native-tests-asan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install C build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libasound2-dev
+      - name: Build + run native tests under AddressSanitizer
+        run: >
+          EXTRA_CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
+          bash packages/loopy_engine/src/test/run_native_tests.sh
+
   # The control-sequence fuzzer: the REAL native engine (device-free pump) +
   # the real repository/bloc/cubits, driven by seeded random event sequences
   # and checked against the control-surface invariant spec
