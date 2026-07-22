@@ -88,6 +88,14 @@ int le_layer_staging_ring_push(le_layer_staging_ring* ring,
 int le_layer_staging_ring_pop(le_layer_staging_ring* ring,
                               le_staged_layer* out);
 
+/* Frees every staged entry still in the ring and leaves it empty.
+ * Single-threaded teardown only: call after the drain thread — the normal
+ * consumer — has been stopped and joined (engine destroy, reconfigure, perf
+ * re-arm). Covers the hole in the "the drain thread's final cycle empties
+ * the ring" invariant: a drain thread that SELF-stopped (write failure) is
+ * gone, so a layer staged after that sits here until teardown. */
+void le_layer_staging_ring_drain_free(le_layer_staging_ring* ring);
+
 #ifdef __cplusplus
 }
 #endif

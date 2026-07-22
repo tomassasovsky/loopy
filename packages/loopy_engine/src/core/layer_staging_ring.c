@@ -1,5 +1,7 @@
 #include "layer_staging_ring.h"
 
+#include <stdlib.h>
+
 static int is_power_of_two(size_t n) { return n >= 2 && (n & (n - 1)) == 0; }
 
 int le_layer_staging_ring_init(le_layer_staging_ring* ring,
@@ -40,4 +42,14 @@ int le_layer_staging_ring_pop(le_layer_staging_ring* ring,
   *out = ring->buffer[head & ring->mask];
   atomic_store_explicit(&ring->head, head + 1, memory_order_release);
   return 1;
+}
+
+void le_layer_staging_ring_drain_free(le_layer_staging_ring* ring) {
+  if (ring == NULL || ring->buffer == NULL) return;
+  le_staged_layer entry;
+  while (le_layer_staging_ring_pop(ring, &entry)) {
+    for (int32_t l = 0; l < entry.lane_count && l < LE_MAX_LANES; ++l) {
+      free(entry.lane_pcm[l]);
+    }
+  }
 }

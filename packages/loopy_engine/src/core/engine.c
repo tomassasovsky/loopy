@@ -225,6 +225,10 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   for (int c = 0; c < LE_MAX_INPUTS; ++c) {
     free(engine->perf.monitor_ring[c].buffer);
   }
+  /* Layers staged after the drain thread died (its self-stop on a write
+   * failure precedes the final drain cycle) are still heap-owned by this
+   * ring — free them before the struct zero below loses the pointers. */
+  le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
   engine->perf = (le_perf_capture){0};
   store_i32(&engine->a_perf_armed, 0);
   atomic_store_explicit(&engine->a_perf_frames, 0, memory_order_relaxed);
@@ -567,6 +571,9 @@ void le_engine_destroy(le_engine* engine) {
     le_perf_drain_stop(engine->perf.drain, LE_PERF_STOP_DISARM);
     engine->perf.drain = NULL;
   }
+  /* Layers staged after the drain thread died (self-stop on write failure)
+   * have no consumer left — free them now that the thread is joined. */
+  le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
   /* Same reasoning as the reconfigure teardown above: cancel+join any active
    * render before this engine (and its perf.render handle) is freed. */
   le_perf_render_cancel(engine);
