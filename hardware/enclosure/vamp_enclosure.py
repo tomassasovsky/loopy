@@ -105,8 +105,16 @@ FSW_PITCH  = 80.0             # centre-to-centre across the row
 FOOTPLATE_PROUD = 10.0        # foot-plate stands this far above the sloped top (so the
                               # pedals sit at a good height even with the low front lip)
 PLATFORM_MARGIN = 2.0         # platform shelf overhang past the pedal footprint (stay within the slot)
-PLATFORM_LEG_W  = 14.0        # weld-tab / leg width
-PLATFORM_FOOT   = 18.0        # IN-turned foot-flange width (M3 screw >=7mm from the flange bend)
+PLATFORM_FOOT   = 18.0        # base screw inset band (holes ff/2 from the platform edge)
+# The pedal platforms are 3D-PRINTED pedestals (they replaced the folded sheet
+# boxes): PETG/ASA, solid walls, >=40% infill. M3 brass heat-set inserts
+# (~M3 x 5.7 long x 4.6 OD) melt in from BELOW at the base's PLAT_SCR holes
+# (bolted from under the floor) and from ABOVE at the ASP-1 base-screw pattern.
+INSERT_PILOT_D  = 4.0         # heat-set pilot bore
+INSERT_DEPTH    = 6.4         # pilot depth (5.7 insert + melt allowance)
+PLAT_WALL       = 3.0         # printed perimeter wall
+PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
+ASP1_MOUNT      = (55.0, 80.0)  # ASP-1 base-screw rectangle (W x D) -- PROVISIONAL until measured
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
 BIG_BEZEL  = (360.0, 224.0)   # 15.6" no-shell capacitive panel outline (glass edge-to-edge)
@@ -119,7 +127,7 @@ SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 # --- LEDs / encoder -----------------------------------------------------------
 # Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
 # board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
-# faceplate UNDERSIDE with VHB tape; a small milky PMMA pill diffuser sets into
+# faceplate UNDERSIDE with VHB tape; a WHITE PLA pill diffuser insert sets into
 # each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
 # (5V/data/GND) on the castellated end pads.
 LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
@@ -383,7 +391,7 @@ def faceplate_holes():
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
     # --- LED diffuser slots: ONE small pill window per indicator pedal, on the
     #     old status-LED centre-line (a single-LED WS2812B board under each,
-    #     VHB-taped to the faceplate underside; milky PMMA pill diffuser set into
+    #     VHB-taped to the faceplate underside; white-PLA pill diffuser set into
     #     the slot). Full-round ends: corner r = LED_SLOT_H/2.
     for label, u, v in PEDALS:
         if not _has_led(label):
@@ -923,8 +931,9 @@ def platform_foot_u(sw):
     return (-sw*0.25, sw*0.25)
 
 def platform_foot_holes():
-    """M3 holes in the bottom plate for the 10 platform foot-flange screws (front + rear
-    in-turned flanges), projected from each pedal onto the horizontal bottom plate."""
+    """M3 clearance holes in the bottom plate for the 10 printed platforms: bolts
+    pass UP through the floor into the heat-set inserts in each pedestal's
+    underside (4 per platform), projected from each pedal onto the flat bottom."""
     cs = math.cos(math.radians(SLOPE_ANGLE))
     sw = ASP1_W + 2*PLATFORM_MARGIN; sd = ASP1_D + 2*PLATFORM_MARGIN; ff = PLATFORM_FOOT
     out = []
@@ -934,50 +943,6 @@ def platform_foot_holes():
             out.append({"kind": "circle", "u": u+d, "v": vb - sd/2 + ff/2, "d": D_M3, "ref": "PLAT_SCR"})
             out.append({"kind": "circle", "u": u+d, "v": vb + sd/2 - ff/2, "d": D_M3, "ref": "PLAT_SCR"})
     return out
-
-def dxf_platform(path, ph, qty, tag):
-    """Inner pedal platform: a closed 4-WALL box (skirt) the ASP-1 stands on. The box stays
-    WITHIN the pedal footprint; the front & rear walls carry IN-turned foot flanges that are
-    SCREWED to the bottom plate (M3) -- no spot welding. A closed box on screwed feet resists
-    a stomp far better than an open channel; matters most for the tall CLEAR/BANK platform."""
-    doc = _doc(); msp = doc.modelspace()
-    sw = ASP1_W + 2*PLATFORM_MARGIN
-    sd = ASP1_D + 2*PLATFORM_MARGIN
-    # box stands ON the bottom plate (T thick), so its height = ph - T; wall = box - shelf - flange
-    h  = max(ph - 3*T, 3.0)                 # wall height (-T bottom plate, -T shelf, -T flange)
-    ff = PLATFORM_FOOT
-    ox, oy = h, h+ff                        # left/right walls have no flange; front/rear do
-    x0, x1 = ox, ox+sw                      # shelf x extents in the flat
-    y0, y1 = oy, oy+sd                      # shelf y extents
-    # cross outline: shelf + front/rear (wall+flange) arms + left/right (wall only) arms
-    _poly(msp, [
-        (x0, 0), (x1, 0), (x1, y0),                  # front arm (wall + in-turned flange)
-        (x1+h, y0), (x1+h, y1), (x1, y1),            # right wall
-        (x1, y1+h+ff), (x0, y1+h+ff), (x0, y1),      # rear arm (wall + in-turned flange)
-        (0, y1), (0, y0), (x0, y0),                  # left wall
-    ], "CUT")
-    for s in ([[(x0,y0),(x1,y0)], [(x0,ff),(x1,ff)],            # front: shelf->wall, wall->flange
-               [(x0,y1),(x1,y1)], [(x0,y1+h),(x1,y1+h)],       # rear
-               [(x0,y0),(x0,y1)], [(x1,y0),(x1,y1)]]):         # left & right walls (single fold)
-        _poly(msp, s, "BEND", closed=False)
-    # corner bend-relief at the 4 shelf corners where the front/rear folds cross the
-    # side-wall folds. The radius must clear the crossing folds' bend-allowance bands
-    # yet stay a band clear of the nearby wall->flange folds at y=ff / y=y1+h -- on
-    # the short-walled FRONT platform that caps it below the base's T+1.
-    band = math.pi/4 * (RI + KF*T)          # half the flattened 90-deg bend arc
-    rrel = min(T + 1.0, h - band)
-    assert rrel >= band, f"wall h={h:.2f} too short for corner bend-relief"
-    for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
-        _circle(msp, cx, cy, 2*rrel)
-    # M3 screw holes through the two in-turned foot flanges (front + rear)
-    cxs = ((x0+x1)/2 + d for d in platform_foot_u(sw))
-    for cx in list(cxs):
-        _circle(msp, cx, ff/2, D_M3)               # front flange
-        _circle(msp, cx, y1+h+ff/2, D_M3)          # rear flange
-    _text(msp, x0, y1+h+ff+8, 6,
-          f"VAMP PLATFORM {tag}  2.0mm  x{qty}  closed 4-wall box H {ph:.1f}  PROVISIONAL  "
-          "M3-screw front+rear foot flanges to bottom; butt-weld 4 corners", "NOTE")
-    doc.saveas(path); return {}
 
 def dxf_screen_bracket(path):
     """Rear clamp bracket that retains a bezel monitor from behind (qty per
@@ -1039,16 +1004,56 @@ def _transition_face(cq):
            * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), TRANS_ANGLE))
     return box.val().moved(loc)
 
-def _platform_solid(cq, ph):
+def _platform_printed(cq, ph):
+    """3D-printed pedal pedestal: solid deck + perimeter wall, hollowed below
+    (tall MID parts) with boss columns at the insert stations. M3 heat-set
+    inserts press in from BELOW at the base PLAT_SCR pattern and from ABOVE at
+    the ASP1_MOUNT pedal pattern (PROVISIONAL). Origin: pedal centre, z=0 at
+    the BASE PLATE TOP; height ph - T puts the deck at the pedal standing
+    plane. Assembly frame: X = depth (v), Y = width (u)."""
     sw = ASP1_W + 2*PLATFORM_MARGIN
     sd = ASP1_D + 2*PLATFORM_MARGIN
-    shelf = cq.Workplane("XY").box(sd, sw, T, centered=(True, True, False)).translate((0,0,ph))
-    legf = cq.Workplane("XY").box(T, sw, ph, centered=(True, True, False)).translate((-sd/2+T/2,0,0))
-    legr = cq.Workplane("XY").box(T, sw, ph, centered=(True, True, False)).translate((sd/2-T/2,0,0))
-    return shelf.union(legf).union(legr)
+    h = ph - T
+    # opposing pilots must keep a >=1mm web in the LOW front pedestal --
+    # cap the depth there and fit SHORT inserts (M3 x 3) instead of 5.7s
+    pil = min(INSERT_DEPTH, (h - 1.0) / 2.0)
+    body = cq.Workplane("XY").box(sd, sw, h, centered=(True, True, False))
+    cav_h = h - PLAT_DECK
+    foot_x = (-(sd/2 - PLATFORM_FOOT/2), sd/2 - PLATFORM_FOOT/2)
+    if cav_h > 2.0:
+        body = body.cut(cq.Workplane("XY").box(
+            sd - 2*PLAT_WALL, sw - 2*PLAT_WALL, cav_h, centered=(True, True, False)))
+        for dx in foot_x:                      # boss columns for the base inserts
+            for dy in platform_foot_u(sw):
+                body = body.union(cq.Workplane("XY").cylinder(
+                    cav_h, 6.0, centered=(True, True, False)).translate((dx, dy, 0)))
+    for dx in foot_x:                          # base inserts, from below
+        for dy in platform_foot_u(sw):
+            body = body.cut(cq.Workplane("XY").cylinder(
+                pil, INSERT_PILOT_D/2,
+                centered=(True, True, False)).translate((dx, dy, 0)))
+    mw, md = ASP1_MOUNT                        # pedal inserts, from above (PROVISIONAL)
+    for dx in (-md/2, md/2):
+        for dy in (-mw/2, mw/2):
+            body = body.cut(cq.Workplane("XY").cylinder(
+                pil, INSERT_PILOT_D/2,
+                centered=(True, True, False)).translate((dx, dy, h - pil)))
+    return body
+
+def build_platform_steps():
+    """Printed platform pedestals: FRONT x8 + MID x2 (STEP + STL for slicing)."""
+    import cadquery as cq
+    outp = []
+    for tag, v in (("front", PEDAL_ROW1_V), ("mid", PEDAL_ROW2_V)):
+        body = _platform_printed(cq, platform_h(v))
+        base = os.path.join(OUT, f"vamp_platform_{tag}")
+        cq.exporters.export(body.val(), base + ".step")
+        cq.exporters.export(body, base + ".stl", tolerance=0.05)
+        outp.append(base + ".step")
+    return outp
 
 def build_diffuser_step():
-    """LED pill diffuser INSERT (3D-print in clear/milky resin, x6 per console):
+    """LED pill diffuser INSERT (3D-print in WHITE PLA, x6 per console):
     a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
     shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
     above the outer skin. The single-LED module (hardware/led_strip/ puck or an
@@ -1074,7 +1079,7 @@ def build_diffuser_step():
 
 
 def build_ring_diffuser_step():
-    """Encoder LED-ring diffuser INSERT (3D-print in clear/milky resin, x1):
+    """Encoder LED-ring diffuser INSERT (3D-print in WHITE PLA, x1):
     the annular sibling of vamp_led_diffuser -- pushes into the faceplate's ring
     window FROM THE INSIDE, shoulder flange seats on the sheet's underside, and
     an annular pocket on the back nests the NeoPixel Ring 16 (authentic Adafruit,
@@ -1128,11 +1133,11 @@ def build_step(write_parts=True):
     fp_loc = (cq.Location(cq.Vector(0, (W - LID_W) / 2.0, H_FRONT))
               * cq.Location(cq.Vector(0,0,0), cq.Vector(0,1,0), -SLOPE_ANGLE))
     addw(fp, "faceplate", fp_loc)
-    # 10 inner platforms under the pedal slots (X = pedal v, Y = pedal u);
-    # mid-row (CLEAR/BANK) platforms are taller because the lid is higher there.
+    # 10 printed platform pedestals under the pedal slots (X = pedal v, Y = pedal u);
+    # mid-row (CLEAR/BANK) pedestals are taller because the lid is higher there.
     for i, (label, u, v) in enumerate(PEDALS):
-        plat = _platform_solid(cq, platform_h(v))
-        addw(plat, f"platform_{i}", cq.Location(cq.Vector(v, u + T, 0)))
+        plat = _platform_printed(cq, platform_h(v))
+        addw(plat, f"platform_{i}", cq.Location(cq.Vector(v, u + T, T)))
     # representative loopy_pi_main board on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
     blk = {"MAIN_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
@@ -1150,9 +1155,9 @@ def build_step(write_parts=True):
     if write_parts:
         exp = cq.exporters.export
         # The base is ONE folded blank (see vamp_base.dxf); the assembly STEP shows it
-        # in 3D. Per-part STEPs: the removable lid + a representative platform.
+        # in 3D. Per-part STEPs: the removable lid (platforms export in
+        # build_platform_steps as print files).
         exp(fp.val(), os.path.join(OUT, "vamp_faceplate.step"))
-        exp(plat, os.path.join(OUT, "vamp_platform.step"))
     return os.path.join(OUT, "vamp_assembly.step")
 
 # ===========================================================================
@@ -1315,7 +1320,7 @@ def _render_parts(cq, explode=0.0):
     add(cq.Workplane("XY").box(LID_REAR_LAP, LID_W, T, centered=False).val().moved(lap_loc), FACE)
     cuts,_=faceplate_holes()
     for label,u,v in PEDALS:
-        ph=platform_h(v); add(_platform_solid(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,0))), PLAT)
+        ph=platform_h(v); add(_platform_printed(cq,ph).val().moved(cq.Location(cq.Vector(v,u+T,T))), PLAT)
         add(cq.Workplane("XY").box(ASP1_D,ASP1_W,ASP1_H,centered=(True,True,False)).translate((v,u+T,ph)).val(), PED)
         # pink/magenta bumper strip across the foot-plate (reference accent)
         add(cq.Workplane("XY").box(16,ASP1_W-8,2,centered=(True,True,False)).translate((v-ASP1_D*0.22,u+T,ph+ASP1_H)).val(), STRIP)
@@ -1396,17 +1401,42 @@ DXF_PARTS = [
     ("vamp_faceplate",        dxf_faceplate),
     ("vamp_overlay",          dxf_overlay),  # printed adhesive top-plate graphic (replaces silkscreen)
     ("vamp_base",             dxf_base),     # bottom + front/rear/side walls, ONE folded blank
-    ("vamp_platform_front",   lambda p: dxf_platform(p, platform_h(PEDAL_ROW1_V), 8, "FRONT")),
-    ("vamp_platform_mid",     lambda p: dxf_platform(p, platform_h(PEDAL_ROW2_V), 2, "MID (CLEAR/BANK)")),
     ("vamp_screen_bracket",   dxf_screen_bracket),
     ("vamp_ring_disc",        dxf_ring_disc),                        # LED-ring centre disc
     ("vamp_corner_bracket_rear",  lambda p: dxf_corner_bracket(p, CORNER_HT, CORNER_ZR_WALL, CORNER_ZR_SIDE, "REAR x2")),
     ("vamp_rear_panel_pi",    lambda p: dxf_rear_panel(p, "pi")),    # swappable rear I/O
     ("vamp_rear_panel_nopi",  lambda p: dxf_rear_panel(p, "nopi")),
 ]
-NO_PDF = {"vamp_platform_front", "vamp_platform_mid", "vamp_ring_disc",
-          "vamp_corner_bracket_rear",
-          "vamp_rear_panel_pi", "vamp_rear_panel_nopi"}   # minimal parts: DXF only
+NO_PDF = set()   # every sheet part ships with a PDF drawing
+
+def build_quote_packages():
+    """Refresh the manufacturer zips from the CURRENT outputs so they can never
+    go stale (a hand-built vamp_sheetmetal.zip once shipped three-week-old
+    flats). Three packs: laser/bend sheet metal, reference STEPs, 3D prints."""
+    import zipfile
+    zips = []
+
+    def pack(zname, names, exts):
+        zp = os.path.join(OUT, zname)
+        with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
+            for n in names:
+                for ext in exts:
+                    p = os.path.join(OUT, n + ext)
+                    if os.path.exists(p):
+                        z.write(p, n + ext)
+        zips.append(zp)
+
+    sheet = [n for n, _ in DXF_PARTS]
+    pack("vamp_sheetmetal.zip", sheet, (".dxf", ".pdf"))
+    pack("vamp_sheetmetal_step.zip",
+         ["vamp_assembly", "vamp_base", "vamp_faceplate", "vamp_screen_bracket",
+          "vamp_corner_bracket_rear", "vamp_rear_panel_pi", "vamp_ring_disc"],
+         (".step",))
+    pack("vamp_3dprint.zip",
+         ["vamp_platform_front", "vamp_platform_mid",
+          "vamp_led_diffuser", "vamp_ring_diffuser"],
+         (".step", ".stl"))
+    return zips
 
 def main(argv):
     print(report())
@@ -1435,10 +1465,14 @@ def main(argv):
             print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
+            for pp in build_platform_steps():
+                print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
             p = build_step()
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except Exception as e:  # pragma: no cover
             print(f"\n(STEP skipped: {e})")
+    for z in build_quote_packages():
+        print("Quote package: out/" + os.path.basename(z))
     if "--render" in argv:
         try:
             r = render_png(os.path.join(OUT, "vamp_render.png"))
