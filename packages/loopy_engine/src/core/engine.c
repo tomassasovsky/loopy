@@ -46,6 +46,7 @@
 #include "miniaudio.h"
 #include "perf_drain.h" /* le_perf_drain_stop (reconfigure/destroy teardown) */
 #include "perf_render.h" /* le_perf_render_cancel (reconfigure/destroy teardown) */
+#include "tempo_grid.h" /* LE_GRID_DIV_OFF (grid-off quantize default) */
 
 /* All platform-specific behavior (CoreAudio channel labels, JACK port-pinning,
  * PipeWire quantum forcing) lives behind the engine_platform.h seam, implemented
@@ -361,6 +362,18 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   }
 
   store_i32(&engine->a_record_offset, 0); /* re-measured per session */
+  /* Tempo grid: only the loop-derived/transient state resets per session. The
+   * SETTINGS (tempo, signature, sync, quantize granularity — and the tempo's
+   * source, which travels with its value per the D6 dead-tempo rule) are
+   * seeded in le_engine_create and persist across start/stop, exactly like
+   * the 2f0513a stack's tempo/metronome settings did. */
+  engine->frame_clock = 0;
+  engine->last_tap_frame = 0;
+  engine->has_tap = 0;
+  engine->grid_total_beats = 0;
+  engine->grid_prev_beat = -1;
+  store_i32(&engine->a_loop_bars, 0);
+  store_i32(&engine->a_current_beat, 0);
   atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
@@ -515,6 +528,19 @@ le_engine* le_engine_create(void) {
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
   store_i32(&engine->a_latency_state, LE_LATENCY_IDLE);
+  /* Tempo-grid SETTINGS: seeded once here (not reset by configure on each
+   * start — the 2f0513a persistence pattern). Everything defaults to
+   * grid-off values: no tempo (0 = unset, source none), 4/4, sync on,
+   * quantize granularity OFF (deliberately unlike the old stack's BAR
+   * default) — so an untouched engine behaves exactly like the tempo-free
+   * build. */
+  store_f32(&engine->a_tempo_bpm_bits, 0.0f);
+  store_i32(&engine->a_ts_num, 4);
+  store_i32(&engine->a_ts_den, 4);
+  store_i32(&engine->a_sync_tempo, 1);
+  store_i32(&engine->a_quantize_div, LE_GRID_DIV_OFF);
+  store_i32(&engine->a_tempo_source, LE_TEMPO_SOURCE_NONE);
+  engine->grid_prev_beat = -1;
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);

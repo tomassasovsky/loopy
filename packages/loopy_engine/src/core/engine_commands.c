@@ -33,6 +33,7 @@
 #include "loopy_engine_api.h"
 #include "perf_drain.h"     /* le_perf_drain_start/stop (capture-to-disk thread) */
 #include "perf_log_ring.h"  /* le_perf_log_ring_push (control-side event log) */
+#include "tempo_grid.h"     /* le_grid_signature_valid, le_grid_div bounds */
 
 /* Whether the track's history is entirely erased-take material — i.e. its top
  * entry is a clear restore point, so everything on the stack belongs to a take
@@ -1159,6 +1160,41 @@ int32_t le_engine_set_track_quantize(le_engine* engine, int32_t channel,
     le_cancel_arm(engine, channel);
   }
   return LE_OK;
+}
+
+/* ---- tempo grid (state + locks; see loopy_engine_api.h's tempo section) ----
+ * Plain le_push producers: validation that needs no engine state runs here on
+ * the control thread; the D6 tempo lock is enforced on the AUDIO thread
+ * (apply_command), the only side that owns track states — a locked command is
+ * accepted by these wrappers and dropped there. */
+
+int32_t le_engine_set_tempo(le_engine* engine, float bpm) {
+  /* Clamped to 30..300 by the audio thread on apply (matching the old stack's
+   * observable clamp-on-read behaviour). */
+  return le_push(engine, LE_CMD_SET_TEMPO, 0, bpm);
+}
+
+int32_t le_engine_set_time_signature(le_engine* engine, int32_t num,
+                                     int32_t den) {
+  /* Reject unsupported signatures outright (the audio thread re-validates so
+   * a raw post_command cannot sneak one through either). */
+  if (!le_grid_signature_valid(num, den)) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_TIME_SIGNATURE, num, (float)den);
+}
+
+int32_t le_engine_tap_tempo(le_engine* engine) {
+  return le_push(engine, LE_CMD_TAP_TEMPO, 0, 0.0f);
+}
+
+int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on) {
+  return le_push(engine, LE_CMD_SET_SYNC_TEMPO, 0, on ? 1.0f : 0.0f);
+}
+
+int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
+  if (div < LE_GRID_DIV_OFF || div > LE_GRID_DIV_SIXTEENTH) {
+    return LE_ERR_INVALID;
+  }
+  return le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
 }
 
 int32_t le_engine_set_track_multiple(le_engine* engine, int32_t channel,

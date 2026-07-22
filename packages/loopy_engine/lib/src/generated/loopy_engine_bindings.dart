@@ -1590,6 +1590,120 @@ class LoopyEngineBindings {
   late final _le_engine_set_track_quantize = _le_engine_set_track_quantizePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
+  /// Sets the tempo in denominator-note beats per minute, clamped to 30..300.
+  /// Sets tempo_source = manual; ignored while the tempo is locked.
+  int le_engine_set_tempo(
+    ffi.Pointer<le_engine> engine,
+    double bpm,
+  ) {
+    return _le_engine_set_tempo(
+      engine,
+      bpm,
+    );
+  }
+
+  late final _le_engine_set_tempoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)
+        >
+      >('le_engine_set_tempo');
+  late final _le_engine_set_tempo = _le_engine_set_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Sets the time signature. Only the 17 Sheeran signatures are valid — x/4 for
+  /// num 2..7 and x/8 for num 5..15 — anything else returns LE_ERR_INVALID
+  /// without posting. Ignored while the tempo is locked.
+  int le_engine_set_time_signature(
+    ffi.Pointer<le_engine> engine,
+    int num,
+    int den,
+  ) {
+    return _le_engine_set_time_signature(
+      engine,
+      num,
+      den,
+    );
+  }
+
+  late final _le_engine_set_time_signaturePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_time_signature');
+  late final _le_engine_set_time_signature = _le_engine_set_time_signaturePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Registers a tap; two taps set the tempo from their interval (intervals
+  /// outside the 30..300 BPM window are ignored, so a stale first tap never
+  /// yields an absurd tempo). Sets tempo_source = tapped on success; taps are
+  /// ignored entirely while the tempo is locked.
+  int le_engine_tap_tempo(
+    ffi.Pointer<le_engine> engine,
+  ) {
+    return _le_engine_tap_tempo(
+      engine,
+    );
+  }
+
+  late final _le_engine_tap_tempoPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<le_engine>)>>(
+        'le_engine_tap_tempo',
+      );
+  late final _le_engine_tap_tempo = _le_engine_tap_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>)>();
+
+  /// Enables/disables loop<->grid sync (default ON). When on, finalizing the
+  /// DEFINING loop establishes the grid relationship: with a tempo already set
+  /// (manual/tapped/derived) the loop's whole-bar count is rounded to the
+  /// existing grid and the tempo is untouched; with no tempo set (source none)
+  /// a tempo is derived from the loop per D7 (whole bars in the current
+  /// signature, BPM in 30..300, nearest 120) and tempo_source becomes derived.
+  /// The loop's AUDIO length is never altered either way. When off, the loop
+  /// stays free-form (loop_bars 0, tempo untouched) — the tempo-free behavior.
+  int le_engine_set_sync_tempo(
+    ffi.Pointer<le_engine> engine,
+    int on$,
+  ) {
+    return _le_engine_set_sync_tempo(
+      engine,
+      on$,
+    );
+  }
+
+  late final _le_engine_set_sync_tempoPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_sync_tempo');
+  late final _le_engine_set_sync_tempo = _le_engine_set_sync_tempoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets the musical quantization granularity (le_grid_div, tempo_grid.h):
+  /// 0 = off (default), 1 = bar, 2..5 = 1/2..1/16 note. Values outside 0..5
+  /// return LE_ERR_INVALID. State only in this part (published in the snapshot;
+  /// consumed by the musical arm machinery in a later part).
+  int le_engine_set_quantize_div(
+    ffi.Pointer<le_engine> engine,
+    int div,
+  ) {
+    return _le_engine_set_quantize_div(
+      engine,
+      div,
+    );
+  }
+
+  late final _le_engine_set_quantize_divPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_quantize_div');
+  late final _le_engine_set_quantize_div = _le_engine_set_quantize_divPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
   /// 0 to inherit the global default (le_engine_set_default_multiple). Applies to
   /// the next recording; existing content is unchanged.
@@ -3060,6 +3174,26 @@ enum le_command_code {
   /// arg_f = 0 (unmute) or 1 (mute)
   LE_CMD_SET_MUTE(8),
 
+  /// arg_f = bpm, clamped to 30..300; sets
+  /// tempo_source = manual (last writer wins)
+  LE_CMD_SET_TEMPO(9),
+
+  /// arg_i = numerator, arg_f = denominator
+  /// (4 or 8); validated to the 17 supported
+  /// signatures (le_grid_signature_valid,
+  /// tempo_grid.h) — others are dropped
+  LE_CMD_SET_TIME_SIGNATURE(10),
+
+  /// two taps set the tempo from their interval; sets
+  /// tempo_source = tapped (last writer wins)
+  LE_CMD_TAP_TEMPO(11),
+
+  /// arg_f = 0/1: whether finalizing a defining
+  /// loop establishes the loop<->grid relationship
+  /// (bar count / tempo derivation — see
+  /// le_engine_set_sync_tempo)
+  LE_CMD_SET_SYNC_TEMPO(12),
+
   /// arg_i = round-trip latency in frames
   LE_CMD_SET_RECORD_OFFSET(13),
 
@@ -3076,6 +3210,12 @@ enum le_command_code {
 
   /// arg_i = track: cancel a pending quantized record
   LE_CMD_DISARM(17),
+
+  /// arg_i = le_grid_div (tempo_grid.h): 0 off /
+  /// 1 bar / 2..5 = 1/2..1/16 note. State only in
+  /// this part — the musical arm machinery that
+  /// consumes it lands in A3. Default off.
+  LE_CMD_SET_QUANTIZE_DIV(18),
 
   /// set a lane chain entry's type (and reset its DSP
   /// state). arg_i = (channel << 16) | (lane << 8) |
@@ -3195,11 +3335,16 @@ enum le_command_code {
     6 => LE_CMD_UNDO,
     7 => LE_CMD_SET_VOLUME,
     8 => LE_CMD_SET_MUTE,
+    9 => LE_CMD_SET_TEMPO,
+    10 => LE_CMD_SET_TIME_SIGNATURE,
+    11 => LE_CMD_TAP_TEMPO,
+    12 => LE_CMD_SET_SYNC_TEMPO,
     13 => LE_CMD_SET_RECORD_OFFSET,
     14 => LE_CMD_SET_INPUT_MASK,
     15 => LE_CMD_SET_OUTPUT_MASK,
     16 => LE_CMD_ARM,
     17 => LE_CMD_DISARM,
+    18 => LE_CMD_SET_QUANTIZE_DIV,
     20 => LE_CMD_SET_LANE_FX,
     21 => LE_CMD_SET_LANE_FX_COUNT,
     23 => LE_CMD_COMMIT_SESSION,
@@ -3564,6 +3709,40 @@ final class le_snapshot extends ffi.Struct {
 
   @ffi.Array.multi([8])
   external ffi.Array<le_track_snapshot> tracks;
+
+  /// denominator-note beats per minute; 0 = unset
+  @ffi.Float()
+  external double tempo_bpm;
+
+  /// time-signature numerator (default 4)
+  @ffi.Int32()
+  external int ts_num;
+
+  /// time-signature denominator, 4 or 8 (default 4)
+  @ffi.Int32()
+  external int ts_den;
+
+  /// 0/1: loop<->grid sync on finalize (default 1)
+  @ffi.Int32()
+  external int sync_tempo;
+
+  /// le_grid_div granularity (default 0 = off)
+  @ffi.Int32()
+  external int quantize_div;
+
+  /// le_tempo_source (default 0 = none)
+  @ffi.Int32()
+  external int tempo_source;
+
+  /// Whole bars in the master loop, or 0 when no grid relationship exists
+  /// (sync off, no loop, or the loop predates any grid). The loop's AUDIO
+  /// length is never altered by the grid — bars is a derived count.
+  @ffi.Int32()
+  external int loop_bars;
+
+  /// 0..ts_num-1 within the bar, loop-driven; 0 idle
+  @ffi.Int32()
+  external int current_beat;
 }
 
 /// The plugin format a descriptor was discovered in.
