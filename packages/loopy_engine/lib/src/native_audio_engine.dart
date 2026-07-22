@@ -625,6 +625,20 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult clearUndoable({int channel = 0}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_clear_undoable(_engine, channel),
+    );
+  }
+
+  @override
+  bool undoRestoresClear({int channel = 0}) {
+    _checkAlive();
+    return _bindings.le_engine_undo_restores_clear(_engine, channel) != 0;
+  }
+
+  @override
   EngineResult undo({int channel = 0}) {
     _checkAlive();
     return EngineResult.fromCode(_bindings.le_engine_undo(_engine, channel));

@@ -89,11 +89,25 @@ void le_lane_reset(le_lane* ln, int32_t input_channel);
  * unallocated). Defined in engine.c. */
 int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames);
 
+/* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
+ * samples — the counterpart to le_lane_ensure_slot's grow-by-replace, for the
+ * one case that must keep its content: a retired undo layer whose slot was
+ * pre-armed at the recording cap because the loop length was not yet known.
+ * Control thread only, and only for a slot the audio thread no longer holds
+ * (never the live slot). No-op when the slot is unallocated or already at or
+ * below `frames`; a failed realloc keeps the oversized buffer. Defined in
+ * engine.c. */
+void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames);
+
 /* Drains the audio->control event ring (retired per-pass undo layers) into the
- * per-track undo stacks, replenishes shadow-slot spares, and applies any undo
- * taps that were queued while a layer was in flight. Control thread only;
- * called at the top of le_engine_get_snapshot and of the transport entry
- * points. Defined in engine_commands.c. */
+ * per-track undo stacks, replenishes shadow-slot spares, pre-arms the
+ * first-wrap shadow for a RECORDING track bound to continue into overdub
+ * (le_capture_may_overdub — deferred-arm captures get their slot ONLY from
+ * this poll, so the per-block snapshot cadence during capture is load-bearing,
+ * not an optimization target), and applies any undo taps that were queued
+ * while a layer was in flight. Control thread only; called at the top of
+ * le_engine_get_snapshot and of the transport entry points. Defined in
+ * engine_commands.c. */
 void le_engine_drain_events(le_engine* engine);
 
 #ifdef __cplusplus

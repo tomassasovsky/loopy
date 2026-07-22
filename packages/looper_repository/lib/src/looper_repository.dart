@@ -171,6 +171,12 @@ class LooperRepository {
   final Map<(int, int), bool> _laneMute = {};
   final Map<(int, int), List<TrackEffect>> _laneEffects = {};
 
+  /// What each cleared track's [undo] must put back that the engine cannot:
+  /// `channel -> lane -> (chain, mute)`. Written by [clear], consumed by
+  /// [undo] only when the engine confirms the restore point survived.
+  final Map<int, Map<int, ({List<TrackEffect> effects, bool muted})>>
+  _clearRestore = {};
+
   /// Per-hardware-input live monitor enable flag (absent => disabled). The
   /// input-level gate; per-lane routing / mix / effects live in the maps below.
   /// All re-applied on every successful (re)start so they survive device
@@ -407,6 +413,7 @@ class LooperRepository {
           rms: s.tracks[i].rms,
           peak: s.tracks[i].peak,
           undoDepth: s.tracks[i].undoDepth,
+          clearRestore: s.tracks[i].clearRestore,
           redoDepth: s.tracks[i].redoDepth,
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
@@ -674,11 +681,14 @@ class LooperRepository {
       // always audible); forget the remembered mutes too, or a device
       // reconnect would replay them and silence the take mid-performance.
       _forgetLaneMutes(channel);
-    } else if (state == TrackState.playing) {
-      // An overdub onto a live loop must be audible too — you're recording into
-      // it. Unlike record-from-empty the engine does NOT auto-unmute here, so
-      // unmute every lane explicitly; forget the remembered mutes for the same
-      // reconnect-replay reason as above.
+    } else if (state == TrackState.playing || state == TrackState.stopped) {
+      // An overdub onto a live loop must be audible too — you're recording
+      // into it — and so must one punched into a stopped (parked, possibly
+      // Stop-muted) track: the engine auto-unmutes every lane at the capture
+      // start (its own punch-in path now enforces it, covering quantized and
+      // sound-activated fires too). Forget the remembered mutes to match, or
+      // a device reconnect would replay them and silence the take
+      // mid-performance.
       _forgetLaneMutes(channel);
       for (var lane = 0; lane < laneCount(channel); lane++) {
         _engine.setLaneMute(muted: false, channel: channel, lane: lane);
@@ -771,16 +781,36 @@ class LooperRepository {
   /// Resumes playback of track [channel].
   EngineResult play({int channel = 0}) => _engine.play(channel: channel);
 
-  /// Erases track [channel] (resets the master if all tracks empty). The
-  /// engine unmutes every lane; the remembered mutes are forgotten to match.
+  /// Erases track [channel] (resets the master if all tracks empty), leaving a
+  /// restore point: [undo] puts the take back, chains and mutes included.
   ///
-  /// The take's FX chains are dropped too (cache + engine): a cleared track is
+  /// The take's FX chains are dropped (cache + engine): a cleared track is
   /// empty, so a subsequent record-from-empty through a *dry* monitor must land
   /// a dry take — not inherit the erased take's chain (the "leftover from a
-  /// previous config" bug). This mirrors [applySession]'s chain reset; it does
-  /// NOT touch routing (`_laneInput` / `_laneOutput` / `_laneVolume`), which is
-  /// the track's config, not the take.
+  /// previous config" bug). They are snapshotted first, so undoing the
+  /// clear can put them back. It does NOT touch routing (`_laneInput` / `_laneOutput` /
+  /// `_laneVolume`), which is the track's config, not the take.
+  ///
+  /// This is the USER's clear. [applySession] uses [_clearDestructive]
+  /// instead — loading a session must never be undoable.
   EngineResult clear({int channel = 0}) {
+    _snapshotForClearRestore(channel);
+    _dropTakeState(channel);
+    return _engine.clearUndoable(channel: channel);
+  }
+
+  /// The destructive clear: same erasure, no way back. Session load only.
+  EngineResult _clearDestructive({int channel = 0}) {
+    _clearRestore.remove(channel);
+    _dropTakeState(channel);
+    return _engine.clear(channel: channel);
+  }
+
+  /// The erasure both clears share: forget the remembered mutes (the engine
+  /// force-unmutes every lane) and empty the take's chains in cache + engine,
+  /// persisting each (F3 — without this, settings keeps the erased take's chain
+  /// and a restart replays it onto the fresh take).
+  void _dropTakeState(int channel) {
     _forgetLaneMutes(channel);
     final clearedLanes = [
       for (final key in _laneEffects.keys)
@@ -788,15 +818,67 @@ class LooperRepository {
     ];
     for (final lane in clearedLanes) {
       setLaneEffects(channel: channel, lane: lane, effects: const []);
-      // Persist the emptied chain (F3): without this, settings keeps the erased
-      // take's chain and a restart replays it onto the fresh take.
       onLaneChainChanged?.call(channel, lane);
     }
-    return _engine.clear(channel: channel);
   }
 
-  /// Removes the most recent overdub layer on track [channel].
-  EngineResult undo({int channel = 0}) => _engine.undo(channel: channel);
+  /// Captures what a clear on [channel] is about to throw away and the engine
+  /// cannot give back: the take's per-lane FX chains and mutes. Keyed by
+  /// channel, replaced by the next clear on the same track.
+  ///
+  /// Deliberately NOT invalidated here when the engine retires its restore
+  /// point (a fresh recording does, two different ways). Mirroring those rules
+  /// in Dart would be a second copy of the engine's bookkeeping, drifting on
+  /// its own; a
+  /// stale entry is inert instead, because it is only ever applied when
+  /// [AudioEngine.undoRestoresClear] says a restore actually happened.
+  void _snapshotForClearRestore(int channel) {
+    _clearRestore[channel] = {
+      for (final entry in _laneEffects.entries)
+        if (entry.key.$1 == channel)
+          entry.key.$2: (
+            effects: List<TrackEffect>.of(entry.value),
+            muted: _laneMute[entry.key] ?? false,
+          ),
+    };
+  }
+
+  /// Removes the most recent overdub layer on track [channel] — or, on a track
+  /// the user cleared, restores the take.
+  ///
+  /// The engine puts the audio, transport and mutes back; the chains are the
+  /// repository's to restore, since the engine is a pure sink that holds only
+  /// what this class pushes. Asked BEFORE the undo: the engine's answer
+  /// describes the next tap, and the snapshot it derives from does not flip
+  /// until the audio thread applies the restore.
+  EngineResult undo({int channel = 0}) {
+    final restoresClear = _engine.undoRestoresClear(channel: channel);
+    final result = _engine.undo(channel: channel);
+    if (restoresClear && result == EngineResult.ok) {
+      _restoreClearedTake(channel);
+    }
+    return result;
+  }
+
+  /// Puts a restored take's chains and mutes back (cache + engine), persisting
+  /// each chain so a restart replays the restored take rather than the emptied
+  /// one the clear wrote.
+  void _restoreClearedTake(int channel) {
+    final snapshot = _clearRestore.remove(channel);
+    if (snapshot == null) return;
+    for (final entry in snapshot.entries) {
+      setLaneEffects(
+        channel: channel,
+        lane: entry.key,
+        effects: entry.value.effects,
+      );
+      onLaneChainChanged?.call(channel, entry.key);
+      // The engine restored the lane mutes from its own record; remember them
+      // to match, or the restart replay would resurrect the clear's
+      // force-unmute.
+      _laneMute[(channel, entry.key)] = entry.value.muted;
+    }
+  }
 
   /// Re-applies the most recently undone overdub layer on track [channel].
   /// A redo that resurrects an undone-to-empty track comes back unmuted
@@ -834,7 +916,10 @@ class LooperRepository {
   }) async {
     final trackCount = _engine.snapshot().tracks.length;
     for (var channel = 0; channel < trackCount; channel++) {
-      clear(channel: channel);
+      // Destructive on purpose: a session load replaces the rig wholesale, so
+      // the tracks it wipes must not sit there offering an undo back to the
+      // previous session's takes.
+      _clearDestructive(channel: channel);
     }
     // The session's per-lane config replaces the remembered one wholesale:
     // purge it all (not just the mutes [clear] forgot) so the restart replay

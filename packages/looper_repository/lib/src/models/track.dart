@@ -20,6 +20,7 @@ class Track extends Equatable {
     this.rms = 0,
     this.peak = 0,
     this.undoDepth = 0,
+    this.clearRestore = false,
     this.redoDepth = 0,
     this.multiple = 1,
     this.inputMask = 0x1,
@@ -54,7 +55,14 @@ class Track extends Equatable {
   final double peak;
 
   /// Available undo steps (overdub layers).
+  ///
+  /// A cleared track reports 0 here even though the erased take's layers are
+  /// still held: they are not peelable until the clear itself is undone.
+  /// See [clearRestore].
   final int undoDepth;
+
+  /// Whether the next undo restores a cleared take rather than peeling a layer.
+  final bool clearRestore;
 
   /// Available redo steps.
   final int redoDepth;
@@ -91,8 +99,9 @@ class Track extends Equatable {
   bool get isCapturing =>
       state == TrackState.recording || state == TrackState.overdubbing;
 
-  /// Whether an overdub layer can be undone.
-  bool get canUndo => undoDepth > 0;
+  /// Whether undo would do anything: peel an overdub layer, or put back a take
+  /// the user cleared.
+  bool get canUndo => undoDepth > 0 || clearRestore;
 
   /// Whether an undone overdub layer can be redone.
   bool get canRedo => redoDepth > 0;
@@ -108,6 +117,7 @@ class Track extends Equatable {
     rms,
     peak,
     undoDepth,
+    clearRestore,
     redoDepth,
     multiple,
     inputMask,

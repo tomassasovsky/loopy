@@ -251,6 +251,15 @@ class FakeSessionEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Erases exactly like [clear]. This fake models the session-load path, which
+  /// never restores a cleared take, so the restore point is not modelled — the
+  /// engine's own tests cover it.
+  @override
+  EngineResult clearUndoable({int channel = 0}) => clear(channel: channel);
+
+  @override
+  bool undoRestoresClear({int channel = 0}) => false;
+
   @override
   EngineResult setLaneCount({required int channel, required int count}) =>
       EngineResult.ok;

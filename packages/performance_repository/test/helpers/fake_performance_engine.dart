@@ -240,6 +240,10 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   EngineResult clear({int channel = 0}) => EngineResult.ok;
   @override
+  EngineResult clearUndoable({int channel = 0}) => EngineResult.ok;
+  @override
+  bool undoRestoresClear({int channel = 0}) => false;
+  @override
   EngineResult setRecordOffset(int frames) => EngineResult.ok;
   @override
   EngineResult setLaneCount({required int channel, required int count}) =>

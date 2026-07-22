@@ -24,8 +24,15 @@ keyboard or mouse.
 
 ## Install
 
-1. Build the release bundle on the Pi: `flutter build linux --release`
-   (the `build-linux-arm64` CI job guards that this compiles for arm64).
+1. Build the release bundle on the Pi with **console/kiosk mode** on:
+   ```bash
+   flutter build linux --release --dart-define=LOOPY_CONSOLE=true
+   ```
+   `LOOPY_CONSOLE=true` hides the on-screen tracks toolbar (the foot pedals
+   drive transport/mode/clear) and tightens the layout for the fixed 16″ panel
+   — see [`lib/common/console_mode.dart`](../../lib/common/console_mode.dart). Omit
+   the define for a normal desktop build. (The `build-linux-arm64` CI job guards
+   that this compiles for arm64.)
 2. Enable the labwc Wayland compositor (Pi OS default on Pi 5; confirm with
    `wlr-randr`, which must list outputs — see `docs/RUNNING_ON_RPI.md`).
 3. Copy the config:

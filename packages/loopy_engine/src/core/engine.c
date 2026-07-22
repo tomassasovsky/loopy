@@ -85,6 +85,21 @@ int le_lane_ensure_slot(le_lane* ln, int32_t slot, int32_t frames) {
   return ln->pool[slot] != NULL;
 }
 
+/* Shrinks an over-allocated slot to `frames`, PRESERVING the leading `frames`
+ * samples (the counterpart to le_lane_ensure_slot's grow-by-replace). Only the
+ * control thread may call it, and only for a slot the audio thread no longer
+ * holds — a retired undo layer, whose cap-sized buffer would otherwise pin the
+ * whole recording cap for the session (see le_handle_retired). A failed realloc
+ * keeps the oversized buffer: correct, just not yet reclaimed. */
+void le_lane_shrink_slot(le_lane* ln, int32_t slot, int32_t frames) {
+  if (frames <= 0 || ln->pool[slot] == NULL) return;
+  if (ln->pool_cap[slot] <= frames) return;
+  float* p = (float*)realloc(ln->pool[slot], (size_t)frames * sizeof(float));
+  if (p == NULL) return;
+  ln->pool[slot] = p;
+  ln->pool_cap[slot] = frames;
+}
+
 /* Lowest set bit of `mask` as a channel index, or -1 when no bit is set. Used to
  * collapse a legacy track input bitmask into lane 0's single input channel. */
 int32_t le_mask_to_channel(uint32_t mask) {
@@ -124,6 +139,7 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
   store_f32(&ln->a_vol_bits, 1.0f);
   store_i32(&ln->a_muted, 0);
+  ln->pending_mute = 0;
   store_i32(&ln->a_live, 0);
   store_i32(&ln->a_len, 0);
   store_f32(&ln->a_rms_bits, 0.0f);
