@@ -719,6 +719,393 @@ static void test_record_after_undo_to_empty_clears_redo(void) {
   le_engine_destroy(e);
 }
 
+/* The undoable clear (#219) puts the whole take back — content AND the overdub
+ * layers beneath it, which stay peelable exactly as if the clear never happened.
+ * That "full stack" restore is the point of the feature. */
+static void test_clear_undoable_restores_take_and_layers(void) {
+  printf("test_clear_undoable_restores_take_and_layers\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch in */
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0); /* punch out -> 1.5, one layer stacked */
+  drain(e);
+  settle_dub(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 1);
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].length_frames == 0);
+  /* The erased take's layer is still held, but not peelable while the restore
+   * point sits above it — an EMPTY track reports no undo steps (the published
+   * contract, and the host's EMPTY => undoDepth == 0 invariant). The restore is
+   * offered through its own flag instead. */
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].clear_restore == 1);
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* undo the clear */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+  CHECK(s.tracks[0].undo_depth == 1); /* the erased take's layer is back */
+  CHECK(s.tracks[0].redo_depth == 1); /* and the clear is redoable */
+  check_content(e, 1.5f);
+
+  /* Still peelable: the layer beneath the restore point survived the clear. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  check_content(e, 1.0f);
+
+  le_engine_destroy(e);
+}
+
+/* Redo re-applies the clear the undo took back, and the pair stays symmetric
+ * under repeated undo/redo rather than decaying after one round trip. */
+static void test_clear_undoable_redo_reclears(void) {
+  printf("test_clear_undoable_redo_reclears\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+
+  for (int round = 0; round < 2; ++round) {
+    CHECK(le_engine_undo(e, 0) == LE_OK);
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+    check_content(e, 1.0f);
+
+    CHECK(le_engine_redo(e, 0) == LE_OK); /* re-clear */
+    drain(e);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+    CHECK(s.tracks[0].length_frames == 0);
+    CHECK(s.tracks[0].undo_depth == 0);
+    CHECK(s.tracks[0].clear_restore == 1); /* restore point back on the stack */
+  }
+
+  le_engine_destroy(e);
+}
+
+/* Clearing the last track resets the master grid (handle_clear's all-empty
+ * path). Undoing that clear must re-establish it — the restored take is
+ * unplayable on a dead clock, and REDO_FROM_EMPTY only ever reads the grid,
+ * which is why the restore rides its own command. */
+static void test_clear_undoable_restores_master_grid(void) {
+  printf("test_clear_undoable_restores_master_grid\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N);
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0); /* whole rig empty: the grid is gone */
+
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N); /* and back */
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == LOOP_N);
+  CHECK(s.tracks[0].multiple == 1);
+  check_content(e, 1.0f);
+
+  le_engine_destroy(e);
+}
+
+/* The restore point carries the pre-clear state and mutes, not just the audio:
+ * a stopped, muted track comes back stopped and muted. (Plain clear deliberately
+ * unmutes — that rule belongs to clear, not to undoing one.) */
+static void test_clear_undoable_restores_state_and_mutes(void) {
+  printf("test_clear_undoable_restores_state_and_mutes\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  CHECK(le_engine_set_track_mute(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(s.tracks[0].muted == 1);
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].muted == 0); /* the clear itself still unmutes */
+
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED); /* not PLAYING */
+  CHECK(s.tracks[0].muted == 1);
+
+  le_engine_destroy(e);
+}
+
+/* A fresh take records into the live slot the restore point names, so the way
+ * back is gone whether or not the bookkeeping admits it — the history must drop
+ * rather than offer an undo that would resurrect a half-overwritten buffer. This
+ * restores the pre-#219 semantic: after clear-then-record, undo depth is 0. */
+static void test_record_after_undoable_clear_drops_restore_point(void) {
+  printf("test_record_after_undoable_clear_drops_restore_point\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].clear_restore == 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* fresh take redefines the grid */
+  process_const(e, 2.0f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].clear_restore == 0); /* the way back died with the tempo */
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* undo-to-empty, not a clear restore */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(le_engine_redo(e, 0) == LE_OK);
+  check_content(e, 2.0f); /* the new take, never the cleared one */
+
+  le_engine_destroy(e);
+}
+
+/* le_engine_clear stays destructive — it is what session load and the internal
+ * grid-redefinition clear (le_engine_record) call, and neither may leave a
+ * restore point behind. */
+static void test_plain_clear_leaves_no_restore_point(void) {
+  printf("test_plain_clear_leaves_no_restore_point\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].redo_depth == 0);
+  CHECK(le_engine_undo(e, 0) == LE_ERR_INVALID); /* nothing to go back to */
+
+  le_engine_destroy(e);
+}
+
+/* Clearing an already-empty track offers no restore point: there is nothing to
+ * put back, and a mark whose slot holds no take would resurrect silence. */
+static void test_undoable_clear_of_empty_track_is_plain(void) {
+  printf("test_undoable_clear_of_empty_track_is_plain\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].clear_restore == 0);
+  CHECK(le_engine_undo(e, 0) == LE_ERR_INVALID);
+
+  le_engine_destroy(e);
+}
+
+/* A cleared sibling must not hold the master grid hostage: its restore point
+ * yields to a fresh recording on another track, which redefines the tempo. The
+ * pre-#219 clear reset the stack outright, so le_grid_still_needed found nothing
+ * to count — keeping the stack must not silently change that. */
+static void test_cleared_sibling_does_not_hold_grid(void) {
+  printf("test_cleared_sibling_does_not_hold_grid\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* track 0 defines a LOOP_N grid */
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].clear_restore == 1); /* restore point held */
+  CHECK(s.master_length_frames == 0);
+
+  /* A fresh take on track 1, twice as long: it must define the new grid rather
+   * than be locked to track 0's dead tempo. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 2.0f, LOOP_N * 2, out);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N * 2);
+  CHECK(s.tracks[1].multiple == 1);
+  /* And track 0's restore point died with the old tempo. */
+  CHECK(s.tracks[0].clear_restore == 0);
+
+  le_engine_destroy(e);
+}
+
+/* The live-slot overwrite hazard on its own, with the grid-redefinition path
+ * taken OUT of the picture: a sibling holds the grid, so recording onto the
+ * cleared track never reaches le_engine_record's drop-every-restore-point loop.
+ * le_begin_empty_capture must still drop this track's restore point, because the
+ * take it names is about to be recorded over in place (pool[live] is regrown and
+ * written by the audio thread). Without this the undo would offer a resurrect
+ * onto a half-overwritten buffer. */
+static void test_record_over_cleared_track_drops_restore_point_grid_held(void) {
+  printf("test_record_over_cleared_track_drops_restore_point_grid_held\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f); /* track 0 defines the grid */
+  /* Track 1 takes real content, so it — not track 0 — holds the grid. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 3.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].clear_restore == 1);    /* restore point held */
+  CHECK(s.master_length_frames == LOOP_N);  /* sibling kept the grid */
+
+  /* Fresh take on track 0. The grid stands, so the record path's invalidation
+   * loop does not run — only le_begin_empty_capture can drop the mark here. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 2.0f, LOOP_N, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == LOOP_N); /* sibling still holds it */
+  CHECK(s.tracks[0].clear_restore == 0);   /* the way back is gone */
+  check_content(e, 2.0f);
+
+  le_engine_destroy(e);
+}
+
+/* redo_stack must not overflow when a restore point pushes the entry count past
+ * what the pool bound alone guarantees.
+ *
+ * Most stack entries name a distinct pool slot, so live + undo + redo +
+ * outstanding <= LE_POOL_SLOTS caps undo + redo at 255. The exceptions are the
+ * pushes that name the ALREADY-live slot and so consume no new one: undo-to-
+ * empty's, and (since #219) the clear restore point's. Pre-#219 there was
+ * exactly one such push and redo_count topped out at 256 — the last valid
+ * index. The restore point adds a second, which is one too many:
+ *
+ *   255 layers + 1 restore point  -> undo 256
+ *   undo the clear, peel all 255  -> redo 256   (both moves, net zero)
+ *   one more undo (to empty)      -> redo_stack[256] — past the end
+ *
+ * redo_count sits immediately after redo_stack, so the overflow corrupts the
+ * very counter that bounds it. Rare (255 overdubs, then clear, then 256 undos)
+ * but reachable, and memory corruption either way. */
+static void test_redo_stack_bounded_with_restore_point(void) {
+  printf("test_redo_stack_bounded_with_restore_point\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  record_base_loop(e, 1.0f);
+  /* Stack layers until eviction pins the depth at its ceiling. */
+  for (int i = 0; i < LE_POOL_SLOTS + 4; ++i) {
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    process_const(e, 0.0f, LOOP_N, out);
+    CHECK(le_engine_record(e, 0) == LE_OK);
+    drain(e);
+    settle_dub(e);
+  }
+  le_engine_get_snapshot(e, &s);
+  const int32_t depth = s.tracks[0].undo_depth;
+  CHECK(depth > 0 && depth <= LE_POOL_SLOTS);
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK); /* + the restore point */
+  drain(e);
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* restore: moves it to redo */
+  drain(e);
+
+  /* Peel everything, then keep tapping past the base into undo-to-empty. Each
+   * tap must either move an entry or refuse — never write past redo_stack. */
+  for (int i = 0; i < LE_POOL_SLOTS + 8; ++i) {
+    le_engine_undo(e, 0);
+    drain(e);
+  }
+  le_engine_get_snapshot(e, &s);
+  /* The counters are still sane: an overflow would have clobbered redo_count
+   * itself (it is the next field after redo_stack). */
+  CHECK(s.tracks[0].redo_depth >= 0);
+  CHECK(s.tracks[0].redo_depth <= LE_POOL_SLOTS);
+  CHECK(s.tracks[0].undo_depth >= 0);
+  CHECK(s.tracks[0].undo_depth <= LE_POOL_SLOTS);
+
+  le_engine_destroy(e);
+}
+
+/* An EMPTY track NEVER reports undo steps, however it got there. undo_depth's
+ * published contract is "available undo steps (overdub layers)", and the host
+ * asserts EMPTY => undoDepth == 0 as a control invariant (lib/control/
+ * invariants.dart, 'depths-sane'). A clear restore point holds real layers, but
+ * they are not steps until it is undone — publishing the raw entry count here
+ * put the app's fuzzer into a Bad state, which is what this pins.
+ *
+ * The flag is the escape hatch: it, not undo_depth, answers "would undo do
+ * something" on a cleared track. */
+static void test_empty_track_never_reports_undo_depth(void) {
+  printf("test_empty_track_never_reports_undo_depth\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  le_snapshot s;
+
+  /* Deepest case: a take with a stacked layer, then cleared. */
+  record_base_loop(e, 1.0f);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.5f, LOOP_N, out);
+  le_engine_record(e, 0);
+  drain(e);
+  settle_dub(e);
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].length_frames == 0);
+  CHECK(s.tracks[0].undo_depth == 0); /* the invariant the host asserts */
+  CHECK(s.tracks[0].clear_restore == 1); /* but undo still does something */
+
+  /* Restoring republishes the real peel depth. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].undo_depth == 1);
+  CHECK(s.tracks[0].clear_restore == 0);
+
+  /* Undo-to-empty empties it a different way — same rule. */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* peel */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* to empty */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].undo_depth == 0);
+  CHECK(s.tracks[0].clear_restore == 0);
+
+  le_engine_destroy(e);
+}
+
 /* Clear resets the track to its default armed-to-play state: unmuted (a
  * leftover Stop-mute never silences the next take) with all capture state
  * dropped. */
@@ -9517,6 +9904,17 @@ int main(void) {
   test_queued_undo_to_empty_coherent_snapshot();
   test_undo_to_empty_and_redo();
   test_record_after_undo_to_empty_clears_redo();
+  test_clear_undoable_restores_take_and_layers();
+  test_clear_undoable_redo_reclears();
+  test_clear_undoable_restores_master_grid();
+  test_clear_undoable_restores_state_and_mutes();
+  test_record_after_undoable_clear_drops_restore_point();
+  test_plain_clear_leaves_no_restore_point();
+  test_undoable_clear_of_empty_track_is_plain();
+  test_cleared_sibling_does_not_hold_grid();
+  test_record_over_cleared_track_drops_restore_point_grid_held();
+  test_redo_stack_bounded_with_restore_point();
+  test_empty_track_never_reports_undo_depth();
   test_clear_unmutes();
   test_record_from_empty_unmutes();
   test_spare_starvation_merges_passes();

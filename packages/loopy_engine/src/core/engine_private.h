@@ -262,20 +262,31 @@ typedef struct le_monitor_input {
   le_fx_state fx;
 } le_monitor_input;
 
-/* What one history entry represents. LE_HIST_LAYER is a retired overdub pass;
- * the CLEAR restore point (#219) lands on top of this enum in a follow-up. */
+/* What one history entry represents. */
 typedef enum {
   LE_HIST_LAYER = 0, /* a retired overdub pass, named by its pool slot */
+  LE_HIST_CLEAR = 1, /* a clear restore point: everything needed to put the
+                      * track back as it was (#219). Pushed ON TOP of the
+                      * layers it erased, which stay peelable after a restore. */
 } le_hist_kind;
 
 /* One entry on a track's undo/redo history (control-thread-owned). A bare pool
- * index cannot say what it represents, which is why this is a tagged struct
- * rather than the int32_t it replaced: the undoable-clear work (#219) needs a
- * restore point — pre-clear live slot plus the length/multiple/state/mutes to
- * put back — to sit on the same stack as the layers it was pushed above. */
+ * index cannot say what it represents, which is why this is a tagged struct:
+ * a LAYER entry needs only its slot, while a CLEAR restore point also carries
+ * the transport state to put back. The payload fields are meaningless (and left
+ * zero) on a LAYER entry. */
 typedef struct {
   int32_t kind; /* le_hist_kind */
-  int32_t slot; /* the pool slot this entry names */
+  int32_t slot; /* the pool slot this entry names — for CLEAR, the pre-clear
+                 * live slot, pinned against reuse until the entry dies */
+  int32_t len;        /* CLEAR: pre-clear track length in frames */
+  int32_t multiple;   /* CLEAR: pre-clear length in whole base loops */
+  int32_t state;      /* CLEAR: pre-clear state (PLAYING / STOPPED) */
+  int32_t master_len; /* CLEAR: master grid at clear time. A clear that empties
+                       * the last track resets the clock, so the restore has to
+                       * re-establish it — the track's own len is not enough
+                       * (this track may be a multiple of the base). */
+  uint32_t muted_mask; /* CLEAR: pre-clear per-lane mute bits (bit l = lane l) */
 } le_hist_entry;
 
 /* Positional aggregate init, not the designated initializer the rest of the
@@ -374,8 +385,13 @@ typedef struct le_track {
                             * before a clear is dropped, never re-pushed */
 
   _Atomic int32_t a_state;
-  _Atomic int32_t a_undo_depth; /* published undo_count */
-  _Atomic int32_t a_redo_depth; /* published redo_count */
+  _Atomic int32_t a_undo_depth; /* published PEELABLE layer count — see
+                                 * le_publish_undo_depth: a cleared track's
+                                 * stack is not peelable until its restore point
+                                 * is undone, so this reads 0 there */
+  _Atomic int32_t a_clear_restore; /* published: 1 when the next undo restores a
+                                    * cleared take rather than peeling a layer */
+  _Atomic int32_t a_redo_depth;    /* published redo_count */
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the
