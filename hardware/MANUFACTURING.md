@@ -46,7 +46,6 @@ a real ASP-1 base is measured — reprint or re-drill if it moves.
 | Encoder ring PCB | `kicad/fab/loopy_pedal_ring_gerbers.zip` | 1 | |
 | LED puck (single WS2812B) | `led_strip/loopy_led_strip_gerbers.zip` | 6 | 16×8 mm, castellated; or buy off-the-shelf WS2812B modules instead (see `led_strip/README.md`). |
 
-(`loopy_pi_main_gerbers.zip` is the **dropped** Pi HAT — do not order.)
 
 ## 4. Printed overlay
 

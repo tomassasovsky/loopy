@@ -48,16 +48,6 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 - [ ] 1000 µF electrolytic, 6.3 V+ ×1 — across the WS2812 5 V rail
 - [ ] 330–470 Ω resistor ×1 — in series with the WS2812 data line
 
-## GPIO input protection (per footswitch + encoder line)
-
-3.3 V discipline — Pi GPIO is **not 5 V tolerant**. Footswitches/encoder switch
-to **ground** (active-low; `gpio_client` enables the internal pull-up). See
-[`hardware/console/README.md`](console/README.md) for the circuit.
-
-- [ ] 1 kΩ resistor (series, per line) ×8  *(5 footswitch + A/B/SW encoder)*
-- [ ] 100 nF ceramic ("104"), 50 V (RC debounce to GND, per line) ×8
-- [ ] BAT54S or 1N4148 clamp diodes (optional ESD clamp to 3V3/GND) ×8
-
 ## Power
 
 - [ ] Raspberry Pi 5 **official 27 W USB-C PD** supply ×1 — Pi 5 alone
