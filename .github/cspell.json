@@ -20,6 +20,7 @@
   "useGitignore": true,
   "ignorePaths": [
     "**/third_party/clap/**",
+    "**/third_party/signalsmith-stretch/**",
     "**/third_party/vst3sdk/**"
   ],
   "words": [
@@ -138,6 +139,7 @@
     "dllmain",
     "DLOOPY",
     "dlopen",
+    "DNDEBUG",
     "dogfood",
     "DOUT",
     "downbeat",
@@ -221,6 +223,7 @@
     "Inno",
     "insample",
     "interoperating",
+    "interp",
     "ints",
     "iplugincompatibility",
     "isclosed",
@@ -415,6 +418,7 @@
     "Repoint",
     "repointed",
     "repros",
+    "resampler",
     "rescan",
     "respawn",
     "respawns",
