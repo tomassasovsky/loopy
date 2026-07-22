@@ -175,7 +175,7 @@ class LooperRepository {
   /// `channel -> lane -> (chain, mute)`. Written by [clear], consumed by
   /// [undo] only when the engine confirms the restore point survived.
   final Map<int, Map<int, ({List<TrackEffect> effects, bool muted})>>
-      _clearRestore = {};
+  _clearRestore = {};
 
   /// Per-hardware-input live monitor enable flag (absent => disabled). The
   /// input-level gate; per-lane routing / mix / effects live in the maps below.

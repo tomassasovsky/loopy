@@ -2024,30 +2024,32 @@ void main() {
       expect(repo.laneEffects(0, 0), isEmpty);
     });
 
-    test('applySession clears destructively — a loaded session is not undoable',
-        () {
-      engine.nextSnapshot = const EngineSnapshot(
-        isRunning: true,
-        sampleRate: 48000,
-        bufferFrames: 128,
-        framesProcessed: 0,
-        xrunCount: 0,
-        inputRms: 0,
-        inputPeak: 0,
-        outputRms: 0,
-        latencyState: le.LatencyState.idle,
-        measuredLatencyMs: -1,
-        tracks: [TrackSnapshot.empty()],
-      );
-      final repo = buildRepo()..startEngine(const EngineConfig());
-      addTearDown(repo.dispose);
-      engine.calls.clear();
+    test(
+      'applySession clears destructively — a loaded session is not undoable',
+      () {
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tracks: [TrackSnapshot.empty()],
+        );
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+        engine.calls.clear();
 
-      unawaited(repo.applySession(const SessionRig()));
+        unawaited(repo.applySession(const SessionRig()));
 
-      expect(engine.calls, contains('clear'));
-      expect(engine.calls, isNot(contains('clearUndoable')));
-    });
+        expect(engine.calls, contains('clear'));
+        expect(engine.calls, isNot(contains('clearUndoable')));
+      },
+    );
 
     test('record captures the monitor plugin state onto the lane (D-P1)', () {
       engine
