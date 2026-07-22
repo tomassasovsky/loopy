@@ -334,17 +334,17 @@ class SettingsRepository {
   Future<void> saveShowTrackIndicators({required bool value}) =>
       _store.setBool(_showTrackIndicatorsKey, value: value);
 
-  static const String _defaultLooperModeKey = 'looper.default_mode';
+  static const String _defaultInteractionModeKey = 'looper.default_mode';
 
-  /// Loads the persisted default looper mode (an opaque token, e.g.
+  /// Loads the persisted default interaction mode (an opaque token, e.g.
   /// `'record'` / `'play'`), or `null` if unset. The presentation layer maps
   /// the token to its mode enum.
-  Future<String?> loadDefaultLooperMode() =>
-      _store.getString(_defaultLooperModeKey);
+  Future<String?> loadDefaultInteractionMode() =>
+      _store.getString(_defaultInteractionModeKey);
 
-  /// Saves the default looper [mode] token.
-  Future<void> saveDefaultLooperMode(String mode) =>
-      _store.setString(_defaultLooperModeKey, mode);
+  /// Saves the default interaction [mode] token.
+  Future<void> saveDefaultInteractionMode(String mode) =>
+      _store.setString(_defaultInteractionModeKey, mode);
 
   static const String _refreshHzKey = 'ui.refresh_hz';
 

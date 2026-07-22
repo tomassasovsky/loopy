@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
 LooperState _stateWith(
@@ -102,7 +102,7 @@ void main() {
         ]),
       );
       const overlay = ControlState(
-        mode: LooperMode.play,
+        mode: InteractionMode.play,
         parkedResume: {1},
       );
       expect(armedTracks(looper, overlay), {1});
@@ -122,7 +122,7 @@ void main() {
         ]),
       );
       const overlay = ControlState(
-        mode: LooperMode.play,
+        mode: InteractionMode.play,
         excluded: {1},
       );
       expect(armedTracks(looper, overlay), {0});
@@ -142,7 +142,7 @@ void main() {
           ),
         ]),
       );
-      const overlay = ControlState(mode: LooperMode.play);
+      const overlay = ControlState(mode: InteractionMode.play);
       expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.green);
       expect(projectTrackLed(looper, overlay, 1), PedalTrackLed.off);
       expect(projectTrackLed(looper, overlay, 2), PedalTrackLed.off);
@@ -165,7 +165,7 @@ void main() {
       // The original bug class, retired by derivation: an undone-to-empty
       // track (dark) that redo resurrects reads green off the very next
       // snapshot — nothing stored needs reconciling.
-      const overlay = ControlState(mode: LooperMode.play);
+      const overlay = ControlState(mode: InteractionMode.play);
       final empty = _stateWith(
         _tracksWith(const [Track(redoDepth: 2)]),
       );

@@ -5,7 +5,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control_projection.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
@@ -154,8 +154,8 @@ class ControlCubit extends Cubit<ControlState> {
 
   Future<void> _restore() async {
     _longPress = Duration(milliseconds: await _settings.loadPedalLongPressMs());
-    final defaultMode = LooperMode.fromToken(
-      await _settings.loadDefaultLooperMode(),
+    final defaultMode = InteractionMode.fromToken(
+      await _settings.loadDefaultInteractionMode(),
     );
     if (isClosed) return;
     emit(state.copyWith(defaultMode: defaultMode));
@@ -207,7 +207,9 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Toggles Record / Play mode (identical from every surface).
   void toggleMode() => setMode(
-    state.mode == LooperMode.record ? LooperMode.play : LooperMode.record,
+    state.mode == InteractionMode.record
+        ? InteractionMode.play
+        : InteractionMode.record,
   );
 
   /// Applies [next] with its entry side effects; a no-op when already there.
@@ -220,21 +222,21 @@ class ControlCubit extends Cubit<ControlState> {
   /// so a take the user did not explicitly end keeps recording until they
   /// return to Rec mode and hit Rec/Play (or end it with an explicit Stop).
   /// Any mode entry clears the stored play intent (the invalidation table).
-  void setMode(LooperMode next) {
+  void setMode(InteractionMode next) {
     if (next == state.mode) return;
     switch (next) {
-      case LooperMode.record:
+      case InteractionMode.record:
         emit(
           state.copyWith(
-            mode: LooperMode.record,
+            mode: InteractionMode.record,
             excluded: const <int>{},
             parkedResume: const <int>{},
           ),
         );
-      case LooperMode.play:
+      case InteractionMode.play:
         emit(
           state.copyWith(
-            mode: LooperMode.play,
+            mode: InteractionMode.play,
             excluded: const <int>{},
             parkedResume: {
               for (final track in _tracks)
@@ -247,10 +249,10 @@ class ControlCubit extends Cubit<ControlState> {
 
   /// Sets and persists the default [mode] the system boots into, applying it
   /// to the live mode now.
-  Future<void> setDefaultMode(LooperMode mode) async {
+  Future<void> setDefaultMode(InteractionMode mode) async {
     emit(state.copyWith(defaultMode: mode));
     setMode(mode);
-    await _settings.saveDefaultLooperMode(mode.token);
+    await _settings.saveDefaultInteractionMode(mode.token);
   }
 
   // ---------------------------------------------------------------------------
@@ -288,9 +290,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// The Rec/Play action under the current mode.
   void recPlay() {
     switch (state.mode) {
-      case LooperMode.record:
+      case InteractionMode.record:
         _recAdvance(state.cursor);
-      case LooperMode.play:
+      case InteractionMode.play:
         _playRecPlay();
     }
   }
@@ -377,9 +379,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// The Stop action under the current mode.
   void stop() {
     switch (state.mode) {
-      case LooperMode.record:
+      case InteractionMode.record:
         _recStop(state.cursor);
-      case LooperMode.play:
+      case InteractionMode.play:
         parkAll();
     }
   }
@@ -422,9 +424,9 @@ class ControlCubit extends Cubit<ControlState> {
   /// footswitch semantics.
   void trackPressed(int channel) {
     switch (state.mode) {
-      case LooperMode.record:
+      case InteractionMode.record:
         _recTrackPressed(channel);
-      case LooperMode.play:
+      case InteractionMode.play:
         _playTrackPressed(channel);
     }
   }
@@ -521,7 +523,7 @@ class ControlCubit extends Cubit<ControlState> {
     }
     emit(
       state.copyWith(
-        mode: LooperMode.record,
+        mode: InteractionMode.record,
         cursor: 0,
         activeBank: 0,
         excluded: const <int>{},

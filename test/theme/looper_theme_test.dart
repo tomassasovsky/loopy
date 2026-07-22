@@ -3,7 +3,7 @@ import 'dart:math' show sqrt;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/theme/theme.dart';
 
 void main() {
@@ -51,24 +51,24 @@ void main() {
       expect(
         theme.meterColor(
           LooperMeterState.playing,
-          mode: LooperMode.record,
+          mode: InteractionMode.record,
         ),
         const Color(0xFF00FF00),
       );
       expect(
-        theme.meterColor(LooperMeterState.playing, mode: LooperMode.play),
+        theme.meterColor(LooperMeterState.playing, mode: InteractionMode.play),
         const Color(0xFF0000FF),
       );
       // A state the active table omits resolves to transparent.
       expect(
         theme.meterColor(
           LooperMeterState.stopped,
-          mode: LooperMode.record,
+          mode: InteractionMode.record,
         ),
         Colors.transparent,
       );
       expect(
-        theme.meterColor(LooperMeterState.muted, mode: LooperMode.play),
+        theme.meterColor(LooperMeterState.muted, mode: InteractionMode.play),
         Colors.transparent,
       );
     });
@@ -193,7 +193,7 @@ void main() {
             muted: true,
             hasContent: true,
             selected: true,
-            mode: LooperMode.record,
+            mode: InteractionMode.record,
           ),
           TrackIndicator.idle,
         );
@@ -208,7 +208,7 @@ void main() {
           muted: false,
           hasContent: false,
           selected: false,
-          mode: LooperMode.play,
+          mode: InteractionMode.play,
         ),
         TrackIndicator.record,
       );
@@ -218,7 +218,7 @@ void main() {
           muted: false,
           hasContent: true,
           selected: false,
-          mode: LooperMode.play,
+          mode: InteractionMode.play,
         ),
         TrackIndicator.record,
       );
@@ -229,7 +229,7 @@ void main() {
           muted: false,
           hasContent: true,
           selected: true,
-          mode: LooperMode.record,
+          mode: InteractionMode.record,
         ),
         TrackIndicator.play,
       );
@@ -239,7 +239,7 @@ void main() {
       // Regardless of selection or mode — it will sound on the next play-all,
       // so the indicator stays lit after a stop rather than going dark.
       for (final selected in [true, false]) {
-        for (final mode in [LooperMode.play, LooperMode.record]) {
+        for (final mode in [InteractionMode.play, InteractionMode.record]) {
           expect(
             TrackIndicator.of(
               TrackState.stopped,
@@ -264,7 +264,7 @@ void main() {
             muted: false,
             hasContent: false,
             selected: true,
-            mode: LooperMode.record,
+            mode: InteractionMode.record,
           ),
           TrackIndicator.record,
           reason: 'record mode arms red',
@@ -275,7 +275,7 @@ void main() {
             muted: false,
             hasContent: false,
             selected: true,
-            mode: LooperMode.play,
+            mode: InteractionMode.play,
           ),
           TrackIndicator.play,
           reason: 'play mode arms green',
@@ -285,7 +285,7 @@ void main() {
 
     test('empty/contentless + unselected is idle in either mode', () {
       for (final state in [TrackState.empty, TrackState.stopped]) {
-        for (final mode in [LooperMode.play, LooperMode.record]) {
+        for (final mode in [InteractionMode.play, InteractionMode.record]) {
           expect(
             TrackIndicator.of(
               state,

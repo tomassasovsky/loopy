@@ -3,9 +3,9 @@
 ///
 /// One mode for the whole system — the pedal's MODE footswitch, the keyboard's
 /// `M`, and the on-screen mode chip all toggle this same state (owned by
-/// `PedalCubit`), so a track press can never mean "record" on one surface and
+/// `ControlCubit`), so a track press can never mean "record" on one surface and
 /// "mute" on another. The pedal wire frame carries it as `PedalMode`.
-enum LooperMode {
+enum InteractionMode {
   /// Track presses select and record/overdub; Stop mutes the selection.
   record,
 
@@ -16,8 +16,9 @@ enum LooperMode {
   String get token => name;
 
   /// Parses a persisted [token] back to a mode, defaulting to [record].
-  static LooperMode fromToken(String? token) => LooperMode.values.firstWhere(
-    (m) => m.name == token,
-    orElse: () => LooperMode.record,
-  );
+  static InteractionMode fromToken(String? token) =>
+      InteractionMode.values.firstWhere(
+        (m) => m.name == token,
+        orElse: () => InteractionMode.record,
+      );
 }

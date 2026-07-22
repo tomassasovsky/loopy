@@ -5,7 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/performance/performance.dart';
@@ -33,7 +33,7 @@ class TracksToolbar extends StatelessWidget {
   });
 
   /// The active system mode (drives the [ModeIndicator]).
-  final LooperMode mode;
+  final InteractionMode mode;
 
   /// The active bank index (drives the [BankSwitch]).
   final int activeBank;
@@ -226,7 +226,7 @@ class ModeIndicator extends StatelessWidget {
   const ModeIndicator({required this.mode, required this.onToggle, super.key});
 
   /// The mode to display.
-  final LooperMode mode;
+  final InteractionMode mode;
 
   /// Invoked on tap; the host wires this to the shared mode toggle (which
   /// also announces the landing mode to assistive tech).
@@ -237,7 +237,7 @@ class ModeIndicator extends StatelessWidget {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final looper = theme.extension<LooperTheme>()!;
-    final recording = mode == LooperMode.record;
+    final recording = mode == InteractionMode.record;
     final color = recording ? looper.recordColor : theme.colorScheme.primary;
     final modeName = recording ? l10n.looperModeRec : l10n.looperModePlay;
 
