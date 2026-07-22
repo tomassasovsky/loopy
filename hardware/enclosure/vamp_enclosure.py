@@ -153,8 +153,12 @@ REAR_WIN_U = 175.0                        # window centre u; REAR_WIN_Z set belo
 VENT_SLOT   = (40.0, 4.0)     # one louvre slot (l x w)
 VENT_PITCH  = 8.0             # slot row pitch (web = pitch - slot = 4mm = 2T)
 VENT_FREE_AREA_MIN = 4000.0   # mm^2 minimum open area (bottom + rear), ~40 cm^2
-STANDOFF_H  = 10.0            # min under-board gap (airflow under the Pi)
-PI_RISER_H  = 33.0            # Pi build: risers lift the Pi so its rear port stack meets the (centred) window
+STANDOFF_H  = 15.0            # under-board gap: the THT leads + buck-module header pins
+                              # hang ~4.5mm below the PCB, so 10mm left ~5mm of real
+                              # airflow; 15mm (standard M3 brass) restores the margin
+PI_STACK_MID = 9.7            # USB/RJ45 stack centreline above the Pi PCB BOTTOM
+                              # (1.6 PCB + ~8.1 to the middle of the 16mm-tall stack);
+                              # PI_RISER_H is derived from it below REAR_WIN_Z
 PI_HOLES    = (58.0, 49.0)    # Raspberry Pi 4/5 mounting-hole rectangle (M2.5)
 # Main board = the manufactured V1 THT Pro Micro board (the loopy_pedal_main THT design,
 # git 794eb48; the later SMD 328P+16U2 redesign is discarded). Measured from its KiCad:
@@ -184,6 +188,11 @@ D           = FACE_RUN + TRANS_RUN + 2*T  # overall depth: +2T so the bottom pla
 # transition DROPS from the peak down to the shorter Rear panel at the very back.
 REAR_WALL_H = H_REAR - TRANS_DROP     # Rear panel height (reduced; below the peak)
 REAR_WIN_Z  = REAR_WALL_H / 2.0       # I/O window centred vertically on the rear wall
+# Pi build: risers lift the Pi so its rear port stack CENTRES in the I/O window
+# (window centre = REAR_WIN_Z up the wall ~= the same height above the bottom
+# plate). The old hardcoded 33.0 left the stack ~2.3mm low - the USB shells'
+# bottom edge hid behind the sub-panel cutout edge.
+PI_RISER_H  = REAR_WIN_Z - PI_STACK_MID
 SLOPE_DROP  = H_REAR - H_FRONT
 L_SLOPE     = math.hypot(FACE_RUN, SLOPE_DROP)            # Top-plate sloped length
 SLOPE_ANGLE = math.degrees(math.atan2(SLOPE_DROP, FACE_RUN))
@@ -592,29 +601,47 @@ def _bottom_vents():
 # board (V1 loopy_pedal_main, or the Pi-main with a Raspberry Pi riding its GPIO)
 # mounts there on M3 standoffs (>= STANDOFF_H for airflow). Same hole pattern both
 # ways so one chassis fits either version. 16" screen above is shallow -> clears it.
-# Centred laterally on the rear I/O window (REAR_WIN_U) so the connector edge lines
-# up with the panel; sat forward of the rear wall to leave room for the Raspberry
-# Pi, which (in the Pi build) tucks behind the board with its port cluster out the
-# window. The mid-row platforms clear the rear strip, so depth is generous.
+# Offset 25 mm off the rear I/O window axis (REAR_WIN_U), AWAY from the CLEAR/BANK
+# platform column: the Pro Micro's USB socket faces that platform, and centring the
+# board left only ~6 mm to it — not enough for a USB-C/micro plug body. The offset
+# buys ~37 mm to the platform slot edge. Sat forward of the rear wall to leave room
+# for the Raspberry Pi, which (in the Pi build) tucks behind the board with its port
+# cluster out the window. The mid-row platforms clear the rear strip, so depth is
+# generous. (Only the Pi needs to stay centred on the window — see pi_mount.)
+BOARD_U = REAR_WIN_U - 25.0
 def board_mounts():
     bw, bd = W - 2*T, D - 2*T
-    return [("MAIN_BOARD", REAR_WIN_U, bd - 145.0, BOARD_HOLES)]
+    return [("MAIN_BOARD", BOARD_U, bd - 145.0, BOARD_HOLES)]
 
 # Pi build only: the Raspberry Pi rides four M2.5 risers (PI_RISER_H tall) so its rear-edge
 # USB/Ethernet stack lines up with the rear I/O window. It sits at the wall, centred on the
 # window, ports facing out -- above and behind the main board, so the two never clash.
 # Returns (centre_u, centre_depth, (u_span, depth_span)) for the 58x49 Pi 4 hole pattern.
+# NOTE the Pi 4's hole pattern is NOT centred on the board: along the 85 mm length the
+# holes sit 3.5/61.5 mm from the SD edge, i.e. the pattern centre is 10 mm SD-ward of the
+# board centre; the PCB port edge is centre_depth + 52.5 and the connector faces ~4 mm
+# beyond that. Depth is bounded by the rear SUB-PANEL, which bolts against the wall's
+# INSIDE face (plate T mm thick): the PCB edge must stop short of that plate -- only the
+# connector bodies pass through its port-block cutout. bd - 56 leaves the PCB edge
+# ~1.4 mm clear of the plate and the connector faces recessed ~1.4 mm inside the wall's
+# outer skin: nothing protrudes past the panel. (bd - 42 put the PCB 8+ mm out through
+# the window; even bd - 52 left the PCB crossing the sub-panel plane.)
 def pi_mount():
     bd = D - 2*T
-    return (REAR_WIN_U, bd - 42.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth; near wall so ports sit flush
+    return (REAR_WIN_U, bd - 56.0, (PI_HOLES[1], PI_HOLES[0]))   # 49 across u, 58 along depth
 
-# External Pololu D24V90F5 buck (40.6 x 20.3 mm, 4x M2 at 35.6 x 15.2 mm) — the add-on that
-# makes 5V for the Pi + screens (the in-production board is untouched). Mounted on standoffs
-# in the rear airflow bay, to the right of the Pi/main-board column.
-BUCK_HOLES = (35.6, 15.2)
+# External 5V buck: eleUniverse 8-36V -> 5V 10A 50W IP67 potted brick (Amazon
+# B0GGHN97TK; envelope 63.8 x 57.7 x 22.1 incl. mounting ears, 116 g, passive
+# aluminium shell) — the add-on that makes 5V for the Pi + screens (the
+# in-production board is untouched). Screws FLAT to the floor of the rear
+# airflow bay by its two end ears (no standoffs), long axis along u.
+# (Replaces the Pololu D24V90F5 — too expensive / hard to source.)
+BUCK_BODY = (63.8, 57.7, 22.1)
+BUCK_EAR_SPACING = 56.0       # ear hole centres along the long axis — PROVISIONAL
+                              # until the unit arrives; drill to the real part
 def buck_mount():
     bd = D - 2*T
-    return (REAR_WIN_U + 125.0, bd - 60.0, BUCK_HOLES)
+    return (REAR_WIN_U + 125.0, bd - 60.0, BUCK_EAR_SPACING)
 
 # ===========================================================================
 # DXF  (ezdxf)
@@ -850,11 +877,11 @@ def dxf_base(path):
         for dy in (-psy/2, psy/2):
             _circle(msp, pcx+dx, pcy+dy, D_M3)
     _text(msp, pcx - psx/2, pcy + psy/2 + 4, 5, f"PI_RISER x{PI_RISER_H:.0f}mm (Pi build)", "NOTE")
-    bkx, bky, (bsx, bsy) = buck_mount()            # external 5V buck (M2 standoffs)
-    for dx in (-bsx/2, bsx/2):
-        for dy in (-bsy/2, bsy/2):
-            _circle(msp, bkx+dx, bky+dy, D_M2)
-    _text(msp, bkx - bsx/2, bky + bsy/2 + 4, 5, "BUCK 5V (Pololu D24V90F5)", "NOTE")
+    bkx, bky, bsp = buck_mount()                   # external 5V buck: 2 ear holes, flat mount
+    for dx in (-bsp/2, bsp/2):
+        _circle(msp, bkx+dx, bky, D_M4)
+    _text(msp, bkx - bsp/2, bky + BUCK_BODY[1]/2 + 4, 5,
+          "BUCK 5V (eleUniverse 8-36V>5V 10A IP67; ear pitch PROVISIONAL)", "NOTE")
     for x in (45, BW-45):
         for y in (45, BD-45):
             _circle(msp, x, y, D_FOOT)
@@ -1109,10 +1136,15 @@ def build_step(write_parts=True):
     # representative loopy_pi_main board on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
     blk = {"MAIN_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
-    for name, cx, cy, _pat in board_mounts():
+    for name, cx, cy, pat in board_mounts():
         bx, by, bz = blk[name]
         b = cq.Workplane("XY").box(bx, by, bz, centered=(True, True, False)).translate((cy + T, cx + T, STANDOFF_H))
         addw(b, name.lower())
+        # the 4 M3 standoff posts under the board (STANDOFF_H tall, on the hole pattern)
+        for du in (-pat[0] / 2.0, pat[0] / 2.0):
+            for dv in (-pat[1] / 2.0, pat[1] / 2.0):
+                post = cq.Workplane("XY").circle(2.75).extrude(STANDOFF_H).translate((cy + T + dv, cx + T + du, 0))
+                addw(post, f"{name.lower()}_standoff_u{int(cx + du)}_d{int(cy + dv)}")
 
     asm.save(os.path.join(OUT, "vamp_assembly.step"))
     if write_parts:
