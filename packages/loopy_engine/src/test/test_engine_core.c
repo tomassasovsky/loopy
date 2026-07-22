@@ -9268,22 +9268,29 @@ static void test_perf_render_scripted_log_boundaries(void) {
 }
 
 /* Shared body for the overdub-pass stitching contract, parameterized by loop
- * length (#227 runs it beyond one quantum). Track settled at arm with a base
- * RAMP image; one retired-layer ramp (offset by +2) activates at
- * `retire_frame` — not one loop cycle earlier: a punch-out mid-cycle retires
- * via an async, chunked drain that can land arbitrarily later than
- * "punch-in + one cycle", so the logged retire frame itself is the only
- * value this capture can trust. Frames before it play the pre-pass image;
- * frames from it onward play the retired layer, looped. Ramps (not
- * constants) so a renderer that indexes an image modulo the wrong length
- * (e.g. one quantum) reads a DIFFERENT sample and fails loudly — a constant
- * fill would return the right value from the wrong index. Ramp steps are
- * exact in float32 (the fixture wav is format-3 float), so comparisons stay
- * bitwise against the very buffers the fixtures were written from. */
+ * length (#227 runs it beyond one quantum) and the arm-time loop phase
+ * (`clock_frame`, armSnapshot.clockFrame — #255 runs it nonzero). Track
+ * settled at arm with a base RAMP image; one retired-layer ramp (offset by
+ * +2) activates at `retire_frame` — not one loop cycle earlier: a punch-out
+ * mid-cycle retires via an async, chunked drain that can land arbitrarily
+ * later than "punch-in + one cycle", so the logged retire frame itself is
+ * the only value this capture can trust. Frames before it play the pre-pass
+ * image; frames from it onward play the retired layer — both PHASE-LOCKED
+ * (#255): a layer image is loop-position-indexed and the loop phase is one
+ * continuous counter across the capture, so every frame plays
+ * image[(clock_frame + f) % loop_len], exactly what the performer heard.
+ * Ramps (not constants) so a renderer that indexes an image modulo the
+ * wrong length (e.g. one quantum) or from the wrong phase (segment-relative
+ * index 0, the pre-#255 bug) reads a DIFFERENT sample and fails loudly — a
+ * constant fill would return the right value from the wrong index. Ramp
+ * steps are exact in float32 (the fixture wav is format-3 float), so
+ * comparisons stay bitwise against the very buffers the fixtures were
+ * written from. */
 static void run_perf_render_stitching_case(const char* name, int32_t sr,
                                            int32_t loop_len,
                                            uint64_t capture_frames,
                                            uint64_t retire_frame,
+                                           uint64_t clock_frame,
                                            int wait_polls) {
   const char* dir = render_test_dir(name);
   char loops_dir[700];
@@ -9318,7 +9325,8 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   char manifest[2048];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
-           "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+           "\"armSnapshot\": {\"clockFrame\": %llu, \"tracks\": "
+           "[{\"channel\": 0, \"lanes\": "
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"loops/track0-lane0.wav\"}]}]}, "
            "\"disarmSnapshot\": {\"tracks\": []}, "
@@ -9326,6 +9334,7 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
            "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
            "\"filename\": \"%s\"}]}",
            sr, (unsigned long long)capture_frames,
+           (unsigned long long)clock_frame,
            (unsigned long long)retire_frame, loop_len, layer_name);
   test_write_manifest(dir, manifest);
 
@@ -9348,21 +9357,25 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
 
   const int32_t got = test_read_stem(dir, 0, stem, (int32_t)capture_frames);
   CHECK(got == (int32_t)capture_frames);
-  /* Segment semantics per le_pr_append_segment / the stitch loop
-   * (perf_render.c): each segment plays its image from ITS OWN index 0 at
-   * the segment's start frame — `pos = (f - start) % image_len` — so a
-   * mid-cycle retire plays post[f - retire], not the phase-locked
-   * post[f % loop_len] a live listener heard (the renderer's documented
-   * phase limitation; see the armSnapshot-phase comment in perf_render.c).
-   * The ramp still does its job under this model: a modulo-one-quantum
-   * indexing wrap reads a different ramp sample and fails loudly. */
+  /* Phase-locked segment semantics (#255, le_pr_append_segment / the stitch
+   * loop in perf_render.c): every segment plays its loop-position-indexed
+   * image from the phase live playback had actually reached — the arm image
+   * from `clock_frame` at capture frame 0, and the retired layer from the
+   * phase the loop was at when the retire activated — so every frame is
+   * image[(clock_frame + f) % loop_len], exactly what the performer heard.
+   * The pre-#255 renderer instead restarted each segment at its own index 0
+   * (`pos = (f - start) % image_len`), rotating every mid-cycle retire by
+   * the retire phase; the ramp fill fails loudly on both that rotation and
+   * a modulo-one-quantum indexing wrap. */
   int bad = 0;
   for (uint64_t f = 0; f < retire_frame && f < capture_frames; ++f) {
-    if (stem[f] != pre[f % (uint64_t)loop_len]) bad++; /* pre-pass image */
+    if (stem[f] != pre[(clock_frame + f) % (uint64_t)loop_len]) {
+      bad++; /* pre-pass image, phase-locked to the arm clock */
+    }
   }
   for (uint64_t f = retire_frame; f < capture_frames; ++f) {
-    if (stem[f] != post[(f - retire_frame) % (uint64_t)loop_len]) {
-      bad++; /* retired layer, segment-relative phase */
+    if (stem[f] != post[(clock_frame + f) % (uint64_t)loop_len]) {
+      bad++; /* retired layer, phase-locked continuation */
     }
   }
   CHECK(bad == 0);
@@ -9375,20 +9388,34 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
 
 static void test_perf_render_overdub_stitching(void) {
   printf("test_perf_render_overdub_stitching\n");
-  run_perf_render_stitching_case("stitch", 4800, 4, 16, 12, 2000);
+  /* retire_frame 10 is deliberately mid-cycle (10 % 4 == 2, phase 2): a
+   * boundary retire (phase 0) could not tell phase-locked stitching from
+   * the pre-#255 segment-relative rotation. Armed at phase 0. */
+  run_perf_render_stitching_case("stitch", 4800, 4, 16, 10, 0, 2000);
 }
 
 /* The same contract at a loop longer than one quantum (#227): the pre-pass
  * image, the retired layer, and the stem writer all size and index by the
  * real loop length — a one-quantum image buffer would truncate (loud under
  * ASAN), and the ramp fill catches a modulo-one-quantum indexing wrap that
- * stays in bounds. */
+ * stays in bounds. The retire lands mid-cycle (phase 1234), so this also
+ * exercises the #255 phase lock beyond one quantum. */
 static void test_perf_render_stitching_long_loop(void) {
   printf("test_perf_render_stitching_long_loop\n");
   const int32_t loop_len = LE_LAYER_QUANTUM + 2000;
   run_perf_render_stitching_case("stitch_long", 48000, loop_len,
                                  (uint64_t)loop_len * 2,
-                                 (uint64_t)loop_len + 1234, 20000);
+                                 (uint64_t)loop_len + 1234, 0, 20000);
+}
+
+/* The #255 sibling gap: a capture armed MID-LOOP against an already-playing
+ * track (armSnapshot.clockFrame != 0). The arm image must play from
+ * clockFrame at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
+ * the mid-cycle retire at frame 9 must inherit the chained phase
+ * ((6 + 9) % 4 == 3), locking the whole stem to the live phase counter. */
+static void test_perf_render_stitching_mid_loop_arm(void) {
+  printf("test_perf_render_stitching_mid_loop_arm\n");
+  run_perf_render_stitching_case("stitch_armphase", 4800, 4, 16, 9, 6, 2000);
 }
 
 /* Acceptance: a track recorded fresh while armed (absent from armSnapshot,
@@ -10103,18 +10130,279 @@ static void test_perf_render_wet_plugin_passthrough(void) {
   le_engine_destroy(e);
 }
 
+/* #255 review follow-up (PR #260 finding 1): a track recorded FRESH while
+ * the master already runs finalizes via finalize_new_track
+ * (engine_process.c), which does NOT reset the loop clock — its buffer was
+ * written phase-locked to the RUNNING master (record_pos seeds to
+ * clock.position at record start), so its image is loop-position-indexed
+ * against that clock, and anchoring its RECORD_END segment at phase 0 would
+ * rotate the stem. Drives a REAL engine: track 0 defines a 4-frame master
+ * (finalize -> clock reset at capture frame 4, LOOP_LENGTH_LOCKED logged
+ * there); track 1 then records fresh with the press at master position 1
+ * and the finalize press at position 3. The rendered dry stem for track 1
+ * must match live playback sample-exactly — image[(f - 4) % 4], the master
+ * phase — and the offline master must hold parity with the live-captured
+ * master.pcm, the same criterion as the golden gate below. */
+static void test_perf_render_fresh_midloop_second_track_phase(void) {
+  printf("test_perf_render_fresh_midloop_second_track_phase\n");
+  const char* dir = render_test_dir("midloop2nd");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  float out[64];
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the master: frames 0-3 record 0.6, finalize applies at
+   * capture frame 4 (le_loop_clock_set_length resets the master phase to 0
+   * there, and finalize_master logs LOOP_LENGTH_LOCKED + RECORD_END at that
+   * same frame). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  /* Play to master position 1: frames 4-8 (positions 0,1,2,3,0) — the next
+   * buffer starts at capture frame 9, master position 1. */
+  process_const(e, 0.0f, 4, out);
+  process_const(e, 0.0f, 1, out);
+
+  /* Track 1 records FRESH mid-loop: the press lands at frame 9 (master
+   * position 1), two frames captured (buffer indices 1,2 — writes are
+   * phase-locked to the running master), and the finalize press lands at
+   * frame 11 (position 3): finalize_new_track -> k=1, len 4, NO clock
+   * reset. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.3f, 2, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e); /* RECORD_END for channel 1 logged at capture frame 11 */
+
+  /* Both tracks play together: frames 11-18. */
+  process_const(e, 0.0f, 8, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  CHECK(capture_frames == 19);
+
+  /* Export both settled lanes for the disarm snapshot — bit-identical to
+   * the engine's own buffers, exactly what performance_repository's real
+   * _captureSettledLanes does at disarm. Track 1's image is loop-position-
+   * indexed against the running master: [0, 0.3, 0.3, 0]. */
+  float lane0[8] = {0};
+  float lane1[8] = {0};
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 8) == loop_len);
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 8) == loop_len);
+  CHECK(fabsf(lane1[0]) < 1e-6f);
+  CHECK(fabsf(lane1[1] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[2] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[3]) < 1e-6f);
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane0, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane1, loop_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char manifest[1600];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": ["
+           "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track0-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track1-lane0.wav\", \"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  /* Track 1's dry stem: silence until its RECORD_END at frame 11, then the
+   * image at the MASTER phase — lane1[(f - 4) % 4], what the performer
+   * heard — not the phase-0-anchored lane1[(f - 11) % 4]. */
+  float stem1[32] = {0};
+  CHECK(test_read_stem(dir, 1, stem1, 32) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < 11; ++f) {
+    CHECK(fabsf(stem1[f]) < 1e-6f);
+  }
+  for (uint64_t f = 11; f < capture_frames; ++f) {
+    CHECK(fabsf(stem1[f] - lane1[(f - 4) % 4]) < 1e-6f);
+  }
+
+  /* Master parity, the golden gate's own criterion. */
+  char pcm_path[700];
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", dir);
+  FILE* pf = fopen(pcm_path, "rb");
+  CHECK(pf != NULL);
+  float live[32] = {0};
+  size_t live_n = 0;
+  if (pf != NULL) {
+    live_n = fread(live, sizeof(float), (size_t)capture_frames, pf);
+    fclose(pf);
+  }
+  CHECK(live_n == capture_frames);
+
+  float offline[32] = {0};
+  CHECK(test_read_master_stem(dir, offline, 32) == (int32_t)capture_frames);
+  if (live_n == capture_frames) {
+    for (uint64_t f = 0; f < capture_frames; ++f) {
+      CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
+    }
+  }
+
+  le_engine_destroy(e);
+}
+
+/* #255 re-review residual (PR #260): the k > 1 variant of the case above. A
+ * fresh take spanning just over one base loop rounds UP to k whole loops
+ * (finalize_new_track), and live playback then cycles its k segments
+ * relative to the take's OWN start iteration (((loop_iteration - start_iter)
+ * % k) * base + pos, engine_process.c) — the TRACK's epoch. Anchoring the
+ * RECORD_END segment on the master lock's epoch mod k*base agrees with that
+ * only modulo base and rotates the stem by whole base loops whenever
+ * start_iter % k != 0. Drives a REAL engine: 4-frame master locked at
+ * capture frame 4; track 1 records fresh from frame 9 (iteration 1,
+ * position 1) for 6 frames -> k=2 (len 8), start_iter=1, finalize at frame
+ * 15. Live playback of track 1 is lane1[(f - 8) % 8]; a lock-epoch anchor
+ * would render lane1[(f - 12) % 8] — rotated one base loop. */
+static void test_perf_render_fresh_multiloop_second_track_phase(void) {
+  printf("test_perf_render_fresh_multiloop_second_track_phase\n");
+  const char* dir = render_test_dir("multiloop2nd");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const int32_t track1_len = 8; /* k = 2 after round-up */
+  float out[64];
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the 4-frame master; finalize (clock reset + lock)
+   * applies at capture frame 4. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  /* Play to master position 1 / iteration 1 (frames 4-8): the next buffer
+   * starts at capture frame 9, position 1, one full loop crossed. */
+  process_const(e, 0.0f, 4, out);
+  process_const(e, 0.0f, 1, out);
+
+  /* Track 1 records fresh mid-loop for SIX frames (9-14): record_pos seeds
+   * to 1 and runs to 7, spanning the loop top -> finalize_new_track rounds
+   * up to k=2 (len 8) with start_iter=1; the finalize press applies at
+   * capture frame 15, master position 3, iteration 2. Buffer indices 1-6
+   * hold 0.3; indices 0 and 7 stay silent. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.3f, 6, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e); /* RECORD_END for channel 1 logged at capture frame 15 */
+
+  /* Both tracks play together: frames 15-22. */
+  process_const(e, 0.0f, 8, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  CHECK(capture_frames == 23);
+
+  float lane0[8] = {0};
+  float lane1[16] = {0};
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 8) == loop_len);
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 16) == track1_len);
+  CHECK(fabsf(lane1[0]) < 1e-6f);
+  for (int i = 1; i <= 6; ++i) {
+    CHECK(fabsf(lane1[i] - 0.3f) < 1e-6f);
+  }
+  CHECK(fabsf(lane1[7]) < 1e-6f);
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane0, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane1, track1_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char manifest[1600];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": ["
+           "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track0-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track1-lane0.wav\", \"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  /* Track 1's dry stem: silence until its RECORD_END at frame 15, then the
+   * image at the TRACK's epoch — lane1[(f - 8) % 8], what the performer
+   * heard — not the lock-epoch lane1[(f - 12) % 8]. */
+  float stem1[32] = {0};
+  CHECK(test_read_stem(dir, 1, stem1, 32) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < 15; ++f) {
+    CHECK(fabsf(stem1[f]) < 1e-6f);
+  }
+  for (uint64_t f = 15; f < capture_frames; ++f) {
+    CHECK(fabsf(stem1[f] - lane1[(f - 8) % 8]) < 1e-6f);
+  }
+
+  /* Master parity, the golden gate's own criterion. */
+  char pcm_path[700];
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", dir);
+  FILE* pf = fopen(pcm_path, "rb");
+  CHECK(pf != NULL);
+  float live[32] = {0};
+  size_t live_n = 0;
+  if (pf != NULL) {
+    live_n = fread(live, sizeof(float), (size_t)capture_frames, pf);
+    fclose(pf);
+  }
+  CHECK(live_n == capture_frames);
+
+  float offline[32] = {0};
+  CHECK(test_read_master_stem(dir, offline, 32) == (int32_t)capture_frames);
+  if (live_n == capture_frames) {
+    for (uint64_t f = 0; f < capture_frames; ++f) {
+      CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
+    }
+  }
+
+  le_engine_destroy(e);
+}
+
 /* Acceptance (the hard gate): drives a REAL engine through a scripted
  * performance under the fixed golden-parity protocol — arm from silence, no
  * monitor inputs, no plugin slots — with overdubbing intentionally absent
- * (arm-image phase alignment against an already-playing track is a
- * documented, separate, pre-existing gap perf_render.c's arm-image handling
- * calls out; arming from silence sidesteps it, matching the plan's own fixed
- * protocol) but real FX engagement/sweep, a volume ride, a mute/unmute, a
- * master-gain change, and the limiter, all via the actual public API so
- * events.log holds genuine engine-emitted entries rather than a hand-typed
- * approximation. Compares the offline-reconstructed master
- * (stems/wet/master.wav) against the live-captured master (master.pcm)
- * sample-by-sample. */
+ * (arm-image phase alignment against an already-playing track is now
+ * phase-locked via armSnapshot.clockFrame, #255, and unit-covered by the
+ * stitching cases above; this golden protocol still arms from silence per
+ * the plan's own fixed protocol) but real FX engagement/sweep, a volume
+ * ride, a mute/unmute, a master-gain change, and the limiter, all via the
+ * actual public API so events.log holds genuine engine-emitted entries
+ * rather than a hand-typed approximation. Compares the offline-reconstructed
+ * master (stems/wet/master.wav) against the live-captured master
+ * (master.pcm) sample-by-sample. */
 static void test_perf_render_golden_master_parity(void) {
   printf("test_perf_render_golden_master_parity\n");
   const char* dir = render_test_dir("golden");
@@ -10475,6 +10763,7 @@ int main(void) {
   test_perf_render_scripted_log_boundaries();
   test_perf_render_overdub_stitching();
   test_perf_render_stitching_long_loop();
+  test_perf_render_stitching_mid_loop_arm();
   test_perf_render_fresh_recorded_while_armed();
   test_perf_render_progress_and_cancel();
   test_perf_render_concurrent_with_live_engine();
@@ -10485,6 +10774,8 @@ int main(void) {
   test_perf_render_multi_channel_dry_fail_isolated();
   test_perf_render_wet_multi_slot_and_count_shrink();
   test_perf_render_wet_plugin_passthrough();
+  test_perf_render_fresh_midloop_second_track_phase();
+  test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_golden_master_parity();
 
   if (g_failures == 0) {
