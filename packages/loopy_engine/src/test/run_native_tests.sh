@@ -12,6 +12,13 @@ cd "$(dirname "$0")/../.."   # src/test -> packages/loopy_engine
 
 OUT="${TMPDIR:-/tmp}"
 CC="${CC:-gcc}"
+# Extra compile/link flags, e.g. EXTRA_CFLAGS="-fsanitize=address -g" for the
+# CI ASAN job (the engine/MIDI suites compile and link in one $CC call, so one
+# variable covers both). SCOPE: only the engine + MIDI suites below take these
+# flags — the Darwin-only plugin scan/slot builds further down do not, so a
+# sanitized run does NOT cover the plugin host C++. Threading sanitizers
+# through those separate compile+link steps is a follow-up if ever needed.
+EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # gnu11 (not strict c11) matches the shipped build (CMake C_STANDARD 11 with
 # extensions on) and exposes the POSIX symbols the Linux MIDI backend needs
 # (clock_gettime / CLOCK_MONOTONIC; strict c11 also triggers ALSA's struct
@@ -36,13 +43,13 @@ ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
 
 echo "== building engine tests =="
 # shellcheck disable=SC2086
-$CC $STD src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
+$CC $STD $EXTRA_CFLAGS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
   -o "$OUT/loopy_core_tests.exe"
 "$OUT/loopy_core_tests.exe"
 
 echo "== building midi tests =="
 # shellcheck disable=SC2086
-$CC $STD src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
+$CC $STD $EXTRA_CFLAGS src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
   src/midi/midi_backend_apple.c src/midi/midi_backend_windows.c $MIDI_LIBS \
   -o "$OUT/loopy_midi_tests.exe"
 "$OUT/loopy_midi_tests.exe"
