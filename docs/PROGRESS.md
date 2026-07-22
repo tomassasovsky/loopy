@@ -579,8 +579,6 @@ remains open — see "On-hardware validations" below.
   all k-loop tracks to the same base-loop downbeat. _(Not started.)_
 - **Accessibility pass** — no `Semantics` coverage yet (theming + golden tests
   are done). Screen-reader labels, focus order, keyboard-nav a11y tests.
-- **Raspberry Pi GPIO backend** — the `ControllerSourceKind.gpio` seam exists but
-  there's no `gpio_client` package / libgpiod binding yet. _(Not started.)_
 - **VST3 FX plugins — parts 15-17** — further built-in effects/polish beyond
   the 7 already shipped (Delay/Reverb/Echo/Drive/Filter/Tremolo/Octaver) and
   their Windows/Linux builds; brainstormed
@@ -601,7 +599,10 @@ remains open — see "On-hardware validations" below.
   `LooperRepository` reconnect supervisor (`_intendRunning` guard,
   `_attemptReconnect`, `_pinnedDevicesPresent`) + `devicePresent` UI banner.
 - **Phase 4:** sessions save/load + WAV export ✅, theming ✅, golden tests ✅.
-  Remaining: Raspberry Pi GPIO backend, accessibility (see above).
+  Remaining: accessibility (see above).
+- **Raspberry Pi GPIO backend — DROPPED** (2026-07-22): won't be built. The
+  `ControllerSourceKind.gpio` seam stays, but no `gpio_client` / libgpiod
+  package is planned.
 
 ### On-hardware validations still open
 - Phase-1 **latency gate** (≤10 ms round-trip) — needs a class-compliant
