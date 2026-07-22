@@ -139,6 +139,7 @@ void le_lane_reset(le_lane* ln, int32_t input_channel) {
   atomic_store_explicit(&ln->a_output_mask, 0x3u, memory_order_relaxed);
   store_f32(&ln->a_vol_bits, 1.0f);
   store_i32(&ln->a_muted, 0);
+  ln->pending_mute = 0;
   store_i32(&ln->a_live, 0);
   store_i32(&ln->a_len, 0);
   store_f32(&ln->a_rms_bits, 0.0f);

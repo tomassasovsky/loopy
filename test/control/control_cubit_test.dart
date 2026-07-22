@@ -172,13 +172,19 @@ void main() {
         expect(cubit.state.parkedResume, {0, 2});
       });
 
-      test('entering Play finalizes a live capture first', () {
+      test('entering Play leaves a live capture recording (the mode toggle '
+          'is a view change, not a transport action)', () {
         setEngine(
           _tracksWith(const [Track(state: TrackState.recording)]),
         );
         cubit.toggleMode();
-        verify(() => looper.record()).called(1); // finalize channel 0
+        // No finalize: the take keeps recording until the user ends it
+        // explicitly (back in Rec mode, Rec/Play — or Stop).
+        verifyNever(() => looper.record(channel: any(named: 'channel')));
+        verifyNever(() => looper.record());
         expect(cubit.state.mode, LooperMode.play);
+        // The capture still previews as a parked-resume member.
+        expect(cubit.state.parkedResume, {0});
       });
 
       test('setMode to the current mode is a no-op', () {
@@ -764,7 +770,7 @@ void main() {
         setEngine(
           _tracksWith(const [Track(state: TrackState.recording)]),
         );
-        cubit.toggleMode(); // finalizes + parkedResume = {0}
+        cubit.toggleMode(); // capture survives; parkedResume = {0}
         expect(cubit.state.parkedResume, {0});
         setEngine(
           _tracksWith(const [Track(state: TrackState.recording)]),
