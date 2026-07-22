@@ -256,6 +256,15 @@ static const unsigned long kBlinkHalfPeriodMs = 400;
 // to black. Copying from the untouched logical frame each time is idempotent.
 //
 // The table is mirrored in hardware/firmware/loopy_pedal_32u4 — keep them in sync.
+//
+// Compile-time toggle, OFF by default: define LED_GAMMA_CORRECTION=1 (an Arduino
+// build flag / -D, or edit the line below) to enable the perceptual ramp. When
+// off, showGamma() copies the logical frame straight through with no correction.
+#ifndef LED_GAMMA_CORRECTION
+#define LED_GAMMA_CORRECTION 0
+#endif
+
+#if LED_GAMMA_CORRECTION
 static const uint8_t kGamma8[256] PROGMEM = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,
@@ -275,15 +284,23 @@ static const uint8_t kGamma8[256] PROGMEM = {
   215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255,
 };
 static inline uint8_t gamma8(uint8_t x) { return pgm_read_byte(&kGamma8[x]); }
+#endif  // LED_GAMMA_CORRECTION
 
-// Gamma-correct the logical frame into the display buffer, then latch it. Drop-in
+// Copy the logical frame into the display buffer, then latch it. Drop-in
 // replacement for FastLED.show() — global brightness is still applied by show().
+// With LED_GAMMA_CORRECTION on, each channel is mapped through the gamma curve;
+// with it off (the default) the frame is copied through unmodified. Either way we
+// copy g_leds -> g_out, since g_out is the buffer FastLED actually clocks out.
 static void showGamma() {
+#if LED_GAMMA_CORRECTION
   for (uint8_t i = 0; i < kNumLeds; i++) {
     g_out[i].r = gamma8(g_leds[i].r);
     g_out[i].g = gamma8(g_leds[i].g);
     g_out[i].b = gamma8(g_leds[i].b);
   }
+#else
+  for (uint8_t i = 0; i < kNumLeds; i++) g_out[i] = g_leds[i];
+#endif
   FastLED.show();
 }
 

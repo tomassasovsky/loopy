@@ -61,13 +61,19 @@ Two WS2812 strips, each rendered from loopy's state frame:
   |---|---|---|---|---|---|---|---|
   | role | mode/global | Tr1 | Tr2 | Tr3 | Tr4 | clear-fade | bank |
 
-Both strips are **gamma-corrected** (a 2.8 curve, `showGamma()`): a WS2812's duty
-cycle is linear but the eye's brightness response is not, so the ring's rotating
-hump and the volume-meter fade would otherwise look top-heavy. The correction runs
-at output into a separate display buffer, so the frozen ring holds steady
-instead of decaying. Note it shifts hand-picked mixed colors (e.g. amber
+Both strips can be **gamma-corrected** (a 2.8 curve, `showGamma()`): a WS2812's
+duty cycle is linear but the eye's brightness response is not, so the ring's
+rotating hump and the volume-meter fade would otherwise look top-heavy. The
+correction runs at output into a separate display buffer, so the frozen ring holds
+steady instead of decaying. Note it shifts hand-picked mixed colors (e.g. amber
 `255,150,0`) and dims the mid-range — re-tune the nominal colors or
 `FastLED.setBrightness` if you want them brighter.
+
+The correction is a **compile-time toggle, OFF by default**. Define
+`LED_GAMMA_CORRECTION=1` (an Arduino build flag / `-D`, or edit the `#define` in
+the firmware) to enable it; with it off, `showGamma()` copies the logical frames
+straight through unmodified. The UNO build (`firmware/loopy_pedal`) shares the same
+flag.
 
 > **Link watchdog:** loopy re-sends the current state frame on a **~1 Hz
 > heartbeat** while bound (`ControlCubit`'s `keepAliveInterval`), not only on
