@@ -55,7 +55,7 @@ Repo: https://github.com/tomassasovsky/loopy · branch `master`.
 ```
 packages/
   loopy_engine/        DATA  — FFI plugin over a hand-written miniaudio engine (C)
-  controller_repository/ REPO — hardware-agnostic MIDI/GPIO → looper actions
+  controller_repository/ REPO — hardware-agnostic MIDI → looper actions
   looper_repository/   REPO  — owns the engine; EngineSnapshot → LooperState
   settings_repository/ REPO  — per-device latency calibration persistence
   local_storage_client/ DATA — KeyValueStore (shared_preferences)
@@ -600,9 +600,9 @@ remains open — see "On-hardware validations" below.
   `_attemptReconnect`, `_pinnedDevicesPresent`) + `devicePresent` UI banner.
 - **Phase 4:** sessions save/load + WAV export ✅, theming ✅, golden tests ✅.
   Remaining: accessibility (see above).
-- **Raspberry Pi GPIO backend — DROPPED** (2026-07-22): won't be built. The
-  `ControllerSourceKind.gpio` seam stays, but no `gpio_client` / libgpiod
-  package is planned.
+- **Raspberry Pi GPIO backend — DROPPED** (2026-07-22): won't be built. No
+  `gpio_client` / libgpiod package is planned, and `ControllerSourceKind` is
+  MIDI-only (the once-planned `gpio` variant was never added).
 
 ### On-hardware validations still open
 - Phase-1 **latency gate** (≤10 ms round-trip) — needs a class-compliant

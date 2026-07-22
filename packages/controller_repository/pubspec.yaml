@@ -1,6 +1,6 @@
 name: controller_repository
 description: >-
-  Hardware-agnostic controller abstraction for Loopy: maps raw MIDI/GPIO inputs
+  Hardware-agnostic controller abstraction for Loopy: maps raw MIDI inputs
   to looper actions through a remappable mapping, with MIDI-learn capture.
 version: 0.1.0
 publish_to: none
