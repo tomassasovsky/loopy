@@ -10263,6 +10263,134 @@ static void test_perf_render_fresh_midloop_second_track_phase(void) {
   le_engine_destroy(e);
 }
 
+/* #255 re-review residual (PR #260): the k > 1 variant of the case above. A
+ * fresh take spanning just over one base loop rounds UP to k whole loops
+ * (finalize_new_track), and live playback then cycles its k segments
+ * relative to the take's OWN start iteration (((loop_iteration - start_iter)
+ * % k) * base + pos, engine_process.c) — the TRACK's epoch. Anchoring the
+ * RECORD_END segment on the master lock's epoch mod k*base agrees with that
+ * only modulo base and rotates the stem by whole base loops whenever
+ * start_iter % k != 0. Drives a REAL engine: 4-frame master locked at
+ * capture frame 4; track 1 records fresh from frame 9 (iteration 1,
+ * position 1) for 6 frames -> k=2 (len 8), start_iter=1, finalize at frame
+ * 15. Live playback of track 1 is lane1[(f - 8) % 8]; a lock-epoch anchor
+ * would render lane1[(f - 12) % 8] — rotated one base loop. */
+static void test_perf_render_fresh_multiloop_second_track_phase(void) {
+  printf("test_perf_render_fresh_multiloop_second_track_phase\n");
+  const char* dir = render_test_dir("multiloop2nd");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  const int32_t track1_len = 8; /* k = 2 after round-up */
+  float out[64];
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the 4-frame master; finalize (clock reset + lock)
+   * applies at capture frame 4. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  /* Play to master position 1 / iteration 1 (frames 4-8): the next buffer
+   * starts at capture frame 9, position 1, one full loop crossed. */
+  process_const(e, 0.0f, 4, out);
+  process_const(e, 0.0f, 1, out);
+
+  /* Track 1 records fresh mid-loop for SIX frames (9-14): record_pos seeds
+   * to 1 and runs to 7, spanning the loop top -> finalize_new_track rounds
+   * up to k=2 (len 8) with start_iter=1; the finalize press applies at
+   * capture frame 15, master position 3, iteration 2. Buffer indices 1-6
+   * hold 0.3; indices 0 and 7 stay silent. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.3f, 6, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e); /* RECORD_END for channel 1 logged at capture frame 15 */
+
+  /* Both tracks play together: frames 15-22. */
+  process_const(e, 0.0f, 8, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  CHECK(capture_frames == 23);
+
+  float lane0[8] = {0};
+  float lane1[16] = {0};
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 8) == loop_len);
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 16) == track1_len);
+  CHECK(fabsf(lane1[0]) < 1e-6f);
+  for (int i = 1; i <= 6; ++i) {
+    CHECK(fabsf(lane1[i] - 0.3f) < 1e-6f);
+  }
+  CHECK(fabsf(lane1[7]) < 1e-6f);
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane0, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane1, track1_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char manifest[1600];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": ["
+           "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track0-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track1-lane0.wav\", \"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  /* Track 1's dry stem: silence until its RECORD_END at frame 15, then the
+   * image at the TRACK's epoch — lane1[(f - 8) % 8], what the performer
+   * heard — not the lock-epoch lane1[(f - 12) % 8]. */
+  float stem1[32] = {0};
+  CHECK(test_read_stem(dir, 1, stem1, 32) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < 15; ++f) {
+    CHECK(fabsf(stem1[f]) < 1e-6f);
+  }
+  for (uint64_t f = 15; f < capture_frames; ++f) {
+    CHECK(fabsf(stem1[f] - lane1[(f - 8) % 8]) < 1e-6f);
+  }
+
+  /* Master parity, the golden gate's own criterion. */
+  char pcm_path[700];
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", dir);
+  FILE* pf = fopen(pcm_path, "rb");
+  CHECK(pf != NULL);
+  float live[32] = {0};
+  size_t live_n = 0;
+  if (pf != NULL) {
+    live_n = fread(live, sizeof(float), (size_t)capture_frames, pf);
+    fclose(pf);
+  }
+  CHECK(live_n == capture_frames);
+
+  float offline[32] = {0};
+  CHECK(test_read_master_stem(dir, offline, 32) == (int32_t)capture_frames);
+  if (live_n == capture_frames) {
+    for (uint64_t f = 0; f < capture_frames; ++f) {
+      CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
+    }
+  }
+
+  le_engine_destroy(e);
+}
+
 /* Acceptance (the hard gate): drives a REAL engine through a scripted
  * performance under the fixed golden-parity protocol — arm from silence, no
  * monitor inputs, no plugin slots — with overdubbing intentionally absent
@@ -10647,6 +10775,7 @@ int main(void) {
   test_perf_render_wet_multi_slot_and_count_shrink();
   test_perf_render_wet_plugin_passthrough();
   test_perf_render_fresh_midloop_second_track_phase();
+  test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_golden_master_parity();
 
   if (g_failures == 0) {

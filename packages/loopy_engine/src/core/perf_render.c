@@ -299,6 +299,13 @@ typedef struct le_pr_manifest {
                                        * the loop phase capture frame 0 lands
                                        * on; 0 when armSnapshot is absent or
                                        * the capture was armed from silence */
+  int32_t arm_master_len;             /* armSnapshot.masterLenFrames — the
+                                       * master loop length at arm; the base
+                                       * modulus for arm_clock_frame when the
+                                       * master was locked before this capture
+                                       * ever started (no LOOP_LENGTH_LOCKED
+                                       * inside the log); 0 when armed from
+                                       * silence */
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
@@ -347,6 +354,8 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   const le_json_value* arm = le_json_get(root, "armSnapshot");
   out->arm_clock_frame = (uint64_t)le_json_number(
       arm != NULL ? le_json_get(arm, "clockFrame") : NULL, 0);
+  out->arm_master_len = (int32_t)le_json_number(
+      arm != NULL ? le_json_get(arm, "masterLenFrames") : NULL, 0);
   out->arm_tracks = arm != NULL ? le_json_get(arm, "tracks") : NULL;
   const le_json_value* disarm = le_json_get(root, "disarmSnapshot");
   out->disarm_tracks = disarm != NULL ? le_json_get(disarm, "tracks") : NULL;
@@ -567,7 +576,7 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
  * must inherit to stay phase-locked with live playback (#255). A build whose
  * last segment is silence (baseline, or post-CLEAR) has no phase to carry:
  * the next content supplies its own anchor (the arm image's clockFrame, or a
- * RECORD_END's master phase — le_pr_master_phase_at below). */
+ * RECORD_END's track epoch — le_pr_record_end_phase below). */
 static uint64_t le_pr_build_phase_at(const le_pr_track_build* b,
                                      uint64_t frame) {
   if (b->segment_count == 0) return 0;
@@ -576,33 +585,96 @@ static uint64_t le_pr_build_phase_at(const le_pr_track_build* b,
   return (seg->phase0 + (frame - seg->start_frame)) % (uint64_t)seg->image_len;
 }
 
-/* The master-loop phase at capture frame `frame`, reduced modulo `image_len`,
- * derived from the logged transport facts: LE_PLOG_LOOP_LENGTH_LOCKED is
- * pushed at the exact frame the master loop length is (re)established AND
- * the loop clock's position resets to 0 (finalize_master ->
- * le_loop_clock_set_length, engine_process.c), so the latest lock at or
- * before `frame` anchors the phase counter. With no lock inside the capture,
- * the master was already running at arm and armSnapshot.clockFrame anchors
- * capture frame 0 instead (see the arm-image comment in le_pr_render_track
- * for that anchor's own staleness caveat, #262). The scan is INCLUSIVE of
- * `frame` itself so a RECORD_END sharing its exact frame with the lock its
- * own finalize pushed (finalize_master emits both back-to-back) resolves to
- * phase 0 regardless of how qsort ordered the same-frame tie. */
-static uint64_t le_pr_master_phase_at(const le_pr_manifest* m,
-                                      const le_pr_log_entry* log,
-                                      int log_count, uint64_t frame,
-                                      int32_t image_len) {
-  if (image_len <= 0) return 0;
-  uint64_t lock_frame = 0;
-  int has_lock = 0;
+/* The latest LE_PLOG_LOOP_LENGTH_LOCKED at or before `frame` (INCLUSIVE, so
+ * a same-frame tie with the finalize that pushed the lock resolves correctly
+ * regardless of how qsort ordered it). The lock is pushed at the exact frame
+ * the master loop length is (re)established AND the loop clock's position
+ * resets to 0 (finalize_master -> le_loop_clock_set_length,
+ * engine_process.c); its arg_i carries the locked base length. */
+static int le_pr_find_lock(const le_pr_log_entry* log, int log_count,
+                           uint64_t frame, uint64_t* out_frame,
+                           int32_t* out_base) {
+  int found = 0;
   for (int i = 0; i < log_count && log[i].frame <= frame; ++i) {
     if (log[i].cmd.code == LE_PLOG_LOOP_LENGTH_LOCKED) {
-      lock_frame = log[i].frame;
-      has_lock = 1;
+      *out_frame = log[i].frame;
+      *out_base = log[i].cmd.arg_i;
+      found = 1;
     }
   }
-  if (has_lock) return (frame - lock_frame) % (uint64_t)image_len;
-  return (m->arm_clock_frame + frame) % (uint64_t)image_len;
+  return found;
+}
+
+/* This channel's latest LE_PLOG_RECORD_START at or before `end_frame` — the
+ * frame its finalized take actually began capturing (engine_process.c logs
+ * it at the exact press/trigger frame). Falls back to `end_frame` itself
+ * when none is logged (a defensive degenerate: zero-length take epoch). */
+static uint64_t le_pr_find_record_start(const le_pr_log_entry* log,
+                                        int log_count, int32_t channel,
+                                        uint64_t end_frame) {
+  uint64_t start = end_frame;
+  for (int i = 0; i < log_count && log[i].frame <= end_frame; ++i) {
+    if (log[i].cmd.code == LE_PLOG_RECORD_START &&
+        log[i].cmd.arg_i == channel) {
+      start = log[i].frame;
+    }
+  }
+  return start;
+}
+
+/* The loop phase a RECORD_END segment (channel's fresh take finalized at
+ * `end_frame`, image length `image_len` frames) starts playing from — the
+ * TRACK's epoch, anchored at its own RECORD_START (#255 re-review):
+ *
+ *   phase0 = (master_pos_at(start_frame) + (end_frame - start_frame))
+ *            % image_len
+ *
+ * A fresh take's buffer is written phase-locked from the master position at
+ * the RECORD_START frame (`record_pos` seeds to `clock.position`,
+ * engine_process.c) and the write head then runs CONTINUOUSLY to the
+ * finalize; live playback likewise indexes ((loop_iteration - start_iter) %
+ * k) * base + position with start_iter fixed at the record start. For a
+ * multi-loop take (k > 1, image_len == k * base) the track's epoch and the
+ * master lock's epoch agree modulo base but diverge in the sub-cycle
+ * whenever start_iter % k != 0 — so the master position at the START is
+ * computed modulo the locked BASE length (the lock's own arg_i, never
+ * image_len), and only the start->end run is reduced modulo image_len.
+ *
+ * The exception is a take the master lock landed INSIDE of (lock_frame >=
+ * start_frame): that take (re)defined the master, and the lock IS the clock
+ * reset — finalize_master logs it at the same frame as the RECORD_END
+ * (phase 0), and a crossfade-deferred finalize (finalize_master_xfade)
+ * resets the clock at the lock frame too, F captured seam frames after the
+ * press — so the anchor there is the lock, never the record start. A
+ * hand-off lock landing exactly ON this take's RECORD_START yields the same
+ * answer either way (the position was 0 right there).
+ *
+ * With no lock inside the capture at all, the master was locked before arm
+ * and armSnapshot.clockFrame/masterLenFrames anchor capture frame 0 instead
+ * (see the arm-image comment in le_pr_render_track for that anchor's own
+ * staleness caveat, #262). */
+static uint64_t le_pr_record_end_phase(const le_pr_manifest* m,
+                                       const le_pr_log_entry* log,
+                                       int log_count, int32_t channel,
+                                       uint64_t end_frame, int32_t image_len) {
+  if (image_len <= 0) return 0;
+  const uint64_t start_frame =
+      le_pr_find_record_start(log, log_count, channel, end_frame);
+  uint64_t lock_frame = 0;
+  int32_t lock_base = 0;
+  const int has_lock =
+      le_pr_find_lock(log, log_count, end_frame, &lock_frame, &lock_base);
+  if (has_lock && lock_frame >= start_frame) {
+    return (end_frame - lock_frame) % (uint64_t)image_len;
+  }
+  uint64_t start_pos = 0;
+  if (has_lock && lock_base > 0) {
+    start_pos = (start_frame - lock_frame) % (uint64_t)lock_base;
+  } else if (!has_lock && m->arm_master_len > 0) {
+    start_pos =
+        (m->arm_clock_frame + start_frame) % (uint64_t)m->arm_master_len;
+  }
+  return (start_pos + (end_frame - start_frame)) % (uint64_t)image_len;
 }
 
 /* Renders channel `channel`'s full-length dry stem into a freshly malloc'd
@@ -683,22 +755,24 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
             int32_t frames = 0;
             float* image = le_pr_read_wav_mono(path, &frames);
             if (image != NULL) {
-              /* The segment anchors at the MASTER phase at the finalize
-               * frame — NOT always 0. Only the DEFINING track's finalize
-               * (finalize_master, engine_process.c) resets the loop clock;
-               * a track recorded fresh while the master already runs
-               * finalizes via finalize_new_track, which never touches the
-               * clock, and its buffer was WRITTEN phase-locked to the
-               * running master (record_pos seeds to clock.position at
-               * record start), so its image is loop-position-indexed
-               * against that clock. le_pr_master_phase_at derives the
-               * phase from the logged LOOP_LENGTH_LOCKED transport fact
-               * (falling back to the arm clockFrame), and yields 0 for the
-               * defining track by construction — its own finalize logs the
-               * lock at this very frame. */
+              /* The segment anchors at the TRACK's epoch — the master
+               * position at its logged RECORD_START plus the continuous
+               * run to this finalize — NOT always 0, and NOT the master
+               * lock's epoch mod the image length. Only the DEFINING
+               * track's finalize (finalize_master, engine_process.c)
+               * resets the loop clock; a track recorded fresh while the
+               * master already runs finalizes via finalize_new_track,
+               * which never touches the clock, and its buffer was WRITTEN
+               * phase-locked from the master position at the record-start
+               * press — a multi-loop take (k > 1) additionally cycles
+               * relative to its own start iteration, which the RECORD_START
+               * anchor captures and a lock-epoch derivation would not.
+               * le_pr_record_end_phase (above) holds the full derivation,
+               * including the defining-take and pre-arm-lock cases. */
               le_pr_append_segment(
                   &build, e->frame,
-                  le_pr_master_phase_at(m, log, log_count, e->frame, frames),
+                  le_pr_record_end_phase(m, log, log_count, channel, e->frame,
+                                         frames),
                   image, frames);
             } else {
               build.load_failed = 1;
