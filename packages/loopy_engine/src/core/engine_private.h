@@ -218,6 +218,12 @@ typedef struct le_lane {
   _Atomic uint32_t a_output_mask;  /* bitmask of output channels to play to */
   _Atomic uint32_t a_vol_bits;     /* per-lane volume (float bits, 0..1) */
   _Atomic int32_t a_muted;         /* per-lane mute */
+  int32_t pending_mute; /* audio-thread-local: a mute that arrived while the
+                         * track was capturing. Applied (into a_muted) when the
+                         * capture ends — a capturing track is never muted, so
+                         * the mute punches the capture out and lands with the
+                         * finalize (see LE_CMD_SET_LANE_MUTE / the finalize
+                         * helpers in engine_process.c). */
 
   float* pool[LE_POOL_SLOTS]; /* lazily allocated loop buffers */
   int32_t pool_cap[LE_POOL_SLOTS]; /* allocated frames per slot (0 = none).
@@ -724,6 +730,17 @@ static inline int32_t load_i32(_Atomic int32_t* slot) {
 }
 static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
   atomic_store_explicit(slot, v, memory_order_relaxed);
+}
+
+/* Track [ch]'s effective forced loop multiple: its per-track override, or the
+ * global default when it inherits (target 0). 0 means auto (round up on stop).
+ * `static inline` here because BOTH threads decide from it — the audio thread's
+ * finalize_new_track fixes the length with it, and the control thread's
+ * first-wrap pre-arm gate (le_capture_may_overdub) predicts that same finalize
+ * — and the two must never diverge. */
+static inline int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
+  const int32_t ov = e->target_multiple[ch];
+  return ov > 0 ? ov : e->default_multiple;
 }
 
 /* float/double <-> atomic-bits helpers. The published metering/gain fields are

@@ -681,11 +681,14 @@ class LooperRepository {
       // always audible); forget the remembered mutes too, or a device
       // reconnect would replay them and silence the take mid-performance.
       _forgetLaneMutes(channel);
-    } else if (state == TrackState.playing) {
-      // An overdub onto a live loop must be audible too — you're recording into
-      // it. Unlike record-from-empty the engine does NOT auto-unmute here, so
-      // unmute every lane explicitly; forget the remembered mutes for the same
-      // reconnect-replay reason as above.
+    } else if (state == TrackState.playing || state == TrackState.stopped) {
+      // An overdub onto a live loop must be audible too — you're recording
+      // into it — and so must one punched into a stopped (parked, possibly
+      // Stop-muted) track: the engine auto-unmutes every lane at the capture
+      // start (its own punch-in path now enforces it, covering quantized and
+      // sound-activated fires too). Forget the remembered mutes to match, or
+      // a device reconnect would replay them and silence the take
+      // mid-performance.
       _forgetLaneMutes(channel);
       for (var lane = 0; lane < laneCount(channel); lane++) {
         _engine.setLaneMute(muted: false, channel: channel, lane: lane);

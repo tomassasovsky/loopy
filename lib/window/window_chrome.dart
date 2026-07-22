@@ -47,6 +47,26 @@ Future<void> toggleLoopyFullScreen() async {
   }
 }
 
+/// Whether the main window should launch full-screen: only on a multi-display
+/// console, so a single-monitor / dev machine keeps a normal window. Pure so it
+/// can be unit-tested without a real desktop.
+bool shouldFullscreenMainWindow(int displayCount) => displayCount >= 2;
+
+/// Full-screens the main window on the primary display at launch when the
+/// console has a second display (the output waveform fills the secondary, so
+/// the control surface fills the primary). No-op on a single display or in
+/// tests; the user can still toggle it off with [toggleLoopyFullScreen].
+Future<void> applyMainWindowFullscreen(int displayCount) async {
+  if (!loopySupportsDesktopWindowing) return;
+  if (!shouldFullscreenMainWindow(displayCount)) return;
+  try {
+    await windowManager.ensureInitialized();
+    await windowManager.setFullScreen(true);
+  } on Object {
+    // Platform channel unavailable in widget tests.
+  }
+}
+
 /// Wraps [body] with an optional hideable custom title bar on Windows.
 class LoopyWindowChromeShell extends StatefulWidget {
   /// Creates a [LoopyWindowChromeShell].

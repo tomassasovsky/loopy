@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461223.548391204
+2461241.2538888888
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461223.548391204
+2461241.2538888888
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-9E
+9F
   9
 $SURFTAB1
  70
@@ -933,11 +933,11 @@ $PSTYLEMODE
   9
 $FINGERPRINTGUID
   2
-{72EE7352-0CF0-4E6C-A5E0-0AF404A245F7}
+{3642DABE-AA7B-4992-947A-FED1CCEC14C5}
   9
 $VERSIONGUID
   2
-{0DC97E1A-61D5-45FA-AC22-2D600AB94374}
+{AF5D0CE8-5339-4C02-91E9-0A70EB1D4F55}
   9
 $EXTNAMES
 290
@@ -2291,7 +2291,7 @@ Continuous
   0
 LAYER
   5
-8A
+8B
 330
 1
 100
@@ -2315,7 +2315,7 @@ Continuous
   0
 LAYER
   5
-8B
+8C
 330
 1
 100
@@ -2339,7 +2339,7 @@ DASHED
   0
 LAYER
   5
-8C
+8D
 330
 1
 100
@@ -2363,7 +2363,7 @@ Continuous
   0
 LAYER
   5
-8D
+8E
 330
 1
 100
@@ -2387,7 +2387,7 @@ Continuous
   0
 LAYER
   5
-8E
+8F
 330
 1
 100
@@ -2411,7 +2411,7 @@ Continuous
   0
 LAYER
   5
-8F
+90
 330
 1
 100
@@ -2435,7 +2435,7 @@ Continuous
   0
 LAYER
   5
-90
+91
 330
 1
 100
@@ -2469,7 +2469,7 @@ STYLE
 100
 AcDbSymbolTable
  70
-26
+27
   0
 STYLE
   5
@@ -3199,6 +3199,34 @@ LiberationMono-Italic.ttf
   4
 
   0
+STYLE
+  5
+8A
+330
+5
+100
+AcDbSymbolTableRecord
+100
+AcDbTextStyleTableRecord
+  2
+SILKBOLD
+ 70
+0
+ 40
+0.0
+ 41
+1.0
+ 50
+0.0
+ 71
+0
+ 42
+2.5
+  3
+arialbd.ttf
+  4
+
+  0
 ENDTAB
   0
 TABLE
@@ -3257,7 +3285,7 @@ ACAD
   0
 APPID
   5
-9B
+9C
 330
 3
 100
@@ -3271,7 +3299,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-9C
+9D
 330
 3
 100
@@ -5383,7 +5411,7 @@ ENTITIES
   0
 LWPOLYLINE
   5
-91
+92
 330
 17
 100
@@ -5415,7 +5443,7 @@ AcDbPolyline
   0
 CIRCLE
   5
-92
+93
 330
 17
 100
@@ -5435,7 +5463,7 @@ AcDbCircle
   0
 CIRCLE
   5
-93
+94
 330
 17
 100
@@ -5455,7 +5483,7 @@ AcDbCircle
   0
 CIRCLE
   5
-94
+95
 330
 17
 100
@@ -5475,7 +5503,7 @@ AcDbCircle
   0
 LWPOLYLINE
   5
-95
+96
 330
 17
 100
@@ -5531,26 +5559,6 @@ AcDbPolyline
   0
 CIRCLE
   5
-96
-330
-17
-100
-AcDbEntity
-  8
-CUT
-100
-AcDbCircle
- 10
--154.0
- 20
--32.0
- 30
-0.0
- 40
-1.6
-  0
-CIRCLE
-  5
 97
 330
 17
@@ -5563,7 +5571,7 @@ AcDbCircle
  10
 -154.0
  20
-32.0
+-32.0
  30
 0.0
  40
@@ -5581,9 +5589,9 @@ CUT
 100
 AcDbCircle
  10
-154.0
+-154.0
  20
--32.0
+32.0
  30
 0.0
  40
@@ -5603,6 +5611,26 @@ AcDbCircle
  10
 154.0
  20
+-32.0
+ 30
+0.0
+ 40
+1.6
+  0
+CIRCLE
+  5
+9A
+330
+17
+100
+AcDbEntity
+  8
+CUT
+100
+AcDbCircle
+ 10
+154.0
+ 20
 32.0
  30
 0.0
@@ -5611,7 +5639,7 @@ AcDbCircle
   0
 TEXT
   5
-9A
+9B
 330
 17
 100
@@ -6729,7 +6757,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-9D
+9E
   0
 DICTIONARYVAR
   5
@@ -6741,7 +6769,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-07-01T16:09:41.234529+00:00
+1.4.4 @ 2026-07-19T09:05:36.918450+00:00
   0
 VISUALSTYLE
   5
@@ -13295,7 +13323,7 @@ strokes_ogs.tif
   0
 DICTIONARYVAR
   5
-9D
+9E
 330
 2D
 100
@@ -13303,7 +13331,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-07-01T16:09:41.236372+00:00
+1.4.4 @ 2026-07-19T09:05:36.920028+00:00
   0
 ENDSEC
   0

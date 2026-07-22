@@ -199,16 +199,18 @@ def fold_faceplate(path, explode=0.0):
     ar = yr + apex(sr)                                      # rear apex  (toward the lap, y>yr)
     shell = _bend_fill(shell, ((0, af, V.T), (PW, af, V.T)), (0,  1, 0), (0, -math.sin(s), -math.cos(s)))   # front-lip fold
     shell = _bend_fill(shell, ((0, ar, V.T), (PW, ar, V.T)), (0, -1, 0), (0, math.cos(sr), -math.sin(sr)))  # rear-lap fold
-    bdd = V.T + V.KF*V.T                  # the preview folds the bend-deducted flat, so the
+    bdd = V.DEV90                         # the preview folds the bend-deducted flat sharply, so
     z0 = V.H_FRONT - bdd                  # walls land ~bdd low -> seat the lid flush on them
     def place(sld):
         return (sld.translate((0, -yf, 0))
                    .rotate((0, 0, 0), (1, 0, 0), V.SLOPE_ANGLE)
                    .translate((0, 0, z0 + explode)))
-    parts = [("lid", place(shell))]
+    # the full-width blank (LID_W) is drawn with the schedule content at +LID_OX;
+    # shift the folded shell back so apertures line up with the base frame
+    parts = [("lid", place(shell.translate((-V.LID_OX, 0, 0))))]
     txt = silk_text(path)                 # embossed silkscreen labels, lifted with the lid
     if txt is not None:
-        parts.append(("lid_silk", place(txt)))
+        parts.append(("lid_silk", place(txt.translate((-V.LID_OX, 0, 0)))))
     # --- screens behind the apertures: glass flush with the plate top, body hangs below; move with lid.
     # NOTE: dxf_faceplate emits the cutouts with oy=yf (front-lip offset), so add yf to match them.
     def screen(u, v, w, h, d, nm):
