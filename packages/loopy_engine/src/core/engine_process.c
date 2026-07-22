@@ -137,14 +137,9 @@ static void request_master_finalize(le_engine* e, le_track* t,
 /* Finalizes a non-defining track that recorded freely across one or more base
  * loops: rounds its length UP to the nearest whole base loop (the locked #4
  * behaviour), publishes the multiple, and moves it to `end_state`. A track that
- * captured nothing (never reached the loop top) returns to EMPTY. */
-/* Track [ch]'s effective forced loop multiple: its per-track override, or the
- * global default when it inherits (target 0). 0 means auto (round up on stop). */
-static int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
-  const int32_t ov = e->target_multiple[ch];
-  return ov > 0 ? ov : e->default_multiple;
-}
-
+ * captured nothing (never reached the loop top) returns to EMPTY. Length policy
+ * comes from le_effective_multiple (engine_private.h — shared with the control
+ * thread's first-wrap pre-arm gate, which predicts this finalize). */
 static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
                                uint64_t frame) {
   const int32_t ch = (int32_t)(t - e->tracks);
@@ -443,9 +438,11 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
       break;
     case LE_TRACK_RECORDING: {
       /* Second press finalizes. In rec/dub mode it continues into overdub
-       * instead of playback (no undo snapshot for this auto-dub layer — a
-       * later manual overdub snapshots normally). A stop press ends in
-       * playback/stopped (handle_stop), never overdub. */
+       * instead of playback; the shadow slot pre-armed during RECORDING (see
+       * le_engine_record / le_engine_drain_events) lets this first wrap's pass
+       * back up on write and retire as its own undo layer, unless the loop was
+       * too short for that post to land (then it merges — see le_dub_boundary).
+       * A stop press ends in playback/stopped (handle_stop), never overdub. */
       const int32_t end = e->rec_dub ? LE_TRACK_OVERDUBBING : LE_TRACK_PLAYING;
       if (e->clock.length == 0) {
         request_master_finalize(e, t, end, frame); /* defers for the seam crossfade */
@@ -521,28 +518,39 @@ static void handle_clear(le_engine* e, int32_t ch) {
   for (int l = 0; l < LE_MAX_LANES; ++l) {
     store_i32(&t->lanes[l].a_muted, 0);
   }
+  /* If every track is now empty, reset the master so a new loop can be defined.
+   * Buffers are not zeroed here (RT-unsafe); a re-record overwrites a full loop
+   * before the track is heard, so stale data never plays. This runs BEFORE the
+   * ack bump below: the bump's release pairs with le_effective_state's acquire,
+   * so a control thread that has seen this clear acked is guaranteed to also
+   * see the master reset — e.g. the first-wrap pre-arm gate reading
+   * a_master_len after an internal grid-redefine clear must read 0, never the
+   * dead grid's length (a stale read there would pre-arm, and strand a
+   * cap-sized slot on, the defining capture the gate exists to skip). */
+  int all_empty = 1;
+  for (int32_t k = 0; k < e->track_count; ++k) {
+    if (load_i32(&e->tracks[k].a_state) != LE_TRACK_EMPTY) {
+      all_empty = 0;
+      break;
+    }
+  }
+  if (all_empty) {
+    le_loop_clock_reset(&e->clock);
+    e->loop_iteration = 0;
+    store_i32(&e->a_master_len, 0);
+    store_i32(&e->a_master_pos, 0);
+    /* Clear the loop waveform so a re-record starts from silence. */
+    e->loop_viz_bucket = -1;
+    for (int i = 0; i < LE_VIZ_POINTS; ++i) {
+      store_f32(&e->a_loop_viz[i], 0.0f);
+      for (int t = 0; t < e->track_count; ++t) {
+        store_f32(&e->a_track_viz[t][i], 0.0f);
+      }
+    }
+  }
   atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
   /* Undo/redo stacks and each lane's a_live are reset by le_engine_clear on the
    * control thread; the audio thread only resets the state/transport here. */
-
-  /* If every track is now empty, reset the master so a new loop can be defined.
-   * Buffers are not zeroed here (RT-unsafe); a re-record overwrites a full loop
-   * before the track is heard, so stale data never plays. */
-  for (int32_t k = 0; k < e->track_count; ++k) {
-    if (load_i32(&e->tracks[k].a_state) != LE_TRACK_EMPTY) return;
-  }
-  le_loop_clock_reset(&e->clock);
-  e->loop_iteration = 0;
-  store_i32(&e->a_master_len, 0);
-  store_i32(&e->a_master_pos, 0);
-  /* Clear the loop waveform so a re-record starts from silence. */
-  e->loop_viz_bucket = -1;
-  for (int i = 0; i < LE_VIZ_POINTS; ++i) {
-    store_f32(&e->a_loop_viz[i], 0.0f);
-    for (int t = 0; t < e->track_count; ++t) {
-      store_f32(&e->a_track_viz[t][i], 0.0f);
-    }
-  }
 }
 
 /* Per-lane / per-monitor effects DSP (the effect kernels, the phase-vocoder /

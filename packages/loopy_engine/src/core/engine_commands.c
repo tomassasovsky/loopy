@@ -76,28 +76,53 @@ static int track_acquire_slot(le_track* t) {
  * waiting a control round-trip. */
 #define LE_DUB_SHADOWS 2
 
-/* Tops the track's posted shadow slots up to LE_DUB_SHADOWS (control thread):
+/* The track's SETTLED loop length, or 0 when it has none yet. A track still
+ * RECORDING publishes a_len as its GROWING record position (the per-block
+ * publish in engine_process.c), not the final loop length — so a_len must never
+ * be used to size an undo-layer slot mid-capture. The pass that fills such a
+ * slot covers the FINAL length (le_dub_session_start latches dub_len at
+ * finalize), so a slot sized to a partial length would be written past its end
+ * by the audio thread's backup-on-write. Callers read 0 as "not settled": size
+ * at the cap, and don't resize. */
+static int32_t le_track_settled_len(le_track* t) {
+  if (load_i32(&t->a_state) == LE_TRACK_RECORDING) return 0;
+  return load_i32(&t->lanes[0].a_len);
+}
+
+/* The buffer an undo layer for a settled `len`-frame loop needs: the length
+ * rounded up to LE_LAYER_QUANTUM, capped at the recording cap — a 2 s loop's
+ * layer costs ~2 s of floats, not the cap. `len <= 0` (not settled — a pre-arm
+ * posted while the loop is still being recorded) can only be served by the full
+ * cap; le_handle_retired shrinks such a slot back to size once its pass retires
+ * and the real length is known. */
+static int32_t le_layer_slot_frames(const le_engine* engine, int32_t len) {
+  if (len <= 0) return engine->max_loop_frames;
+  const int32_t want =
+      ((len + LE_LAYER_QUANTUM - 1) / LE_LAYER_QUANTUM) * LE_LAYER_QUANTUM;
+  return want > engine->max_loop_frames ? engine->max_loop_frames : want;
+}
+
+/* Tops the track's posted shadow slots up to `target` (control thread):
  * acquires a free pool slot, lazily allocates its buffer on every active lane,
  * and posts it via LE_CMD_DUB_SHADOW. Push-then-mutate: the slot only becomes
  * `outstanding` once the ring accepted the command (a lazily allocated buffer
  * stays in the pool either way). The audio thread arms the slot as its next
  * shadow; the ring's release/acquire publishes the fresh buffers, exactly like
- * the fx delay-line pattern. */
-static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
+ * the fx delay-line pattern.
+ *
+ * `target` is LE_DUB_SHADOWS (armed + spare) for a running dub session, but 1
+ * for a pre-arm during RECORDING: the length is not settled there, so each slot
+ * costs the full recording cap, and only the first wrap's pass needs one — its
+ * spare arrives from the running session's replenish right after finalize, when
+ * the length is settled and the slot is loop-length-quantized. Capped at
+ * LE_DUB_SHADOWS. */
+static void le_post_dub_shadows(le_engine* engine, int32_t channel,
+                                int32_t target) {
   le_track* t = &engine->tracks[channel];
   const int32_t lanes = le_lanes_active(t);
-  /* Undo layers are sized to the loop length rounded to LE_LAYER_QUANTUM — a
-   * 2 s loop's layer costs ~2 s of floats, not the recording cap. An
-   * EMPTY-start post (rec/dub, fixed multiple — final length unknown until
-   * finalize) still sizes at the full cap. */
-  const int32_t len = load_i32(&t->lanes[0].a_len);
-  int32_t want = engine->max_loop_frames;
-  if (len > 0) {
-    want =
-        ((len + LE_LAYER_QUANTUM - 1) / LE_LAYER_QUANTUM) * LE_LAYER_QUANTUM;
-    if (want > engine->max_loop_frames) want = engine->max_loop_frames;
-  }
-  while (t->outstanding_count < LE_DUB_SHADOWS) {
+  const int32_t want = le_layer_slot_frames(engine, le_track_settled_len(t));
+  if (target > LE_DUB_SHADOWS) target = LE_DUB_SHADOWS;
+  while (t->outstanding_count < target) {
     const int slot = track_acquire_slot(t);
     if (slot < 0) return; /* pool exhausted beyond eviction: skip boundaries */
     int ok = 1;
@@ -114,6 +139,36 @@ static void le_post_dub_shadows(le_engine* engine, int32_t channel) {
     }
     t->outstanding_slots[t->outstanding_count++] = slot;
   }
+}
+
+/* Whether a fresh capture on [channel] is bound to continue straight into
+ * overdub, so its shadow slots are worth pre-arming during RECORDING — letting
+ * the first wrap's pass back up on write and retire as its own undo layer
+ * instead of merging into the base. rec/dub mode continues any second-press
+ * finalize into overdub, so any capture qualifies when it is on. With rec/dub
+ * off, only a non-defining capture (master already exists) with a fixed loop
+ * multiple auto-finalizes into overdub; a defining capture, or one with an auto
+ * multiple, finalizes to playback and is skipped so it never strands a pre-armed
+ * slot (cap-sized, since the length is unknown until finalize).
+ *
+ * Known, deliberate exclusion: an auto-multiple capture that records all the
+ * way to the buffer cap rolls into overdub (advance_transport_frame's
+ * record_pos >= max_loop_frames auto-finalize) with no pre-armed slot, so that
+ * first wrap merges into the base — the pre-fix behaviour. Covering it would
+ * mean pre-arming every auto-multiple capture, stranding a cap-sized slot on
+ * the common record-to-playback flow, to benefit only a capture held for the
+ * entire cap (30 s+) without a press.
+ *
+ * `has_master` comes from the CALLER, never re-read from a_master_len here: a
+ * caller that just pushed the internal grid-redefine CLEAR (le_engine_record's
+ * fresh-take branch) already knows the capture will be defining, while the
+ * atomic stays stale until the audio thread applies that CLEAR — re-reading it
+ * would pre-arm exactly the defining capture this gate exists to skip. */
+static int le_capture_may_overdub(le_engine* engine, int32_t channel,
+                                  int has_master) {
+  if (engine->rec_dub) return 1;
+  if (!has_master) return 0;
+  return le_effective_multiple(engine, channel) > 0;
 }
 
 /* One undo step on a track that has stacked layers (control thread): swap the
@@ -258,8 +313,8 @@ static void le_stage_retired_layer(le_engine* engine, int32_t channel,
 }
 
 /* Handles one retired-layer event (control thread): returns the slot from the
- * audio thread's hands (`outstanding`) onto the undo stack, and replenishes the
- * spare while the dub session keeps running. */
+ * audio thread's hands (`outstanding`) onto the undo stack, right-sizes it, and
+ * replenishes the spare while the dub session keeps running. */
 static void le_handle_retired(le_engine* engine, const le_command* evt) {
   const int32_t ch = evt->evt.channel;
   if (ch < 0 || ch >= engine->track_count) return;
@@ -274,12 +329,33 @@ static void le_handle_retired(le_engine* engine, const le_command* evt) {
       break;
     }
   }
+  /* Right-size a slot that was pre-armed at the recording cap because the loop
+   * length was not settled while it was still being recorded (the first wrap's
+   * layer, and its spare). The length is settled now and the audio thread has
+   * handed the slot back — the retire event IS that hand-off, and the slot is
+   * never the live one — so the control thread can shrink it to the same
+   * loop-length-quantized size every other layer gets. Without this the cap
+   * (30 s by default, up to minutes if the user raised it) would stay pinned
+   * per lane for the rest of the session. The retired PCM is preserved: the
+   * shrink keeps the leading frames, and the staging copy above already ran.
+   * An unsettled length (a fresh capture already re-armed this track) skips the
+   * resize rather than risk truncating the layer — leaving it oversized is
+   * always safe. */
+  const int32_t len = le_track_settled_len(t);
+  if (len > 0) {
+    const int32_t want = le_layer_slot_frames(engine, len);
+    const int32_t lanes = le_lanes_active(t);
+    for (int32_t l = 0; l < lanes; ++l) {
+      le_lane_shrink_slot(&t->lanes[l], evt->evt.slot, want);
+    }
+  }
   if (t->undo_count < LE_POOL_SLOTS) {
     t->undo_stack[t->undo_count++] = le_hist_layer(evt->evt.slot);
     store_i32(&t->a_undo_depth, t->undo_count);
   }
   if (load_i32(&t->a_layer_in_flight)) {
-    le_post_dub_shadows(engine, ch); /* the dub continues: keep 2 posted */
+    /* the dub continues: keep armed + spare posted */
+    le_post_dub_shadows(engine, ch, LE_DUB_SHADOWS);
   }
 }
 
@@ -295,16 +371,38 @@ void le_engine_drain_events(le_engine* engine) {
    * guaranteed to see that event — then the stack is complete and the queued
    * taps peel the layers the user asked for.
    *
-   * The same sweep replenishes shadow slots for any in-flight session that is
-   * short (a capture that ran straight into overdub — rec/dub, fixed
-   * multiple — starts with none; the length is known by now, so the slots are
-   * loop-length-sized). */
+   * The same sweep replenishes shadow slots for any in-flight session (armed +
+   * spare), and pre-arms ONE for a track that is still RECORDING but bound to
+   * run straight into overdub (rec/dub, or a non-defining fixed multiple). The
+   * length is not settled mid-capture, so a pre-armed slot is cap-sized
+   * (le_post_dub_shadows) — one is all the first wrap needs, and its spare
+   * comes from this same sweep's in-flight branch right after finalize, when
+   * the slot is loop-length-quantized. Arming BEFORE the finalize->overdub
+   * transition is what lets the first wrap's pass back up on write and retire
+   * as its own undo layer — instead of running un-backed and merging into the
+   * base. A base loop so short it finalizes before this post lands falls back
+   * to the merge, the same coherent behaviour as spare starvation. */
   for (int32_t ch = 0; ch < engine->track_count; ++ch) {
     le_track* t = &engine->tracks[ch];
     const int in_flight =
         atomic_load_explicit(&t->a_layer_in_flight, memory_order_acquire);
-    if (in_flight && t->outstanding_count < LE_DUB_SHADOWS) {
-      le_post_dub_shadows(engine, ch);
+    /* Effective state, not raw a_state: a CLEAR / undo-to-empty pushed but not
+     * yet applied means this track is about to be EMPTY — pre-arming it would
+     * post a cap-sized slot straight into the clear's path (the same unacked
+     * window every control-side decision in this file guards with
+     * le_effective_state). */
+    const int recording = le_effective_state(t) == LE_TRACK_RECORDING;
+    if (in_flight) {
+      le_post_dub_shadows(engine, ch, LE_DUB_SHADOWS);
+    } else if (recording &&
+               le_capture_may_overdub(engine, ch,
+                                      load_i32(&engine->a_master_len) > 0)) {
+      /* The a_master_len read is safe here BECAUSE effective state said
+       * RECORDING: that required acquiring the ack of every pending state
+       * command, and handle_clear stores its master reset before its ack's
+       * release — so a defining capture behind an internal grid-redefine
+       * clear always reads 0, never the dead grid's stale length. */
+      le_post_dub_shadows(engine, ch, 1);
     }
     if (t->queued_undo <= 0) continue;
     if (in_flight) continue; /* still capturing/draining: keep waiting */
@@ -399,10 +497,13 @@ static int le_grid_still_needed(le_engine* engine, int32_t channel) {
  * previous, shorter loop) and `outstanding` is reclaimed here — safe because
  * an EMPTY track can have no layer in flight, hence no retire events to
  * mis-attribute, and nothing re-posts this track's slots until content exists.
- * A capture that runs straight into overdub (rec/dub, fixed multiple) gets its
- * correctly-sized slots from the poll-driven replenish in
- * le_engine_drain_events once the length is known; its first pass goes
- * un-backed and merges into the next boundary — coherent, never torn. */
+ * A capture that runs straight into overdub (rec/dub, fixed multiple) instead
+ * gets cap-sized slots pre-armed after the RECORD command (le_engine_record) or
+ * by the RECORDING branch of le_engine_drain_events, so they are in hand at the
+ * finalize->overdub transition and the first wrap's pass backs up on write as
+ * its own undo layer. Only if the loop finalizes before that post lands does
+ * the first pass go un-backed and merge into the next boundary — coherent,
+ * never torn, the spare-starvation fallback. */
 static void le_begin_empty_capture(le_engine* engine, int32_t channel) {
   le_track* t = &engine->tracks[channel];
   le_clear_redo(t);
@@ -450,7 +551,7 @@ static void le_begin_punch_in(le_engine* engine, int32_t channel) {
   le_engine_drain_events(engine);
   le_clear_redo(t);
   t->queued_undo = 0;
-  le_post_dub_shadows(engine, channel);
+  le_post_dub_shadows(engine, channel, LE_DUB_SHADOWS);
 }
 
 int32_t le_engine_record(le_engine* engine, int32_t channel) {
@@ -551,7 +652,24 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
   if ((st == LE_TRACK_PLAYING || st == LE_TRACK_STOPPED) && len > 0) {
     le_begin_punch_in(engine, channel);
   }
-  return le_push(engine, LE_CMD_RECORD, channel, 0.0f);
+  const int32_t rc = le_push(engine, LE_CMD_RECORD, channel, 0.0f);
+  /* Pre-arm ONE shadow slot for a fresh capture that is bound to run straight
+   * into overdub (rec/dub, or a non-defining fixed multiple). Posted AFTER the
+   * RECORD command so it orders behind handle_record's EMPTY-case drop of any
+   * stale armed slots — the audio thread then arms this one during RECORDING,
+   * and the finalize->overdub transition finds it already in hand, so the first
+   * wrap's pass backs up on write and becomes its own undo layer. One slot, not
+   * LE_DUB_SHADOWS: it is cap-sized (the length is not settled until finalize),
+   * and the running session's replenish supplies the quantized spare right
+   * after finalize. Not done for the deferred arm paths above: their
+   * EMPTY->RECORDING transition fires later on the audio thread and would drop
+   * a slot posted now — the RECORDING branch of le_engine_drain_events
+   * pre-arms those instead. */
+  if (rc == LE_OK && st == LE_TRACK_EMPTY &&
+      le_capture_may_overdub(engine, channel, has_master)) {
+    le_post_dub_shadows(engine, channel, 1);
+  }
+  return rc;
 }
 
 int32_t le_engine_stop_track(le_engine* engine, int32_t channel) {
