@@ -172,53 +172,57 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
-  testWidgets('console main window (16" panel decal)', (tester) async {
-    // The real per-track names shown on the console.
-    const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
-    for (var i = 0; i < names.length; i++) {
-      await tracks.rename(i, names[i]);
-    }
-    seed(
-      const LooperState(
-        status: EngineStatus(
-          isConnected: true,
-          devicePresent: true,
-          deviceName: 'VAMP',
-          sampleRate: 48000,
-          inputChannels: 2,
-          outputChannels: 2,
+  testWidgets(
+    'console main window (16" panel decal)',
+    (tester) async {
+      // The real per-track names shown on the console.
+      const names = ['GUITAR', 'BOOM', 'RC20', 'VOX'];
+      for (var i = 0; i < names.length; i++) {
+        await tracks.rename(i, names[i]);
+      }
+      seed(
+        const LooperState(
+          status: EngineStatus(
+            isConnected: true,
+            devicePresent: true,
+            deviceName: 'VAMP',
+            sampleRate: 48000,
+            inputChannels: 2,
+            outputChannels: 2,
+          ),
+          tracks: [
+            Track(
+              state: TrackState.playing,
+              rms: 0.72,
+              peak: 0.9,
+              lengthFrames: 96000,
+            ),
+            Track(
+              channel: 1,
+              state: TrackState.playing,
+              rms: 0.5,
+              peak: 0.68,
+              lengthFrames: 96000,
+            ),
+            // RC20: loaded (has content) but muted.
+            Track(
+              channel: 2,
+              state: TrackState.playing,
+              muted: true,
+              rms: 0.4,
+              peak: 0.55,
+              lengthFrames: 96000,
+            ),
+            Track(channel: 3),
+          ],
         ),
-        tracks: [
-          Track(
-            state: TrackState.playing,
-            rms: 0.72,
-            peak: 0.9,
-            lengthFrames: 96000,
-          ),
-          Track(
-            channel: 1,
-            state: TrackState.playing,
-            rms: 0.5,
-            peak: 0.68,
-            lengthFrames: 96000,
-          ),
-          // RC20: loaded (has content) but muted.
-          Track(
-            channel: 2,
-            state: TrackState.playing,
-            muted: true,
-            rms: 0.4,
-            peak: 0.55,
-            lengthFrames: 96000,
-          ),
-          Track(channel: 3),
-        ],
-      ),
-    );
-    await pump(tester);
-    await expectLater(
-      find.byType(TracksView),
-      matchesGoldenFile('goldens/tracks_main_window.png'),
-    );
-  }, skip: !hasScreenshotFonts || !kConsoleMode);
+      );
+      await pump(tester);
+      await expectLater(
+        find.byType(TracksView),
+        matchesGoldenFile('goldens/tracks_main_window.png'),
+      );
+    },
+    skip: !hasScreenshotFonts || !kConsoleMode,
+  );
 }
