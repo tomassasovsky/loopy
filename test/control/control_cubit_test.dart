@@ -5,7 +5,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:midi_client/midi_client.dart' show MidiDevice;
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
@@ -148,11 +148,11 @@ void main() {
 
     group('mode', () {
       test('toggleMode flips between Record and Play', () {
-        expect(cubit.state.mode, LooperMode.record);
+        expect(cubit.state.mode, InteractionMode.record);
         cubit.toggleMode();
-        expect(cubit.state.mode, LooperMode.play);
+        expect(cubit.state.mode, InteractionMode.play);
         cubit.toggleMode();
-        expect(cubit.state.mode, LooperMode.record);
+        expect(cubit.state.mode, InteractionMode.record);
       });
 
       test('entering Play previews the whole content set as parkedResume', () {
@@ -182,36 +182,39 @@ void main() {
         // explicitly (back in Rec mode, Rec/Play — or Stop).
         verifyNever(() => looper.record(channel: any(named: 'channel')));
         verifyNever(() => looper.record());
-        expect(cubit.state.mode, LooperMode.play);
+        expect(cubit.state.mode, InteractionMode.play);
         // The capture still previews as a parked-resume member.
         expect(cubit.state.parkedResume, {0});
       });
 
       test('setMode to the current mode is a no-op', () {
-        cubit.setMode(LooperMode.record);
+        cubit.setMode(InteractionMode.record);
         verifyNever(() => looper.record(channel: any(named: 'channel')));
-        expect(cubit.state.mode, LooperMode.record);
+        expect(cubit.state.mode, InteractionMode.record);
       });
 
       test('setDefaultMode persists the token and applies the mode', () async {
-        await cubit.setDefaultMode(LooperMode.play);
-        expect(cubit.state.defaultMode, LooperMode.play);
-        expect(cubit.state.mode, LooperMode.play);
-        expect(await settings.loadDefaultLooperMode(), LooperMode.play.token);
+        await cubit.setDefaultMode(InteractionMode.play);
+        expect(cubit.state.defaultMode, InteractionMode.play);
+        expect(cubit.state.mode, InteractionMode.play);
+        expect(
+          await settings.loadDefaultInteractionMode(),
+          InteractionMode.play.token,
+        );
       });
 
       test('load boots the live mode into the persisted default', () async {
-        await settings.saveDefaultLooperMode(LooperMode.play.token);
+        await settings.saveDefaultInteractionMode(InteractionMode.play.token);
         await cubit.load();
-        expect(cubit.state.defaultMode, LooperMode.play);
-        expect(cubit.state.mode, LooperMode.play);
+        expect(cubit.state.defaultMode, InteractionMode.play);
+        expect(cubit.state.mode, InteractionMode.play);
       });
 
       test('toggleMode does not change the persisted default mode', () async {
         cubit.toggleMode();
-        expect(cubit.state.mode, LooperMode.play);
-        expect(cubit.state.defaultMode, LooperMode.record);
-        expect(await settings.loadDefaultLooperMode(), isNull);
+        expect(cubit.state.mode, InteractionMode.play);
+        expect(cubit.state.defaultMode, InteractionMode.record);
+        expect(await settings.loadDefaultInteractionMode(), isNull);
       });
     });
 
@@ -583,7 +586,7 @@ void main() {
           verify(() => looper.setMute(muted: false, channel: 1)).called(1);
 
           // The whole-rig reset: overlay home again.
-          expect(cubit.state.mode, LooperMode.record);
+          expect(cubit.state.mode, InteractionMode.record);
           expect(cubit.state.cursor, 0);
           expect(cubit.state.parkedResume, isEmpty);
 
@@ -803,7 +806,7 @@ void main() {
           ..emit(0x90, PedalButton.mode.note, 100)
           ..emit(0x80, PedalButton.mode.note, 0);
         await pumpEventQueue();
-        expect(cubit.state.mode, LooperMode.play);
+        expect(cubit.state.mode, InteractionMode.play);
       });
 
       test('Bank toggles the active bank and moves the cursor', () async {
@@ -842,7 +845,7 @@ void main() {
         verify(() => looper.clear(channel: 1)).called(1);
         verifyNever(() => looper.clear(channel: 2));
         verify(() => looper.setMute(muted: false, channel: 1)).called(1);
-        expect(cubit.state.mode, LooperMode.record);
+        expect(cubit.state.mode, InteractionMode.record);
         expect(cubit.state.cursor, 0);
       });
 
@@ -886,13 +889,13 @@ void main() {
       group('mode press timing (D-PEDAL)', () {
         test('tap toggles mode and does NOT arm/disarm performance '
             'recording', () async {
-          expect(cubit.state.mode, LooperMode.record);
+          expect(cubit.state.mode, InteractionMode.record);
           transport
             ..emit(0x90, PedalButton.mode.note, 100) // press
             ..emit(0x80, PedalButton.mode.note, 0); // quick release == tap
           await pumpEventQueue();
 
-          expect(cubit.state.mode, LooperMode.play);
+          expect(cubit.state.mode, InteractionMode.play);
           expect(performance.armedDirectory, isNull);
         });
 
@@ -905,7 +908,7 @@ void main() {
             transport.emit(0x80, PedalButton.mode.note, 0);
             await pumpEventQueue();
 
-            expect(cubit.state.mode, LooperMode.record); // unchanged
+            expect(cubit.state.mode, InteractionMode.record); // unchanged
             expect(performance.armedDirectory, isNotNull);
           },
         );

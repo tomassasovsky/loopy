@@ -12,7 +12,7 @@ library;
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/cubit/control_cubit.dart';
 import 'package:loopy/control/invariants.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 
 /// Whether the play transport is PARKED: content exists but none of it is
@@ -64,12 +64,12 @@ PedalTrackLed projectTrackLed(
       ? looper.tracks[channel]
       : null;
   switch (overlay.mode) {
-    case LooperMode.play:
+    case InteractionMode.play:
       final armed = armedTracks(looper, overlay).contains(channel);
       return armed && !(track?.muted ?? false)
           ? PedalTrackLed.green
           : PedalTrackLed.off;
-    case LooperMode.record:
+    case InteractionMode.record:
       if (channel == overlay.cursor) return PedalTrackLed.red;
       if (track?.isCapturing ?? false) return PedalTrackLed.red;
       return PedalTrackLed.off;
@@ -124,7 +124,7 @@ PedalStateFrame projectFrame(
     trackLeds: leds,
     activeBank: overlay.activeBank,
     selectedTrack: overlay.cursor,
-    mode: overlay.mode == LooperMode.play ? PedalMode.play : PedalMode.rec,
+    mode: overlay.mode == InteractionMode.play ? PedalMode.play : PedalMode.rec,
     loopLengthMicros: lengthMicros.clamp(
       0,
       PedalStateFrame.maxLoopLengthMicros,

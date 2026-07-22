@@ -12,8 +12,8 @@ part of 'control_cubit.dart';
 class ControlState extends Equatable {
   /// Creates a [ControlState].
   const ControlState({
-    this.mode = LooperMode.record,
-    this.defaultMode = LooperMode.record,
+    this.mode = InteractionMode.record,
+    this.defaultMode = InteractionMode.record,
     this.cursor = 0,
     this.activeBank = 0,
     this.excluded = const <int>{},
@@ -29,10 +29,10 @@ class ControlState extends Equatable {
   /// The system-wide record/play mode — every surface (pedal footswitch, `M`
   /// key, on-screen chip) toggles and reads this ONE field. Changed only by
   /// explicit mode actions (clear-all counts: a whole-rig reset → record).
-  final LooperMode mode;
+  final InteractionMode mode;
 
   /// The persisted mode the system boots into.
-  final LooperMode defaultMode;
+  final InteractionMode defaultMode;
 
   /// The ONE track cursor, shared by every surface (`0..7`). Rec-mode
   /// Rec/Play, Stop, Undo and Redo target it. Clamped to a valid channel by
@@ -71,8 +71,8 @@ class ControlState extends Equatable {
 
   /// Returns a copy with the given fields replaced.
   ControlState copyWith({
-    LooperMode? mode,
-    LooperMode? defaultMode,
+    InteractionMode? mode,
+    InteractionMode? defaultMode,
     int? cursor,
     int? activeBank,
     Set<int>? excluded,

@@ -9,7 +9,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
@@ -120,7 +120,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final tracks = context.watch<TracksCubit>().state;
     final showIndicators = tracks.showIndicators;
     // The default mode is a looper-wide behavior default, owned by the shared
-    // control overlay (the LooperMode's home), not a view preference.
+    // control overlay (the InteractionMode's home), not a view preference.
     final defaultMode = context.watch<ControlCubit>().state.defaultMode;
     final refreshHz = context.watch<RefreshRateCubit>().state;
     return [
@@ -160,18 +160,18 @@ class _SettingsPageState extends State<SettingsPage> {
       const SizedBox(height: 12),
       Text(l10n.defaultModeIntro, style: setupBody),
       const SizedBox(height: 12),
-      SetupOptionRow<LooperMode>(
+      SetupOptionRow<InteractionMode>(
         selected: defaultMode,
         onSelected: (m) => context.read<ControlCubit>().setDefaultMode(m),
         options: [
           SetupOption(
-            value: LooperMode.record,
+            value: InteractionMode.record,
             label: l10n.recordModeLabel,
             sub: l10n.recordModeSub,
             optionKey: const Key('settings_defaultMode_record'),
           ),
           SetupOption(
-            value: LooperMode.play,
+            value: InteractionMode.play,
             label: l10n.playModeLabel,
             sub: l10n.playModeSub,
             optionKey: const Key('settings_defaultMode_play'),
