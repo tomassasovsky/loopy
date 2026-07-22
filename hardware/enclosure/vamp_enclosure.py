@@ -4,7 +4,8 @@ Generates a **manufacturing package** for a wedge-shaped floor console modelled 
 the "Chewie II" / Sonnit reference (850 x 465 x 100 mm, top sloping toward the
 player), housing this repo's standalone build: a Raspberry Pi 4/5 running loopy,
 the loopy_pi_main board, ten foot pedals, the EC11 encoder + diffused LED ring,
-through-hole indicator LEDs and a 7" + 16" touchscreen pair. Branded **VAMP**.
+SMD LED-strip status indicators (WS2812B segments behind diffuser slots) and a
+7" + 16" touchscreen pair. Branded **VAMP**.
 
 Construction (see ../loopy_vamp_enclosure_design.md and
 ../../docs/plan/2026-06-27-feat-vamp-enclosure-rework-plan.md):
@@ -116,8 +117,19 @@ SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
 SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 
 # --- LEDs / encoder -----------------------------------------------------------
-D_LED     = 5.1      # 5 mm through-hole LED (cabled)
-D_LEDBZ   = 8.0      # 5 mm LED + chrome bezel (power / mode)
+# Status indicators = SMD LEDs (WS2812B), NOT through-hole: ONE single-LED
+# board per indicator pedal (hardware/led_strip/, 16 x 8 mm puck) stuck to the
+# faceplate UNDERSIDE with VHB tape; a small milky PMMA pill diffuser sets into
+# each slot and glows through. Boards daisy-chain pedal-to-pedal with 3 wires
+# (5V/data/GND) on the castellated end pads.
+LED_SLOT_H = 6.0          # diffuser-slot height (v); corner r = H/2 -> full round ends
+LED_SLOT_W = 60.0         # pill window per indicator pedal (one 5050 diffused behind it)
+LED_INS_CLR   = 0.2       # diffuser-insert lateral clearance in the slot (total)
+LED_INS_PROUD = 0.4       # lens stands this far above the outer skin
+LED_INS_FLANGE = 3.0      # shoulder overhang past the slot, all around (seats on the
+                          # faceplate UNDERSIDE -- the insert pushes in from INSIDE)
+LED_INS_FL_T  = 1.5       # shoulder thickness
+LED_INS_POCKET = (6.0, 6.0, 0.8)  # LED nest recess in the shoulder's back face
 D_ENC     = 7.0      # EC11 encoder bush
 RING_OD   = 58.0     # diffused-annulus ring window OD (12 THT LEDs behind)
 RING_ID   = 40.0     # ring window ID
@@ -340,20 +352,19 @@ def faceplate_holes():
     for label, u, v in PEDALS:
         cuts.append({"kind": "rect", "u": u - FSW_SLOT_W/2, "v": v - FSW_SLOT_D/2,
                      "w": FSW_SLOT_W, "h": FSW_SLOT_D, "r": 0.0, "ref": label})  # square: max corner clearance
-        led = _has_led(label)
-        if led:
-            cuts.append({"kind": "circle", "u": u, "v": v + FSW_SLOT_D/2 + LED_GAP,
-                         "d": D_LED, "ref": label + "_LED"})
-        # silkscreen label ABOVE the pedal (rear side); each line sized so its WIDTH spans
-        # ~one pedal (height from the bold char-advance factor ~0.66). u = centred left edge.
+        led = _has_led(label)   # (slot cutouts below replace the old per-pedal LED holes;
+                                #  the flag still sets the label offset, unchanged)
+        # silkscreen label ABOVE the pedal (rear side); every line is drawn at
+        # EXACTLY the pill width (LED_SLOT_W) so labels and LED pills read as one
+        # family of bars: common cap height, width factor forces the advance.
         lines = _silk_lines(label)
         if not lines:                                  # tracks carry no silk text
             continue
-        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 7.0 if led else 8.0)
+        v_lbl = v + FSW_SLOT_D/2 + (LED_GAP + 12.0 if led else 8.0)  # labelled pills get extra air
         infos = []                                     # (text, width-factor, displayed width)
         for ln in lines:
             est_w = SILK_H * len(ln) * SILK_CW         # natural width at the common height
-            infos.append((ln, min(1.0, FSW_SLOT_W / est_w), min(est_w, FSW_SLOT_W)))
+            infos.append((ln, LED_SLOT_W / est_w, LED_SLOT_W))
         left_x = u - max(d for _, _, d in infos) / 2.0   # multiline: flush-left, block centred
         for k, (ln, wf, disp_w) in enumerate(infos):
             vpos = v_lbl + (len(lines)-1-k)*(SILK_H*1.15)
@@ -361,6 +372,17 @@ def faceplate_holes():
                 engr.append({"u": left_x, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "left"})
             else:                                      # single line -> centred on the pedal
                 engr.append({"u": u, "v": vpos, "h": SILK_H, "s": ln, "wf": wf, "halign": "center"})
+    # --- LED diffuser slots: ONE small pill window per indicator pedal, on the
+    #     old status-LED centre-line (a single-LED WS2812B board under each,
+    #     VHB-taped to the faceplate underside; milky PMMA pill diffuser set into
+    #     the slot). Full-round ends: corner r = LED_SLOT_H/2.
+    for label, u, v in PEDALS:
+        if not _has_led(label):
+            continue
+        vc = v + FSW_SLOT_D/2 + LED_GAP              # same centre-line the LED holes used
+        cuts.append({"kind": "rect", "u": u - LED_SLOT_W/2, "v": vc - LED_SLOT_H/2,
+                     "w": LED_SLOT_W, "h": LED_SLOT_H, "r": LED_SLOT_H/2,
+                     "ref": label + "_LEDSLOT"})
     # --- screens: top edges aligned on SCREEN_TOP_V ------------------------
     cuts.append({"kind": "rect", "u": COL_U - SMALL_W/2.0, "v": SCREEN_TOP_V - SMALL_H, "w": SMALL_W, "h": SMALL_H, "ref": "SCREEN_7IN"})
     s16_uc = (_row1_u(4) + _row1_u(7)) / 2.0    # centre over the 4 track pedals (row-1 right group)
@@ -602,6 +624,9 @@ def _doc():
     import ezdxf
     doc = ezdxf.new("R2018", setup=True)
     doc.units = 4  # mm
+    # bold face for printed legends (the overlay shop substitutes their Arial
+    # Bold; the DXF style just names it -- thicker strokes than the default)
+    doc.styles.add("SILKBOLD", font="arialbd.ttf")
     doc.layers.add("CUT", color=7)
     doc.layers.add("BEND", color=4, linetype="DASHED")
     doc.layers.add("ENGRAVE", color=3)
@@ -629,7 +654,10 @@ def _rrect(msp, x, y, w, h, r=R_FILLET, layer="CUT"):
 def _text(msp, x, y, h, s, layer="ENGRAVE", wf=1.0, halign="left"):
     from ezdxf.enums import TextEntityAlignment
     al = TextEntityAlignment.CENTER if halign == "center" else TextEntityAlignment.LEFT
-    msp.add_text(s, height=h, dxfattribs={"layer": layer, "width": wf}).set_placement((x, y), align=al)
+    attrs = {"layer": layer, "width": wf}
+    if layer == "SILK":
+        attrs["style"] = "SILKBOLD"          # legends print BOLD
+    msp.add_text(s, height=h, dxfattribs=attrs).set_placement((x, y), align=al)
 
 def _emit(msp, feats, ox=0.0, oy=0.0):
     for f in feats:
@@ -992,6 +1020,58 @@ def _platform_solid(cq, ph):
     legr = cq.Workplane("XY").box(T, sw, ph, centered=(True, True, False)).translate((sd/2-T/2,0,0))
     return shelf.union(legf).union(legr)
 
+def build_diffuser_step():
+    """LED pill diffuser INSERT (3D-print in clear/milky resin, x6 per console):
+    a stadium lens that pushes into the faceplate slot FROM THE INSIDE until its
+    shoulder flange seats on the sheet's underside; the lens stands LED_INS_PROUD
+    above the outer skin. The single-LED module (hardware/led_strip/ puck or an
+    off-the-shelf WS2812B breakout) nests in a shallow pocket on the back and is
+    VHB-taped over the flange, which also retains the insert."""
+    import cadquery as cq
+    lens_l = LED_SLOT_W - LED_INS_CLR
+    lens_w = LED_SLOT_H - LED_INS_CLR
+    lens_h = T + LED_INS_PROUD
+    fl_l = LED_SLOT_W + 2 * LED_INS_FLANGE
+    fl_w = LED_SLOT_H + 2 * LED_INS_FLANGE
+    lens = cq.Workplane("XY").slot2D(lens_l, lens_w).extrude(lens_h)
+    lens = lens.edges(">Z").chamfer(0.3)             # soft glow edge on the proud lip
+    ins = lens.union(cq.Workplane("XY").slot2D(fl_l, fl_w).extrude(-LED_INS_FL_T))
+    px, py, pd = LED_INS_POCKET                       # LED nest, back face
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
+                  .rect(px, py).extrude(pd))
+    step = os.path.join(OUT, "vamp_led_diffuser.step")
+    stl = os.path.join(OUT, "vamp_led_diffuser.stl")
+    cq.exporters.export(ins.val(), step)
+    cq.exporters.export(ins.val(), stl)
+    return step
+
+
+def build_ring_diffuser_step():
+    """Encoder LED-ring diffuser INSERT (3D-print in clear/milky resin, x1):
+    the annular sibling of vamp_led_diffuser -- pushes into the faceplate's ring
+    window FROM THE INSIDE, shoulder flange seats on the sheet's underside, and
+    an annular pocket on the back nests the NeoPixel Ring 16 (authentic Adafruit,
+    44.5mm OD -- verify before printing, clones run 68mm+) so the 16 LEDs glow
+    through the lens. Same clearances/proud as the pill insert."""
+    import cadquery as cq
+    ro = (RING_OD - LED_INS_CLR) / 2.0
+    ri = (RING_ID + LED_INS_CLR) / 2.0
+    lens = (cq.Workplane("XY").circle(ro).circle(ri)
+            .extrude(T + LED_INS_PROUD))
+    lens = lens.edges(">Z").chamfer(0.3)
+    fo = RING_OD / 2.0 + LED_INS_FLANGE
+    fi = RING_ID / 2.0 - LED_INS_FLANGE
+    ins = lens.union(cq.Workplane("XY").circle(fo).circle(fi)
+                     .extrude(-LED_INS_FL_T))
+    # NeoPixel Ring 16 nest: annular recess in the shoulder's back face
+    ins = ins.cut(cq.Workplane("XY").workplane(offset=-LED_INS_FL_T)
+                  .circle(23.0).circle(16.0).extrude(0.8))
+    step = os.path.join(OUT, "vamp_ring_diffuser.step")
+    cq.exporters.export(ins.val(), step)
+    cq.exporters.export(ins.val(), os.path.join(OUT, "vamp_ring_diffuser.stl"))
+    return step
+
+
 def build_step(write_parts=True):
     import cadquery as cq
     os.makedirs(OUT, exist_ok=True)
@@ -1319,6 +1399,10 @@ def main(argv):
                 print(f"    (pdf skipped: {e})")
     if "--no-step" not in argv:
         try:
+            d = build_diffuser_step()
+            print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
+            r = build_ring_diffuser_step()
+            print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
             p = build_step()
             print("\n3D STEP:\n  " + os.path.relpath(p, HERE) + " (+ per-part .step)")
         except Exception as e:  # pragma: no cover

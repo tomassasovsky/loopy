@@ -7,30 +7,30 @@
 <rect x="276.3" y="337.6" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="377.4" y="337.6" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="478.6" y="337.6" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="517.6" cy="325.6" r="2.5" fill="#22c55e"/>
 <rect x="579.7" y="337.6" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="618.7" cy="325.6" r="2.5" fill="#22c55e"/>
 <rect x="680.9" y="337.6" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="719.9" cy="325.6" r="2.5" fill="#22c55e"/>
 <rect x="782.0" y="337.6" width="78.0" height="103.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="821.0" cy="325.6" r="2.5" fill="#22c55e"/>
 <rect x="276.3" y="169.6" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="315.3" cy="157.6" r="2.5" fill="#22c55e"/>
 <rect x="377.4" y="169.6" width="78.0" height="103.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
-<circle cx="416.4" cy="157.6" r="2.5" fill="#22c55e"/>
+<rect x="487.6" y="322.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="588.7" y="322.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="689.9" y="322.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="791.0" y="322.6" width="60.0" height="6.0" rx="3" fill="#243149" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="285.3" y="154.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
+<rect x="386.4" y="154.6" width="60.0" height="6.0" rx="3" fill="#1c2740" stroke="#8aa0c0" stroke-width="1.4"/>
 <rect x="85.6" y="78.6" width="156.0" height="88.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
 <text x="163.6" y="122.6" fill="#4a7f96" font-size="12" text-anchor="middle">7" TOUCH - waveform</text>
 <rect x="497.3" y="78.6" width="344.0" height="194.0" rx="5" fill="#0c1a24" stroke="#38bdf8" stroke-width="2"/>
 <text x="669.3" y="175.6" fill="#4a7f96" font-size="12" text-anchor="middle">16" TOUCH - main UI</text>
 <circle cx="163.6" cy="221.1" r="29.0" fill="none" stroke="#a855f7" stroke-width="3"/>
 <circle cx="163.6" cy="221.1" r="3.5" fill="#cbd5e1"/>
-<text x="96.0" y="310.9" fill="#9fb0c8" font-size="8" text-anchor="middle">REC/</text>
-<text x="96.0" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">PLAY</text>
+<text x="99.0" y="310.9" fill="#9fb0c8" font-size="8" text-anchor="middle">REC/</text>
+<text x="99.0" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">PLAY</text>
 <text x="230.1" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">STOP</text>
 <text x="331.3" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">UNDO</text>
 <text x="432.4" y="339.6" fill="#9fb0c8" font-size="8" text-anchor="middle">MODE</text>
-<text x="331.3" y="160.6" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
-<text x="432.4" y="160.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
+<text x="331.3" y="155.6" fill="#9fb0c8" font-size="8" text-anchor="middle">CLEAR</text>
+<text x="432.4" y="155.6" fill="#9fb0c8" font-size="8" text-anchor="middle">BANK</text>
 <text x="44" y="526.6" fill="#94a3b8" font-size="12" font-weight="600">REAR I/O PANEL — 850 x 90 mm (lowered; transition shoulder carries the lid-lap screws)</text>
 <rect x="44" y="538.6" width="846.0" height="90.0" rx="6" fill="#131c2c" stroke="#5b6b86" stroke-width="2"/>
 <rect x="74.0" y="560.6" width="290.0" height="46.0" fill="#0f1623" stroke="#cbd5e1" stroke-width="1.3"/>
