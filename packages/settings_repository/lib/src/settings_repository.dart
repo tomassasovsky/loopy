@@ -327,8 +327,8 @@ class SettingsRepository {
 
   /// Whether per-track status indicators show on the Tracks-view tiles.
   /// Defaults to `true` when unset.
-  Future<bool> loadShowTrackIndicators() async =>
-      await _store.getBool(_showTrackIndicatorsKey) ?? true;
+  Future<bool> loadShowTrackIndicators({bool defaultValue = true}) async =>
+      await _store.getBool(_showTrackIndicatorsKey) ?? defaultValue;
 
   /// Saves whether per-track status indicators show on the Tracks-view tiles.
   Future<void> saveShowTrackIndicators({required bool value}) =>

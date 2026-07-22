@@ -346,6 +346,13 @@ class MockAudioEngine implements AudioEngine {
   EngineResult clear({int channel = 0}) => _requireRunning();
 
   @override
+  EngineResult clearUndoable({int channel = 0}) => _requireRunning();
+
+  /// The mock keeps no undo history, so it never offers a restore.
+  @override
+  bool undoRestoresClear({int channel = 0}) => false;
+
+  @override
   EngineResult undo({int channel = 0}) => _requireRunning();
 
   @override
