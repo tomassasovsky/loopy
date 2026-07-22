@@ -33,6 +33,11 @@ always stretch from original per-layer buffers at ratio
   - Benchmark Signalsmith quality presets on the audio thread: 8 tracks ×
     lanes at 48 kHz; decide preset + render model (inline vs. worker thread
     with crossfade fallback); validate the D13 double-memory budget.
+  - Manual-verified: the Sheeran has a **two-toggle model** (§5.9.5) — Sync
+    Audio to Tempo (follow tempo, varispeed-style pitch shift) and Time
+    Stretch (pitch preserved) are independent. Spike decides whether loopy
+    adds the cheap varispeed leg (resample) or ships pitch-preserved-only
+    (current default; document as deviation if skipped).
   - Harness home: `packages/loopy_engine/src/test/bench/` — **excluded from
     `run_native_tests.sh`** (must not join the golden gate or rot untracked).
   - Confirms provisional manifest names (`syncAudioToTempo`,

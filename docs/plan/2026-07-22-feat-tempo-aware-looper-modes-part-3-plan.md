@@ -31,7 +31,8 @@ loop-top pulse).
     position each block; 0xF8 ticks, Start/Stop/Continue per D15 (Start at
     loop downbeat — end of count-in, never count-in start; ticks free-run at
     set BPM while transport stopped — confirm vs. the Sheeran manual at
-    review).
+    review). Manual-verified: send operates **only in Multi/Sync/Band**
+    (§6.2.2) — the emitter goes silent in Song/Free.
   - Tri-state clock mode `off / send / receive` atomic +
     `LE_CMD_SET_CLOCK_MODE` (receive rejected until part 5); ffigen regen
     in-PR.

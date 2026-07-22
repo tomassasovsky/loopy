@@ -24,8 +24,9 @@ UI conventions, and the tracking contract (every PR: `Part of #263`, never
 ## Overview
 
 Resurrect and modernize the tempo stack deleted in `2f0513a` against the
-current engine (lanes, monitors, perf recording): tempo + all 15 time
-signatures, routable click + count-in, tap tempo, musical quantization, loop↔
+current engine (lanes, monitors, perf recording): tempo + all 17
+manual-verified time signatures, routable click (4-value mode) + count-in
+(configurable measures), tap tempo, musical quantization, loop↔
 tempo sync, track length presets, manifest v4, `.als` real tempo. Everything
 defaults off; the grid-off path stays bit-identical (existing suites pass
 unchanged on every PR).
@@ -37,7 +38,8 @@ unchanged on every PR).
     math over `{bpm, ts_num, ts_den, sample_rate}` — frames-per-beat-unit,
     frames-per-bar, `next_boundary(pos, subdivision)`, loop-length↔BPM
     derivation (D7). Beat unit = denominator note (verify vs. manual, index
-    Architecture §1).
+    Architecture §1). Valid signatures — exactly 17 (manual §5.9.1): den 4 →
+    num 2–7; den 8 → num 5–15; reject all else (test 2/8 and 8/4 rejections).
   - Grid atomics + snapshot fields on `le_engine`
     (`engine_private.h`, `engine_snapshot.c`, `loopy_engine_api.h`).
   - Commands (free slots 9–12, 18–19): `LE_CMD_SET_TEMPO`,
@@ -59,9 +61,13 @@ unchanged on every PR).
   - Click voice (sine 1000/1500 Hz, 30 ms decay, amp 0.25) + routable click
     bus: `LE_CMD_SET_CLICK_OUTPUT`, `LE_CMD_SET_CLICK_VOLUME`; summed
     post-`perf_tap_master_frame` (index Architecture §3, D5) in
-    `engine_process.c`.
+    `engine_process.c`. Click is a 4-value mode (`LE_CMD_SET_CLICK_MODE`:
+    off / rec / rec-first-layer / play+rec, manual §5.9.1) — gates when the
+    click voice runs, replacing the old boolean metronome.
   - Count-in state machine (D9): idle-only, record-press cancels, auto-record
-    mutual exclusion, counting-in snapshot fields + beat countdown.
+    mutual exclusion, counting-in snapshot fields + beat countdown;
+    count-in length in measures (`LE_CMD_SET_COUNT_IN`: 0 = off, N = bars,
+    default 1).
   - Tests: click energy on masked channels only; zero click in master render
     and perf capture; count-in cancel/precedence; count-in never fires while
     anything plays.
@@ -99,8 +105,8 @@ unchanged on every PR).
   - New `lib/looper/view/tempo_settings_section.dart` wired into
     `lib/looper/view/settings_page.dart` (index UI conventions: LooperTheme
     tokens, no pixel params, extracted widget classes): BPM control, tap,
-    signature picker (15), quantize-granularity selector, metronome +
-    count-in toggles, click output/volume routing.
+    signature picker (17), quantize-granularity selector, click-mode
+    selector + count-in measures control, click output/volume routing.
   - Transport tempo/beat display in the looper chrome
     (`lib/looper/view/tracks_chrome.dart`); armed indication via
     `Track.armed`.
@@ -112,7 +118,9 @@ unchanged on every PR).
   `merge-gate` UI review)
   - AUTO / 1–64 bars per track (D7 rounding, D17 auto-finalize extending
     `engine_process.c:1445`; allocation validation vs. `max_loop_frames`
-    before record with surfaced error).
+    before record with surfaced error). Follow the D17 manual matrix
+    (song-mode-spec §1): preset×click-state decides whether tempo, bars, or
+    both are derived; N-bars+click-off derives tempo from length ÷ N.
   - Per-track preset UI in the tracks section / routing dialog.
   - Tests: native preset finalize/early-press/inert-change cases; the
     64×15/8×30 BPM rejection; Dart preset UI + repository tests.

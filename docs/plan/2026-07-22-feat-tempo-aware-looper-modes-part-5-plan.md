@@ -45,9 +45,14 @@ Tempo forced on (D3).
     guard + `TempoSource.external`); Sync Audio to Tempo forced on.
   - Downbeat: bar 1 beat 1 = first MIDI Start; slave-enable against running
     clock anchors at enable moment; `realignDownbeat` action (D20); per-mode
-    downbeat arming per the B1 §6.2.1 table; SPP explicitly ignored (D14).
+    arming per the transcribed table in
+    `docs/plan/2026-07-22-song-mode-spec.md` §3 (clock-not-running → start
+    on MIDI Start, playback locked otherwise; running+Multi → next downbeat;
+    running+Sync/Band → primary top; **receive inactive in Song/Free** —
+    entering them while slaved drops to internal clock with a notice); SPP
+    explicitly ignored (D14).
   - Tests: restriction enforcement; downbeat anchor cases; per-mode arming
-    table row by row.
+    table row by row incl. the Song/Free drop-to-internal path.
 - [ ] **E3 — app UI** (`autonomy:merge-gate`; carries `Closes #263`)
   - Receive option in the clock-mode setting; locked/lost indicators;
     disabled tempo controls while slaved (with hint); pedal counting/lost

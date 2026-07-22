@@ -37,14 +37,15 @@ bidirectional degrade policy (D11).
     (`lib/control/`, `lib/looper/view/`, `lib/theme/looper_theme.dart`) +
     tests; **preserve persisted token strings** under `looper.default_mode`
     (D10). Zero behavior change.
-- [ ] **B1 — Song-mode + downbeat-arming spec** (doc PR;
+- [ ] **B1 — Song-mode + downbeat-arming spec** (doc;
   `autonomy:plan-gate` — this is a design review checkpoint)
-  - Transcribe from the Sheeran manual: section count/shape, mapping onto 8
-    tracks, pedal advance gesture, quantized transition point, in-flight
-    recording behavior at a switch, one-session-tempo confirmation (D19).
-  - Transcribe §6.2.1 per-mode downbeat arming (consumed by part 5).
-  - Finalize provisional manifest names `songSections`/`bandGroups` (D12).
-  - Location: `docs/plan/2026-07-22-song-mode-spec.md` (linked from #263).
+  - **DRAFTED**: `docs/plan/2026-07-22-song-mode-spec.md` — transcribed from
+    the manual (§4.2/§5.9/§6.2.1) with the six B1 questions answered and the
+    per-mode clock-arming table for part 5. Outcomes: sections are tracks
+    (no separate object, no advance gesture — `advanceSection` dropped from
+    D20); `songSections`/`bandGroups` manifest fields dropped; per-track
+    **One Shot** flag added to B scope; Band section transport quantizes to
+    the primary cycle. **Awaiting user plan-gate review — B4 blocked on it.**
 - [ ] **B2a — engine mode field** (`autonomy:auto`)
   - `le_looper_mode` enum + atomic, `LE_CMD_SET_LOOPER_MODE`; rejected while
     any track has content (D4). ffigen regen in-PR.
@@ -66,11 +67,13 @@ bidirectional degrade policy (D11).
   - `a_primary_track` + crown command + D18 lifecycle (persists through
     clear, explicit re-crown, no auto-reassignment).
   - Division playback (1/2, 1/4 of primary) extending the `seg_base`
-    derivation (D16); Band groups per B1 spec; preset restriction to valid
+    derivation (D16); Band = primary + independently start/stoppable
+    section tracks quantized to the primary cycle (song-mode-spec §2 Q3);
+    per-track One Shot flag; preset restriction to valid
     multiples/divisions.
-  - Tests: division vs. undone-primary; crown persistence; Band group
-    behavior. Size watch: if diff exceeds ~600 LOC, peel Band groups into a
-    follow-on PR (depends on primary, not on division math).
+  - Tests: division vs. undone-primary; crown persistence; Band section
+    start/stop quantization; One Shot stop-at-end. Size watch: if diff
+    exceeds ~600 LOC, peel Band section transport into a follow-on PR.
 - [ ] **B4 — Song mode engine** (`autonomy:auto`; blocked on B1 review)
   - Sections, quantized advance, `advanceSection` action (D20), in-flight
     recording rule per B1.
@@ -90,8 +93,9 @@ bidirectional degrade policy (D11).
   depends on B5a only)
   - Mode picker with clear-all confirmation (D4; not a pedal action), crown
     UI (Wave-view style), `crownPrimary` action; manifest `looperMode` /
-    `primaryTrack` / B1-named section+group fields live; UI conventions per
-    index. Session round-trip tests incl. Free-mode lengths.
+    `primaryTrack` / `oneShot` fields live (`songSections`/`bandGroups`
+    dropped per B1); UI conventions per index. Session round-trip tests
+    incl. Free-mode lengths.
 
 ## Success Criteria
 

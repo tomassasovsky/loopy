@@ -20,12 +20,20 @@ brainstorm: docs/brainstorm/2026-07-22-tempo-aware-looper-modes-brainstorm-doc.m
 
 ## Overview
 
-Bring loopy to parity with the Sheeran Looper X tempo system: BPM (30–300) with
-all 15 time signatures (2/4…15/8), a synthesized routable click with one-bar
-count-in, tap tempo, musical quantization (1 bar, 1/2, 1/4, 1/8, 1/16 note),
-the five looper modes (Multi, Sync, Song, Band, Free), MIDI clock send and
-receive, per-track length presets (AUTO / 1–64 bars with tempo detection), and
-pitch-preserved time-stretch (0.5×–2×, Signalsmith Stretch).
+Bring loopy to parity with the Sheeran Looper X tempo system: BPM (30–300; a
+deliberate superset of the Sheeran's manual-verified 30–280) with all 17
+manual-verified time signatures (2/4–7/4, 5/8–15/8), a synthesized routable
+click (4-value click mode) with configurable count-in measures, tap tempo,
+musical quantization (1 bar, 1/2, 1/4, 1/8, 1/16 note), the five looper modes
+(Multi, Sync, Song, Band, Free), MIDI clock send and receive, per-track length
+presets (AUTO / 1–64 bars with tempo detection), and pitch-preserved
+time-stretch (0.5×–2×, Signalsmith Stretch).
+
+> **Manual verification (2026-07-22):** the plan was cross-checked against the
+> Sheeran Looper X User Guide v1.0.0 after initial drafting; the normative
+> transcription and the resulting corrections live in
+> [2026-07-22-song-mode-spec.md](2026-07-22-song-mode-spec.md) §1/§4. Where a
+> D-decision below conflicts with that spec, the spec wins.
 
 **The invariant that governs everything:** today's tempo-free workflow becomes
 **Multi mode with all grid features off**, and that path stays **bit-identical**
@@ -178,26 +186,26 @@ analysis. Items marked **(user-approved)** were confirmed 2026-07-22.
 
 | # | Decision |
 |---|----------|
-| D1 | **(user-approved)** Full 15 time signatures from day one. Engine math is generic over `ts_num/ts_den`; the deleted stack's only 4/4 assumption was one `LE_BEATS_PER_BAR` define. |
+| D1 | **(user-approved)** Full signature set from day one — manual-verified as **17 signatures**: 2/4, 3/4, 4/4, 5/4, 6/4, 7/4, 5/8–15/8 (den 4 → num 2–7; den 8 → num 5–15; nothing else). Engine math is generic over `ts_num/ts_den`; the deleted stack's only 4/4 assumption was one `LE_BEATS_PER_BAR` define. Tempo clamp stays 30–300 (superset of the Sheeran's 30–280 — documented deviation). |
 | D2 | **(user-approved)** `.als` export emits real tempo as a Phase A tail item (`DawProject.tempoBpm` already threads through). **Bar-aligned clips split out** as a follow-up issue — they need loop-start offsets and wall-clock→grid mapping. |
 | D3 | **(user-approved)** Slaved restrictions per Sheeran: manual tempo disabled + Sync Audio to Tempo forced on while receiving clock → **receive is Phase E**, after stretch. |
 | D4 | **(user-approved)** Mode is a session-level choice, **locked while any track has content**; switching with content requires an explicit clear-all confirmation in the app UI; mode switching is **not** a pedal action. Kills the 5×5 transition matrix. |
-| D5 | **(user-approved)** Click is routable with own mask/volume, **default: no master outputs**; summed post-`perf_tap_master_frame` (Architecture §3), so it is excluded from performance capture and export by construction and bypasses master gain/limiter. |
+| D5 | **(user-approved)** Click is routable with own mask/volume, **default: no master outputs**; summed post-`perf_tap_master_frame` (Architecture §3), so it is excluded from performance capture and export by construction and bypasses master gain/limiter. Manual correction: click is a **4-value mode**, not a boolean — Off / Rec (recording+overdub) / Rec-1st-layer / Play+Rec (§5.9.1); `a_metronome_on` becomes `a_click_mode`. |
 | D6 | **Tempo lock:** manual BPM and time signature are locked while any grid-recorded content exists (Sheeran behavior); cleared-all unlocks. Phase D relaxes the BPM lock to the 0.5×–2× stretch window. Derived tempo **survives** clearing its source loop (the `2f0513a` "dead tempo" lesson); clearing all tracks *offers* a tempo reset, never forces it. |
 | D7 | **Tempo-source precedence:** `TempoSource { none, manual, tapped, derived, external }`. external > (manual \| tapped, last writer wins) > derived. If tempo is set, an AUTO-preset recording **rounds to whole bars of the existing grid** and never re-derives. AUTO derives only from `TempoSource.none`; derivation picks the BPM in 30–300 yielding a whole bar count in the current signature, tie-break nearest 120. |
 | D8 | **Quantized actions (v1 table):** record start — quantized; record end — quantized, **round to nearest** unit, min 1 unit, capture continues to the boundary when rounding up; overdub start — quantized; overdub end — layer boundary as today; stop/mute — immediate. Granularity change while armed re-evaluates the pending arm immediately (may fire on the next subdivision); disarm always available. |
-| D9 | **Count-in:** fires only when the transport is idle (first/defining recording); once anything plays, quantize governs. Record-press during count-in cancels; stop cancels. Auto-record (input threshold) and count-in are mutually exclusive in UI; if a loaded session has both, **count-in wins** and auto-record is cleared. Pedal/UI show a distinct counting-in state with a beat countdown (a bar of 15/8 at 30 BPM is long). |
+| D9 | **Count-in:** fires only when the transport is idle (first/defining recording); once anything plays, quantize governs. Record-press during count-in cancels; stop cancels. Auto-record (input threshold) and count-in are mutually exclusive in UI; if a loaded session has both, **count-in wins** and auto-record is cleared. Pedal/UI show a distinct counting-in state with a beat countdown (a bar of 15/8 at 30 BPM is long). Manual correction: count-in length is a **configurable number of measures** (default 1), not fixed at one bar (§5.9.1). |
 | D10 | **Naming:** existing `LooperMode` (record/play) → **`InteractionMode`** in a standalone mechanical PR (B0, no Phase-A dependency, lands first), preserving the persisted token strings under `looper.default_mode` (no migration). The five-mode enum then takes the freed name: Dart `LooperMode { multi, sync, song, band, free }`, C `le_looper_mode`. The two never coexist. |
 | D11 | **Pedal protocol v2:** protocol version byte bumps to 0x02; flags byte gains a 3-bit mode field + counting-in bit; **bidirectional degrade policy** — app reads firmware version first; against v1 firmware it emits v1 frames (mode collapsed to the legacy bit, tempo state invisible) and surfaces an "update pedal firmware" notice; v2 firmware parses v1 frames (version byte discriminates). Contract test gains fixtures for all four app/firmware pairings. |
 | D12 | **Manifest v4** is specified in full in Phase A (schema below) with fields phase-marked; the loader tolerates absent later-phase fields. Later-phase field **names** (`songSections`, `bandGroups`, `clockMode`, `syncAudioToTempo`) are **provisional pending B1/D0 review** — renaming them there is not a breaking change to this plan. The app always writes v4 once on this code (documented: a re-saved session is unreadable to pre-v4 builds; the v3 version gate already rejects future versions cleanly, `session.dart:398-423`). |
 | D13 | **Stretch layer architecture (validated by the D0 spike):** keep original per-layer buffers; stretch each layer from its **original** at ratio `original_tempo / current_tempo`; never stretch stretched output; undo peels layers each at its own native rate. Doubles peak memory for stretched content — budgeted in the spike. |
-| D14 | **Clock-receive robustness (Phase E):** >250 ms without 0xF8 = clock-lost → freewheel at last smoothed tempo; in-flight recordings finalize on the frozen grid; MIDI Stop = transport stop (distinct from loss). Downbeat: bar 1 beat 1 = first MIDI Start; SPP not honored in v1; slave-enable against an already-running clock anchors the downbeat at the enable moment, with a manual "re-align downbeat" `LooperAction`. Per-mode downbeat arming transcribed from Sheeran §6.2.1 in the E-phase spec. |
-| D15 | **Clock send (Phase C):** MIDI Start is sent at the loop downbeat (end of count-in), never at count-in start; ticks free-run at the set BPM while the transport is stopped (matches DAW expectations; check the manual's behavior at C1 review). Clock mode is a tri-state `off / send / receive` — send and receive are mutually exclusive. |
+| D14 | **Clock-receive robustness (Phase E):** >250 ms without 0xF8 = clock-lost → freewheel at last smoothed tempo; in-flight recordings finalize on the frozen grid; MIDI Stop = transport stop (distinct from loss). Downbeat: bar 1 beat 1 = first MIDI Start; SPP not honored in v1; slave-enable against an already-running clock anchors the downbeat at the enable moment, with a manual "re-align downbeat" `LooperAction`. The per-mode arming table is now transcribed (song-mode-spec §3): clock-not-running → armed tracks start on MIDI Start (playback cannot start/stop otherwise); running+Multi → next downbeat; running+Sync/Band → primary-track top; **receive is inactive in Song/Free** (entering them while slaved drops to internal clock with a notice). |
+| D15 | **Clock send (Phase C):** MIDI Start is sent at the loop downbeat (end of count-in), never at count-in start; ticks free-run at the set BPM while the transport is stopped (matches DAW expectations; check the manual's behavior at C1 review). Clock mode is a tri-state `off / send / receive` — send and receive are mutually exclusive. Manual correction: **send operates only in Multi/Sync/Band** (§6.2.2) — no clock output in Song/Free. |
 | D16 | **Sync divisions** (track at 1/2, 1/4 of primary) are new engine work — the `seg_base` multiple math cannot express them; Phase B extends the derivation. Length-preset pickers become context-restricted in Sync/Band (only valid multiples/divisions of the primary selectable). |
-| D17 | **Length presets:** a 1–64-bar preset auto-finalizes at exactly N bars (extends the existing fixed-multiple auto-finalize, `engine_process.c:1445`); an early record-press closes at the quantized boundary instead (disarms the preset). Preset changes on a recorded track are inert until re-record. N bars × signature × 30 BPM is validated against `max_loop_frames` **before** recording starts, with an error surfaced. |
+| D17 | **Length presets:** a 1–64-bar preset auto-finalizes at exactly N bars (extends the existing fixed-multiple auto-finalize, `engine_process.c:1445`); an early record-press closes at the quantized boundary instead (disarms the preset). Preset changes on a recorded track are inert until re-record. N bars × signature × 30 BPM is validated against `max_loop_frames` **before** recording starts, with an error surfaced. Manual refinement (§5.9.3 matrix, song-mode-spec §1): AUTO+click-off derives tempo *and* bars; AUTO+click-on derives bars only; **N-bars+click-off derives the tempo from recording-length ÷ N**; N-bars+click-on auto-finishes at N bars. In Sync/Band the preset applies only to the first-recorded track. Presets unavailable while clock receive is on. |
 | D18 | **Primary track (Sync/Band):** designation persists if the primary is cleared/undone-to-empty (its grid survives per D6); re-crowning is an explicit user action; **no auto-reassignment** (surprising on stage). Crown UI per the brainstorm (Wave-view style). |
-| D19 | **Song mode spec** is transcribed from the Sheeran manual (sections, mapping to 8 tracks, pedal advance gesture, quantized transition point, in-flight recording behavior at a switch, one session tempo) as B1 — **no engine work for Song before that spec is reviewed.** |
-| D20 | **New `LooperAction` inventory** (controller mapping + pedal + settings stay in sync): `tapTempo` (returns), `toggleMetronome`, `cancelArm`, `realignDownbeat` (E), `crownPrimary` (B), `advanceSection` (B). |
+| D19 | **Song mode spec**: DRAFTED from the manual — [2026-07-22-song-mode-spec.md](2026-07-22-song-mode-spec.md) (plan-gate, awaiting review). Key outcomes: a section **is a track** (8 sections in loopy Song mode; 1 primary + 7 in Band); no advance gesture exists (sections start/stop via their own track presses); Band section starts/stops quantize to the primary cycle; one session tempo confirmed; per-track **One Shot** flag enters Phase B scope; Feedback/Decay stays out of scope. **No engine work for Song (B4) before the spec is approved.** |
+| D20 | **New `LooperAction` inventory** (controller mapping + pedal + settings stay in sync): `tapTempo` (returns), `toggleMetronome`, `cancelArm`, `realignDownbeat` (E), `crownPrimary` (B). (`advanceSection` dropped — the manual has no such gesture; sections are driven by direct track presses, song-mode-spec §2 Q2.) |
 
 ### Manifest v4 schema
 
@@ -224,8 +232,6 @@ erDiagram
         bool countIn "A"
         string looperMode "B; multi|sync|song|band|free"
         int primaryTrack "B; -1 = none"
-        json songSections "B; provisional, per B1"
-        json bandGroups "B; provisional, per B1"
         string clockMode "C/E; provisional; off|send|receive"
         bool syncAudioToTempo "D; provisional, per D0"
     }
@@ -235,6 +241,7 @@ erDiagram
         int lengthFrames
         int lengthPresetBars "A; 0 = AUTO"
         int freeLengthFrames "B; Free mode"
+        bool oneShot "B; play once then stop"
         float originalTempoBpm "D; stretch base"
     }
 ```
