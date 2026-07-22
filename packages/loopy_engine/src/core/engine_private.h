@@ -424,7 +424,8 @@ typedef struct le_track {
    * the finalize press the master keeps RECORDING `xfade_capture` more frames —
    * the continuation of the performance just past the loop point — into
    * [xfade_len, xfade_len + F). When the count hits 0 that overlap is
-   * equal-power crossfaded into the loop head so the wrap (xfade_len-1 -> 0) is
+   * equal-gain (linear) crossfaded into the loop head so the wrap
+   * (xfade_len-1 -> 0) is
    * click-free, and the loop is finalized at exactly xfade_len (length, and so
    * tempo/quantize, are preserved). 0 == not deferring (immediate finalize). */
   int32_t xfade_capture;
