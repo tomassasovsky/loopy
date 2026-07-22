@@ -1135,9 +1135,13 @@ def build_step(write_parts=True):
     addw(fp, "faceplate", fp_loc)
     # 10 printed platform pedestals under the pedal slots (X = pedal v, Y = pedal u);
     # mid-row (CLEAR/BANK) pedestals are taller because the lid is higher there.
+    # Depth uses the SLOPE-PROJECTED station (v*cos) — the same projection
+    # platform_foot_holes() drills the bottom plate with — so platform, floor
+    # holes, and faceplate slot share one centre at every pedal position.
+    _cs = math.cos(math.radians(SLOPE_ANGLE))
     for i, (label, u, v) in enumerate(PEDALS):
         plat = _platform_printed(cq, platform_h(v))
-        addw(plat, f"platform_{i}", cq.Location(cq.Vector(v, u + T, T)))
+        addw(plat, f"platform_{i}", cq.Location(cq.Vector(v * _cs, u + T, T)))
     # representative loopy_pi_main board on standoffs, rear clear zone (visual stand-in;
     # the fully-detailed KiCad model is rendered in the 3D viewer, not the STEP)
     blk = {"MAIN_BOARD": (BOARD_SIZE[0], BOARD_SIZE[1], 16.0)}
