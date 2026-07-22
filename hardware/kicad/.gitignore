@@ -30,12 +30,6 @@ _*.rpt
 _tools/
 fab/loopy_pedal_main/
 fab/loopy_pedal_ring/
-fab/loopy_pi_main/
-
-# Pi-on-board 3D assembly: generated board + downloaded Pi model (render-only,
-# pi_assemble.py fetches the model on demand)
-_assembly.*
-_models/
 
 # Throwaway test boards / KiCad caches
 _*.kicad_pcb

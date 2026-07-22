@@ -4,9 +4,12 @@ Quantities are **per console**. All parts are standard and available at local
 electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 (import or specialty). Mirrors [`loopy_pedal_shopping_list.md`](loopy_pedal_shopping_list.md).
 
-> The console is a **standalone Pi 5 appliance**, separate from the 32U4
-> USB-MIDI pedal. The WS2812 LEDs are offloaded to a small RP2040 driver over
-> UART (see [`firmware/led_driver/README.md`](../firmware/led_driver/README.md));
+> The console is a **standalone Pi 5 appliance**. The foot controls
+> (footswitches + encoder) connect through the 32U4 USB-MIDI pedal board
+> (`loopy_pedal_main` — see [`MANUFACTURING.md`](MANUFACTURING.md)); the Pi
+> reads no controls directly. The WS2812 LEDs are offloaded to a small RP2040
+> driver over UART (see
+> [`firmware/led_driver/README.md`](../firmware/led_driver/README.md));
 > the Pi never bit-bangs WS2812.
 
 ---
@@ -33,10 +36,15 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
 
 ## Foot controls
 
+Carried by the `loopy_pedal_main` USB-MIDI board — fab + BOM in
+[`MANUFACTURING.md`](MANUFACTURING.md) (order it alongside this list).
+
 - [ ] Momentary **SPST footswitches** (stomp-rated) ×5 — rec/overdub, stop,
       undo, clear, encoder-press is separate
-- [ ] **EC11 rotary encoder** (with push switch) ×1
+- [ ] **EC11 rotary encoder** (with push switch) ×1 — mounts on the encoder
+      ring PCB (also in `MANUFACTURING.md`)
 - [ ] Knob for the EC11 ×1
+- [ ] USB-A → USB cable, Pi → `loopy_pedal_main` ×1
 
 ## LEDs + driver
 
@@ -47,16 +55,6 @@ electronics shops / MercadoLibre, except the Pi 5, screens, and USB interface
       WS2812 data line off the RP2040
 - [ ] 1000 µF electrolytic, 6.3 V+ ×1 — across the WS2812 5 V rail
 - [ ] 330–470 Ω resistor ×1 — in series with the WS2812 data line
-
-## GPIO input protection (per footswitch + encoder line)
-
-3.3 V discipline — Pi GPIO is **not 5 V tolerant**. Footswitches/encoder switch
-to **ground** (active-low; `gpio_client` enables the internal pull-up). See
-[`hardware/console/README.md`](console/README.md) for the circuit.
-
-- [ ] 1 kΩ resistor (series, per line) ×8  *(5 footswitch + A/B/SW encoder)*
-- [ ] 100 nF ceramic ("104"), 50 V (RC debounce to GND, per line) ×8
-- [ ] BAT54S or 1N4148 clamp diodes (optional ESD clamp to 3V3/GND) ×8
 
 ## Power
 
@@ -96,6 +94,6 @@ a waveform, so pick any 7″ HDMI panel; set its per-output `--scale` in
   [`docs/RUNNING_ON_LINUX.md`](../docs/RUNNING_ON_LINUX.md)).
 - The RP2040 LED driver talks UART to the Pi (GPIO14/15) — see the firmware
   README for wiring + the wire-format spec.
-- No console PCB is fabbed yet; the foot controls + protection passives are
-  point-to-point or on protoboard. Enclosure/fab files live under
-  `hardware/console/` once designed.
+- The foot controls wire to the `loopy_pedal_main` board (fabbed — see
+  `MANUFACTURING.md`); there is no console-specific PCB. Enclosure/fab files
+  live under `hardware/console/` once designed.
