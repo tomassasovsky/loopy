@@ -803,6 +803,18 @@ LE_EXPORT int32_t le_engine_clear(le_engine* engine, int32_t channel);
  * runs out of room for it. `undo` is never a promise, only an offer. */
 LE_EXPORT int32_t le_engine_clear_undoable(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_undo(le_engine* engine, int32_t channel);
+/* Whether the NEXT le_engine_undo on `channel` would restore a cleared take
+ * (1) rather than peel an overdub layer or empty the track (0). Also 0 for an
+ * invalid channel or a stopped engine.
+ *
+ * For a host that has to put back state the engine does not own — the take's FX
+ * chains, say. Ask BEFORE undoing: afterwards the answer describes the next tap,
+ * not the one just made. Deriving it from a snapshot instead would race — the
+ * snapshot publishes a_state, which does not flip until the audio thread applies
+ * the restore, whereas this reads the control thread's own history stack and is
+ * exact the moment it returns. */
+LE_EXPORT int32_t le_engine_undo_restores_clear(le_engine* engine,
+                                                int32_t channel);
 LE_EXPORT int32_t le_engine_redo(le_engine* engine, int32_t channel);
 LE_EXPORT int32_t le_engine_set_track_volume(le_engine* engine, int32_t channel,
                                              float volume);
