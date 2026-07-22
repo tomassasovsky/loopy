@@ -143,3 +143,6 @@ hardware/kicad/*.gbr
 hardware/kicad/*.gbrjob
 __pycache__/
 *.lck
+
+# graphify knowledge-graph output (generated; rebuild with `graphify update .`)
+graphify-out/
