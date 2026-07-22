@@ -84,6 +84,7 @@ add_library(loopy_engine SHARED
   core/engine_miniaudio.c
   core/lockfree_ring.c
   core/loop_clock.c
+  core/tempo_grid.c          # pure-value tempo/bar/subdivision math
   core/audio_ring.c          # float SPSC ring (performance-recording capture)
   core/perf_log_ring.c       # perf event log: SPSC ring of frame-tagged le_command entries
   core/layer_staging_ring.c  # retired-layer PCM staging ring (persist before pool eviction)

@@ -176,6 +176,15 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
     le_fill_track_snapshot(&engine->tracks[t], t < engine->track_count,
                            &out->tracks[t]);
   }
+  /* Tempo grid (trailing block; grid-off defaults read 0/4/4/1/0/0/0/0). */
+  out->tempo_bpm = load_f32(&engine->a_tempo_bpm_bits);
+  out->ts_num = load_i32(&engine->a_ts_num);
+  out->ts_den = load_i32(&engine->a_ts_den);
+  out->sync_tempo = load_i32(&engine->a_sync_tempo);
+  out->quantize_div = load_i32(&engine->a_quantize_div);
+  out->tempo_source = load_i32(&engine->a_tempo_source);
+  out->loop_bars = load_i32(&engine->a_loop_bars);
+  out->current_beat = load_i32(&engine->a_current_beat);
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,
