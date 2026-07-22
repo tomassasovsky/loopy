@@ -1145,6 +1145,40 @@ class LoopyEngineBindings {
   late final _le_engine_clear = _le_engine_clearPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Clear that leaves a restore point: identical to le_engine_clear, except the
+  /// track's history survives with a LE_HIST_CLEAR entry pushed on top, so the next
+  /// le_engine_undo puts the take back — content, length, multiple, state, mutes,
+  /// and the master grid if this clear reset it — with the erased take's overdub
+  /// layers still peelable beneath it. le_engine_redo then re-clears.
+  ///
+  /// Use this for a USER clear. le_engine_clear stays the destructive one, and must
+  /// remain so for its two non-user callers: session load, and the internal clear
+  /// le_engine_record posts to redefine the grid when recording onto an otherwise-
+  /// empty looper (which would otherwise leave a bogus restore point on every take).
+  ///
+  /// The restore point is dropped — and this decays to a plain clear — when the
+  /// track has nothing to restore (already empty / zero length), when a fresh
+  /// recording on this track overwrites the live slot it names, or when the pool
+  /// runs out of room for it. `undo` is never a promise, only an offer.
+  int le_engine_clear_undoable(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_clear_undoable(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_clear_undoablePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_clear_undoable');
+  late final _le_engine_clear_undoable = _le_engine_clear_undoablePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   int le_engine_undo(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -1162,6 +1196,35 @@ class LoopyEngineBindings {
         >
       >('le_engine_undo');
   late final _le_engine_undo = _le_engine_undoPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Whether the NEXT le_engine_undo on `channel` would restore a cleared take
+  /// (1) rather than peel an overdub layer or empty the track (0). Also 0 for an
+  /// invalid channel or a stopped engine.
+  ///
+  /// For a host that has to put back state the engine does not own — the take's FX
+  /// chains, say. Ask BEFORE undoing: afterwards the answer describes the next tap,
+  /// not the one just made. Deriving it from a snapshot instead would race — the
+  /// snapshot publishes a_state, which does not flip until the audio thread applies
+  /// the restore, whereas this reads the control thread's own history stack and is
+  /// exact the moment it returns.
+  int le_engine_undo_restores_clear(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_undo_restores_clear(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_undo_restores_clearPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_undo_restores_clear');
+  late final _le_engine_undo_restores_clear = _le_engine_undo_restores_clearPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
   int le_engine_redo(
@@ -3099,6 +3162,15 @@ enum le_command_code {
   /// control thread already swapped a_live.
   LE_CMD_REDO_FROM_EMPTY(40),
 
+  /// undo of an undoable clear: reinstate a cleared
+  /// track. `restore` arm. Distinct from REDO_FROM_
+  /// EMPTY because it restores the pre-clear STATE
+  /// (which may be STOPPED) and re-establishes the
+  /// master grid a whole-rig clear reset — REDO_
+  /// FROM_EMPTY only ever reads the clock. The
+  /// control thread already swapped a_live.
+  LE_CMD_RESTORE_CLEAR(43),
+
   /// begin publishing to the perf capture rings
   LE_CMD_PERF_ARM(41),
 
@@ -3146,6 +3218,7 @@ enum le_command_code {
     38 => LE_CMD_DUB_SHADOW,
     39 => LE_CMD_UNDO_TO_EMPTY,
     40 => LE_CMD_REDO_FROM_EMPTY,
+    43 => LE_CMD_RESTORE_CLEAR,
     41 => LE_CMD_PERF_ARM,
     42 => LE_CMD_PERF_DISARM,
     100 => LE_EVT_LAYER_RETIRED,
@@ -3307,9 +3380,19 @@ final class le_track_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int multiple;
 
-  /// available undo steps (overdub layers)
+  /// available undo steps (overdub layers). A track
+  /// cleared via le_engine_clear_undoable reads 0 here
+  /// even though its erased take's layers are still held:
+  /// they are not peelable until the restore point above
+  /// them is undone. See clear_restore.
   @ffi.Int32()
   external int undo_depth;
+
+  /// 1 when the next le_engine_undo restores a cleared
+  /// take rather than peeling a layer — i.e. "undo would
+  /// do something" on a track whose undo_depth is 0.
+  @ffi.Int32()
+  external int clear_restore;
 
   /// available redo steps
   @ffi.Int32()

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
@@ -60,6 +61,16 @@ class TrackColumn extends StatelessWidget {
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final playMode = mode == LooperMode.play;
     final barColor = looper.meterColor(meterState, mode: mode);
+
+    // The track name label. On the console it renders at a uniform, larger
+    // size (consistent height across columns; the longest name reaches ~60% of
+    // the column width); desktop keeps the fixed text size.
+    final nameStyle = theme.textTheme.titleMedium?.copyWith(
+      color: Colors.white,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.5,
+    );
+    final nameText = Text(name, textAlign: TextAlign.center, style: nameStyle);
     // Undo/Redo shortcut hints adapt to the host platform — Loopy targets
     // Windows/Linux too, so this must not hardcode the macOS modifier.
     final isMac = defaultTargetPlatform == TargetPlatform.macOS;
@@ -89,55 +100,84 @@ class TrackColumn extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Text(
-                '${track.channel + 1}',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: Colors.white70,
-                ),
-              ),
-              const Spacer(),
-              if (track.isMultiple)
+          if (kConsoleMode)
+            // Console mode: the foot pedals own undo/redo, so the on-screen
+            // buttons are hidden entirely and the channel number is centred.
+            // The loop-multiple badge still rides the right edge.
+            Stack(
+              alignment: Alignment.center,
+              children: [
                 Text(
-                  l10n.loopMultipleLabel(track.multiple),
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.primary,
+                  '${track.channel + 1}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white70,
+                    // Console: larger channel number to match the bigger name.
+                    fontSize: 40,
                   ),
                 ),
-              // Undo/Redo surface only on the selected column; the keyboard
-              // shortcut hint in each tooltip adapts to the host platform.
-              if (selected) ...[
-                IconButton(
-                  key: Key('tracks_undo_${track.channel}'),
-                  tooltip: l10n.undoTooltip(undoShortcut),
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  color: Colors.white70,
-                  icon: const Icon(Icons.undo),
-                  // Mirrors the `U` key: enabled whenever there is a layer to
-                  // peel — stacked overdub passes, or the base recording
-                  // itself (undoing it empties the track, redo-ably) — but not
-                  // mid-capture, when the engine rejects undo.
-                  onPressed:
-                      (track.hasContent || track.canUndo) && !track.isCapturing
-                      ? () => onUndo(track.channel)
-                      : null,
-                ),
-                IconButton(
-                  key: Key('tracks_redo_${track.channel}'),
-                  tooltip: l10n.redoTooltip(redoShortcut),
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  color: Colors.white70,
-                  icon: const Icon(Icons.redo),
-                  onPressed: track.canRedo && !track.isCapturing
-                      ? () => onRedo(track.channel)
-                      : null,
-                ),
+                if (track.isMultiple)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      l10n.loopMultipleLabel(track.multiple),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
               ],
-            ],
-          ),
+            )
+          else
+            Row(
+              children: [
+                Text(
+                  '${track.channel + 1}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+                const Spacer(),
+                if (track.isMultiple)
+                  Text(
+                    l10n.loopMultipleLabel(track.multiple),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                // Undo/Redo surface only on the selected column; the keyboard
+                // shortcut hint in each tooltip adapts to the host platform.
+                if (selected) ...[
+                  IconButton(
+                    key: Key('tracks_undo_${track.channel}'),
+                    tooltip: l10n.undoTooltip(undoShortcut),
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: Colors.white70,
+                    icon: const Icon(Icons.undo),
+                    // Mirrors the `U` key: enabled whenever there is a layer to
+                    // peel — stacked overdub passes, or the base recording
+                    // itself (undoing it empties the track, redo-ably) — but
+                    // not mid-capture, when the engine rejects undo.
+                    onPressed:
+                        (track.hasContent || track.canUndo) &&
+                            !track.isCapturing
+                        ? () => onUndo(track.channel)
+                        : null,
+                  ),
+                  IconButton(
+                    key: Key('tracks_redo_${track.channel}'),
+                    tooltip: l10n.redoTooltip(redoShortcut),
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: Colors.white70,
+                    icon: const Icon(Icons.redo),
+                    onPressed: track.canRedo && !track.isCapturing
+                        ? () => onRedo(track.channel)
+                        : null,
+                  ),
+                ],
+              ],
+            ),
           Expanded(
             child: FocusableTapTarget(
               key: Key('tracks_tile_${track.channel}'),
@@ -179,7 +219,7 @@ class TrackColumn extends StatelessWidget {
             undoDepth: track.undoDepth + (track.hasContent ? 1 : 0),
             redoDepth: track.redoDepth,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: kConsoleMode ? 2 : 10),
           FocusableTapTarget(
             key: Key('tracks_name_${track.channel}'),
             semanticLabel: l10n.a11yRenameTrack(name),
@@ -189,15 +229,18 @@ class TrackColumn extends StatelessWidget {
               channel: track.channel,
               current: name,
             ),
-            child: Text(
-              name,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
-              ),
-            ),
+            child: kConsoleMode
+                // Fixed console name size: uniform height across columns, tuned
+                // so a 6-char name (e.g. GUITAR) reaches ~60% of the column
+                // width on the 16" panel. Hard-coded (not width-relative).
+                ? Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nameStyle?.copyWith(fontSize: 47.3, height: 1),
+                  )
+                : nameText,
           ),
           // A discrete arm/readiness strip, shown only when the view preference
           // is on. When off the widget is absent and the tile reflows.
@@ -260,26 +303,33 @@ class _TrackHistoryDots extends StatelessWidget {
       return Colors.white12;
     }
 
+    // On the console the history dots (undo/redo indicators) scale up to match
+    // the larger track name; desktop keeps the compact sizes.
+    const dotSize = kConsoleMode ? 18.0 : 8.0;
+    const rowHeight = kConsoleMode ? 26.0 : 12.0;
+    const gutterSize = kConsoleMode ? 24.0 : 12.0;
+    const gapSize = kConsoleMode ? 8.0 : 4.0;
+
     Widget gutter(IconData icon, {required bool visible}) => Visibility(
       visible: visible,
       maintainSize: true,
       maintainAnimation: true,
       maintainState: true,
-      child: Icon(icon, size: 12, color: Colors.white70),
+      child: Icon(icon, size: gutterSize, color: Colors.white70),
     );
 
     return SizedBox(
-      height: 12,
+      height: rowHeight,
       child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          spacing: 4,
+          spacing: gapSize,
           children: [
             gutter(Icons.chevron_left, visible: page > 0),
             for (var i = 0; i < _slotsPerPage; i++)
               SizedBox.square(
-                dimension: 8,
+                dimension: dotSize,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: slotColor(start + i),
