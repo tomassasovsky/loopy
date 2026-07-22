@@ -954,49 +954,6 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
       break;
     }
-    case LE_CMD_RESTORE_CLEAR: {
-      /* Undo of an undoable clear: the control thread already swapped a_live
-       * back to the erased take and pushed the mute restore ahead of us; put the
-       * transport back here. Distinct from REDO_FROM_EMPTY on two counts — the
-       * state may be STOPPED rather than PLAYING, and the grid may need
-       * re-establishing rather than merely reading. */
-      const int32_t ch = cmd->restore.channel;
-      if (!valid_channel(e, ch)) break;
-      le_track* t = &e->tracks[ch];
-      const int32_t len = cmd->restore.len;
-      if (load_i32(&t->a_state) == LE_TRACK_EMPTY && len > 0) {
-        /* The restored loop may differ in length from whatever the leftover
-         * armed shadows were sized for — drop them (control reclaimed). */
-        le_dub_drop_armed(t);
-        /* Re-establish the grid this clear reset. A clear only resets the master
-         * once every track is empty (handle_clear's all-empty path), so this
-         * fires for the last track cleared / a whole-rig clear, and is a no-op
-         * when a sibling kept the clock running. Restoring the recorded base —
-         * not this track's own len — is what keeps a track that was several
-         * base loops long coming back at the right multiple. */
-        if (e->clock.length == 0 && cmd->restore.master_len > 0) {
-          le_plog_push(e, frame,
-                       (le_command){.code = LE_PLOG_LOOP_LENGTH_LOCKED,
-                                    .arg_i = cmd->restore.master_len});
-          le_loop_clock_set_length(&e->clock, cmd->restore.master_len);
-          e->loop_iteration = 0;
-          store_i32(&e->a_master_len, cmd->restore.master_len);
-        }
-        const int32_t base = e->clock.length > 0 ? e->clock.length : len;
-        int32_t k = len / base;
-        if (k < 1) k = 1;
-        le_track_set_len(t, len);
-        store_i32(&t->a_multiple, k);
-        t->start_iter = 0;
-        store_i32(&t->a_state, cmd->restore.state);
-        /* The clear-restore edge case of undo: same semantic code as every
-         * other undo path (see LE_CMD_UNDO_TO_EMPTY), so a downstream consumer
-         * never needs to know which internal path fired. */
-        le_plog_push(e, frame, (le_command){.code = LE_PLOG_UNDO, .arg_i = ch});
-      }
-      atomic_fetch_add_explicit(&t->a_state_acks, 1, memory_order_release);
-      break;
-    }
     /* Undo/redo swaps are handled on the control thread (le_engine_undo/redo),
      * not via the command ring; only the state flips above ride it. */
     case LE_CMD_SET_VOLUME: {
