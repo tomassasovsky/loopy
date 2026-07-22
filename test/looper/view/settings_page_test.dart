@@ -67,8 +67,8 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
-    // The real control cubit: it owns the shared LooperMode whose persisted
-    // default the View section edits.
+    // The real control cubit: it owns the shared InteractionMode whose
+    // persisted default the View section edits.
     pedalRepo = PedalRepository(const NoopPedalTransport());
     performance = PerformanceRepository(
       engine: FakeAudioEngine(),
@@ -217,18 +217,18 @@ void main() {
     tester,
   ) async {
     await pump(tester);
-    expect(control.state.defaultMode, LooperMode.record);
+    expect(control.state.defaultMode, InteractionMode.record);
 
     final play = find.byKey(const Key('settings_defaultMode_play'));
     await tester.ensureVisible(play);
     await tester.tap(play);
     await tester.pumpAndSettle();
 
-    expect(control.state.defaultMode, LooperMode.play);
-    expect(control.state.mode, LooperMode.play);
+    expect(control.state.defaultMode, InteractionMode.play);
+    expect(control.state.mode, InteractionMode.play);
     expect(
-      await settings.loadDefaultLooperMode(),
-      LooperMode.play.token,
+      await settings.loadDefaultInteractionMode(),
+      InteractionMode.play.token,
     );
   });
 

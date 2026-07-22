@@ -2,7 +2,7 @@ import 'dart:math' show sqrt;
 
 import 'package:flutter/material.dart';
 import 'package:looper_repository/looper_repository.dart' show TrackState;
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 
 /// Maps engine peak amplitude (`0..1`) to meter fill (`0..1`).
 ///
@@ -74,7 +74,7 @@ enum TrackIndicator {
     required bool muted,
     required bool hasContent,
     required bool selected,
-    required LooperMode mode,
+    required InteractionMode mode,
   }) {
     if (muted) return TrackIndicator.idle;
     return switch (state) {
@@ -83,7 +83,7 @@ enum TrackIndicator {
       TrackState.stopped when hasContent => TrackIndicator.play,
       TrackState.empty || TrackState.stopped =>
         selected
-            ? (mode == LooperMode.play
+            ? (mode == InteractionMode.play
                   ? TrackIndicator.play
                   : TrackIndicator.record)
             : TrackIndicator.idle,
@@ -141,10 +141,10 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
 
   /// The meter color for [state] in the current mode ([mode] selects the
   /// play or record table). Transparent if the table omits it.
-  Color meterColor(LooperMeterState state, {required LooperMode mode}) =>
+  Color meterColor(LooperMeterState state, {required InteractionMode mode}) =>
       {
-        LooperMode.play: playMeterColors,
-        LooperMode.record: recordMeterColors,
+        InteractionMode.play: playMeterColors,
+        InteractionMode.record: recordMeterColors,
       }[mode]![state] ??
       Colors.transparent;
 

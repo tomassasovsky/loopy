@@ -511,14 +511,14 @@ void main() {
     });
   });
 
-  group('default looper mode', () {
+  group('default interaction mode', () {
     test('returns null when unset', () async {
-      expect(await repository.loadDefaultLooperMode(), isNull);
+      expect(await repository.loadDefaultInteractionMode(), isNull);
     });
 
     test('round-trips a saved token', () async {
-      await repository.saveDefaultLooperMode('play');
-      expect(await repository.loadDefaultLooperMode(), 'play');
+      await repository.saveDefaultInteractionMode('play');
+      expect(await repository.loadDefaultInteractionMode(), 'play');
     });
   });
 

@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/pedal/cubit/pedal_cubit.dart';
 // The effect models come from the looper_repository barrel (the domain types
 // setLaneEffects expects); hide the engine-package originals to disambiguate.
@@ -456,7 +456,7 @@ void main() {
         // The mode toggle is a view change, not a transport action: the
         // take must still be recording (it used to be force-finalized).
         expect(h.looper.tracks[0].state, TrackState.recording);
-        expect(h.control.state.mode, LooperMode.play);
+        expect(h.control.state.mode, InteractionMode.play);
 
         // It keeps ACCUMULATING through play mode...
         h

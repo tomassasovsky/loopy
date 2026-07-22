@@ -5,7 +5,7 @@ import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/theme/theme.dart';
 
 /// A chromeless row of the active-bank track level meters — the bars-only
@@ -68,7 +68,7 @@ class _TrackMeter extends StatelessWidget {
 
   final Track track;
   final LooperTheme looper;
-  final LooperMode mode;
+  final InteractionMode mode;
   final bool selected;
   final String name;
 

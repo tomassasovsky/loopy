@@ -9,7 +9,7 @@ import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
-import 'package:loopy/looper/model/looper_mode.dart';
+import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
 import 'package:loopy/performance/performance.dart';
@@ -98,7 +98,7 @@ class TracksCommands {
   void toggleMode() {
     final overlay = context.read<ControlCubit>()..toggleMode();
     _announce(
-      overlay.state.mode == LooperMode.record
+      overlay.state.mode == InteractionMode.record
           ? context.l10n.a11yModeRecord
           : context.l10n.a11yModePlay,
     );
@@ -230,7 +230,7 @@ class TracksCommands {
       final channel = digit - 1;
       if (channel <= 7) {
         overlay.selectTrack(channel); // moves the cursor and reveals its bank
-        if (mode == LooperMode.play) {
+        if (mode == InteractionMode.play) {
           bloc.add(LooperMuteToggled(channel));
         }
       }
@@ -238,7 +238,7 @@ class TracksCommands {
     }
 
     // Record-mode actions on the selected track.
-    if (mode == LooperMode.record) {
+    if (mode == InteractionMode.record) {
       if (key == LogicalKeyboardKey.keyR) {
         bloc.add(LooperRecordPressed(selected));
         return KeyEventResult.handled;
