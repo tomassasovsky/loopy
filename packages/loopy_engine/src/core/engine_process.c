@@ -702,18 +702,18 @@ static void handle_clear(le_engine* e, int32_t ch) {
 /* Per-lane / per-monitor effects DSP (the effect kernels, the phase-vocoder /
  * PSOLA octaver, the Freeverb reverb, and the chain runner) moved to engine_fx.c
  * (S1). The cross-TU surface and the PV/PSOLA tuning constants live in
- * engine_fx.h. LE_PI stays here for finalize_master_xfade below. */
-
-#ifndef LE_PI
-#define LE_PI 3.14159265358979323846f
-#endif
+ * engine_fx.h. */
 
 /* Completes a deferred crossfade-finalize of the defining master (set up by
  * request_master_finalize once xfade_capture frames of overlap are captured).
- * Equal-power crossfade of the captured continuation [len, len+F) into the loop
- * head [0, F): each head sample morphs from the continuation (which follows
- * len-1 naturally) into the original head, so the wrap len-1 -> 0 is continuous
- * and no power dips. The loop is then finalized at exactly `len`. */
+ * Equal-gain (linear) crossfade of the captured continuation [len, len+F) into
+ * the loop head [0, F): each head sample morphs from the continuation (which
+ * follows len-1 naturally) into the original head, so the wrap len-1 -> 0 is
+ * continuous. Equal-gain — not equal-power — because the two signals are the
+ * performance and its own continuation, i.e. highly correlated: linear weights
+ * sum to exactly 1.0 so correlated material passes at unity, where equal-power
+ * (sin/cos) would bump it up to sqrt(2)x (+3 dB) at mid-fade (#256). The loop
+ * is then finalized at exactly `len`. */
 static void finalize_master_xfade(le_engine* e, le_track* t, uint64_t frame) {
   const int32_t len = t->xfade_len;
   const int32_t F = seam_xfade_frames(e);
@@ -722,9 +722,9 @@ static void finalize_master_xfade(le_engine* e, le_track* t, uint64_t frame) {
     float* b = t->lanes[l].pool[load_i32(&t->lanes[l].a_live)];
     if (b == NULL) continue;
     for (int32_t i = 0; i < F; ++i) {
-      const float x = (float)i / (float)F;        /* 0..1 across the fade */
-      const float w_in = sinf(0.5f * LE_PI * x);  /* original head fades in */
-      const float w_out = cosf(0.5f * LE_PI * x); /* continuation fades out */
+      const float x = (float)i / (float)F;  /* 0..1 across the fade */
+      const float w_in = x;                 /* original head fades in */
+      const float w_out = 1.0f - x;         /* continuation fades out */
       b[i] = b[len + i] * w_out + b[i] * w_in;
     }
   }

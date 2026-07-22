@@ -6349,12 +6349,13 @@ static void test_multi_lane_long_loop_dub_roundtrip(void) {
   CHECK(depth >= 1); /* the pass (+ a punch-tail sliver at this size) */
 
   /* Live playback sums both dubbed lanes: (1+0.5) + (2+0.25) = 3.75 almost
-   * everywhere. A ~450-frame band at the seam legitimately overshoots: the
-   * equal-power seam crossfade (sin/cos weights) applied to fully correlated
-   * DC content peaks at sqrt(2)x mid-fade, so the ceiling is the base sum
-   * 3.0*sqrt(2) = 4.243 plus the 0.75 dub layer = 4.99 (measured 4.67). A
-   * seam-band DOUBLE-application of the dub layer (the #218 bug class) would
-   * reach 3*sqrt(2) + 1.5 = 5.74 — keep the bound between the two. */
+   * everywhere — including the seam band: the equal-gain (linear) seam
+   * crossfade (#256) has weights summing to exactly 1.0, so fully correlated
+   * DC content passes at unity and the legitimate ceiling is 3.75. A seam-band
+   * DOUBLE-application of the dub layer (the #218 bug class) would reach
+   * 3.0 + 2*0.75 = 4.5, and a regression to equal-power sin/cos weights would
+   * reach 3.0*sqrt(2) + 0.75 = 4.99 — keep the bound between the legitimate
+   * 3.75 and the nearest failure mode at 4.5 to catch both. */
   float* play = malloc((size_t)len * sizeof(float));
   CHECK(play != NULL);
   if (play == NULL) { /* CHECK doesn't halt — avoid the NULL capture */
@@ -6365,7 +6366,7 @@ static void test_multi_lane_long_loop_dub_roundtrip(void) {
   pump_two_lane(e, 0.0f, 0.0f, len, play, &got);
   CHECK(got == len);
   CHECK(count_near(play, len, 3.75f) > (len * 9) / 10);
-  for (int i = 0; i < len; ++i) CHECK(play[i] < 5.1f);
+  for (int i = 0; i < len; ++i) CHECK(play[i] < 4.1f);
 
   /* Export every image of both lanes (ordinal 0 = oldest undo … depth = live),
    * tear down, rebuild, and demand byte-identical re-exports: the strongest
