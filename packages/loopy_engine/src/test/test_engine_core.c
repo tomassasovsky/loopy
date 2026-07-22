@@ -9267,22 +9267,29 @@ static void test_perf_render_scripted_log_boundaries(void) {
 }
 
 /* Shared body for the overdub-pass stitching contract, parameterized by loop
- * length (#227 runs it beyond one quantum). Track settled at arm with a base
- * RAMP image; one retired-layer ramp (offset by +2) activates at
- * `retire_frame` — not one loop cycle earlier: a punch-out mid-cycle retires
- * via an async, chunked drain that can land arbitrarily later than
- * "punch-in + one cycle", so the logged retire frame itself is the only
- * value this capture can trust. Frames before it play the pre-pass image;
- * frames from it onward play the retired layer, looped. Ramps (not
- * constants) so a renderer that indexes an image modulo the wrong length
- * (e.g. one quantum) reads a DIFFERENT sample and fails loudly — a constant
- * fill would return the right value from the wrong index. Ramp steps are
- * exact in float32 (the fixture wav is format-3 float), so comparisons stay
- * bitwise against the very buffers the fixtures were written from. */
+ * length (#227 runs it beyond one quantum) and the arm-time loop phase
+ * (`clock_frame`, armSnapshot.clockFrame — #255 runs it nonzero). Track
+ * settled at arm with a base RAMP image; one retired-layer ramp (offset by
+ * +2) activates at `retire_frame` — not one loop cycle earlier: a punch-out
+ * mid-cycle retires via an async, chunked drain that can land arbitrarily
+ * later than "punch-in + one cycle", so the logged retire frame itself is
+ * the only value this capture can trust. Frames before it play the pre-pass
+ * image; frames from it onward play the retired layer — both PHASE-LOCKED
+ * (#255): a layer image is loop-position-indexed and the loop phase is one
+ * continuous counter across the capture, so every frame plays
+ * image[(clock_frame + f) % loop_len], exactly what the performer heard.
+ * Ramps (not constants) so a renderer that indexes an image modulo the
+ * wrong length (e.g. one quantum) or from the wrong phase (segment-relative
+ * index 0, the pre-#255 bug) reads a DIFFERENT sample and fails loudly — a
+ * constant fill would return the right value from the wrong index. Ramp
+ * steps are exact in float32 (the fixture wav is format-3 float), so
+ * comparisons stay bitwise against the very buffers the fixtures were
+ * written from. */
 static void run_perf_render_stitching_case(const char* name, int32_t sr,
                                            int32_t loop_len,
                                            uint64_t capture_frames,
                                            uint64_t retire_frame,
+                                           uint64_t clock_frame,
                                            int wait_polls) {
   const char* dir = render_test_dir(name);
   char loops_dir[700];
@@ -9317,7 +9324,8 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
   char manifest[2048];
   snprintf(manifest, sizeof(manifest),
            "{\"sample_rate\": %d, \"capture_frames\": %llu, "
-           "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
+           "\"armSnapshot\": {\"clockFrame\": %llu, \"tracks\": "
+           "[{\"channel\": 0, \"lanes\": "
            "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
            "\"loops/track0-lane0.wav\"}]}]}, "
            "\"disarmSnapshot\": {\"tracks\": []}, "
@@ -9325,6 +9333,7 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
            "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
            "\"filename\": \"%s\"}]}",
            sr, (unsigned long long)capture_frames,
+           (unsigned long long)clock_frame,
            (unsigned long long)retire_frame, loop_len, layer_name);
   test_write_manifest(dir, manifest);
 
@@ -9347,21 +9356,25 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
 
   const int32_t got = test_read_stem(dir, 0, stem, (int32_t)capture_frames);
   CHECK(got == (int32_t)capture_frames);
-  /* Segment semantics per le_pr_append_segment / the stitch loop
-   * (perf_render.c): each segment plays its image from ITS OWN index 0 at
-   * the segment's start frame — `pos = (f - start) % image_len` — so a
-   * mid-cycle retire plays post[f - retire], not the phase-locked
-   * post[f % loop_len] a live listener heard (the renderer's documented
-   * phase limitation; see the armSnapshot-phase comment in perf_render.c).
-   * The ramp still does its job under this model: a modulo-one-quantum
-   * indexing wrap reads a different ramp sample and fails loudly. */
+  /* Phase-locked segment semantics (#255, le_pr_append_segment / the stitch
+   * loop in perf_render.c): every segment plays its loop-position-indexed
+   * image from the phase live playback had actually reached — the arm image
+   * from `clock_frame` at capture frame 0, and the retired layer from the
+   * phase the loop was at when the retire activated — so every frame is
+   * image[(clock_frame + f) % loop_len], exactly what the performer heard.
+   * The pre-#255 renderer instead restarted each segment at its own index 0
+   * (`pos = (f - start) % image_len`), rotating every mid-cycle retire by
+   * the retire phase; the ramp fill fails loudly on both that rotation and
+   * a modulo-one-quantum indexing wrap. */
   int bad = 0;
   for (uint64_t f = 0; f < retire_frame && f < capture_frames; ++f) {
-    if (stem[f] != pre[f % (uint64_t)loop_len]) bad++; /* pre-pass image */
+    if (stem[f] != pre[(clock_frame + f) % (uint64_t)loop_len]) {
+      bad++; /* pre-pass image, phase-locked to the arm clock */
+    }
   }
   for (uint64_t f = retire_frame; f < capture_frames; ++f) {
-    if (stem[f] != post[(f - retire_frame) % (uint64_t)loop_len]) {
-      bad++; /* retired layer, segment-relative phase */
+    if (stem[f] != post[(clock_frame + f) % (uint64_t)loop_len]) {
+      bad++; /* retired layer, phase-locked continuation */
     }
   }
   CHECK(bad == 0);
@@ -9374,20 +9387,34 @@ static void run_perf_render_stitching_case(const char* name, int32_t sr,
 
 static void test_perf_render_overdub_stitching(void) {
   printf("test_perf_render_overdub_stitching\n");
-  run_perf_render_stitching_case("stitch", 4800, 4, 16, 12, 2000);
+  /* retire_frame 10 is deliberately mid-cycle (10 % 4 == 2, phase 2): a
+   * boundary retire (phase 0) could not tell phase-locked stitching from
+   * the pre-#255 segment-relative rotation. Armed at phase 0. */
+  run_perf_render_stitching_case("stitch", 4800, 4, 16, 10, 0, 2000);
 }
 
 /* The same contract at a loop longer than one quantum (#227): the pre-pass
  * image, the retired layer, and the stem writer all size and index by the
  * real loop length — a one-quantum image buffer would truncate (loud under
  * ASAN), and the ramp fill catches a modulo-one-quantum indexing wrap that
- * stays in bounds. */
+ * stays in bounds. The retire lands mid-cycle (phase 1234), so this also
+ * exercises the #255 phase lock beyond one quantum. */
 static void test_perf_render_stitching_long_loop(void) {
   printf("test_perf_render_stitching_long_loop\n");
   const int32_t loop_len = LE_LAYER_QUANTUM + 2000;
   run_perf_render_stitching_case("stitch_long", 48000, loop_len,
                                  (uint64_t)loop_len * 2,
-                                 (uint64_t)loop_len + 1234, 20000);
+                                 (uint64_t)loop_len + 1234, 0, 20000);
+}
+
+/* The #255 sibling gap: a capture armed MID-LOOP against an already-playing
+ * track (armSnapshot.clockFrame != 0). The arm image must play from
+ * clockFrame at capture frame 0 — pre[(6 + f) % 4], i.e. arm phase 2 — and
+ * the mid-cycle retire at frame 9 must inherit the chained phase
+ * ((6 + 9) % 4 == 3), locking the whole stem to the live phase counter. */
+static void test_perf_render_stitching_mid_loop_arm(void) {
+  printf("test_perf_render_stitching_mid_loop_arm\n");
+  run_perf_render_stitching_case("stitch_armphase", 4800, 4, 16, 9, 6, 2000);
 }
 
 /* Acceptance: a track recorded fresh while armed (absent from armSnapshot,
@@ -10105,15 +10132,15 @@ static void test_perf_render_wet_plugin_passthrough(void) {
 /* Acceptance (the hard gate): drives a REAL engine through a scripted
  * performance under the fixed golden-parity protocol — arm from silence, no
  * monitor inputs, no plugin slots — with overdubbing intentionally absent
- * (arm-image phase alignment against an already-playing track is a
- * documented, separate, pre-existing gap perf_render.c's arm-image handling
- * calls out; arming from silence sidesteps it, matching the plan's own fixed
- * protocol) but real FX engagement/sweep, a volume ride, a mute/unmute, a
- * master-gain change, and the limiter, all via the actual public API so
- * events.log holds genuine engine-emitted entries rather than a hand-typed
- * approximation. Compares the offline-reconstructed master
- * (stems/wet/master.wav) against the live-captured master (master.pcm)
- * sample-by-sample. */
+ * (arm-image phase alignment against an already-playing track is now
+ * phase-locked via armSnapshot.clockFrame, #255, and unit-covered by the
+ * stitching cases above; this golden protocol still arms from silence per
+ * the plan's own fixed protocol) but real FX engagement/sweep, a volume
+ * ride, a mute/unmute, a master-gain change, and the limiter, all via the
+ * actual public API so events.log holds genuine engine-emitted entries
+ * rather than a hand-typed approximation. Compares the offline-reconstructed
+ * master (stems/wet/master.wav) against the live-captured master
+ * (master.pcm) sample-by-sample. */
 static void test_perf_render_golden_master_parity(void) {
   printf("test_perf_render_golden_master_parity\n");
   const char* dir = render_test_dir("golden");
@@ -10474,6 +10501,7 @@ int main(void) {
   test_perf_render_scripted_log_boundaries();
   test_perf_render_overdub_stitching();
   test_perf_render_stitching_long_loop();
+  test_perf_render_stitching_mid_loop_arm();
   test_perf_render_fresh_recorded_while_armed();
   test_perf_render_progress_and_cancel();
   test_perf_render_concurrent_with_live_engine();

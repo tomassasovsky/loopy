@@ -292,6 +292,13 @@ static int le_pr_write_wav_mono(const char* path, const float* samples,
 typedef struct le_pr_manifest {
   int32_t sample_rate;
   uint64_t capture_frames;
+  uint64_t arm_clock_frame;           /* armSnapshot.clockFrame — the master
+                                       * playhead position AT arm (
+                                       * PerformanceArmSnapshot.clockFrame /
+                                       * `snapshot.masterPositionFrames`), i.e.
+                                       * the loop phase capture frame 0 lands
+                                       * on; 0 when armSnapshot is absent or
+                                       * the capture was armed from silence */
   const le_json_value* arm_tracks;    /* armSnapshot.tracks array, or NULL */
   const le_json_value* disarm_tracks; /* disarmSnapshot.tracks array, or NULL */
   const le_json_value* layers;        /* layers array, or NULL */
@@ -338,6 +345,8 @@ static int le_pr_load_manifest(const char* dir, char** out_text,
   out->capture_frames =
       (uint64_t)le_json_number(le_json_get(root, "capture_frames"), 0);
   const le_json_value* arm = le_json_get(root, "armSnapshot");
+  out->arm_clock_frame = (uint64_t)le_json_number(
+      arm != NULL ? le_json_get(arm, "clockFrame") : NULL, 0);
   out->arm_tracks = arm != NULL ? le_json_get(arm, "tracks") : NULL;
   const le_json_value* disarm = le_json_get(root, "disarmSnapshot");
   out->disarm_tracks = disarm != NULL ? le_json_get(disarm, "tracks") : NULL;
@@ -495,6 +504,13 @@ static int le_pr_load_log(const char* dir, le_pr_log_entry** out_entries) {
 
 typedef struct le_pr_segment {
   uint64_t start_frame;
+  uint64_t phase0;   /* loop position (image index) the segment plays from at
+                      * start_frame — stems are PHASE-LOCKED to what the
+                      * performer heard (#255): a layer image is loop-position-
+                      * indexed (buffer index == loop position), and the loop's
+                      * phase is one continuous counter across the whole
+                      * capture, so a segment activating at loop phase p must
+                      * keep playing from image[p], not restart at image[0] */
   float* image;      /* owned; NULL = silence */
   int32_t image_len; /* loop period in frames; meaningless if image is NULL */
 } le_pr_segment;
@@ -518,7 +534,8 @@ typedef struct le_pr_track_build {
 } le_pr_track_build;
 
 static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
-                                 float* image, int32_t image_len) {
+                                 uint64_t phase0, float* image,
+                                 int32_t image_len) {
   if (b->segment_count >= LE_PR_MAX_SEGMENTS) {
     free(image); /* dropped: better a short render than an overflow */
     return;
@@ -531,9 +548,25 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
    * it here. */
   le_pr_segment* seg = &b->segments[b->segment_count++];
   seg->start_frame = start_frame;
+  seg->phase0 = image_len > 0 ? phase0 % (uint64_t)image_len : 0;
   seg->image = image;
   seg->image_len = image_len;
   if (image != NULL) b->has_content = 1;
+}
+
+/* The loop phase (image index) the CURRENT last segment would play at
+ * `frame` — the continuous loop-position counter a new segment activating at
+ * `frame` must inherit to stay phase-locked with live playback (#255). A
+ * build whose last segment is silence (baseline, or post-CLEAR) has no phase
+ * to carry: the next content either starts a fresh loop clock
+ * (le_loop_clock_set_length resets position to 0 at a fresh record-finalize)
+ * or the caller supplies its own anchor (the arm image's clockFrame). */
+static uint64_t le_pr_build_phase_at(const le_pr_track_build* b,
+                                     uint64_t frame) {
+  if (b->segment_count == 0) return 0;
+  const le_pr_segment* seg = &b->segments[b->segment_count - 1];
+  if (seg->image == NULL || seg->image_len <= 0) return 0;
+  return (seg->phase0 + (frame - seg->start_frame)) % (uint64_t)seg->image_len;
 }
 
 /* Renders channel `channel`'s full-length dry stem into a freshly malloc'd
@@ -557,23 +590,19 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * A real arm-time image, when present, simply appends its own segment
    * right after this one at the same frame 0 (superseding it immediately —
    * see le_pr_append_segment's "later transition supersedes" note). */
-  le_pr_append_segment(&build, 0, NULL, 0);
+  le_pr_append_segment(&build, 0, 0, NULL, 0);
 
-  /* KNOWN GAP (pre-existing since part 7, not exercised by this part's
-   * tests): an arm-image segment always starts its content at index 0 —
-   * correct only when the master loop's phase happened to be exactly 0 at
-   * the arm instant. `armSnapshot.clockFrame` (the master playhead position
-   * AT arm, PerformanceArmSnapshot.clockFrame /
-   * `snapshot.masterPositionFrames`) records the true phase whenever a
-   * capture is armed mid-loop against an ALREADY-PLAYING track, but is not
-   * yet read here — the correct index for that case is `(f + clockFrame) %
-   * image_len`, since the loop's phase is one continuous counter across the
-   * whole capture, not something that resets at a segment boundary (verified
-   * against `le_loop_clock_set_length`, which DOES reset position to 0 at a
-   * *fresh* record-finalize — the reason this part's golden-parity protocol
-   * arms from silence and never exercises the mid-loop-arm path is precisely
-   * to sidestep this until it's fixed). Deferred rather than fixed here since
-   * it is outside this part's own acceptance criteria. */
+  /* An arm-image segment starts at the loop phase the track was actually at
+   * when the capture armed: `armSnapshot.clockFrame` (the master playhead
+   * position AT arm) IS capture frame 0's loop position whenever a capture
+   * is armed mid-loop against an ALREADY-PLAYING track, so the correct index
+   * is `(clockFrame + f) % image_len` — the loop's phase is one continuous
+   * counter across the whole capture, not something that resets at a segment
+   * boundary (verified against `le_loop_clock_set_length`, which DOES reset
+   * position to 0 at a *fresh* record-finalize; that path is the RECORD_END
+   * branch below, which correspondingly anchors at phase 0). Fixed alongside
+   * the mid-cycle layer-retire rotation (#255) — both were the same
+   * "segment restarts its image at index 0" root cause. */
   const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
   if (arm_lane != NULL &&
       le_json_bool(le_json_get(arm_lane, "deferred"), 0) == 0) {
@@ -586,7 +615,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         int32_t frames = 0;
         float* image = le_pr_read_wav_mono(path, &frames);
         if (image != NULL) {
-          le_pr_append_segment(&build, 0, image, frames);
+          le_pr_append_segment(&build, 0, m->arm_clock_frame, image, frames);
         } else {
           build.load_failed = 1;
         }
@@ -617,7 +646,11 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
             int32_t frames = 0;
             float* image = le_pr_read_wav_mono(path, &frames);
             if (image != NULL) {
-              le_pr_append_segment(&build, e->frame, image, frames);
+              /* Phase 0 by construction: a fresh record-finalize resets the
+               * loop clock's position to 0 at exactly this frame
+               * (le_loop_clock_set_length), so the freshly recorded content
+               * really does start its cycle here. */
+              le_pr_append_segment(&build, e->frame, 0, image, frames);
             } else {
               build.load_failed = 1;
             }
@@ -674,8 +707,19 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
              * sample-accurate, at the cost of not modeling the sub-cycle
              * moment a live listener would have heard the transition
              * (which isn't logged anywhere and can't be reconstructed from
-             * this capture). */
-            le_pr_append_segment(&build, e->frame, image, frame_count);
+             * this capture).
+             *
+             * The segment inherits the loop phase the track had reached at
+             * the retire frame (#255): a layer image is loop-position-
+             * indexed, and live playback simply kept its position counter
+             * running when the shadow swapped in — a retire at loop phase p
+             * continued from image[p], so restarting the render at image[0]
+             * would rotate the stem by p frames relative to what the
+             * performer heard for every mid-cycle punch-out. Boundary
+             * retires (p == 0) were already exact. */
+            le_pr_append_segment(&build, e->frame,
+                                 le_pr_build_phase_at(&build, e->frame), image,
+                                 frame_count);
           } else {
             build.load_failed = 1;
           }
@@ -685,7 +729,7 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
         break;
       }
     } else if (e->cmd.code == LE_CMD_CLEAR && e->cmd.arg_i == channel) {
-      le_pr_append_segment(&build, e->frame, NULL, 0);
+      le_pr_append_segment(&build, e->frame, 0, NULL, 0);
     }
   }
 
@@ -710,7 +754,12 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
     }
     const le_pr_segment* seg = &build.segments[seg_index];
     if (seg->image != NULL && seg->image_len > 0) {
-      const uint64_t pos = (f - seg->start_frame) % (uint64_t)seg->image_len;
+      /* Phase-locked (#255): the segment's image plays from the loop
+       * position it was actually at when the segment activated, not from
+       * its own index 0 — stems reproduce exactly what the performer
+       * heard. */
+      const uint64_t pos =
+          (seg->phase0 + (f - seg->start_frame)) % (uint64_t)seg->image_len;
       stem[f] = seg->image[pos];
     }
   }
