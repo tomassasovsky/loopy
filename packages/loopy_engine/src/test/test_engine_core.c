@@ -10130,6 +10130,139 @@ static void test_perf_render_wet_plugin_passthrough(void) {
   le_engine_destroy(e);
 }
 
+/* #255 review follow-up (PR #260 finding 1): a track recorded FRESH while
+ * the master already runs finalizes via finalize_new_track
+ * (engine_process.c), which does NOT reset the loop clock — its buffer was
+ * written phase-locked to the RUNNING master (record_pos seeds to
+ * clock.position at record start), so its image is loop-position-indexed
+ * against that clock, and anchoring its RECORD_END segment at phase 0 would
+ * rotate the stem. Drives a REAL engine: track 0 defines a 4-frame master
+ * (finalize -> clock reset at capture frame 4, LOOP_LENGTH_LOCKED logged
+ * there); track 1 then records fresh with the press at master position 1
+ * and the finalize press at position 3. The rendered dry stem for track 1
+ * must match live playback sample-exactly — image[(f - 4) % 4], the master
+ * phase — and the offline master must hold parity with the live-captured
+ * master.pcm, the same criterion as the golden gate below. */
+static void test_perf_render_fresh_midloop_second_track_phase(void) {
+  printf("test_perf_render_fresh_midloop_second_track_phase\n");
+  const char* dir = render_test_dir("midloop2nd");
+  const int32_t sr = 4800;
+  const int32_t loop_len = 4;
+  float out[64];
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 1000);
+  CHECK(le_perf_arm(e, dir) == LE_OK);
+  drain(e);
+
+  /* Track 0 defines the master: frames 0-3 record 0.6, finalize applies at
+   * capture frame 4 (le_loop_clock_set_length resets the master phase to 0
+   * there, and finalize_master logs LOOP_LENGTH_LOCKED + RECORD_END at that
+   * same frame). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  process_const(e, 0.6f, loop_len, out);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  drain(e);
+
+  /* Play to master position 1: frames 4-8 (positions 0,1,2,3,0) — the next
+   * buffer starts at capture frame 9, master position 1. */
+  process_const(e, 0.0f, 4, out);
+  process_const(e, 0.0f, 1, out);
+
+  /* Track 1 records FRESH mid-loop: the press lands at frame 9 (master
+   * position 1), two frames captured (buffer indices 1,2 — writes are
+   * phase-locked to the running master), and the finalize press lands at
+   * frame 11 (position 3): finalize_new_track -> k=1, len 4, NO clock
+   * reset. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  process_const(e, 0.3f, 2, out);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e); /* RECORD_END for channel 1 logged at capture frame 11 */
+
+  /* Both tracks play together: frames 11-18. */
+  process_const(e, 0.0f, 8, out);
+
+  le_snapshot snap;
+  le_engine_get_snapshot(e, &snap);
+  const uint64_t capture_frames = (uint64_t)snap.perf_frames;
+  CHECK(capture_frames == 19);
+
+  /* Export both settled lanes for the disarm snapshot — bit-identical to
+   * the engine's own buffers, exactly what performance_repository's real
+   * _captureSettledLanes does at disarm. Track 1's image is loop-position-
+   * indexed against the running master: [0, 0.3, 0.3, 0]. */
+  float lane0[8] = {0};
+  float lane1[8] = {0};
+  CHECK(le_engine_export_track_lane(e, 0, 0, lane0, 8) == loop_len);
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 8) == loop_len);
+  CHECK(fabsf(lane1[0]) < 1e-6f);
+  CHECK(fabsf(lane1[1] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[2] - 0.3f) < 1e-6f);
+  CHECK(fabsf(lane1[3]) < 1e-6f);
+
+  char wav_path[700];
+  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane0, loop_len, sr);
+  snprintf(wav_path, sizeof(wav_path), "%s/track1-lane0.wav", dir);
+  test_write_wav_mono(wav_path, lane1, loop_len, sr);
+
+  CHECK(le_perf_disarm(e) == LE_OK);
+
+  char manifest[1600];
+  snprintf(manifest, sizeof(manifest),
+           "{\"sample_rate\": %d, \"capture_frames\": %llu, "
+           "\"armSnapshot\": {\"masterGain\": 1.0, \"limiterOn\": false, "
+           "\"limiterCeiling\": 0.99, \"tracks\": []}, "
+           "\"disarmSnapshot\": {\"tracks\": ["
+           "{\"channel\": 0, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track0-lane0.wav\", \"effects\": []}]}, "
+           "{\"channel\": 1, \"volume\": 1.0, \"muted\": false, \"lanes\": "
+           "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
+           "\"track1-lane0.wav\", \"effects\": []}]}]}, "
+           "\"layers\": []}",
+           sr, (unsigned long long)capture_frames);
+  test_write_manifest(dir, manifest);
+
+  CHECK(le_perf_render_begin(e, dir) == LE_OK);
+  test_wait_for_render(e, 5000);
+
+  /* Track 1's dry stem: silence until its RECORD_END at frame 11, then the
+   * image at the MASTER phase — lane1[(f - 4) % 4], what the performer
+   * heard — not the phase-0-anchored lane1[(f - 11) % 4]. */
+  float stem1[32] = {0};
+  CHECK(test_read_stem(dir, 1, stem1, 32) == (int32_t)capture_frames);
+  for (uint64_t f = 0; f < 11; ++f) {
+    CHECK(fabsf(stem1[f]) < 1e-6f);
+  }
+  for (uint64_t f = 11; f < capture_frames; ++f) {
+    CHECK(fabsf(stem1[f] - lane1[(f - 4) % 4]) < 1e-6f);
+  }
+
+  /* Master parity, the golden gate's own criterion. */
+  char pcm_path[700];
+  snprintf(pcm_path, sizeof(pcm_path), "%s/master.pcm", dir);
+  FILE* pf = fopen(pcm_path, "rb");
+  CHECK(pf != NULL);
+  float live[32] = {0};
+  size_t live_n = 0;
+  if (pf != NULL) {
+    live_n = fread(live, sizeof(float), (size_t)capture_frames, pf);
+    fclose(pf);
+  }
+  CHECK(live_n == capture_frames);
+
+  float offline[32] = {0};
+  CHECK(test_read_master_stem(dir, offline, 32) == (int32_t)capture_frames);
+  if (live_n == capture_frames) {
+    for (uint64_t f = 0; f < capture_frames; ++f) {
+      CHECK(fabsf(offline[f] - live[f]) < 1e-4f);
+    }
+  }
+
+  le_engine_destroy(e);
+}
+
 /* Acceptance (the hard gate): drives a REAL engine through a scripted
  * performance under the fixed golden-parity protocol — arm from silence, no
  * monitor inputs, no plugin slots — with overdubbing intentionally absent
@@ -10513,6 +10646,7 @@ int main(void) {
   test_perf_render_multi_channel_dry_fail_isolated();
   test_perf_render_wet_multi_slot_and_count_shrink();
   test_perf_render_wet_plugin_passthrough();
+  test_perf_render_fresh_midloop_second_track_phase();
   test_perf_render_golden_master_parity();
 
   if (g_failures == 0) {

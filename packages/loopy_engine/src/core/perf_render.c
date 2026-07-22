@@ -508,9 +508,17 @@ typedef struct le_pr_segment {
                       * start_frame — stems are PHASE-LOCKED to what the
                       * performer heard (#255): a layer image is loop-position-
                       * indexed (buffer index == loop position), and the loop's
-                      * phase is one continuous counter across the whole
-                      * capture, so a segment activating at loop phase p must
-                      * keep playing from image[p], not restart at image[0] */
+                      * phase runs as a continuous counter between the LOGGED
+                      * transport facts that reset it (LOOP_LENGTH_LOCKED at a
+                      * master finalize), so a segment activating at loop phase
+                      * p must keep playing from image[p], not restart at
+                      * image[0]. RESIDUAL LIMITATION: a mid-capture transport
+                      * hold (nothing playing or recording) pins the live
+                      * clock's position to 0 with NOTHING logged
+                      * (engine_process.c's all-idle branch), so a phase reset
+                      * via all-tracks-idle cannot be reconstructed from this
+                      * capture — sibling of the multi-loop sub-cycle
+                      * ambiguity noted on PR #260 */
   float* image;      /* owned; NULL = silence */
   int32_t image_len; /* loop period in frames; meaningless if image is NULL */
 } le_pr_segment;
@@ -555,18 +563,46 @@ static void le_pr_append_segment(le_pr_track_build* b, uint64_t start_frame,
 }
 
 /* The loop phase (image index) the CURRENT last segment would play at
- * `frame` — the continuous loop-position counter a new segment activating at
- * `frame` must inherit to stay phase-locked with live playback (#255). A
- * build whose last segment is silence (baseline, or post-CLEAR) has no phase
- * to carry: the next content either starts a fresh loop clock
- * (le_loop_clock_set_length resets position to 0 at a fresh record-finalize)
- * or the caller supplies its own anchor (the arm image's clockFrame). */
+ * `frame` — the loop-position counter a new segment activating at `frame`
+ * must inherit to stay phase-locked with live playback (#255). A build whose
+ * last segment is silence (baseline, or post-CLEAR) has no phase to carry:
+ * the next content supplies its own anchor (the arm image's clockFrame, or a
+ * RECORD_END's master phase — le_pr_master_phase_at below). */
 static uint64_t le_pr_build_phase_at(const le_pr_track_build* b,
                                      uint64_t frame) {
   if (b->segment_count == 0) return 0;
   const le_pr_segment* seg = &b->segments[b->segment_count - 1];
   if (seg->image == NULL || seg->image_len <= 0) return 0;
   return (seg->phase0 + (frame - seg->start_frame)) % (uint64_t)seg->image_len;
+}
+
+/* The master-loop phase at capture frame `frame`, reduced modulo `image_len`,
+ * derived from the logged transport facts: LE_PLOG_LOOP_LENGTH_LOCKED is
+ * pushed at the exact frame the master loop length is (re)established AND
+ * the loop clock's position resets to 0 (finalize_master ->
+ * le_loop_clock_set_length, engine_process.c), so the latest lock at or
+ * before `frame` anchors the phase counter. With no lock inside the capture,
+ * the master was already running at arm and armSnapshot.clockFrame anchors
+ * capture frame 0 instead (see the arm-image comment in le_pr_render_track
+ * for that anchor's own staleness caveat, #262). The scan is INCLUSIVE of
+ * `frame` itself so a RECORD_END sharing its exact frame with the lock its
+ * own finalize pushed (finalize_master emits both back-to-back) resolves to
+ * phase 0 regardless of how qsort ordered the same-frame tie. */
+static uint64_t le_pr_master_phase_at(const le_pr_manifest* m,
+                                      const le_pr_log_entry* log,
+                                      int log_count, uint64_t frame,
+                                      int32_t image_len) {
+  if (image_len <= 0) return 0;
+  uint64_t lock_frame = 0;
+  int has_lock = 0;
+  for (int i = 0; i < log_count && log[i].frame <= frame; ++i) {
+    if (log[i].cmd.code == LE_PLOG_LOOP_LENGTH_LOCKED) {
+      lock_frame = log[i].frame;
+      has_lock = 1;
+    }
+  }
+  if (has_lock) return (frame - lock_frame) % (uint64_t)image_len;
+  return (m->arm_clock_frame + frame) % (uint64_t)image_len;
 }
 
 /* Renders channel `channel`'s full-length dry stem into a freshly malloc'd
@@ -592,17 +628,18 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
    * see le_pr_append_segment's "later transition supersedes" note). */
   le_pr_append_segment(&build, 0, 0, NULL, 0);
 
-  /* An arm-image segment starts at the loop phase the track was actually at
-   * when the capture armed: `armSnapshot.clockFrame` (the master playhead
-   * position AT arm) IS capture frame 0's loop position whenever a capture
-   * is armed mid-loop against an ALREADY-PLAYING track, so the correct index
-   * is `(clockFrame + f) % image_len` — the loop's phase is one continuous
-   * counter across the whole capture, not something that resets at a segment
-   * boundary (verified against `le_loop_clock_set_length`, which DOES reset
-   * position to 0 at a *fresh* record-finalize; that path is the RECORD_END
-   * branch below, which correspondingly anchors at phase 0). Fixed alongside
-   * the mid-cycle layer-retire rotation (#255) — both were the same
-   * "segment restarts its image at index 0" root cause. */
+  /* An arm-image segment anchors at `armSnapshot.clockFrame` (the master
+   * playhead near the arm instant), indexing `(clockFrame + f) % image_len`
+   * for a track already playing when the capture armed — fixed alongside the
+   * mid-cycle layer-retire rotation (#255; both were the same "segment
+   * restarts its image at index 0" root cause). KNOWN RESIDUAL (#262): this
+   * anchor is the best the capture records, but it is race-stale —
+   * clockFrame is sampled by the control thread BEFORE lane capture and
+   * manifest I/O, while capture frame 0 only begins when LE_CMD_PERF_ARM
+   * reaches the audio thread, an unbounded I/O gap later — so a mid-loop
+   * arm's stems can still be offset by that arm latency. The exact fix
+   * needs an engine-side transport fact logged when PERF_ARM actually
+   * applies; render-side, this is as good as the data gets. */
   const le_json_value* arm_lane = le_pr_find_lane0(m->arm_tracks, channel);
   if (arm_lane != NULL &&
       le_json_bool(le_json_get(arm_lane, "deferred"), 0) == 0) {
@@ -646,11 +683,23 @@ static float* le_pr_render_track(const char* dir, const le_pr_manifest* m,
             int32_t frames = 0;
             float* image = le_pr_read_wav_mono(path, &frames);
             if (image != NULL) {
-              /* Phase 0 by construction: a fresh record-finalize resets the
-               * loop clock's position to 0 at exactly this frame
-               * (le_loop_clock_set_length), so the freshly recorded content
-               * really does start its cycle here. */
-              le_pr_append_segment(&build, e->frame, 0, image, frames);
+              /* The segment anchors at the MASTER phase at the finalize
+               * frame — NOT always 0. Only the DEFINING track's finalize
+               * (finalize_master, engine_process.c) resets the loop clock;
+               * a track recorded fresh while the master already runs
+               * finalizes via finalize_new_track, which never touches the
+               * clock, and its buffer was WRITTEN phase-locked to the
+               * running master (record_pos seeds to clock.position at
+               * record start), so its image is loop-position-indexed
+               * against that clock. le_pr_master_phase_at derives the
+               * phase from the logged LOOP_LENGTH_LOCKED transport fact
+               * (falling back to the arm clockFrame), and yields 0 for the
+               * defining track by construction — its own finalize logs the
+               * lock at this very frame. */
+              le_pr_append_segment(
+                  &build, e->frame,
+                  le_pr_master_phase_at(m, log, log_count, e->frame, frames),
+                  image, frames);
             } else {
               build.load_failed = 1;
             }
