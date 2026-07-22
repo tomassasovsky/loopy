@@ -7,6 +7,17 @@ control-surface invariant spec ([lib/control/invariants.dart](../../lib/control/
 after every settled step. The same spec runs as debug-mode asserts on every
 pedal frame projection — documentation and enforcement are one artifact.
 
+Two kinds of rules run per step:
+
+- **State invariants** — predicates over one settled state (also asserted at
+  projection time), e.g. `capturing-never-muted`: a recording/overdubbing
+  track is never muted (starting a capture auto-unmutes; a mute issued
+  mid-capture punches out and lands at the capture end).
+- **Transition rules** — predicates over the settled `(pre, post)` pair
+  around one action, fuzz-only (no single frame can check them), e.g.
+  `unpark-on-start`: starting to record or play anything while the transport
+  is held must resume every content track (mutes preserved).
+
 ## Run it
 
 ```sh
