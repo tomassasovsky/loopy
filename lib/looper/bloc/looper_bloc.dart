@@ -17,7 +17,7 @@ part 'looper_event.dart';
 /// translated into the same looper actions.
 class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// Creates a [LooperBloc] backed by [repository], optionally fed by
-  /// [controller] (a MIDI/GPIO foot controller).
+  /// [controller] (a MIDI foot controller).
   LooperBloc({
     required LooperRepository repository,
     ControllerRepository? controller,
