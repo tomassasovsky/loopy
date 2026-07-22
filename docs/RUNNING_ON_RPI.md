@@ -153,10 +153,6 @@ it (config in [`deploy/rpi/`](../deploy/rpi/README.md)):
 The console targets a Pi 5, but the software is portable arm64 + standard
 peripherals and runs on a **Pi 4 Model B 8GB** with no code changes:
 
-- **GPIO** — the 40-pin header is `/dev/gpiochip0` on the Pi 4, which is exactly
-  what `gpio_client` defaults to. (On the Pi 5 the GPIO sits behind the RP1 chip
-  and is often `/dev/gpiochip4`, so the Pi 5 may instead need a chip-path
-  override — the Pi 4 needs none.)
 - **Displays** — Pi 4 has 2× micro-HDMI; labwc/Wayland + `wlr-randr` run on it.
 - **LED driver** — external RP2040 over UART (GPIO14/15), Pi-model-agnostic.
 - **Caveats are performance, not compatibility.** The Pi 4 CPU is ~2–3× slower,
@@ -173,11 +169,10 @@ The console's hardware design lives under [`hardware/`](../hardware):
 - **BOM / shopping list:** [`hardware/loopy_console_shopping_list.md`](../hardware/loopy_console_shopping_list.md)
   (Argentina-sourced) — Pi 5 + active cooler, 16″ touchscreen, **7″ HDMI**
   display, USB interface, footswitches, EC11 encoder, WS2812 ring + strip, the
-  RP2040 LED driver, GPIO-protection passives, and power.
-- **GPIO protection + power/thermal budget + enclosure intent:**
-  [`hardware/console/README.md`](../hardware/console/README.md) — 3.3 V input
-  protection (series-R + RC + optional clamp; active-low to GND), the per-rail
-  power budget, and the active-cooling requirement.
+  RP2040 LED driver, and power.
+- **Power/thermal budget + enclosure intent:**
+  [`hardware/console/README.md`](../hardware/console/README.md) — the per-rail
+  power budget and the active-cooling requirement.
 
 **7″ display decision: HDMI (not DSI).** Both screens are HDMI, so they
 enumerate as `HDMI-A-1` / `HDMI-A-2` and pin cleanly via `wlr-randr` (Part 5's
@@ -225,6 +220,4 @@ and a Pi 5 are available:
 - [ ] **≥2 h thermal soak** (audio + dual-display + GPU, closed enclosure):
       `vcgencmd get_throttled` stays `0x0`, no xrun-rate regression; record
       results here.
-- [ ] **Miswire test**: a 5 V touch to each protected GPIO input does not damage
-      the pin (per `hardware/console/README.md`).
 - [ ] Stompable footswitch panel survives stage-abuse testing.

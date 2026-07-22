@@ -1,7 +1,8 @@
 # VAMP — sheet-metal enclosure for the loopy Pi loopstation
 
 A wedge-shaped welded console that houses this repo's standalone build
-([`loopy_pi_main`](loopy_pi_main_pcb_design.md)) and **integrates ten foot pedals
+(a Raspberry Pi + the V1 [`loopy_pedal_main`](loopy_pedal_pcb_design.md) board)
+and **integrates ten foot pedals
 into the chassis** the way the real "Chewie II" / Sonnit reference does. Form
 (850 × 465 × 100 mm, top sloping toward the player) and layout from the reference;
 internals are this project's. Branded **VAMP**.
@@ -135,15 +136,15 @@ rear earth stud provides the bond point.
 The pedal platforms hang from the walls at the front + CLEAR/BANK rows, so the
 **rear strip of the bottom plate is the clear floor** for the electronics — and the
 16" screen above it is shallow (mounts to the faceplate, ~18 mm deep), leaving head
-height. The **Raspberry Pi and the `loopy_pi_main` board mount there on M3
-standoffs** (≥ `STANDOFF_H` for under-board airflow), linked by the 40-pin ribbon
-(they sit side-by-side per the board doc). The **EC11 ring board** mounts to the
+height. The **Raspberry Pi and the `loopy_pedal_main` board mount there on
+standoffs** (≥ `STANDOFF_H` for under-board airflow), linked over USB (they sit
+side-by-side). The **EC11 ring board** mounts to the
 faceplate underside behind the encoder cutout; the **screens** clamp to the
 faceplate from behind (`screen_bracket`).
 
 The **bottom plate** (`board_mounts()` drives the patterns) is **welded** to the
-wall bottom edges (part of the lower body) and carries: the **Pi** (58 × 49 M3) and
-**`loopy_pi_main` board** (110 × 75 M3, **provisional — confirm vs the board**)
+wall bottom edges (part of the lower body) and carries: the **Pi** (58 × 49) and
+**`loopy_pedal_main` board** (85 × 87 M3, measured from its KiCad)
 standoff holes in the rear; an **intake-vent block** in the clear gap between the
 two platform rows (air crosses the boards to the rear-wall exhaust); and 4 rubber
 feet. The electronics are reached from the **open top** once the lid is lifted.
