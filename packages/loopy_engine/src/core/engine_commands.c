@@ -948,13 +948,35 @@ static int32_t le_restore_clear(le_engine* engine, int32_t channel) {
    * mis-attributed). */
   t->outstanding_count = 0;
   le_mark_state_cmd(t, e.state);
-  le_track_set_len(t, e.len); /* coherent snapshot before the audio applies */
-  store_i32(&t->a_multiple, e.multiple);
+  /* Length and multiple are DELIBERATELY not stored control-side here, unlike
+   * the paths that empty a track. Those publish len 0 up front so a poll can
+   * never catch EMPTY next to a stale nonzero length; this one runs the other
+   * way, so doing the same would publish the restored length while a_state is
+   * still EMPTY — manufacturing the very pair (EMPTY, len > 0) that the host's
+   * 'depths-sane' invariant rejects. handle_restore_clear sets both, in that
+   * order, so the track is only ever seen empty-and-lengthless or
+   * restored-and-sized. Control-side decisions in the gap are safe without it:
+   * le_mark_state_cmd below already makes le_effective_state report the
+   * restored state. */
   le_publish_undo_depth(t);
   store_i32(&t->a_redo_depth, t->redo_count);
   le_plog_push_ctrl(engine,
                     (le_command){.code = LE_PLOG_UNDO, .arg_i = channel});
   return LE_OK;
+}
+
+int32_t le_engine_undo_restores_clear(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return 0;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return 0;
+  }
+  if (channel < 0 || channel >= engine->track_count) return 0;
+  /* Drain first, for the same reason le_engine_undo does: a retire event still
+   * in the ring would push a layer on top of the restore point, making the next
+   * tap a peel rather than a restore. Answering from the undrained stack would
+   * hand the caller a stale verdict it is about to act on. */
+  le_engine_drain_events(engine);
+  return le_history_is_cleared(&engine->tracks[channel]) ? 1 : 0;
 }
 
 int32_t le_engine_undo(le_engine* engine, int32_t channel) {

@@ -112,6 +112,23 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Counts undoable clears separately from destructive ones, so a test can
+  /// tell a user clear (which must leave a way back) from a session-load one.
+  int clearUndoableCalls = 0;
+
+  @override
+  EngineResult clearUndoable({int channel = 0}) {
+    clearUndoableCalls++;
+    return EngineResult.ok;
+  }
+
+  /// What the next [undo] would do; stands in for the engine's restore-point
+  /// bookkeeping.
+  bool undoRestoresClearResult = false;
+
+  @override
+  bool undoRestoresClear({int channel = 0}) => undoRestoresClearResult;
+
   @override
   EngineResult undo({int channel = 0}) {
     undoCalls++;

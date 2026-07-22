@@ -168,6 +168,7 @@ class TrackSnapshot {
     required this.undoDepth,
     required this.rms,
     required this.peak,
+    this.clearRestore = false,
     this.redoDepth = 0,
     this.multiple = 1,
     this.inputMask = 0x1,
@@ -184,6 +185,7 @@ class TrackSnapshot {
       muted = false,
       lengthFrames = 0,
       undoDepth = 0,
+      clearRestore = false,
       redoDepth = 0,
       rms = 0,
       peak = 0,
@@ -208,6 +210,7 @@ class TrackSnapshot {
     muted: native.muted != 0,
     lengthFrames: native.length_frames,
     undoDepth: native.undo_depth,
+    clearRestore: native.clear_restore != 0,
     redoDepth: native.redo_depth,
     rms: native.rms,
     peak: native.peak,
@@ -236,6 +239,14 @@ class TrackSnapshot {
 
   /// Available undo steps (overdub layers).
   final int undoDepth;
+
+  /// Whether the next undo on this track restores a take cleared via
+  /// `clearUndoable` rather than peeling an overdub layer.
+  ///
+  /// A cleared track reports [undoDepth] 0 — its erased take's layers are held
+  /// but not peelable until the restore point above them is undone — so this is
+  /// what says "undo would do something" there.
+  final bool clearRestore;
 
   /// Available redo steps.
   final int redoDepth;

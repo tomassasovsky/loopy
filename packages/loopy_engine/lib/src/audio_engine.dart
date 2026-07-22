@@ -153,9 +153,37 @@ abstract interface class LooperTransport {
   EngineResult play({int channel = 0});
 
   /// Erases track [channel] (and resets the master loop if all tracks empty).
+  ///
+  /// Destructive: the take is gone. This is the session-load / internal-reset
+  /// clear — for a clear the user can take back, see [clearUndoable].
   EngineResult clear({int channel = 0});
 
+  /// Erases track [channel], leaving a restore point: the next [undo] puts the
+  /// take back — content, length, state, mutes, and the master loop if this
+  /// clear reset it — with the erased take's overdub layers still peelable
+  /// beneath it. [redo] then re-clears.
+  ///
+  /// The restore point is an offer, not a promise: it is dropped when a fresh
+  /// recording on this track overwrites the take, and when a fresh recording
+  /// anywhere redefines the master loop the take was cut against. Ask
+  /// [undoRestoresClear] rather than assuming it survived.
+  EngineResult clearUndoable({int channel = 0});
+
+  /// Whether the next [undo] on [channel] would restore a cleared take rather
+  /// than peel an overdub layer or empty the track.
+  ///
+  /// For callers that must put back state the engine does not own (a take's FX
+  /// chains, say). Ask BEFORE undoing — afterwards the answer describes the
+  /// next tap, not the one just made. Prefer this to comparing engine
+  /// snapshots across the call: a snapshot publishes the audio thread's
+  /// state, which does not flip until it applies the restore, so
+  /// before/after inference races. This answer is exact when it returns.
+  bool undoRestoresClear({int channel = 0});
+
   /// Removes the most recent overdub layer on track [channel] (multi-level).
+  ///
+  /// Past the base layer the track empties (redo-ably); on a track cleared via
+  /// [clearUndoable] this restores the take instead — see [undoRestoresClear].
   EngineResult undo({int channel = 0});
 
   /// Re-applies the most recently undone overdub layer on track [channel].

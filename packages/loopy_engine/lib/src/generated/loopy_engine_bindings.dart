@@ -1198,6 +1198,35 @@ class LoopyEngineBindings {
   late final _le_engine_undo = _le_engine_undoPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Whether the NEXT le_engine_undo on `channel` would restore a cleared take
+  /// (1) rather than peel an overdub layer or empty the track (0). Also 0 for an
+  /// invalid channel or a stopped engine.
+  ///
+  /// For a host that has to put back state the engine does not own — the take's FX
+  /// chains, say. Ask BEFORE undoing: afterwards the answer describes the next tap,
+  /// not the one just made. Deriving it from a snapshot instead would race — the
+  /// snapshot publishes a_state, which does not flip until the audio thread applies
+  /// the restore, whereas this reads the control thread's own history stack and is
+  /// exact the moment it returns.
+  int le_engine_undo_restores_clear(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_undo_restores_clear(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_undo_restores_clearPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_undo_restores_clear');
+  late final _le_engine_undo_restores_clear = _le_engine_undo_restores_clearPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   int le_engine_redo(
     ffi.Pointer<le_engine> engine,
     int channel,
