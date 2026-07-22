@@ -6291,6 +6291,23 @@ static int count_near(const float* buf, int n, float want) {
   return hits;
 }
 
+/* Records a defining base loop of exactly `len` frames of `value` (mono).
+ * At real lengths the finalize defers ~10 ms for the seam crossfade, so the
+ * overlap must keep being fed after the second press — this helper owns that
+ * timing dance once (the long-loop siblings of record_base_loop). */
+static void record_long_base_loop(le_engine* e, float value, int32_t len) {
+  le_snapshot s;
+  le_engine_record(e, 0);
+  pump_frames(e, value, len);
+  le_engine_record(e, 0);
+  drain(e);
+  pump_frames(e, value, 600); /* > seam overlap (480 @ 48k) */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == len);
+}
+
 /* Multi-lane dub capture + layer save/load slot mapping at > 1 quantum: both
  * lanes' dub shadows and restored slots must cover the full loop, and
  * finalize_layers' slot mapping must survive a teardown/rebuild with
@@ -6332,31 +6349,54 @@ static void test_multi_lane_long_loop_dub_roundtrip(void) {
   CHECK(depth >= 1); /* the pass (+ a punch-tail sliver at this size) */
 
   /* Live playback sums both dubbed lanes: (1+0.5) + (2+0.25) = 3.75 almost
-   * everywhere. A ~450-frame band at the seam legitimately overshoots (punch
-   * sliver + seam crossfade stack there, measured peak ~4.67) — the exact
-   * fade envelope is the short tests' job, so only a runaway bound here. */
+   * everywhere. A ~450-frame band at the seam legitimately overshoots: the
+   * equal-power seam crossfade (sin/cos weights) applied to fully correlated
+   * DC content peaks at sqrt(2)x mid-fade, so the ceiling is the base sum
+   * 3.0*sqrt(2) = 4.243 plus the 0.75 dub layer = 4.99 (measured 4.67). A
+   * seam-band DOUBLE-application of the dub layer (the #218 bug class) would
+   * reach 3*sqrt(2) + 1.5 = 5.74 — keep the bound between the two. */
   float* play = malloc((size_t)len * sizeof(float));
   CHECK(play != NULL);
+  if (play == NULL) { /* CHECK doesn't halt — avoid the NULL capture */
+    le_engine_destroy(e);
+    return;
+  }
   int got = 0;
   pump_two_lane(e, 0.0f, 0.0f, len, play, &got);
   CHECK(got == len);
   CHECK(count_near(play, len, 3.75f) > (len * 9) / 10);
-  for (int i = 0; i < len; ++i) CHECK(play[i] < 6.0f);
+  for (int i = 0; i < len; ++i) CHECK(play[i] < 5.1f);
 
   /* Export every image of both lanes (ordinal 0 = oldest undo … depth = live),
    * tear down, rebuild, and demand byte-identical re-exports: the strongest
    * phase-independent proof the slot mapping survived at this size. */
   const int images = depth + 1;
   CHECK(images <= 4);
+  if (images > 4) { /* CHECK doesn't halt — bail before overflowing l0/l1 */
+    free(play);
+    le_engine_destroy(e);
+    return;
+  }
   float* l0[4] = {0};
   float* l1[4] = {0};
   for (int o = 0; o < images; ++o) {
     l0[o] = malloc((size_t)len * sizeof(float));
     l1[o] = malloc((size_t)len * sizeof(float));
     CHECK(l0[o] != NULL && l1[o] != NULL);
+    if (l0[o] == NULL || l1[o] == NULL) return;
     CHECK(le_engine_export_layer(e, 0, 0, o, l0[o], len) == len);
     CHECK(le_engine_export_layer(e, 0, 1, o, l1[o], len) == len);
   }
+
+  /* Loop-indexed tail pin: the playback capture above is phase-shifted, so
+   * only exports can address the [quantum, len) region specifically — the
+   * 4% tail a whole-loop histogram can never catch on its own (a dub that
+   * silently stopped at one quantum would still clear the 90% bar). The
+   * punch/seam fade bands (~1500 frames, wherever the phase put them) are
+   * allowed to miss the exact level. */
+  const int tail = len - LE_LAYER_QUANTUM;
+  CHECK(count_near(l0[depth] + LE_LAYER_QUANTUM, tail, 1.5f) > tail - 1500);
+  CHECK(count_near(l1[depth] + LE_LAYER_QUANTUM, tail, 2.25f) > tail - 1500);
 
   le_engine_clear(e, 0);
   drain(e);
@@ -6408,14 +6448,7 @@ static void test_undo_pool_eviction_long_loop(void) {
   le_snapshot s;
 
   const int32_t len = LE_LAYER_QUANTUM + 2000;
-  le_engine_record(e, 0);
-  pump_frames(e, 1.0f, len);
-  le_engine_record(e, 0);
-  drain(e);
-  pump_frames(e, 1.0f, 600);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].length_frames == len);
+  record_long_base_loop(e, 1.0f, len);
 
   /* One continuous overdub held for more wraps than the pool holds; the poll
    * tick between passes collects retires and replenishes spares. */
@@ -6440,9 +6473,18 @@ static void test_undo_pool_eviction_long_loop(void) {
   const float top = 1.0f + 0.5f * (float)passes;
   float* pcm = malloc((size_t)len * sizeof(float));
   CHECK(pcm != NULL);
+  if (pcm == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
   CHECK(le_engine_export_track(e, 0, pcm, len) == len);
   CHECK(count_near(pcm, len, top) > (len * 9) / 10);
   for (int i = 0; i < len; ++i) CHECK(pcm[i] < top + 0.5f + 1e-3f);
+  /* Loop-indexed tail pin (export addresses loop frame 0..len): the 4% tail
+   * past the quantum must carry every pass too, not just clear a whole-loop
+   * histogram; fade bands (~1500 frames) may miss the exact level. */
+  const int tail = len - LE_LAYER_QUANTUM;
+  CHECK(count_near(pcm + LE_LAYER_QUANTUM, tail, top) > tail - 1500);
   CHECK(le_engine_undo(e, 0) == LE_OK);
   CHECK(le_engine_lane_slot_cap_for_test(e, 0, 0, -1) >= len);
   free(pcm);
@@ -6460,14 +6502,7 @@ static void test_record_offset_long_loop(void) {
   le_snapshot s;
 
   const int32_t len = LE_LAYER_QUANTUM + 2000;
-  le_engine_record(e, 0);
-  pump_frames(e, 0.0f, len);
-  le_engine_record(e, 0);
-  drain(e);
-  pump_frames(e, 0.0f, 600);
-  drain(e);
-  le_engine_get_snapshot(e, &s);
-  CHECK(s.tracks[0].length_frames == len);
+  record_long_base_loop(e, 0.0f, len);
 
   CHECK(le_engine_set_record_offset(e, 3) == LE_OK);
   drain(e);
@@ -6487,6 +6522,10 @@ static void test_record_offset_long_loop(void) {
   /* Exactly one hot frame landed; nothing else lit up or clipped. */
   float* pcm = malloc((size_t)len * sizeof(float));
   CHECK(pcm != NULL);
+  if (pcm == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
   CHECK(le_engine_export_track(e, 0, pcm, len) == len);
   int hot = 0;
   for (int i = 0; i < len; ++i) {
@@ -6508,12 +6547,7 @@ static void test_overdub_feedback_long_loop(void) {
   le_snapshot s;
 
   const int32_t len = LE_LAYER_QUANTUM + 2000;
-  le_engine_record(e, 0);
-  pump_frames(e, 1.0f, len);
-  le_engine_record(e, 0);
-  drain(e);
-  pump_frames(e, 1.0f, 600);
-  drain(e);
+  record_long_base_loop(e, 1.0f, len);
 
   CHECK(le_engine_set_overdub_feedback(e, 0.5f) == LE_OK);
   drain(e);
@@ -6529,9 +6563,18 @@ static void test_overdub_feedback_long_loop(void) {
 
   float* pcm = malloc((size_t)len * sizeof(float));
   CHECK(pcm != NULL);
+  if (pcm == NULL) {
+    le_engine_destroy(e);
+    return;
+  }
   CHECK(le_engine_export_track(e, 0, pcm, len) == len);
   CHECK(count_near(pcm, len, 0.5f) > (len * 9) / 10);
   for (int i = 0; i < len; ++i) CHECK(pcm[i] < 1.0f + 1e-3f);
+  /* Loop-indexed tail pin: a decay pass that silently stopped at one quantum
+   * leaves the whole [quantum, len) tail at 1.0 yet still clears the 90%
+   * whole-loop bar — pin the tail itself (fade bands may miss). */
+  const int tail = len - LE_LAYER_QUANTUM;
+  CHECK(count_near(pcm + LE_LAYER_QUANTUM, tail, 0.5f) > tail - 1500);
 
   /* Undo restores the undecayed base across the whole buffer. */
   le_engine_get_snapshot(e, &s);
@@ -9223,112 +9266,52 @@ static void test_perf_render_scripted_log_boundaries(void) {
   le_engine_destroy(e);
 }
 
-/* Acceptance: overdub-pass stitching. Track settled at arm with a constant
- * base image; one retired layer (a different constant) whose retire frame
- * implies a punch-in exactly `loop_len` frames earlier. Frames before the
- * punch-in play the pre-pass (arm) image; frames from the punch-in onward
- * play the retired layer, looped. */
-static void test_perf_render_overdub_stitching(void) {
-  printf("test_perf_render_overdub_stitching\n");
-  const char* dir = render_test_dir("stitch");
-  const int32_t sr = 4800;
-  const int32_t loop_len = 4;
-  const uint64_t capture_frames = 16;
-  const uint64_t retire_frame = 12; /* the new image activates exactly here —
-                                    * not one loop cycle earlier: a punch-out
-                                    * mid-cycle retires via an async, chunked
-                                    * drain that can land arbitrarily later
-                                    * than "punch-in + one cycle", so the
-                                    * logged retire frame itself is the only
-                                    * value this capture can trust */
-
-  char loops_dir[700];
-  snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
-  test_render_mkdir(loops_dir);
-
-  const float pre[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-  char wav_path[700];
-  snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
-  test_write_wav_mono(wav_path, pre, loop_len, sr);
-
-  const float post[4] = {2.0f, 2.0f, 2.0f, 2.0f};
-  char layer_path[700];
-  snprintf(layer_path, sizeof(layer_path), "%s/layer-0-12-1.pcm", dir);
-  test_write_raw_pcm_mono(layer_path, post, loop_len);
-
-  char manifest[2048];
-  snprintf(manifest, sizeof(manifest),
-          "{\"sample_rate\": %d, \"capture_frames\": %llu, "
-          "\"armSnapshot\": {\"tracks\": [{\"channel\": 0, \"lanes\": "
-          "[{\"lane\": 0, \"deferred\": false, \"pcmRef\": "
-          "\"loops/track0-lane0.wav\"}]}]}, "
-          "\"disarmSnapshot\": {\"tracks\": []}, "
-          "\"layers\": [{\"channel\": 0, \"slot\": 1, \"generation\": 0, "
-          "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
-          "\"filename\": \"layer-0-12-1.pcm\"}]}",
-          sr, (unsigned long long)capture_frames,
-          (unsigned long long)retire_frame, loop_len);
-  test_write_manifest(dir, manifest);
-
-  char log_path[700];
-  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
-  FILE* lf = fopen(log_path, "wb");
-  CHECK(lf != NULL);
-  if (lf != NULL) {
-    test_write_log_header(lf, sr);
-    test_write_log_entry(
-        lf, retire_frame,
-        (le_command){.code = LE_PLOG_LAYER_RETIRED,
-                    .evt = {.channel = 0, .slot = 1, .generation = 0}});
-    fclose(lf);
-  }
-
-  le_engine* e = le_engine_create();
-  CHECK(le_perf_render_begin(e, dir) == LE_OK);
-  test_wait_for_render(e, 2000);
-
-  float stem[16];
-  const int32_t got = test_read_stem(dir, 0, stem, 16);
-  CHECK(got == (int32_t)capture_frames);
-  for (uint64_t f = 0; f < retire_frame; ++f) {
-    CHECK(fabsf(stem[f] - 1.0f) < 1e-6f); /* before retire: pre-pass image */
-  }
-  for (uint64_t f = retire_frame; f < capture_frames; ++f) {
-    CHECK(fabsf(stem[f] - 2.0f) < 1e-6f); /* from retire onward: post-pass */
-  }
-
-  le_engine_destroy(e);
-}
-
-/* The stitching contract at a loop longer than one quantum (#227): the
- * pre-pass image, the retired layer, and the stem writer all size and index
- * by the real loop length — a one-quantum image buffer would truncate (loud
- * under ASAN, wrong stem content without it). Short sibling above. */
-static void test_perf_render_stitching_long_loop(void) {
-  printf("test_perf_render_stitching_long_loop\n");
-  const char* dir = render_test_dir("stitch_long");
-  const int32_t sr = 48000;
-  const int32_t loop_len = LE_LAYER_QUANTUM + 2000;
-  const uint64_t capture_frames = (uint64_t)loop_len * 2;
-  const uint64_t retire_frame = (uint64_t)loop_len + 1234;
-
+/* Shared body for the overdub-pass stitching contract, parameterized by loop
+ * length (#227 runs it beyond one quantum). Track settled at arm with a base
+ * RAMP image; one retired-layer ramp (offset by +2) activates at
+ * `retire_frame` — not one loop cycle earlier: a punch-out mid-cycle retires
+ * via an async, chunked drain that can land arbitrarily later than
+ * "punch-in + one cycle", so the logged retire frame itself is the only
+ * value this capture can trust. Frames before it play the pre-pass image;
+ * frames from it onward play the retired layer, looped. Ramps (not
+ * constants) so a renderer that indexes an image modulo the wrong length
+ * (e.g. one quantum) reads a DIFFERENT sample and fails loudly — a constant
+ * fill would return the right value from the wrong index. Ramp steps are
+ * exact in float32 (the fixture wav is format-3 float), so comparisons stay
+ * bitwise against the very buffers the fixtures were written from. */
+static void run_perf_render_stitching_case(const char* name, int32_t sr,
+                                           int32_t loop_len,
+                                           uint64_t capture_frames,
+                                           uint64_t retire_frame,
+                                           int wait_polls) {
+  const char* dir = render_test_dir(name);
   char loops_dir[700];
   snprintf(loops_dir, sizeof(loops_dir), "%s/loops", dir);
   test_render_mkdir(loops_dir);
 
   float* pre = malloc((size_t)loop_len * sizeof(float));
   float* post = malloc((size_t)loop_len * sizeof(float));
-  CHECK(pre != NULL && post != NULL);
+  float* stem = malloc((size_t)capture_frames * sizeof(float));
+  CHECK(pre != NULL && post != NULL && stem != NULL);
+  if (pre == NULL || post == NULL || stem == NULL) {
+    free(pre);
+    free(post);
+    free(stem);
+    return;
+  }
   for (int32_t i = 0; i < loop_len; ++i) {
-    pre[i] = 1.0f;
-    post[i] = 2.0f;
+    pre[i] = 0.25f + (float)(i & 1023) * (1.0f / 2048.0f); /* [0.25, 0.75) */
+    post[i] = 2.0f + (float)(i & 1023) * (1.0f / 2048.0f); /* [2.0, 2.5) */
   }
 
   char wav_path[700];
   snprintf(wav_path, sizeof(wav_path), "%s/track0-lane0.wav", loops_dir);
   test_write_wav_mono(wav_path, pre, loop_len, sr);
+
+  char layer_name[64];
+  snprintf(layer_name, sizeof(layer_name), "layer-%s.pcm", name);
   char layer_path[700];
-  snprintf(layer_path, sizeof(layer_path), "%s/layer-long.pcm", dir);
+  snprintf(layer_path, sizeof(layer_path), "%s/%s", dir, layer_name);
   test_write_raw_pcm_mono(layer_path, post, loop_len);
 
   char manifest[2048];
@@ -9340,9 +9323,9 @@ static void test_perf_render_stitching_long_loop(void) {
            "\"disarmSnapshot\": {\"tracks\": []}, "
            "\"layers\": [{\"channel\": 0, \"slot\": 1, \"generation\": 0, "
            "\"frame\": %llu, \"frame_count\": %d, \"lane_count\": 1, "
-           "\"filename\": \"layer-long.pcm\"}]}",
+           "\"filename\": \"%s\"}]}",
            sr, (unsigned long long)capture_frames,
-           (unsigned long long)retire_frame, loop_len);
+           (unsigned long long)retire_frame, loop_len, layer_name);
   test_write_manifest(dir, manifest);
 
   char log_path[700];
@@ -9360,24 +9343,51 @@ static void test_perf_render_stitching_long_loop(void) {
 
   le_engine* e = le_engine_create();
   CHECK(le_perf_render_begin(e, dir) == LE_OK);
-  test_wait_for_render(e, 20000); /* bigger stem, bigger budget */
+  test_wait_for_render(e, wait_polls);
 
-  float* stem = malloc((size_t)capture_frames * sizeof(float));
-  CHECK(stem != NULL);
   const int32_t got = test_read_stem(dir, 0, stem, (int32_t)capture_frames);
   CHECK(got == (int32_t)capture_frames);
+  /* Segment semantics per le_pr_append_segment / the stitch loop
+   * (perf_render.c): each segment plays its image from ITS OWN index 0 at
+   * the segment's start frame — `pos = (f - start) % image_len` — so a
+   * mid-cycle retire plays post[f - retire], not the phase-locked
+   * post[f % loop_len] a live listener heard (the renderer's documented
+   * phase limitation; see the armSnapshot-phase comment in perf_render.c).
+   * The ramp still does its job under this model: a modulo-one-quantum
+   * indexing wrap reads a different ramp sample and fails loudly. */
   int bad = 0;
-  for (uint64_t f = 0; f < retire_frame; ++f) {
-    if (fabsf(stem[f] - 1.0f) >= 1e-6f) bad++;
+  for (uint64_t f = 0; f < retire_frame && f < capture_frames; ++f) {
+    if (stem[f] != pre[f % (uint64_t)loop_len]) bad++; /* pre-pass image */
   }
   for (uint64_t f = retire_frame; f < capture_frames; ++f) {
-    if (fabsf(stem[f] - 2.0f) >= 1e-6f) bad++;
+    if (stem[f] != post[(f - retire_frame) % (uint64_t)loop_len]) {
+      bad++; /* retired layer, segment-relative phase */
+    }
   }
   CHECK(bad == 0);
-  free(stem);
+
   free(pre);
   free(post);
+  free(stem);
   le_engine_destroy(e);
+}
+
+static void test_perf_render_overdub_stitching(void) {
+  printf("test_perf_render_overdub_stitching\n");
+  run_perf_render_stitching_case("stitch", 4800, 4, 16, 12, 2000);
+}
+
+/* The same contract at a loop longer than one quantum (#227): the pre-pass
+ * image, the retired layer, and the stem writer all size and index by the
+ * real loop length — a one-quantum image buffer would truncate (loud under
+ * ASAN), and the ramp fill catches a modulo-one-quantum indexing wrap that
+ * stays in bounds. */
+static void test_perf_render_stitching_long_loop(void) {
+  printf("test_perf_render_stitching_long_loop\n");
+  const int32_t loop_len = LE_LAYER_QUANTUM + 2000;
+  run_perf_render_stitching_case("stitch_long", 48000, loop_len,
+                                 (uint64_t)loop_len * 2,
+                                 (uint64_t)loop_len + 1234, 20000);
 }
 
 /* Acceptance: a track recorded fresh while armed (absent from armSnapshot,

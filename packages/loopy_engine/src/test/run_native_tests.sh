@@ -13,7 +13,11 @@ cd "$(dirname "$0")/../.."   # src/test -> packages/loopy_engine
 OUT="${TMPDIR:-/tmp}"
 CC="${CC:-gcc}"
 # Extra compile/link flags, e.g. EXTRA_CFLAGS="-fsanitize=address -g" for the
-# CI ASAN job (compile and link happen in one $CC call, so this covers both).
+# CI ASAN job (the engine/MIDI suites compile and link in one $CC call, so one
+# variable covers both). SCOPE: only the engine + MIDI suites below take these
+# flags — the Darwin-only plugin scan/slot builds further down do not, so a
+# sanitized run does NOT cover the plugin host C++. Threading sanitizers
+# through those separate compile+link steps is a follow-up if ever needed.
 EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 # gnu11 (not strict c11) matches the shipped build (CMake C_STANDARD 11 with
 # extensions on) and exposes the POSIX symbols the Linux MIDI backend needs

@@ -1615,13 +1615,13 @@ int32_t le_perf_arm(le_engine* engine, const char* capture_dir) {
   le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
                         engine->perf.log_ctrl_storage,
                         LE_PERF_LOG_CTRL_RING_CAPACITY);
-  /* Same reasoning for the layer-staging ring (part 5) — safe to blindly
-   * re-init (not free-then-init) because a previous session's drain thread
-   * always empties it in its unconditional final drain cycle before
-   * le_perf_drain_stop returns, and le_perf_arm refuses to re-arm at all
-   * while a stale drain thread from a stalled disarm is still alive (the
-   * only scenario where this ring could otherwise still hold live
-   * heap-owned entries). */
+  /* The layer-staging ring (part 5) needs a free-then-init, not a blind
+   * re-init: the previous session's drain thread usually empties it in its
+   * unconditional final drain cycle, but a drain thread that SELF-stopped
+   * (write failure) died before later retires were staged — those entries
+   * still own heap PCM and have no consumer left. le_perf_arm refuses to
+   * run while a stale drain thread is alive, so this pop is race-free. */
+  le_layer_staging_ring_drain_free(&engine->perf.layer_staging_ring);
   le_layer_staging_ring_init(&engine->perf.layer_staging_ring,
                              engine->perf.layer_staging_storage,
                              LE_LAYER_STAGING_RING_CAPACITY);
