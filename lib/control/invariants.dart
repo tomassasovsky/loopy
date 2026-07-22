@@ -14,6 +14,14 @@
 /// formula) rather than importing `control_projection.dart` — a spec that
 /// called the implementation it checks would be tautological.
 ///
+/// Alongside the single-state invariants there is a TRANSITION-rule section
+/// ([controlTransitionRules]): predicates over a settled (pre, post) pair
+/// around one action. These constrain what an action may do (e.g. a start
+/// from a held transport must unpark the whole loop), which no single-state
+/// predicate can express — a deliberate per-track stop is legal, the same
+/// stopped track LEFT BEHIND by a start is not. Only the fuzzer owns a step
+/// boundary, so these are fuzz-checked (not projection-asserted).
+///
 /// History: the pre-refactor spec carried `pin`/`fuzzOnly` tags for rules the
 /// stored-armed-set architecture could not honour at projection time (a
 /// deliberate disarm was indistinguishable from a stale set). With the
@@ -81,6 +89,20 @@ bool _parked(LooperState s) =>
 
 /// The control-surface invariants, most fundamental first.
 final List<ControlInvariant> controlInvariants = [
+  // The auto-unmute rule as a state predicate: a muted track unmutes the
+  // moment it starts recording, and a mute issued mid-capture punches the
+  // capture out (the mute itself lands with the capture end) — so a settled
+  // state NEVER shows a capturing track muted. Recording into silence was
+  // the original bug class (a Stop-muted parked track punched into a silent
+  // overdub).
+  ControlInvariant('capturing-never-muted', (c) {
+    for (final t in c.looper.tracks) {
+      if (t.isCapturing && t.muted) {
+        return 'track ${t.channel} is ${t.state.name} while muted';
+      }
+    }
+    return null;
+  }),
   ControlInvariant('depths-sane', (c) {
     for (final t in c.looper.tracks) {
       if (t.undoDepth < 0 || t.redoDepth < 0) {
@@ -226,6 +248,89 @@ List<String> checkControlInvariants(ControlContext c) => [
   for (final invariant in controlInvariants)
     if (invariant.check(c) case final String message)
       '${invariant.name}: $message',
+];
+
+// ---------------------------------------------------------------------------
+// Transition rules: predicates over a (pre, post) pair of SETTLED states.
+// ---------------------------------------------------------------------------
+
+/// A settled-state pair around one applied action. Unlike [ControlInvariant]
+/// (a single-state predicate, also asserted at projection time), a transition
+/// rule constrains what an ACTION may do — it needs the before picture, so
+/// only the sequence fuzzer (which owns the step boundary) can check it.
+class LooperTransition {
+  /// Creates a [LooperTransition].
+  const LooperTransition({required this.pre, required this.post});
+
+  /// Engine truth settled BEFORE the action.
+  final LooperState pre;
+
+  /// Engine truth settled AFTER the action.
+  final LooperState post;
+}
+
+/// One named transition rule; `null` when satisfied, else a violation
+/// description.
+class ControlTransitionRule {
+  /// Creates a [ControlTransitionRule].
+  const ControlTransitionRule(this.name, this.check);
+
+  /// Stable identifier, used in failure output and corpus annotations.
+  final String name;
+
+  /// Returns `null` when the rule holds for the transition, else a violation
+  /// message.
+  final String? Function(LooperTransition t) check;
+}
+
+/// Whether the transport is HELD: no track is playing, recording, or
+/// overdubbing, so the engine's loop clock sits at the top. Deliberately
+/// wider than [_parked] (which ignores `recording` — a lone defining take
+/// reads as "parked" to the LEDs but the transport is very much active).
+bool _transportHeld(LooperState s) => !s.tracks.any(
+  (t) =>
+      t.state == TrackState.playing ||
+      t.state == TrackState.overdubbing ||
+      t.state == TrackState.recording,
+);
+
+bool _running(Track t) =>
+    t.state == TrackState.playing ||
+    t.state == TrackState.overdubbing ||
+    t.state == TrackState.recording;
+
+/// The transition rules the fuzzer checks around every step.
+final List<ControlTransitionRule> controlTransitionRules = [
+  // The unpark rule: starting to record or play ANYTHING while the transport
+  // is held resumes the ENTIRE loop — after the settle, no content track may
+  // still sit frozen. (Mutes are preserved: unparking un-freezes, it does not
+  // un-silence.) Holds for every surface and every start path: pedal, bloc,
+  // record punch-ins, plain plays, and redo-from-empty resurrection.
+  ControlTransitionRule('unpark-on-start', (t) {
+    if (!_transportHeld(t.pre)) return null;
+    if (!t.pre.tracks.any((tr) => tr.hasContent)) return null;
+    final started = t.post.tracks.any((tr) {
+      final pre = tr.channel < t.pre.tracks.length
+          ? t.pre.tracks[tr.channel]
+          : null;
+      return _running(tr) && (pre == null || !_running(pre));
+    });
+    if (!started) return null;
+    for (final tr in t.post.tracks) {
+      if (tr.hasContent && tr.state == TrackState.stopped) {
+        return 'track ${tr.channel} still parked after a start woke the '
+            'transport';
+      }
+    }
+    return null;
+  }),
+];
+
+/// Evaluates the transition rules against [t]; returns the violations
+/// (`"name: message"`), empty when all hold.
+List<String> checkControlTransitionRules(LooperTransition t) => [
+  for (final rule in controlTransitionRules)
+    if (rule.check(t) case final String message) '${rule.name}: $message',
 ];
 
 /// Assert-mode hook for projection time: throws (listing every violation)
