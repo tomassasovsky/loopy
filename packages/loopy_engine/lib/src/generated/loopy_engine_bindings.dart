@@ -1749,6 +1749,36 @@ class LoopyEngineBindings {
   late final _le_engine_crown_primary = _le_engine_crown_primaryPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop
+  /// press on a non-primary, content-bearing track in BAND mode, deferred
+  /// (quantized) to the next time the PRIMARY track returns to its loop top —
+  /// matching the manual's "quantized to the primary track" section semantics,
+  /// genuinely different from Sync (where non-primary tracks are locked to
+  /// always play, never independently started/stopped). A second call before
+  /// the boundary fires cancels the pending toggle (mirrors le_engine_record's
+  /// quantize-arm toggle shape). Returns LE_ERR_INVALID outside BAND mode, for
+  /// the primary track itself, or for a still-EMPTY track (nothing to
+  /// start/stop — a section reaches this only after its own defining,
+  /// sync-quantized recording has finalized).
+  int le_engine_toggle_section(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_toggle_section(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_toggle_sectionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_toggle_section');
+  late final _le_engine_toggle_section = _le_engine_toggle_sectionPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the click audibility mode (le_click_mode, 0..3). Values outside the
   /// enum return LE_ERR_INVALID. Default off.
   int le_engine_set_click_mode(
@@ -3391,10 +3421,17 @@ enum le_command_code {
   /// (arg_f = track, arg_i = output bitmask)
   LE_CMD_SET_OUTPUT_MASK(15),
 
-  /// arg_i = track: arm a quantized record (fire at loop top)
+  /// arg_i = track: arm a quantized record (fire at loop
+  /// top). arg_f selects the trigger: 0 = grid/loop-top
+  /// (quantize), 1 = input level (auto-record), 2 = Band
+  /// section transport (B3b) -- a play/stop TOGGLE on a
+  /// content-bearing non-primary track, deferred to the
+  /// next primary-track loop top rather than a record
+  /// action; see le_engine_toggle_section.
   LE_CMD_ARM(16),
 
   /// arg_i = track: cancel a pending quantized record
+  /// (any trigger).
   LE_CMD_DISARM(17),
 
   /// arg_i = le_grid_div (tempo_grid.h): 0 off /
