@@ -378,7 +378,9 @@ POST_U     = [610.0, 725.0]        # two posts under the aperture (u 454..796), 
 POST_PW    = 40.0                  # post width (u) -- lateral stability
 POST_PAD   = 30.0                  # top pad length (v) -- bears on the faceplate underside
 POST_FOOTL = 35.0                  # foot flange length (v) -- bolts to the base floor
-POST_FELT  = 2.0                   # compliant cap (felt/rubber): tolerance + anti-rattle
+POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) felt/foam cap on the
+                                   # pad compresses into this ~1 mm when the lid seats -> preloaded,
+                                   # firm, rattle-free contact without jacking the lid.
 POST_TILT  = SLOPE_ANGLE           # pad tilt (deg) so it beds FLUSH on the sloped faceplate underside
 POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
 # The shell is soft 1050 aluminium, but the posts are made in STEEL 1.6 mm: ~3x stiffer
