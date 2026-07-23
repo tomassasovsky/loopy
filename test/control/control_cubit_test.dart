@@ -950,7 +950,7 @@ void main() {
         transport.sent.clear();
 
         // Rec mode (default): the cursor track (0) is red; a playing
-        // non-cursor track is off (green-for-playing is a Play-mode concern).
+        // non-cursor track is off (green-for-playing is a Mute-mode concern).
         setEngine(
           _tracksWith(const [
             Track(), // track 0 (cursor) -> red indicator
