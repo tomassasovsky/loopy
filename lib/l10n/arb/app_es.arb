@@ -882,6 +882,7 @@
     "modeChangeConfirmBody": "Cambiar de modo borra todas las pistas — no hay forma de conservar los loops actuales. ¿Borrar todo y cambiar?",
     "modeChangeConfirmConfirm": "Borrar y cambiar",
     "modeChangeConfirmCancel": "Cancelar",
+    "modeChangeTimedOut": "El cambio de modo tardó demasiado — el borrado aún está terminando. Inténtalo de nuevo en un momento.",
     "oneShotGroupLabel": "UNA VEZ",
     "oneShotIntro": "Una pista de una sola vez se reproduce una vez y se detiene en lugar de repetirse (activo en los modos Free y Song).",
     "a11yTrackPrimary": "Pista principal",

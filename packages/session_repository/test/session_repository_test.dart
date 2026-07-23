@@ -311,6 +311,38 @@ void main() {
       final track1 = bundle.session.tracks.firstWhere((t) => t.channel == 1);
       expect(track0.oneShot, isTrue);
       expect(track1.oneShot, isFalse);
+      // Session-level mirror also carries channel 0, matching the per-track
+      // flag for a content-bearing channel.
+      expect(bundle.session.oneShotChannels, contains(0));
+      expect(bundle.session.oneShotChannels, isNot(contains(1)));
+    },
+  );
+
+  test(
+    'save then read round-trips a One Shot flag pre-armed on a channel with '
+    'NO content (independent review of #295): SessionTrack.oneShot has no '
+    'home for a content-less channel (_capture only builds a SessionTrack '
+    'for a channel with lanes), so it must round-trip through the '
+    'session-level Session.oneShotChannels instead',
+    () async {
+      final source = FakeSessionEngine()
+        // Channel 1 is left empty on purpose — never seeded — while its One
+        // Shot flag is armed, mirroring a user pre-arming Settings > One
+        // Shot before ever recording onto the track.
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..oneShot[0] = true
+        ..oneShot[1] = true;
+      final dir = '${tempDir.path}/oneShotEmpty';
+      await repoFor(source).save(dir);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      // Channel 1 never got a SessionTrack at all (no content) — the old,
+      // pre-fix gap.
+      expect(bundle.session.tracks.any((t) => t.channel == 1), isFalse);
+      // But its flag survived through the content-independent session-level
+      // set, alongside channel 0's (which also has content).
+      expect(bundle.session.oneShotChannels, containsAll([0, 1]));
     },
   );
 
@@ -329,6 +361,7 @@ void main() {
       expect(bundle.session.looperMode, LooperMode.multi);
       expect(bundle.session.primaryTrack, -1);
       expect(bundle.session.tracks.single.oneShot, isFalse);
+      expect(bundle.session.oneShotChannels, isEmpty);
     },
   );
 

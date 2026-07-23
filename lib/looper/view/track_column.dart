@@ -81,6 +81,22 @@ class TrackColumn extends StatelessWidget {
     // column layout never shifts when the mode changes.
     final crownVisible =
         looperMode == LooperMode.sync || looperMode == LooperMode.band;
+    // Built once and placed in whichever branch below applies (console
+    // Stack vs standard Row) — a single construction site means the two
+    // layouts can never diverge on the badge's key/callback wiring (a
+    // console-only regression the per-layout-flavor split would otherwise
+    // let slip past a plain `flutter test` run, since `kConsoleMode` is a
+    // compile-time constant no normal test toggles).
+    final crownBadge = crownVisible
+        ? _CrownBadge(
+            key: Key('tracks_crown_${track.channel}'),
+            isPrimary: isPrimary,
+            color: theme.colorScheme.primary,
+            onCrown: onCrownPrimary == null
+                ? null
+                : () => onCrownPrimary!(track.channel),
+          )
+        : null;
 
     // The track name label. On the console it renders at a uniform, larger
     // size (consistent height across columns; the longest name reaches ~60% of
@@ -151,32 +167,15 @@ class TrackColumn extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: _PendingArmBadge(color: looper.recordColor),
                   ),
-                if (crownVisible)
-                  Align(
-                    alignment: Alignment.topCenter,
-                    child: _CrownBadge(
-                      key: Key('tracks_crown_${track.channel}'),
-                      isPrimary: isPrimary,
-                      color: theme.colorScheme.primary,
-                      onCrown: onCrownPrimary == null
-                          ? null
-                          : () => onCrownPrimary!(track.channel),
-                    ),
-                  ),
+                if (crownBadge != null)
+                  Align(alignment: Alignment.topCenter, child: crownBadge),
               ],
             )
           else
             Row(
               children: [
-                if (crownVisible) ...[
-                  _CrownBadge(
-                    key: Key('tracks_crown_${track.channel}'),
-                    isPrimary: isPrimary,
-                    color: theme.colorScheme.primary,
-                    onCrown: onCrownPrimary == null
-                        ? null
-                        : () => onCrownPrimary!(track.channel),
-                  ),
+                if (crownBadge != null) ...[
+                  crownBadge,
                   const SizedBox(width: 6),
                 ],
                 Text(
