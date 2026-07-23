@@ -186,6 +186,16 @@ class App extends StatelessWidget {
             },
           ),
           BlocProvider(
+            create: (context) {
+              final cubit = TempoCubit(
+                repository: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          BlocProvider(
             // Not lazy: the monitor graph page is the only widget that reads
             // this cubit, but the saved per-input monitors must be applied to
             // the engine at startup — otherwise monitoring stays off until the

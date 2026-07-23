@@ -46,6 +46,12 @@ void main() {
   late RecordOptionsCubit recordOptions;
   late LooperRepository repository;
   late LooperBloc looperBloc;
+  late TempoCubit tempo;
+
+  setUpAll(() {
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(ClickMode.off);
+  });
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -127,6 +133,34 @@ void main() {
       const Stream<LooperState>.empty(),
       initialState: const LooperState(),
     );
+    for (final stub in <void Function()>[
+      () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setTimeSignature(any(), any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setSyncTempo(on: any(named: 'on')),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setQuantizeDiv(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setClickMode(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setClickOutput(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setClickVolume(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setCountIn(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(repository.tapTempo).thenReturn(EngineResult.ok),
+    ]) {
+      stub();
+    }
+    tempo = TempoCubit(repository: repository, settings: settings);
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -153,6 +187,7 @@ void main() {
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
             BlocProvider<LooperBloc>.value(value: looperBloc),
+            BlocProvider<TempoCubit>.value(value: tempo),
           ],
           child: const SettingsPage(),
         ),
@@ -361,6 +396,24 @@ void main() {
     verify(() => repository.setQuantize(enabled: true)).called(1);
   });
 
+  testWidgets('choosing a quantize granularity on the Tempo tab applies it', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
+    await tester.pumpAndSettle();
+    final option = find.byKey(
+      const Key('tempoSettings_quantizeDiv_quarter'),
+    );
+    await tester.ensureVisible(option);
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+
+    expect(tempo.state.quantizeDiv, GridDivision.quarter);
+    verify(() => repository.setQuantizeDiv(GridDivision.quarter)).called(1);
+  });
+
   testWidgets('selecting a section tab shows only that section', (
     tester,
   ) async {
@@ -394,6 +447,16 @@ void main() {
     );
     expect(find.byKey(const Key('settings_trackName_0')), findsNothing);
 
+    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
+    await tester.pumpAndSettle();
+    // The Tempo section renders the BPM control (its own settings surface,
+    // not audio_setup — index plan UI conventions).
+    expect(find.byKey(const Key('tempoSettings_bpm_field')), findsOneWidget);
+    expect(
+      find.byKey(const Key('audioSettings_playbackDevice_picker')),
+      findsNothing,
+    );
+
     // There is no longer a Routing tab — the whole-system signal flow moved to
     // the Signal surface.
     expect(find.byKey(const Key('settings_tab_routing')), findsNothing);
@@ -421,6 +484,7 @@ void main() {
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
             BlocProvider<LooperBloc>.value(value: looperBloc),
+            BlocProvider<TempoCubit>.value(value: tempo),
           ],
           child: MaterialApp(
             theme: AppTheme.neon,

@@ -87,15 +87,16 @@ void main() {
   });
 
   test(
-    'the default tapTempo mapping (CC 84) is recognized but not yet '
-    'actionable — A4b is repository-layer only, bloc wiring lands in A5',
+    'the default tapTempo mapping (CC 84) drives repository.tapTempo',
     () async {
+      when(repository.tapTempo).thenReturn(EngineResult.ok);
       final bloc = LooperBloc(repository: repository, controller: controller);
       addTearDown(bloc.close);
 
       source.pushForTest(_cc, 84, 127);
       await pumpEventQueue();
 
+      verify(repository.tapTempo).called(1);
       verifyNever(() => repository.record());
       verifyNever(() => repository.clear());
     },
