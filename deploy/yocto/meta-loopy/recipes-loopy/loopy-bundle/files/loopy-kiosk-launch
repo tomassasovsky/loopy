@@ -1,0 +1,6 @@
+#!/bin/sh
+# Launch the prebuilt Loopy GTK bundle as a Wayland client under weston.
+# GDK_BACKEND=wayland forces the GTK embedder onto Wayland (not X11/XWayland).
+# LOOPY_CONSOLE is already compiled into the bundle; nothing to pass here.
+export GDK_BACKEND=wayland
+exec /opt/loopy/loopy "$@"

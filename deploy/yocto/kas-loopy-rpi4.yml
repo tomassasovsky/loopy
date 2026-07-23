@@ -1,0 +1,69 @@
+# kas project for the Tier 3a spike (issue #284): a minimal Yocto/weston image
+# for raspberrypi4-64 that runs our PREBUILT Flutter GTK bundle. Build it from an
+# Apple-Silicon Mac with kas-container (native arm64):
+#
+#   ./kas-container build deploy/yocto/kas-loopy-rpi4.yml
+#
+# See deploy/yocto/README.md for the full flow. UNTESTED SCAFFOLD — the recipes
+# below encode the research decisions but need iteration on the build host
+# (blocked-verify per the plan). Branch/versions target scarthgap.
+header:
+  version: 14
+
+distro: poky
+machine: raspberrypi4-64
+
+target:
+  - loopy-kiosk-image
+
+repos:
+  # This repo (contains meta-loopy). No url => the repo holding this kas file.
+  loopy:
+    layers:
+      deploy/yocto/meta-loopy:
+
+  poky:
+    url: https://git.yoctoproject.org/poky
+    branch: scarthgap
+    layers:
+      meta:
+      meta-poky:
+
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    branch: scarthgap
+    layers:
+      meta-oe:
+      meta-python:
+      meta-multimedia:
+
+  meta-raspberrypi:
+    url: https://git.yoctoproject.org/meta-raspberrypi
+    branch: scarthgap
+
+local_conf_header:
+  standard: |
+    CONF_VERSION = "2"
+    PACKAGE_CLASSES = "package_ipk"
+    # Lean image: drop docs/dev/dbg splits for a spike.
+    INHERIT += "rm_work"
+
+  init: |
+    # systemd so we can order the app after weston with a unit.
+    INIT_MANAGER = "systemd"
+
+  rpi-wayland: |
+    # Pi 4 GPU + KMS so Mesa/Wayland/weston work; Wayland desktop features.
+    DISTRO_FEATURES:append = " wayland opengl systemd"
+    DISTRO_FEATURES:remove = " x11"
+    # vc4/v3d KMS is enabled by default on raspberrypi4-64; force GL driver if needed:
+    # RPI_KERNEL_DEVICETREE_OVERLAYS:append = " overlays/vc4-kms-v3d.dtbo"
+
+  loopy: |
+    # Install the prebuilt bundle recipe into the image.
+    IMAGE_INSTALL:append = " loopy-bundle"
+    # REQUIRED: absolute path, reachable INSIDE the build container, to the
+    # prebuilt bundle dir that contains 'loopy' (built by
+    # deploy/rpi/build/build-arm64-bundle.sh). Easiest: copy the bundle under the
+    # repo (e.g. deploy/yocto/prebuilt/bundle) so kas-container's mount sees it.
+    LOOPY_BUNDLE_DIR ?= "${TOPDIR}/../deploy/yocto/prebuilt/bundle"

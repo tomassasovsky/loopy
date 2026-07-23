@@ -137,6 +137,7 @@
     "DEVICECHANGE",
     "diagnosability",
     "discretes",
+    "diskutil",
     "dlfcn",
     "dllexport",
     "dllmain",

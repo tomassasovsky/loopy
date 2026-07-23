@@ -146,3 +146,6 @@ __pycache__/
 
 # graphify knowledge-graph output (generated; rebuild with `graphify update .`)
 graphify-out/
+
+# Tier 3a: staged prebuilt bundle for the Yocto build (binary artifact)
+deploy/yocto/prebuilt/
