@@ -349,6 +349,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
+  /* Free mode (B2b): each track's own clock resets alongside the master's —
+   * a fresh configure/session must never carry a stale established length
+   * from a previous run into the first Free-mode recording. */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    le_loop_clock_reset(&engine->tracks[t].free_clock);
+    engine->tracks[t].free_iteration = 0;
+  }
 
   /* Loop visualization: clear the master + per-track loop rings. */
   engine->loop_viz_bucket = -1;
@@ -358,6 +365,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   }
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     engine->track_viz_accum[t] = 0.0f;
+    engine->track_viz_bucket[t] = -1; /* Free mode (B2b); see field doc */
     for (int i = 0; i < LE_VIZ_POINTS; ++i) {
       store_f32(&engine->a_track_viz[t][i], 0.0f);
     }

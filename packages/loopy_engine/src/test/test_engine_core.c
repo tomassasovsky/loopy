@@ -13913,6 +13913,666 @@ static void test_looper_mode_locked_by_non_zero_track_content(void) {
   le_engine_destroy(e);
 }
 
+/* ---- Free mode per-track clocks (B2b) ----
+ *
+ * Each le_track gains its own le_loop_clock (free_clock), engaged only when
+ * a_looper_mode == LE_LOOPER_MODE_FREE. "Dormant outside Free mode" is
+ * proven by every OTHER test in this file (400+) passing UNCHANGED with the
+ * default MULTI mode -- see the full-suite run this PR's verification
+ * quotes. These tests cover Free mode's own semantics: independent
+ * per-track lengths under staggered/un-synced starts, the one-capturer
+ * hand-off finalizing to each track's OWN clock (not the master, not the
+ * interrupting track), per-track viz, and that no residual Multi-mode
+ * master-clock state can leak into a fresh Free-mode recording. */
+
+/* Records a defining/first take on channel [ch] for [len] silent frames and
+ * lets the seam-crossfade deferral (sr/100 extra frames) land -- mirrors
+ * tg_record_defining_loop but parameterized by channel, because every
+ * Free-mode track's first take goes through the EXACT SAME defining/xfade-
+ * deferred path as Multi mode's track 0 (e->clock.length == 0 is the sole
+ * discriminator handle_record/finalize use, and it never becomes nonzero in
+ * Free mode -- see finalize_master's free_mode branch). */
+static void fm_record_track(le_engine* e, int32_t ch, int32_t len) {
+  le_engine_record(e, ch);
+  tg_advance(e, len);
+  le_engine_record(e, ch); /* queue finalize (defers for the seam crossfade) */
+  tg_advance(e, e->sample_rate / 100);
+}
+
+/* Like fm_record_track but feeds a constant [value] instead of silence, so
+ * the recorded content is trivially distinguishable per track (viz tests). */
+static void fm_advance_value(le_engine* e, float value, int total) {
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = value;
+  while (total > 0) {
+    const int n = total > 64 ? 64 : total;
+    le_engine_process(e, out, in, (uint32_t)n);
+    total -= n;
+  }
+}
+static void fm_record_track_value(le_engine* e, int32_t ch, int32_t len,
+                                  float value) {
+  le_engine_record(e, ch);
+  fm_advance_value(e, value, len);
+  le_engine_record(e, ch);
+  fm_advance_value(e, value, e->sample_rate / 100);
+}
+
+/* A fresh engine, switched into Free mode (every track starts empty, so the
+ * D4 gate accepts it immediately). */
+static le_engine* fm_make_free_engine(int sr) {
+  le_engine* e = tg_make_engine(sr);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_FREE) == LE_OK);
+  tg_advance(e, 1);
+  return e;
+}
+
+static void test_free_mode_defining_recording_sets_own_clock_not_master(void) {
+  printf("test_free_mode_defining_recording_sets_own_clock_not_master\n");
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 1500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 1500);
+  CHECK(s.tracks[0].multiple == 1);
+
+  /* The shared master never moves -- the whole point of Free mode: each
+   * track's defining recording sets ITS OWN clock, not e->clock. */
+  CHECK(s.master_length_frames == 0);
+  CHECK(e->clock.length == 0);
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->loop_iteration == 0);
+
+  /* This track's OWN clock IS established. */
+  CHECK(e->tracks[0].free_clock.length == 1500);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_independent_lengths_prime_wraps(void) {
+  printf("test_free_mode_independent_lengths_prime_wraps\n");
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  /* 8 mutually prime lengths -- distinct primes are trivially coprime, so no
+   * accidental shared period can mask cross-track interference between any
+   * pair. Recorded sequentially (one-capturer): by the time the last track
+   * finalizes, every earlier track has already been PLAYING (and ticking
+   * its own clock) for a different, staggered span -- exactly the
+   * un-synced Free-mode workflow. */
+  const int32_t len[LE_MAX_TRACKS] = {991, 997, 1009, 1013,
+                                      1019, 1021, 1031, 1033};
+  for (int32_t ch = 0; ch < LE_MAX_TRACKS; ++ch) {
+    fm_record_track(e, ch, len[ch]);
+  }
+
+  le_engine_get_snapshot(e, &s);
+  for (int32_t ch = 0; ch < LE_MAX_TRACKS; ++ch) {
+    CHECK(s.tracks[ch].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[ch].length_frames == len[ch]);
+    CHECK(e->tracks[ch].free_clock.length == len[ch]);
+  }
+  /* The shared master stayed dormant through all 8 defining takes. */
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->clock.length == 0);
+
+  /* Snapshot each track's current (already-staggered) position/iteration as
+   * the baseline for one shared batch advance -- every track is PLAYING now,
+   * so this single tg_advance ticks all 8 clocks in lockstep with the SAME
+   * frame count, letting position/iteration be verified against a closed-
+   * form formula instead of a loose bound. */
+  int32_t base_pos[LE_MAX_TRACKS];
+  uint64_t base_iter[LE_MAX_TRACKS];
+  for (int32_t ch = 0; ch < LE_MAX_TRACKS; ++ch) {
+    base_pos[ch] = e->tracks[ch].free_clock.position;
+    base_iter[ch] = e->tracks[ch].free_iteration;
+  }
+
+  /* Long enough for several wrap cycles on both the shortest (991) and the
+   * longest (1033) track. */
+  const int N = 5000;
+  tg_advance(e, N);
+
+  for (int32_t ch = 0; ch < LE_MAX_TRACKS; ++ch) {
+    const int64_t total = (int64_t)base_pos[ch] + N;
+    const int32_t expect_pos = (int32_t)(total % len[ch]);
+    const uint64_t expect_iter = base_iter[ch] + (uint64_t)(total / len[ch]);
+    CHECK(e->tracks[ch].free_clock.position == expect_pos);
+    CHECK(e->tracks[ch].free_iteration == expect_iter);
+    CHECK(expect_iter >= base_iter[ch] + 3); /* several wraps happened */
+  }
+
+  /* The shared master / loop_iteration never moved across the whole run. */
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->clock.length == 0);
+  CHECK(e->loop_iteration == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_one_capturer_handoff_finalizes_to_own_length(void) {
+  printf("test_free_mode_one_capturer_handoff_finalizes_to_own_length\n");
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  /* Track 0 already has its own established length from an earlier take. */
+  fm_record_track(e, 0, 2000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == 2000);
+  const int32_t track0_len_before = e->tracks[0].free_clock.length;
+
+  /* Track 1 starts its OWN defining recording -- left in flight (not
+   * finalized). */
+  le_engine_record(e, 1);
+  tg_advance(e, 400);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* Track 0 (already established) starts an overdub punch-in: the
+   * one-capturer hand-off (close_active_capture -- unconditional and mode-
+   * agnostic, the same "single input stream" invariant Multi mode relies
+   * on) finalizes track 1's in-flight recording RIGHT HERE, to ITS OWN
+   * clock -- not track 0's length, not any shared master. */
+  le_engine_record(e, 0);
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].length_frames == 400);
+  CHECK(e->tracks[1].free_clock.length == 400);
+  CHECK(e->tracks[1].free_clock.length != track0_len_before);
+
+  /* Track 0's own clock is untouched by the hand-off: it moved to
+   * OVERDUBBING, not a re-finalize. */
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(e->tracks[0].free_clock.length == track0_len_before);
+
+  /* The shared master never existed and still doesn't. */
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->clock.length == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_no_residual_multi_mode_state(void) {
+  printf("test_free_mode_no_residual_multi_mode_state\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  /* Establish real Multi-mode master-clock state first. */
+  tg_record_defining_loop(e, 2000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+  CHECK(s.master_length_frames == 2000);
+  CHECK(e->clock.length == 2000);
+
+  /* Clear back to all-empty -- the only way to release the D4 lock -- via
+   * the existing, unmodified handle_clear all-empty reset. */
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+  CHECK(e->clock.length == 0);
+
+  /* Switch into Free mode (only possible now that everything is empty). */
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_FREE) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_FREE);
+
+  /* A fresh Free-mode defining recording, at a DIFFERENT length than the
+   * old Multi-mode master -- if any stale master-clock state leaked in, this
+   * would either misread the old 2000-frame grid or corrupt the new take. */
+  fm_record_track(e, 0, 1500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_frames == 1500);
+  CHECK(e->tracks[0].free_clock.length == 1500);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 0);
+  CHECK(load_i32(&e->a_master_len) == 0); /* never re-established */
+  CHECK(e->clock.length == 0);
+  CHECK(e->loop_iteration == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_overdub_writes_own_position(void) {
+  printf("test_free_mode_overdub_writes_own_position\n");
+  /* Regression pin for the mix_tracks_frame fix: before it, an overdub
+   * write's target index (wdub) defaulted to 0 whenever the shared master
+   * was dormant (e->clock.length == 0, i.e. always in Free mode) instead of
+   * this track's own comp_pos(trk_pos, offset, trk_len) -- corrupting frame
+   * 0 every sample instead of writing at the punched-in position. Feeds a
+   * LOUD, distinguishable overdub value (not silence) so a stray write at
+   * the wrong index is actually detectable, not masked by "0 * gain == 0". */
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track_value(e, 0, 900, 0.5f);
+  /* Run the loop around a few times so the write head is nowhere near frame
+   * 0 when the punch-in below lands. */
+  tg_advance(e, 2200); /* several full loops past position 0 */
+
+  le_engine_record(e, 0); /* punch-in: PLAYING -> OVERDUBBING */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  const int32_t punch_pos = e->tracks[0].free_clock.position;
+  CHECK(punch_pos > 0 && punch_pos < 900); /* not sitting at the loop top */
+
+  /* Overdub a loud constant for a short, bounded span (long enough for the
+   * ~10-frame punch-in fade to fully ramp), then punch back out. */
+  fm_advance_value(e, 1.0f, 50);
+  le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
+  fm_advance_value(e, 0.0f, e->sample_rate / 100 + 5); /* let the fade settle */
+
+  const int32_t live = load_i32(&e->tracks[0].lanes[0].a_live);
+  const float* buf = e->tracks[0].lanes[0].pool[live];
+  CHECK(buf != NULL);
+
+  /* The overdub landed at THIS track's own punched-in position (fully
+   * ramped by now: original 0.5f loop content + 1.0f * unity overdub gain),
+   * not at index 0. classic additive overdub (overdub_fb == 1.0 default). */
+  const int32_t mid = (punch_pos + 20) % 900; /* deep in the fully-ramped window */
+  CHECK(buf[mid] > 1.3f);
+  CHECK(buf[mid] < 1.7f);
+
+  /* Frame 0 (and every frame far from the punch window) must be untouched
+   * -- still exactly the original 0.5f recording, not corrupted by writes
+   * that used to land unconditionally at index 0. */
+  CHECK(fabsf(buf[0] - 0.5f) < 1e-6f);
+  CHECK(fabsf(buf[10] - 0.5f) < 1e-6f);
+  CHECK(fabsf(buf[899] - 0.5f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_per_track_viz_independent(void) {
+  printf("test_free_mode_per_track_viz_independent\n");
+  le_engine* e = fm_make_free_engine(1000);
+
+  /* Two tracks, distinct lengths and distinct constant content so their
+   * waveforms are trivially distinguishable. */
+  fm_record_track_value(e, 0, 900, 0.8f);
+  fm_record_track_value(e, 1, 1100, 0.3f);
+
+  /* Both tracks are now PLAYING; run long enough for each to sweep its own
+   * full length (publishing every viz bucket at least once). */
+  tg_advance(e, 2500);
+
+  float tviz0[LE_VIZ_POINTS];
+  float tviz1[LE_VIZ_POINTS];
+  CHECK(le_engine_read_track_visual(e, 0, tviz0, LE_VIZ_POINTS) == LE_VIZ_POINTS);
+  CHECK(le_engine_read_track_visual(e, 1, tviz1, LE_VIZ_POINTS) == LE_VIZ_POINTS);
+
+  /* Each track's own waveform captured ITS OWN content level -- bucketed
+   * against its OWN clock (free_track_viz_tap_frame), not the master's
+   * (which would never publish anything: e->clock.length stays 0). */
+  CHECK(max_of(tviz0, LE_VIZ_POINTS) > 0.79f);
+  CHECK(max_of(tviz0, LE_VIZ_POINTS) < 0.81f);
+  CHECK(max_of(tviz1, LE_VIZ_POINTS) > 0.29f);
+  CHECK(max_of(tviz1, LE_VIZ_POINTS) < 0.31f);
+
+  /* The MASTER waveform is never touched in Free mode -- there is no single
+   * shared loop to visualize (viz_tap_frame's own e->clock.length > 0 gate
+   * stays false for the whole run). */
+  float loopviz[LE_VIZ_POINTS];
+  le_engine_read_visual(e, loopviz, LE_VIZ_POINTS);
+  CHECK(max_of(loopviz, LE_VIZ_POINTS) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* ---- Free mode (B2b): adversarial-review follow-up fixes + coverage ----
+ *
+ * A 13-agent five-lens adversarial review of the original B2b commit found
+ * two real defects (BUG 1, BUG 2 below) -- the same bug class as the wdub/
+ * od_fade_on fix above (a sibling function reading the permanently-dormant
+ * e->clock instead of a Free-mode track's own free_clock), just in code the
+ * first pass didn't touch -- plus several already-correct-by-inspection
+ * paths that had zero direct test coverage. This section fixes both real
+ * bugs and closes every coverage gap the review flagged. */
+
+static void test_free_mode_dub_layer_retires_not_stuck(void) {
+  printf("test_free_mode_dub_layer_retires_not_stuck\n");
+  /* Regression pin for BUG 1 (adversarial review, empirically proven with a
+   * throwaway repro): le_dub_block_update used to read `base` ONCE from the
+   * permanently-dormant e->clock.length instead of the track's own
+   * free_clock.length, so the post-punch-out drain guards (base > 0) could
+   * never pass for a Free-mode track -- a_layer_in_flight got stuck at 1
+   * forever: the undo layer never retires (permanently un-undoable) and its
+   * dub_slot never returns to the shared bounded pool (a real-time-thread
+   * resource leak that eventually starves future overdub captures). */
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 900);
+
+  /* Punch in, overdub LESS than a full lap (a partially-covered shadow --
+   * exactly the path le_dub_block_update's drain exists for), punch out. */
+  le_engine_record(e, 0); /* PLAYING -> OVERDUBBING */
+  fm_advance_value(e, 0.3f, 50);
+  le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
+
+  /* Let the punch-out fade tail fully decay (od_gain -> 0) so the block
+   * update's "still writing" guard clears and the drain can proceed. */
+  tg_advance(e, e->sample_rate / 100 + 5);
+
+  settle_layers(e); /* the reviewer's exact repro shape */
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].layer_in_flight == 0); /* was stuck at 1 before the fix */
+  CHECK(e->tracks[0].dub_slot == -1);      /* the shadow slot returned to the pool */
+  CHECK(e->tracks[0].dub_retire_slot == -1);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_commit_session_rejected_leaves_master_dormant(void) {
+  printf("test_free_mode_commit_session_rejected_leaves_master_dormant\n");
+  /* Regression pin for BUG 2 (adversarial review): le_engine_commit_session
+   * used to post LE_CMD_COMMIT_SESSION unconditionally, which would set
+   * e->clock/a_master_len to a nonzero value even while a_looper_mode ==
+   * FREE -- violating the invariant every other Free-mode code path in this
+   * file depends on staying dormant. Covers BOTH layers of the fix: the
+   * control-thread wrapper's synchronous rejection, and the audio-thread
+   * handler's own defensive guard (for a raw ring push that bypasses the
+   * wrapper entirely -- the real escape hatch, le_engine_post_command,
+   * additionally requires a_running, i.e. a live device, so it cannot be
+   * exercised in this device-free harness; le_push is the same "post
+   * straight onto the ring" primitive minus that requirement, gated only on
+   * a_configured like every other control-thread wrapper here, and is
+   * exactly what le_engine_commit_session itself calls once past the new
+   * guard). */
+  le_engine* e = fm_make_free_engine(1000);
+
+  /* Layer 1: the normal wrapper rejects synchronously, before posting. */
+  CHECK(le_engine_commit_session(e, 2000) == LE_ERR_INVALID);
+  tg_advance(e, 1);
+  CHECK(e->clock.length == 0);
+  CHECK(load_i32(&e->a_master_len) == 0);
+
+  /* Layer 2: even a raw post (bypassing the wrapper) is declined audio-side. */
+  CHECK(le_push(e, LE_CMD_COMMIT_SESSION, 2000, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(e->clock.length == 0);
+  CHECK(load_i32(&e->a_master_len) == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_stopped_track_freezes_phase(void) {
+  printf("test_free_mode_stopped_track_freezes_phase\n");
+  /* GAP 3: advance_track_clock_frame's state gate (only ticks while PLAYING
+   * or OVERDUBBING, explicitly excluding STOPPED) had zero direct coverage. */
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 900);
+  tg_advance(e, 250); /* move well off position 0 */
+
+  const int32_t pos_before_stop = e->tracks[0].free_clock.position;
+  const uint64_t iter_before_stop = e->tracks[0].free_iteration;
+  CHECK(pos_before_stop > 0);
+
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  /* Advance substantially while stopped -- the track's own clock must NOT
+   * tick during any of this. */
+  tg_advance(e, 5000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(e->tracks[0].free_clock.position == pos_before_stop);
+  CHECK(e->tracks[0].free_iteration == iter_before_stop);
+
+  /* Resume: playback picks up from EXACTLY where it paused, not advanced by
+   * the stopped duration. */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[0].free_clock.position == (pos_before_stop + 1) % 900);
+
+  le_engine_destroy(e);
+}
+
+/* GAP 4: the defensive free_clock/free_iteration/track_viz_bucket resets in
+ * handle_clear / LE_CMD_UNDO_TO_EMPTY / LE_CMD_REDO_FROM_EMPTY /
+ * LE_CMD_RESTORE_CLEAR were correct by code-tracing but had zero direct
+ * coverage. Four small tests, each with two Free-mode tracks (distinct
+ * lengths, both advanced off position 0): drive one lifecycle path on track
+ * 0, assert it resets/restores correctly AND track 1 is byte-for-byte
+ * unaffected (catches both over-reset and under-reset). */
+
+static void test_free_mode_clear_resets_targeted_track_only(void) {
+  printf("test_free_mode_clear_resets_targeted_track_only\n");
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 991);
+  fm_record_track(e, 1, 997);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+  CHECK(sib_pos > 0);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  tg_advance(e, 1); /* the clear lands, and the sibling ticks once more */
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(e->tracks[0].free_clock.length == 0);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 0);
+  CHECK(e->track_viz_bucket[0] == -1);
+
+  /* Sibling is byte-for-byte unaffected, aside from its own natural tick. */
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos + 1);
+  CHECK(e->tracks[1].free_iteration == sib_iter);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_undo_to_empty_resets_targeted_track_only(void) {
+  printf("test_free_mode_undo_to_empty_resets_targeted_track_only\n");
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 991);
+  fm_record_track(e, 1, 997);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+
+  /* Track 0 has no overdub layers -- undoing the base recording itself
+   * empties it (le_engine_undo's undo_count == 0 path -> LE_CMD_UNDO_TO_EMPTY). */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(e->tracks[0].free_clock.length == 0);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 0);
+  CHECK(e->track_viz_bucket[0] == -1);
+
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos + 1);
+  CHECK(e->tracks[1].free_iteration == sib_iter);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_redo_from_empty_restores_targeted_track_only(void) {
+  printf("test_free_mode_redo_from_empty_restores_targeted_track_only\n");
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 991);
+  fm_record_track(e, 1, 997);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos_before = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter_before = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* -> EMPTY, redo stack holds the base take */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* -> LE_CMD_REDO_FROM_EMPTY */
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 991);
+  /* THIS track's own clock is freshly re-established at its original length
+   * -- not left dormant, and not resurrecting whatever position/iteration
+   * it happened to be at before the undo (fresh position 0, one tick having
+   * landed by the frame the redo applies). */
+  CHECK(e->tracks[0].free_clock.length == 991);
+  CHECK(e->tracks[0].free_clock.position == 1);
+  CHECK(e->tracks[0].free_iteration == 0);
+
+  /* Sibling: two more of its own ticks landed (the undo's block, the redo's
+   * block) -- completely unaffected by track 0's whole undo/redo round trip. */
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos_before + 2);
+  CHECK(e->tracks[1].free_iteration == sib_iter_before);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_restore_clear_restores_targeted_track_only(void) {
+  printf("test_free_mode_restore_clear_restores_targeted_track_only\n");
+  le_engine* e = fm_make_free_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 991);
+  fm_record_track(e, 1, 997);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos_before = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter_before = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK); /* -> EMPTY, restore point stacked */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(e->tracks[0].free_clock.length == 0); /* handle_clear's reset, proven above */
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* history is cleared -> LE_CMD_RESTORE_CLEAR */
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 991);
+  CHECK(e->tracks[0].free_clock.length == 991);
+  CHECK(e->tracks[0].free_iteration == 0);
+
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos_before + 2);
+  CHECK(e->tracks[1].free_iteration == sib_iter_before);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_playback_output_scans_own_position(void) {
+  printf("test_free_mode_playback_output_scans_own_position\n");
+  /* GAP 5: pins the mix_tracks_frame READ side specifically (loopsample =
+   * lbuf[seg_base[t] + trk_pos[t]]) via the AUDIBLE OUTPUT (out[]), not just
+   * the raw write buffer the earlier overdub test checks -- a revert of
+   * just that one read line (leaving the write side correct) would silently
+   * stick Free-mode playback at position-0 content forever, and nothing
+   * else in this suite would catch it. */
+  le_engine* e = fm_make_free_engine(1000);
+
+  /* Two distinguishable halves of an 800-frame loop. The seam-crossfade
+   * deferral (finalize press, below) is fed the SAME value as the head
+   * (0.2f) so the equal-gain blend of "continuation" into "head" over the
+   * first few frames stays a clean 0.2f rather than smearing toward
+   * whatever the deferral window happened to capture. */
+  le_engine_record(e, 0);
+  fm_advance_value(e, 0.2f, 400); /* first half: buf[0..399] */
+  fm_advance_value(e, 0.9f, 400); /* second half: buf[400..799] */
+  le_engine_record(e, 0);         /* finalize (defers for the seam crossfade) */
+  fm_advance_value(e, 0.2f, e->sample_rate / 100);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 800);
+
+  float in[1] = {0.0f};
+  float out[1];
+
+  /* Rewind to the loop top (a whole number of laps) so the next frame reads
+   * index 0 of the first half. */
+  const int32_t pos_now = e->tracks[0].free_clock.position;
+  tg_advance(e, (800 - pos_now) % 800);
+  CHECK(e->tracks[0].free_clock.position == 0);
+
+  le_engine_process(e, out, in, 1); /* reads index 0: first half */
+  CHECK(fabsf(out[0] - 0.2f) < 1e-5f);
+
+  /* Advance to the middle of the loop (index 400: second half) and sample
+   * the output there too -- proves the read position actually moved. */
+  tg_advance(e, 399); /* one frame already consumed by the process() above */
+  CHECK(e->tracks[0].free_clock.position == 400);
+  le_engine_process(e, out, in, 1);
+  CHECK(fabsf(out[0] - 0.9f) < 1e-5f);
+
+  le_engine_destroy(e);
+}
+
+static void test_free_mode_punch_in_ramps_not_hard_cuts(void) {
+  printf("test_free_mode_punch_in_ramps_not_hard_cuts\n");
+  /* GAP 6: pins that od_fade_on's per-track fix (trk_len[t] instead of the
+   * master's always-0 length) actually keeps the punch fade RAMPING in Free
+   * mode rather than hard-cutting -- sampled at the punch edge itself
+   * (the FIRST overdubbed frame), where a missing ramp (od_gain snapping
+   * straight to the 1.0 target) is indistinguishable from a correct one by
+   * the time content is read deep into the window, as the existing test
+   * does. */
+  le_engine* e = fm_make_free_engine(1000);
+
+  fm_record_track_value(e, 0, 900, 0.5f);
+  tg_advance(e, 100); /* off position 0, not near the loop top */
+
+  le_engine_record(e, 0);       /* PLAYING -> OVERDUBBING */
+  fm_advance_value(e, 1.0f, 1); /* exactly the FIRST overdubbed frame */
+
+  const int32_t live = load_i32(&e->tracks[0].lanes[0].a_live);
+  const float* buf = e->tracks[0].lanes[0].pool[live];
+  CHECK(buf != NULL);
+
+  /* At the very first punched-in frame, od_gain has ramped only ONE step
+   * (od_step = 1 / od_fade_frames = 0.1 at this sample rate): a hard cut
+   * would already read ~1.5 (0.5 + 1.0*1.0) here; a missing gate would read
+   * exactly 0.5 (no overdub at all); a correct ramp reads ~0.6. */
+  const int32_t punch_idx = 100; /* position was 100 when the punch landed */
+  CHECK(buf[punch_idx] > 0.5f);
+  CHECK(buf[punch_idx] < 0.7f);
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -14241,6 +14901,21 @@ int main(void) {
   test_looper_mode_switch_accepted_when_empty();
   test_looper_mode_locked_with_content();
   test_looper_mode_locked_by_non_zero_track_content();
+  test_free_mode_defining_recording_sets_own_clock_not_master();
+  test_free_mode_independent_lengths_prime_wraps();
+  test_free_mode_one_capturer_handoff_finalizes_to_own_length();
+  test_free_mode_no_residual_multi_mode_state();
+  test_free_mode_overdub_writes_own_position();
+  test_free_mode_per_track_viz_independent();
+  test_free_mode_dub_layer_retires_not_stuck();
+  test_free_mode_commit_session_rejected_leaves_master_dormant();
+  test_free_mode_stopped_track_freezes_phase();
+  test_free_mode_clear_resets_targeted_track_only();
+  test_free_mode_undo_to_empty_resets_targeted_track_only();
+  test_free_mode_redo_from_empty_restores_targeted_track_only();
+  test_free_mode_restore_clear_restores_targeted_track_only();
+  test_free_mode_playback_output_scans_own_position();
+  test_free_mode_punch_in_ramps_not_hard_cuts();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
