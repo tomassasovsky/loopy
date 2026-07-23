@@ -455,6 +455,19 @@ class SessionRepository {
       // construction (D18; [LooperModeControl]'s class doc).
       looperMode: snapshot.looperMode,
       primaryTrack: snapshot.primaryTrack,
+      // One Shot, per channel (post-B5c independent review fix): read
+      // straight off `snapshot.tracks` — EVERY channel, unconditional on
+      // `state`/`lengthFrames` — rather than off `captured.tracks` (which
+      // the loop above only builds for a settled, content-bearing channel).
+      // `LooperModeControl.setOneShot` is explicitly "not gated by the D4
+      // content lock" and settable on an empty track in advance of
+      // recording, so this is the one content-independent home the flag
+      // needs to round-trip a pre-armed-but-empty channel through save/load
+      // — see [Session.oneShotChannels]'s doc.
+      oneShotChannels: [
+        for (var i = 0; i < snapshot.tracks.length; i++)
+          if (snapshot.tracks[i].oneShot) i,
+      ],
     );
   }
 

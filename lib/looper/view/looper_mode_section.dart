@@ -55,7 +55,11 @@ class LooperModeSection extends StatelessWidget {
   /// clear, then switch — on an explicit confirm. Never dispatches the mode
   /// change without either condition holding, so the engine's silent D4
   /// no-op can never surface as a picker that "did nothing" for no visible
-  /// reason.
+  /// reason — and on the (rare) bounded-wait timeout, where the dispatch is
+  /// withheld for the same reason, a SnackBar makes that outcome visible too
+  /// (independent review of #295: the confirm dialog is already dismissed by
+  /// then, so without it the timeout looked identical to a tap that never
+  /// registered).
   static Future<void> _requestModeChange(
     BuildContext context, {
     required LooperMode current,
@@ -107,12 +111,28 @@ class LooperModeSection extends StatelessWidget {
     // Re-check rather than dispatching unconditionally: on the (rare) timeout
     // path above, content may still be present — dispatching anyway would
     // recreate the exact silent D4 no-op this whole flow exists to prevent.
-    // Skipping leaves the picker showing the still-current mode, a visible
-    // (not silent) "it didn't switch" rather than a misleading dispatch the
-    // engine quietly drops.
     if (!bloc.state.hasContent) {
       bloc.add(LooperModeChanged(next));
+      return;
     }
+    // The confirm dialog is already gone (popped above) and the picker's own
+    // state is unchanged, so without an explicit signal here the timeout is
+    // indistinguishable from "my tap didn't register" — surface it with a
+    // SnackBar (matching `tracks_commands.dart`'s `showSessionOutcome`
+    // convention for other transient outcomes) so the user knows to retry
+    // rather than silently getting nothing.
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          key: const Key('looperMode_timeout_snackbar'),
+          content: Semantics(
+            liveRegion: true,
+            child: Text(context.l10n.modeChangeTimedOut),
+          ),
+        ),
+      );
   }
 }
 

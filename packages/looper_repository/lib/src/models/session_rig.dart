@@ -137,6 +137,7 @@ class SessionRig {
     this.monitors = const [],
     this.looperMode = LooperMode.multi,
     this.primaryTrack = -1,
+    this.oneShotChannels = const {},
   });
 
   /// The base (master) loop length in frames; `0` for an empty session.
@@ -163,4 +164,13 @@ class SessionRig {
   /// cannot always be fully reset to `-1` on the LIVE engine (no "un-crown"
   /// native call exists) even though it is captured/restored here.
   final int primaryTrack;
+
+  /// Every channel with One Shot armed (post-B5c independent review fix),
+  /// independent of whether that channel has a [SessionRigTrack] entry — a
+  /// channel pre-armed with One Shot but never recorded onto has no track
+  /// entry at all (see `SessionRepository._capture`'s doc), so its flag only
+  /// round-trips through this session-level set, not through
+  /// [SessionRigTrack.oneShot]. Restored unconditionally on apply, like
+  /// [looperMode]/[primaryTrack] above.
+  final Set<int> oneShotChannels;
 }

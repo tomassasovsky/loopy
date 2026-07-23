@@ -479,7 +479,17 @@ class LooperRepository {
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
-      primaryTrack: s.primaryTrack,
+      // Project from the repository's own re-apply CACHE, not the raw
+      // `s.primaryTrack` (independent review of #295, D18): the native
+      // engine has no "un-crown" call, so a channel crowned by a prior/live
+      // session stays crowned on `s.primaryTrack` through an `applySession`
+      // load that defines no crown of its own — but `applySession` DOES
+      // correctly reset `_primaryTrack` to `null` in that case (see its
+      // doc). The cache is therefore the accurate "what does THIS session
+      // intend" answer; the raw snapshot is not. `crownPrimary` is the only
+      // way `_primaryTrack` is ever set to a non-null value, so the two stay
+      // in lockstep everywhere except this one documented gap.
+      primaryTrack: _primaryTrack ?? -1,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -1234,6 +1244,22 @@ class LooperRepository {
       if (track.oneShot) {
         setOneShot(channel: track.channel, oneShot: true);
       }
+    }
+
+    // One Shot, session-level set (post-B5c independent review fix): the
+    // per-track restore just above only runs for a channel that also has a
+    // [SessionRigTrack] entry, i.e. content — a channel armed with One Shot
+    // but never recorded onto has no such entry (see
+    // `SessionRepository._capture`'s doc) and would otherwise stay off
+    // forever after this load. [rig.oneShotChannels] is the content-independent
+    // source of truth (every armed channel, captured unconditionally), so
+    // restore from it too; harmless overlap with the per-track loop above for
+    // a content-bearing channel since [setOneShot] is idempotent. Bounded to
+    // `trackCount` — a manifest saved on a build with more physical tracks
+    // than this engine must not push an out-of-range channel.
+    for (final channel in rig.oneShotChannels) {
+      if (channel < 0 || channel >= trackCount) continue;
+      setOneShot(channel: channel, oneShot: true);
     }
 
     // Chains: reset every remembered chain the rig does not define, then

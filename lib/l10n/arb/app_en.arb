@@ -1030,6 +1030,7 @@
     "modeChangeConfirmBody": "Changing mode clears every track — there's no way to keep the current loops. Clear all tracks and switch?",
     "modeChangeConfirmConfirm": "Clear & Switch",
     "modeChangeConfirmCancel": "Cancel",
+    "modeChangeTimedOut": "Mode switch timed out — the clear is still finishing. Try again in a moment.",
     "oneShotGroupLabel": "ONE SHOT",
     "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
     "a11yTrackPrimary": "Primary track",

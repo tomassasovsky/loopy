@@ -76,6 +76,10 @@ void main() {
     countInBars: 2,
     looperMode: LooperMode.band,
     primaryTrack: 1,
+    // Channel 2 has NO SessionTrack entry (content-less) — its One Shot flag
+    // only round-trips through this session-level set, alongside channel 0's
+    // (which also has a per-track `oneShot: true` above; both should agree).
+    oneShotChannels: [0, 2],
   );
 
   group('Session', () {
@@ -104,6 +108,7 @@ void main() {
       expect(json['countInBars'], 2);
       expect(json['looperMode'], 'band');
       expect(json['primaryTrack'], 1);
+      expect(json['oneShotChannels'], [0, 2]);
       final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
       expect(track0['lengthPresetBars'], 4);
       expect(track0['oneShot'], isTrue);
@@ -111,8 +116,8 @@ void main() {
 
     test(
       'v4 round-trips every new field (tempo/signature/quantize/click/ '
-      'count-in, looperMode/primaryTrack, and per-track '
-      'lengthPresetBars/oneShot)',
+      'count-in, looperMode/primaryTrack, per-track '
+      'lengthPresetBars/oneShot, and the session-level oneShotChannels set)',
       () {
         final json = jsonDecode(jsonEncode(session.toJson()));
         final loaded = Session.fromJson(json as Map<String, dynamic>);
@@ -132,6 +137,9 @@ void main() {
         // AUTO (0) / off round-trip too — not just non-default values.
         expect(loaded.tracks[1].lengthPresetBars, 0);
         expect(loaded.tracks[1].oneShot, isFalse);
+        // Channel 2's flag has no SessionTrack to live on (no content) — it
+        // only survives through this session-level set.
+        expect(loaded.oneShotChannels, [0, 2]);
         expect(loaded, session);
       },
     );
@@ -178,6 +186,7 @@ void main() {
         expect(loaded.clickVolume, 1);
         expect(loaded.countInBars, 0);
         expect(loaded.tracks.single.lengthPresetBars, 0);
+        expect(loaded.oneShotChannels, isEmpty);
         // The rest of the v3 manifest still loads intact.
         expect(loaded.baseLengthFrames, 96000);
         expect(loaded.tracks.single.lanes.single.volume, 1.0);
@@ -207,13 +216,15 @@ void main() {
     );
 
     test(
-      'reads looperMode, primaryTrack, and per-track oneShot when present '
-      '(B5c) — unlike the still-future C/D fields above, these ARE '
-      'understood by this code',
+      'reads looperMode, primaryTrack, per-track oneShot, and the '
+      'session-level oneShotChannels set when present (B5c + independent '
+      'review of #295) — unlike the still-future C/D fields above, these '
+      'ARE understood by this code',
       () {
         final json = session.toJson();
         json['looperMode'] = 'sync';
         json['primaryTrack'] = 0;
+        json['oneShotChannels'] = [3];
         final track0 = (json['tracks'] as List).first as Map<String, dynamic>;
         track0['oneShot'] = true;
 
@@ -223,6 +234,7 @@ void main() {
         expect(loaded.tracks[0].oneShot, isTrue);
         // Track 1 (not touched above) still defaults to off.
         expect(loaded.tracks[1].oneShot, isFalse);
+        expect(loaded.oneShotChannels, [3]);
       },
     );
 

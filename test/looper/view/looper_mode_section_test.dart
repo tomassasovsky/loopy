@@ -237,7 +237,10 @@ void main() {
     'a clear that never settles within the bounded wait still does NOT '
     'dispatch the mode change — the timeout path must re-check, not '
     'dispatch unconditionally (that would recreate the exact silent D4 '
-    'no-op this flow exists to prevent)',
+    'no-op this flow exists to prevent) — and surfaces a visible SnackBar '
+    '(independent review of #295: the confirm dialog is already gone by '
+    'this point, so without the SnackBar the timeout looked identical to a '
+    'tap that never registered)',
     (tester) async {
       final controller = StreamController<LooperState>.broadcast();
       addTearDown(controller.close);
@@ -251,8 +254,17 @@ void main() {
       await tester.tap(find.byKey(const Key('looperMode_option_sync')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('looperMode_confirm_confirm')));
-      await tester.pump();
+      await tester.pumpAndSettle();
       verify(() => repository.clear()).called(1);
+
+      // The confirm dialog is already dismissed at this point (its pop
+      // animation has settled) — before the SnackBar fix, the screen here
+      // looked identical to before the user ever tapped anything.
+      expect(find.byKey(const Key('looperMode_confirm_dialog')), findsNothing);
+      expect(
+        find.byKey(const Key('looperMode_timeout_snackbar')),
+        findsNothing,
+      );
 
       // Never push a cleared state — the bloc keeps reporting content, so
       // the bounded wait runs out its full timeout.
@@ -263,6 +275,14 @@ void main() {
       // by the engine's D4 lock, the exact failure mode this whole
       // confirm-then-clear-then-switch flow exists to prevent.
       verifyNever(() => bloc.add(any()));
+
+      // But the timeout is no longer silent: a SnackBar tells the user to
+      // retry, instead of leaving them with zero information.
+      await tester.pump();
+      expect(
+        find.byKey(const Key('looperMode_timeout_snackbar')),
+        findsOneWidget,
+      );
     },
   );
 }
