@@ -55,6 +55,7 @@
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
+#include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "loopy_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
@@ -69,6 +70,19 @@ extern "C" {
 #endif
 
 #define LE_RING_CAPACITY 256u
+
+/* MIDI clock output ring (C1, D15): audio-thread producer, drained by
+ * whichever consumer forwards the bytes to le_midi_out_send (a native test's
+ * direct le_ring_pop today; a future Dart poll loop, mirroring the existing
+ * loop-top-pulse architecture, once a destination port is wired). Reuses
+ * le_ring/le_command wholesale rather than inventing a byte-sized ring — one
+ * command-sized slot per raw status byte (in `.code`) is negligible waste for
+ * a control-rate consumer, and it means this ring needs no new push/pop
+ * implementation to review. Capacity generously covers even a multi-bar test
+ * run between drains: at the fastest supported tempo (300 BPM) one PPQN tick
+ * is ~8.3 ms of audio, so 24 * 300 / 60 ≈ 120 ticks/s — comfortably inside a
+ * few seconds of undrained backlog. */
+#define LE_MIDI_CLOCK_RING_CAPACITY 1024u
 
 /* Performance event log (part 3): 4096 slots absorbs a command storm (a
  * scripted/automated burst of >= 2000 audibility-affecting changes) within one
@@ -668,6 +682,14 @@ struct le_engine {
    * Meaningful only in Sync/Band; see le_sync_quantize_active below. */
   _Atomic int32_t a_primary_track;
 
+  /* MIDI clock mode (Phase C/E, D15, published — see le_snapshot's trailing
+   * clock block). A SETTING, seeded once in le_engine_create and persisting
+   * across configure exactly like a_looper_mode/a_primary_track above.
+   * Default OFF (0) so an untouched engine emits no clock bytes. Gates
+   * le_midi_clock_advance (called at the end of le_engine_process) alongside
+   * the looper mode — see le_clock_send_gate_open, engine_process.c. */
+  _Atomic int32_t a_clock_mode;
+
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
   /* Global master output gain (float bits, 0..1), applied post-mix to the final
@@ -726,6 +748,15 @@ struct le_engine {
    * top of le_engine_get_snapshot (the UI poll) and of the transport calls. */
   le_ring evt_ring;
   le_command evt_storage[LE_RING_CAPACITY];
+
+  /* MIDI clock output ring (C1, D15; see LE_MIDI_CLOCK_RING_CAPACITY above).
+   * Audio-thread producer: le_engine_process appends one entry per emitted
+   * byte (le_midi_clock_advance's output), `.code` holding the raw status
+   * byte (LE_MIDI_CLOCK_TICK/_START/_STOP). No consumer is wired in this part
+   * — see le_midi_clock.h's header doc — so this simply accumulates until
+   * something pops it (a native test today). */
+  le_ring midi_clock_ring;
+  le_command midi_clock_ring_storage[LE_MIDI_CLOCK_RING_CAPACITY];
 
   /* Configuration. */
   int sample_rate;
@@ -799,6 +830,15 @@ struct le_engine {
    * cancel-wins, matching the precondition that a press was already in
    * flight before the commit landed. */
   int32_t count_in_grace_channel; /* -1 = no grace window open */
+
+  /* MIDI clock send (C1, D15): audio-thread-local generator state driving
+   * le_midi_clock_advance once per block (engine_process.c, the very end of
+   * le_engine_process — after the per-frame loop, since the emitter runs at
+   * BLOCK granularity like the tap-tempo frame clock above, not per-sample).
+   * Reset per session (le_engine_configure) via le_midi_clock_reset, exactly
+   * like the click/count-in running state above — its SETTING twin
+   * (a_clock_mode) is seeded once in le_engine_create and persists. */
+  le_midi_clock_gen midi_clock;
 
   /* Quantized recording (control-thread-owned). When `quantize` is set, a record
    * press over an existing master arms `armed[ch]` (and does the one-time prep

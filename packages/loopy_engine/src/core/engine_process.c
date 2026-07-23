@@ -26,7 +26,8 @@
 #include "engine_fx.h"       /* fx_apply_chain, le_fx_entry_reset */
 #include "engine_internal.h" /* le_engine_process prototype */
 #include "engine_private.h"  /* le_engine + the published atomics */
-#include "lockfree_ring.h"   /* le_command, le_ring_pop */
+#include "le_midi_clock.h"   /* le_midi_clock_advance (C1 24-PPQN clock-send) */
+#include "lockfree_ring.h"   /* le_command, le_ring_pop, le_ring_push */
 #include "loop_clock.h"      /* le_loop_clock_* */
 #include "loopy_engine_api.h"
 #include "perf_log_ring.h" /* le_perf_log_ring_push, le_perf_log_code (perf event log) */
@@ -290,6 +291,21 @@ static int le_looper_mode_locked(le_engine* e) {
     if (load_i32(&e->tracks[t].a_state) != LE_TRACK_EMPTY) return 1;
   }
   return 0;
+}
+
+/* MIDI clock send gate (C1, D15): whether le_midi_clock_advance may emit
+ * ANYTHING this block. Manual-verified (docs/plan/2026-07-22-song-mode-
+ * spec.md, "MIDI clock" section): send is active only in Multi/Sync/Band —
+ * Song and Free stay completely silent regardless of clock_mode. Unlike
+ * le_looper_mode_locked above (a content check gating whether a MODE SWITCH
+ * is accepted), this reads the CURRENT mode every block to gate whether
+ * clock OUTPUT fires — the two are deliberately different predicates over
+ * the same a_looper_mode field. */
+static int le_clock_send_gate_open(le_engine* e) {
+  if (load_i32(&e->a_clock_mode) != LE_CLOCK_SEND) return 0;
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  return mode == LE_LOOPER_MODE_MULTI || mode == LE_LOOPER_MODE_SYNC ||
+        mode == LE_LOOPER_MODE_BAND;
 }
 
 /* Two-tap tempo (modernized from 2f0513a): the interval between this tap and
@@ -1946,6 +1962,18 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     case LE_CMD_SET_ONE_SHOT: {
       if (!valid_channel(e, cmd->arg_i)) break;
       store_i32(&e->tracks[cmd->arg_i].a_one_shot, cmd->arg_f != 0.0f ? 1 : 0);
+      break;
+    }
+    /* ---- MIDI clock (Phase C/E, D15; see LE_CMD_SET_CLOCK_MODE's doc,
+     * loopy_engine_api.h). Not perf-logged, for the same reason as
+     * LE_CMD_SET_LOOPER_MODE above. */
+    case LE_CMD_SET_CLOCK_MODE: {
+      const int32_t m = cmd->arg_i;
+      /* Re-validated here (the exported wrapper already rejects RECEIVE and
+       * anything else) so a raw le_engine_post_command can never publish an
+       * unimplemented/out-of-range clock mode. */
+      if (m != LE_CLOCK_OFF && m != LE_CLOCK_SEND) break;
+      store_i32(&e->a_clock_mode, m);
       break;
     }
     /* ---- click + count-in (A2; see the helper block above finalize_master).
@@ -3661,5 +3689,32 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   if (e->perf.armed) {
     atomic_fetch_add_explicit(&e->a_perf_frames, (uint64_t)frames,
                               memory_order_relaxed);
+  }
+
+  /* MIDI clock send (C1, D15). BLOCK granularity, like the tap-tempo frame
+   * clock above: the emitter is driven once per le_engine_process call with
+   * this call's whole frame count, not per-sample — MIDI clock's practical
+   * timing tolerance is well inside one audio block (a few ms at typical
+   * buffer sizes), and every other block-rate decision in this function
+   * (limiter params, click bus settings, master gain) already uses this same
+   * granularity. `transport_active` reads the states AFTER this block's
+   * transport advances above, so a track that started/stopped mid-block is
+   * reflected from the very next call — le_transport_held is the exact
+   * negation this needs (see its own doc for why it's the audio-thread twin
+   * of le_transport_active on the control side). Bytes are appended to
+   * midi_clock_ring (RT-safe: bounded push, no allocation/lock/syscall) for
+   * whatever forwards them to le_midi_out_send — see le_midi_clock.h. */
+  {
+    int32_t num = load_i32(&e->a_ts_num);
+    if (num <= 0) num = 4;
+    uint8_t clock_bytes[32];
+    const int32_t clock_n = le_midi_clock_advance(
+        &e->midi_clock, (int32_t)frames, load_f32(&e->a_tempo_bpm_bits), num,
+        load_i32(&e->a_ts_den), sr, !le_transport_held(e),
+        le_clock_send_gate_open(e), clock_bytes, (int32_t)sizeof(clock_bytes));
+    for (int32_t i = 0; i < clock_n; ++i) {
+      le_ring_push(&e->midi_clock_ring,
+                   (le_command){.code = clock_bytes[i]});
+    }
   }
 }

@@ -200,6 +200,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->looper_mode = load_i32(&engine->a_looper_mode);
   /* Primary track (B3, D18; trailing block; default reads -1 = none). */
   out->primary_track = load_i32(&engine->a_primary_track);
+  /* MIDI clock (Phase C, D15; trailing block; default reads 0 = OFF). */
+  out->clock_mode = load_i32(&engine->a_clock_mode);
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,

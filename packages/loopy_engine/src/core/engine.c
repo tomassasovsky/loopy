@@ -40,6 +40,7 @@
 #include "engine_miniaudio.h"
 #include "engine_platform.h"
 #include "engine_private.h"
+#include "le_midi_clock.h" /* le_midi_clock_reset (C1 clock-send generator) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
@@ -409,6 +410,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->count_in_grace_channel = -1; /* no cancel-race grace window open */
   store_i32(&engine->a_counting_in, 0);
   store_i32(&engine->a_count_in_beats_left, 0);
+  /* MIDI clock send (C1): the RUNNING generator state resets per session,
+   * exactly like the click/count-in state above — a fresh configure must
+   * never carry a stale active-run frame count (or an unpaired Stop owed)
+   * into the next session. The SETTING (a_clock_mode) persists, seeded once
+   * in le_engine_create like a_looper_mode/a_primary_track. */
+  le_midi_clock_reset(&engine->midi_clock);
   atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
@@ -554,6 +561,8 @@ le_engine* le_engine_create(void) {
   if (engine == NULL) return NULL;
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
+  le_ring_init(&engine->midi_clock_ring, engine->midi_clock_ring_storage,
+              LE_MIDI_CLOCK_RING_CAPACITY);
   le_perf_log_ring_init(&engine->perf.log_ring, engine->perf.log_storage,
                         LE_PERF_LOG_RING_CAPACITY);
   le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
@@ -595,6 +604,11 @@ le_engine* le_engine_create(void) {
    * a_looper_mode, -1 is NOT calloc's zero-fill, so this store is load-
    * bearing, not just legibility. */
   store_i32(&engine->a_primary_track, -1);
+  /* MIDI clock mode SETTING (Phase C/E, D15): same seeded-once persistence as
+   * the looper mode / primary track above. OFF (0) is both the enum's zero
+   * value and calloc's zero-fill; kept explicit for the same legibility
+   * reason as a_looper_mode's redundant store. */
+  store_i32(&engine->a_clock_mode, LE_CLOCK_OFF);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);

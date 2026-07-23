@@ -1341,6 +1341,17 @@ int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_ARM, channel, 2.0f);
 }
 
+/* ---- MIDI clock (Phase C/E, D15; see loopy_engine_api.h's MIDI-clock
+ * section) ---- */
+
+int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode) {
+  /* RECEIVE is Phase E's clock follower — stub the tri-state field now (so
+   * that part can reuse it without a breaking rename) but reject it here,
+   * same as any value outside the enum. */
+  if (mode != LE_CLOCK_OFF && mode != LE_CLOCK_SEND) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_CLOCK_MODE, mode, 0.0f);
+}
+
 /* ---- click + count-in (A2; see loopy_engine_api.h's click section) ---- */
 
 int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode) {

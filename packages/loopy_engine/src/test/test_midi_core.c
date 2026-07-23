@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "le_midi_backend.h"
+#include "le_midi_clock.h" /* le_midi_clock_advance (C1, D15) */
 #include "le_midi_internal.h"
 #include "loopy_engine_api.h"
 
@@ -286,6 +287,307 @@ static void test_midi_out_send_and_open_guards(void) {
   le_midi_out_destroy(m);
 }
 
+/* ---- MIDI clock send (C1, D15) -------------------------------------------
+ *
+ * Pure logic tests for le_midi_clock_advance -- no engine, no OS MIDI, fully
+ * deterministic (mirrors how tempo_grid.c's pure math is unit-tested in
+ * test_engine_core.c). Engine-level wiring (the looper-mode gate, the
+ * real count-in path, the published atomics) is covered separately in
+ * test_engine_core.c.
+ */
+
+/* Counts bytes of `value` in out[0..n). */
+static int count_byte(const uint8_t* out, int32_t n, uint8_t value) {
+  int c = 0;
+  for (int32_t i = 0; i < n; ++i) {
+    if (out[i] == value) c++;
+  }
+  return c;
+}
+
+static void test_clock_silent_when_gate_closed(void) {
+  printf("test_clock_silent_when_gate_closed\n");
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[32];
+  /* Transport active but the gate is closed (clock_mode off, or Song/Free
+   * mode) for many blocks in a row: nothing is ever emitted, not even a
+   * Start for the already-active transport. */
+  for (int i = 0; i < 200; ++i) {
+    const int32_t n = le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000,
+                                            /*transport_active=*/1,
+                                            /*gate_open=*/0, out, 32);
+    CHECK(n == 0);
+  }
+}
+
+static void test_clock_silent_when_transport_idle(void) {
+  printf("test_clock_silent_when_transport_idle\n");
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[32];
+  /* Gate open but the transport never becomes active (idle looper, or
+   * mid count-in): nothing is emitted. The manual-verified correction (see
+   * le_midi_clock.h) is exactly this -- no free-run while idle. */
+  for (int i = 0; i < 200; ++i) {
+    const int32_t n = le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000,
+                                            /*transport_active=*/0,
+                                            /*gate_open=*/1, out, 32);
+    CHECK(n == 0);
+  }
+}
+
+static void test_clock_start_fires_once_on_activation(void) {
+  printf("test_clock_start_fires_once_on_activation\n");
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[32];
+
+  /* Idle for a few blocks: nothing (in particular, no premature Start --
+   * this stands in for "Start never lands at count-in start", which the
+   * engine level test proves with a real count-in; here transport_active=0
+   * IS the count-in's transport state). */
+  for (int i = 0; i < 5; ++i) {
+    CHECK(le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000, 0, 1, out, 32) ==
+          0);
+  }
+
+  /* Downbeat: transport becomes active. Exactly one Start, as the first
+   * byte. */
+  int32_t n = le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000, 1, 1, out,
+                                    32);
+  CHECK(n >= 1);
+  CHECK(out[0] == LE_MIDI_CLOCK_START);
+  CHECK(count_byte(out, n, LE_MIDI_CLOCK_START) == 1);
+
+  /* Staying active never re-fires Start. */
+  for (int i = 0; i < 50; ++i) {
+    n = le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000, 1, 1, out, 32);
+    CHECK(count_byte(out, n, LE_MIDI_CLOCK_START) == 0);
+  }
+}
+
+static void test_clock_stop_fires_once_on_deactivation(void) {
+  printf("test_clock_stop_fires_once_on_deactivation\n");
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[32];
+
+  le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000, 1, 1, out, 32); /* Start */
+  for (int i = 0; i < 10; ++i) {
+    le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000, 1, 1, out, 32);
+  }
+
+  int32_t n = le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000, 0, 1, out,
+                                    32);
+  CHECK(n == 1);
+  CHECK(out[0] == LE_MIDI_CLOCK_STOP);
+
+  /* Staying idle never re-fires Stop, and emits no ticks. */
+  for (int i = 0; i < 50; ++i) {
+    n = le_midi_clock_advance(&g, 512, 120.0f, 4, 4, 48000, 0, 1, out, 32);
+    CHECK(n == 0);
+  }
+}
+
+static void test_clock_gate_close_mid_run_stops_then_reopen_is_fresh_start(
+    void) {
+  printf("test_clock_gate_close_mid_run_stops_then_reopen_is_fresh_start\n");
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[32];
+
+  int32_t n =
+      le_midi_clock_advance(&g, 100, 120.0f, 4, 4, 48000, 1, 1, out, 32);
+  CHECK(n >= 1 && out[0] == LE_MIDI_CLOCK_START);
+
+  /* The gate closes while the transport is still running (e.g. the user
+   * flips clock_mode to off, or switches into Song/Free) -- a Stop fires
+   * immediately, not deferred until the gate reopens. */
+  n = le_midi_clock_advance(&g, 100, 120.0f, 4, 4, 48000, 1, 0, out, 32);
+  CHECK(n == 1 && out[0] == LE_MIDI_CLOCK_STOP);
+
+  /* Gated closed: silence regardless of the (still-active) transport. */
+  for (int i = 0; i < 20; ++i) {
+    CHECK(le_midi_clock_advance(&g, 100, 120.0f, 4, 4, 48000, 1, 0, out, 32) ==
+          0);
+  }
+
+  /* Reopening against an already-running transport is a FRESH Start -- no
+   * phantom Stop was left waiting, and the tick epoch restarts at 0 (proven
+   * by the next tick landing a full interval later, not immediately). */
+  n = le_midi_clock_advance(&g, 100, 120.0f, 4, 4, 48000, 1, 1, out, 32);
+  CHECK(n == 1 && out[0] == LE_MIDI_CLOCK_START);
+}
+
+/* frames_per_tick at 120 BPM, 4/4, sr 48000: frames_per_beat = 24000,
+ * frames_per_quarter == frames_per_beat (ts_den 4), /24 = 1000. Round numbers
+ * make the exact-count assertions below unambiguous. */
+#define TICK_BPM 120.0f
+#define TICK_SR 48000
+#define TICK_FRAMES_PER_TICK 1000
+
+static void test_clock_ppqn_between_two_starts(void) {
+  printf("test_clock_ppqn_between_two_starts\n");
+  /* Exactly 24*beats ticks between a Start and the Stop/next-Start boundary:
+   * run the transport active for precisely `beats` quarter notes' worth of
+   * frames, then deactivate. */
+  const int beats = 4;
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[8192];
+
+  int32_t n = le_midi_clock_advance(&g, 1, TICK_BPM, 4, 4, TICK_SR, 1, 1, out,
+                                    8192);
+  CHECK(n == 1 && out[0] == LE_MIDI_CLOCK_START);
+  int ticks = 0;
+
+  /* Run comfortably past the 96th tick's boundary (beats*PPQN = 96 ticks,
+   * at frame 96*1000 = 96000) but well short of the 97th (at 97000), so the
+   * count is unambiguous regardless of exactly which block a boundary falls
+   * in. `remaining` accounts for the 1 frame the Start call above already
+   * consumed. */
+  const int32_t target_active_frames =
+      beats * TICK_FRAMES_PER_TICK * LE_MIDI_CLOCK_PPQN + 500;
+  int32_t remaining = target_active_frames - 1;
+  while (remaining > 0) {
+    const int32_t chunk = remaining > 37 ? 37 : remaining; /* odd block size
+                                                             * on purpose: see
+                                                             * the no-double-
+                                                             * count test
+                                                             * below for why */
+    n = le_midi_clock_advance(&g, chunk, TICK_BPM, 4, 4, TICK_SR, 1, 1, out,
+                              8192);
+    ticks += count_byte(out, n, LE_MIDI_CLOCK_TICK);
+    CHECK(count_byte(out, n, LE_MIDI_CLOCK_START) == 0);
+    CHECK(count_byte(out, n, LE_MIDI_CLOCK_STOP) == 0);
+    remaining -= chunk;
+  }
+
+  /* Exactly 24*beats ticks fired in the active run, no more (the 97th
+   * boundary was never reached) and no fewer. */
+  CHECK(ticks == beats * LE_MIDI_CLOCK_PPQN);
+
+  n = le_midi_clock_advance(&g, 100, TICK_BPM, 4, 4, TICK_SR, 0, 1, out, 8192);
+  CHECK(n == 1 && out[0] == LE_MIDI_CLOCK_STOP);
+}
+
+static void test_clock_no_double_count_across_block_boundary(void) {
+  printf("test_clock_no_double_count_across_block_boundary\n");
+  /* Drives many blocks of a size that does NOT evenly divide
+   * TICK_FRAMES_PER_TICK (37 has no common factor with 1000), so ticks land
+   * mid-block as often as not -- the classic off-by-one/double-count
+   * scenario. The final total must exactly match the ideal floor-division
+   * count: any drift or double count would show up as a mismatch here. */
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[64];
+
+  le_midi_clock_advance(&g, 1, TICK_BPM, 4, 4, TICK_SR, 1, 1, out, 64); /* Start */
+  uint64_t total_frames = 1;
+  int64_t ticks = 0;
+  const int32_t block = 37;
+  const int blocks = 5000; /* 185000 frames ~ 185 ticks */
+  for (int i = 0; i < blocks; ++i) {
+    const int32_t n =
+        le_midi_clock_advance(&g, block, TICK_BPM, 4, 4, TICK_SR, 1, 1, out,
+                              64);
+    ticks += count_byte(out, n, LE_MIDI_CLOCK_TICK);
+    total_frames += (uint64_t)block;
+  }
+  const int64_t expected = (int64_t)(total_frames / TICK_FRAMES_PER_TICK);
+  CHECK(ticks == expected);
+}
+
+static void test_clock_tick_spacing_jitter_bound(void) {
+  printf("test_clock_tick_spacing_jitter_bound\n");
+  /* Reconstructs the frame position of every emitted tick (from the running
+   * total of frames processed) and checks consecutive ticks never land more
+   * than one block's worth of frames away from the ideal spacing -- the
+   * jitter bound a block-granular (not per-sample) emitter can promise. */
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  uint8_t out[64];
+  const int32_t block = 23; /* another size that doesn't divide 1000 evenly */
+
+  le_midi_clock_advance(&g, 1, TICK_BPM, 4, 4, TICK_SR, 1, 1, out, 64);
+  uint64_t frame = 1;
+  int64_t last_tick_frame = -1;
+  int max_abs_jitter = 0;
+  for (int i = 0; i < 3000; ++i) {
+    const int32_t n =
+        le_midi_clock_advance(&g, block, TICK_BPM, 4, 4, TICK_SR, 1, 1, out,
+                              64);
+    for (int32_t b = 0; b < n; ++b) {
+      if (out[b] != LE_MIDI_CLOCK_TICK) continue;
+      /* This tick was detected somewhere within [frame, frame+block) --
+       * frame+block (the call's END position) is the tightest available
+       * upper bound without per-sample instrumentation. */
+      const int64_t detected_at = (int64_t)frame + block;
+      if (last_tick_frame >= 0) {
+        const int64_t spacing = detected_at - last_tick_frame;
+        const int jitter = (int)(spacing - TICK_FRAMES_PER_TICK);
+        const int abs_jitter = jitter < 0 ? -jitter : jitter;
+        if (abs_jitter > max_abs_jitter) max_abs_jitter = abs_jitter;
+      }
+      last_tick_frame = detected_at;
+    }
+    frame += (uint64_t)block;
+  }
+  CHECK(last_tick_frame > 0); /* sanity: ticks actually fired */
+  /* Detection latency is bounded by one block, so spacing between two
+   * DETECTED ticks is within one block of the true interval either way. */
+  CHECK(max_abs_jitter <= block);
+}
+
+static void test_clock_beat_unit_is_quarter_note_absolute(void) {
+  printf("test_clock_beat_unit_is_quarter_note_absolute\n");
+  /* D15/PPQN: ticks are 24-per-QUARTER-note regardless of the session's beat
+   * unit (tempo_grid's BPM counts denominator-note beats). At the SAME BPM,
+   * an 8-beat-unit signature's quarter note is twice as long as a
+   * 4-beat-unit signature's -- so it takes half as many ticks to cover the
+   * same wall-clock span. */
+  le_midi_clock_gen g4, g8;
+  le_midi_clock_reset(&g4);
+  le_midi_clock_reset(&g8);
+  uint8_t out[64];
+
+  le_midi_clock_advance(&g4, 1, 120.0f, 4, 4, 48000, 1, 1, out, 64);
+  le_midi_clock_advance(&g8, 1, 120.0f, 4, 8, 48000, 1, 1, out, 64);
+
+  const int32_t span = 48000; /* 1 second */
+  int ticks4 = 0, ticks8 = 0;
+  int32_t n = le_midi_clock_advance(&g4, span - 1, 120.0f, 4, 4, 48000, 1, 1,
+                                    out, 64);
+  ticks4 = count_byte(out, n, LE_MIDI_CLOCK_TICK);
+  n = le_midi_clock_advance(&g8, span - 1, 120.0f, 4, 8, 48000, 1, 1, out, 64);
+  ticks8 = count_byte(out, n, LE_MIDI_CLOCK_TICK);
+
+  CHECK(ticks4 == 2 * ticks8);
+}
+
+static void test_clock_null_and_degenerate_args_are_safe(void) {
+  printf("test_clock_null_and_degenerate_args_are_safe\n");
+  uint8_t out[8];
+  le_midi_clock_gen g;
+  le_midi_clock_reset(&g);
+  le_midi_clock_reset(NULL); /* safe */
+  CHECK(le_midi_clock_advance(NULL, 64, 120.0f, 4, 4, 48000, 1, 1, out, 8) ==
+        0);
+  CHECK(le_midi_clock_advance(&g, 64, 120.0f, 4, 4, 48000, 1, 1, NULL, 8) ==
+        0);
+  CHECK(le_midi_clock_advance(&g, 64, 120.0f, 4, 4, 48000, 1, 1, out, 0) == 0);
+  CHECK(le_midi_clock_advance(&g, -1, 120.0f, 4, 4, 48000, 1, 1, out, 8) == 0);
+  /* No tempo set (bpm 0, the grid-off default): Start/Stop still fire on
+   * transport edges, but no ticks (a degenerate grid yields 0 frames-per-
+   * quarter, per tempo_grid.c). */
+  le_midi_clock_reset(&g);
+  int32_t n = le_midi_clock_advance(&g, 64, 0.0f, 4, 4, 48000, 1, 1, out, 8);
+  CHECK(n == 1 && out[0] == LE_MIDI_CLOCK_START);
+  n = le_midi_clock_advance(&g, 64, 0.0f, 4, 4, 48000, 1, 1, out, 8);
+  CHECK(n == 0);
+}
+
 int main(void) {
   test_parse_control_change();
   test_parse_note_on_and_off();
@@ -301,6 +603,17 @@ int main(void) {
   test_midi_out_create_destroy_and_null_safety();
   test_midi_out_enumerate_arg_validation();
   test_midi_out_send_and_open_guards();
+
+  test_clock_silent_when_gate_closed();
+  test_clock_silent_when_transport_idle();
+  test_clock_start_fires_once_on_activation();
+  test_clock_stop_fires_once_on_deactivation();
+  test_clock_gate_close_mid_run_stops_then_reopen_is_fresh_start();
+  test_clock_ppqn_between_two_starts();
+  test_clock_no_double_count_across_block_boundary();
+  test_clock_tick_spacing_jitter_bound();
+  test_clock_beat_unit_is_quarter_note_absolute();
+  test_clock_null_and_degenerate_args_are_safe();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
