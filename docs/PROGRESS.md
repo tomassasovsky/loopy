@@ -239,10 +239,10 @@ Phases 1–3 of the plan plus several sync refinements. See `git log` for detail
   eight tracks show as two banks of four (A / B), one bank visible at a time.
   `BankCubit` (app-wide) holds enabled + active bank; Big Picture shows an A|B
   switch.
-- **Performance keyboard + Record/Play modes** — handled in the Big Picture
+- **Performance keyboard + Record/Mute modes** — handled in the Big Picture
   `Focus` (plain keys consumed so macOS does not beep). `M` switches mode (a
-  REC/PLAY indicator shows it); `1`–`8` select a track (auto-revealing its bank);
-  Record mode adds `R` record/overdub and `P` play/pause the selection; Play mode
+  REC/MUTE indicator shows it); `1`–`8` select a track (auto-revealing its bank);
+  Record mode adds `R` record/overdub and `P` play/pause the selection; Mute mode
   makes `1`–`8` select + mute/unmute; both modes: `Space` play/pause all, `C`
   clear all, `⌘/Ctrl+Z` undo, `⌘/Ctrl+Y`/`Shift+Z` redo. `PerformanceMode` +
   `toggleMode` on `BigPictureCubit`; new `LooperClearAllPressed` event.
