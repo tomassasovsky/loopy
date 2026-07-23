@@ -408,15 +408,37 @@ abstract interface class TempoControl {
 /// looper feature's own `InteractionMode` (record/mute — what a track press
 /// does); the two must never be confused.
 ///
-/// Single-method today (B2a); expected to grow (e.g. a `crownPrimary`-style
-/// command in B3), so this stays its own interface — a role slice, not a
-/// top-level function — matching every other interface in this file.
-// ignore: one_member_abstracts
+/// Grew in B5c (as anticipated) to also carry [crownPrimary] and
+/// [setOneShot]: both are persistent, mode-adjacent per-session/per-track
+/// designations (crown: D18; One Shot: song-mode-spec.md §2) rather than
+/// tempo-grid state, so they belong here alongside [setLooperMode] rather
+/// than in [TempoControl].
 abstract interface class LooperModeControl {
   /// Sets the looper mode. Ignored while the mode is locked (see the class
   /// doc). Values outside [LooperMode] are rejected with
   /// [EngineResult.invalid] without applying.
   EngineResult setLooperMode(LooperMode mode);
+
+  /// Crowns [channel] the primary track (Sync/Band, D18). Accepted in every
+  /// looper mode and NOT gated by the D4 content lock — the crown is a
+  /// persistent per-session designation, not content — though it is inert
+  /// outside Sync/Band. Persists through a track clear/undo-to-empty and
+  /// across mode switches; only an explicit re-crown moves it (no
+  /// auto-reassignment, and no "un-crown" call exists — see
+  /// [EngineSnapshot.primaryTrack]'s doc for the `-1` = none sentinel).
+  /// Returns [EngineResult.invalid] for an out-of-range channel.
+  EngineResult crownPrimary({required int channel});
+
+  /// Sets track [channel]'s One Shot flag (song-mode-spec.md §2): when
+  /// [oneShot] is `true`, the track plays once and then stops instead of
+  /// looping. Accepted in every looper mode and NOT gated by the D4 content
+  /// lock — like [crownPrimary], it is a persistent per-track SETTING, not
+  /// content — though it is only behaviorally active in Free/Song (the only
+  /// modes with a per-track transport-wrap event to hook). Survives a track
+  /// clear/undo-to-empty and a mode switch; a fresh (re)start of the engine
+  /// resets it to `false` (see [TrackSnapshot.oneShot]'s doc). Returns
+  /// [EngineResult.invalid] for an out-of-range channel.
+  EngineResult setOneShot({required int channel, required bool oneShot});
 }
 
 /// Global master-output bus: post-mix gain and the peak limiter.

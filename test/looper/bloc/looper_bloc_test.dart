@@ -38,6 +38,7 @@ void main() {
     registerFallbackValue(<TrackEffect>[]);
     registerFallbackValue(const PluginRef(format: PluginFormat.vst3, id: ''));
     registerFallbackValue(ClickMode.off);
+    registerFallbackValue(LooperMode.multi);
   });
 
   setUp(() {
@@ -96,6 +97,16 @@ void main() {
         bars: any(named: 'bars'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.setOneShot(
+        channel: any(named: 'channel'),
+        oneShot: any(named: 'oneShot'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
+      () => repository.crownPrimary(channel: any(named: 'channel')),
+    ).thenReturn(EngineResult.ok);
+    when(() => repository.setLooperMode(any())).thenReturn(EngineResult.ok);
     when(
       () => repository.setLaneCount(
         channel: any(named: 'channel'),
@@ -374,6 +385,32 @@ void main() {
     verify: (_) => verify(
       () => repository.setTrackLengthPreset(channel: 1, bars: 8),
     ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperOneShotToggled forwards the flag to the repository (B5c)',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperOneShotToggled(1, oneShot: true)),
+    verify: (_) => verify(
+      () => repository.setOneShot(channel: 1, oneShot: true),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperCrownPrimaryPressed forwards the channel to the repository (D18, '
+    'B5c)',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperCrownPrimaryPressed(2)),
+    verify: (_) => verify(() => repository.crownPrimary(channel: 2)).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperModeChanged forwards the mode to the repository (D4, B5c) — '
+    "the confirmation flow is the UI's job, not the bloc's",
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.band)),
+    verify: (_) =>
+        verify(() => repository.setLooperMode(LooperMode.band)).called(1),
   );
 
   blocTest<LooperBloc, LooperState>(
@@ -952,6 +989,47 @@ void main() {
         verify(() => settings.saveLaneEffects(0, 1, any())).called(1);
       },
     );
+
+    blocTest<LooperBloc, LooperState>(
+      'LooperModeChanged persists the mode code (B5c)',
+      build: () {
+        when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
+        return LooperBloc(repository: repository, settings: settings);
+      },
+      act: (bloc) => bloc.add(const LooperModeChanged(LooperMode.free)),
+      verify: (_) {
+        verify(() => repository.setLooperMode(LooperMode.free)).called(1);
+        verify(() => settings.saveLooperMode(LooperMode.free.code)).called(1);
+      },
+    );
+  });
+
+  group('load() (B5c boot restore)', () {
+    late SettingsRepository settings;
+
+    setUp(() {
+      settings = _MockSettingsRepository();
+    });
+
+    test('applies the persisted looper mode to the repository', () async {
+      when(() => settings.loadLooperMode()).thenAnswer((_) async => 2);
+      final bloc = LooperBloc(repository: repository, settings: settings);
+      addTearDown(bloc.close);
+
+      await bloc.load();
+
+      // Code 2 == LooperMode.song (engine_snapshot.dart's code mapping).
+      verify(() => repository.setLooperMode(LooperMode.song)).called(1);
+    });
+
+    test('is a no-op with no settings repository', () async {
+      final bloc = buildBloc();
+      addTearDown(bloc.close);
+
+      await bloc.load(); // must not throw
+
+      verifyNever(() => repository.setLooperMode(any()));
+    });
   });
 
   blocTest<LooperBloc, LooperState>(

@@ -318,6 +318,16 @@ void main() {
     );
   }, skip: !hasScreenshotFonts);
 
+  testWidgets('Mode section — the five-mode picker (B5c)', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('settings_tab_mode')));
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(SettingsPage),
+      matchesGoldenFile('goldens/settings_mode.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
   testWidgets('Signal surface — inputs, lanes, outputs', (tester) async {
     tester.view
       ..physicalSize = const Size(1980, 1320)

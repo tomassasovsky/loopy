@@ -57,6 +57,10 @@ SessionRig rigFromBundle(SessionBundle bundle) => SessionRig(
         effects: decodeTrackEffects(monitor.encoded),
       ),
   ],
+  // Looper mode + crown (schema v4, B5c) — session-level, so read straight
+  // off the manifest rather than through `_rigTracks`.
+  looperMode: bundle.session.looperMode,
+  primaryTrack: bundle.session.primaryTrack,
 );
 
 /// Builds the rig's tracks from [bundle], zipping each manifest lane with its
@@ -88,6 +92,7 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
           channel: track.channel,
           lanes: lanes,
           lengthPresetBars: track.lengthPresetBars,
+          oneShot: track.oneShot,
         ),
       );
     }

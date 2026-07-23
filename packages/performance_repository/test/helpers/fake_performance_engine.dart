@@ -315,6 +315,11 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
   @override
+  EngineResult crownPrimary({required int channel}) => EngineResult.ok;
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) =>
+      EngineResult.ok;
+  @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;
   @override
