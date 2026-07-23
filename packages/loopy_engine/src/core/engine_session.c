@@ -260,5 +260,26 @@ int32_t le_engine_finalize_layers(le_engine* engine, int32_t channel,
 }
 
 int32_t le_engine_commit_session(le_engine* engine, int32_t base_frames) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  /* Free mode (B2b, adversarial-review BUG 2 fix): session import
+   * establishes ONE shared base length for every imported track
+   * (LE_CMD_COMMIT_SESSION's handler, engine_process.c) — meaningless, and
+   * actively harmful, for Free mode's independent per-track lengths: it
+   * would set the shared master clock to nonzero while a_looper_mode ==
+   * FREE, violating the invariant every other Free-mode code path in this
+   * PR relies on (the master clock stays permanently dormant in this
+   * mode). Free-mode session import is a documented gap (see the handler's
+   * doc) that a later PR (A7/B5c territory) needs to solve with a proper
+   * per-track free_clock restore from the manifest — not this single-base
+   * commit. Rejecting synchronously here, before the command is even
+   * posted, is cleaner than a silent partial no-op: the caller (the
+   * session-load path) gets an actionable LE_ERR_INVALID instead of
+   * imported tracks quietly failing to establish playable state. The
+   * audio-thread handler carries its own defensive copy of this same guard
+   * for the raw le_engine_post_command escape hatch, which can post this
+   * command directly and bypass this wrapper. */
+  if (load_i32(&engine->a_looper_mode) == LE_LOOPER_MODE_FREE) {
+    return LE_ERR_INVALID;
+  }
   return le_push(engine, LE_CMD_COMMIT_SESSION, base_frames, 0.0f);
 }
