@@ -408,6 +408,7 @@ class SessionRepository {
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
           lengthPresetBars: track.lengthPresetBars,
+          oneShot: track.oneShot,
           lanes: lanes,
         ),
       );
@@ -447,6 +448,13 @@ class SessionRepository {
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,
       countInBars: snapshot.countInBars,
+      // Looper mode + crown (schema v4, B5c) are session-level SETTINGS, not
+      // derived-from-track-content state either — same reasoning as the
+      // tempo-grid fields above, and [snapshot.looperMode]/
+      // [snapshot.primaryTrack] persist regardless of track content by
+      // construction (D18; [LooperModeControl]'s class doc).
+      looperMode: snapshot.looperMode,
+      primaryTrack: snapshot.primaryTrack,
     );
   }
 

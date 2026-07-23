@@ -264,6 +264,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackLengthPreset(event.channel, event.bars),
       );
     });
+    on<LooperOneShotToggled>(
+      (event, _) => _repository.setOneShot(
+        channel: event.channel,
+        oneShot: event.oneShot,
+      ),
+    );
+    on<LooperCrownPrimaryPressed>(
+      (event, _) => _repository.crownPrimary(channel: event.channel),
+    );
+    on<LooperModeChanged>((event, _) {
+      _repository.setLooperMode(event.mode);
+      unawaited(_settings?.saveLooperMode(event.mode.code));
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);
@@ -306,6 +319,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// is started when an editor opens and cancelled on close / [close] so a
   /// closed editor never leaves a ticking timer (D-WIN/D-SYNC).
   final Map<(int, int, int), Timer> _lanePluginEditorTimers = {};
+
+  /// Restores the persisted looper mode (B5c) and applies it to the
+  /// repository — the same "seeded settings cubit" `load()` convention as
+  /// `TempoCubit`/`TracksCubit`/etc (see `app.dart`'s
+  /// `unawaited(cubit.load())` wiring). Calls the repository directly
+  /// (rather than dispatching [LooperModeChanged]) so a boot restore never
+  /// re-persists the value it just read back.
+  Future<void> load() async {
+    final settings = _settings;
+    if (settings == null) return;
+    final mode = LooperMode.fromCode(await settings.loadLooperMode());
+    _repository.setLooperMode(mode);
+  }
 
   bool _isMuted(int channel) =>
       channel >= 0 &&

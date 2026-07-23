@@ -2885,6 +2885,92 @@ void main() {
       },
     );
 
+    test('crownPrimary is deferred until running, then re-applied', () {
+      final repo = buildRepo()..crownPrimary(channel: 2);
+      expect(engine.lastCrownedChannel, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, 2);
+    });
+
+    test('crownPrimary applies immediately while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..crownPrimary(channel: 5);
+      expect(engine.lastCrownedChannel, 5);
+    });
+
+    test(
+      'the crown re-applies on every restart (device change), like looper '
+      'mode — D18, no un-crown call means the cache never has a "default" '
+      'to fall back to, only a remembered channel',
+      () {
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..crownPrimary(channel: 4);
+        expect(engine.lastCrownedChannel, 4);
+
+        engine.lastCrownedChannel = null;
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastCrownedChannel, 4);
+      },
+    );
+
+    test('a never-crowned track does not push crownPrimary on start', () {
+      buildRepo().startEngine(const EngineConfig());
+      expect(engine.lastCrownedChannel, isNull);
+    });
+
+    test('setOneShot is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setOneShot(channel: 1, oneShot: true);
+      expect(engine.trackOneShot, isEmpty); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.trackOneShot[1], isTrue);
+    });
+
+    test('setOneShot applies immediately while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setOneShot(channel: 2, oneShot: true);
+      expect(engine.trackOneShot[2], isTrue);
+    });
+
+    test('setOneShot(false) clears a remembered flag', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setOneShot(channel: 1, oneShot: true);
+      expect(engine.trackOneShot[1], isTrue);
+
+      repo.setOneShot(channel: 1, oneShot: false);
+      expect(engine.trackOneShot[1], isFalse);
+
+      // A restart no longer replays the cleared flag.
+      engine.trackOneShot.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.trackOneShot, isEmpty);
+    });
+
+    test(
+      'per-track one-shot flags re-apply on every restart (device change)',
+      () {
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setOneShot(channel: 3, oneShot: true);
+        expect(engine.trackOneShot[3], isTrue);
+
+        engine.trackOneShot.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.trackOneShot[3], isTrue);
+      },
+    );
+
     test(
       'TransportState projects every tempo-grid + click + count-in + '
       'looper-mode field from the snapshot',
@@ -2914,6 +3000,7 @@ void main() {
           countingIn: true,
           countInBeatsLeft: 3,
           looperMode: LooperMode.band,
+          primaryTrack: 2,
         );
 
         final transport = buildRepo().state.transport;
@@ -2932,6 +3019,7 @@ void main() {
         expect(transport.countingIn, isTrue);
         expect(transport.countInBeatsLeft, 3);
         expect(transport.looperMode, LooperMode.band);
+        expect(transport.primaryTrack, 2);
       },
     );
 
@@ -2954,6 +3042,7 @@ void main() {
         expect(transport.countingIn, isFalse);
         expect(transport.countInBeatsLeft, 0);
         expect(transport.looperMode, LooperMode.multi);
+        expect(transport.primaryTrack, -1);
       },
     );
   });
@@ -2984,9 +3073,11 @@ void main() {
       int outputMask = 0x3,
       int inputChannel = 0,
       int lengthPresetBars = 0,
+      bool oneShot = false,
     }) => SessionRigTrack(
       channel: channel,
       lengthPresetBars: lengthPresetBars,
+      oneShot: oneShot,
       lanes: [
         SessionRigLane(
           lane: 0,
@@ -3139,6 +3230,155 @@ void main() {
         );
 
         expect(engine.trackLengthPreset[0], 8);
+      },
+    );
+
+    test(
+      'resets a stale one-shot flag when the loaded session leaves it '
+      'undefined (B5c) — mirrors the A6 length-preset reset above, since '
+      'a_one_shot survives `clear` by the same "setting, not content" rule',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          // A live/prior session left track 0 marked One Shot.
+          ..setOneShot(channel: 0, oneShot: true);
+        addTearDown(repo.dispose);
+        expect(engine.trackOneShot[0], isTrue);
+
+        // The loaded session's track 0 has content but is not One Shot, and
+        // it says nothing at all about track 1.
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.trackOneShot[0], isFalse);
+        expect(engine.trackOneShot[1], isFalse);
+
+        // A restart replays only the loaded (off) value, not the stale true.
+        engine.trackOneShot.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.trackOneShot.containsKey(0), isFalse);
+      },
+    );
+
+    test(
+      "applies the loaded session's own one-shot flag per track (B5c)",
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1]), oneShot: true),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.trackOneShot[0], isTrue);
+      },
+    );
+
+    test(
+      "applies the loaded session's looper mode and crown (B5c)",
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+            ],
+            looperMode: LooperMode.band,
+            primaryTrack: 1,
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.lastLooperMode, LooperMode.band);
+        expect(engine.lastCrownedChannel, 1);
+      },
+    );
+
+    test(
+      'pushes the looper mode BEFORE any content is imported, so a '
+      "content-bearing session's mode is never silently dropped by the D4 "
+      'content lock (B5c)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+            ],
+            looperMode: LooperMode.sync,
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        final modeIndex = engine.calls.indexOf('setLooperMode');
+        final importIndex = engine.calls.indexOf('importLayer');
+        expect(modeIndex, greaterThanOrEqualTo(0));
+        expect(importIndex, greaterThanOrEqualTo(0));
+        expect(modeIndex, lessThan(importIndex));
+      },
+    );
+
+    test(
+      'a session load resets the primary-track RE-APPLY CACHE when it '
+      'defines no crown, even though the live engine keeps a prior crown '
+      '(B5c, D18: no un-crown call exists on the live engine)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          // A live/prior session crowned track 1.
+          ..crownPrimary(channel: 1);
+        addTearDown(repo.dispose);
+        expect(engine.lastCrownedChannel, 1);
+
+        // The loaded session defines no crown at all.
+        engine.lastCrownedChannel = null;
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        // No new crownPrimary call was pushed to the LIVE engine — D18's "no
+        // un-crown call" means the prior crown is not (and cannot be) undone
+        // here. This is the documented limitation, not a bug.
+        expect(engine.lastCrownedChannel, isNull);
+
+        // But the re-apply CACHE was reset: a subsequent restart does not
+        // resurrect the stale crown.
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.lastCrownedChannel, isNull);
       },
     );
 

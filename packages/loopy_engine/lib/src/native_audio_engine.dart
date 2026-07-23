@@ -1027,6 +1027,22 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult crownPrimary({required int channel}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_crown_primary(_engine, channel),
+    );
+  }
+
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_one_shot(_engine, channel, oneShot ? 1 : 0),
+    );
+  }
+
+  @override
   EngineResult setLaneFx({
     required int channel,
     required int lane,
