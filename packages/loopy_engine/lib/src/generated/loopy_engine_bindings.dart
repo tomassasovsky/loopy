@@ -1704,6 +1704,28 @@ class LoopyEngineBindings {
   late final _le_engine_set_quantize_div = _le_engine_set_quantize_divPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
+  /// return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
+  /// locked (see the class doc) — the audio thread silently drops it.
+  int le_engine_set_looper_mode(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_set_looper_mode(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_set_looper_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_looper_mode');
+  late final _le_engine_set_looper_mode = _le_engine_set_looper_modePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the click audibility mode (le_click_mode, 0..3). Values outside the
   /// enum return LE_ERR_INVALID. Default off.
   int le_engine_set_click_mode(
@@ -1853,7 +1875,15 @@ class LoopyEngineBindings {
   /// LE_ERR_CAPACITY when N bars of the CURRENT time signature at the slowest
   /// possible tempo (30 BPM) would exceed the engine's max_loop_frames — checked
   /// here, before recording starts, so a doomed preset is rejected outright
-  /// rather than silently failing mid-take.
+  /// rather than silently failing mid-take. This is a best-effort check against
+  /// the signature live NOW: nothing locks the signature/tempo between setting
+  /// the preset and actually recording (no track has content yet, so D6's lock
+  /// does not apply), so a change in between can still make an N-bars+click-on
+  /// take's auto-finalize target unreachable. That case is re-guarded with the
+  /// ACTUAL live grid when recording starts (engine_process.c's
+  /// le_arm_length_preset_target) — an unreachable target is never armed, so
+  /// the take degrades cleanly to the click-off derive-from-length path at
+  /// finalize instead of silently stalling.
   int le_engine_set_track_length_preset(
     ffi.Pointer<le_engine> engine,
     int channel,
@@ -3472,6 +3502,9 @@ enum le_command_code {
   /// 1..LE_LENGTH_PRESET_MAX_BARS = fixed).
   LE_CMD_SET_LENGTH_PRESET(44),
 
+  /// arg_i = le_looper_mode (0..4)
+  LE_CMD_SET_LOOPER_MODE(45),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -3525,6 +3558,7 @@ enum le_command_code {
     41 => LE_CMD_PERF_ARM,
     42 => LE_CMD_PERF_DISARM,
     44 => LE_CMD_SET_LENGTH_PRESET,
+    45 => LE_CMD_SET_LOOPER_MODE,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -3936,6 +3970,10 @@ final class le_snapshot extends ffi.Struct {
   /// reads 4, 3, 2, 1, then 0 as the recording starts). 0 when idle.
   @ffi.Int32()
   external int count_in_beats_left;
+
+  /// le_looper_mode (default 0 = MULTI)
+  @ffi.Int32()
+  external int looper_mode;
 }
 
 /// The plugin format a descriptor was discovered in.

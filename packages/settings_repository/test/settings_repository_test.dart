@@ -676,6 +676,17 @@ void main() {
     });
   });
 
+  group('looper mode', () {
+    test('defaults to 0 (multi) when unset', () async {
+      expect(await repository.loadLooperMode(), 0);
+    });
+
+    test('round-trips a saved enum code', () async {
+      await repository.saveLooperMode(3);
+      expect(await repository.loadLooperMode(), 3);
+    });
+  });
+
   group('track length preset', () {
     test('defaults to 0 (AUTO) and round-trips a fixed value', () async {
       expect(await repository.loadTrackLengthPreset(0), 0);

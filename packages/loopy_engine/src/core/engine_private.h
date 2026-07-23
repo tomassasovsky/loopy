@@ -607,6 +607,16 @@ struct le_engine {
   _Atomic int32_t a_counting_in;        /* 0/1: a count-in is in progress */
   _Atomic int32_t a_count_in_beats_left; /* countdown beats remaining; 0 idle */
 
+  /* Looper mode (B2a, D4, published — see le_snapshot's trailing looper-mode
+   * block). A SETTING, seeded once in le_engine_create and persisting across
+   * configure exactly like the tempo/click settings above (not reset per
+   * session, and not reset by clear-all either — no engine-side "revert to
+   * Multi" event exists). Default MULTI (0) so an untouched engine is
+   * bit-identical to today's build. LOCKED (le_looper_mode_locked,
+   * engine_process.c) while any track has content — a simpler predicate than
+   * the tempo lock (content alone). */
+  _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
+
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
   /* Global master output gain (float bits, 0..1), applied post-mix to the final

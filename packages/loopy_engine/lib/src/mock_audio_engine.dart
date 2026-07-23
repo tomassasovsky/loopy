@@ -83,6 +83,16 @@ class MockAudioEngine implements AudioEngine {
   double _clickVolume = 1;
   int _countInBars = 0;
 
+  // ---- looper mode (LooperModeControl, B2a) ----
+  //
+  // Same seeded-once persistence as the tempo/click settings above. Unlike
+  // the native engine, this mock does NOT replicate the D4 content lock
+  // (mirroring the mock's existing choice not to replicate D6's tempo lock
+  // either) — it is a simplified simulation for UI development/manual
+  // testing, not a byte-for-byte reimplementation of native's business
+  // rules; the lock gate is covered by the native C tests.
+  LooperMode _looperMode = LooperMode.multi;
+
   /// Wall-clock timestamp of the previous [tapTempo] call, `null` before the
   /// first tap or after a fresh [start]. The mock has no audio-thread frame
   /// clock, so it uses real elapsed time as the tap interval (the native
@@ -197,6 +207,7 @@ class MockAudioEngine implements AudioEngine {
       clickMask: _clickMask,
       clickVolume: _clickVolume,
       countInBars: _countInBars,
+      looperMode: _looperMode,
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -623,6 +634,17 @@ class MockAudioEngine implements AudioEngine {
     // The mock models no real transport/capacity, so unlike the native
     // engine's D17 allocation guard, every in-range value is accepted.
     _tracks[channel].lengthPresetBars = bars;
+    return EngineResult.ok;
+  }
+
+  // ---- looper mode (LooperModeControl, B2a) ----
+
+  @override
+  EngineResult setLooperMode(LooperMode mode) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    // No D4 content lock here — see _looperMode's doc.
+    _looperMode = mode;
     return EngineResult.ok;
   }
 

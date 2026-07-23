@@ -1016,6 +1016,16 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  // ---- looper mode (LooperModeControl, B2a) ----
+
+  @override
+  EngineResult setLooperMode(LooperMode mode) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_looper_mode(_engine, mode.code),
+    );
+  }
+
   @override
   EngineResult setLaneFx({
     required int channel,
@@ -1403,6 +1413,7 @@ class PumpedNativeEngine extends NativeAudioEngine {
       countInBars: s.countInBars,
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
+      looperMode: s.looperMode,
       tracks: s.tracks,
     );
   }

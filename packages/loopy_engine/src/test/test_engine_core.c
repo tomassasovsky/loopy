@@ -13776,6 +13776,143 @@ static void test_perf_render_quantized_round_down_truncation_log_frame(void) {
   le_engine_destroy(e);
 }
 
+/* ---- looper mode (B2a, D4) ----
+ * The five-mode field + its content-lock gate. No Sync/Song/Band/Free
+ * SEMANTICS exist yet (that's B2b onward) — these tests cover only the field
+ * itself and le_looper_mode_locked (engine_process.c). */
+
+static void test_looper_mode_defaults_and_persistence(void) {
+  printf("test_looper_mode_defaults_and_persistence\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  /* Grid-off-style default: MULTI (0) on a fresh engine, same as every other
+   * tempo-grid-era setting's untouched value. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+
+  /* Settings persist across a reconfigure (the 2f0513a pattern, same as
+   * tempo/click): seeded once in le_engine_create, never reset by
+   * configure. */
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SYNC);
+
+  le_engine_configure(e, 1000, 1, 1, 20000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SYNC); /* survived the reconfigure */
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_mode_setter_validates_args(void) {
+  printf("test_looper_mode_setter_validates_args\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  /* Out-of-range values are rejected by the control-thread wrapper and never
+   * posted — the published mode is untouched. */
+  CHECK(le_engine_set_looper_mode(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_looper_mode(e, 5) == LE_ERR_INVALID);
+  CHECK(le_engine_set_looper_mode(e, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_set_looper_mode(NULL, LE_LOOPER_MODE_SYNC) == LE_ERR_INVALID);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_mode_switch_accepted_when_empty(void) {
+  printf("test_looper_mode_switch_accepted_when_empty\n");
+  /* Every one of the 5 values round-trips through the command while every
+   * track is EMPTY -- no other validation at this stage (B2a is the field +
+   * gate only; Sync/Song/Band/Free semantics are not implemented yet). */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  const int32_t modes[] = {
+      LE_LOOPER_MODE_MULTI, LE_LOOPER_MODE_SYNC, LE_LOOPER_MODE_SONG,
+      LE_LOOPER_MODE_BAND,  LE_LOOPER_MODE_FREE,  LE_LOOPER_MODE_MULTI,
+  };
+  for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+    CHECK(le_engine_set_looper_mode(e, modes[i]) == LE_OK);
+    tg_advance(e, 1);
+    le_engine_get_snapshot(e, &s);
+    CHECK(s.looper_mode == modes[i]);
+  }
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_mode_locked_with_content(void) {
+  printf("test_looper_mode_locked_with_content\n");
+  /* D4: while any track has content, a mode switch is a no-op; clearing
+   * every track releases the lock and the switch applies immediately. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000); /* track 0 defines the master */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state != LE_TRACK_EMPTY);
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK); /* accepted
+    by the wrapper (control-thread validation only); dropped by the audio
+    thread */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI); /* unchanged: locked */
+
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SYNC); /* unlocked: applies */
+
+  le_engine_destroy(e);
+}
+
+static void test_looper_mode_locked_by_non_zero_track_content(void) {
+  printf("test_looper_mode_locked_by_non_zero_track_content\n");
+  /* The D4 gate checks EVERY track, not just track 0 / a "selected" one:
+   * content on track 2 alone -- tracks 0, 1, and everything past 2 stay
+   * EMPTY -- still locks a mode switch. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_record(e, 2); /* track 2 defines the master directly */
+  tg_advance(e, 4000);
+  le_engine_record(e, 2); /* queue finalize (seam crossfade) */
+  tg_advance(e, e->sample_rate / 100);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[2].state != LE_TRACK_EMPTY);
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI); /* still locked by track 2 */
+
+  le_engine_clear(e, 2);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].state == LE_TRACK_EMPTY);
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_BAND) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_BAND); /* every track empty: applies */
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -14099,6 +14236,11 @@ int main(void) {
   test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_golden_master_parity();
   test_perf_render_quantized_round_down_truncation_log_frame();
+  test_looper_mode_defaults_and_persistence();
+  test_looper_mode_setter_validates_args();
+  test_looper_mode_switch_accepted_when_empty();
+  test_looper_mode_locked_with_content();
+  test_looper_mode_locked_by_non_zero_track_content();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

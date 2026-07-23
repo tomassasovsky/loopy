@@ -423,6 +423,37 @@ void main() {
       });
     });
 
+    group('LooperModeControl', () {
+      test('setLooperMode requires the engine to be running', () {
+        expect(
+          engine.setLooperMode(LooperMode.sync),
+          EngineResult.notRunning,
+        );
+      });
+
+      test('snapshot defaults to multi', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().looperMode, LooperMode.multi);
+      });
+
+      test('setLooperMode surfaces in the snapshot', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setLooperMode(LooperMode.band), EngineResult.ok);
+        expect(engine.snapshot().looperMode, LooperMode.band);
+      });
+
+      test('looper mode persists across stop/start', () {
+        // Seeded once (mirrors the tempo grid settings), not reset to the
+        // default on every fresh start.
+        engine
+          ..start(engine.defaultConfig)
+          ..setLooperMode(LooperMode.free)
+          ..stop()
+          ..start(engine.defaultConfig);
+        expect(engine.snapshot().looperMode, LooperMode.free);
+      });
+    });
+
     group('plugin scan stub', () {
       test('returns no results before a scan begins', () {
         expect(engine.scanResults(), isEmpty);

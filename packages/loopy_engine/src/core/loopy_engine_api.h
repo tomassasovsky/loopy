@@ -94,6 +94,29 @@ typedef enum le_click_mode {
   LE_CLICK_PLAY_REC = 3,  /* whenever the transport plays or records */
 } le_click_mode;
 
+/* The five architectural looper modes (B2a, D4/D10), mirrored in
+ * le_snapshot.looper_mode. MULTI is today's behavior — independent per-track
+ * loops, the whole engine as it exists before this series — and stays the
+ * default. Sync/Song/Band/Free semantics (primary-track sync + divisions,
+ * section sequencing, quantized section tracks, per-track independent
+ * clocks) are NOT implemented yet: this part is only the field plus D4's
+ * content-lock gate (le_looper_mode_locked, engine_process.c) that guards
+ * switching it. Later B-series parts (B2b onward) give the non-MULTI values
+ * their behavior; setting one here today just changes what is published,
+ * with the engine's audio path staying exactly the MULTI behavior
+ * regardless of the published value. This is a DIFFERENT axis from
+ * InteractionMode (Dart-only: record/mute, what a track press does) — the
+ * two never coexist under the same name (D10) and must not be confused. */
+typedef enum le_looper_mode {
+  LE_LOOPER_MODE_MULTI = 0, /* default: independent per-track loops (today's
+                             * behavior, unchanged by this part) */
+  LE_LOOPER_MODE_SYNC = 1,  /* primary-track sync + multiples/divisions (B3) */
+  LE_LOOPER_MODE_SONG = 2,  /* section sequencing (B4) */
+  LE_LOOPER_MODE_BAND = 3,  /* primary + independently-quantized sections
+                             * (B3) */
+  LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
+} le_looper_mode;
+
 /* Maximum count-in length in measures (le_engine_set_count_in). */
 #define LE_COUNT_IN_MAX_BARS 64
 
@@ -274,6 +297,16 @@ typedef enum le_command_code {
    * an already-recorded track until it is re-recorded. */
   LE_CMD_SET_LENGTH_PRESET = 44, /* arg_i = channel, arg_f = bars (0 = AUTO,
                                   * 1..LE_LENGTH_PRESET_MAX_BARS = fixed). */
+
+  /* ---- looper mode (B2a, D4) ----
+   * The five-mode axis (le_looper_mode). LOCKED (silently rejected, no-op)
+   * whenever ANY track has content (state != EMPTY) — le_looper_mode_locked,
+   * engine_process.c. Simpler than the D6 tempo lock: content alone, no grid
+   * or count-in check. Only clearing every track releases the lock. Mode
+   * semantics beyond the field itself land in B2b onward; this part accepts
+   * any of the 5 values unconditionally once unlocked. Not perf-logged (a
+   * mode switch changes no audible output in this part). */
+  LE_CMD_SET_LOOPER_MODE = 45, /* arg_i = le_looper_mode (0..4) */
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -576,6 +609,12 @@ typedef struct le_snapshot {
    * come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
    * reads 4, 3, 2, 1, then 0 as the recording starts). 0 when idle. */
   int32_t count_in_beats_left;
+
+  /* ---- looper mode (B2a, D4; trailing for the same offset-stability reason
+   * as the tempo/click blocks above). Default MULTI (0) — an untouched
+   * engine's mode reads MULTI, today's behavior. See le_looper_mode's doc for
+   * the content-lock gate and what each value means. */
+  int32_t looper_mode; /* le_looper_mode (default 0 = MULTI) */
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -1062,6 +1101,28 @@ LE_EXPORT int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on);
  * return LE_ERR_INVALID. State only in this part (published in the snapshot;
  * consumed by the musical arm machinery in a later part). */
 LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
+
+/* ---- looper mode (B2a, decision D4) ----
+ * The five architectural looper modes (le_looper_mode). Mode is a
+ * session-level choice, LOCKED while any track has content (state != EMPTY):
+ * a switch attempted then is silently rejected (no-op) — a simpler predicate
+ * than the D6 tempo lock (content alone, no grid or count-in check; see
+ * le_looper_mode_locked, engine_process.c). Only clearing every track
+ * releases the lock. Mode switching is NOT a pedal action (D4) and has no UI
+ * in this part (that lands in B5c). Semantics beyond the field itself
+ * (Sync/Song/Band/Free behavior) land in B2b onward — this part accepts any
+ * of the 5 values unconditionally once unlocked, with the engine's audio path
+ * staying today's MULTI behavior regardless of the published value. Persists
+ * across configure() exactly like tempo_source: seeded once in
+ * le_engine_create, never reset by configure (same 2f0513a persistence
+ * pattern) — and untouched by clear-all, since no engine-side "revert to
+ * Multi" event is specified anywhere in the plan; the mode simply stays at
+ * whatever it was last explicitly set to. */
+
+/* Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
+ * return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
+ * locked (see the class doc) — the audio thread silently drops it. */
+LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the

@@ -571,6 +571,12 @@ le_engine* le_engine_create(void) {
   atomic_store_explicit(&engine->a_click_mask, 0u, memory_order_relaxed);
   store_f32(&engine->a_click_volume_bits, 1.0f);
   store_i32(&engine->a_count_in_bars, 0);
+  /* Looper mode SETTING (B2a, D4): same seeded-once persistence as the
+   * tempo/click settings above. MULTI (0) is both the enum's zero value and
+   * calloc's zero-fill, so this store is redundant against the allocation —
+   * kept explicit anyway, matching every sibling setting here, so the
+   * default is legible at the seed site rather than implied by calloc. */
+  store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);

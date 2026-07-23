@@ -279,6 +279,19 @@ static int le_tempo_locked(le_engine* e) {
          load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_NONE;
 }
 
+/* The D4 looper-mode lock: a mode switch (LE_CMD_SET_LOOPER_MODE) is ignored
+ * while ANY track has content (state != EMPTY) — deliberately a simpler
+ * predicate than le_tempo_locked above: no grid check (loop_bars /
+ * tempo_source), no count-in extension. Content on ANY track locks it, not
+ * just a "selected" or track-0 one — the mode is a session-level choice, not
+ * a per-track one. Only clearing every track releases the lock. */
+static int le_looper_mode_locked(le_engine* e) {
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    if (load_i32(&e->tracks[t].a_state) != LE_TRACK_EMPTY) return 1;
+  }
+  return 0;
+}
+
 /* Two-tap tempo (modernized from 2f0513a): the interval between this tap and
  * the previous one, in frames of e->frame_clock (block-granular — taps arrive
  * via the ring, which drains at block start, so finer resolution would be
@@ -1602,6 +1615,17 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (d < LE_GRID_DIV_OFF) d = LE_GRID_DIV_OFF;
       if (d > LE_GRID_DIV_SIXTEENTH) d = LE_GRID_DIV_SIXTEENTH;
       store_i32(&e->a_quantize_div, d);
+      break;
+    }
+    /* ---- looper mode (B2a, D4; see le_looper_mode_locked above). Not
+     * perf-logged: in this part a mode switch changes no audible output. */
+    case LE_CMD_SET_LOOPER_MODE: {
+      if (le_looper_mode_locked(e)) break; /* D4: rejected (no-op) while locked */
+      int32_t m = cmd->arg_i;
+      if (m < LE_LOOPER_MODE_MULTI || m > LE_LOOPER_MODE_FREE) {
+        break; /* re-validated here; the exported wrapper already rejects */
+      }
+      store_i32(&e->a_looper_mode, m);
       break;
     }
     /* ---- click + count-in (A2; see the helper block above finalize_master).

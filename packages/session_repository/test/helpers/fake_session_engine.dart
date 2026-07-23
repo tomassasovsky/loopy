@@ -390,6 +390,8 @@ class FakeSessionEngine implements AudioEngine {
     required int bars,
   }) => EngineResult.ok;
   @override
+  EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
+  @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;
   @override
