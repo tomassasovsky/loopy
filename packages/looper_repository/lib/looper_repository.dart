@@ -5,12 +5,17 @@ library;
 // Engine wire-format constants + types that are not churn-prone shapes stay
 // re-exported (documented D2 keepers): the effect-chain serializers and the
 // effect/lane caps are stable native contracts, and `TrackState` is already
-// surfaced through the `Track` / `LooperState` domain models. The audio-config
-// cluster (AudioBackend/AudioDevice/EngineConfig/…) is wrapped in Part 2b.
+// surfaced through the `Track` / `LooperState` domain models. `ClickMode` /
+// `GridDivision` / `TempoSource` are the same kind of keeper, now surfaced
+// through `TransportState` (A4b). The audio-config cluster
+// (AudioBackend/AudioDevice/EngineConfig/…) is wrapped in Part 2b.
 export 'package:loopy_engine/loopy_engine.dart'
     show
+        ClickMode,
         EngineResult,
+        GridDivision,
         PluginScanProgress,
+        TempoSource,
         TrackState,
         kMaxInputs,
         kMaxLanes,

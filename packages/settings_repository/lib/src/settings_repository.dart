@@ -407,6 +407,103 @@ class SettingsRepository {
   Future<void> saveTrackMultiple(int channel, int multiple) =>
       _store.setInt(_trackMultipleKey(channel), multiple);
 
+  // ---- tempo grid (A1) + click/count-in (A2) ----
+  //
+  // Every key here defaults to the tempo-free/grid-off value, so an unset
+  // install (or one that predates this plan) loads exactly the tempo-free
+  // behaviour — mirroring [loadQuantize]'s off-by-default contract.
+
+  static const String _tempoBpmKey = 'tempo.bpm';
+
+  /// Loads the saved tempo in beats per minute. Defaults to `0` (never set)
+  /// when unset.
+  Future<double> loadTempoBpm() async =>
+      await _store.getDouble(_tempoBpmKey) ?? 0;
+
+  /// Saves the tempo in beats per minute.
+  Future<void> saveTempoBpm(double bpm) => _store.setDouble(_tempoBpmKey, bpm);
+
+  static const String _timeSignatureNumKey = 'tempo.ts_num';
+  static const String _timeSignatureDenKey = 'tempo.ts_den';
+
+  /// Loads the saved time signature as `(num, den)`. Defaults to `(4, 4)`
+  /// when unset.
+  Future<(int num, int den)> loadTimeSignature() async => (
+    await _store.getInt(_timeSignatureNumKey) ?? 4,
+    await _store.getInt(_timeSignatureDenKey) ?? 4,
+  );
+
+  /// Saves the time signature.
+  Future<void> saveTimeSignature(int num, int den) async {
+    await _store.setInt(_timeSignatureNumKey, num);
+    await _store.setInt(_timeSignatureDenKey, den);
+  }
+
+  static const String _syncTempoKey = 'tempo.sync';
+
+  /// Whether loop↔grid sync is on. Defaults to `true` when unset.
+  Future<bool> loadSyncTempo() async =>
+      await _store.getBool(_syncTempoKey) ?? true;
+
+  /// Saves whether loop↔grid sync is on.
+  Future<void> saveSyncTempo({required bool value}) =>
+      _store.setBool(_syncTempoKey, value: value);
+
+  static const String _quantizeDivKey = 'tempo.quantize_div';
+
+  /// Loads the musical quantization granularity as the native `le_grid_div`
+  /// enum code (see `GridDivision.code` / `GridDivision.fromCode`). Defaults
+  /// to `0` (`GridDivision.off`) when unset.
+  Future<int> loadQuantizeDiv() async =>
+      await _store.getInt(_quantizeDivKey) ?? 0;
+
+  /// Saves the musical quantization granularity as its enum [code].
+  Future<void> saveQuantizeDiv(int code) =>
+      _store.setInt(_quantizeDivKey, code);
+
+  static const String _clickModeKey = 'tempo.click_mode';
+
+  /// Loads the click audibility mode as the native `le_click_mode` enum code
+  /// (see `ClickMode.code` / `ClickMode.fromCode`). Defaults to `0`
+  /// (`ClickMode.off`) when unset.
+  Future<int> loadClickMode() async => await _store.getInt(_clickModeKey) ?? 0;
+
+  /// Saves the click audibility mode as its enum [code].
+  Future<void> saveClickMode(int code) => _store.setInt(_clickModeKey, code);
+
+  static const String _clickOutputMaskKey = 'tempo.click_output_mask';
+
+  /// Loads the click output routing bitmask. Defaults to `0` (no outputs)
+  /// when unset.
+  Future<int> loadClickOutputMask() async =>
+      await _store.getInt(_clickOutputMaskKey) ?? 0;
+
+  /// Saves the click output routing bitmask.
+  Future<void> saveClickOutputMask(int mask) =>
+      _store.setInt(_clickOutputMaskKey, mask);
+
+  static const String _clickVolumeKey = 'tempo.click_volume';
+
+  /// Loads the click volume (`0..LE_MAX_GAIN`). Defaults to `1.0` when unset.
+  Future<double> loadClickVolume() async =>
+      await _store.getDouble(_clickVolumeKey) ?? 1.0;
+
+  /// Saves the click volume.
+  Future<void> saveClickVolume(double volume) =>
+      _store.setDouble(_clickVolumeKey, volume);
+
+  static const String _countInBarsKey = 'tempo.count_in_bars';
+
+  /// Loads the count-in length in measures (`0` = off). Defaults to `0`
+  /// (off) when unset — the wire default per A2, not the UI-suggested
+  /// starting point of one bar.
+  Future<int> loadCountInBars() async =>
+      await _store.getInt(_countInBarsKey) ?? 0;
+
+  /// Saves the count-in length in measures (`0` = off).
+  Future<void> saveCountInBars(int bars) =>
+      _store.setInt(_countInBarsKey, bars);
+
   // Legacy single-route monitor keys (one route per input). No longer written
   // by the live app; read once by the v2 lane migration and then cleared. The
   // v1 courtesy migration still writes monitor_input.N (global flag →
