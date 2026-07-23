@@ -22,7 +22,20 @@ enum LooperAction {
   playAll,
 
   /// Stop all tracks.
-  stopAll;
+  stopAll,
+
+  /// Tap to set the tempo (D20).
+  tapTempo,
+
+  /// Toggle the click (metronome) mode between off and its last-used
+  /// audible mode (D20). Named `toggleMetronome` (not `toggleClick`) per the
+  /// index plan's D20 action inventory, matching the deleted pre-`2f0513a`
+  /// action's user-facing name; the engine layer itself calls this feature
+  /// "click" (`ClickMode`, `TempoControl.setClickMode`).
+  toggleMetronome,
+
+  /// Cancel a pending quantized/signal-triggered record arm (D20).
+  cancelArm;
 
   /// Whether this action targets a specific channel (vs a global transport
   /// action like [playAll]).
@@ -32,6 +45,10 @@ enum LooperAction {
     LooperAction.play ||
     LooperAction.clear ||
     LooperAction.undo => true,
-    LooperAction.playAll || LooperAction.stopAll => false,
+    LooperAction.playAll ||
+    LooperAction.stopAll ||
+    LooperAction.tapTempo ||
+    LooperAction.toggleMetronome ||
+    LooperAction.cancelArm => false,
   };
 }
