@@ -134,7 +134,7 @@ final List<ControlInvariant> controlInvariants = [
       return 'frame bank ${c.frame.activeBank} != overlay '
           '${c.overlay.activeBank}';
     }
-    final want = c.overlay.mode == InteractionMode.play
+    final want = c.overlay.mode == InteractionMode.mute
         ? PedalMode.play
         : PedalMode.rec;
     if (c.frame.mode != want) {
@@ -171,8 +171,8 @@ final List<ControlInvariant> controlInvariants = [
     }
     return null;
   }),
-  ControlInvariant('muted-dark-in-play', (c) {
-    if (c.overlay.mode != InteractionMode.play) return null;
+  ControlInvariant('muted-dark-in-mute', (c) {
+    if (c.overlay.mode != InteractionMode.mute) return null;
     for (final t in c.looper.tracks) {
       if (t.muted &&
           t.channel < c.frame.trackLeds.length &&
@@ -188,7 +188,7 @@ final List<ControlInvariant> controlInvariants = [
   // was the original bug class; under pure derivation it is structurally
   // unreachable — this pins it against regressions in the derivation itself.
   ControlInvariant('sounding-unexcluded-green', (c) {
-    if (c.overlay.mode != InteractionMode.play) return null;
+    if (c.overlay.mode != InteractionMode.mute) return null;
     if (_parked(c.looper)) return null; // nothing sounds while parked
     for (final t in c.looper.tracks) {
       if (!_sounding(t) || c.overlay.excluded.contains(t.channel)) continue;
@@ -202,7 +202,7 @@ final List<ControlInvariant> controlInvariants = [
   }),
   // While parked, the LEDs preview exactly what Rec/Play resumes.
   ControlInvariant('parked-preview-matches-resume', (c) {
-    if (c.overlay.mode != InteractionMode.play || !_parked(c.looper)) {
+    if (c.overlay.mode != InteractionMode.mute || !_parked(c.looper)) {
       return null;
     }
     for (var ch = 0; ch < c.frame.trackLeds.length; ch++) {

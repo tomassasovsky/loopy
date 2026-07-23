@@ -102,7 +102,7 @@ void main() {
         ]),
       );
       const overlay = ControlState(
-        mode: InteractionMode.play,
+        mode: InteractionMode.mute,
         parkedResume: {1},
       );
       expect(armedTracks(looper, overlay), {1});
@@ -122,7 +122,7 @@ void main() {
         ]),
       );
       const overlay = ControlState(
-        mode: InteractionMode.play,
+        mode: InteractionMode.mute,
         excluded: {1},
       );
       expect(armedTracks(looper, overlay), {0});
@@ -130,7 +130,7 @@ void main() {
   });
 
   group('projectTrackLed', () {
-    test('Play mode: armed and audible reads green, muted reads off', () {
+    test('Mute mode: armed and audible reads green, muted reads off', () {
       final looper = _stateWith(
         _tracksWith(const [
           Track(state: TrackState.playing, lengthFrames: 48000),
@@ -142,7 +142,7 @@ void main() {
           ),
         ]),
       );
-      const overlay = ControlState(mode: InteractionMode.play);
+      const overlay = ControlState(mode: InteractionMode.mute);
       expect(projectTrackLed(looper, overlay, 0), PedalTrackLed.green);
       expect(projectTrackLed(looper, overlay, 1), PedalTrackLed.off);
       expect(projectTrackLed(looper, overlay, 2), PedalTrackLed.off);
@@ -165,7 +165,7 @@ void main() {
       // The original bug class, retired by derivation: an undone-to-empty
       // track (dark) that redo resurrects reads green off the very next
       // snapshot — nothing stored needs reconciling.
-      const overlay = ControlState(mode: InteractionMode.play);
+      const overlay = ControlState(mode: InteractionMode.mute);
       final empty = _stateWith(
         _tracksWith(const [Track(redoDepth: 2)]),
       );

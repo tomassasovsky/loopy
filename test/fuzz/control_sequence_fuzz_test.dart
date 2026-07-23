@@ -59,7 +59,7 @@ void main() {
           ..pumpLoop(fa)
           ..run(const [_Tap(PedalButton.recPlay)], fa) // finalize
           ..settle(fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> play, auto-arms
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> mute, auto-arms
           ..settle(fa);
         expect(h.frame.trackLeds[0], PedalTrackLed.green);
 
@@ -285,7 +285,7 @@ void main() {
           ..pumpLoop(fa)
           ..run(const [_Bloc('record', 1)], fa) // finalize t1
           ..settle(fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> mute mode
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
           ..settle(fa);
@@ -344,7 +344,7 @@ void main() {
           ..pumpLoop(fa)
           ..run(const [_Bloc('record', 1)], fa)
           ..settle(fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> mute mode
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // parkAll, latch {0,1}
           ..settle(fa)
@@ -422,7 +422,7 @@ void main() {
           ..pumpLoop(fa)
           ..run(const [_Bloc('record', 1)], fa)
           ..settle(fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> mute mode
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // parkAll
           ..settle(fa)
@@ -443,7 +443,7 @@ void main() {
       });
     }, skip: skip);
 
-    test('a live capture survives the Rec->Play mode switch and keeps '
+    test('a live capture survives the Rec->Mute mode switch and keeps '
         'recording until Rec/Play finalizes it back in Rec mode '
         '(2026-07-16)', () {
       _inHarness((h, fa) {
@@ -451,14 +451,14 @@ void main() {
           ..run(const [_Tap(PedalButton.recPlay)], fa) // start a fresh take
           ..run(const [_Pump(100, 0.5)], fa)
           ..settle(fa) // the cubit's polled snapshot sees the capture
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> mute mode
           ..settle(fa);
         // The mode toggle is a view change, not a transport action: the
         // take must still be recording (it used to be force-finalized).
         expect(h.looper.tracks[0].state, TrackState.recording);
-        expect(h.control.state.mode, InteractionMode.play);
+        expect(h.control.state.mode, InteractionMode.mute);
 
-        // It keeps ACCUMULATING through play mode...
+        // It keeps ACCUMULATING through mute mode...
         h
           ..run(const [_Pump(100, 0.5)], fa)
           ..run(const [_Tap(PedalButton.mode)], fa) // back to rec mode
@@ -475,7 +475,7 @@ void main() {
       });
     }, skip: skip);
 
-    test('an overdub survives the Rec->Play mode switch (2026-07-16)', () {
+    test('an overdub survives the Rec->Mute mode switch (2026-07-16)', () {
       _inHarness((h, fa) {
         h
           ..run(const [_Tap(PedalButton.recPlay)], fa)
@@ -485,7 +485,7 @@ void main() {
           ..run(const [_Tap(PedalButton.recPlay)], fa) // punch into overdub
           ..run(const [_Pump(64, 0.5)], fa)
           ..settle(fa) // the cubit's polled snapshot sees the overdub
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> mute mode
           ..settle(fa);
         expect(h.looper.tracks[0].state, TrackState.overdubbing);
 
@@ -527,7 +527,7 @@ void main() {
       });
     }, skip: skip);
 
-    test('play-mode Rec/Play resume leaves a live capture alone (does not '
+    test('mute-mode Rec/Play resume leaves a live capture alone (does not '
         'punch it out as a deselected member)', () {
       _inHarness((h, fa) {
         h
@@ -539,7 +539,7 @@ void main() {
           ..pumpLoop(fa)
           ..run(const [_Bloc('record', 1)], fa)
           ..settle(fa)
-          ..run(const [_Tap(PedalButton.mode)], fa) // -> play mode
+          ..run(const [_Tap(PedalButton.mode)], fa) // -> mute mode
           ..settle(fa)
           ..run(const [_Tap(PedalButton.stop)], fa) // park, latch {0,1}
           ..settle(fa)

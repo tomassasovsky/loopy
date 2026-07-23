@@ -9,7 +9,7 @@ part 'tracks_state.dart';
 /// indicator visibility toggle.
 ///
 /// The track cursor and active bank are NOT here — they are control state,
-/// owned (once, for every surface) by `ControlOverlayCubit`; the record/play
+/// owned (once, for every surface) by `ControlOverlayCubit`; the record/mute
 /// mode likewise. This cubit holds only what the tracks view persists about
 /// its own presentation.
 class TracksCubit extends Cubit<TracksState> {
