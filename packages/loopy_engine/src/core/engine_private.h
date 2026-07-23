@@ -442,6 +442,23 @@ typedef struct le_track {
   int32_t xfade_capture;
   int32_t xfade_len;
   int32_t xfade_end_state;
+
+  /* Free mode (B2b, index Architecture §4): this track's OWN loop clock,
+   * structurally identical to (and reusing) the master's le_loop_clock —
+   * length 0 means "not yet established", exactly like e->clock before the
+   * first defining recording. DORMANT outside Free mode: nothing writes or
+   * reads free_clock/free_iteration unless a_looper_mode == LE_LOOPER_MODE_
+   * FREE (verified by construction — see finalize_master, mix_tracks_frame,
+   * advance_transport_frame, viz_tap_frame's Free-mode-guarded call sites in
+   * engine_process.c). In Multi/Sync/Song/Band every track's length is a
+   * multiple of the ONE shared e->clock (seg_base's `k` multiples), so this
+   * stays untouched at its zero-initialized value for the engine's whole
+   * lifetime in those modes. free_iteration mirrors e->loop_iteration (a
+   * free-running wrap count) for the same reason e->loop_iteration exists:
+   * future per-track-multiple work (Band's non-primary sections, B3/B4) has
+   * the same shape available without inventing a second counter later. */
+  le_loop_clock free_clock;
+  uint64_t free_iteration;
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
@@ -797,6 +814,15 @@ struct le_engine {
   int32_t loop_viz_bucket;
   float loop_viz_accum;
   float track_viz_accum[LE_MAX_TRACKS];
+  /* Free mode (B2b): per-track bucket cursor, mirroring loop_viz_bucket but
+   * scoped to each track's own clock — Free mode has no single shared loop
+   * to bucket a_loop_viz against (a_loop_viz is simply not updated in Free
+   * mode; only the per-track a_track_viz waveforms are meaningful there).
+   * -1 = no bucket published yet, same convention as loop_viz_bucket.
+   * Dormant outside Free mode (see free_track_viz_tap_frame's mode guard,
+   * engine_process.c) — stays at its zero-initialized/reset value, which
+   * le_engine_configure and handle_clear explicitly re-arm to -1. */
+  int32_t track_viz_bucket[LE_MAX_TRACKS];
 
   /* Latency harness (audio-thread-local + published state). The measurement
    * captures the input-magnitude envelope into lat_buf for a fixed window after
