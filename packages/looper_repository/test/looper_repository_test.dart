@@ -2631,6 +2631,260 @@ void main() {
     });
   });
 
+  group('tempo grid + click + count-in (A4b)', () {
+    test('setTempo is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setTempo(140);
+      expect(engine.lastTempoBpm, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastTempoBpm, 140);
+    });
+
+    test('setTempo applies immediately while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTempo(90);
+      expect(engine.lastTempoBpm, 90);
+    });
+
+    test(
+      'an unset tempo is never pushed on start (0 would clamp up to 30)',
+      () {
+        buildRepo().startEngine(const EngineConfig());
+        expect(engine.lastTempoBpm, isNull);
+      },
+    );
+
+    test('setTempo re-applies on every restart (device change)', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTempo(128);
+      expect(engine.lastTempoBpm, 128);
+
+      // A restart (reconnect / device switch) resets the engine's tempo grid
+      // to the tempo-free defaults, so the remembered tempo must be pushed
+      // again.
+      engine.lastTempoBpm = null;
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.lastTempoBpm, 128);
+    });
+
+    test('setTimeSignature is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setTimeSignature(3, 4);
+      expect(engine.lastTimeSignature, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastTimeSignature, (3, 4));
+    });
+
+    test('setTimeSignature applies immediately while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTimeSignature(5, 8);
+      expect(engine.lastTimeSignature, (5, 8));
+    });
+
+    test('tapTempo forwards to the engine and is never remembered', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..tapTempo();
+      expect(engine.calls, contains('tapTempo'));
+
+      // A momentary action, not remembered state: a restart never replays it.
+      engine.calls.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.calls, isNot(contains('tapTempo')));
+    });
+
+    test('setSyncTempo is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setSyncTempo(on: false);
+      expect(engine.lastSyncTempo, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastSyncTempo, isFalse);
+    });
+
+    test('setQuantizeDiv is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setQuantizeDiv(GridDivision.eighth);
+      expect(engine.lastQuantizeDiv, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastQuantizeDiv, GridDivision.eighth);
+    });
+
+    test('setClickMode is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setClickMode(ClickMode.playRec);
+      expect(engine.lastClickMode, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastClickMode, ClickMode.playRec);
+    });
+
+    test('setClickOutput is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setClickOutput(0x3);
+      expect(engine.lastClickOutput, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastClickOutput, 0x3);
+    });
+
+    test('setClickVolume is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setClickVolume(0.5);
+      expect(engine.lastClickVolume, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastClickVolume, 0.5);
+    });
+
+    test('setClickVolume applies immediately while running', () {
+      final repo = buildRepo()..startEngine(const EngineConfig());
+      // The start re-applied the default (unity).
+      expect(engine.lastClickVolume, 1.0);
+
+      repo.setClickVolume(0.25);
+      expect(engine.lastClickVolume, 0.25);
+    });
+
+    test('setCountIn is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setCountIn(2);
+      expect(engine.lastCountIn, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastCountIn, 2);
+    });
+
+    test('setCountIn clamps a negative to zero', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setCountIn(-3);
+      expect(engine.lastCountIn, 0);
+    });
+
+    test(
+      'the grid-off defaults (signature 4/4, sync on, quantize div/click/ '
+      'count-in off) still re-apply on a plain start',
+      () {
+        buildRepo().startEngine(const EngineConfig());
+        expect(engine.lastTimeSignature, (4, 4));
+        expect(engine.lastSyncTempo, isTrue);
+        expect(engine.lastQuantizeDiv, GridDivision.off);
+        expect(engine.lastClickMode, ClickMode.off);
+        expect(engine.lastClickOutput, 0);
+        expect(engine.lastClickVolume, 1.0);
+        expect(engine.lastCountIn, 0);
+      },
+    );
+
+    test(
+      'signature, sync, quantize div, click mode/output/volume and count-in '
+      're-apply on every restart (device change)',
+      () {
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setTimeSignature(3, 4)
+          ..setSyncTempo(on: false)
+          ..setQuantizeDiv(GridDivision.bar)
+          ..setClickMode(ClickMode.rec)
+          ..setClickOutput(0x1)
+          ..setClickVolume(0.7)
+          ..setCountIn(4);
+
+        engine
+          ..lastTimeSignature = null
+          ..lastSyncTempo = null
+          ..lastQuantizeDiv = null
+          ..lastClickMode = null
+          ..lastClickOutput = null
+          ..lastClickVolume = null
+          ..lastCountIn = null;
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+
+        expect(engine.lastTimeSignature, (3, 4));
+        expect(engine.lastSyncTempo, isFalse);
+        expect(engine.lastQuantizeDiv, GridDivision.bar);
+        expect(engine.lastClickMode, ClickMode.rec);
+        expect(engine.lastClickOutput, 0x1);
+        expect(engine.lastClickVolume, 0.7);
+        expect(engine.lastCountIn, 4);
+      },
+    );
+
+    test(
+      'TransportState projects every tempo-grid + click + count-in field '
+      'from the snapshot',
+      () {
+        engine.nextSnapshot = const EngineSnapshot(
+          isRunning: true,
+          sampleRate: 48000,
+          bufferFrames: 128,
+          framesProcessed: 0,
+          xrunCount: 0,
+          inputRms: 0,
+          inputPeak: 0,
+          outputRms: 0,
+          latencyState: le.LatencyState.idle,
+          measuredLatencyMs: -1,
+          tempoBpm: 128,
+          tempoSource: TempoSource.manual,
+          tsNum: 3,
+          syncTempo: false,
+          quantizeDiv: GridDivision.quarter,
+          loopBars: 4,
+          currentBeat: 2,
+          clickMode: ClickMode.playRec,
+          clickMask: 0x3,
+          clickVolume: 0.8,
+          countInBars: 2,
+          countingIn: true,
+          countInBeatsLeft: 3,
+        );
+
+        final transport = buildRepo().state.transport;
+        expect(transport.tempoBpm, 128);
+        expect(transport.tempoSource, TempoSource.manual);
+        expect(transport.tsNum, 3);
+        expect(transport.tsDen, 4);
+        expect(transport.syncTempo, isFalse);
+        expect(transport.quantizeDiv, GridDivision.quarter);
+        expect(transport.loopBars, 4);
+        expect(transport.currentBeat, 2);
+        expect(transport.clickMode, ClickMode.playRec);
+        expect(transport.clickMask, 0x3);
+        expect(transport.clickVolume, closeTo(0.8, 1e-9));
+        expect(transport.countInBars, 2);
+        expect(transport.countingIn, isTrue);
+        expect(transport.countInBeatsLeft, 3);
+      },
+    );
+
+    test(
+      'TransportState defaults to the tempo-free grid-off values',
+      () {
+        final transport = buildRepo().state.transport;
+        expect(transport.tempoBpm, 0);
+        expect(transport.tempoSource, TempoSource.none);
+        expect(transport.tsNum, 4);
+        expect(transport.tsDen, 4);
+        expect(transport.syncTempo, isTrue);
+        expect(transport.quantizeDiv, GridDivision.off);
+        expect(transport.loopBars, 0);
+        expect(transport.currentBeat, 0);
+        expect(transport.clickMode, ClickMode.off);
+        expect(transport.clickMask, 0);
+        expect(transport.clickVolume, 1);
+        expect(transport.countInBars, 0);
+        expect(transport.countingIn, isFalse);
+        expect(transport.countInBeatsLeft, 0);
+      },
+    );
+  });
+
   group('applySession', () {
     /// A snapshot with [count] settled-empty tracks (the post-clear state), so
     /// the apply's settle wait passes immediately.
