@@ -185,6 +185,14 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->tempo_source = load_i32(&engine->a_tempo_source);
   out->loop_bars = load_i32(&engine->a_loop_bars);
   out->current_beat = load_i32(&engine->a_current_beat);
+  /* Click + count-in (trailing block; click-off defaults read 0/0/1/0/0/0). */
+  out->click_mode = load_i32(&engine->a_click_mode);
+  out->click_mask =
+      atomic_load_explicit(&engine->a_click_mask, memory_order_relaxed);
+  out->click_volume = load_f32(&engine->a_click_volume_bits);
+  out->count_in_bars = load_i32(&engine->a_count_in_bars);
+  out->counting_in = load_i32(&engine->a_counting_in);
+  out->count_in_beats_left = load_i32(&engine->a_count_in_beats_left);
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,

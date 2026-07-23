@@ -67,6 +67,12 @@ static inline void le_flush_denormals(void) {
  * track into OVERDUBBING calls it so the layer capture is armed. */
 static void le_dub_session_start(le_engine* e, le_track* t);
 
+/* Defined below; handle_record's count-in cancel-race grace window (code-
+ * review fix) reuses this full "return a track to EMPTY, and if the whole
+ * rig is now empty, reset the master/grid too" reset rather than hand-
+ * rolling a partial one. */
+static void handle_clear(le_engine* e, int32_t ch);
+
 /* Performance event log (part 3, docs/design/performance-event-log-format.md):
  * pushes one entry into perf.log_ring, tagged with `frame` — the capture
  * frame it occurred at, same epoch as a_perf_frames/the PCM taps below. No-op
@@ -161,14 +167,75 @@ static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
   return end_state;
 }
 
-/* ---- tempo grid (audio thread) ----
+/* ---- tempo grid + click + count-in (audio thread) ----
  *
- * State + locks only in this part (A1): no click, no count-in, no musical arm
- * machinery. Everything here is dormant with the grid-off defaults — the pure
- * math lives in tempo_grid.c; these helpers wire it to engine state. None of
- * these commands is perf-logged: in this part they change no audible output
- * (the audited-command contract above logs audibility-affecting commands
- * only; the click, when it lands in A2, is what earns a log row). */
+ * Grid state + locks (A1) and the click voice + count-in built on them (A2);
+ * the musical arm machinery is a later part. Everything here is dormant with
+ * the grid-off/click-off defaults — the pure math lives in tempo_grid.c;
+ * these helpers wire it to engine state. None of these commands is
+ * perf-logged: the tempo commands change no audible output in this part, and
+ * the click commands shape a source that is EXCLUDED from performance capture
+ * by construction (summed after perf_tap_master_frame, D5) — a replay of the
+ * captured performance never contains the click, so logging its configuration
+ * would be noise the renderer must ignore. */
+
+/* Click voice constants (recovered 2f0513a values): a 30 ms linearly decaying
+ * sine burst at 0.25 amplitude — 1000 Hz on beats, 1500 Hz on the bar
+ * downbeat. */
+#define LE_CLICK_AMP 0.25f
+#define LE_CLICK_MS 30
+#define LE_CLICK_FREQ_BEAT 1000.0f
+#define LE_CLICK_FREQ_DOWNBEAT 1500.0f
+#define LE_CLICK_TWO_PI 6.28318530717958647692f
+
+/* (Re)starts the click burst for a beat that begins this frame. */
+static void trigger_click(le_engine* e, int downbeat) {
+  const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  e->click_len = sr * LE_CLICK_MS / 1000;
+  if (e->click_len < 1) e->click_len = 1;
+  e->click_remaining = e->click_len;
+  e->click_phase = 0.0f;
+  e->click_freq = downbeat ? LE_CLICK_FREQ_DOWNBEAT : LE_CLICK_FREQ_BEAT;
+}
+
+/* Drops an in-progress count-in back to idle (cancel and commit both funnel
+ * through here). The current click burst, if any, decays out naturally — only
+ * future beats stop. */
+static void le_count_in_reset(le_engine* e) {
+  e->count_in_total = 0;
+  e->count_in_elapsed = 0;
+  e->count_in_beats = 0;
+  e->count_in_beat = 0;
+  store_i32(&e->a_counting_in, 0);
+  store_i32(&e->a_count_in_beats_left, 0);
+}
+
+/* Starts a count-in for the DEFINING record press on `ch` (D9; the caller —
+ * handle_record's EMPTY branch — has verified no master exists, count-in is
+ * enabled, and a tempo is set). Beat boundaries render from their index
+ * against the frozen nominal frames-per-beat, so the recording starts exactly
+ * bars * ts_num * fpb frames after the press — the bar-1 downbeat. Returns 1
+ * when counting began, 0 on a degenerate grid (caller records immediately). */
+static int le_count_in_begin(le_engine* e, int32_t ch, int32_t bars) {
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  int32_t num = load_i32(&e->a_ts_num);
+  if (num <= 0) num = 4;
+  const le_tempo_grid g = {load_f32(&e->a_tempo_bpm_bits), num,
+                           load_i32(&e->a_ts_den), sr};
+  const double fpb = le_grid_frames_per_beat_unit(&g);
+  if (fpb <= 0.0) return 0; /* degenerate: nothing to click against */
+  const int32_t beats = bars * num;
+  e->count_in_fpb = fpb;
+  e->count_in_beats = beats;
+  e->count_in_total = (int32_t)llround((double)beats * fpb);
+  if (e->count_in_total < 1) e->count_in_total = 1;
+  e->count_in_elapsed = 0;
+  e->count_in_beat = 0;
+  e->count_in_channel = ch;
+  store_i32(&e->a_counting_in, 1);
+  store_i32(&e->a_count_in_beats_left, beats);
+  return 1;
+}
 
 /* The D6 tempo lock: manual tempo / signature changes (and taps) are ignored
  * while any track has content AND a grid exists (loop_bars > 0 or
@@ -183,8 +250,23 @@ static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
  * path that sets loop_bars > 0 also leaves tempo_source != none (sync
  * derivation marks DERIVED; the round-to-bars path requires a source), so no
  * reachable state distinguishes it. It stays per the plan's literal predicate
- * as a belt against future states that might break that invariant. */
+ * as a belt against future states that might break that invariant.
+ *
+ * EXTENSION (code-review fix, A2): also locked while a count-in is running
+ * (count_in_total > 0), even though the defining track is still EMPTY at
+ * that point (it only becomes RECORDING at le_count_in_commit) — the
+ * "any_content" test above would otherwise miss this window entirely. The
+ * count-in's click schedule (count_in_fpb/count_in_beats/count_in_total) is
+ * already frozen from the CURRENT tempo the instant it begins
+ * (le_count_in_begin); letting a tempo/signature change through mid-count
+ * would leave the audible click counting the OLD rate while
+ * sync_grid_to_loop later built the finalized loop's beat grid from the NEW
+ * one — a silent mismatch between what was heard and what was recorded.
+ * This is D6's same "tempo is locked once it's audibly committed to" spirit,
+ * just extended one edge earlier: the count-in IS the commitment moment, not
+ * the first captured sample. */
 static int le_tempo_locked(le_engine* e) {
+  if (e->count_in_total > 0) return 1;
   int any_content = 0;
   for (int32_t t = 0; t < e->track_count; ++t) {
     if (load_i32(&e->tracks[t].a_state) != LE_TRACK_EMPTY) {
@@ -267,20 +349,50 @@ static void sync_grid_to_loop(le_engine* e, int32_t len) {
 
 /* Per-frame beat publication, loop-driven: once a grid exists the beat index
  * derives from the master position so beats divide the loop exactly (the
- * 2f0513a loop-synced branch; the free-running branch returns with the click
- * in A2). Dormant-grid cost is the single grid_total_beats compare. Note:
- * with the default sync-on, a grid derives at the first defining finalize, so
- * the per-frame divide runs from then on — the same cost profile as the old
- * stack's loop-synced metronome; gating it on actual consumers (click,
- * quantize) is A2/A3's call if ever needed. */
-static inline void grid_beat_frame(le_engine* e, int32_t pos) {
+ * 2f0513a loop-synced branch; the free-running branch lives in click_frame).
+ * Dormant-grid cost is the single grid_total_beats compare. Note: with the
+ * default sync-on, a grid derives at the first defining finalize, so the
+ * per-frame divide runs from then on — the same cost profile as the old
+ * stack's loop-synced metronome.
+ *
+ * A2: this is also the loop-locked click scheduler. `click_on` is the frame's
+ * click audibility gate; a beat transition while it holds retriggers the
+ * click voice (downbeat pitch on beat 0 of the bar). grid_prev_beat/
+ * a_current_beat are tracked EVERY frame a grid+loop exist, regardless of
+ * click_on — only the trigger_click call below is gated — so grid_prev_beat
+ * always holds the TRUE current beat, click on or off.
+ *
+ * A RISE of the gate (click_on flips 0->1) re-arms grid_prev_beat to -1, but
+ * ONLY when `pos == 0` — the loop top, which is the one case where a rising
+ * gate should click immediately: the held-transport resume (le_transport_
+ * held parks the clock at 0 the whole time it's held, so grid_prev_beat is
+ * already sitting at 0 from the continuous tracking above and would
+ * otherwise suppress the resume's downbeat — the -1 re-arm forces it back
+ * out). Any OTHER gate rise — most notably a punch-in overdub starting
+ * mid-loop under LE_CLICK_REC (handle_record's PLAYING/STOPPED branch begins
+ * capturing at the CURRENT transport position, not a beat boundary) — must
+ * NOT get this treatment: firing immediately there would click at whatever
+ * arbitrary phase the punch landed on, not a real beat (confirmed bug:
+ * 300 BPM, punch mid-beat fired a click ~112 ms after the true beat onset).
+ * Leaving grid_prev_beat alone on those rises is exactly right, because it
+ * is already the CURRENT beat (continuous tracking, above) — so `beat !=
+ * grid_prev_beat` below stays false and no spurious click fires; the click
+ * naturally picks up at the next REAL boundary once the beat actually
+ * changes. */
+static inline void grid_beat_frame(le_engine* e, int32_t pos, int click_on) {
   if (e->grid_total_beats <= 0 || e->clock.length <= 0) return;
+  if (click_on != e->click_grid_gate) {
+    if (click_on && pos == 0) e->grid_prev_beat = -1;
+    e->click_grid_gate = click_on;
+  }
   const int32_t beat =
       le_grid_beat_at(pos, e->clock.length, e->grid_total_beats);
   if (beat != e->grid_prev_beat) {
     e->grid_prev_beat = beat;
     const int32_t num = load_i32(&e->a_ts_num);
-    store_i32(&e->a_current_beat, num > 0 ? beat % num : 0);
+    const int32_t bar_beat = num > 0 ? beat % num : 0;
+    store_i32(&e->a_current_beat, bar_beat);
+    if (click_on) trigger_click(e, bar_beat == 0);
   }
 }
 
@@ -657,6 +769,37 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
  * hand-off), then advances this track's state machine. */
 static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
+  /* A record press during a count-in CANCELS it outright — back to idle, no
+   * recording (D9). Any track's press cancels: the count-in is global
+   * transport state, not a per-track arm. */
+  if (e->count_in_total > 0) {
+    le_count_in_reset(e);
+    return;
+  }
+  /* Cancel-vs-auto-commit race grace window (code-review fix; engine_private.h
+   * / le_count_in_commit have the full rationale). A press that lands here
+   * with count_in_grace_channel == ch arrived one block too late to see
+   * count_in_total > 0 above: the count-in's own sample-accurate auto-commit
+   * already landed mid the PREVIOUS block and flipped this track to
+   * RECORDING. Without this check the press would fall through to the
+   * LE_TRACK_RECORDING case below and finalize a near-zero-length defining
+   * loop — not what a press racing the commit meant. Treat it as the
+   * original cancel-intent instead: abort the just-started take back to
+   * EMPTY (handle_clear — the whole rig, since the defining take is the
+   * only content that can exist at this point) rather than finalizing it.
+   * This is indistinguishable, within one block, from a genuine "count in,
+   * then immediately finalize a near-zero loop" double-press; the
+   * deliberate choice is cancel-wins, since a press was already in flight
+   * before the commit landed. Consumed unconditionally (one-shot) whether
+   * or not the state still matches what the commit left. */
+  if (e->count_in_grace_channel == ch) {
+    e->count_in_grace_channel = -1;
+    if (load_i32(&e->tracks[ch].a_state) == LE_TRACK_RECORDING &&
+        e->clock.length == 0) {
+      handle_clear(e, ch);
+      return;
+    }
+  }
   /* Latched BEFORE any state mutation: a capture start from a held transport
    * unparks the whole loop (le_unpark_stopped) after it lands. */
   const int was_held = le_transport_held(e);
@@ -672,6 +815,19 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
        * the new track records freely from the loop top. Both are RECORDING,
        * distinguished by clock.length. */
       if (e->clock.length == 0) {
+        /* The DEFINING press is where a count-in fires (D9: idle transport,
+         * no master — with a master this branch isn't taken, and count-in
+         * never applies once anything plays). It needs a tempo to click
+         * against; with none set, recording starts immediately as always.
+         * No RECORD_START / unmute here — the commit at the count-in's
+         * downbeat does both when the capture actually begins. */
+        {
+          const int32_t ci_bars = load_i32(&e->a_count_in_bars);
+          if (ci_bars > 0 && load_f32(&e->a_tempo_bpm_bits) > 0.0f &&
+              le_count_in_begin(e, ch, ci_bars)) {
+            break;
+          }
+        }
         t->record_pos = 0;
         t->record_start = 0;
         le_loop_clock_reset(&e->clock);
@@ -741,6 +897,9 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
 
 static void handle_stop(le_engine* e, int32_t ch, uint64_t frame) {
   if (!valid_channel(e, ch)) return;
+  /* A stop press during a count-in cancels it (D9). The stop then proceeds
+   * normally — a no-op on the idle transport a count-in requires. */
+  if (e->count_in_total > 0) le_count_in_reset(e);
   le_track* t = &e->tracks[ch];
   const int32_t st = load_i32(&t->a_state);
   if (st == LE_TRACK_RECORDING) {
@@ -1328,6 +1487,51 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&e->a_quantize_div, d);
       break;
     }
+    /* ---- click + count-in (A2; see the helper block above finalize_master).
+     * Not perf-logged: the click never reaches the performance capture (it
+     * sums after the perf tap by design), so its configuration is invisible
+     * to a replay of the captured performance. Each value is re-clamped here
+     * (the exported wrappers already validate) so a raw le_engine_post_command
+     * can never publish an out-of-range value. */
+    case LE_CMD_SET_CLICK_MODE: {
+      int32_t m = cmd->arg_i;
+      if (m < LE_CLICK_OFF) m = LE_CLICK_OFF;
+      if (m > LE_CLICK_PLAY_REC) m = LE_CLICK_PLAY_REC;
+      store_i32(&e->a_click_mode, m);
+      break;
+    }
+    case LE_CMD_SET_CLICK_OUTPUT:
+      atomic_store_explicit(&e->a_click_mask, cmd->trackmask.mask,
+                            memory_order_relaxed);
+      break;
+    case LE_CMD_SET_CLICK_VOLUME: {
+      float v = cmd->arg_f;
+      /* NaN-rejecting clamp (same rationale as LE_CMD_SET_TEMPO's). */
+      if (!(v >= 0.0f)) {
+        v = 0.0f;
+      } else if (v > LE_MAX_GAIN) {
+        v = LE_MAX_GAIN;
+      }
+      store_f32(&e->a_click_volume_bits, v);
+      break;
+    }
+    case LE_CMD_SET_COUNT_IN: {
+      int32_t bars = cmd->arg_i;
+      if (bars < 0) bars = 0;
+      if (bars > LE_COUNT_IN_MAX_BARS) bars = LE_COUNT_IN_MAX_BARS;
+      store_i32(&e->a_count_in_bars, bars);
+      /* ANY mid-count-in change cancels the count-in in flight — not just a
+       * change to 0 (code-review fix). The running countdown was frozen at
+       * le_count_in_begin from whatever bars was in effect THEN
+       * (count_in_total/count_in_beats/count_in_fpb); republishing a
+       * different nonzero value here would leave the published setting and
+       * the actually-counting schedule silently diverged until the count-in
+       * ends on the STALE value. Cancelling and letting the next record
+       * press pick up the freshly-published value is simpler and consistent
+       * with the existing 0-cancels precedent. */
+      if (e->count_in_total > 0) le_count_in_reset(e);
+      break;
+    }
     case LE_CMD_SET_MASTER_GAIN: {
       le_plog_push(e, frame, *cmd);
       float g = cmd->arg_f;
@@ -1745,6 +1949,176 @@ static inline void perf_tap_monitor_frame(le_engine* e, int input, float l,
   const float s[2] = {l, r};
   if (!le_audio_ring_push_frame(&e->perf.monitor_ring[input], s, 2)) {
     atomic_fetch_add_explicit(&e->a_perf_overruns, 1u, memory_order_relaxed);
+  }
+}
+
+/* ---- click + count-in per-frame steps (A2) ----
+ *
+ * The click sums into its masked output channels AFTER perf_tap_master_frame
+ * and BEFORE viz_tap_frame (index Architecture §3, D5). Consequences, all
+ * intended: it bypasses master gain and the limiter (click volume is its only
+ * gain stage), it is absent from output metering and the loop viz (both fed
+ * upstream), and it is excluded from performance capture — and therefore from
+ * every bounce/export — by construction. */
+
+/* The frame's click audibility gate (le_click_mode semantics). `st` is the
+ * frame's per-track state snapshot from mix_tracks_frame. A count-in overrides
+ * every mode but OFF: the whole point of counting is hearing it. */
+static inline int le_click_gate(const le_engine* e, int32_t mode, int tc,
+                                const int32_t* st) {
+  if (e->count_in_total > 0) return 1;
+  switch (mode) {
+    case LE_CLICK_REC:
+      for (int t = 0; t < tc; ++t) {
+        if (st[t] == LE_TRACK_RECORDING || st[t] == LE_TRACK_OVERDUBBING) {
+          return 1;
+        }
+      }
+      return 0;
+    case LE_CLICK_REC_FIRST:
+      /* Only the DEFINING first-layer recording (no master yet). */
+      if (e->clock.length != 0) return 0;
+      for (int t = 0; t < tc; ++t) {
+        if (st[t] == LE_TRACK_RECORDING) return 1;
+      }
+      return 0;
+    case LE_CLICK_PLAY_REC:
+      for (int t = 0; t < tc; ++t) {
+        if (st[t] == LE_TRACK_PLAYING || st[t] == LE_TRACK_RECORDING ||
+            st[t] == LE_TRACK_OVERDUBBING) {
+          return 1;
+        }
+      }
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+/* Completes a count-in: the counting state drops and the DEFINING recording
+ * begins on count_in_channel — the same start the immediate press would have
+ * done, deferred to land exactly on the bar-1 downbeat (the NEXT frame is the
+ * first one captured: mix_tracks_frame has already run for this frame, so the
+ * capture window opens at press + count_in_total frames precisely). The
+ * free-run click phase re-anchors here so the recording's first frame carries
+ * the downbeat click when the mode gates it in.
+ *
+ * count_in_grace_channel opens a one-block cancel-vs-commit race window
+ * (code-review fix, engine_private.h has the full rationale): this can fire
+ * MID-block, one block before commands next drain, so a cancel press already
+ * in flight when this lands would otherwise arrive at handle_record too late
+ * to see count_in_total > 0. le_engine_process clears the window back to -1
+ * right after every block's command-drain loop, so it survives for exactly
+ * the one drain immediately following this commit's block. */
+static void le_count_in_commit(le_engine* e, uint64_t frame) {
+  const int32_t ch = e->count_in_channel;
+  le_count_in_reset(e);
+  if (!valid_channel(e, ch)) return;
+  le_track* t = &e->tracks[ch];
+  /* Both re-checked: a clear/undo cannot have made this stale (counting only
+   * ever starts against an empty rig), but the commit must never stomp state
+   * if some future path breaks that invariant. */
+  if (load_i32(&t->a_state) != LE_TRACK_EMPTY || e->clock.length != 0) return;
+  e->count_in_grace_channel = ch; /* open the one-block cancel-race window */
+  le_dub_drop_armed(t);
+  t->record_pos = 0;
+  t->record_start = 0;
+  le_loop_clock_reset(&e->clock);
+  store_i32(&t->a_state, LE_TRACK_RECORDING);
+  le_plog_push(e, frame,
+               (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
+  le_capture_start_unmute(e, t, frame);
+  e->click_free_running = 1;
+  e->click_free_frame = 0;
+  e->click_free_beat = 0;
+}
+
+/* Advances the count-in / free-running click schedulers and synthesizes the
+ * click voice into the masked output channels for one frame. `click_on` is
+ * the frame's audibility gate (le_click_gate). Dormant cost with the
+ * defaults: the single fused compare at the top (all three terms are
+ * audio-thread-local ints that read 0). */
+static inline void click_frame(le_engine* e, float* out, uint32_t f,
+                               int ch_out, int click_on, uint32_t mask,
+                               float vol, int sr, uint64_t frame) {
+  /* click_free_running joins the fuse so a gate that fell while no burst was
+   * sounding still gets its one clean-up pass (the free-run reset below) —
+   * after that the whole term reads 0 again and this stays one compare. */
+  if ((click_on | e->count_in_total | e->click_remaining |
+       e->click_free_running) == 0) {
+    return;
+  }
+
+  if (e->count_in_total > 0) {
+    /* Counting in: beats render from their index against the frozen nominal
+     * fpb (no accumulation drift), audible in every mode but OFF. */
+    if (e->count_in_beat < e->count_in_beats &&
+        e->count_in_elapsed >=
+            (int32_t)llround((double)e->count_in_beat * e->count_in_fpb)) {
+      const int32_t num = load_i32(&e->a_ts_num);
+      const int32_t bar_beat = num > 0 ? e->count_in_beat % num : 0;
+      if (click_on) trigger_click(e, bar_beat == 0);
+      store_i32(&e->a_current_beat, bar_beat);
+      store_i32(&e->a_count_in_beats_left,
+                e->count_in_beats - e->count_in_beat);
+      e->count_in_beat++;
+    }
+    e->count_in_elapsed++;
+    if (e->count_in_elapsed >= e->count_in_total) {
+      le_count_in_commit(e, frame); /* the downbeat: recording starts */
+    }
+  } else {
+    /* Free-running scheduler: with no loop-locked grid (defining recording,
+     * or sync-off playback) and a tempo set, the beat phase runs on the
+     * nominal grid, re-anchoring its downbeat whenever it activates. The
+     * loop-locked case is grid_beat_frame's. */
+    const int free_run =
+        click_on && (e->grid_total_beats <= 0 || e->clock.length <= 0);
+    if (!free_run) {
+      e->click_free_running = 0;
+    } else {
+      if (!e->click_free_running) {
+        e->click_free_running = 1;
+        e->click_free_frame = 0;
+        e->click_free_beat = 0;
+      }
+      if (e->click_free_frame == 0) {
+        /* Beat boundary: refresh fpb from the published tempo (a pre-content
+         * tempo change retunes the next beat), click, publish the beat. */
+        const float bpm = load_f32(&e->a_tempo_bpm_bits);
+        if (bpm > 0.0f) {
+          const int32_t fpb = (int32_t)llround(60.0 * (double)sr / (double)bpm);
+          e->click_free_fpb = fpb > 0 ? fpb : 1;
+          const int32_t num = load_i32(&e->a_ts_num);
+          trigger_click(e, e->click_free_beat == 0);
+          store_i32(&e->a_current_beat,
+                    num > 0 ? e->click_free_beat % num : 0);
+        } else {
+          e->click_free_fpb = 0; /* no tempo: nothing to click against */
+        }
+      }
+      if (e->click_free_fpb > 0 && ++e->click_free_frame >= e->click_free_fpb) {
+        e->click_free_frame = 0;
+        const int32_t num = load_i32(&e->a_ts_num);
+        e->click_free_beat = num > 0 ? (e->click_free_beat + 1) % num : 0;
+      }
+    }
+  }
+
+  /* Synthesis: one sample of the decaying sine burst, summed into the masked
+   * channels only. Post-master-bus by design — see the block comment above. */
+  if (e->click_remaining > 0) {
+    const float env = (float)e->click_remaining / (float)e->click_len;
+    const float s = LE_CLICK_AMP * env * sinf(e->click_phase) * vol;
+    e->click_phase += LE_CLICK_TWO_PI * e->click_freq / (float)sr;
+    if (e->click_phase > LE_CLICK_TWO_PI) e->click_phase -= LE_CLICK_TWO_PI;
+    e->click_remaining--;
+    if (mask != 0u) {
+      float* o = out + (size_t)f * (size_t)ch_out;
+      for (int c = 0; c < ch_out; ++c) {
+        if (mask & (1u << c)) o[c] += s;
+      }
+    }
   }
 }
 
@@ -2336,6 +2710,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   le_command cmd;
   while (le_ring_pop(&e->ring, &cmd)) apply_command(e, &cmd, perf_frame_base);
 
+  /* Close the count-in cancel-race grace window (code-review fix) right
+   * after this block's command drain: it is open for exactly one block's
+   * worth of draining — the block immediately following the commit that set
+   * it (engine_private.h / le_count_in_commit have the full rationale) —
+   * whether or not a matching press showed up to consume it. */
+  e->count_in_grace_channel = -1;
+
   /* Per-pass undo layer maintenance: retry parked retires and advance the
    * post-punch-out drain. Runs every call — including frames == 0 pumps (the
    * host tests' drain helper) — so a completed layer always retires. */
@@ -2349,6 +2730,13 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   const int limiter_on = load_i32(&e->a_limiter_enabled) != 0;
   const float limiter_ceiling = load_f32(&e->a_limiter_ceiling_bits);
   const float overdub_fb = load_f32(&e->a_overdub_fb_bits);
+
+  /* Click bus settings, read once per block (same rationale; the click's
+   * volume is its ONLY gain stage — deliberately outside the master bus). */
+  const int32_t click_mode = load_i32(&e->a_click_mode);
+  const uint32_t click_mask =
+      atomic_load_explicit(&e->a_click_mask, memory_order_relaxed);
+  const float click_vol = load_f32(&e->a_click_volume_bits);
   /* ~50 ms release toward unity once the signal drops below the ceiling. */
   float lim_release = 1.0f / (0.05f * (float)(e->sample_rate > 0
                                                   ? e->sample_rate
@@ -2441,15 +2829,29 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                        mon_on, mon_mut, mon_has_fx, mon_fx_count, mon_fx_type,
                        mon_fx_params, mon_vol, mon_out);
 
-    /* Master bus (gain + limiter + output metering), then the loop-viz tap, then
-     * advance the record heads and master transport — see the static-inline step
-     * definitions above le_engine_process. The latency-calibration pulse path
-     * bypassed all of this via `continue` above. */
+    /* Master bus (gain + limiter + output metering), then the perf tap, THEN
+     * the click bus (Architecture §3: after the tap so captures/exports never
+     * contain it; after gain/limiter/metering so none of them touch it), then
+     * the loop-viz tap, then advance the record heads and master transport —
+     * see the static-inline step definitions above le_engine_process. The
+     * latency-calibration pulse path bypassed all of this via `continue`
+     * above. Dormant click cost: the click_on ternary here plus click_frame's
+     * fused compare. */
     master_bus_frame(e, out, f, ch_out, master_gain, limiter_on, limiter_ceiling,
                      lim_release, &out_sumsq, &frame_out_peak);
     perf_tap_master_frame(e, out, f, ch_out);
+    const int click_on =
+        click_mode != LE_CLICK_OFF ? le_click_gate(e, click_mode, tc, st) : 0;
+    grid_beat_frame(e, pos, click_on); /* dormant-grid cost: one int compare */
+    /* click_mask & out_enabled (code-review fix): a structurally-disabled
+     * output must never carry click energy even if the click's own routing
+     * mask points at it — exactly like every other source's fan-out (lanes:
+     * out_mask & out_enabled in mix_tracks_frame; monitors: mon_out &
+     * out_enabled in mix_monitors_frame). out_enabled is already loaded once
+     * per block above. */
+    click_frame(e, out, f, ch_out, click_on, click_mask & out_enabled,
+                click_vol, sr, perf_frame_base + f);
     viz_tap_frame(e, tc, pos, frame_out_peak, frame_trk_peak);
-    grid_beat_frame(e, pos); /* dormant-grid cost: one int compare */
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
 

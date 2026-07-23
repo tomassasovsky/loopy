@@ -580,7 +580,21 @@ struct le_engine {
   _Atomic int32_t a_quantize_div;    /* le_grid_div; default 0 = off */
   _Atomic int32_t a_tempo_source;    /* le_tempo_source; default 0 = none */
   _Atomic int32_t a_loop_bars;       /* whole bars in the master loop; 0 none */
-  _Atomic int32_t a_current_beat;    /* 0..ts_num-1, loop-driven */
+  _Atomic int32_t a_current_beat;    /* 0..ts_num-1; loop-driven, or click/
+                                      * count-in-driven while those free-run */
+
+  /* Click + count-in (A2, published — see le_snapshot's trailing click block).
+   * The SETTINGS (mode/mask/volume/bars) are seeded in le_engine_create and
+   * persist across configure, exactly like the tempo settings above; the
+   * counting state (a_counting_in / a_count_in_beats_left) is transient. All
+   * default to click-off values (mode off, mask 0 = unrouted, count-in 0 =
+   * off) so the untouched engine is bit-identical to the click-free build. */
+  _Atomic int32_t a_click_mode;         /* le_click_mode; default 0 = off */
+  _Atomic uint32_t a_click_mask;        /* output bitmask; default 0 = unrouted */
+  _Atomic uint32_t a_click_volume_bits; /* float bits, 0..LE_MAX_GAIN; def. 1 */
+  _Atomic int32_t a_count_in_bars;      /* measures of count-in; 0 = off */
+  _Atomic int32_t a_counting_in;        /* 0/1: a count-in is in progress */
+  _Atomic int32_t a_count_in_beats_left; /* countdown beats remaining; 0 idle */
 
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
@@ -664,6 +678,56 @@ struct le_engine {
   int32_t grid_total_beats;
   int32_t grid_prev_beat;
 
+  /* Audio-thread-local click voice (A2): one synthesized sine burst
+   * (1000/1500 Hz, 30 ms linear decay) retriggered on each audible beat.
+   * click_remaining > 0 while a burst is decaying; click_grid_gate is last
+   * frame's loop-locked gate (a rise re-arms grid_prev_beat so the current
+   * beat clicks immediately). The free-running scheduler (click_free_*) runs
+   * the beat phase off the nominal grid whenever no loop-locked grid exists
+   * (defining recording, sync-off playback); it re-anchors its downbeat each
+   * time it activates. */
+  int32_t click_remaining;
+  int32_t click_len;
+  float click_phase;
+  float click_freq;
+  int click_grid_gate;
+  int click_free_running;
+  int32_t click_free_frame; /* frames into the current free-run beat */
+  int32_t click_free_fpb;   /* frames per beat, refreshed at each beat */
+  int32_t click_free_beat;  /* 0..ts_num-1 within the free-run bar */
+
+  /* Audio-thread-local count-in (A2, D9): count_in_total > 0 while counting.
+   * Beat boundaries render from their index against the frozen count_in_fpb
+   * (no accumulation drift); the recording on count_in_channel begins the
+   * frame count_in_elapsed reaches count_in_total — the bar-1 downbeat. */
+  int32_t count_in_total;   /* frames in the whole count-in; 0 = not counting */
+  int32_t count_in_elapsed; /* frames since the count-in began */
+  int32_t count_in_beats;   /* total beats (bars * ts_num) */
+  int32_t count_in_beat;    /* next beat index (0-based) to fire */
+  double count_in_fpb;      /* nominal frames per beat, frozen at start */
+  int32_t count_in_channel; /* track the count-in will commit to */
+  /* Cancel-vs-auto-commit race grace window (code-review fix, A2). Commands
+   * drain once at the top of le_engine_process, but le_count_in_commit can
+   * complete the count-in MID-block via the per-frame countdown; a cancel
+   * press posted just after that block's drain already ran arrives one
+   * block too late — count_in_total is already 0 by the time it drains, so
+   * handle_record's cancel guard above no longer fires and the press would
+   * otherwise fall through to the RECORDING-finalize branch, minting a
+   * near-zero-length defining loop instead of the cancel the user pressed
+   * for. le_count_in_commit sets this to the just-committed channel;
+   * le_engine_process clears it back to -1 immediately after EVERY block's
+   * command-drain loop, so it is visible to exactly one block's worth of
+   * draining (the block right after the commit) — the same block a
+   * concurrently-posted press can land in. handle_record treats a press on
+   * this channel, within that window, as the ORIGINAL cancel-intent: the
+   * just-started take is aborted back to EMPTY (handle_clear) rather than
+   * finalized. This cannot be told apart from a genuine "count in, then
+   * immediately finalize a near-zero loop" double-press — the two are
+   * indistinguishable within a single block — so the deliberate choice is
+   * cancel-wins, matching the precondition that a press was already in
+   * flight before the commit landed. */
+  int32_t count_in_grace_channel; /* -1 = no grace window open */
+
   /* Quantized recording (control-thread-owned). When `quantize` is set, a record
    * press over an existing master arms `armed[ch]` (and does the one-time prep
    * an immediate record would) instead of acting now; the audio thread fires it
@@ -700,6 +764,12 @@ struct le_engine {
    * the input level crosses LE_AUTO_RECORD_THRESHOLD. Reuses the arm/pending
    * machinery with a per-track trigger type (see le_track.pending_trigger). */
   int auto_record;
+
+  /* Control-side mirror of the count-in setting (the published a_count_in_bars
+   * only updates when the audio thread drains the ring, so the D9 auto-record
+   * mutual exclusion and le_engine_record's precedence check read this plain
+   * control-thread int instead of racing the atomic). */
+  int count_in_bars;
 
   /* Loop-viz bucketing (audio-thread-local): peaks accumulate within the
    * current loop bucket and publish when the playhead crosses into the next. */
