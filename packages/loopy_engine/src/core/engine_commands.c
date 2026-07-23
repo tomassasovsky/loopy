@@ -1253,6 +1253,35 @@ int32_t le_engine_set_default_multiple(le_engine* engine, int32_t multiple) {
   return LE_OK;
 }
 
+/* ---- track length presets (A6, D17; see loopy_engine_api.h's section doc for
+ * the full preset x click-mode matrix) ---- */
+
+int32_t le_engine_set_track_length_preset(le_engine* engine, int32_t channel,
+                                          int32_t bars) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (bars < 0 || bars > LE_LENGTH_PRESET_MAX_BARS) return LE_ERR_INVALID;
+  if (bars > 0) {
+    /* D17 allocation guard: `bars` bars of the CURRENT time signature at the
+     * slowest possible tempo (30 BPM, LE_GRID_TEMPO_MIN) must fit within
+     * max_loop_frames — checked here, before recording starts, rather than
+     * discovered mid-take. Any signature is possible pre-lock, so this reads
+     * the signature live rather than assuming 4/4. A tempo at or above 30 BPM
+     * (the engine's floor) only ever needs FEWER frames per bar, so passing
+     * this check at 30 BPM guarantees every reachable actual tempo fits too. */
+    int32_t num = load_i32(&engine->a_ts_num);
+    if (num <= 0) num = 4;
+    const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
+    const le_tempo_grid worst = {LE_GRID_TEMPO_MIN, num,
+                                 load_i32(&engine->a_ts_den), sr};
+    const double fpbar = le_grid_frames_per_bar(&worst);
+    if (fpbar > 0.0 && (double)bars * fpbar > (double)engine->max_loop_frames) {
+      return LE_ERR_CAPACITY;
+    }
+  }
+  return le_push(engine, LE_CMD_SET_LENGTH_PRESET, channel, (float)bars);
+}
+
 int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled) {
   if (engine == NULL) return LE_ERR_INVALID;
   engine->rec_dub = enabled ? 1 : 0;

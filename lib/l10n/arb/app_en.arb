@@ -318,6 +318,16 @@
     "defaultLabel": "Default",
     "tracksIntro": "Rename tracks.",
     "tracksGroupLabel": "TRACKS",
+    "lengthPresetLabel": "Length preset",
+    "lengthPresetAuto": "AUTO",
+    "lengthPresetBars": "{bars, plural, one{1 bar} other{{bars} bars}}",
+    "@lengthPresetBars": {
+        "placeholders": {
+            "bars": {
+                "type": "int"
+            }
+        }
+    },
     "inputChannelLabel": "In {channelNumber}",
     "@inputChannelLabel": {
         "placeholders": {

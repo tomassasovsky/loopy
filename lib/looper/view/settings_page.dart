@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
+import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
@@ -209,6 +210,7 @@ class _SettingsPageState extends State<SettingsPage> {
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
     final tracks = context.watch<TracksCubit>();
+    final looperTracks = context.watch<LooperBloc>().state.tracks;
     return [
       Text(l10n.tracksIntro, style: setupBody),
       const SizedBox(height: 28),
@@ -227,6 +229,26 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
         if (i < tracks.state.names.length - 1) const SizedBox(height: 8),
+      ],
+      const SizedBox(height: 28),
+      SetupGroupLabel(l10n.lengthPresetLabel),
+      const SizedBox(height: 12),
+      for (var i = 0; i < looperTracks.length; i++) ...[
+        SetupTrackLengthPresetRow(
+          rowKey: Key('settings_trackLengthPreset_$i'),
+          channel: i,
+          bars: looperTracks[i].lengthPresetBars,
+          label: l10n.displayTrackName(
+            i < tracks.state.names.length ? tracks.state.names[i] : '',
+            i,
+          ),
+          autoLabel: l10n.lengthPresetAuto,
+          barsLabel: l10n.lengthPresetBars,
+          onChanged: (bars) => context.read<LooperBloc>().add(
+            LooperTrackLengthPresetChanged(i, bars),
+          ),
+        ),
+        if (i < looperTracks.length - 1) const SizedBox(height: 8),
       ],
     ];
   }

@@ -83,6 +83,12 @@ void main() {
       ),
     ).thenReturn(EngineResult.ok);
     when(
+      () => repository.setTrackLengthPreset(
+        channel: any(named: 'channel'),
+        bars: any(named: 'bars'),
+      ),
+    ).thenReturn(EngineResult.ok);
+    when(
       () => repository.setLaneCount(
         channel: any(named: 'channel'),
         count: any(named: 'count'),
@@ -348,6 +354,15 @@ void main() {
     act: (bloc) => bloc.add(const LooperTrackMultipleChanged(1, 3)),
     verify: (_) => verify(
       () => repository.setTrackMultiple(channel: 1, multiple: 3),
+    ).called(1),
+  );
+
+  blocTest<LooperBloc, LooperState>(
+    'LooperTrackLengthPresetChanged forwards bars to the repository',
+    build: buildBloc,
+    act: (bloc) => bloc.add(const LooperTrackLengthPresetChanged(1, 8)),
+    verify: (_) => verify(
+      () => repository.setTrackLengthPreset(channel: 1, bars: 8),
     ).called(1),
   );
 

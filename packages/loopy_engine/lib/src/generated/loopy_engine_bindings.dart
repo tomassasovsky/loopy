@@ -1847,6 +1847,35 @@ class LoopyEngineBindings {
       _le_engine_set_default_multiplePtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Sets track [channel]'s length preset: 0 = AUTO, or 1..
+  /// LE_LENGTH_PRESET_MAX_BARS to fix the defining recording to N bars (see the
+  /// matrix above). Returns LE_ERR_INVALID for a bad channel/bars, or
+  /// LE_ERR_CAPACITY when N bars of the CURRENT time signature at the slowest
+  /// possible tempo (30 BPM) would exceed the engine's max_loop_frames — checked
+  /// here, before recording starts, so a doomed preset is rejected outright
+  /// rather than silently failing mid-take.
+  int le_engine_set_track_length_preset(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int bars,
+  ) {
+    return _le_engine_set_track_length_preset(
+      engine,
+      channel,
+      bars,
+    );
+  }
+
+  late final _le_engine_set_track_length_presetPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_length_preset');
+  late final _le_engine_set_track_length_preset =
+      _le_engine_set_track_length_presetPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback. A stop press
   /// always ends in playback/stopped. Independent of this setting, a track recorded
@@ -3133,7 +3162,13 @@ enum le_result {
   /// a plugin's bus topology is not a stereo (or
   /// mono-adaptable) effect — instrument / multi-bus /
   /// sidechain / wrong channel count (D-BUS)
-  LE_ERR_UNSUPPORTED(-5);
+  LE_ERR_UNSUPPORTED(-5),
+
+  /// a requested allocation would exceed engine
+  /// capacity (A6, D17): N bars of the current
+  /// signature at the slowest possible tempo (30
+  /// BPM) would not fit in max_loop_frames
+  LE_ERR_CAPACITY(-6);
 
   final int value;
   const le_result(this.value);
@@ -3145,6 +3180,7 @@ enum le_result {
     -3 => LE_ERR_NOT_RUNNING,
     -4 => LE_ERR_DEVICE,
     -5 => LE_ERR_UNSUPPORTED,
+    -6 => LE_ERR_CAPACITY,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -3432,6 +3468,10 @@ enum le_command_code {
   /// handshake once the audio thread acks this
   LE_CMD_PERF_DISARM(42),
 
+  /// arg_i = channel, arg_f = bars (0 = AUTO,
+  /// 1..LE_LENGTH_PRESET_MAX_BARS = fixed).
+  LE_CMD_SET_LENGTH_PRESET(44),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -3484,6 +3524,7 @@ enum le_command_code {
     43 => LE_CMD_RESTORE_CLEAR,
     41 => LE_CMD_PERF_ARM,
     42 => LE_CMD_PERF_DISARM,
+    44 => LE_CMD_SET_LENGTH_PRESET,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -3691,6 +3732,13 @@ final class le_track_snapshot extends ffi.Struct {
   /// 0/1: a quantized/signal arm is waiting to fire
   @ffi.Int32()
   external int pending;
+
+  /// Trailing (A6, D17): the DEFINING-recording length preset — 0 = AUTO,
+  /// 1..LE_LENGTH_PRESET_MAX_BARS = fixed N bars. Inert on a track that
+  /// already has content; applies to the next defining recording only. See
+  /// le_engine_set_track_length_preset.
+  @ffi.Int32()
+  external int length_preset_bars;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -4040,6 +4088,8 @@ final class le_midi_out extends ffi.Opaque {}
 const int LE_MAX_CHANNELS = 32;
 
 const int LE_COUNT_IN_MAX_BARS = 64;
+
+const int LE_LENGTH_PRESET_MAX_BARS = 64;
 
 const int LE_FX_MAX = 8;
 

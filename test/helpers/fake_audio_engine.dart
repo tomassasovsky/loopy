@@ -351,6 +351,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// Per-track length presets passed to [setTrackLengthPreset].
+  final Map<int, int> trackLengthPreset = {};
+
+  @override
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
+    trackLengthPreset[channel] = bars;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;

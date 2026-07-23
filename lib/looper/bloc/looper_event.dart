@@ -110,6 +110,22 @@ final class LooperTrackMultipleChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, multiple];
 }
 
+/// Track [channel]'s length preset changed (A6, D17; `0` = AUTO).
+///
+/// Governs the DEFINING (first/master) recording only — orthogonal to
+/// [LooperTrackMultipleChanged], which governs a non-defining track once a
+/// master already exists.
+final class LooperTrackLengthPresetChanged extends LooperChannelEvent {
+  /// Creates a [LooperTrackLengthPresetChanged].
+  const LooperTrackLengthPresetChanged(super.channel, this.bars);
+
+  /// The fixed bar count, or `0` for AUTO.
+  final int bars;
+
+  @override
+  List<Object?> get props => [channel, bars];
+}
+
 /// Base for events targeting one [lane] of a track [channel].
 sealed class LooperLaneEvent extends LooperChannelEvent {
   const LooperLaneEvent(super.channel, this.lane);

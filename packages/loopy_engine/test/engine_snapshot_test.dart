@@ -140,7 +140,8 @@ void main() {
           ..rms = 0.4
           ..peak = 0.6
           ..input_mask = 0x2
-          ..output_mask = 0x5;
+          ..output_mask = 0x5
+          ..length_preset_bars = 8;
 
         final track = TrackSnapshot.fromNative(ptr.ref);
         expect(track.state, TrackState.playing);
@@ -154,6 +155,7 @@ void main() {
         expect(track.peak, closeTo(0.6, 1e-6));
         expect(track.inputMask, 0x2);
         expect(track.outputMask, 0x5);
+        expect(track.lengthPresetBars, 8);
         // No lanes supplied => empty list, so the derived count is 0.
         expect(track.lanes, isEmpty);
         expect(track.laneCount, 0);
@@ -229,6 +231,22 @@ void main() {
     test('a differing input or output mask breaks equality', () {
       expect(build(), isNot(equals(build(inputMask: 0x2))));
       expect(build(), isNot(equals(build(outputMask: 0x1))));
+    });
+
+    test('a differing length preset breaks equality', () {
+      final a = build();
+      const b = TrackSnapshot(
+        state: TrackState.playing,
+        volume: 0.5,
+        muted: false,
+        lengthFrames: 100,
+        undoDepth: 0,
+        rms: 0.1,
+        peak: 0.2,
+        lengthPresetBars: 4,
+      );
+      expect(a, isNot(equals(b)));
+      expect(a.hashCode, isNot(b.hashCode));
     });
 
     TrackSnapshot withLanes(List<LaneSnapshot> lanes) => TrackSnapshot(

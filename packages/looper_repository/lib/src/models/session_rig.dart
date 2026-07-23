@@ -55,7 +55,11 @@ class SessionRigLane {
 @immutable
 class SessionRigTrack {
   /// Creates a [SessionRigTrack].
-  const SessionRigTrack({required this.channel, required this.lanes});
+  const SessionRigTrack({
+    required this.channel,
+    required this.lanes,
+    this.lengthPresetBars = 0,
+  });
 
   /// Track channel index.
   final int channel;
@@ -63,6 +67,12 @@ class SessionRigTrack {
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.
   final List<SessionRigLane> lanes;
+
+  /// The track's length preset (A6): `0` = AUTO, `1..64` = a fixed bar count.
+  /// Restored on session load; it only governs a FUTURE defining recording on
+  /// this track, so restoring it here is inert for the audio the load just
+  /// imported — it only matters if the user re-records the track later.
+  final int lengthPresetBars;
 }
 
 /// One hardware input's live-monitor configuration inside a [SessionRig].

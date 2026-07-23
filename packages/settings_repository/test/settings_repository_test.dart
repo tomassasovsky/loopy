@@ -676,6 +676,22 @@ void main() {
     });
   });
 
+  group('track length preset', () {
+    test('defaults to 0 (AUTO) and round-trips a fixed value', () async {
+      expect(await repository.loadTrackLengthPreset(0), 0);
+      await repository.saveTrackLengthPreset(0, 8);
+      expect(await repository.loadTrackLengthPreset(0), 8);
+    });
+
+    test('is independent per track', () async {
+      await repository.saveTrackLengthPreset(0, 4);
+      await repository.saveTrackLengthPreset(1, 16);
+      expect(await repository.loadTrackLengthPreset(0), 4);
+      expect(await repository.loadTrackLengthPreset(1), 16);
+      expect(await repository.loadTrackLengthPreset(2), 0);
+    });
+  });
+
   group('StoredAudioConfig.maxLoopMinutes', () {
     test(
       'defaults to 0 (engine default) and round-trips a saved value',

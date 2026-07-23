@@ -83,7 +83,13 @@ List<SessionRigTrack> _rigTracks(SessionBundle bundle) {
       );
     }
     if (lanes.isNotEmpty) {
-      tracks.add(SessionRigTrack(channel: track.channel, lanes: lanes));
+      tracks.add(
+        SessionRigTrack(
+          channel: track.channel,
+          lanes: lanes,
+          lengthPresetBars: track.lengthPresetBars,
+        ),
+      );
     }
   }
   return tracks;
