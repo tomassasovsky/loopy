@@ -593,6 +593,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   }
   le_track_set_len(t, len);
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
+  store_i32(&t->a_sync_divisor, 0); /* a defining track is never a division */
   store_i32(&t->a_state, end_state);
   t->start_iter = 0;
   /* This track leaves RECORDING here regardless of end_state — even the
@@ -650,12 +651,177 @@ static void request_master_finalize(le_engine* e, le_track* t,
   }
 }
 
+/* Sync/Band quantize decision (B3, D16): the nearest valid ratio to how much
+ * [len] was actually captured relative to the primary's [base] length,
+ * returned as a power-of-two exponent p in [-2,2] over the supported set
+ * {1/4, 1/2, 1, 2, 4} — p >= 0 means a multiple (k = 1<<p); p < 0 means a
+ * division (n = 1<<-p). Log2-nearest, not linear-nearest: the ratio set is
+ * geometric (equally spaced in log2), so this is genuinely the "closest"
+ * match — and, deliberately unlike Multi's AUTO round-up-only rule, it can
+ * round DOWN a take that ran long, truncating rather than padding with
+ * silence. This matches the manual's "every later [Sync/Band] track is AUTO
+ * (Bars)" (song-mode-spec.md §1): it snaps to the nearest grid point, not
+ * always the next one up. A take far outside the set (near-zero or many
+ * loops long) still clamps to the nearest END of the range rather than
+ * being rejected. */
+static int32_t le_sync_ratio_pow(int32_t len, int32_t base) {
+  if (len <= 0 || base <= 0) return 0;
+  const double p = log2((double)len / (double)base);
+  int32_t pi = (int32_t)llround(p);
+  if (pi < -2) pi = -2;
+  if (pi > 2) pi = 2;
+  return pi;
+}
+
+/* Sync/Band quantize decision (B3, D16), adversarial-review BUG 1 + BUG 2
+ * fix: chooses BOTH the multiple/divisor AND validates it fits, so no
+ * caller can apply an unsafe result. Writes *out_k (>= 1) and
+ * *out_divisor (0 = ordinary multiple of *out_k base loops; 2 or 4 = a
+ * division, *out_k inertly 1) for a track that captured [len] frames
+ * against the primary's [base]-frame length, with the buffer physically
+ * capped at [max_loop_frames] (a lane's pool is allocated ONCE at that
+ * size in le_engine_configure — le_track_set_len only ever publishes the
+ * logical length, it never grows the buffer).
+ *
+ * BUG 1 (memory safety): the multiple leg (p >= 0, k = 1/2/4) used to call
+ * le_track_set_len(t, k * base) with NO clamp against max_loop_frames,
+ * unlike the ordinary (non-Sync) path a few lines below in
+ * finalize_new_track, which already has `maxk = max_loop_frames / base;
+ * if (k > maxk) k = maxk;`. Without it, a large primary (e.g. any base
+ * over max_loop_frames/4) let a non-primary track's nearest-ratio match
+ * publish a_len larger than the lane's actual allocated capacity —
+ * mix_tracks_frame's `lbuf[seg_base[t] + trk_pos[t]]` then reads out of
+ * bounds on the audio thread. Fixed here with the IDENTICAL clamp the
+ * ordinary path already trusts.
+ *
+ * BUG 2 (audio correctness): the division leg used to accept ANY p < 0
+ * candidate and compute div_len = llround(base / n) independently at
+ * write time (here) and read time (sync_division_positions_frame) with
+ * nothing forcing n * div_len == base. Whenever the primary's length isn't
+ * evenly divisible by n — the ORDINARY case for a freely-recorded primary,
+ * not a rare edge case (e.g. base=17, n=4 -> div_len=llround(4.25)=4, but
+ * 4*4=16=/=17) — the fixed-length `pos % div_len` read repeats or skips
+ * exactly one buffer index every single primary cycle: a permanent,
+ * audible stutter for the life of the track. Fixed by only ever OFFERING a
+ * division that tiles EXACTLY: step the requested divisor down (4 -> 2)
+ * and, if the primary's length is odd (no divisor in {2,4} can ever tile
+ * it exactly), fall all the way back to an ordinary 1x multiple instead of
+ * publishing an inexact division. This is the "reject and fall back"
+ * option (vs. a remainder-distributing read mapping in the spirit of
+ * le_grid_beat_at/tempo_grid.c) — simpler, and every division this
+ * function ever hands back is now PROVABLY exact (base % divisor == 0),
+ * not just "close", so sync_division_positions_frame's read needs no
+ * rounding at all (see its updated doc). */
+static void le_sync_choose_ratio(int32_t len, int32_t base,
+                                 int32_t max_loop_frames, int32_t* out_k,
+                                 int32_t* out_divisor) {
+  const int32_t p = le_sync_ratio_pow(len, base);
+  if (p >= 0) {
+    int32_t k = 1 << p; /* 1, 2, or 4 base loops */
+    const int32_t maxk = max_loop_frames / base;
+    if (maxk >= 1 && k > maxk) k = maxk; /* BUG 1: identical to the below */
+    if (k < 1) k = 1;
+    *out_k = k;
+    *out_divisor = 0;
+    return;
+  }
+  for (int32_t n = 1 << (-p); n >= 2; n /= 2) {
+    if (base % n == 0) { /* BUG 2: only ever offer an EXACT division */
+      *out_k = 1;
+      *out_divisor = n;
+      return;
+    }
+  }
+  *out_k = 1; /* base doesn't divide evenly by 2 (let alone 4): no valid
+               * division exists — fall back to an ordinary 1x multiple,
+               * always exact and always within capacity (base itself is
+               * already <= max_loop_frames, the invariant every defining
+               * take's own auto-finalize already enforces). */
+  *out_divisor = 0;
+}
+
+/* Recomputes a_multiple / a_sync_divisor for a track whose length is being
+ * REINSTATED directly (LE_CMD_REDO_FROM_EMPTY / LE_CMD_RESTORE_CLEAR)
+ * rather than freshly finalized — these paths restore a previously-decided
+ * length; they don't re-run finalize_new_track's decision. Mirrors the
+ * codebase's existing "recompute from len/base rather than store it
+ * redundantly" choice for `multiple` (le_hist_entry.multiple is likewise
+ * write-only, never read back). k = len/base >= 1 is the ordinary multiple
+ * path, byte-identical to before B3. len < base (k rounds to 0) means the
+ * restored track was a B3 Sync/Band DIVISION: since le_sync_choose_ratio
+ * (post-BUG-2-fix) only ever creates a division where base % divisor == 0
+ * EXACTLY, the divisor is recovered exactly too (len == base/4 tests
+ * first; anything else that got here — len < base — can only be base/2,
+ * the sole remaining possibility the write side could have produced), not
+ * guessed by a fuzzy log2 threshold. */
+static void le_restore_multiple_or_divisor(le_track* t, int32_t base,
+                                           int32_t len) {
+  if (base <= 0) base = len > 0 ? len : 1;
+  const int32_t k = len / base;
+  if (k >= 1) {
+    store_i32(&t->a_multiple, k);
+    store_i32(&t->a_sync_divisor, 0);
+    return;
+  }
+  const int32_t n = (len > 0 && base % 4 == 0 && len * 4 == base) ? 4 : 2;
+  store_i32(&t->a_sync_divisor, n);
+  store_i32(&t->a_multiple, 1); /* inert alongside a nonzero divisor */
+}
+
+/* Adversarial-review BUG 4 fix: whether channel [ch] IS the crowned primary
+ * in Sync/Band mode — regardless of whether it is currently "established"
+ * (le_sync_quantize_active deliberately excludes ch == primary from its
+ * own gate). Used by finalize_new_track to force the primary's OWN
+ * re-record to exactly one base loop instead of the ordinary auto-round-up
+ * whenever it lands here (e->clock.length > 0 already — i.e. this is NOT
+ * the primary's first-ever defining take, which goes through
+ * finalize_master instead and is untouched by this).
+ *
+ * Concretely: clearing the primary while a dependent Sync track survives
+ * keeps e->clock alive (handle_clear only resets it when EVERY track is
+ * empty) — a_primary_track itself also survives, per D18. Re-recording the
+ * primary then hits finalize_new_track (e->clock.length is nonzero), and
+ * without this check it would auto-round like any other track — landing
+ * a_multiple at 2 or 4 if the new take doesn't match the old base exactly,
+ * silently "un-establishing" the primary (le_sync_quantize_active's
+ * a_multiple == 1 check would start failing) for every FUTURE Sync/Band
+ * recording, with zero user-visible signal. D18: the primary is a
+ * deliberate, persistent designation — its re-record must always
+ * re-establish as exactly one base loop. e->clock.length itself is
+ * deliberately left UNTOUCHED (unlike a true fresh defining recording,
+ * finalize_master): a sibling may already be phase-locked to it, so this
+ * truncates any overflow past one base loop (the same "can round DOWN"
+ * behavior le_sync_choose_ratio already has for ordinary non-primary
+ * tracks) rather than ever changing the shared base a sibling depends on.
+ * A useful side effect: this also closes the "someone else recorded
+ * first, defining e->clock, before the primary's own first take"
+ * mis-ordering le_sync_quantize_active's doc used to flag as a documented
+ * limitation — the primary now always lands at multiple == 1 there too. */
+static inline int le_is_reestablishing_primary(le_engine* e, int32_t ch) {
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode != LE_LOOPER_MODE_SYNC && mode != LE_LOOPER_MODE_BAND) return 0;
+  return load_i32(&e->a_primary_track) == ch;
+}
+
 /* Finalizes a non-defining track that recorded freely across one or more base
- * loops: rounds its length UP to the nearest whole base loop (the locked #4
- * behaviour), publishes the multiple, and moves it to `end_state`. A track that
- * captured nothing (never reached the loop top) returns to EMPTY. Length policy
- * comes from le_effective_multiple (engine_private.h — shared with the control
- * thread's first-wrap pre-arm gate, which predicts this finalize). */
+ * loops. A track that captured nothing (never reached the loop top) returns
+ * to EMPTY. Three length policies, mutually exclusive:
+ *   - Sync/Band with an established primary (le_sync_quantize_active, D16):
+ *     snaps to the nearest valid multiple-or-division of the PRIMARY's
+ *     length, chosen AND capacity/exactness-validated in one call
+ *     (le_sync_choose_ratio — le_effective_multiple is bypassed entirely,
+ *     "every later track is AUTO", song-mode-spec.md §1). A division
+ *     publishes a_sync_divisor and sizes the track's OWN buffer to exactly
+ *     that (exact, by construction) fraction — see
+ *     sync_division_positions_frame for how it plays back phase-locked to
+ *     the primary's top.
+ *   - Sync/Band, but [t] IS the crowned primary re-recording into an
+ *     e->clock a sibling keeps alive (le_is_reestablishing_primary, BUG 4):
+ *     forced to exactly one base loop — see that predicate's doc.
+ *   - Otherwise (today's behavior, unchanged): rounds the length UP to the
+ *     nearest whole base loop (the locked #4 behaviour), per
+ *     le_effective_multiple (engine_private.h — shared with the control
+ *     thread's first-wrap pre-arm gate, which predicts this finalize). */
 static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
                                uint64_t frame) {
   const int32_t ch = (int32_t)(t - e->tracks);
@@ -667,6 +833,7 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
     store_i32(&t->a_state, LE_TRACK_EMPTY);
     le_track_set_len(t, 0);
     store_i32(&t->a_multiple, 1);
+    store_i32(&t->a_sync_divisor, 0);
     t->record_pos = 0;
     le_plog_push(e, frame,
                 (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
@@ -675,15 +842,40 @@ static void finalize_new_track(le_engine* e, le_track* t, int32_t end_state,
   /* A mute deferred during the take lands with the finalize (and blocks a
    * rec/dub continuation into OVERDUBBING — see le_consume_pending_mutes). */
   end_state = le_consume_pending_mutes(e, t, end_state, 1, frame);
-  /* A forced multiple fixes the length to exactly K base loops; 0 (auto) rounds
-   * up to whole base loops based on how much was recorded. */
-  const int32_t forced = le_effective_multiple(e, ch);
-  int32_t k = forced > 0 ? forced : (t->record_pos + base - 1) / base;
-  const int32_t maxk = e->max_loop_frames / base;
-  if (k < 1) k = 1;
-  if (maxk >= 1 && k > maxk) k = maxk;
-  store_i32(&t->a_multiple, k);
-  le_track_set_len(t, k * base);
+  if (le_sync_quantize_active(e, ch)) {
+    /* le_sync_quantize_active guarantees the primary's OWN recorded length
+     * is exactly one base loop, so `base` (e->clock.length) IS the
+     * primary's length here — no separate lookup needed. */
+    int32_t k, divisor;
+    le_sync_choose_ratio(t->record_pos, base, e->max_loop_frames, &k,
+                        &divisor);
+    if (divisor > 0) {
+      store_i32(&t->a_sync_divisor, divisor);
+      store_i32(&t->a_multiple, 1); /* inert alongside a nonzero divisor */
+      le_track_set_len(t, base / divisor); /* exact: base % divisor == 0 */
+    } else {
+      store_i32(&t->a_sync_divisor, 0);
+      store_i32(&t->a_multiple, k);
+      le_track_set_len(t, k * base);
+    }
+  } else if (le_is_reestablishing_primary(e, ch)) {
+    /* BUG 4: the primary re-recording over a master a sibling kept alive —
+     * always exactly one base loop, e->clock.length untouched. */
+    store_i32(&t->a_sync_divisor, 0);
+    store_i32(&t->a_multiple, 1);
+    le_track_set_len(t, base);
+  } else {
+    /* A forced multiple fixes the length to exactly K base loops; 0 (auto)
+     * rounds up to whole base loops based on how much was recorded. */
+    const int32_t forced = le_effective_multiple(e, ch);
+    int32_t k = forced > 0 ? forced : (t->record_pos + base - 1) / base;
+    const int32_t maxk = e->max_loop_frames / base;
+    if (k < 1) k = 1;
+    if (maxk >= 1 && k > maxk) k = maxk;
+    store_i32(&t->a_sync_divisor, 0);
+    store_i32(&t->a_multiple, k);
+    le_track_set_len(t, k * base);
+  }
   store_i32(&t->a_state, end_state);
   t->record_pos = 0;
   le_plog_push(e, frame, (le_command){.code = LE_PLOG_RECORD_END, .arg_i = ch});
@@ -1158,6 +1350,12 @@ static void handle_clear(le_engine* e, int32_t ch) {
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
+  /* B3, D18: the track's own division state dies with its content — a
+   * re-record decides fresh. The PRIMARY DESIGNATION itself is session-level
+   * state (a_primary_track), not per-track, and is deliberately untouched
+   * here even when [t] is the primary being cleared (D18: persists through
+   * clear; no auto-reassignment). */
+  store_i32(&t->a_sync_divisor, 0);
   /* Free mode (B2b): this track's own clock (if it had one established)
    * dies with its content, exactly like the master dies with the last
    * track's content below — unconditional and cheap (a no-op reset when
@@ -1521,6 +1719,7 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&t->a_state, LE_TRACK_EMPTY);
       le_track_set_len(t, 0);
       store_i32(&t->a_multiple, 1);
+      store_i32(&t->a_sync_divisor, 0); /* B3: division state dies too */
       /* Free mode (B2b): same invariant-preserving reset as handle_clear's —
        * a track reading EMPTY must never carry an established free_clock.
        * Cheap no-op outside Free mode (already dormant there). */
@@ -1556,11 +1755,10 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
           le_loop_clock_set_length(&t->free_clock, len);
           t->free_iteration = 0;
           store_i32(&t->a_multiple, 1);
+          store_i32(&t->a_sync_divisor, 0); /* Free mode never divides */
         } else {
           const int32_t base = e->clock.length > 0 ? e->clock.length : len;
-          int32_t k = len / base;
-          if (k < 1) k = 1;
-          store_i32(&t->a_multiple, k);
+          le_restore_multiple_or_divisor(t, base, len);
         }
         le_track_set_len(t, len);
         t->start_iter = 0;
@@ -1619,11 +1817,10 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
           le_loop_clock_set_length(&t->free_clock, len);
           t->free_iteration = 0;
           store_i32(&t->a_multiple, 1);
+          store_i32(&t->a_sync_divisor, 0); /* Free mode never divides */
         } else {
           const int32_t base = e->clock.length > 0 ? e->clock.length : len;
-          int32_t k = len / base;
-          if (k < 1) k = 1;
-          store_i32(&t->a_multiple, k);
+          le_restore_multiple_or_divisor(t, base, len);
         }
         le_track_set_len(t, len);
         t->start_iter = 0;
@@ -1713,6 +1910,17 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         break; /* re-validated here; the exported wrapper already rejects */
       }
       store_i32(&e->a_looper_mode, m);
+      break;
+    }
+    /* ---- primary track (B3, D18; see LE_CMD_CROWN_PRIMARY's doc,
+     * loopy_engine_api.h). Accepted in ANY mode — the crown is a persistent
+     * per-session designation, not gated by the D4 mode lock or by mode
+     * itself; it simply has no effect outside Sync/Band
+     * (le_sync_quantize_active). Not perf-logged, for the same reason as
+     * LE_CMD_SET_LOOPER_MODE above. */
+    case LE_CMD_CROWN_PRIMARY: {
+      if (!valid_channel(e, cmd->arg_i)) break;
+      store_i32(&e->a_primary_track, cmd->arg_i);
       break;
     }
     /* ---- click + count-in (A2; see the helper block above finalize_master).
@@ -2066,6 +2274,12 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         int32_t k = len / base;
         if (k < 1) k = 1;
         store_i32(&tr->a_multiple, k);
+        /* Session import never encodes a B3 Sync/Band division (out of this
+         * part's manifest scope, deferred to B5c like every other B3 UI/
+         * session surface) — always the ordinary whole-multiple path, and
+         * defensively zeroed so a track that was a division before some
+         * prior clear+reimport cycle never leaks a stale divisor. */
+        store_i32(&tr->a_sync_divisor, 0);
         tr->start_iter = 0;
         store_i32(&tr->a_state, LE_TRACK_PLAYING);
       }
@@ -2806,6 +3020,67 @@ static inline void free_track_positions_frame(le_engine* e, int tc,
   }
 }
 
+/* Sync/Band division read (B3, D16): overrides trk_pos[t]/trk_len[t] for
+ * every track [t] with an active division (a_sync_divisor > 0) — the
+ * "generalized phase within primary" the seg_base/multiple math (in
+ * mix_tracks_frame, below) cannot express, since a division's OWN buffer is
+ * SHORTER than the base loop, not a multiple of it. trk_len[t] is
+ * e->clock.length / divisor (le_sync_quantize_active guarantees the primary
+ * is exactly one base loop whenever a division was created, so no separate
+ * lookup is needed); trk_pos[t] is `pos % trk_len[t]`, folding the
+ * primary's CURRENT phase into the division's own shorter cycle.
+ *
+ * base / divisor is an EXACT integer division with NO remainder here —
+ * adversarial-review BUG 2 fix: le_sync_choose_ratio (finalize_new_track)
+ * now only ever publishes a divisor that tiles the primary's length
+ * exactly (base % divisor == 0), stepping down (4 -> 2) or falling back to
+ * an ordinary multiple otherwise, rather than this function's old
+ * `llround(base / n)` — which, whenever the primary's length wasn't evenly
+ * divisible by n (the ORDINARY case for a freely-recorded primary, not a
+ * rare edge case), silently repeated or skipped one buffer index every
+ * single cycle: an audible, permanent stutter. With base % divisor == 0
+ * guaranteed on write, `pos % trk_len[t]` now tiles PROVABLY exactly:
+ * over one full primary cycle (pos sweeping 0..base-1), it visits every
+ * one of the divisor's own trk_len[t] indices exactly `divisor` times,
+ * with no repeats and no skips, for any pos — not just at pos == 0.
+ *
+ * Deliberately anchored to `pos` (the primary's live phase), not a running
+ * iteration/segment count like the multiple path's seg_base: whenever pos
+ * == 0 (the primary's loop top), pos % trk_len[t] == 0 too, for ANY
+ * trk_len[t] > 0 — so a division track's own loop-top ALWAYS coincides
+ * with the primary's, on every primary cycle, regardless of how many times
+ * either has wrapped. A half-length division therefore completes exactly 2
+ * of its own loops per 1 primary loop, phase-aligned at the start — the
+ * behavior a musician expects from a half-length loop layered under a
+ * full-length one. (seg_base itself already reads 0 for these tracks with
+ * no changes needed: finalize_new_track sets a_multiple to 1 for a
+ * division, so the existing `seg = (iter - start_iter) % 1` collapses to 0
+ * unconditionally.)
+ *
+ * Per-track, not mode-gated (mirrors free_track_positions_frame's shape but
+ * checks per-track state instead of a single outer mode flag): a_sync_
+ * divisor is only ever set nonzero by finalize_new_track under le_sync_
+ * quantize_active, which requires SYNC/BAND, so this is mutually exclusive
+ * with Free mode's own per-track free_clock by construction — cheap
+ * (a single comparison) on every track that isn't a division. */
+static inline void sync_division_positions_frame(le_engine* e, int tc,
+                                                  int32_t pos,
+                                                  int32_t* trk_pos,
+                                                  int32_t* trk_len) {
+  const int32_t base = e->clock.length;
+  if (base <= 0) return;
+  for (int t = 0; t < tc; ++t) {
+    const int32_t n = load_i32(&e->tracks[t].a_sync_divisor);
+    if (n < 2) continue;
+    const int32_t len = base / n; /* exact: le_sync_choose_ratio guarantees
+                                    * base % n == 0 for every divisor it
+                                    * ever publishes */
+    if (len < 1) continue; /* defensive; unreachable given the guarantee */
+    trk_len[t] = len;
+    trk_pos[t] = pos % len;
+  }
+}
+
 /* Per-frame capture + additive playback mix: snapshots each track's per-lane
  * playback state, records / overdubs the live input into the lane buffers at the
  * latency-compensated write head, and sums every audible lane (through its
@@ -2882,6 +3157,10 @@ static inline void mix_tracks_frame(
   if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE) {
     free_track_positions_frame(e, tc, trk_pos, trk_len);
   }
+  /* Sync/Band divisions (B3): per-track, so this always runs (mutually
+   * exclusive with Free mode's per-track override above by construction —
+   * see sync_division_positions_frame's doc). */
+  sync_division_positions_frame(e, tc, pos, trk_pos, trk_len);
 
   /* The looper mix is additive: clear this output frame, then sum every active
    * lane's mono contribution into the output channels its mask selects. */

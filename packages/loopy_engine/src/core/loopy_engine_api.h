@@ -308,6 +308,16 @@ typedef enum le_command_code {
    * mode switch changes no audible output in this part). */
   LE_CMD_SET_LOOPER_MODE = 45, /* arg_i = le_looper_mode (0..4) */
 
+  /* ---- primary track / Sync + Band (B3, D16/D18) ----
+   * Designates track [arg_i] the "crowned" primary track for Sync/Band's
+   * multiple-or-division sync (a_primary_track). Accepted in ANY mode (the
+   * crown is a persistent per-session designation per D18 — it simply has no
+   * effect outside Sync/Band); rejected only for an out-of-range channel.
+   * There is no "un-crown": D18's no-auto-reassignment rule means the only
+   * way to change it is another CROWN_PRIMARY. See le_sync_quantize_active
+   * (engine_private.h) for how this gates Sync/Band's finalize behavior. */
+  LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
@@ -494,6 +504,14 @@ typedef struct le_track_snapshot {
    * already has content; applies to the next defining recording only. See
    * le_engine_set_track_length_preset. */
   int32_t length_preset_bars;
+  /* Trailing (B3, D16): 0 = this track's length is an ordinary multiple of
+   * the base loop (see `multiple` above — the common case in every mode,
+   * including Sync/Band multiples). 2 or 4 = this track is a SYNC DIVISION:
+   * it plays a repeating 1/2 or 1/4 slice of the primary track's length,
+   * phase-locked to the primary's loop top (`multiple` reads 1, inertly, for
+   * a division track). Only ever nonzero in Sync/Band mode on a non-primary
+   * track. See le_sync_quantize_active (engine_private.h) for how it's set. */
+  int32_t sync_divisor;
 } le_track_snapshot;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -615,6 +633,14 @@ typedef struct le_snapshot {
    * engine's mode reads MULTI, today's behavior. See le_looper_mode's doc for
    * the content-lock gate and what each value means. */
   int32_t looper_mode; /* le_looper_mode (default 0 = MULTI) */
+
+  /* ---- primary track (B3, D18; trailing for the same offset-stability
+   * reason as the blocks above). -1 = none (default). Persists through the
+   * primary track being cleared/undone-to-empty; only an explicit re-crown
+   * (le_engine_crown_primary) changes it — see LE_CMD_CROWN_PRIMARY's doc.
+   * Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
+   * nonzero value in any other mode is inert. */
+  int32_t primary_track;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -1123,6 +1149,27 @@ LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
  * return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
  * locked (see the class doc) — the audio thread silently drops it. */
 LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
+
+/* ---- primary track / Sync (B3, decisions D16/D18; Band's independently
+ * start/stoppable section tracks are a follow-on part, B3b) ----
+ * One primary track; every other track's DEFINING recording is
+ * auto-quantized (D16) to the nearest of {1/4, 1/2, 1, 2, 4} times the
+ * primary's established length — a multiple (1/2/4) plays like today's
+ * fixed-multiple tracks; a division (1/4, 1/2) plays a repeating slice of
+ * ITS OWN (shorter) buffer, phase-locked to the primary's loop top. Inert
+ * until a primary is crowned AND that primary already has an established
+ * (single-base-loop) length; until then Sync's non-primary tracks record
+ * exactly like Multi (D16 fallback). The gate (le_sync_quantize_active,
+ * engine_private.h) already also recognizes BAND mode — Band shares this
+ * SAME primary/multiple-division machinery per D16 — but Band's
+ * ADDITIONAL independently start/stoppable section tracks have no engine
+ * surface yet in this part. */
+
+/* Crowns [channel] the primary track (D18). Rejects only an out-of-range
+ * channel; accepted in every looper mode (the crown persists regardless of
+ * mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
+ * exists — re-crowning a different channel is the only way to change it. */
+LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the

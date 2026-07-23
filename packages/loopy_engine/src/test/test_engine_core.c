@@ -14573,6 +14573,766 @@ static void test_free_mode_punch_in_ramps_not_hard_cuts(void) {
   le_engine_destroy(e);
 }
 
+/* ---- B3: primary track (D18), Sync mode (D16) ----
+ *
+ * D18: a_primary_track (-1 = none) persists through a crowned track's
+ * clear/undo-to-empty; only an explicit re-crown changes it. D16: Sync's
+ * non-primary tracks snap their DEFINING recording to the nearest of
+ * {1/4, 1/2, 1, 2, 4} times the primary's length once a primary is crowned
+ * AND established (has content, exactly one base loop); with no primary
+ * yet, Sync behaves exactly like Multi (AUTO round-up). Band shares this
+ * SAME primary/multiple-division machinery (le_sync_quantize_active checks
+ * BAND too), but its ADDITIONAL independently start/stoppable section
+ * tracks are a follow-on part (B3b) — see the B3 PR notes. */
+
+/* Writes one distinct value per frame from [values] (n <= 64, matching every
+ * other small-loop test helper's implicit bound). */
+static void process_seq(le_engine* e, const float* values, int n, float* out) {
+  float in[64];
+  for (int i = 0; i < n; ++i) in[i] = values[i];
+  le_engine_process(e, out, in, (uint32_t)n);
+}
+
+#define SB_BASE 16 /* primary loop length for every B3 test below */
+
+static void test_primary_track_default_none(void) {
+  printf("test_primary_track_default_none\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == -1);
+  le_engine_destroy(e);
+}
+
+static void test_crown_primary_rejects_invalid_channel(void) {
+  printf("test_crown_primary_rejects_invalid_channel\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_crown_primary(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_crown_primary(e, 999) == LE_ERR_INVALID);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == -1); /* untouched by the rejected calls */
+  le_engine_destroy(e);
+}
+
+static void test_crown_primary_sets_field(void) {
+  printf("test_crown_primary_sets_field\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_crown_primary(e, 2) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 2);
+  le_engine_destroy(e);
+}
+
+static void test_crown_primary_accepted_in_any_mode(void) {
+  printf("test_crown_primary_accepted_in_any_mode\n");
+  /* D18: the crown is a persistent designation, independent of mode --
+   * accepted (and published) here in the default MULTI mode, even though
+   * it has no effect there (le_sync_quantize_active). */
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+  CHECK(le_engine_crown_primary(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 1);
+  le_engine_destroy(e);
+}
+
+static void test_crown_primary_persists_through_clear(void) {
+  printf("test_crown_primary_persists_through_clear\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, SB_BASE, out);
+  le_engine_record(e, 0); /* finalize -> PLAYING */
+  drain(e);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.primary_track == 0); /* D18: survives the clear */
+
+  le_engine_destroy(e);
+}
+
+static void test_crown_primary_persists_through_undo_to_empty(void) {
+  printf("test_crown_primary_persists_through_undo_to_empty\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, SB_BASE, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  /* No overdub layers yet, so the very first undo goes past the base layer
+   * (UNDO_TO_EMPTY), not a layer peel. */
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.primary_track == 0); /* D18: survives undo-to-empty too */
+
+  le_engine_destroy(e);
+}
+
+static void test_crown_primary_re_crown_changes_it(void) {
+  printf("test_crown_primary_re_crown_changes_it\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
+  drain(e);
+  CHECK(le_engine_crown_primary(e, 3) == LE_OK);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 3); /* only an explicit re-crown moves it */
+  le_engine_destroy(e);
+}
+
+/* D16 fallback, inert-outside-Sync/Band leg: in MULTI mode a crowned
+ * primary has NO effect on another track's finalize -- it keeps today's
+ * AUTO round-up, never the nearest-ratio snap (which would behave
+ * differently here: 1.5 base loops rounds DOWN to 1 under nearest-log2
+ * matching, but Multi's AUTO always rounds UP to 2). */
+static void test_crown_primary_inert_outside_sync_band(void) {
+  printf("test_crown_primary_inert_outside_sync_band\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
+  drain(e);
+
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, SB_BASE, out);
+  le_engine_record(e, 0); /* finalize -> defines the base loop, multiple 1 */
+  drain(e);
+
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, SB_BASE + SB_BASE / 2, out); /* 1.5x base */
+  le_engine_record(e, 1); /* finalize */
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+  CHECK(s.tracks[1].multiple == 2);          /* AUTO round-up, unaffected */
+  CHECK(s.tracks[1].sync_divisor == 0);
+  CHECK(s.tracks[1].length_frames == 2 * SB_BASE);
+
+  le_engine_destroy(e);
+}
+
+/* D16 fallback: Sync mode with NO primary yet (or an un-established one)
+ * behaves exactly like Multi's AUTO round-up -- proven the same
+ * discriminating way as the inert-outside-Sync/Band test above (a
+ * nearest-ratio snap of 1.5x would round DOWN to 1; AUTO round-up gives 2). */
+static void test_sync_no_primary_behaves_like_multi(void) {
+  printf("test_sync_no_primary_behaves_like_multi\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  /* No crown at all. */
+
+  le_engine_record(e, 0);
+  process_const(e, 1.0f, SB_BASE, out);
+  le_engine_record(e, 0);
+  drain(e);
+
+  le_engine_record(e, 1);
+  process_const(e, 2.0f, SB_BASE + SB_BASE / 2, out); /* 1.5x base */
+  le_engine_record(e, 1);
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].multiple == 2); /* AUTO round-up fallback, not nearest */
+  CHECK(s.tracks[1].sync_divisor == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Presses record on [ch] in a mode where le_sync_quantize_active holds for
+ * it: the press force-arms (D16) instead of recording immediately, so the
+ * caller must advance to the next primary-track loop top for it to
+ * actually start. Leaves the track RECORDING with record_pos freshly
+ * seeded at exactly 0 -- the phase-lock precondition every test below
+ * relies on. */
+static void sb_arm_and_start(le_engine* e, int32_t ch) {
+  CHECK(le_engine_record(e, ch) == LE_OK);
+  drain(e); /* applies the ARM (pending_record = 1); does not fire it */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[ch].pending == 1);
+  tg_advance(e, s.master_length_frames - s.master_position_frames);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[ch].state == LE_TRACK_RECORDING);
+  CHECK(s.master_position_frames == 0); /* fired exactly at the loop top */
+}
+
+/* Crowns + records track 0 as an established primary (SB_BASE frames of
+ * [value]) in whichever mode is already set (SYNC or BAND). Leaves the
+ * master clock at position 0. */
+static void sb_make_primary(le_engine* e, float value) {
+  float out[64];
+  CHECK(le_engine_crown_primary(e, 0) == LE_OK);
+  drain(e);
+  le_engine_record(e, 0);
+  process_const(e, value, SB_BASE, out);
+  le_engine_record(e, 0);
+  drain(e);
+}
+
+/* Generalizes sb_make_primary to an arbitrary channel and base length --
+ * used by the GAP-1 tests below, which deliberately need a primary length
+ * that ISN'T SB_BASE (16, which divides both 2 and 4 cleanly and would
+ * mask BUG 2 entirely). */
+static void sb_make_primary_ex(le_engine* e, int32_t ch, int32_t base_len,
+                               float value) {
+  float out[64];
+  CHECK(le_engine_crown_primary(e, ch) == LE_OK);
+  drain(e);
+  le_engine_record(e, ch);
+  process_const(e, value, base_len, out);
+  le_engine_record(e, ch);
+  drain(e);
+}
+
+/* Nearest-log2-match, DOWNWARD leg: 20 frames (1.25x SB_BASE) is closer to
+ * 1x than 2x on the log2 grid (log2(1.25) ~= 0.32, nearer 0 than 1) -- the
+ * take is TRUNCATED to exactly one base loop, discriminating this from
+ * Multi's AUTO, which would round UP to 2 for anything over 1x. */
+static void test_sync_nonprimary_snaps_down_to_nearest_multiple(void) {
+  printf("test_sync_nonprimary_snaps_down_to_nearest_multiple\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f);
+
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, 20, out); /* 1.25x SB_BASE */
+  le_engine_record(e, 1);          /* immediate finalize */
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 0);
+  CHECK(s.tracks[1].multiple == 1); /* snapped DOWN, not rounded up to 2 */
+  CHECK(s.tracks[1].length_frames == SB_BASE);
+
+  /* The truncated content is exactly the first SB_BASE frames of 2.0 (the
+   * captured tail past that point is discarded, never played). */
+  float pcm[SB_BASE];
+  CHECK(le_engine_export_track(e, 1, pcm, SB_BASE) == SB_BASE);
+  for (int i = 0; i < SB_BASE; ++i) CHECK(fabsf(pcm[i] - 2.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* THE core division-playback test (D16, the trickiest math in this PR):
+ * an exact 1/2-ratio capture (8 frames, log2(0.5) == -1 exactly) becomes a
+ * division track whose own 8-frame buffer holds 8 DISTINCT values, so
+ * phase can be read back unambiguously. Verifies, over TWO full primary
+ * cycles (32 frames): the division completes exactly 4 of its own loops
+ * (2 per primary cycle) and re-aligns to its own frame 0 at EVERY primary
+ * loop top (frame 0 and frame 16), not just the first -- out[i] must equal
+ * pattern[i % 8] for the entire 32-frame span. */
+static void test_sync_nonprimary_division_half_phase_correct_two_cycles(void) {
+  printf("test_sync_nonprimary_division_half_phase_correct_two_cycles\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 0.0f); /* silent primary -- isolates track 1 below */
+
+  sb_arm_and_start(e, 1);
+  const float pattern[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  process_seq(e, pattern, 8, out); /* exactly SB_BASE/2 frames */
+  le_engine_record(e, 1);          /* immediate finalize */
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 2);
+  CHECK(s.tracks[1].multiple == 1); /* inert alongside the divisor */
+  CHECK(s.tracks[1].length_frames == SB_BASE / 2);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+
+  /* Realign to a clean primary loop top before sampling (position is
+   * already 0 here in practice -- SB_BASE frames captured from a position-0
+   * start wraps exactly back to 0 -- but this is not load-bearing on that
+   * coincidence). */
+  le_engine_get_snapshot(e, &s);
+  tg_advance(e, (SB_BASE - s.master_position_frames) % SB_BASE);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+
+  process_const(e, 0.0f, 2 * SB_BASE, out); /* two full primary cycles */
+  for (int i = 0; i < 2 * SB_BASE; ++i) {
+    CHECK(fabsf(out[i] - pattern[i % 8]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* The 1/4-division leg of the same D16 formula: 4 frames (log2(0.25) == -2
+ * exactly) over one full primary cycle -- the 4-value pattern must repeat
+ * exactly 4 times. */
+static void test_sync_nonprimary_division_quarter(void) {
+  printf("test_sync_nonprimary_division_quarter\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 0.0f);
+
+  sb_arm_and_start(e, 1);
+  const float pattern[4] = {10, 20, 30, 40};
+  process_seq(e, pattern, 4, out);
+  le_engine_record(e, 1);
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 4);
+  CHECK(s.tracks[1].length_frames == SB_BASE / 4);
+
+  tg_advance(e, (SB_BASE - s.master_position_frames) % SB_BASE);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+
+  /* GAP 6: two full primary cycles (like the half-division sibling test),
+   * not one -- proves re-alignment at the SECOND boundary too, not just
+   * the first. */
+  process_const(e, 0.0f, 2 * SB_BASE, out);
+  for (int i = 0; i < 2 * SB_BASE; ++i) {
+    CHECK(fabsf(out[i] - pattern[i % 4]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* ---- adversarial-review fixes (post-bd77289): BUG 1-4, GAP 1-6 ---- */
+
+/* GAP 2 (happy-path leg): the Sync-active round-UP finalize (nearest-ratio
+ * p >= 0, k = 2 or 4) had ZERO test coverage before this fix -- which is
+ * exactly how BUG 1 (the missing max_loop_frames clamp) shipped
+ * undetected. Default (generous) capacity: a capture that snaps to k=2
+ * finalizes with the correct multiple and the full, unclamped length. */
+static void test_sync_nonprimary_snaps_up_to_nearest_multiple(void) {
+  printf("test_sync_nonprimary_snaps_up_to_nearest_multiple\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f);
+
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, 2 * SB_BASE, out); /* exactly 2x -> k=2 */
+  le_engine_record(e, 1);
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 0);
+  CHECK(s.tracks[1].multiple == 2);
+  CHECK(s.tracks[1].length_frames == 2 * SB_BASE);
+
+  float pcm[2 * SB_BASE];
+  CHECK(le_engine_export_track(e, 1, pcm, 2 * SB_BASE) == 2 * SB_BASE);
+  for (int i = 0; i < 2 * SB_BASE; ++i) CHECK(fabsf(pcm[i] - 2.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* BUG 1 fix, GAP 2 (capacity leg): constrains max_loop_frames so that k=2
+ * -- what the capture naturally snaps to -- would need MORE frames than
+ * are actually allocated. Before the fix, le_track_set_len(t, k * base)
+ * had no clamp here (unlike the ordinary auto-round-up path a few lines
+ * below it in finalize_new_track), so a_len was published larger than the
+ * lane's actual pool capacity -- mix_tracks_frame's playback read then
+ * goes out of bounds on the audio thread. Proves the SAME clamp the
+ * ordinary path already had now also applies to the Sync-active leg. */
+static void test_sync_round_up_finalize_respects_max_loop_frames(void) {
+  printf("test_sync_round_up_finalize_respects_max_loop_frames\n");
+  /* Parameters are deliberately spread out, not just "base=SB_BASE
+   * scaled": the capture length (44) must (a) log2-round to k=2 relative
+   * to base (44/30 ~= 1.47, nearest to 2^1), (b) stay STRICTLY UNDER
+   * max_frames so the pre-existing "record_pos >= max_loop_frames"
+   * capacity safety valve (advance_transport_frame) never auto-finalizes
+   * DURING the capture -- that path finalizes into OVERDUBBING and arms a
+   * punch-in undo session, an unrelated interaction that would corrupt
+   * this test's content if the two thresholds collided -- and (c) stay
+   * <= 64 (process_const's own fixed-size stack buffer). max_frames (50)
+   * sits strictly between the capture length and 2*base (60), so maxk =
+   * max_frames/base = 1 clamps k down from the naturally-chosen 2. */
+  const int32_t base = 30;
+  const int32_t max_frames = 50;
+  const int32_t capture = 44;
+  le_engine* e = tg_make_engine_cap(48000, max_frames);
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary_ex(e, 0, base, 0.0f); /* silent primary: isolates track 1 */
+
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, capture, out); /* ~1.47x base -> nearest-ratio k=2 */
+  le_engine_record(e, 1);
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 0);
+  /* Without BUG 1's fix this would read 2 (== 2 * base == 60 frames,
+   * beyond the 50-frame allocated capacity -- an OOB read on playback).
+   * The clamp forces the largest multiple that still fits. */
+  CHECK(s.tracks[1].multiple == 1);
+  CHECK(s.tracks[1].length_frames == base);
+  CHECK(s.tracks[1].length_frames <= max_frames);
+
+  /* Playback must stay well-defined (in-bounds) at every position of the
+   * clamped loop -- the concrete proof this is safe, not just "the
+   * metadata looks right". */
+  process_const(e, 0.0f, base, out);
+  for (int i = 0; i < base; ++i) CHECK(fabsf(out[i] - 2.0f) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* BUG 2 fix, GAP 1: an ODD primary length (17) can never tile a division
+ * exactly (17 % 2 != 0, let alone % 4) -- le_sync_choose_ratio must fall
+ * all the way back to an ordinary 1x multiple rather than ever publish a
+ * stuttering division. Captures ~1/4 of the base, which would otherwise
+ * request a division. */
+static void test_sync_division_falls_back_on_indivisible_base(void) {
+  printf("test_sync_division_falls_back_on_indivisible_base\n");
+  const int32_t base = 17;
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary_ex(e, 0, base, 1.0f);
+
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, 4, out); /* ~1/4 of 17 -> would request n=4 */
+  le_engine_record(e, 1);
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 0); /* no unsafe division was created */
+  CHECK(s.tracks[1].multiple == 1);     /* falls back to 1x, always exact */
+  CHECK(s.tracks[1].length_frames == base);
+
+  le_engine_destroy(e);
+}
+
+/* BUG 2 fix, GAP 1 (the discriminating case): base=18 is EVEN but not a
+ * multiple of 4 -- a request that naturally lands on n=4 (nearest-log2 to
+ * a ~1/4 capture) must step DOWN to n=2 (18 % 2 == 0, 18 % 4 != 0) rather
+ * than publish an inexact 4-way division. Verifies EXACT tiling with no
+ * repeated or skipped index across 2 full primary cycles by comparing
+ * playback against the division's OWN exported buffer (ground truth,
+ * including whatever unwritten tail the short capture left) rather than a
+ * hand-computed pattern. SB_BASE (16) divides both 2 and 4 cleanly and
+ * would mask this bug entirely -- this is why GAP 1 called out a
+ * non-16 base specifically. */
+static void
+test_sync_nonprimary_division_even_not_multiple_of_four_tiles_exactly(void) {
+  printf(
+      "test_sync_nonprimary_division_even_not_multiple_of_four_tiles_exactly\n");
+  const int32_t base = 18;
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary_ex(e, 0, base, 0.0f); /* silent primary: isolates track 1 */
+
+  sb_arm_and_start(e, 1);
+  const float pattern[5] = {1, 2, 3, 4, 5}; /* ~1/4 of 18 -> requests n=4 */
+  process_seq(e, pattern, 5, out);
+  le_engine_record(e, 1);
+  drain(e);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 2);         /* stepped DOWN from 4 */
+  CHECK(s.tracks[1].length_frames == base / 2); /* 9, exact */
+
+  float buf[9];
+  CHECK(le_engine_export_track(e, 1, buf, 9) == 9);
+
+  tg_advance(e, (base - s.master_position_frames) % base);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+
+  process_const(e, 0.0f, 2 * base, out); /* two full primary cycles */
+  for (int i = 0; i < 2 * base; ++i) {
+    CHECK(fabsf(out[i] - buf[i % 9]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
+/* BUG 3 fix (adversarial review): crowning a track that is ITSELF a Sync
+ * division of another primary must not let downstream tracks treat its
+ * fractional length as if it were a full primary reference -- track 1
+ * (crowned second) holds only an 8-frame division of track 0's 16-frame
+ * primary; le_sync_quantize_active must read this as "not established"
+ * for any OTHER track (the D16 no-primary fallback), not corrupt the math
+ * with an 8-frame "base". */
+static void
+test_crown_division_track_does_not_corrupt_downstream_quantize(void) {
+  printf("test_crown_division_track_does_not_corrupt_downstream_quantize\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f); /* track 0: 16-frame primary */
+
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, SB_BASE / 2, out); /* exact half -> divisor 2 */
+  le_engine_record(e, 1);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 2);
+  CHECK(s.tracks[1].length_frames == SB_BASE / 2);
+
+  /* Crown track 1 (the division) as the new primary. */
+  CHECK(le_engine_crown_primary(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.primary_track == 1);
+
+  /* Track 2's recording must NOT quantize against track 1's fractional
+   * (8-frame) length -- it falls back to ordinary Multi-style behavior,
+   * exactly the D16 no-primary-established discriminator used elsewhere
+   * in this file: a 1.25x-the-REAL-base take rounds UP to multiple 2
+   * under AUTO, never snaps DOWN to 1 the way an active Sync quantize
+   * would (and could never even compute a sane ratio against an 8-frame
+   * "base" without corrupting the math). */
+  le_engine_record(e, 2);
+  process_const(e, 3.0f, SB_BASE + SB_BASE / 4, out); /* 1.25x REAL base */
+  le_engine_record(e, 2);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].sync_divisor == 0);
+  CHECK(s.tracks[2].multiple == 2); /* AUTO round-up fallback, not corrupted */
+
+  le_engine_destroy(e);
+}
+
+/* BUG 4 fix (adversarial review): clearing the primary while a dependent
+ * Sync track survives keeps e->clock alive (handle_clear only resets it
+ * when EVERY track is empty) -- and a_primary_track itself persists too
+ * (D18). Re-recording the primary must NOT auto-round like an ordinary
+ * track (which would silently un-establish it as "the reference" for
+ * every future Sync recording, a_multiple != 1, with no user-visible
+ * signal) -- it must always re-finalize as exactly one base loop, per
+ * D18's "the primary is a deliberate, persistent designation". */
+static void test_primary_re_record_after_clear_forces_one_base_loop(void) {
+  printf("test_primary_re_record_after_clear_forces_one_base_loop\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f); /* track 0: 16-frame primary */
+
+  /* A dependent Sync track that will keep e->clock alive once the primary
+   * is cleared. */
+  sb_arm_and_start(e, 1);
+  process_const(e, 2.0f, SB_BASE, out); /* exact 1x */
+  le_engine_record(e, 1);
+  drain(e);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK); /* the primary, not the dependent */
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.primary_track == 0);              /* D18: crown survives */
+  CHECK(s.master_length_frames == SB_BASE); /* e->clock kept alive by track 1 */
+
+  /* Re-record the primary with a take that would round UP under ordinary
+   * AUTO (1.5x base) -- without the fix this lands a_multiple at 2. */
+  le_engine_record(e, 0);
+  process_const(e, 5.0f, SB_BASE + SB_BASE / 2, out); /* 1.5x base */
+  le_engine_record(e, 0);
+  drain(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].sync_divisor == 0);
+  CHECK(s.tracks[0].multiple == 1); /* forced, not auto-rounded to 2 */
+  CHECK(s.tracks[0].length_frames == SB_BASE);
+  CHECK(s.master_length_frames == SB_BASE); /* e->clock itself untouched */
+
+  /* The primary is genuinely re-established: a fresh dependent recording
+   * still gets Sync-quantized (proves le_sync_quantize_active's
+   * a_multiple == 1 check now passes again). */
+  sb_arm_and_start(e, 2);
+  process_const(e, 9.0f, SB_BASE / 2, out); /* exact half */
+  le_engine_record(e, 2);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].sync_divisor == 2);
+  CHECK(s.tracks[2].length_frames == SB_BASE / 2);
+
+  le_engine_destroy(e);
+}
+
+/* GAP 3: force-arm-to-primary-loop-top was only ever tested from position
+ * 0 (a degenerate full-cycle wait, sb_arm_and_start's own precondition).
+ * Presses record mid-cycle and asserts the take starts at EXACTLY the
+ * next boundary frame -- not one frame early, not one frame late. */
+static void test_sync_force_arm_from_mid_cycle_fires_at_exact_boundary(void) {
+  printf("test_sync_force_arm_from_mid_cycle_fires_at_exact_boundary\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 1.0f);
+
+  tg_advance(e, 5); /* mid-cycle, not the loop top */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 5);
+
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e); /* applies the ARM; does not fire it */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* One frame short of the boundary: still not fired. */
+  tg_advance(e, SB_BASE - 5 - 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == SB_BASE - 1);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* The single frame that crosses the loop top fires it, exactly. */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].pending == 0);
+
+  le_engine_destroy(e);
+}
+
+/* GAP 4: no B3 test cleared/undid the primary while a dependent Sync
+ * track was alive and PLAYING. The dependent must keep playing correctly
+ * (it reads e->clock.length + its own a_sync_divisor, never the primary
+ * track's own state), and a later third-track recording must fall back
+ * sanely (D16 no-primary-established) since the primary is now EMPTY. */
+static void
+test_primary_cleared_dependent_track_keeps_playing_correctly(void) {
+  printf("test_primary_cleared_dependent_track_keeps_playing_correctly\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 0.0f); /* silent primary: isolates track 1's playback */
+
+  sb_arm_and_start(e, 1);
+  const float pattern[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  process_seq(e, pattern, 8, out); /* exact half -> divisor 2 */
+  le_engine_record(e, 1);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 2);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK); /* clear the primary */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* untouched */
+  CHECK(s.master_length_frames == SB_BASE);     /* kept alive by track 1 */
+
+  /* Realign and verify track 1's playback is still phase-correct. */
+  tg_advance(e, (SB_BASE - s.master_position_frames) % SB_BASE);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+  process_const(e, 0.0f, 2 * SB_BASE, out);
+  for (int i = 0; i < 2 * SB_BASE; ++i) {
+    CHECK(fabsf(out[i] - pattern[i % 8]) < 1e-6f);
+  }
+
+  /* A third track now falls back to ordinary Multi behavior: the primary
+   * is EMPTY, so le_sync_quantize_active reads "not established". */
+  le_engine_record(e, 2);
+  process_const(e, 3.0f, SB_BASE + SB_BASE / 2, out); /* 1.5x -> AUTO k=2 */
+  le_engine_record(e, 2);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[2].sync_divisor == 0);
+  CHECK(s.tracks[2].multiple == 2);
+
+  le_engine_destroy(e);
+}
+
+/* GAP 5: le_restore_multiple_or_divisor's division-reconstruction branch
+ * (undo-to-empty -> redo-from-empty of a track holding an active divisor)
+ * had zero coverage. Round-trips a half-division track through exactly
+ * that path and confirms the divisor (and the live content) come back
+ * unchanged. */
+static void
+test_division_track_undo_to_empty_redo_round_trips_divisor(void) {
+  printf("test_division_track_undo_to_empty_redo_round_trips_divisor\n");
+  le_engine* e = make_configured_engine();
+  float out[64];
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SYNC) == LE_OK);
+  drain(e);
+  sb_make_primary(e, 0.0f);
+
+  sb_arm_and_start(e, 1);
+  const float pattern[8] = {11, 22, 33, 44, 55, 66, 77, 88};
+  process_seq(e, pattern, 8, out);
+  le_engine_record(e, 1);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].sync_divisor == 2);
+  CHECK(s.tracks[1].length_frames == SB_BASE / 2);
+
+  /* No overdub layers yet: the first undo goes straight past the base
+   * layer (UNDO_TO_EMPTY), resetting a_sync_divisor to 0. */
+  CHECK(le_engine_undo(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].sync_divisor == 0);
+
+  /* Redo reinstates it via le_restore_multiple_or_divisor. */
+  CHECK(le_engine_redo(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].sync_divisor == 2); /* recovered exactly, not guessed */
+  CHECK(s.tracks[1].length_frames == SB_BASE / 2);
+
+  float pcm[SB_BASE / 2];
+  CHECK(le_engine_export_track(e, 1, pcm, SB_BASE / 2) == SB_BASE / 2);
+  for (int i = 0; i < SB_BASE / 2; ++i) {
+    CHECK(fabsf(pcm[i] - pattern[i]) < 1e-6f);
+  }
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -14916,6 +15676,30 @@ int main(void) {
   test_free_mode_restore_clear_restores_targeted_track_only();
   test_free_mode_playback_output_scans_own_position();
   test_free_mode_punch_in_ramps_not_hard_cuts();
+
+  test_primary_track_default_none();
+  test_crown_primary_rejects_invalid_channel();
+  test_crown_primary_sets_field();
+  test_crown_primary_accepted_in_any_mode();
+  test_crown_primary_persists_through_clear();
+  test_crown_primary_persists_through_undo_to_empty();
+  test_crown_primary_re_crown_changes_it();
+  test_crown_primary_inert_outside_sync_band();
+  test_sync_no_primary_behaves_like_multi();
+  test_sync_nonprimary_snaps_down_to_nearest_multiple();
+  test_sync_nonprimary_division_half_phase_correct_two_cycles();
+  test_sync_nonprimary_division_quarter();
+  test_sync_nonprimary_snaps_up_to_nearest_multiple();
+  test_sync_round_up_finalize_respects_max_loop_frames();
+  test_sync_division_falls_back_on_indivisible_base();
+  test_sync_nonprimary_division_even_not_multiple_of_four_tiles_exactly();
+  test_crown_division_track_does_not_corrupt_downstream_quantize();
+  test_primary_re_record_after_clear_forces_one_base_loop();
+  test_sync_force_arm_from_mid_cycle_fires_at_exact_boundary();
+  test_primary_cleared_dependent_track_keeps_playing_correctly();
+  test_division_track_undo_to_empty_redo_round_trips_divisor();
+  /* Band's independently start/stoppable section-transport tests land with
+   * the B3b follow-on (le_engine_toggle_section) — see the B3 PR notes. */
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");

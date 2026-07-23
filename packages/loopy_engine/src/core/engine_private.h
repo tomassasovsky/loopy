@@ -399,6 +399,15 @@ typedef struct le_track {
                                     * cleared take rather than peeling a layer */
   _Atomic int32_t a_redo_depth;    /* published redo_count */
   _Atomic int32_t a_multiple;   /* track length in whole base loops (>= 1) */
+  /* Sync division (B3, D16, published): 0 = ordinary (this track's length is
+   * `a_multiple` whole base loops, the ubiquitous case); 2 or 4 = this
+   * track's OWN buffer holds exactly 1/2 or 1/4 of the primary's length and
+   * loops at that own (faster) rate, phase-locked to the primary's loop top
+   * (a_multiple reads 1, inertly, alongside a nonzero divisor). Set only by
+   * finalize_new_track under le_sync_quantize_active; 0 everywhere else, so
+   * every mode but an active Sync/Band division is byte-for-byte the
+   * pre-B3 seg_base/multiple path (see mix_tracks_frame). */
+  _Atomic int32_t a_sync_divisor;
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the
                               * control thread to reconcile arm vs. fired. */
@@ -633,6 +642,15 @@ struct le_engine {
    * engine_process.c) while any track has content — a simpler predicate than
    * the tempo lock (content alone). */
   _Atomic int32_t a_looper_mode; /* le_looper_mode; default 0 = MULTI */
+
+  /* Primary track (B3, D18, published — see le_snapshot's trailing block).
+   * -1 = none (default). A SETTING seeded once in le_engine_create and
+   * persisting across configure exactly like a_looper_mode above, and
+   * (unlike per-track content) NOT reset by handle_clear — a crowned track
+   * being cleared to EMPTY does not un-crown it (D18: the designation
+   * survives; only an explicit re-crown, LE_CMD_CROWN_PRIMARY, changes it).
+   * Meaningful only in Sync/Band; see le_sync_quantize_active below. */
+  _Atomic int32_t a_primary_track;
 
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
@@ -886,6 +904,69 @@ static inline void store_i32(_Atomic int32_t* slot, int32_t v) {
 static inline int32_t le_effective_multiple(const le_engine* e, int32_t ch) {
   const int32_t ov = e->target_multiple[ch];
   return ov > 0 ? ov : e->default_multiple;
+}
+
+/* Sync/Band quantize gate (B3, D16/D18): whether channel [ch]'s finalize
+ * should snap to the nearest valid multiple-or-division of the PRIMARY
+ * track's length instead of the ordinary auto-round-up / forced-multiple
+ * rule (le_effective_multiple, above — bypassed entirely when this is true,
+ * per the manual's "every later track is AUTO", song-mode-spec.md §1).
+ * `static inline` here for the same reason as le_effective_multiple: BOTH
+ * threads decide from it and must never diverge — the control thread
+ * (le_engine_record) uses it to decide whether a non-primary EMPTY track's
+ * record press force-arms to the primary's loop top instead of starting
+ * immediately, and the audio thread (finalize_new_track) uses it to decide
+ * the actual ratio.
+ *
+ * True only when ALL of:
+ *   - mode is SYNC or BAND;
+ *   - a primary track is crowned (a_primary_track >= 0) and it is not [ch]
+ *     itself (the primary's own recording never quantizes against itself —
+ *     also correctly excludes the primary's OWN first-ever defining take,
+ *     see the a_len check below);
+ *   - the primary track already has content (lane 0's a_len > 0, read
+ *     BEFORE finalize_new_track mutates anything for [ch] — so if [ch] IS
+ *     the primary mid its own first recording, a_len still reads its
+ *     pre-take value: 0 the very first time, correctly reading "not yet
+ *     established" and falling back to ordinary Multi-style rounding, the
+ *     documented D16 fallback);
+ *   - the primary's own recorded length is EXACTLY one base loop
+ *     (a_multiple == 1 AND a_sync_divisor == 0 — BOTH are required: a Sync
+ *     DIVISION track also publishes a_multiple == 1 inertly alongside its
+ *     nonzero divisor, so a_multiple alone cannot tell "one plain base
+ *     loop" apart from "a fractional slice of some OTHER track" —
+ *     adversarial-review BUG 3. Without the divisor check, crowning a
+ *     division track as primary would make every downstream formula treat
+ *     its fractional length as if it were a full base loop, corrupting
+ *     the math for every dependent track. Checked here — the one gate both
+ *     threads consult — rather than at crown time (le_engine_crown_primary
+ *     stays unconditional per D18: the crown is a persistent designation,
+ *     settable before content even exists), matching this file's existing
+ *     "recompute live, don't trust the setter" discipline (see
+ *     le_effective_multiple, le_looper_mode_locked). A track crowned while
+ *     holding a divisor simply reads as "not yet established" — the same
+ *     D16 fallback as no primary at all, so every OTHER track's
+ *     recording degrades gracefully to ordinary Multi-style behavior
+ *     rather than corrupting). This is what lets every formula below use
+ *     e->clock.length directly as "the primary's length": if some OTHER
+ *     track happened to record first and define e->clock (D16's fallback
+ *     lets that happen), and the primary later records into that
+ *     already-established master as a k != 1 multiple, e->clock.length no
+ *     longer equals the primary's own length — a rare mis-ordering this
+ *     conservatively falls back on rather than risk incoherent divide/
+ *     multiply math (documented limitation, not a crash — and largely
+ *     closed by finalize_new_track's le_is_reestablishing_primary path,
+ *     engine_process.c, which now forces the primary's OWN recording to
+ *     exactly one base loop whenever it lands here). */
+static inline int le_sync_quantize_active(le_engine* e, int32_t ch) {
+  const int32_t mode = load_i32(&e->a_looper_mode);
+  if (mode != LE_LOOPER_MODE_SYNC && mode != LE_LOOPER_MODE_BAND) return 0;
+  const int32_t primary = load_i32(&e->a_primary_track);
+  if (primary < 0 || primary >= e->track_count || primary == ch) return 0;
+  le_track* pt = &e->tracks[primary];
+  if (load_i32(&pt->lanes[0].a_len) <= 0) return 0;
+  if (load_i32(&pt->a_sync_divisor) != 0) return 0;
+  return load_i32(&pt->a_multiple) == 1;
 }
 
 /* float/double <-> atomic-bits helpers. The published metering/gain fields are
