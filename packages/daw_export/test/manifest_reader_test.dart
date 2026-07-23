@@ -606,6 +606,78 @@ void main() {
       },
     );
 
+    test(
+      'threads a real, explicit tempoBpm through to the returned DawProject '
+      '(and into beat-unit automation conversion)',
+      () {
+        Directory('${dir.path}/stems/wet').createSync(recursive: true);
+        File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {
+              'tracks': [
+                {
+                  'channel': 0,
+                  'lanes': [
+                    {
+                      'lane': 0,
+                      'deferred': false,
+                      'pcmRef': 'stems/wet/track0.wav',
+                    },
+                  ],
+                },
+              ],
+            },
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+        const codeSetVolume = 7;
+        _writeLog('${dir.path}/events.log', 48000, [
+          (0, codeSetVolume, _generic(0, 0.5)),
+          (48000, codeSetVolume, _generic(0, 0.9)),
+        ]);
+
+        final project = DawManifestReader.read(dir.path, tempoBpm: 140);
+        expect(project!.tempoBpm, 140.0);
+        // At 140 BPM, 1s == 140/60 beats — distinct from the 120-BPM 2.0
+        // beats the earlier test at the same frame offset asserts, proving
+        // this reader's own internal beat-time conversion (not just the
+        // returned DawProject.tempoBpm) uses the real tempo too.
+        final lanes = project.tracks.single.automationLanes;
+        expect(lanes.single.breakpoints.last.beat, closeTo(140 / 60, 1e-9));
+      },
+    );
+
+    test(
+      'a non-positive tempoBpm (a legacy v3 session, or v4 grid-off content '
+      "reporting Session.tempoBpm's 0 = unset) falls back to 120 BPM, same "
+      'as omitting the argument entirely',
+      () {
+        File('${dir.path}/performance.json').writeAsStringSync(
+          jsonEncode({
+            'sample_rate': 48000,
+            'capture_frames': 48000,
+            'armSnapshot': {'tracks': <dynamic>[]},
+            'disarmSnapshot': {'tracks': <dynamic>[]},
+            'layers': <dynamic>[],
+          }),
+        );
+
+        expect(DawManifestReader.read(dir.path)!.tempoBpm, 120.0);
+        expect(
+          DawManifestReader.read(dir.path, tempoBpm: 0)!.tempoBpm,
+          120.0,
+        );
+        expect(
+          DawManifestReader.read(dir.path, tempoBpm: -1)!.tempoBpm,
+          120.0,
+        );
+      },
+    );
+
     test('a track with no logged gestures gets no automation lanes', () {
       Directory('${dir.path}/stems/wet').createSync(recursive: true);
       File('${dir.path}/stems/wet/track0.wav').writeAsBytesSync([0]);

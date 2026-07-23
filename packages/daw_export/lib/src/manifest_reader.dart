@@ -32,7 +32,22 @@ abstract final class DawManifestReader {
   /// caller) — mirrors this codebase's established "graceful no-op on a
   /// missing/corrupt sidecar" convention (`performance_repository`'s
   /// `recoverCapture`) rather than throwing.
-  static DawProject? read(String captureDir, {double tempoBpm = 120.0}) {
+  ///
+  /// [tempoBpm] is the REAL session tempo the caller knows about — in
+  /// practice, the currently-open session's `Session.tempoBpm`
+  /// (`session_repository`, schema v4) — or `0`/omitted for "unset": a
+  /// legacy v3 session, or v4 content recorded with the grid off
+  /// (`TempoSource.none`). Every beat-time conversion this reader does (this
+  /// method's own automation-lane calls below, and the returned
+  /// [DawProject]) uses [kFallbackTempoBpm] instead whenever [tempoBpm] is
+  /// non-positive, so an unset/legacy session still exports a valid,
+  /// non-degenerate `.als` at this feature's original fixed tempo — never at
+  /// literal `0`.
+  static DawProject? read(
+    String captureDir, {
+    double tempoBpm = kFallbackTempoBpm,
+  }) {
+    final effectiveTempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
     final manifestFile = File('$captureDir/performance.json');
     if (!manifestFile.existsSync()) return null;
     final Map<String, dynamic> manifest;
@@ -165,7 +180,7 @@ abstract final class DawManifestReader {
           logEntries,
           channel,
           sampleRate,
-          tempoBpm,
+          effectiveTempoBpm,
         );
         if (raw.volume.isNotEmpty) {
           automationLanes.add(
@@ -173,7 +188,7 @@ abstract final class DawManifestReader {
               target: AutomationTarget.volume,
               breakpoints: thinVolumeAutomation(
                 raw: raw.volume,
-                tempoBpm: tempoBpm,
+                tempoBpm: effectiveTempoBpm,
               ),
             ),
           );
@@ -208,7 +223,7 @@ abstract final class DawManifestReader {
       );
     }
 
-    return DawProject(tracks: tracks, tempoBpm: tempoBpm);
+    return DawProject(tracks: tracks, tempoBpm: effectiveTempoBpm);
   }
 
   static String? _firstExisting(String captureDir, List<String> candidates) {
