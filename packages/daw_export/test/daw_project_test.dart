@@ -9,6 +9,23 @@ void main() {
       expect(project.tracks, isEmpty);
     });
 
+    test(
+      'normalizes a non-positive tempoBpm (the v4 session manifest "unset" '
+      'sentinel) to the kFallbackTempoBpm fallback',
+      () {
+        expect(const DawProject(tracks: []).tempoBpm, kFallbackTempoBpm);
+        expect(
+          const DawProject(tracks: [], tempoBpm: 0).tempoBpm,
+          kFallbackTempoBpm,
+        );
+        expect(
+          const DawProject(tracks: [], tempoBpm: -5).tempoBpm,
+          kFallbackTempoBpm,
+        );
+        expect(kFallbackTempoBpm, 120.0);
+      },
+    );
+
     test('carries an explicit tempo and track list', () {
       const clip = DawClip(
         fileRef: 'stems/wet/track0.wav',

@@ -290,6 +290,14 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                // The real tempo to stamp the `.als` export with, read fresh
+                // at each export (not captured once here) — the live
+                // engine's current tempo via the looper repository, the same
+                // TransportState.tempoBpm field session_repository threads
+                // into the v4 manifest. `0` (grid off / tempo never set)
+                // falls through to daw_export's own 120 BPM fallback.
+                currentTempoBpm: () =>
+                    context.read<LooperRepository>().state.transport.tempoBpm,
               );
               unawaited(cubit.load());
               return cubit;

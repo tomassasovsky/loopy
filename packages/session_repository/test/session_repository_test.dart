@@ -119,6 +119,69 @@ void main() {
   );
 
   test(
+    'save threads the engine snapshot tempo grid + click + count-in into '
+    'the v4 manifest, read decodes it back',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..tempoBpm = 96.0
+        ..tempoSource = TempoSource.tapped
+        ..tsNum = 7
+        ..tsDen = 8
+        ..quantizeDiv = GridDivision.quarter
+        ..clickMode = ClickMode.playRec
+        ..clickMask = 0x1
+        ..clickVolume = 0.4
+        ..countInBars = 3;
+      final dir = '${tempDir.path}/tempo';
+
+      final session = await repoFor(source).save(dir);
+      expect(session.tempoBpm, 96.0);
+      expect(session.tempoSource, TempoSource.tapped);
+      expect(session.tsNum, 7);
+      expect(session.tsDen, 8);
+      expect(session.quantizeDiv, GridDivision.quarter);
+      expect(session.clickMode, ClickMode.playRec);
+      expect(session.clickOutputMask, 0x1);
+      expect(session.clickVolume, 0.4);
+      expect(session.countInBars, 3);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+      expect(bundle.session.tempoBpm, 96.0);
+      expect(bundle.session.tempoSource, TempoSource.tapped);
+      expect(bundle.session.tsNum, 7);
+      expect(bundle.session.tsDen, 8);
+      expect(bundle.session.quantizeDiv, GridDivision.quarter);
+      expect(bundle.session.clickMode, ClickMode.playRec);
+      expect(bundle.session.clickOutputMask, 0x1);
+      expect(bundle.session.clickVolume, 0.4);
+      expect(bundle.session.countInBars, 3);
+    },
+  );
+
+  test(
+    'a derived tempo persists in the manifest even when saved with zero '
+    'tracks (D6: clearing all tracks offers a tempo reset, never forces it)',
+    () async {
+      // Unlike baseLengthFrames (zeroed for a zero-track save, see the
+      // "persists no ghost grid" test above), tempo/signature/click/
+      // count-in are session-level settings, not derived-from-content
+      // state — the engine's "grid survives a clear" behavior must round
+      // -trip through a save exactly as the live engine reports it.
+      final engine = FakeSessionEngine()
+        ..tempoBpm = 140.0
+        ..tempoSource = TempoSource.derived;
+      final dir = '${tempDir.path}/dead-tempo';
+
+      final session = await repoFor(engine).save(dir);
+      expect(session.tracks, isEmpty);
+      expect(session.baseLengthFrames, 0);
+      expect(session.tempoBpm, 140.0);
+      expect(session.tempoSource, TempoSource.derived);
+    },
+  );
+
+  test(
     'save without chains writes an empty (but present) v2 chain list',
     () async {
       final source = FakeSessionEngine()

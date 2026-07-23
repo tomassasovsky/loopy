@@ -421,14 +421,31 @@ class SessionRepository {
       channels: 1,
       // The engine keeps the master grid alive after the last track is undone
       // to empty (redo needs it), but a session with zero tracks must not
-      // persist that ghost tempo — loading it would re-establish a grid with
-      // no content, silently locking the next recording's length.
+      // persist that ghost length — loading it would re-establish a grid
+      // with no content, silently locking the next recording's length.
       baseLengthFrames: captured.tracks.isEmpty
           ? 0
           : snapshot.masterLengthFrames,
       tracks: captured.tracks,
       laneChains: chains.laneChains,
       monitors: chains.monitors,
+      // Tempo/signature/quantize/click/count-in are session-level settings,
+      // not derived-from-track-content state, so — unlike baseLengthFrames
+      // above — they persist regardless of whether any track has content.
+      // This is deliberate, not an oversight: D6 says a derived tempo
+      // survives clearing its source loop ("clearing all tracks offers a
+      // tempo reset, never forces it"), and D7 lets a manual/tapped tempo be
+      // dialed in before the first recording ever starts — both cases are a
+      // zero-track snapshot the app must still round-trip faithfully.
+      tempoBpm: snapshot.tempoBpm,
+      tempoSource: snapshot.tempoSource,
+      tsNum: snapshot.tsNum,
+      tsDen: snapshot.tsDen,
+      quantizeDiv: snapshot.quantizeDiv,
+      clickMode: snapshot.clickMode,
+      clickOutputMask: snapshot.clickMask,
+      clickVolume: snapshot.clickVolume,
+      countInBars: snapshot.countInBars,
     );
   }
 
