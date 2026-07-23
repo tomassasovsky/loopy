@@ -2,11 +2,15 @@ SUMMARY = "Prebuilt Loopy Flutter GTK bundle (installed as-is; NOT built from so
 DESCRIPTION = "Installs the exact aarch64 Flutter GTK bundle produced by \
 deploy/rpi/build/build-arm64-bundle.sh into /opt/loopy, plus a Wayland launcher \
 and a systemd unit that runs it under weston. See docs/plan Tier 3a §Phase 2."
-LICENSE = "MIT"
+# CLOSED: a prebuilt binary we install verbatim — no in-tree license file to
+# checksum here (the app's licensing lives in the main repo, not this recipe).
+LICENSE = "CLOSED"
 
 # Path to the prebuilt bundle dir (contains 'loopy', libflutter_linux_gtk.so,
-# libloopy_engine.so, data/). Set via LOOPY_BUNDLE_DIR in kas/local.conf.
-LOOPY_BUNDLE_DIR ?= ""
+# libloopy_engine.so, data/). Defaults to deploy/yocto/prebuilt/bundle relative to
+# this recipe (resolves inside the build container regardless of mount point);
+# override via LOOPY_BUNDLE_DIR in kas/local.conf to point elsewhere.
+LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 
 SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch"
@@ -17,14 +21,19 @@ S = "${WORKDIR}"
 # Yocto strip/relocate them or run host-oriented QA that assumes we compiled them.
 INHIBIT_PACKAGE_STRIP = "1"
 INHIBIT_SYSROOT_STRIP = "1"
-INSANE_SKIP:${PN} += "already-stripped ldflags arch textrel"
+# Prebuilt binaries: skip already-stripped/arch/textrel QA, and file-rdeps too —
+# the auto shlib scan can't map every SONAME for a binary we didn't compile. The
+# actual libs still land in the image via the RDEPENDS below (the GTK stack).
+INSANE_SKIP:${PN} += "already-stripped ldflags arch textrel file-rdeps"
 
 # Contains target ELF/.so, so it is machine-specific, not allarch.
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-# Runtime libs the GTK embedder + native engine link against. Verify on device
-# with `ldd /opt/loopy/loopy` — this is the ABI-matching risk (plan §Risks).
-RDEPENDS:${PN} = "gtk+3 mesa alsa-lib libstdc++ glib-2.0"
+# Runtime libs the GTK embedder + native engine link against, named explicitly so
+# they're guaranteed in the image. Verify the full set on device with
+# `ldd /opt/loopy/loopy` — this is the ABI-matching risk (plan §Risks).
+RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
+                  fontconfig freetype glib-2.0 mesa alsa-lib libstdc++"
 
 inherit systemd
 SYSTEMD_SERVICE:${PN} = "loopy.service"
@@ -44,7 +53,11 @@ do_install() {
     fi
 
     install -d ${D}/opt/loopy
-    cp -a "${bundle}/." ${D}/opt/loopy/
+    # cp -R (not -a): preserve the executable bits but NOT the host uid/gid, then
+    # force root ownership — staged files must not carry the build user's uid
+    # (else do_package fails with "uid not found / host contamination").
+    cp -R "${bundle}/." ${D}/opt/loopy/
+    chown -R root:root ${D}/opt/loopy
 
     install -d ${D}${bindir}
     install -m 0755 ${WORKDIR}/loopy-kiosk-launch ${D}${bindir}/loopy-kiosk-launch
