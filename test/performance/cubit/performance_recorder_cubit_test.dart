@@ -98,12 +98,14 @@ void main() {
   PerformanceRecorderCubit build({
     DateTime Function()? now,
     Future<int?> Function(String path)? freeSpaceBytes,
+    double Function()? currentTempoBpm,
   }) => PerformanceRecorderCubit(
     performance: performance,
     armedTickInterval: const Duration(milliseconds: 10),
     renderPollInterval: const Duration(milliseconds: 10),
     now: now ?? (() => clock),
     freeSpaceBytes: freeSpaceBytes ?? (_) async => null,
+    currentTempoBpm: currentTempoBpm ?? () => 0,
   );
 
   /// Arms via the repository directly and seeds a real `events.log` +
@@ -564,6 +566,88 @@ void main() {
 
         expect(completed.tracks, hasLength(1));
         expect(completed.tracks.single.name, 'Track 0');
+      },
+    );
+  });
+
+  group('.als real tempo threading', () {
+    /// Decompresses `project.als` (gzipped XML, `als_builder.dart`) and
+    /// returns it as a string — the same decode `als_builder_test.dart`
+    /// itself uses — so a test here can assert on the actual emitted
+    /// `<Tempo>` value rather than trusting the wiring by inspection.
+    String readAls(String dir) => utf8.decode(
+      GZipCodec().decode(File('$dir/project.als').readAsBytesSync()),
+    );
+
+    test(
+      'a real, non-default currentTempoBpm reaches the exported .als '
+      "(end-to-end: this cubit's constructor dependency -> "
+      '_writeDawExports -> DawManifestReader.read -> DawProject -> '
+      'buildAls), not just the daw_export library level',
+      () async {
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build(currentTempoBpm: () => 96.0);
+        addTearDown(cubit.close);
+        final dir = await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+
+        await cubit.toggleArm();
+        await waitForCompleted(cubit);
+
+        expect(readAls(dir), contains('<Manual Value="96.0"/>'));
+      },
+    );
+
+    test(
+      'an unset (0, the default) currentTempoBpm still exports — falling '
+      "back to daw_export's own 120 BPM default, exactly like before this "
+      'wiring existed',
+      () async {
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        final cubit = build(); // default currentTempoBpm: () => 0
+        addTearDown(cubit.close);
+        final dir = await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+
+        await cubit.toggleArm();
+        await waitForCompleted(cubit);
+
+        expect(readAls(dir), contains('<Manual Value="120.0"/>'));
+      },
+    );
+
+    test(
+      'reExport() also threads the real tempo (same _writeDawExports path '
+      'as a fresh completion)',
+      () async {
+        engine.renderStatuses = const [
+          PerformanceRenderTrackStatus(channel: 0, succeeded: true),
+        ];
+        var tempo = 0.0;
+        final cubit = build(currentTempoBpm: () => tempo);
+        addTearDown(cubit.close);
+        final dir = await armWithLog(performance);
+        await pumpEventQueue();
+        clock = clock.add(const Duration(seconds: 5));
+        await cubit.toggleArm();
+        await waitForCompleted(cubit);
+        expect(readAls(dir), contains('<Manual Value="120.0"/>'));
+
+        // Tempo becomes known only after the fact (e.g. the user dialed it
+        // in after this capture finished) — reExport() must pick up the
+        // CURRENT value, proving it reads the callback fresh rather than a
+        // value captured once at cubit construction.
+        tempo = 140.0;
+        await cubit.reExport();
+        await pumpEventQueue();
+
+        expect(readAls(dir), contains('<Manual Value="140.0"/>'));
       },
     );
   });

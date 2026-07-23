@@ -44,6 +44,22 @@ class FakeSessionEngine implements AudioEngine {
   final List<_FakeTrack> _tracks = List.generate(4, (_) => _FakeTrack());
   int masterLength = 0;
 
+  // ---- tempo grid + click + count-in (A1/A2, threaded to Session v4 by A7)
+  // ----
+  // Mutable so a test can seed non-default grid state before calling
+  // `SessionRepository.save`, exercising the actual `_sessionFrom` wiring
+  // rather than trusting it by inspection. Defaults mirror
+  // `EngineSnapshot`'s own tempo-free defaults.
+  double tempoBpm = 0;
+  TempoSource tempoSource = TempoSource.none;
+  int tsNum = 4;
+  int tsDen = 4;
+  GridDivision quantizeDiv = GridDivision.off;
+  ClickMode clickMode = ClickMode.off;
+  int clickMask = 0;
+  double clickVolume = 1;
+  int countInBars = 0;
+
   /// While > 0, every snapshot reports track 0's undo layer as in flight and
   /// decrements — simulating the punch-out fade-tail/drain window a capture
   /// must wait out.
@@ -136,6 +152,15 @@ class FakeSessionEngine implements AudioEngine {
     latencyState: LatencyState.idle,
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
+    tempoBpm: tempoBpm,
+    tempoSource: tempoSource,
+    tsNum: tsNum,
+    tsDen: tsDen,
+    quantizeDiv: quantizeDiv,
+    clickMode: clickMode,
+    clickMask: clickMask,
+    clickVolume: clickVolume,
+    countInBars: countInBars,
     tracks: [
       for (final (i, t) in _tracks.indexed)
         TrackSnapshot(
