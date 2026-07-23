@@ -15,4 +15,12 @@
 #   --target lib/main_production.dart --dart-define=LOOPY_CONSOLE=true
 #   (see deploy/rpi/README.md).
 LOOPY_BIN="${LOOPY_BIN:-$HOME/loopy/build/linux/arm64/release/bundle/loopy}"
-exec "$LOOPY_BIN" &
+
+# Launch under pw-jack so the engine's preferred JACK backend binds to
+# PipeWire's JACK server. Without it the real libjack is loaded, finds no
+# running jackd, and the engine hangs retrying — audio silently dies on boot
+# with no terminal to see it (needs the `pipewire-jack` package; verified on a
+# Pi 4B bring-up). Falls back to a direct launch if pw-jack is not installed.
+LOOPY_LAUNCH=""
+command -v pw-jack >/dev/null 2>&1 && LOOPY_LAUNCH="pw-jack"
+exec $LOOPY_LAUNCH "$LOOPY_BIN" &
