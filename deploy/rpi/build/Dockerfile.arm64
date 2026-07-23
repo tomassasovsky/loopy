@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1
+#
+# aarch64 Linux build image for the Loopy floor-console bundle.
+#
+# The dev machine is a Mac, which cannot produce a Linux release bundle, so the
+# build runs in this arm64 container instead. It mirrors the CI arm64 recipe
+# (.github/workflows/main.yaml `build-linux-arm64`) so a green CI compile is a
+# strong predictor that this image builds too — see build-arm64-bundle.sh.
+#
+# On Apple Silicon the arm64 image runs natively; on Intel it runs under qemu
+# (slower). build-arm64-bundle.sh forces --platform linux/arm64 either way.
+FROM arm64v8/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# The CI arm64 dep set (ninja..pkg-config) PLUS the packages a bare Ubuntu image
+# lacks that the GitHub arm64 runner ships preinstalled. Without git/curl/unzip/
+# xz-utils/ca-certificates Flutter's git bootstrap and first-run SDK fetch fail
+# in a clean container; libstdc++6 backs the Dart/engine toolchain.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ninja-build libgtk-3-dev libglib2.0-dev libpango1.0-dev libasound2-dev \
+      clang cmake pkg-config \
+      git curl unzip xz-utils ca-certificates libstdc++6 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Flutter 3.44.4 — the repo-pinned version, cloned from the same ref the CI
+# arm64 job uses (a shallow clone of the tag, not a channel).
+ENV FLUTTER_HOME=/opt/flutter
+RUN git clone --depth 1 --branch 3.44.4 \
+      https://github.com/flutter/flutter.git "$FLUTTER_HOME"
+ENV PATH="$FLUTTER_HOME/bin:$PATH"
+
+# Flutter shells out to git against its own SDK and the mounted project (which
+# the host user owns, not root); mark all trees safe so pub/build do not abort
+# on "detected dubious ownership". Then warm the linux desktop artifacts into
+# the image so each build does not re-download the engine.
+RUN git config --global --add safe.directory '*' \
+ && flutter config --enable-linux-desktop \
+ && flutter precache --linux
+
+# In-container build orchestration. Kept inline (heredoc) rather than a third
+# file so the tooling stays exactly two files: this Dockerfile + the wrapper.
+# Args passed after the image name reach flutter build as "$@" (passthrough).
+RUN cat > /usr/local/bin/loopy-build <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+flutter pub get
+
+# CI-parity debug smoke FIRST: the exact command the CI arm64 job runs. Linux
+# --release runs nowhere in CI, so this catches toolchain/dep drift against the
+# proven compile guard before the (unproven-by-CI) release build.
+echo "==> CI-parity debug smoke: flutter build linux --debug (main_development)"
+flutter build linux --debug --target lib/main_development.dart
+
+# The real deliverable: the release bundle. LOOPY_CONSOLE defaults on via the
+# wrapper; extra args ("$@") are forwarded verbatim so callers can override.
+echo "==> Release bundle: flutter build linux --release (main_production) $*"
+flutter build linux --release --target lib/main_production.dart "$@"
+
+# Hand the generated artifacts back to the invoking host user; without this the
+# mounted output would be root-owned on the Mac. Non-fatal if a path is absent.
+if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
+  chown -R "$HOST_UID:$HOST_GID" \
+    build .dart_tool linux/flutter/ephemeral \
+    .flutter-plugins .flutter-plugins-dependencies pubspec.lock 2>/dev/null || true
+fi
+SCRIPT
+RUN chmod +x /usr/local/bin/loopy-build
+
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/loopy-build"]
