@@ -108,6 +108,51 @@ float le_grid_derive_bpm(int32_t loop_frames, int32_t ts_num,
  * beat_at). Returns 0 when len or total_beats <= 0. */
 int32_t le_grid_beat_at(int32_t pos, int32_t len, int32_t total_beats);
 
+/* ---- loop-locked subdivision grid (A3: musical quantize arming) ----
+ *
+ * Once a live loop exists, subdivision boundaries derive from the LOOP-LOCKED
+ * grid — `len` frames holding `total_beats` denominator-note beats — never
+ * from nominal-BPM multiples (the reconciliation note on le_grid_next_boundary:
+ * the two diverge whenever len != bars * frames_per_bar). The subdivision
+ * count over the loop is a RATIONAL sub_num/sub_den (one 3/4 bar holds 1.5
+ * half notes), so the helpers carry it as a pair and boundary positions are
+ * the exact-division renderings
+ *     start(i) = ceil(i * len * sub_den / sub_num)
+ * mirroring le_grid_beat_at's remainder distribution: pure integer math, no
+ * float drift, and the loop top (pos == 0) is a boundary of every division.
+ *
+ * These also serve any UI countdown: le_snapshot already publishes everything
+ * they need (per-track `pending`, quantize_div, loop_bars, ts_num/den, master
+ * length/position), so no armed-target snapshot field exists — the fire
+ * position is derived, not published. */
+
+/* The rational count of `div` subdivisions in a loop holding `total_beats`
+ * beats: total_beats / ts_num bars, or total_beats * N / ts_den 1/N notes.
+ * Writes an unreduced positive num/den pair and returns 1, or returns 0 (num 0,
+ * den 1) for OFF, an unknown div, or degenerate arguments. */
+int le_grid_loop_subdiv_ratio(int32_t total_beats, int32_t ts_num,
+                              int32_t ts_den, int32_t div, int64_t* out_num,
+                              int64_t* out_den);
+
+/* The subdivision index (0-based) at `pos` (in [0, len)) of a loop of `len`
+ * frames holding sub_num/sub_den subdivisions:
+ * floor(pos * sub_num / (len * sub_den)). Returns 0 on degenerate input. */
+int32_t le_grid_loop_subdiv_at(int32_t pos, int32_t len, int64_t sub_num,
+                               int64_t sub_den);
+
+/* The first frame of subdivision `idx`: ceil(idx * len * sub_den / sub_num),
+ * clamped to len (indexes past the loop's last subdivision land on the wrap).
+ * Returns 0 for idx <= 0 or degenerate input. */
+int32_t le_grid_loop_subdiv_start(int32_t idx, int32_t len, int64_t sub_num,
+                                  int64_t sub_den);
+
+/* The first subdivision boundary STRICTLY AFTER `pos`, in (pos, len]: a result
+ * of len means the next boundary is the loop top (the wrap). An action armed
+ * exactly on a boundary fires at the next one, same convention as
+ * le_grid_next_boundary. Returns -1 on degenerate input. */
+int32_t le_grid_loop_next_subdiv(int32_t pos, int32_t len, int64_t sub_num,
+                                 int64_t sub_den);
+
 #ifdef __cplusplus
 }
 #endif
