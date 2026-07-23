@@ -28,6 +28,8 @@ void main() {
       expect(blank.clearFadeActive, isFalse);
       expect(blank.isGoodbye, isFalse);
       expect(blank.performanceArmed, isFalse);
+      expect(blank.looperMode, PedalLooperMode.multi);
+      expect(blank.countingIn, isFalse);
     });
 
     test('sets isGoodbye when requested', () {
@@ -49,12 +51,25 @@ void main() {
       expect(sample(), isNot(sample().copyWith(performanceArmed: true)));
     });
 
+    test('frames differ when only looperMode differs', () {
+      expect(
+        sample(),
+        isNot(sample().copyWith(looperMode: PedalLooperMode.band)),
+      );
+    });
+
+    test('frames differ when only countingIn differs', () {
+      expect(sample(), isNot(sample().copyWith(countingIn: true)));
+    });
+
     test('toString surfaces the salient fields', () {
       final text = sample().toString();
       expect(text, contains('amber'));
       expect(text, contains('bank: 1'));
       expect(text, contains('selected: 4'));
       expect(text, contains('performanceArmed: false'));
+      expect(text, contains('looperMode: multi'));
+      expect(text, contains('countingIn: false'));
     });
   });
 
@@ -73,6 +88,8 @@ void main() {
           PedalStateFrame.trackCount,
           PedalTrackLed.red,
         ),
+        looperMode: PedalLooperMode.song,
+        countingIn: true,
       );
       expect(updated.globalColor, GlobalColor.red);
       expect(updated.activeBank, 0);
@@ -83,6 +100,8 @@ void main() {
       expect(updated.isGoodbye, isTrue);
       expect(updated.performanceArmed, isTrue);
       expect(updated.trackLeds, everyElement(PedalTrackLed.red));
+      expect(updated.looperMode, PedalLooperMode.song);
+      expect(updated.countingIn, isTrue);
     });
 
     test('keeps the original values when no override is given', () {

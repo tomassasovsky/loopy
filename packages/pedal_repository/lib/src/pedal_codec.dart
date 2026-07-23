@@ -26,7 +26,8 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 /// | byte  | meaning                                                  |
 /// |-------|----------------------------------------------------------|
 /// | 0     | flags: bit0 mode, bit1 clearFadeActive, bit2 goodbye,    |
-/// |       | bit3 performanceArmed                                    |
+/// |       | bit3 performanceArmed, bits4-6 [PedalLooperMode] index   |
+/// |       | (v2 only), bit7 countingIn (v2 only)                     |
 /// | 1     | [GlobalColor] index                                      |
 /// | 2     | active bank (0 = A, 1 = B)                               |
 /// | 3     | armed track (0..7)                                       |
@@ -36,6 +37,24 @@ import 'package:pedal_repository/src/pedal_state_frame.dart';
 ///
 /// The mode bit encodes [PedalMode]: `0` = rec, `1` = play. The checksum is the
 /// XOR of every packed payload byte, masked to 7 bits.
+///
+/// ### Protocol versions and the D11 degrade policy
+///
+/// [protocolVersionV1] is the pre-existing wire (flags bits 4-7 always zero,
+/// no looper-mode/counting-in). [protocolVersionV2] (D11) adds those two
+/// fields **in the same 17-byte payload** — the flags byte had exactly
+/// enough spare headroom (4 of 8 bits used), so v2 needed no payload growth,
+/// only a header version bump and two more flag bits. [encodeFrame] emits
+/// [protocolVersionV2] by default; pass `targetVersion:
+/// PedalCodec.protocolVersionV1` to talk to firmware that has not been
+/// reflashed past v1 (the two new fields are silently omitted — "tempo state
+/// invisible" per D11, not an error). [decodeFrame] accepts both versions:
+/// a v1 frame always decodes with [PedalStateFrame.looperMode] `multi` and
+/// [PedalStateFrame.countingIn] `false`, regardless of what the engine's
+/// actual state was when the (v1-limited) sender built it.
+/// [firmwareNeedsUpdate] is the pure signal a later PR's UI surfaces as an
+/// "update pedal firmware" notice — this package has no live
+/// version-discovery channel yet (see its doc comment).
 abstract final class PedalCodec {
   /// MIDI SysEx start byte.
   static const sysExStart = 0xF0;
@@ -46,8 +65,25 @@ abstract final class PedalCodec {
   /// Non-commercial MIDI manufacturer id used for the pedal protocol.
   static const manufacturerId = 0x7D;
 
-  /// The protocol version carried in every state frame.
-  static const protocolVersion = 0x01;
+  /// Wire protocol version 1 (pre-B5a): the flags byte carries only the
+  /// [PedalMode] bit, `clearFadeActive`, `goodbye`, and `performanceArmed` —
+  /// bits 4-7 are unused/reserved and always zero. A frame at this version
+  /// cannot carry [PedalStateFrame.looperMode] or
+  /// [PedalStateFrame.countingIn] (D11): [decodeFrame] degrades both to
+  /// their defaults ([PedalLooperMode.multi], not counting in) rather than
+  /// failing to decode.
+  static const protocolVersionV1 = 0x01;
+
+  /// Wire protocol version 2 (current, D11): adds the 3-bit
+  /// [PedalLooperMode] field and the counting-in flag to the *same* flags
+  /// byte (bits 4-6 and bit 7) — no payload growth was needed. [encodeFrame]
+  /// emits this by default; [decodeFrame] accepts it alongside
+  /// [protocolVersionV1].
+  static const protocolVersionV2 = 0x02;
+
+  /// The version [encodeFrame] targets when its `targetVersion` parameter is
+  /// omitted — always the newest version this codec speaks.
+  static const int protocolVersion = protocolVersionV2;
 
   /// Message type for a state frame.
   static const messageTypeState = 0x01;
@@ -72,14 +108,35 @@ abstract final class PedalCodec {
   // loopy → pedal
   // ---------------------------------------------------------------------------
 
-  /// Serializes [frame] to a complete SysEx message.
-  static Uint8List encodeFrame(PedalStateFrame frame) {
+  /// Serializes [frame] to a complete SysEx message, targeting
+  /// [targetVersion] (defaults to [protocolVersion], the newest this codec
+  /// speaks).
+  ///
+  /// Pass `targetVersion: PedalCodec.protocolVersionV1` when the bound
+  /// firmware has not been reflashed past v1 (D11): [frame]'s
+  /// [PedalStateFrame.looperMode] and [PedalStateFrame.countingIn] are then
+  /// silently left off the wire (encoded as if `multi` / not counting in) —
+  /// v1 has no bits budgeted for them, not an error.
+  static Uint8List encodeFrame(
+    PedalStateFrame frame, {
+    int targetVersion = protocolVersion,
+  }) {
+    assert(
+      targetVersion == protocolVersionV1 || targetVersion == protocolVersionV2,
+      'targetVersion must be protocolVersionV1 or protocolVersionV2, '
+      'got $targetVersion',
+    );
     final payload = Uint8List(_payloadLength);
     payload[0] =
         (frame.mode == PedalMode.play ? 0x01 : 0) |
         (frame.clearFadeActive ? 0x02 : 0) |
         (frame.isGoodbye ? 0x04 : 0) |
         (frame.performanceArmed ? 0x08 : 0);
+    if (targetVersion >= protocolVersionV2) {
+      payload[0] |=
+          ((frame.looperMode.index & 0x07) << 4) |
+          (frame.countingIn ? 0x80 : 0);
+    }
     payload[1] = frame.globalColor.index;
     payload[2] = frame.activeBank;
     payload[3] = frame.selectedTrack;
@@ -97,7 +154,7 @@ abstract final class PedalCodec {
     final out = BytesBuilder()
       ..addByte(sysExStart)
       ..addByte(manufacturerId)
-      ..addByte(protocolVersion)
+      ..addByte(targetVersion)
       ..addByte(messageTypeState)
       ..add(packed)
       ..addByte(_checksum(packed))
@@ -125,11 +182,18 @@ abstract final class PedalCodec {
   ///
   /// Returns `null` if the message is not a well-formed, checksum-valid state
   /// frame of a recognized version — callers keep the last good frame.
+  /// Accepts both [protocolVersionV1] and [protocolVersionV2] (D11): a v1
+  /// frame decodes with [PedalStateFrame.looperMode] `multi` and
+  /// [PedalStateFrame.countingIn] `false` (the wire never carried anything
+  /// else for those fields at v1).
   static PedalStateFrame? decodeFrame(List<int> message) {
     if (message.length < 6) return null;
     if (message.first != sysExStart || message.last != sysExEnd) return null;
     if (message[1] != manufacturerId) return null;
-    if (message[2] != protocolVersion) return null;
+    final version = message[2];
+    if (version != protocolVersionV1 && version != protocolVersionV2) {
+      return null;
+    }
     if (message[3] != messageTypeState) return null;
 
     // body = packed payload + checksum, between the header and the F7.
@@ -160,6 +224,20 @@ abstract final class PedalCodec {
     if (activeBank > 1) return null;
     if (selectedTrack >= PedalStateFrame.trackCount) return null;
 
+    // v1 frames never carried these fields — bits 4-7 are reserved zero on
+    // that wire, so a v1 decode always reports the defaults (D11). A v2
+    // frame's looper-mode nibble must be one of the five defined values;
+    // 5-7 are reserved/unused wire values, rejected like any other
+    // out-of-range enum index in this decoder.
+    var looperMode = PedalLooperMode.multi;
+    var countingIn = false;
+    if (version >= protocolVersionV2) {
+      final looperModeIndex = (flags >> 4) & 0x07;
+      if (looperModeIndex >= PedalLooperMode.values.length) return null;
+      looperMode = PedalLooperMode.values[looperModeIndex];
+      countingIn = flags & 0x80 != 0;
+    }
+
     final trackLeds = <PedalTrackLed>[];
     for (var i = 0; i < PedalStateFrame.trackCount; i++) {
       final ledIndex = payload[4 + i];
@@ -184,8 +262,25 @@ abstract final class PedalCodec {
       performanceArmed: flags & 0x08 != 0,
       loopLengthMicros: loopLengthMicros,
       masterGain: payload.length >= _payloadLength ? payload[16] / 255.0 : 1.0,
+      looperMode: looperMode,
+      countingIn: countingIn,
     );
   }
+
+  /// Whether firmware reporting [firmwareProtocolVersion] cannot represent
+  /// the fields protocol v2 added (looper mode, counting-in) — the pure
+  /// signal a later PR surfaces as an "update pedal firmware" notice (D11).
+  ///
+  /// Stateless: this package has no live firmware-version-discovery channel
+  /// today. `PedalRepository.bind` broadcasts [encodeIdentityRequest], but
+  /// the reply is a SysEx message loopy's current 3-byte-only input capture
+  /// cannot deliver (see `PedalBindStatus`'s doc comment), so nothing here
+  /// reads hardware. A later PR — once the input seam grows a SysEx-capable
+  /// path, or a manual firmware-version setting exists — calls this with
+  /// whatever it learns, and passes the matching `targetVersion` to
+  /// [encodeFrame].
+  static bool firmwareNeedsUpdate(int firmwareProtocolVersion) =>
+      firmwareProtocolVersion < protocolVersionV2;
 
   // ---------------------------------------------------------------------------
   // pedal → loopy
