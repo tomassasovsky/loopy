@@ -555,9 +555,42 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
    * SESSION, for session import). */
   le_plog_push(e, frame,
               (le_command){.code = LE_PLOG_LOOP_LENGTH_LOCKED, .arg_i = len});
-  le_loop_clock_set_length(&e->clock, len);
-  e->loop_iteration = 0; /* the base loop just (re)started */
-  store_i32(&e->a_master_len, len);
+  /* Free mode (B2b, index Architecture §4): this track's OWN clock, not the
+   * shared master. Free mode has no single shared loop (song-mode-spec §1:
+   * "four un-synced, independently playing" tracks) — up to 8 independent
+   * lengths, each established by that track's own defining recording, so
+   * e->clock / a_master_len / loop_iteration must stay untouched here
+   * (dormant at whatever they already are — 0 in practice: D4 only allows
+   * switching INTO Free with every track empty, and le_engine_configure /
+   * handle_clear reset the master alongside every track whenever the rig
+   * goes fully empty, so no Multi-mode residue can reach a Free-mode
+   * finalize). sync_grid_to_loop / le_apply_length_preset_tempo are Multi
+   * mode's "this ONE loop derives/rounds THE session tempo" logic (D7) —
+   * with several independent Free-mode lengths there is no single loop to
+   * derive a session-wide tempo from, so neither runs for a Free-mode
+   * finalize: BPM/signature stay exactly what the session already has (D7:
+   * session-wide, set manually/tapped, never derived from one of several
+   * independent per-track lengths). This does NOT disable quantize/length
+   * presets in Free mode — le_arm_length_preset_target's auto-finalize
+   * target (consumed above this function, in advance_transport_frame) is a
+   * pure function of the GLOBAL tempo grid (tempo_grid.h takes bpm/
+   * signature/sample_rate as parameters, never track-bound state) and
+   * already composes per-track unmodified; only the POST-hoc "derive/round
+   * the session tempo from THIS take's length" step below is Multi-mode-
+   * only. */
+  const int free_mode = load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE;
+  if (free_mode) {
+    le_loop_clock_set_length(&t->free_clock, len);
+    t->free_iteration = 0; /* this track's own loop just (re)started */
+    /* Re-arm this track's own viz bucket cursor (mirrors the loop_viz_bucket
+     * re-arm master finalizes get for free by always being preceded by an
+     * all-empty reset — see le_engine_configure / handle_clear doc). */
+    e->track_viz_bucket[(int32_t)(t - e->tracks)] = -1;
+  } else {
+    le_loop_clock_set_length(&e->clock, len);
+    e->loop_iteration = 0; /* the base loop just (re)started */
+    store_i32(&e->a_master_len, len);
+  }
   le_track_set_len(t, len);
   store_i32(&t->a_multiple, 1); /* the defining track is one base loop */
   store_i32(&t->a_state, end_state);
@@ -575,12 +608,16 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
    * (target reached on time, OR an early press that disarms it — D17) takes
    * the normal path unchanged: on-time, the existing tempo already makes len
    * round back to bars == N; early, the shorter take rounds to whatever bars
-   * it actually spans, exactly the "early press disarms the preset" rule. */
+   * it actually spans, exactly the "early press disarms the preset" rule.
+   * Free mode (see above): skipped outright — no session-tempo derivation
+   * from a single independent length. */
   const int32_t preset_bars = load_i32(&t->a_length_preset_bars);
-  if (preset_bars > 0 && t->length_preset_target_frames == 0) {
-    le_apply_length_preset_tempo(e, len, preset_bars);
-  } else {
-    sync_grid_to_loop(e, len);
+  if (!free_mode) {
+    if (preset_bars > 0 && t->length_preset_target_frames == 0) {
+      le_apply_length_preset_tempo(e, len, preset_bars);
+    } else {
+      sync_grid_to_loop(e, len);
+    }
   }
   t->length_preset_target_frames = 0; /* consumed; the next take re-arms */
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
@@ -772,13 +809,27 @@ static void le_dub_boundary(le_engine* e, le_track* t, uint64_t frame) {
  * control thread's acquire), so a control thread that sees flag == 0 after
  * draining the evt_ring is guaranteed to hold every layer. */
 static void le_dub_block_update(le_engine* e, uint64_t frame) {
-  const int32_t base = e->clock.length;
+  /* Free mode (B2b, adversarial-review BUG 1 fix): `base` moved INSIDE the
+   * loop and computed per-track (mirroring mix_tracks_frame's trk_len[t])
+   * instead of being read once from e->clock.length. e->clock stays
+   * permanently dormant (length 0) in Free mode, so a single outer `base`
+   * meant every guard below that gates on `base > 0` could never pass for a
+   * Free-mode track — regardless of that track's own established
+   * free_clock.length — leaving a partially-covered overdub shadow's drain
+   * permanently un-armed: dub_draining never sets, the shadow never
+   * retires, a_layer_in_flight never clears, and the shadow's pool slot
+   * never returns to the shared bounded pool. A real-time-thread resource
+   * leak, proven empirically (a throwaway repro: Free-mode track, punch in,
+   * overdub < 1 lap, punch out, settle — layer_in_flight stuck at 1
+   * forever). Pinned by test_free_mode_dub_layer_retires_not_stuck. */
+  const int free_mode = load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE;
   for (int32_t ti = 0; ti < e->track_count; ++ti) {
     le_track* t = &e->tracks[ti];
     le_dub_try_retire(e, t, frame);
     if (!load_i32(&t->a_layer_in_flight)) continue;
     const int32_t st = load_i32(&t->a_state);
     if (st == LE_TRACK_OVERDUBBING || t->od_gain > 0.0f) continue; /* writing */
+    const int32_t base = free_mode ? t->free_clock.length : e->clock.length;
 
     /* Punch-out complete. A partially covered shadow drains: the un-backed
      * positions were never written this pass, so live still holds their
@@ -1107,6 +1158,16 @@ static void handle_clear(le_engine* e, int32_t ch) {
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_track_set_len(t, 0);
   store_i32(&t->a_multiple, 1);
+  /* Free mode (B2b): this track's own clock (if it had one established)
+   * dies with its content, exactly like the master dies with the last
+   * track's content below — unconditional and cheap (a no-op reset when
+   * already dormant, i.e. every mode but Free), so "a track reading EMPTY
+   * has a dormant free_clock" is an invariant provable by construction
+   * rather than by tracing every path that can reach EMPTY (this one, and
+   * LE_CMD_UNDO_TO_EMPTY below). */
+  le_loop_clock_reset(&t->free_clock);
+  t->free_iteration = 0;
+  e->track_viz_bucket[ch] = -1;
   /* Drop the per-pass capture wholesale: the control thread reclaimed every
    * posted shadow slot when it pushed this clear and bumped the generation (we
    * mirror the bump), so an already-pushed retire event from before the clear
@@ -1460,6 +1521,12 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       store_i32(&t->a_state, LE_TRACK_EMPTY);
       le_track_set_len(t, 0);
       store_i32(&t->a_multiple, 1);
+      /* Free mode (B2b): same invariant-preserving reset as handle_clear's —
+       * a track reading EMPTY must never carry an established free_clock.
+       * Cheap no-op outside Free mode (already dormant there). */
+      le_loop_clock_reset(&t->free_clock);
+      t->free_iteration = 0;
+      e->track_viz_bucket[cmd->arg_i] = -1;
       /* The to-EMPTY edge case of undo (LE_PLOG_UNDO, not a raw copy of this
        * command — every undo path, common in-track swap or this one, logs
        * the same semantic code so a downstream consumer never needs to know
@@ -1482,11 +1549,20 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         /* The restored loop may differ in length from whatever the leftover
          * armed shadows were sized for — drop them (control reclaimed). */
         le_dub_drop_armed(t);
-        const int32_t base = e->clock.length > 0 ? e->clock.length : len;
-        int32_t k = len / base;
-        if (k < 1) k = 1;
+        /* Free mode (B2b): restore THIS track's own clock — there is no
+         * shared base to be a multiple of (Multi/Sync/Song/Band's `base`/`k`
+         * below is meaningless with independent per-track lengths). */
+        if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE) {
+          le_loop_clock_set_length(&t->free_clock, len);
+          t->free_iteration = 0;
+          store_i32(&t->a_multiple, 1);
+        } else {
+          const int32_t base = e->clock.length > 0 ? e->clock.length : len;
+          int32_t k = len / base;
+          if (k < 1) k = 1;
+          store_i32(&t->a_multiple, k);
+        }
         le_track_set_len(t, len);
-        store_i32(&t->a_multiple, k);
         t->start_iter = 0;
         store_i32(&t->a_state, LE_TRACK_PLAYING);
         /* The from-EMPTY edge case of redo (LE_PLOG_REDO — see the UNDO_TO_
@@ -1534,11 +1610,22 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
            * with sync off it correctly stays grid-free. */
           sync_grid_to_loop(e, cmd->restore.master_len);
         }
-        const int32_t base = e->clock.length > 0 ? e->clock.length : len;
-        int32_t k = len / base;
-        if (k < 1) k = 1;
+        /* Free mode (B2b): restore THIS track's own clock, mirroring
+         * LE_CMD_REDO_FROM_EMPTY above — restore.master_len is always 0 for
+         * a Free-mode clear (a_master_len is never set in this mode), so the
+         * block above is already a no-op here; only the per-track base/k
+         * computation below needs the same mode branch. */
+        if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE) {
+          le_loop_clock_set_length(&t->free_clock, len);
+          t->free_iteration = 0;
+          store_i32(&t->a_multiple, 1);
+        } else {
+          const int32_t base = e->clock.length > 0 ? e->clock.length : len;
+          int32_t k = len / base;
+          if (k < 1) k = 1;
+          store_i32(&t->a_multiple, k);
+        }
         le_track_set_len(t, len);
-        store_i32(&t->a_multiple, k);
         t->start_iter = 0;
         store_i32(&t->a_state, cmd->restore.state);
         /* The clear-restore edge case of undo: same semantic code as every
@@ -1921,6 +2008,32 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
     case LE_CMD_COMMIT_SESSION: {
       const int32_t base = cmd->arg_i;
       if (base <= 0) break;
+      /* KNOWN GAP (B2b), guarded (adversarial-review BUG 2 fix): this
+       * command establishes ONE shared `base` length for every imported
+       * track via a whole-loop multiple — correct for Multi/Sync/Song/Band,
+       * but Free mode has no single shared loop to import onto. The
+       * control-thread wrapper (le_engine_commit_session, engine_session.c)
+       * already rejects this outright when a_looper_mode == FREE, so this
+       * command should never reach here in that mode from the normal
+       * session-import path — but le_engine_post_command is a raw FFI escape
+       * hatch that can post ANY command directly, bypassing that wrapper.
+       * Without this second guard, a raw post here would set e->clock /
+       * a_master_len to a nonzero value while FREE — the exact invariant
+       * ("the shared master clock stays permanently dormant in this mode")
+       * every other Free-mode code path in this file depends on staying
+       * true (advance_transport_frame's shared-clock tick and
+       * mix_tracks_frame's Multi-mode defaults would otherwise spuriously
+       * activate alongside the per-track Free-mode paths). It would ALSO,
+       * independently, leave imported tracks marked PLAYING with no
+       * established free_clock of their own — reproducing the exact
+       * "playback stuck reading position 0 forever" bug class this PR
+       * already found and fixed once in mix_tracks_frame. Free-mode session
+       * import (restoring each track's own free_clock from the manifest,
+       * per D12's phase-marked freeLengthFrames field) is out of B2b's
+       * engine-only scope — the part-2 plan has no B2b manifest/session
+       * task (that lands with A7/B5c) — so this simply declines the whole
+       * commit rather than corrupting state or silently mishandling it. */
+      if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE) break;
       /* Establish the master loop and start every imported track (EMPTY with a
        * loaded length) at its whole-loop multiple. The PCM and per-track length
        * were written by le_engine_import_track before this command was posted,
@@ -2307,6 +2420,51 @@ static inline void viz_tap_frame(le_engine* e, int tc, int32_t pos,
   }
 }
 
+/* Free mode (B2b): the per-track twin of viz_tap_frame, above — bucketed
+ * against each track's OWN clock instead of the (permanently dormant, Free-
+ * mode) master. There is no single shared loop in Free mode, so a_loop_viz
+ * (the mixed/master waveform) is simply never touched here — viz_tap_frame's
+ * own `e->clock.length > 0` gate already keeps IT untouched for the exact
+ * same reason. Called as a single guarded call from le_engine_process,
+ * immediately after viz_tap_frame, only when a_looper_mode == FREE. */
+static inline void free_track_viz_tap_frame(le_engine* e, int tc,
+                                            const float* frame_trk_peak) {
+  for (int t = 0; t < tc; ++t) {
+    const le_loop_clock* c = &e->tracks[t].free_clock;
+    if (c->length <= 0) continue; /* this track's clock isn't established yet */
+    int32_t bucket = (int32_t)((int64_t)c->position * LE_VIZ_POINTS / c->length);
+    if (bucket >= LE_VIZ_POINTS) bucket = LE_VIZ_POINTS - 1;
+    if (bucket != e->track_viz_bucket[t]) {
+      const int32_t prev = e->track_viz_bucket[t];
+      if (prev >= 0 && prev < LE_VIZ_POINTS) {
+        store_f32(&e->a_track_viz[t][prev], e->track_viz_accum[t]);
+      }
+      e->track_viz_bucket[t] = bucket;
+      e->track_viz_accum[t] = 0.0f;
+    }
+    if (frame_trk_peak[t] > e->track_viz_accum[t]) {
+      e->track_viz_accum[t] = frame_trk_peak[t];
+    }
+  }
+}
+
+/* Free mode (B2b): advances track [t]'s own clock by one frame, mirroring
+ * le_loop_clock_tick's per-master-clock shape but scoped to a single track —
+ * ticks (and bumps the track's own wrap counter) only while that track is
+ * actually sounding (PLAYING or OVERDUBBING); a RECORDING, STOPPED, or EMPTY
+ * track's own clock holds its position (no "hold the whole rig at the top"
+ * concept per-track in this PR — a stopped Free-mode track simply pauses and
+ * resumes where it left off, same as playback silently skipping it in
+ * mix_tracks_frame while stopped). No-op (by construction) when this track's
+ * clock isn't established yet (length <= 0): a track still on its own first/
+ * defining recording never reaches PLAYING/OVERDUBBING before finalize_master
+ * sets free_clock, so this is a defensive belt more than a reachable guard. */
+static inline void advance_track_clock_frame(le_track* t, int32_t state) {
+  if (t->free_clock.length <= 0) return;
+  if (state != LE_TRACK_PLAYING && state != LE_TRACK_OVERDUBBING) return;
+  if (le_loop_clock_tick(&t->free_clock)) t->free_iteration++;
+}
+
 /* Advances the record heads and then the master transport for one frame. An
  * auto-multiple track grows freely (rounded up only on stop); a fixed-multiple
  * track auto-finalizes after exactly K base loops, and a track recorded over an
@@ -2418,6 +2576,14 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       e->loop_iteration = 0;
       for (int t = 0; t < tc; ++t) e->tracks[t].start_iter = 0;
     }
+  }
+  /* Free mode (B2b, index Architecture §4): each track's own clock advances
+   * independently of the shared master above, which stays permanently
+   * dormant (e->clock.length == 0) in this mode — a single guarded call so
+   * this diff stays inspectable at a glance, and provably UNREACHABLE (not
+   * merely untested) when a_looper_mode != FREE. */
+  if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE) {
+    for (int t = 0; t < tc; ++t) advance_track_clock_frame(&e->tracks[t], st[t]);
   }
 }
 
@@ -2617,6 +2783,29 @@ static inline void mix_monitors_frame(
   }
 }
 
+/* Free mode (B2b): fills the per-track effective read position / clock length
+ * for one frame. Every entry defaults to the shared master's own (pos,
+ * e->clock.length) — Multi/Sync/Song/Band's exact values — so a caller that
+ * never invokes this (every mode but Free) stays byte-for-byte on the master
+ * path; within Free mode, a track whose own clock isn't established yet
+ * (still on its first/defining recording) also keeps the default, which is
+ * moot — mix_tracks_frame never reads trk_pos/trk_len for a RECORDING track
+ * (see rec_w, below). Single guarded call from mix_tracks_frame, mirroring
+ * advance_track_clock_frame's per-track scoping above but for the READ side
+ * (this does not advance anything; le_engine_process calls it before
+ * advance_transport_frame ticks free_clock, so it reads this frame's
+ * pre-advance position — exactly like `pos` itself). */
+static inline void free_track_positions_frame(le_engine* e, int tc,
+                                              int32_t* trk_pos,
+                                              int32_t* trk_len) {
+  for (int t = 0; t < tc; ++t) {
+    const le_loop_clock* c = &e->tracks[t].free_clock;
+    if (c->length <= 0) continue; /* not yet established: keep the default */
+    trk_pos[t] = c->position;
+    trk_len[t] = c->length;
+  }
+}
+
 /* Per-frame capture + additive playback mix: snapshots each track's per-lane
  * playback state, records / overdubs the live input into the lane buffers at the
  * latency-compensated write head, and sums every audible lane (through its
@@ -2675,16 +2864,39 @@ static inline void mix_tracks_frame(
     }
   }
 
+  /* Free mode (B2b): each track with its own established clock reads/writes
+   * at ITS OWN position and against ITS OWN length below, not the shared
+   * master's — single guarded call (free_track_positions_frame) so this is
+   * the only place mix_tracks_frame diverges from the Multi/Sync/Song/Band
+   * path; every trk_pos[t]/trk_len[t] entry equals pos/e->clock.length
+   * verbatim whenever the call is skipped (mode != FREE) or a specific
+   * track's own clock isn't established yet, so the per-track loop below is
+   * byte-for-byte the master path in every case but an active Free-mode
+   * track. */
+  int32_t trk_pos[LE_MAX_TRACKS];
+  int32_t trk_len[LE_MAX_TRACKS];
+  for (int t = 0; t < tc; ++t) {
+    trk_pos[t] = pos;
+    trk_len[t] = e->clock.length;
+  }
+  if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE) {
+    free_track_positions_frame(e, tc, trk_pos, trk_len);
+  }
+
   /* The looper mix is additive: clear this output frame, then sum every active
    * lane's mono contribution into the output channels its mask selects. */
   for (int c = 0; c < ch_out; ++c) out[f * ch_out + c] = 0.0f;
 
-  /* The punch fade only engages once the loop is long enough to host a full
-   * fade-in plus fade-out tail with steady audio between them; shorter loops
-   * (sub-20 ms — not musically a loop) snap straight to the target, preserving
-   * the exact unfaded write the deterministic tests rely on. */
-  const int od_fade_on = e->clock.length >= 2 * od_fade_frames;
   for (int t = 0; t < tc; ++t) {
+    /* The punch fade only engages once the loop is long enough to host a full
+     * fade-in plus fade-out tail with steady audio between them; shorter loops
+     * (sub-20 ms — not musically a loop) snap straight to the target,
+     * preserving the exact unfaded write the deterministic tests rely on.
+     * Per-track (trk_len[t]) so a Free-mode track's own length governs its
+     * own punch fade instead of the (always-0) master's — identical to
+     * `e->clock.length >= 2 * od_fade_frames` in every other mode, since
+     * trk_len[t] == e->clock.length there. */
+    const int od_fade_on = trk_len[t] >= 2 * od_fade_frames;
     /* Advance this track's overdub punch envelope once per frame (shared by
      * every lane): ramp toward 1 while OVERDUBBING, toward 0 otherwise. When a
      * punch-out flips the state to PLAYING the envelope is still > 0, so the
@@ -2740,17 +2952,17 @@ static inline void mix_tracks_frame(
 
     const int dub_writes =
         (st[t] == LE_TRACK_OVERDUBBING || st[t] == LE_TRACK_PLAYING) &&
-        od_gain > 0.0f && e->clock.length > 0;
+        od_gain > 0.0f && trk_len[t] > 0;
     int32_t wdub = 0;
     int backing = 0;
     if (dub_writes) {
-      wdub = seg_base[t] + comp_pos(pos, tr->dub_offset, e->clock.length);
+      wdub = seg_base[t] + comp_pos(trk_pos[t], tr->dub_offset, trk_len[t]);
       backing = tr->dub_slot >= 0 && !tr->dub_draining && tr->dub_len > 0 &&
                 tr->dub_count < tr->dub_len;
       if (backing && tr->dub_count < 0) {
         tr->dub_count = 0;
-        tr->dub_start_vpos = pos;
-        tr->dub_start_vseg = seg_base[t] / e->clock.length;
+        tr->dub_start_vpos = trk_pos[t];
+        tr->dub_start_vseg = seg_base[t] / trk_len[t];
       }
     }
 
@@ -2779,8 +2991,10 @@ static inline void mix_tracks_frame(
          * compensated position, scaled by the punch envelope so it ramps in on
          * punch-in and out on punch-out (od_gain keeps the write alive for the
          * fade-out tail after the state has already returned to PLAYING).
-         * od_gain == 0 in steady playback, so this is a plain read. */
-        loopsample = lbuf[seg_base[t] + pos];
+         * od_gain == 0 in steady playback, so this is a plain read.
+         * trk_pos[t] (Free mode, B2b): this track's own clock position;
+         * equals pos otherwise. */
+        loopsample = lbuf[seg_base[t] + trk_pos[t]];
         if (od_gain > 0.0f) {
           /* Backup-on-write: save the pre-value into the armed shadow first —
            * the incremental per-pass undo snapshot (same slot on every lane,
@@ -3015,6 +3229,12 @@ void le_engine_process(le_engine* e, float* output, const float* input,
     click_frame(e, out, f, ch_out, click_on, click_mask & out_enabled,
                 click_vol, sr, perf_frame_base + f);
     viz_tap_frame(e, tc, pos, frame_out_peak, frame_trk_peak);
+    /* Free mode (B2b): the per-track twin of the tap above, single guarded
+     * call — see free_track_viz_tap_frame's doc for why a_loop_viz itself
+     * stays untouched in this mode. */
+    if (load_i32(&e->a_looper_mode) == LE_LOOPER_MODE_FREE) {
+      free_track_viz_tap_frame(e, tc, frame_trk_peak);
+    }
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
 
