@@ -47,23 +47,23 @@ local_conf_header:
     PACKAGE_CLASSES = "package_ipk"
     # Lean image: drop docs/dev/dbg splits for a spike.
     INHERIT += "rm_work"
+    # Accept the Pi 4/5 WiFi firmware's restricted license (meta-raspberrypi).
+    LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
 
   init: |
     # systemd so we can order the app after weston with a unit.
     INIT_MANAGER = "systemd"
 
   rpi-wayland: |
-    # Pi 4 GPU + KMS so Mesa/Wayland/weston work; Wayland desktop features.
-    DISTRO_FEATURES:append = " wayland opengl systemd"
-    DISTRO_FEATURES:remove = " x11"
+    # Pi 4 GPU + KMS so Mesa/Wayland/weston work. `pam` is required by systemd +
+    # packagegroup-core-weston; keep x11 in so the image GTK3 stays a close ABI
+    # match to our Ubuntu-built bundle (xwayland fallback also available).
+    DISTRO_FEATURES:append = " wayland opengl systemd pam"
     # vc4/v3d KMS is enabled by default on raspberrypi4-64; force GL driver if needed:
     # RPI_KERNEL_DEVICETREE_OVERLAYS:append = " overlays/vc4-kms-v3d.dtbo"
 
   loopy: |
-    # Install the prebuilt bundle recipe into the image.
+    # Install the prebuilt bundle recipe into the image. The recipe defaults
+    # LOOPY_BUNDLE_DIR to deploy/yocto/prebuilt/bundle (staged by the build steps
+    # in deploy/yocto/README.md); override here only to point elsewhere.
     IMAGE_INSTALL:append = " loopy-bundle"
-    # REQUIRED: absolute path, reachable INSIDE the build container, to the
-    # prebuilt bundle dir that contains 'loopy' (built by
-    # deploy/rpi/build/build-arm64-bundle.sh). Easiest: copy the bundle under the
-    # repo (e.g. deploy/yocto/prebuilt/bundle) so kas-container's mount sees it.
-    LOOPY_BUNDLE_DIR ?= "${TOPDIR}/../deploy/yocto/prebuilt/bundle"
