@@ -3603,6 +3603,623 @@ static void test_beat_boundary_on_block_edge(void) {
   le_engine_destroy(e);
 }
 
+/* ---- musical quantize arming (A3: loop-locked subdivision grid) ---- */
+
+/* The pure loop-locked subdivision helpers: rational subdivision counts,
+ * exact-division boundary rendering (mirroring le_grid_beat_at), and the
+ * strictly-after next-boundary convention with the wrap as the final one. */
+static void test_loop_subdiv_ratio_and_boundaries(void) {
+  printf("test_loop_subdiv_ratio_and_boundaries\n");
+  int64_t n = 0, d = 0;
+
+  /* 2 bars of 4/4 (8 beats): 2 bars, 4 halves, 8 quarters, 16 eighths,
+   * 32 sixteenths — as unreduced rationals. */
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, LE_GRID_DIV_BAR, &n, &d) == 1);
+  CHECK(n == 8 && d == 4);
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, LE_GRID_DIV_HALF, &n, &d) == 1);
+  CHECK(n == 16 && d == 4);
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, LE_GRID_DIV_QUARTER, &n, &d) == 1);
+  CHECK(n == 32 && d == 4);
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, LE_GRID_DIV_EIGHTH, &n, &d) == 1);
+  CHECK(n == 64 && d == 4);
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, LE_GRID_DIV_SIXTEENTH, &n, &d) == 1);
+  CHECK(n == 128 && d == 4);
+
+  /* One 3/4 bar holds 1.5 half notes — the rational (non-integer) count. */
+  CHECK(le_grid_loop_subdiv_ratio(3, 3, 4, LE_GRID_DIV_HALF, &n, &d) == 1);
+  CHECK(n == 6 && d == 4);
+
+  /* OFF / unknown / degenerate refuse. */
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, LE_GRID_DIV_OFF, &n, &d) == 0);
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, 99, &n, &d) == 0);
+  CHECK(le_grid_loop_subdiv_ratio(0, 4, 4, LE_GRID_DIV_BAR, &n, &d) == 0);
+  CHECK(le_grid_loop_subdiv_ratio(8, 0, 4, LE_GRID_DIV_BAR, &n, &d) == 0);
+  CHECK(le_grid_loop_subdiv_ratio(8, 4, 4, LE_GRID_DIV_BAR, NULL, &d) == 0);
+
+  /* Exact division over a non-divisible length: 48001 frames, 4 quarters
+   * (one 4/4 bar, ratio 16/4) -> boundaries at ceil(i * 48001 / 4) =
+   * 0, 12001, 24001, 36001 — remainder distributed, no drift. */
+  CHECK(le_grid_loop_subdiv_at(0, 48001, 16, 4) == 0);
+  CHECK(le_grid_loop_subdiv_at(12000, 48001, 16, 4) == 0);
+  CHECK(le_grid_loop_subdiv_at(12001, 48001, 16, 4) == 1);
+  CHECK(le_grid_loop_subdiv_at(24000, 48001, 16, 4) == 1);
+  CHECK(le_grid_loop_subdiv_at(24001, 48001, 16, 4) == 2);
+  CHECK(le_grid_loop_subdiv_start(1, 48001, 16, 4) == 12001);
+  CHECK(le_grid_loop_subdiv_start(2, 48001, 16, 4) == 24001);
+  CHECK(le_grid_loop_subdiv_start(3, 48001, 16, 4) == 36001);
+  CHECK(le_grid_loop_next_subdiv(0, 48001, 16, 4) == 12001);
+  CHECK(le_grid_loop_next_subdiv(12001, 48001, 16, 4) == 24001);
+  CHECK(le_grid_loop_next_subdiv(36001, 48001, 16, 4) == 48001); /* wrap */
+  CHECK(le_grid_loop_next_subdiv(47000, 48001, 16, 4) == 48001); /* wrap */
+
+  /* Fractional count: 1.5 halves over a 1500-frame 3/4 bar (ratio 6/4) put
+   * the ONLY interior boundary at beat 2 = frame 1000, then the wrap. */
+  CHECK(le_grid_loop_subdiv_at(999, 1500, 6, 4) == 0);
+  CHECK(le_grid_loop_subdiv_at(1000, 1500, 6, 4) == 1);
+  CHECK(le_grid_loop_next_subdiv(0, 1500, 6, 4) == 1000);
+  CHECK(le_grid_loop_next_subdiv(1000, 1500, 6, 4) == 1500); /* wrap */
+
+  /* Degenerate arguments. */
+  CHECK(le_grid_loop_subdiv_at(-1, 1500, 6, 4) == 0);
+  CHECK(le_grid_loop_subdiv_at(5, 0, 6, 4) == 0);
+  CHECK(le_grid_loop_subdiv_start(0, 1500, 6, 4) == 0);
+  CHECK(le_grid_loop_next_subdiv(-1, 1500, 6, 4) == -1);
+  CHECK(le_grid_loop_next_subdiv(1500, 1500, 6, 4) == -1); /* pos >= len */
+  CHECK(le_grid_loop_next_subdiv(5, 1500, 0, 4) == -1);
+}
+
+/* A3 fixture: sr 1000, manual 120 bpm in 4/4 (nominal bar 2000 frames), and a
+ * 3000-frame defining loop on track 0 — 1.5 nominal bars, which A1 rounds to
+ * 2 bars. The LOOP-LOCKED grid therefore deliberately disagrees with the
+ * nominal one: 8 beats over 3000 frames put the loop-locked bar at 1500 and
+ * the quarter at 375, where nominal-BPM math says 2000 and 500. Boolean
+ * quantize is ON (it gates IF arming happens; the division decides WHERE the
+ * armed action fires). Master position is 1 on return. */
+static le_engine* qa_make_grid_engine(void) {
+  le_engine* e = tg_make_engine(1000);
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 3000);
+  le_engine_set_quantize(e, 1);
+  return e;
+}
+
+/* Processes constant-`value` input until the master position is exactly
+ * `target` (forward, wrapping). */
+static void qa_advance_to(le_engine* e, float value, int32_t target) {
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  int32_t delta = target - s.master_position_frames;
+  if (delta < 0) delta += s.master_length_frames;
+  float in[64];
+  float out[64];
+  for (int i = 0; i < 64; ++i) in[i] = value;
+  while (delta > 0) {
+    const int n = delta > 64 ? 64 : delta;
+    le_engine_process(e, out, in, (uint32_t)n);
+    delta -= n;
+  }
+}
+
+/* Plays `len` frames of silent input from the current position, copying the
+ * mono output into dst (dst[i] == loop content at position start + i). */
+static void qa_capture_out(le_engine* e, float* dst, int len) {
+  float in[64] = {0};
+  float out[64];
+  int off = 0;
+  while (off < len) {
+    const int n = (len - off) > 64 ? 64 : (len - off);
+    le_engine_process(e, out, in, (uint32_t)n);
+    memcpy(dst + off, out, (size_t)n * sizeof(float));
+    off += n;
+  }
+}
+
+/* One D8 record-start row: with `div` set, a record press on empty track 1 at
+ * master position `arm_pos` arms, stays armed through `fire_pos` - 1, and
+ * begins recording exactly at `fire_pos`. Clears track 1 before returning. */
+static void qa_check_start_fire(le_engine* e, int32_t div, int32_t arm_pos,
+                                int32_t fire_pos) {
+  le_snapshot s;
+  CHECK(le_engine_set_quantize_div(e, div) == LE_OK);
+  qa_advance_to(e, 0.0f, arm_pos);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* armed, not recording */
+  CHECK(s.tracks[1].pending == 1);
+
+  qa_advance_to(e, 0.0f, fire_pos - 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* one frame early: still armed */
+
+  tg_advance(e, 1); /* the boundary frame */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].pending == 0);
+
+  le_engine_clear(e, 1);
+  drain(e);
+}
+
+/* D8 record start, row by row, on a loop whose length is NOT a whole number
+ * of nominal bars — the boundaries MUST come from the loop-locked grid.
+ * Loop-locked boundaries over the 3000-frame 2-bar loop: bar 1500, half 750,
+ * quarter 375, eighth ceil(187.5) = 188, sixteenth ceil(93.75) = 94. The BAR
+ * row doubles as the nominal-vs-loop-locked discriminator: nominal-BPM math
+ * (le_grid_next_boundary at 120 bpm) would wait until frame 2000. */
+static void test_quantize_div_start_fires_on_loop_locked_grid(void) {
+  printf("test_quantize_div_start_fires_on_loop_locked_grid\n");
+  le_engine* e = qa_make_grid_engine();
+
+  qa_check_start_fire(e, LE_GRID_DIV_BAR, 1, 1500); /* nominal would be 2000 */
+  qa_check_start_fire(e, LE_GRID_DIV_HALF, 1, 750);
+  qa_check_start_fire(e, LE_GRID_DIV_QUARTER, 1, 375);
+  qa_check_start_fire(e, LE_GRID_DIV_EIGHTH, 1, 188);
+  qa_check_start_fire(e, LE_GRID_DIV_SIXTEENTH, 1, 94);
+  /* Armed past the last interior boundary, the fire is the loop top (the
+   * helper's boundary frame at `len` is the wrap into position 0). */
+  qa_check_start_fire(e, LE_GRID_DIV_BAR, 1600, 3000);
+
+  le_engine_destroy(e);
+}
+
+/* D8 record END, round-down: a finalize press 3.49 quarter units into the
+ * capture truncates at unit 3 — the tail past the boundary behind is dropped
+ * (zeroed) and the track finalizes immediately at that boundary. */
+static void test_quantize_div_record_end_rounds_down(void) {
+  printf("test_quantize_div_record_end_rounds_down\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1); /* arm the start */
+  drain(e);
+  qa_advance_to(e, 0.0f, 375); /* fire: capture begins at 375 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* 3.49 units of 2.0 (1309 frames): behind = 184 < ahead = 191. */
+  qa_advance_to(e, 2.0f, 375 + 1309);
+  le_engine_record(e, 1); /* finalize press */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* truncated, finalized NOW */
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].multiple == 1);
+  CHECK(s.tracks[1].length_frames == 3000);
+
+  /* Content: 2.0 over exactly [375, 1500) — 3 whole units — and silence
+   * everywhere else, including the truncated tail [1500, 1684). */
+  static float dst[3000];
+  qa_advance_to(e, 0.0f, 0);
+  qa_capture_out(e, dst, 3000);
+  CHECK(fabsf(dst[374]) < 1e-6f);
+  CHECK(fabsf(dst[375] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[1499] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[1500]) < 1e-6f);
+  CHECK(fabsf(dst[1600]) < 1e-6f);
+  CHECK(fabsf(dst[1683]) < 1e-6f);
+  CHECK(fabsf(dst[2500]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* D8 record END, round-up: a finalize press 3.51 units in keeps capturing to
+ * unit 4 — the pending end fires exactly on the boundary ahead. */
+static void test_quantize_div_record_end_rounds_up(void) {
+  printf("test_quantize_div_record_end_rounds_up\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375);
+
+  /* 3.51 units of 2.0 (1317 frames, position 1692): behind = 192 >=
+   * ahead = 183 -> the end arms for the boundary at 1875. */
+  qa_advance_to(e, 2.0f, 375 + 1317);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* still capturing */
+  CHECK(s.tracks[1].pending == 1);
+
+  qa_advance_to(e, 2.0f, 1874); /* one frame short of the boundary */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  qa_advance_to(e, 2.0f, 1875); /* the boundary frame fires the finalize */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].length_frames == 3000);
+
+  /* Content: 2.0 over exactly [375, 1875) — 4 whole units. */
+  static float dst[3000];
+  qa_advance_to(e, 0.0f, 0);
+  qa_capture_out(e, dst, 3000);
+  CHECK(fabsf(dst[375] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[1874] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[1875]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* D8 record END, min 1 unit: a finalize press 0.27 units into the capture
+ * would truncate to a ZERO-length take — it must round up instead, capturing
+ * exactly one whole unit. */
+static void test_quantize_div_record_end_min_one_unit(void) {
+  printf("test_quantize_div_record_end_min_one_unit\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375);
+
+  /* 100 frames in: behind = 100 < ahead = 275, but truncating would leave a
+   * 0-unit capture -> the end arms for the boundary at 750 instead. */
+  qa_advance_to(e, 2.0f, 475);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* min 1 unit: rounds up */
+  CHECK(s.tracks[1].pending == 1);
+
+  qa_advance_to(e, 2.0f, 750); /* the 1-unit boundary fires the finalize */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+
+  static float dst[3000];
+  qa_advance_to(e, 0.0f, 0);
+  qa_capture_out(e, dst, 3000);
+  CHECK(fabsf(dst[375] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[749] - 2.0f) < 1e-6f);
+  CHECK(fabsf(dst[750]) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* D8 overdub rows: the START is subdivision-quantized like a record start;
+ * the END stays at the layer boundary (the loop top) exactly as today — a
+ * punch-out never fires on a mid-loop subdivision boundary. */
+static void test_quantize_div_overdub_start_quantized_end_layer(void) {
+  printf("test_quantize_div_overdub_start_quantized_end_layer\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 400);
+  le_engine_record(e, 0); /* arm a punch-in on the playing master track */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* armed, not overdubbing */
+  CHECK(s.tracks[0].pending == 1);
+
+  qa_advance_to(e, 0.0f, 749);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  tg_advance(e, 1); /* quarter boundary 750: overdub START fires */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  le_engine_record(e, 0); /* arm the punch-OUT */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(s.tracks[0].pending == 1);
+
+  /* Mid-loop quarter boundaries (1125, 1500, ... 2625) must NOT punch out. */
+  qa_advance_to(e, 0.0f, 2900);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  qa_advance_to(e, 0.0f, 0); /* the layer boundary (loop top) does */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].pending == 0);
+
+  le_engine_destroy(e);
+}
+
+/* Granularity change while armed re-evaluates immediately: a pending BAR arm
+ * switched to SIXTEENTH fires on the very next sixteenth boundary. */
+static void test_quantize_div_granularity_change_reevaluates(void) {
+  printf("test_quantize_div_granularity_change_reevaluates\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_BAR) == LE_OK);
+  qa_advance_to(e, 0.0f, 1600); /* past the interior bar boundary at 1500 */
+  le_engine_record(e, 1);       /* arm: the BAR fire would be the loop top */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* Switch to SIXTEENTH (93.75 frames/unit): the next sixteenth boundary
+   * after 1600 is ceil(18 * 93.75) = 1688 — the pending arm must fire there,
+   * within one sixteenth of the change, not wait for the bar. */
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
+  qa_advance_to(e, 0.0f, 1687);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* A change to OFF while armed reverts the pending fire to the loop top: the
+ * boolean loop-top machinery, exactly as before A3. */
+static void test_quantize_div_off_reverts_pending_to_loop_top(void) {
+  printf("test_quantize_div_off_reverts_pending_to_loop_top\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
+  qa_advance_to(e, 0.0f, 100);
+  le_engine_record(e, 1);
+  drain(e);
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_OFF) == LE_OK);
+
+  /* Every interior sixteenth boundary passes without firing... */
+  qa_advance_to(e, 0.0f, 2999);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[1].pending == 1);
+
+  tg_advance(e, 1); /* ...the loop top fires. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* Code-review fix (A3 follow-up), design decision documented at the ARM
+ * apply-site's min-1-unit check: "min 1 unit" is scoped to whichever
+ * division is live when the boundary actually fires, not the one active
+ * when the press armed it (option (a) — the stateless-wait philosophy
+ * already used for the record-START and granularity-change-while-armed
+ * paths; no target length or armed division is latched anywhere). A press
+ * whose round-down candidate fails QUARTER's min-1-unit (leaving < 1 quarter
+ * of capture) falls through to the plain wait — and a granularity change to
+ * SIXTEENTH during that wait is honored on the SIXTEENTH's own very next
+ * boundary, producing a capture shorter than one QUARTER unit: min-1-unit is
+ * never re-checked against the division active at press time. */
+static void test_quantize_div_min_one_unit_reevaluates_on_granularity_change(
+    void) {
+  printf("test_quantize_div_min_one_unit_reevaluates_on_granularity_change\n");
+  le_engine* e = qa_make_grid_engine(); /* quantize=1 boolean ON, div OFF (default) */
+  le_snapshot s;
+
+  /* Arm and fire the start with the division still OFF, so it fires
+   * specifically at the loop top (position 0) — the only boundary that
+   * exists pre-A3 — rather than the first QUARTER boundary reached on the
+   * way there (375), which a div already live at arm time would fire on
+   * instead. record_start must be exactly 0 for the span math below. */
+  le_engine_record(e, 1); /* arm the start */
+  drain(e);
+  qa_advance_to(e, 0.0f, 0); /* wrap: fires the start at the loop top, pos 0 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+
+  /* Only 50 frames in: the round-down candidate (boundary 0, `behind` = 50)
+   * would leave a ZERO-length capture — min-1-unit under QUARTER (unit 375)
+   * fails, so the end falls through to the wait instead of truncating now. */
+  qa_advance_to(e, 2.0f, 50);
+  le_engine_record(e, 1); /* finalize press */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* not truncated: waiting */
+  CHECK(s.tracks[1].pending == 1);
+
+  /* Switch to SIXTEENTH (93.75 frames/unit) immediately: the wait is
+   * stateless, so this is honored on SIXTEENTH's own next boundary — 94 —
+   * NOT re-checked against QUARTER's 375-frame min-1-unit floor. */
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_SIXTEENTH) == LE_OK);
+  qa_advance_to(e, 2.0f, 93);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* one frame short: waiting */
+
+  /* position 94: the sixteenth boundary fires the finalize (still capturing
+   * 2.0 through the last frame — a silent tg_advance here would falsely
+   * plant a silent sample at index 93 and corrupt the span check below). */
+  qa_advance_to(e, 2.0f, 94);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].length_frames == 3000); /* rounded up to the base loop */
+
+  /* The captured span itself proves it: content in [0, 94) only — a 94-frame
+   * take, far short of one QUARTER unit (375), exactly as documented. */
+  float* lane1 = (float*)calloc(3000, sizeof(float));
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, 3000) == 3000);
+  CHECK(fabsf(lane1[0] - 2.0f) < 1e-6f);
+  CHECK(fabsf(lane1[93] - 2.0f) < 1e-6f);
+  CHECK(fabsf(lane1[94]) < 1e-6f);
+  CHECK(fabsf(lane1[374]) < 1e-6f); /* silent well past the old QUARTER unit */
+  free(lane1);
+
+  le_engine_destroy(e);
+}
+
+/* Disarm racing the boundary frame inside one process block: ring commands
+ * apply at block START, before any frame advances, so a disarm posted before
+ * the block containing the boundary DETERMINISTICALLY wins — the fire never
+ * happens. (A disarm posted after the boundary's block has already fired
+ * loses just as deterministically; the control thread then reconciles the
+ * spent arm on the next press.) */
+static void test_quantize_div_disarm_wins_at_boundary_block(void) {
+  printf("test_quantize_div_disarm_wins_at_boundary_block\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1); /* arm: fires at 375 */
+  drain(e);
+  qa_advance_to(e, 0.0f, 374); /* one frame short of the boundary */
+
+  le_engine_record(e, 1); /* second press -> DISARM, not yet applied */
+  /* ONE block that both applies the disarm and crosses frame 375. */
+  tg_advance(e, 64);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY); /* disarm won */
+  CHECK(s.tracks[1].pending == 0);
+
+  qa_advance_to(e, 0.0f, 1); /* a full wrap later: still cancelled */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_EMPTY);
+
+  le_engine_destroy(e);
+}
+
+/* One-capturer hand-off with a pending quantized END on another track: the
+ * hand-off finalizes the recording track immediately AND clears its pending
+ * end — a stale arm must not re-fire on the now-playing track (it would start
+ * a spurious overdub at the next boundary). */
+static void test_quantize_div_handoff_clears_pending_end(void) {
+  printf("test_quantize_div_handoff_clears_pending_end\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 0.0f, 375);
+
+  /* Round-up end pending (as in the rounds_up test): fires at 1875. */
+  qa_advance_to(e, 2.0f, 375 + 1317);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+  CHECK(s.tracks[1].pending == 1);
+
+  /* An immediate record on track 2 (per-track quantize off) hands the one
+   * capturer over: track 1 finalizes NOW and its pending end is spent. */
+  CHECK(le_engine_set_track_quantize(e, 2, 0) == LE_OK);
+  le_engine_record(e, 2);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].length_frames == 3000); /* rounded up to the base loop */
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+
+  /* Past where the stale end would have fired — and past the loop top — the
+   * hand-off target keeps recording and track 1 never re-enters a capture. */
+  qa_advance_to(e, 0.0f, 1900);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  qa_advance_to(e, 0.0f, 100);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* Code-review fix (A3 follow-up): close_active_capture's pending-record clear
+ * (engine_process.c) is shared machinery — it fires for a hand-off whether
+ * the closed track's pending arm is a subdivision boundary (A3, div != OFF)
+ * or a plain loop-top boundary (the PRE-EXISTING boolean-quantize path,
+ * quantize_div == OFF, which predates A3 entirely and must keep working
+ * bit-identically). test_quantize_div_handoff_clears_pending_end above only
+ * exercises the subdivision case; this is its div-OFF sibling, guarding
+ * against a future refactor that conditions the clear on subdivision state
+ * and silently reintroduces the bug for the boolean-only path (confirmed to
+ * reproduce on master, one commit before this fix). */
+static void test_quantize_boolean_handoff_clears_pending_end(void) {
+  printf("test_quantize_boolean_handoff_clears_pending_end\n");
+  le_engine* e = qa_make_grid_engine(); /* quantize=1 boolean ON, div OFF (default) */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize_div == LE_GRID_DIV_OFF); /* the pre-A3 boolean-only path */
+
+  /* Arm a boolean loop-top START on track 1 and let it fire at the wrap
+   * (master position 1 on return from qa_make_grid_engine). */
+  le_engine_record(e, 1);
+  drain(e);
+  qa_advance_to(e, 0.0f, 0); /* wrap: fires the start */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* A second press mid-capture arms the boolean loop-top END (D8's
+   * pre-existing "stop/mute — immediate" row does not apply here: a record
+   * press, not a stop, always quantizes when the boolean is on). */
+  qa_advance_to(e, 2.0f, 500);
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* still capturing */
+  CHECK(s.tracks[1].pending == 1);
+
+  /* An immediate record on track 2 (per-track quantize off) hands the one
+   * capturer over: track 1 finalizes NOW (rounded up to the base loop) and
+   * its pending end is spent — close_active_capture's clear, exercised here
+   * on the div-OFF/loop-top path. */
+  CHECK(le_engine_set_track_quantize(e, 2, 0) == LE_OK);
+  le_engine_record(e, 2);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[1].length_frames == 3000); /* rounded up to the base loop */
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+
+  /* A full loop later (unconditional, not qa_advance_to's wrap-if-behind
+   * math — the master is already sitting at the position this hand-off
+   * pressed at, so a same-position target would be a zero-frame no-op and
+   * never actually cross the loop top the stale end would fire on) — past
+   * where the stale boolean end would have fired — track 1 stays PLAYING:
+   * no spurious overdub. */
+  tg_advance(e, 3000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].pending == 0);
+  CHECK(s.tracks[2].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+/* Boolean quantize still GATES arming: with it off, a set division alone must
+ * not defer anything — record starts and ends act immediately, mid-unit. */
+static void test_quantize_div_requires_boolean_quantize(void) {
+  printf("test_quantize_div_requires_boolean_quantize\n");
+  le_engine* e = qa_make_grid_engine();
+  le_snapshot s;
+
+  le_engine_set_quantize(e, 0); /* boolean off, division set */
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+
+  qa_advance_to(e, 0.0f, 100); /* mid-unit */
+  le_engine_record(e, 1);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING); /* immediate, no arm */
+  CHECK(s.tracks[1].pending == 0);
+
+  qa_advance_to(e, 2.0f, 500); /* mid-unit again */
+  le_engine_record(e, 1);      /* finalize press */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* immediate, no rounding */
+  CHECK(s.tracks[1].pending == 0);
+
+  le_engine_destroy(e);
+}
+
 static void test_classify_capture_device(void) {
   printf("test_classify_capture_device\n");
   /* PulseAudio monitor sources. */
@@ -11487,6 +12104,157 @@ static void test_perf_render_golden_master_parity(void) {
   le_engine_destroy(e);
 }
 
+/* Code-review fix (A3 follow-up): a quantized record-END round-down
+ * TRUNCATION (D8 -- capture ends behind the press, drop the tail) used to
+ * tag finalize_new_track's LE_PLOG_RECORD_END with the raw, buffer-start-
+ * approximate `frame` passed to apply_command -- not the `behind`-frames-
+ * earlier boundary the audio was actually truncated to (le_truncate_capture_
+ * tail). Live playback reads clock.position directly and was never
+ * affected; but perf_render.c's le_pr_record_end_phase folds the logged
+ * end_frame straight into the finalized segment's start_frame AND its
+ * `(end_frame - start_frame)` phase span, so an export render of a
+ * round-down-truncated take used to start its segment `behind` frames late.
+ *
+ * This asserts the fix DIRECTLY, at its own source of truth: the logged
+ * LE_PLOG_RECORD_END frame tag in events.log (the file the drain thread
+ * writes during a live perf-armed session -- read here as raw bytes, the
+ * SAME 28-byte-per-entry format test_write_log_entry hand-authors for the
+ * OTHER perf_render tests' fixtures). Two reasons this beats an offline-
+ * render/stem comparison for THIS specific bug:
+ *   - Once the render has switched to the new segment, le_pr_record_end_
+ *     phase's own math makes the tagged end_frame cancel out algebraically
+ *     (index(f) = (start_pos - start_frame_record + f) % image_len) -- a
+ *     wrong tag is only OBSERVABLE within the disputed window itself
+ *     [true end_frame, buggy end_frame), and since that window is exactly
+ *     the truncated-away tail, the new take's own content there is silence
+ *     either way. Making it observable needs the channel to have had real
+ *     (non-silent) content at ARM time -- but le_pr_render_track only
+ *     honors a channel's RECORD_END at all when `!build.has_content`
+ *     (i.e. the channel was EMPTY at arm), so an arm-image and a fresh
+ *     RECORD_END are mutually exclusive in the render's own model. There is
+ *     no render-observable way to exercise this fix through that pipeline.
+ *   - The live master-tap ring (master.pcm) is sized for LE_PERF_CAPTURE_
+ *     SECONDS of REAL wall-clock audio; a synchronous, no-sleep native test
+ *     that blasts through thousands of frames in microseconds starves the
+ *     background drain thread of real time to keep it drained and silently
+ *     overruns it (a_perf_overruns) -- an environment artifact, not a
+ *     symptom of this bug.
+ *
+ * Every "true" timing value below is read straight from the live engine's
+ * own snapshots (never hand-derived arithmetic reproducing the engine's own
+ * math): `raw_before_finalize` / `pos_before_finalize` are perf_frames and
+ * master_position_frames snapshotted immediately before the finalize press
+ * -- pos_before_finalize (1684) and the already-CHECKed content boundary
+ * (1500) give `behind` (184) as plain arithmetic on two asserted facts, not
+ * a re-derivation of le_truncate_capture_tail's own math. `raw_before_
+ * finalize` equals the ARM command's OWN apply-time perf_frame_base: the
+ * finalize press (le_engine_record) is a pure control-thread ring push (no
+ * frames processed), and the drain(e) that follows is a ZERO-frame
+ * le_engine_process call, so perf_frame_base for THAT call -- read before
+ * any of ITS OWN frames are added -- is unchanged from this snapshot. */
+static void test_perf_render_quantized_round_down_truncation_log_frame(void) {
+  printf("test_perf_render_quantized_round_down_truncation_log_frame\n");
+  const char* dir = render_test_dir("qdown-log");
+  const int32_t sr = 1000;
+  const int32_t loop_len = 3000; /* 2 loop-locked bars, as in qa_make_grid_engine */
+
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 20000);
+  CHECK(le_perf_arm(e, dir) == LE_OK); /* arm from silence, nothing recorded yet */
+  drain(e);
+
+  /* Track 0 defines a SILENT 3000-frame master (tg_record_defining_loop always
+   * records silence); irrelevant to this test beyond establishing the grid. */
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, loop_len); /* master position 1 on return */
+  le_engine_set_quantize(e, 1);
+
+  /* Exactly test_quantize_div_record_end_rounds_down's scripted press
+   * sequence: arm a quarter-quantized start (fires at loop-locked position
+   * 375), record 2.0 for 1309 frames (position 1684), then press finalize --
+   * behind=184 < ahead=191, so the capture truncates back to the boundary at
+   * 1500 and finalizes NOW, not at the next boundary. */
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  qa_advance_to(e, 0.0f, 1);
+  le_engine_record(e, 1); /* arm the start */
+  drain(e);
+  qa_advance_to(e, 0.0f, 375); /* fire: capture begins at 375 */
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  qa_advance_to(e, 2.0f, 375 + 1309);
+  le_engine_get_snapshot(e, &s);
+  const uint64_t raw_before_finalize = (uint64_t)s.perf_frames;
+  const int32_t pos_before_finalize = s.master_position_frames;
+  CHECK(pos_before_finalize == 1684);
+
+  le_engine_record(e, 1); /* finalize press: round-down truncation */
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING); /* truncated, finalized now */
+  CHECK(s.tracks[1].length_frames == loop_len);
+
+  /* The finalized take's own content proves where le_truncate_capture_tail
+   * actually cut: 2.0 up to (not including) 1500, silence from 1500. */
+  float* lane1 = (float*)calloc((size_t)loop_len, sizeof(float));
+  CHECK(le_engine_export_track_lane(e, 1, 0, lane1, loop_len) == loop_len);
+  CHECK(fabsf(lane1[1499] - 2.0f) < 1e-6f);
+  const int32_t content_boundary = 1500;
+  CHECK(fabsf(lane1[content_boundary]) < 1e-6f);
+  free(lane1);
+
+  /* The truncated boundary, in plain arithmetic on two already-asserted
+   * facts (never a re-derivation of le_truncate_capture_tail's own math):
+   * the press landed `behind` frames past the boundary it truncates BACK
+   * to. */
+  const int32_t behind = pos_before_finalize - content_boundary;
+  CHECK(behind == 184);
+  const uint64_t end_frame_true = raw_before_finalize - (uint64_t)behind;
+
+  CHECK(le_perf_disarm(e) == LE_OK); /* flushes events.log fully before this returns */
+
+  /* Read events.log directly: 12-byte header ("PLEV" + version + sample_rate),
+   * then 28-byte entries (frame:8, code:4, arg_i:4, arg_f:4, 8 bytes unused --
+   * the generic {arg_i, arg_f} union arm LE_PLOG_RECORD_END uses, matching
+   * test_write_log_entry's own encoding and le_pd_write_log_entry's on-disk
+   * layout exactly). Finds channel 1's RECORD_END frame tag. */
+  char log_path[700];
+  snprintf(log_path, sizeof(log_path), "%s/events.log", dir);
+  FILE* lf = fopen(log_path, "rb");
+  CHECK(lf != NULL);
+  int64_t record_end_ch1_frame = -1;
+  if (lf != NULL) {
+    unsigned char header[12];
+    CHECK(fread(header, 1, sizeof(header), lf) == sizeof(header));
+    unsigned char entry[28];
+    while (fread(entry, 1, sizeof(entry), lf) == sizeof(entry)) {
+      int64_t frame;
+      int32_t code, arg_i;
+      memcpy(&frame, entry + 0, 8);
+      memcpy(&code, entry + 8, 4);
+      memcpy(&arg_i, entry + 12, 4);
+      if (code == LE_PLOG_RECORD_END && arg_i == 1) {
+        record_end_ch1_frame = frame;
+      }
+    }
+    fclose(lf);
+  }
+  CHECK(record_end_ch1_frame >= 0);
+
+  /* The core assertion: channel 1's logged finalize frame is the TRUNCATED
+   * boundary's own sample-accurate position -- `end_frame_true`, `behind`
+   * frames earlier than the raw press -- not the buffer-start-approximate
+   * press frame (`raw_before_finalize`) itself. A regression back to the
+   * raw `frame` would make record_end_ch1_frame equal raw_before_finalize,
+   * `behind` (184) frames later than this check requires. */
+  CHECK(record_end_ch1_frame == (int64_t)end_frame_true);
+  CHECK(record_end_ch1_frame != (int64_t)raw_before_finalize);
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -11685,6 +12453,19 @@ int main(void) {
   test_lock_engages_with_sync_off_content();
   test_beat_division_locks_to_loop();
   test_beat_boundary_on_block_edge();
+  test_loop_subdiv_ratio_and_boundaries();
+  test_quantize_div_start_fires_on_loop_locked_grid();
+  test_quantize_div_record_end_rounds_down();
+  test_quantize_div_record_end_rounds_up();
+  test_quantize_div_record_end_min_one_unit();
+  test_quantize_div_overdub_start_quantized_end_layer();
+  test_quantize_div_granularity_change_reevaluates();
+  test_quantize_div_off_reverts_pending_to_loop_top();
+  test_quantize_div_min_one_unit_reevaluates_on_granularity_change();
+  test_quantize_div_disarm_wins_at_boundary_block();
+  test_quantize_div_handoff_clears_pending_end();
+  test_quantize_boolean_handoff_clears_pending_end();
+  test_quantize_div_requires_boolean_quantize();
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
@@ -11756,6 +12537,7 @@ int main(void) {
   test_perf_render_fresh_midloop_second_track_phase();
   test_perf_render_fresh_multiloop_second_track_phase();
   test_perf_render_golden_master_parity();
+  test_perf_render_quantized_round_down_truncation_log_frame();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
