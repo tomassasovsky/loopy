@@ -1704,6 +1704,103 @@ class LoopyEngineBindings {
   late final _le_engine_set_quantize_div = _le_engine_set_quantize_divPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Sets the click audibility mode (le_click_mode, 0..3). Values outside the
+  /// enum return LE_ERR_INVALID. Default off.
+  int le_engine_set_click_mode(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_set_click_mode(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_set_click_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_click_mode');
+  late final _le_engine_set_click_mode = _le_engine_set_click_modePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Routes the click to the output channels set in [mask] (bit c => hardware
+  /// output channel c; bits beyond the negotiated range are ignored). Default 0:
+  /// the click sounds on no outputs until explicitly routed.
+  int le_engine_set_click_output(
+    ffi.Pointer<le_engine> engine,
+    int mask,
+  ) {
+    return _le_engine_set_click_output(
+      engine,
+      mask,
+    );
+  }
+
+  late final _le_engine_set_click_outputPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_click_output');
+  late final _le_engine_set_click_output = _le_engine_set_click_outputPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets the click volume, clamped to 0..LE_MAX_GAIN (default 1.0). This is the
+  /// click's only gain stage — master gain and the limiter never touch it.
+  int le_engine_set_click_volume(
+    ffi.Pointer<le_engine> engine,
+    double volume,
+  ) {
+    return _le_engine_set_click_volume(
+      engine,
+      volume,
+    );
+  }
+
+  late final _le_engine_set_click_volumePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Float)
+        >
+      >('le_engine_set_click_volume');
+  late final _le_engine_set_click_volume = _le_engine_set_click_volumePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, double)>();
+
+  /// Sets the count-in length in measures (0 = off .. LE_COUNT_IN_MAX_BARS;
+  /// values outside return LE_ERR_INVALID). Default 0 = off on the wire — the
+  /// manual's 1-bar default is applied by the app layer when the user enables
+  /// counting in. With count-in on and a tempo set, a record press on an idle,
+  /// empty looper (the DEFINING recording) first clicks [bars] measures — the
+  /// counting state is published via counting_in / count_in_beats_left — and
+  /// recording then starts exactly on the downbeat. A record press during the
+  /// count-in cancels it (back to idle); so does a stop press, and so does
+  /// setting this to 0. With no tempo set there is nothing to click against and
+  /// recording starts immediately. Once anything is recorded, record presses
+  /// behave exactly as without count-in (quantize governs — D9). Mutually
+  /// exclusive with sound-activated recording: enabling count-in disables
+  /// auto-record (and cancels its threshold arms), and enabling auto-record
+  /// clears the count-in — count-in wins when both are somehow set at once.
+  int le_engine_set_count_in(
+    ffi.Pointer<le_engine> engine,
+    int bars,
+  ) {
+    return _le_engine_set_count_in(
+      engine,
+      bars,
+    );
+  }
+
+  late final _le_engine_set_count_inPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_count_in');
+  late final _le_engine_set_count_in = _le_engine_set_count_inPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
   /// 0 to inherit the global default (le_engine_set_default_multiple). Applies to
   /// the next recording; existing content is unchanged.
@@ -3217,6 +3314,9 @@ enum le_command_code {
   /// consumes it lands in A3. Default off.
   LE_CMD_SET_QUANTIZE_DIV(18),
 
+  /// arg_i = le_click_mode (0..3). Default off.
+  LE_CMD_SET_CLICK_MODE(19),
+
   /// set a lane chain entry's type (and reset its DSP
   /// state). arg_i = (channel << 16) | (lane << 8) |
   /// index, arg_f = le_fx_type.
@@ -3227,9 +3327,23 @@ enum le_command_code {
   /// count.
   LE_CMD_SET_LANE_FX_COUNT(21),
 
+  /// click output routing. trackmask arm:
+  /// channel unused, mask = output bitmask
+  /// (default 0 = no outputs).
+  LE_CMD_SET_CLICK_OUTPUT(22),
+
   /// arg_i = base loop length in frames: publish
   /// the master loop and start imported tracks
   LE_CMD_COMMIT_SESSION(23),
+
+  /// arg_f = 0..LE_MAX_GAIN (the click's ONLY
+  /// gain stage — master gain never applies).
+  LE_CMD_SET_CLICK_VOLUME(24),
+
+  /// arg_i = count-in length in measures
+  /// (0 = off, up to LE_COUNT_IN_MAX_BARS).
+  /// 0 also cancels an in-progress count-in.
+  LE_CMD_SET_COUNT_IN(25),
 
   /// lane records this input channel (-1 = none).
   /// arg_f = channel*LE_MAX_LANES + lane,
@@ -3345,9 +3459,13 @@ enum le_command_code {
     16 => LE_CMD_ARM,
     17 => LE_CMD_DISARM,
     18 => LE_CMD_SET_QUANTIZE_DIV,
+    19 => LE_CMD_SET_CLICK_MODE,
     20 => LE_CMD_SET_LANE_FX,
     21 => LE_CMD_SET_LANE_FX_COUNT,
+    22 => LE_CMD_SET_CLICK_OUTPUT,
     23 => LE_CMD_COMMIT_SESSION,
+    24 => LE_CMD_SET_CLICK_VOLUME,
+    25 => LE_CMD_SET_COUNT_IN,
     26 => LE_CMD_SET_LANE_INPUT,
     27 => LE_CMD_SET_LANE_OUTPUT,
     28 => LE_CMD_SET_LANE_VOLUME,
@@ -3740,9 +3858,36 @@ final class le_snapshot extends ffi.Struct {
   @ffi.Int32()
   external int loop_bars;
 
-  /// 0..ts_num-1 within the bar, loop-driven; 0 idle
+  /// 0..ts_num-1 within the bar: loop-driven, or driven
+  /// by the count-in / free-running click; 0 idle
   @ffi.Int32()
   external int current_beat;
+
+  /// le_click_mode (default 0 = off)
+  @ffi.Int32()
+  external int click_mode;
+
+  /// click output bitmask (default 0 = no outputs)
+  @ffi.Uint32()
+  external int click_mask;
+
+  /// 0..LE_MAX_GAIN (default 1); the click's only gain
+  @ffi.Float()
+  external double click_volume;
+
+  /// count-in length in measures; 0 = off (default)
+  @ffi.Int32()
+  external int count_in_bars;
+
+  /// 0/1: a count-in is currently running
+  @ffi.Int32()
+  external int counting_in;
+
+  /// Beat countdown while counting in: the number of count-in beats still to
+  /// come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
+  /// reads 4, 3, 2, 1, then 0 as the recording starts). 0 when idle.
+  @ffi.Int32()
+  external int count_in_beats_left;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -3893,6 +4038,8 @@ final class le_midi extends ffi.Opaque {}
 final class le_midi_out extends ffi.Opaque {}
 
 const int LE_MAX_CHANNELS = 32;
+
+const int LE_COUNT_IN_MAX_BARS = 64;
 
 const int LE_FX_MAX = 8;
 

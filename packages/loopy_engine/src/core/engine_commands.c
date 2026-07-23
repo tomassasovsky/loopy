@@ -699,8 +699,12 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
    * start (LE_CMD_ARM with trigger 1); the audio thread begins recording the
    * first frame the input crosses the threshold. A second press cancels. Takes
    * precedence over quantize for the start — finalize/overdub presses (the
-   * track is no longer EMPTY) fall through to the quantize/immediate paths. */
-  if (engine->auto_record && st == LE_TRACK_EMPTY) {
+   * track is no longer EMPTY) fall through to the quantize/immediate paths.
+   * A DEFINING press with count-in enabled skips this arm entirely (D9:
+   * count-in wins when both are somehow set at once) and falls through to the
+   * immediate path, where the audio thread starts the count-in. */
+  if (engine->auto_record && st == LE_TRACK_EMPTY &&
+      !(engine->count_in_bars > 0 && !has_master)) {
     if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
       engine->armed[channel] = 0; /* spent: the signal already fired it */
     }
@@ -1197,6 +1201,41 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
   return le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
 }
 
+/* ---- click + count-in (A2; see loopy_engine_api.h's click section) ---- */
+
+int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode) {
+  if (mode < LE_CLICK_OFF || mode > LE_CLICK_PLAY_REC) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_CLICK_MODE, mode, 0.0f);
+}
+
+int32_t le_engine_set_click_output(le_engine* engine, int32_t mask) {
+  /* trackmask arm (channel unused) so all 32 mask bits round-trip exactly,
+   * like the other mask commands. Bits beyond the negotiated output range are
+   * simply never summed into. */
+  return le_push_cmd(engine, (le_command){.code = LE_CMD_SET_CLICK_OUTPUT,
+                                          .trackmask = {0, (uint32_t)mask}});
+}
+
+int32_t le_engine_set_click_volume(le_engine* engine, float volume) {
+  /* Clamped to 0..LE_MAX_GAIN by the audio thread on apply (the SET_VOLUME
+   * pattern). */
+  return le_push(engine, LE_CMD_SET_CLICK_VOLUME, 0, volume);
+}
+
+int32_t le_engine_set_count_in(le_engine* engine, int32_t bars) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (bars < 0 || bars > LE_COUNT_IN_MAX_BARS) return LE_ERR_INVALID;
+  engine->count_in_bars = bars; /* control-side mirror (D9 exclusion below) */
+  if (bars > 0 && engine->auto_record) {
+    /* D9 mutual exclusion, count-in's direction: enabling count-in clears
+     * sound-activated record outright — the mode AND any tracks still
+     * waiting on the input threshold (le_engine_set_auto_record(0) cancels
+     * those arms). */
+    le_engine_set_auto_record(engine, 0);
+  }
+  return le_push(engine, LE_CMD_SET_COUNT_IN, bars, 0.0f);
+}
+
 int32_t le_engine_set_track_multiple(le_engine* engine, int32_t channel,
                                      int32_t multiple) {
   if (engine == NULL) return LE_ERR_INVALID;
@@ -1235,6 +1274,17 @@ int32_t le_engine_set_auto_record(le_engine* engine, int32_t enabled) {
     for (int32_t c = 0; c < engine->track_count; ++c) {
       if (engine->armed_trigger[c] == 1) le_cancel_arm(engine, c);
     }
+  } else if (engine->count_in_bars > 0) {
+    /* D9 mutual exclusion, auto-record's direction: enabling sound-activated
+     * record clears the count-in setting (the SET_COUNT_IN(0) it posts also
+     * cancels a count-in already in flight). If both are somehow set at once
+     * anyway — raw command posts — count-in still wins at press time
+     * (le_engine_record checks it before the auto-record arm). The push's
+     * result is deliberately ignored: pre-configure there is no ring, and
+     * the zeroed control mirror is already authoritative for press
+     * decisions. */
+    engine->count_in_bars = 0;
+    (void)le_push(engine, LE_CMD_SET_COUNT_IN, 0, 0.0f);
   }
   return LE_OK;
 }
