@@ -2,9 +2,10 @@
  * pedal_protocol.c - implementation of the loopy <-> pedal wire protocol.
  *
  * Mirrors PedalCodec (Dart) byte-for-byte: 7-bit SysEx packing, XOR checksum,
- * the 16-byte logical payload layout, and the inbound Note/CC scheme. Pure C,
- * no allocation, no Arduino headers — the sketch #includes it and the host test
- * links it.
+ * the 17-byte logical payload layout (protocol v1 and v2, D11 -- same byte
+ * count, v2 only claims spare flags-byte bits), and the inbound Note/CC
+ * scheme. Pure C, no allocation, no Arduino headers — the sketch #includes it
+ * and the host test links it.
  */
 #include "pedal_protocol.h"
 
@@ -51,11 +52,20 @@ static uint8_t pedal_checksum(const uint8_t* packed, int len) {
 }
 
 int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
+  const uint8_t version = (frame->protocol_version == PEDAL_PROTOCOL_VERSION_V1)
+                               ? PEDAL_PROTOCOL_VERSION_V1
+                               : PEDAL_PROTOCOL_VERSION_V2;
+
   uint8_t payload[PEDAL_PAYLOAD_LEN];
   payload[0] = (uint8_t)((frame->play_mode ? 0x01 : 0) |
                          (frame->clear_fade ? 0x02 : 0) |
                          (frame->goodbye ? 0x04 : 0) |
                          (frame->performance_armed ? 0x08 : 0));
+  if (version >= PEDAL_PROTOCOL_VERSION_V2) {
+    payload[0] = (uint8_t)(payload[0] |
+                            ((frame->looper_mode & 0x07u) << 4) |
+                            (frame->counting_in ? 0x80u : 0));
+  }
   payload[1] = frame->global_color;
   payload[2] = frame->active_bank;
   payload[3] = frame->armed_track;
@@ -75,7 +85,7 @@ int pedal_encode_frame(const pedal_frame* frame, uint8_t* buf) {
   int o = 0;
   buf[o++] = PEDAL_SYSEX_START;
   buf[o++] = PEDAL_MANUFACTURER_ID;
-  buf[o++] = PEDAL_PROTOCOL_VERSION;
+  buf[o++] = version;
   buf[o++] = PEDAL_MSG_TYPE_STATE;
   for (int i = 0; i < packed_len; i++) buf[o++] = packed[i];
   buf[o++] = pedal_checksum(packed, packed_len);
@@ -87,7 +97,11 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
   if (len < 6) return 0;
   if (msg[0] != PEDAL_SYSEX_START || msg[len - 1] != PEDAL_SYSEX_END) return 0;
   if (msg[1] != PEDAL_MANUFACTURER_ID) return 0;
-  if (msg[2] != PEDAL_PROTOCOL_VERSION) return 0;
+  const uint8_t version = msg[2];
+  if (version != PEDAL_PROTOCOL_VERSION_V1 &&
+      version != PEDAL_PROTOCOL_VERSION_V2) {
+    return 0;
+  }
   if (msg[3] != PEDAL_MSG_TYPE_STATE) return 0;
 
   /* body = packed payload + checksum, between the header and the F7. */
@@ -115,11 +129,31 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
   for (int i = 0; i < PEDAL_TRACK_COUNT; i++) {
     if (payload[4 + i] >= PEDAL_LED_COUNT) return 0;
   }
+  /* v1 never carried this field -- bits 4-6 are reserved zero on that wire,
+   * so there is nothing to validate there (a v1 decode always reports the
+   * default below). A v2 frame's looper-mode nibble must be one of the five
+   * defined values; 5-7 are reserved/unused wire values. This check runs
+   * here, alongside every other field's validation above and before any
+   * `out->` write, so a rejected frame leaves *out completely untouched --
+   * matching this function's validate-then-write pattern (the same reason
+   * color/bank/armed/track-LEDs are checked before any write, not after). */
+  const uint8_t looper_mode = (uint8_t)((payload[0] >> 4) & 0x07u);
+  if (version >= PEDAL_PROTOCOL_VERSION_V2 &&
+      looper_mode >= PEDAL_LOOPER_MODE_COUNT) {
+    return 0;
+  }
 
   out->play_mode = (uint8_t)(payload[0] & 0x01u);
   out->clear_fade = (uint8_t)((payload[0] >> 1) & 0x01u);
   out->goodbye = (uint8_t)((payload[0] >> 2) & 0x01u);
   out->performance_armed = (uint8_t)((payload[0] >> 3) & 0x01u);
+  if (version >= PEDAL_PROTOCOL_VERSION_V2) {
+    out->looper_mode = looper_mode;
+    out->counting_in = (uint8_t)((payload[0] >> 7) & 0x01u);
+  } else {
+    out->looper_mode = PEDAL_LOOPER_MODE_MULTI;
+    out->counting_in = 0;
+  }
   out->global_color = color;
   out->active_bank = bank;
   out->armed_track = armed;
@@ -131,6 +165,7 @@ int pedal_decode_frame(const uint8_t* msg, int len, pedal_frame* out) {
                             ((uint32_t)payload[14] << 16) |
                             ((uint32_t)payload[15] << 24);
   out->master_gain = (plen >= PEDAL_PAYLOAD_LEN) ? payload[16] : 255u;
+  out->protocol_version = version;
   return 1;
 }
 

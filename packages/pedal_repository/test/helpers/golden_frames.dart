@@ -90,5 +90,44 @@ Map<String, PedalStateFrame> goldenFrames() {
       clearFadeActive: false,
       performanceArmed: true,
     ),
+
+    // Protocol v2 (D11) — exercises the new flags bits 4-6 (looperMode) and
+    // bit 7 (countingIn) at once, alongside otherwise-ordinary Play-mode,
+    // bank A fields. Encoded at the codec's default (v2) like every other
+    // entry here, so this fixture proves the (app v2, firmware v2) full-
+    // fidelity pairing on its own; see `explicitVersionGoldenFrames` below
+    // for the same content forced onto the legacy (v1) wire.
+    'mode_counting_in': PedalStateFrame(
+      globalColor: GlobalColor.amber,
+      trackLeds: leds(const [PedalTrackLed.green]),
+      activeBank: 0,
+      selectedTrack: 2,
+      mode: PedalMode.play,
+      loopLengthMicros: 750000,
+      clearFadeActive: false,
+      looperMode: PedalLooperMode.sync,
+      countingIn: true,
+    ),
   };
 }
+
+/// A small second catalog: fixtures that pin an explicit wire protocol
+/// version rather than the [PedalCodec.protocolVersion] default every entry
+/// in [goldenFrames] above encodes at.
+///
+/// These exist purely for the D11 bidirectional-degrade contract: proving
+/// what the app actually puts on the wire when it detects old firmware and
+/// downgrades, with a concrete committed byte sequence firmware can test
+/// against (see `firmware/test/test_pedal_protocol.c`'s
+/// `test_version_pairings`) — not just "the codec's current default", which
+/// [goldenFrames] already covers.
+Map<String, ({PedalStateFrame frame, int version})>
+explicitVersionGoldenFrames() => {
+  // Same logical content as `idle_rec` above, forced onto the legacy (v1)
+  // wire — the D11 "today's baseline, must stay bit-identical" pairing.
+  // Pinned in pedal_codec_test.dart against the exact pre-B5a fixture bytes.
+  'idle_rec_v1': (
+    frame: goldenFrames()['idle_rec']!,
+    version: PedalCodec.protocolVersionV1,
+  ),
+};
