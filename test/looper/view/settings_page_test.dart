@@ -219,16 +219,16 @@ void main() {
     await pump(tester);
     expect(control.state.defaultMode, InteractionMode.record);
 
-    final play = find.byKey(const Key('settings_defaultMode_play'));
-    await tester.ensureVisible(play);
-    await tester.tap(play);
+    final mute = find.byKey(const Key('settings_defaultMode_mute'));
+    await tester.ensureVisible(mute);
+    await tester.tap(mute);
     await tester.pumpAndSettle();
 
-    expect(control.state.defaultMode, InteractionMode.play);
-    expect(control.state.mode, InteractionMode.play);
+    expect(control.state.defaultMode, InteractionMode.mute);
+    expect(control.state.mode, InteractionMode.mute);
     expect(
       await settings.loadDefaultInteractionMode(),
-      InteractionMode.play.token,
+      InteractionMode.mute.token,
     );
   });
 

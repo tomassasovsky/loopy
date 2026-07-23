@@ -108,12 +108,12 @@
     "measuringLowercase": "measuring…",
     "noLoopback": "no loopback",
     "emDash": "—",
-    "looperModeRec": "REC",
-    "looperModePlay": "PLAY",
+    "interactionModeRec": "REC",
+    "interactionModeMute": "MUTE",
     "a11yUndone": "Undone",
     "a11yRedone": "Redone",
     "a11yModeRecord": "Record mode",
-    "a11yModePlay": "Play mode",
+    "a11yModeMute": "Mute mode",
     "a11yPlayingAll": "Playing all tracks",
     "a11yStoppedAll": "Stopped all tracks",
     "a11yAllCleared": "All tracks cleared",
@@ -170,7 +170,7 @@
     "@shortcutPlayStopAll": {
         "description": "Legend description for the Space shortcut."
     },
-    "shortcutMode": "Switch record / play mode",
+    "shortcutMode": "Switch record / mute mode",
     "@shortcutMode": {
         "description": "Legend description for the M shortcut."
     },
@@ -178,7 +178,7 @@
     "@shortcutArm": {
         "description": "Legend description for the A shortcut."
     },
-    "shortcutSelectTrack": "Select a track (mute it in play mode)",
+    "shortcutSelectTrack": "Select a track (mute it in mute mode)",
     "@shortcutSelectTrack": {
         "description": "Legend description for the 1–8 number-key shortcuts."
     },
@@ -225,8 +225,8 @@
             }
         }
     },
-    "a11yTrackTilePlay": "{name}, {state}, activate to mute or unmute",
-    "@a11yTrackTilePlay": {
+    "a11yTrackTileMute": "{name}, {state}, activate to mute or unmute",
+    "@a11yTrackTileMute": {
         "placeholders": {
             "name": {
                 "type": "String"
@@ -299,11 +299,11 @@
     "trackIndicatorsTitle": "Track indicators",
     "trackIndicatorsSubtitle": "Show a status light on each track",
     "looperGroupLabel": "LOOPER",
-    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Play mode they mute / unmute.",
+    "defaultModeIntro": "Mode the looper starts in — what a track press does, from the pedal, keyboard, or screen. Number keys select tracks; in Record mode R/P arm and play the selection, in Mute mode they mute / unmute.",
     "recordModeLabel": "Record",
     "recordModeSub": "Arm & capture",
-    "playModeLabel": "Play",
-    "playModeSub": "Mute / unmute",
+    "muteModeLabel": "Mute",
+    "muteModeSub": "Mute / unmute",
     "refreshRateIntro": "UI refresh rate — how often the waveforms and meters update. Higher is smoother but uses more CPU.",
     "refreshRateHz": "{hz} Hz",
     "@refreshRateHz": {
