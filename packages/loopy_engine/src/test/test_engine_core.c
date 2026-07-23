@@ -7818,6 +7818,1002 @@ static void test_deferred_arm_first_wrap_shadow_fits_loop(void) {
   le_engine_destroy(e);
 }
 
+/* ---- click + count-in (A2: routable click bus, 4-value mode, count-in) ----
+ *
+ * Audio-carrying tests run at sr 48000 — at the tg tests' sr 1000 a 1000 Hz
+ * click aliases to DC and synthesizes near-silence. 300 BPM gives exactly
+ * 9600 frames per beat, 38400 per 4/4 bar. State-machine-only tests reuse the
+ * cheap sr-1000 grid (120 BPM -> 500 frames per beat). This section sits
+ * below the perf-capture helpers because the capture-exclusion test drives
+ * le_perf_arm / le_perf_disarm through perf_test_dir(). */
+
+#define CK_SR 48000
+#define CK_FPB 9600          /* frames per beat at 300 BPM, sr 48000 */
+#define CK_BAR (4 * CK_FPB)  /* one 4/4 bar */
+#define CK_CLICK_FRAMES 1440 /* the 30 ms click burst at sr 48000 */
+
+static le_engine* ck_make_engine(int out_ch) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, CK_SR, 1, out_ch, CK_SR * 4);
+  return e;
+}
+
+/* Processes `frames` frames of silence in <=64-frame blocks, accumulating
+ * per-channel output energy (sum of squares) and peak into the caller's
+ * arrays (either may be NULL to skip). */
+static void ck_run(le_engine* e, int frames, int ch_out, double* energy,
+                   float* peak) {
+  float in[64] = {0};
+  float out[64 * 8];
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    le_engine_process(e, out, in, (uint32_t)n);
+    if (energy != NULL || peak != NULL) {
+      for (int f = 0; f < n; ++f) {
+        for (int c = 0; c < ch_out; ++c) {
+          const float s = out[f * ch_out + c];
+          if (energy != NULL) energy[c] += (double)s * (double)s;
+          if (peak != NULL && fabsf(s) > peak[c]) peak[c] = fabsf(s);
+        }
+      }
+    }
+    frames -= n;
+  }
+}
+
+/* Processes `frames` frames of silence and returns the sign-flip count on
+ * output channel `ch` — a cheap spectral proxy: over the 30 ms burst a
+ * 1500 Hz downbeat click flips ~90 times, a 1000 Hz beat click ~60. */
+static int ck_crossings(le_engine* e, int frames, int ch_out, int ch) {
+  float in[64] = {0};
+  float out[64 * 8];
+  int crossings = 0;
+  float prev = 0.0f;
+  while (frames > 0) {
+    const int n = frames > 64 ? 64 : frames;
+    le_engine_process(e, out, in, (uint32_t)n);
+    for (int f = 0; f < n; ++f) {
+      const float s = out[f * ch_out + ch];
+      if (s != 0.0f) {
+        if (prev != 0.0f && (prev < 0.0f) != (s < 0.0f)) crossings++;
+        prev = s;
+      }
+    }
+    frames -= n;
+  }
+  return crossings;
+}
+
+static void test_click_defaults_and_validation(void) {
+  printf("test_click_defaults_and_validation\n");
+  le_engine* e = ck_make_engine(2);
+  le_snapshot s;
+
+  /* Click-off defaults: mode off, mask 0 (unrouted), volume unity, count-in
+   * 0 bars, no counting state. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == LE_CLICK_OFF);
+  CHECK(s.click_mask == 0u);
+  CHECK(fabsf(s.click_volume - 1.0f) < 1e-6f);
+  CHECK(s.count_in_bars == 0);
+  CHECK(s.counting_in == 0);
+  CHECK(s.count_in_beats_left == 0);
+
+  /* Wrapper validation. */
+  CHECK(le_engine_set_click_mode(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_click_mode(e, 4) == LE_ERR_INVALID);
+  CHECK(le_engine_set_count_in(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_count_in(e, LE_COUNT_IN_MAX_BARS + 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_count_in(NULL, 1) == LE_ERR_INVALID);
+
+  /* Settings publish, the volume clamps to LE_MAX_GAIN on apply, and all of
+   * it persists across a reconfigure (create-seeded, like the tempo
+   * settings) while the counting state stays transient. */
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x2) == LE_OK);
+  CHECK(le_engine_set_click_volume(e, 5.0f) == LE_OK);
+  CHECK(le_engine_set_count_in(e, 2) == LE_OK);
+  ck_run(e, 1, 2, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == LE_CLICK_PLAY_REC);
+  CHECK(s.click_mask == 0x2u);
+  CHECK(fabsf(s.click_volume - LE_MAX_GAIN) < 1e-6f);
+  CHECK(s.count_in_bars == 2);
+  le_engine_configure(e, CK_SR, 1, 2, CK_SR * 4);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == LE_CLICK_PLAY_REC);
+  CHECK(s.click_mask == 0x2u);
+  CHECK(fabsf(s.click_volume - LE_MAX_GAIN) < 1e-6f);
+  CHECK(s.count_in_bars == 2);
+  CHECK(s.counting_in == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_masked_channels_and_volume(void) {
+  printf("test_click_masked_channels_and_volume\n");
+  le_engine* e = ck_make_engine(2);
+  double energy[2] = {0};
+  float peak[2] = {0};
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x2) == LE_OK); /* channel 1 only */
+
+  /* Idle transport: the gate is off — silence even with tempo + mask set. */
+  ck_run(e, 2 * CK_FPB, 2, energy, peak);
+  CHECK(energy[0] == 0.0);
+  CHECK(energy[1] == 0.0);
+
+  /* A defining recording engages the free-running click: energy on the
+   * masked channel only; the unmasked channel stays EXACTLY zero. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  energy[0] = energy[1] = 0.0;
+  ck_run(e, CK_FPB, 2, energy, peak);
+  CHECK(energy[1] > 0.5);
+  CHECK(energy[0] == 0.0);
+  /* At unity click volume the burst peaks at ~LE_CLICK_AMP (0.25). */
+  CHECK(peak[1] > 0.2f && peak[1] < 0.26f);
+  CHECK(peak[0] == 0.0f);
+
+  /* Click volume scales the voice: half volume, half peak. The run starts
+   * exactly on the next beat boundary, so it covers one whole burst. */
+  CHECK(le_engine_set_click_volume(e, 0.5f) == LE_OK);
+  energy[1] = 0.0;
+  peak[1] = 0.0f;
+  ck_run(e, CK_FPB, 2, energy, peak);
+  CHECK(energy[1] > 0.1);
+  CHECK(peak[1] > 0.1f && peak[1] < 0.13f);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_bypasses_master_bus(void) {
+  printf("test_click_bypasses_master_bus\n");
+  le_engine* e = ck_make_engine(1);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  /* Master gain to ZERO: if the click ran through the master bus this would
+   * silence it. It is summed after the bus by design (D5). */
+  CHECK(le_engine_set_master_gain(e, 0.0f) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  double energy[1] = {0};
+  float peak[1] = {0};
+  ck_run(e, CK_FPB, 1, energy, peak);
+  CHECK(energy[0] > 0.5);  /* audible despite master gain 0... */
+  CHECK(peak[0] > 0.2f);   /* ...at full click level, uncut */
+  /* ...and invisible to output metering, which is fed upstream of it. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.output_rms == 0.0f);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_respects_output_enabled_gate(void) {
+  printf("test_click_respects_output_enabled_gate\n");
+  /* Code-review fix (MEDIUM): click_frame was called with the raw click
+   * mask, never intersected with the structural output-enabled mask —
+   * unlike every other source's fan-out (lanes: out_mask & out_enabled in
+   * mix_tracks_frame; monitors: mon_out & out_enabled in
+   * mix_monitors_frame). A structurally-disabled output must never carry
+   * click energy even though the click's own routing mask still points at
+   * it. */
+  le_engine* e = ck_make_engine(2);
+  double energy[2] = {0};
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK); /* channel 0 */
+  CHECK(le_engine_set_output_enabled(e, 0, 0) == LE_OK); /* disable it */
+  ck_run(e, 1, 2, NULL, NULL);
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_BAR, 2, energy, NULL);
+  CHECK(energy[0] == 0.0); /* disabled: silent despite the click mask */
+  CHECK(energy[1] == 0.0); /* never routed to */
+
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_rec_semantics(void) {
+  printf("test_click_mode_rec_semantics\n");
+  le_engine* e = ck_make_engine(1);
+  double energy[1] = {0};
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+
+  /* Idle: silent. */
+  ck_run(e, CK_FPB, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  /* Recording (the defining take): clicks. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  energy[0] = 0.0;
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] > 0.5);
+
+  /* Finalize (seam xfade defers CK_SR/100 frames), flush the last burst's
+   * tail, then a full playing loop: REC is silent during plain playback. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100 + CK_CLICK_FRAMES + 64, 1, NULL, NULL);
+  energy[0] = 0.0;
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  /* Punch-in overdub EXACTLY at the loop top (pos == 0, via the snapshot):
+   * the gate rise fires the beat underway immediately, and — because pos==0
+   * really is a beat boundary — it's the true bar downbeat, 1500 Hz
+   * (grid_beat_frame's pos==0 special case; code-review fix). Verified by
+   * frequency/timing (ck_crossings), not just energy>0 — a bare energy
+   * check can't tell a correct downbeat from an off-grid click at an
+   * arbitrary phase, which is exactly how the punch-in-mid-beat bug this
+   * pins shipped unnoticed in the first place. A mid-beat punch (which must
+   * NOT fire immediately) is covered separately by
+   * test_click_punch_in_overdub_no_off_grid_click. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == CK_BAR);
+  const int32_t to_top = (CK_BAR - s.master_position_frames) % CK_BAR;
+  ck_run(e, to_top, 1, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == 0);
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  const int down = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(down > 75 && down < 105); /* 1500 Hz downbeat, fired immediately */
+
+  /* Punch-out: back to silence once the last burst decays. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_CLICK_FRAMES + 64, 1, NULL, NULL);
+  energy[0] = 0.0;
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_punch_in_overdub_no_off_grid_click(void) {
+  printf("test_click_punch_in_overdub_no_off_grid_click\n");
+  /* Code-review fix (HIGH): a punch-in overdub on an ALREADY-PLAYING loop
+   * starts capturing at the current transport position, not a beat
+   * boundary (handle_record's PLAYING/STOPPED branch). Under LE_CLICK_REC,
+   * click_on flips 0->1 the instant the track becomes OVERDUBBING — before
+   * the fix, grid_beat_frame's gate-rise handling fired a click immediately
+   * at that arbitrary mid-beat phase instead of a real beat. This pins the
+   * confirmed scenario (300 BPM, punch mid-beat-1): silence until the next
+   * TRUE boundary, then a click exactly there — never at the punch frame
+   * itself. */
+  le_engine* e = ck_make_engine(1);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* Finalize a one-bar defining loop with the click off, so its own
+   * free-running click doesn't interfere with positioning. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_BAR, 1, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100 + 64, 1, NULL, NULL);
+
+  /* REC mode: silent through plain playback (click_grid_gate stays 0 going
+   * into the punch — this IS a genuine gate rise, not a coincidence). */
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+
+  /* Align to exactly the middle of beat 1 (NOT beat 0, not near any
+   * boundary) via the snapshot before punching in. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == CK_BAR);
+  const int32_t target = CK_FPB + CK_FPB / 2; /* mid beat 1 */
+  const int32_t to_target =
+      ((target - s.master_position_frames) % CK_BAR + CK_BAR) % CK_BAR;
+  ck_run(e, to_target, 1, NULL, NULL);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_position_frames == target);
+
+  /* Punch in mid-beat: the gate rises here. No click at the punch frame or
+   * anywhere before the next real boundary (beat 2, at 2*CK_FPB — CK_FPB/2
+   * frames away). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  double energy[1] = {0};
+  ck_run(e, CK_FPB / 2, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  /* The click picks up naturally at that true boundary — beat 2, a plain
+   * beat: 1000 Hz, not the downbeat pitch and not an off-grid burst. */
+  const int at_boundary = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(at_boundary > 45 && at_boundary < 75);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_rec_first_semantics(void) {
+  printf("test_click_mode_rec_first_semantics\n");
+  le_engine* e = ck_make_engine(1);
+  double energy[1] = {0};
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC_FIRST) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* The DEFINING first-layer recording clicks... */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] > 0.5);
+
+  /* ...but once the loop exists, nothing does: not playback, and — unlike
+   * REC — not an overdub either (it is not the first layer). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100 + CK_CLICK_FRAMES + 64, 1, NULL, NULL);
+  energy[0] = 0.0;
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* punch-in overdub */
+  energy[0] = 0.0;
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_rec_first_second_track_silent(void) {
+  printf("test_click_mode_rec_first_second_track_silent\n");
+  /* Code-review fix (HIGH): le_click_gate's REC_FIRST guard —
+   * `if (e->clock.length != 0) return 0;` — restricts the mode to the
+   * DEFINING first-layer take only. A DIFFERENT track's own first take,
+   * recorded fresh once a master already exists, is ALSO state RECORDING
+   * but must stay silent under REC_FIRST; nothing exercised that distinction
+   * before this test, so the guard could be inverted or deleted without any
+   * test noticing. */
+  le_engine* e = ck_make_engine(1);
+  double energy[1] = {0};
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* Finalize a defining track-0 loop first, with the click off so it can't
+   * contribute any of the energy checked below. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_BAR, 1, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100 + 64, 1, NULL, NULL);
+
+  /* Track 1's OWN first take, now that a master already exists (clock.length
+   * != 0): state RECORDING, but the guard says silent under REC_FIRST. */
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC_FIRST) == LE_OK);
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_play_rec_semantics(void) {
+  printf("test_click_mode_play_rec_semantics\n");
+  le_engine* e = ck_make_engine(1);
+  double energy[1] = {0};
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* Record + finalize a one-bar loop; PLAY_REC keeps clicking through
+   * playback (the loop-locked grid drives the beats). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_BAR, 1, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100, 1, NULL, NULL);
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] > 0.5);
+
+  /* Stopped: the transport is held — silence once the last burst decays. */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  ck_run(e, CK_CLICK_FRAMES + 64, 1, NULL, NULL);
+  energy[0] = 0.0;
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  /* Resuming playback clicks the downbeat IMMEDIATELY (the gate rise re-arms
+   * the loop-locked scheduler; the held transport resumes from the top). */
+  CHECK(le_engine_play(e, 0) == LE_OK);
+  energy[0] = 0.0;
+  ck_run(e, CK_CLICK_FRAMES, 1, energy, NULL);
+  CHECK(energy[0] > 0.5);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_mode_off_stays_silent(void) {
+  printf("test_click_mode_off_stays_silent\n");
+  le_engine* e = ck_make_engine(1);
+  double energy[1] = {0};
+  le_snapshot s;
+
+  /* OFF (the default) with tempo + a mask set: still never audible during a
+   * defining recording... */
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.click_mode == LE_CLICK_OFF);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* finalize */
+  ck_run(e, CK_SR / 100 + CK_CLICK_FRAMES + 64, 1, NULL, NULL);
+
+  /* ...nor through playback... */
+  energy[0] = 0.0;
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] == 0.0);
+
+  le_engine_destroy(e);
+
+  /* ...nor during a count-in: the manual's "OFF" means never audible, but the
+   * count-in still runs (silently) and still lands the recording exactly on
+   * the downbeat — D9's schedule is independent of whether anyone can hear
+   * it count. */
+  le_engine* e2 = ck_make_engine(1);
+  CHECK(le_engine_set_tempo(e2, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_output(e2, 0x1) == LE_OK);
+  CHECK(le_engine_set_count_in(e2, 1) == LE_OK);
+  double energy2[1] = {0};
+  CHECK(le_engine_record(e2, 0) == LE_OK);
+  ck_run(e2, 1, 1, energy2, NULL); /* drain the RECORD command */
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.counting_in == 1); /* the schedule still runs */
+  ck_run(e2, CK_BAR - 2, 1, energy2, NULL);
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY); /* one frame short */
+  CHECK(energy2[0] == 0.0);                   /* and silent throughout */
+  ck_run(e2, 1, 1, energy2, NULL);            /* the downbeat frame */
+  le_engine_get_snapshot(e2, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* landed exactly on time */
+  CHECK(energy2[0] == 0.0);
+
+  le_engine_destroy(e2);
+}
+
+/* trigger_click's downbeat-vs-beat boolean (1500/1000 Hz) is computed
+ * independently at THREE call sites: the count-in scheduler (click_frame),
+ * the loop-locked scheduler (grid_beat_frame), and the free-running
+ * scheduler (click_frame, no-master-yet / sync-off). Code-review fix
+ * (MEDIUM): only the count-in site had a frequency assertion — flipping the
+ * boolean at either of the other two would have passed all pre-existing
+ * tests. The three tests below cover the three sites independently. */
+
+static void test_click_count_in_downbeat_vs_beat_frequency(void) {
+  printf("test_click_count_in_downbeat_vs_beat_frequency\n");
+  le_engine* e = ck_make_engine(1);
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* Count in one 4/4 bar. Beat 0 is the bar downbeat: 1500 Hz — ~45 cycles
+   * over the 30 ms burst, ~90 sign flips. Beat 1 is a plain beat: 1000 Hz —
+   * ~30 cycles, ~60 flips. The counts separate cleanly at 75. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  const int down = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(down > 75 && down < 105);
+  ck_run(e, CK_FPB - CK_CLICK_FRAMES, 1, NULL, NULL);
+  const int beat = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(beat > 45 && beat < 75);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_free_running_downbeat_vs_beat_frequency(void) {
+  printf("test_click_free_running_downbeat_vs_beat_frequency\n");
+  le_engine* e = ck_make_engine(1);
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* The DEFINING recording free-runs the click off the nominal grid (no
+   * master yet, clock.length == 0) — click_frame's free-run branch, the
+   * trigger_click call site distinct from both the count-in scheduler above
+   * and the loop-locked one below. Same downbeat/beat frequency split. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  const int down = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(down > 75 && down < 105);
+  ck_run(e, CK_FPB - CK_CLICK_FRAMES, 1, NULL, NULL);
+  const int beat = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(beat > 45 && beat < 75);
+
+  le_engine_destroy(e);
+}
+
+static void test_click_loop_locked_downbeat_vs_beat_frequency(void) {
+  printf("test_click_loop_locked_downbeat_vs_beat_frequency\n");
+  le_engine* e = ck_make_engine(1);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  /* Finalize a one-bar defining loop with the click off, then enable it —
+   * grid_beat_frame's loop-locked branch drives beats hereon, via the
+   * NATURAL per-frame beat-transition trigger (not the pos==0 gate-rise
+   * special case: the click is enabled mid-loop, at whatever arbitrary
+   * position the finalize flush left it, and this test waits for the loop
+   * to wrap around to 0 on its own before asserting anything). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_BAR, 1, NULL, NULL);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  ck_run(e, CK_SR / 100 + 64, 1, NULL, NULL);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == CK_BAR);
+  const int32_t to_top = (CK_BAR - s.master_position_frames) % CK_BAR;
+  ck_run(e, to_top, 1, NULL, NULL);
+
+  const int down = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(down > 75 && down < 105); /* the wrap to beat 0: 1500 Hz downbeat */
+  ck_run(e, CK_FPB - CK_CLICK_FRAMES, 1, NULL, NULL);
+  const int beat = ck_crossings(e, CK_CLICK_FRAMES, 1, 0);
+  CHECK(beat > 45 && beat < 75); /* beat 1: 1000 Hz */
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_delays_defining_record(void) {
+  printf("test_count_in_delays_defining_record\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames per beat */
+  CHECK(le_engine_set_count_in(e, 2) == LE_OK);   /* 2 bars * 4 * 500 = 4000 */
+  tg_advance(e, 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.count_in_beats_left == 8); /* all 8 beats ahead (beat 0 sounding) */
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* One frame short of the full count-in: still counting, still empty. */
+  tg_advance(e, 3998);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.count_in_beats_left == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* The next frame is the downbeat: the DEFINING record starts, delayed by
+   * exactly bars * ts_num * frames_per_beat frames. */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.count_in_beats_left == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  /* And not a frame earlier: 800 captured frames finalize to an 800-frame
+   * loop — had capture started during the count-in, the length would show
+   * it. */
+  tg_advance(e, 800);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1000 / 100); /* seam-xfade deferral at sr 1000 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 800);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_record_press_cancels(void) {
+  printf("test_count_in_record_press_cancels\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+
+  /* A record press mid-count CANCELS: back to idle, nothing records. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.count_in_beats_left == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* Well past where the count-in would have committed: still idle — the
+   * cancel killed the deferred record, not just the clicks. */
+  tg_advance(e, 4000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+
+  /* A fresh press after a cancel starts a fresh count-in. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_stop_and_disable_cancel(void) {
+  printf("test_count_in_stop_and_disable_cancel\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  tg_advance(e, 1);
+
+  /* Stop cancels (D9). */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 500);
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  tg_advance(e, 3000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+
+  /* Disabling count-in mid-count cancels too. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(le_engine_set_count_in(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  tg_advance(e, 3000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_bars_change_mid_count_cancels(void) {
+  printf("test_count_in_bars_change_mid_count_cancels\n");
+  /* Code-review fix (MEDIUM): LE_CMD_SET_COUNT_IN used to reset the running
+   * countdown only when the NEW value was 0; any other nonzero value
+   * republished a_count_in_bars but left the frozen count_in_total/
+   * count_in_beats/count_in_fpb (set at le_count_in_begin from the OLD
+   * value) untouched, so the published setting and the actually-running
+   * countdown would silently diverge until the stale count-in ended. ANY
+   * mid-count-in change now cancels, matching the existing ->0 precedent. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames/beat */
+  CHECK(le_engine_set_count_in(e, 2) == LE_OK);   /* 2 bars = 4000 frames */
+  tg_advance(e, 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+
+  /* Changing to a DIFFERENT nonzero value mid-count cancels outright. */
+  CHECK(le_engine_set_count_in(e, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.count_in_beats_left == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.count_in_bars == 4); /* the new setting IS published */
+
+  /* Well past where the OLD (2-bar) count-in would have committed: still
+   * idle — the cancel killed the deferred record, not just the beat count. */
+  tg_advance(e, 4000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+
+  /* A fresh press counts in cleanly against the NEW value (4 bars = 8000
+   * frames), with no residual state from the cancelled one. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 7999);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+static void test_tempo_lock_during_count_in(void) {
+  printf("test_tempo_lock_during_count_in\n");
+  /* Code-review fix (MEDIUM): D6's tempo lock gated on "does any track have
+   * content", which is false during an active count-in (the defining track
+   * is still EMPTY — it only becomes RECORDING at le_count_in_commit). A
+   * tempo/signature change was therefore accepted mid-count-in even though
+   * the count-in's click schedule (count_in_fpb etc.) was already frozen
+   * from the OLD tempo: the audible click kept counting the old rate while
+   * the eventually-finalized grid would silently follow the new one.
+   * le_tempo_locked now also locks while count_in_total > 0. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames/beat */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);   /* 1 bar = 2000 frames */
+  tg_advance(e, 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* begins counting in */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+
+  /* Attempted mid-count-in changes are rejected outright, exactly like D6's
+   * content lock. */
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK); /* posts; audio-thread no-ops it */
+  CHECK(le_engine_set_time_signature(e, 3, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.ts_num == 4);
+  CHECK(s.ts_den == 4);
+  CHECK(s.counting_in == 1); /* still counting, unaffected either way */
+
+  /* Let the count-in run to completion (2000 frames total; 2 already
+   * elapsed above). */
+  tg_advance(e, 2000 - 2);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+  /* The tempo/signature that survived is the ORIGINAL, locked-through one —
+   * not the rejected 90 bpm / 3-4. */
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.ts_num == 4);
+  CHECK(s.ts_den == 4);
+
+  /* Finalize a clean one-bar take (2000 frames at 120 bpm/4-4, sr 1000) and
+   * confirm the finalized GRID matches the original tempo too. */
+  tg_advance(e, 2000);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, e->sample_rate / 100);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 2000);
+  CHECK(s.loop_bars == 1);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_cancel_race_across_block_boundary(void) {
+  printf("test_count_in_cancel_race_across_block_boundary\n");
+  /* Code-review fix (HIGH): le_count_in_commit can complete the count-in
+   * MID-block via the per-frame countdown, but commands only drain once at
+   * block-top (le_engine_process). A cancel press posted just after the
+   * commit's block has already drained arrives one block too late to see
+   * count_in_total > 0 in handle_record's guard — before the fix, it would
+   * fall through to the RECORDING-finalize branch and mint a near-zero-
+   * length defining loop instead of the cancel it meant. Constructed
+   * directly with le_engine_process (not the tg_advance/ck_run helpers) for
+   * exact control of block boundaries: one call spans past the count-in's
+   * completion (the commit fires mid-call); the cancel press is posted only
+   * AFTER that call returns, so it can only drain in the NEXT call. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK); /* 500 frames/beat */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);   /* 1 bar = 2000 frames */
+  tg_advance(e, 1);
+
+  CHECK(le_engine_record(e, 0) == LE_OK); /* begins counting in */
+
+  /* Block N: one call spanning past frame 2000 — the commit lands mid-call,
+   * inside this same block. */
+  {
+    const int n = 2050;
+    float* in = calloc((size_t)n, sizeof(float));
+    float* out = calloc((size_t)n, sizeof(float));
+    CHECK(in != NULL && out != NULL);
+    le_engine_process(e, out, in, (uint32_t)n);
+    free(in);
+    free(out);
+  }
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* the commit landed */
+
+  /* The cancel-intent press is posted only NOW — after block N (and its
+   * commit) already happened. It can only drain at the top of block N+1. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+
+  /* Block N+1: a tiny call is enough to drain it. */
+  tg_advance(e, 4);
+
+  /* The grace window recognized the race: aborted back to EMPTY, not
+   * finalized into a near-zero-length defining loop. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.counting_in == 0);
+
+  /* A fresh press afterward behaves normally — no residual grace/limbo. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 4);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1); /* counts in again, cleanly */
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_without_tempo_records_immediately(void) {
+  printf("test_count_in_without_tempo_records_immediately\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  /* Count-in enabled but NO tempo set: nothing to click against — the press
+   * records immediately, exactly as without count-in. */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_never_fires_with_content(void) {
+  printf("test_count_in_never_fires_with_content\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 2000); /* track 0 defines and plays a bar */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  tg_advance(e, 1);
+
+  /* With the loop playing, a press on an empty sibling records immediately
+   * (phase-locked, as always) — count-in is for the DEFINING take only. */
+  CHECK(le_engine_record(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_auto_record_mutual_exclusion(void) {
+  printf("test_count_in_auto_record_mutual_exclusion\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 120.0f) == LE_OK);
+  tg_advance(e, 1);
+
+  /* Direction 1: enabling count-in while a track waits on the input
+   * threshold clears BOTH the auto-record mode and the pending arm (D9). */
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* arms the input-level trigger */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 1);
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].pending == 0); /* threshold arm cancelled */
+  CHECK(e->auto_record == 0);      /* mode cleared (white-box) */
+  CHECK(s.count_in_bars == 1);
+
+  /* A press now counts in — auto-record is gone. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* cancel; back to idle */
+  tg_advance(e, 1);
+
+  /* Direction 2: enabling auto-record clears the count-in setting; a press
+   * then threshold-arms instead of counting in. */
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.count_in_bars == 0);
+  CHECK(e->count_in_bars == 0);
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].pending == 1);
+  CHECK(le_engine_record(e, 0) == LE_OK); /* disarm again */
+  tg_advance(e, 1);
+
+  /* Direction 2, mid-count: enabling auto-record during an active count-in
+   * cancels the counting as well (its SET_COUNT_IN(0) cancels in flight). */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* clears auto-record again */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(le_engine_set_auto_record(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.count_in_bars == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  le_engine_destroy(e);
+}
+
+static void test_count_in_click_absent_from_perf_capture(void) {
+  printf("test_count_in_click_absent_from_perf_capture\n");
+  le_engine* e = ck_make_engine(1);
+
+  CHECK(le_engine_set_tempo(e, 300.0f) == LE_OK);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_PLAY_REC) == LE_OK);
+  /* Route the click to output 0 — the very channel the perf tap captures.
+   * If the click were summed before the tap this test would light up. */
+  CHECK(le_engine_set_click_output(e, 0x1) == LE_OK);
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK);
+  ck_run(e, 1, 1, NULL, NULL);
+
+  char path[600];
+  snprintf(path, sizeof(path), "%s/master.pcm", perf_test_dir());
+  remove(path); /* clear any stale capture from a prior test */
+  CHECK(le_perf_arm(e, perf_test_dir()) == LE_OK);
+  drain(e);
+
+  /* Count in a full bar (audible on output 0), then record a little. */
+  CHECK(le_engine_record(e, 0) == LE_OK);
+  double energy[1] = {0};
+  ck_run(e, CK_BAR, 1, energy, NULL);
+  CHECK(energy[0] > 0.5); /* the count-in clicked on the captured output */
+  ck_run(e, 1000, 1, NULL, NULL);
+  CHECK(atomic_load_explicit(&e->a_perf_overruns, memory_order_relaxed) ==
+        0u); /* nothing dropped: the capture spans the whole count-in */
+  CHECK(le_perf_disarm(e) == LE_OK); /* blocks: final flush + join */
+
+  /* The captured master must be pure silence: the click sums AFTER the perf
+   * tap, so a performance capture (and every export built from it) never
+   * contains it — by construction, not by filtering. */
+  static float pcm[262144];
+  FILE* f = fopen(path, "rb");
+  CHECK(f != NULL);
+  if (f != NULL) {
+    const size_t n = fread(pcm, sizeof(float), 262144, f);
+    fclose(f);
+    CHECK(n >= (size_t)CK_BAR); /* the count-in window is all there */
+    float max_mag = 0.0f;
+    for (size_t i = 0; i < n; ++i) {
+      if (fabsf(pcm[i]) > max_mag) max_mag = fabsf(pcm[i]);
+    }
+    CHECK(max_mag == 0.0f);
+  }
+
+  le_engine_destroy(e);
+}
+
 /* ---- long-loop (> LE_LAYER_QUANTUM) audit coverage — #227 ----
  *
  * Nearly every looper test runs at LOOP_N = 4 frames, far below
@@ -12285,6 +13281,29 @@ int main(void) {
   test_new_track_first_wrap_is_undoable_layer();
   test_first_wrap_layer_shrinks_to_quantum();
   test_deferred_arm_first_wrap_shadow_fits_loop();
+  test_click_defaults_and_validation();
+  test_click_masked_channels_and_volume();
+  test_click_bypasses_master_bus();
+  test_click_respects_output_enabled_gate();
+  test_click_mode_rec_semantics();
+  test_click_punch_in_overdub_no_off_grid_click();
+  test_click_mode_rec_first_semantics();
+  test_click_mode_rec_first_second_track_silent();
+  test_click_mode_play_rec_semantics();
+  test_click_mode_off_stays_silent();
+  test_click_count_in_downbeat_vs_beat_frequency();
+  test_click_free_running_downbeat_vs_beat_frequency();
+  test_click_loop_locked_downbeat_vs_beat_frequency();
+  test_count_in_delays_defining_record();
+  test_count_in_record_press_cancels();
+  test_count_in_stop_and_disable_cancel();
+  test_count_in_bars_change_mid_count_cancels();
+  test_tempo_lock_during_count_in();
+  test_count_in_cancel_race_across_block_boundary();
+  test_count_in_without_tempo_records_immediately();
+  test_count_in_never_fires_with_content();
+  test_count_in_auto_record_mutual_exclusion();
+  test_count_in_click_absent_from_perf_capture();
   test_first_wrap_prearm_footprint_bounded();
   test_rec_dub_long_loop_first_wrap_undo();
   test_multi_lane_long_loop_dub_roundtrip();

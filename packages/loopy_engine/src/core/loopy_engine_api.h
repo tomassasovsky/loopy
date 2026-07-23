@@ -77,6 +77,22 @@ typedef enum le_tempo_source {
   LE_TEMPO_SOURCE_EXTERNAL = 4, /* reserved: MIDI clock receive (Phase E) */
 } le_tempo_source;
 
+/* Click (metronome) audibility mode, mirrored in le_snapshot.click_mode — a
+ * 4-value mode per the Sheeran manual §5.9.1, replacing the old boolean
+ * metronome (D5). It gates WHEN the click voice sounds; WHERE it sounds is the
+ * click output mask (le_engine_set_click_output — default no outputs).
+ * Count-in clicks are audible in every mode except OFF while counting. */
+typedef enum le_click_mode {
+  LE_CLICK_OFF = 0,       /* never audible (count-ins still run, silently) */
+  LE_CLICK_REC = 1,       /* while any track records or overdubs */
+  LE_CLICK_REC_FIRST = 2, /* only during the DEFINING first-layer recording
+                           * (incl. its count-in) */
+  LE_CLICK_PLAY_REC = 3,  /* whenever the transport plays or records */
+} le_click_mode;
+
+/* Maximum count-in length in measures (le_engine_set_count_in). */
+#define LE_COUNT_IN_MAX_BARS 64
+
 /* Classification of a cable-free loopback path used to auto-measure latency.
  * All of these capture the *digital* round-trip (output → OS mixer → capture);
  * they exclude DAC/ADC converter latency, so they under-report the true analog
@@ -135,14 +151,28 @@ typedef enum le_command_code {
                                  * 1 bar / 2..5 = 1/2..1/16 note. State only in
                                  * this part — the musical arm machinery that
                                  * consumes it lands in A3. Default off. */
+  /* ---- click + count-in (A2, D5/D9). The click is its own routable source:
+   * it sums into the channels of its output mask AFTER the master bus and the
+   * performance tap, so it bypasses master gain / limiter / metering and is
+   * excluded from performance capture and export by construction. None of
+   * these commands is therefore perf-logged. */
+  LE_CMD_SET_CLICK_MODE = 19, /* arg_i = le_click_mode (0..3). Default off. */
   LE_CMD_SET_LANE_FX = 20, /* set a lane chain entry's type (and reset its DSP
                             * state). arg_i = (channel << 16) | (lane << 8) |
                             * index, arg_f = le_fx_type. */
   LE_CMD_SET_LANE_FX_COUNT = 21, /* set a lane's active chain length.
                                   * arg_i = (channel << 16) | (lane << 8) |
                                   * count. */
+  LE_CMD_SET_CLICK_OUTPUT = 22,  /* click output routing. trackmask arm:
+                                  * channel unused, mask = output bitmask
+                                  * (default 0 = no outputs). */
   LE_CMD_COMMIT_SESSION = 23,    /* arg_i = base loop length in frames: publish
                                   * the master loop and start imported tracks */
+  LE_CMD_SET_CLICK_VOLUME = 24,  /* arg_f = 0..LE_MAX_GAIN (the click's ONLY
+                                  * gain stage — master gain never applies). */
+  LE_CMD_SET_COUNT_IN = 25,      /* arg_i = count-in length in measures
+                                  * (0 = off, up to LE_COUNT_IN_MAX_BARS).
+                                  * 0 also cancels an in-progress count-in. */
   /* ---- multi-lane recording (a track owns an array of lanes) ----
    * Each lane records one hardware input into its own clean mono buffer; all
    * lanes of a track share one transport and one undo span. The lane *count* is
@@ -502,7 +532,22 @@ typedef struct le_snapshot {
    * (sync off, no loop, or the loop predates any grid). The loop's AUDIO
    * length is never altered by the grid — bars is a derived count. */
   int32_t loop_bars;
-  int32_t current_beat; /* 0..ts_num-1 within the bar, loop-driven; 0 idle */
+  int32_t current_beat; /* 0..ts_num-1 within the bar: loop-driven, or driven
+                         * by the count-in / free-running click; 0 idle */
+
+  /* ---- click + count-in (A2; trailing for the same offset-stability reason
+   * as the tempo block above). All default to click-off values: mode off,
+   * mask 0 (unrouted), volume 1, count-in 0 bars — the untouched engine is
+   * bit-identical to the click-free build. */
+  int32_t click_mode;   /* le_click_mode (default 0 = off) */
+  uint32_t click_mask;  /* click output bitmask (default 0 = no outputs) */
+  float click_volume;   /* 0..LE_MAX_GAIN (default 1); the click's only gain */
+  int32_t count_in_bars; /* count-in length in measures; 0 = off (default) */
+  int32_t counting_in;   /* 0/1: a count-in is currently running */
+  /* Beat countdown while counting in: the number of count-in beats still to
+   * come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
+   * reads 4, 3, 2, 1, then 0 as the recording starts). 0 when idle. */
+  int32_t count_in_beats_left;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -947,10 +992,10 @@ LE_EXPORT int32_t le_engine_set_track_quantize(le_engine* engine,
                                                int32_t channel, int32_t mode);
 
 /* ---- tempo grid ----
- * Grid STATE + locks only in this part: no click, no count-in, and the
+ * Grid state + locks (A1) and the click + count-in built on them (A2); the
  * musical (subdivision) arm machinery lands in a later part. With every
- * default in place (no tempo ever set, quantize_div off) the engine behaves
- * exactly like the tempo-free build.
+ * default in place (no tempo ever set, quantize_div off, click mode off,
+ * count-in 0) the engine behaves exactly like the tempo-free build.
  *
  * Tempo LOCK (D6): while any track has content AND a grid exists
  * (loop_bars > 0 or tempo_source != none), set_tempo / set_time_signature /
@@ -989,6 +1034,45 @@ LE_EXPORT int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on);
  * return LE_ERR_INVALID. State only in this part (published in the snapshot;
  * consumed by the musical arm machinery in a later part). */
 LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
+
+/* ---- click + count-in (A2, decisions D5/D9) ----
+ * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
+ * bar downbeat, 30 ms linear decay) with its OWN output routing and volume,
+ * summed into its masked output channels after the master bus and the
+ * performance tap. Consequences, all by design: the click bypasses master
+ * gain, the limiter, and output metering (its own volume is its only gain
+ * stage — it must stay audible and constant regardless of master moves), and
+ * it never appears in performance captures, bounces, or exports. It defaults
+ * to NO outputs: nothing sounds until a mask is assigned. */
+
+/* Sets the click audibility mode (le_click_mode, 0..3). Values outside the
+ * enum return LE_ERR_INVALID. Default off. */
+LE_EXPORT int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode);
+
+/* Routes the click to the output channels set in [mask] (bit c => hardware
+ * output channel c; bits beyond the negotiated range are ignored). Default 0:
+ * the click sounds on no outputs until explicitly routed. */
+LE_EXPORT int32_t le_engine_set_click_output(le_engine* engine, int32_t mask);
+
+/* Sets the click volume, clamped to 0..LE_MAX_GAIN (default 1.0). This is the
+ * click's only gain stage — master gain and the limiter never touch it. */
+LE_EXPORT int32_t le_engine_set_click_volume(le_engine* engine, float volume);
+
+/* Sets the count-in length in measures (0 = off .. LE_COUNT_IN_MAX_BARS;
+ * values outside return LE_ERR_INVALID). Default 0 = off on the wire — the
+ * manual's 1-bar default is applied by the app layer when the user enables
+ * counting in. With count-in on and a tempo set, a record press on an idle,
+ * empty looper (the DEFINING recording) first clicks [bars] measures — the
+ * counting state is published via counting_in / count_in_beats_left — and
+ * recording then starts exactly on the downbeat. A record press during the
+ * count-in cancels it (back to idle); so does a stop press, and so does
+ * setting this to 0. With no tempo set there is nothing to click against and
+ * recording starts immediately. Once anything is recorded, record presses
+ * behave exactly as without count-in (quantize governs — D9). Mutually
+ * exclusive with sound-activated recording: enabling count-in disables
+ * auto-record (and cancels its threshold arms), and enabling auto-record
+ * clears the count-in — count-in wins when both are somehow set at once. */
+LE_EXPORT int32_t le_engine_set_count_in(le_engine* engine, int32_t bars);
 
 /* Fixes track [channel]'s loop length to [multiple] whole base loops (>= 1), or
  * 0 to inherit the global default (le_engine_set_default_multiple). Applies to
