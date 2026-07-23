@@ -7,13 +7,15 @@ library;
 // effect/lane caps are stable native contracts, and `TrackState` is already
 // surfaced through the `Track` / `LooperState` domain models. `ClickMode` /
 // `GridDivision` / `TempoSource` are the same kind of keeper, now surfaced
-// through `TransportState` (A4b). The audio-config cluster
+// through `TransportState` (A4b). `LooperMode` joins them (B2a), also
+// surfaced through `TransportState`. The audio-config cluster
 // (AudioBackend/AudioDevice/EngineConfig/…) is wrapped in Part 2b.
 export 'package:loopy_engine/loopy_engine.dart'
     show
         ClickMode,
         EngineResult,
         GridDivision,
+        LooperMode,
         PluginScanProgress,
         TempoSource,
         TrackState,

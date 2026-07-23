@@ -49,6 +49,8 @@ void main() {
       expect(snapshot.countInBars, 0);
       expect(snapshot.countingIn, isFalse);
       expect(snapshot.countInBeatsLeft, 0);
+      // Looper mode (B2a) default.
+      expect(snapshot.looperMode, LooperMode.multi);
     });
   });
 
@@ -122,6 +124,35 @@ void main() {
       expect(ClickMode.rec.code, 1);
       expect(ClickMode.recFirst.code, 2);
       expect(ClickMode.playRec.code, 3);
+    });
+  });
+
+  group('LooperMode', () {
+    test('fromCode maps each known code', () {
+      expect(LooperMode.fromCode(0), LooperMode.multi);
+      expect(LooperMode.fromCode(1), LooperMode.sync);
+      expect(LooperMode.fromCode(2), LooperMode.song);
+      expect(LooperMode.fromCode(3), LooperMode.band);
+      expect(LooperMode.fromCode(4), LooperMode.free);
+    });
+
+    test('falls back to multi for unknown codes', () {
+      expect(LooperMode.fromCode(99), LooperMode.multi);
+      expect(LooperMode.fromCode(-1), LooperMode.multi);
+    });
+
+    test('code round-trips through fromCode for every value', () {
+      for (final mode in LooperMode.values) {
+        expect(LooperMode.fromCode(mode.code), mode);
+      }
+    });
+
+    test('code matches the native le_looper_mode integer values', () {
+      expect(LooperMode.multi.code, 0);
+      expect(LooperMode.sync.code, 1);
+      expect(LooperMode.song.code, 2);
+      expect(LooperMode.band.code, 3);
+      expect(LooperMode.free.code, 4);
     });
   });
 
@@ -386,7 +417,8 @@ void main() {
           ..click_volume = 0.8
           ..count_in_bars = 2
           ..counting_in = 1
-          ..count_in_beats_left = 5;
+          ..count_in_beats_left = 5
+          ..looper_mode = 3;
 
         const tracks = [
           TrackSnapshot(
@@ -442,6 +474,8 @@ void main() {
         expect(snapshot.countInBars, 2);
         expect(snapshot.countingIn, isTrue);
         expect(snapshot.countInBeatsLeft, 5);
+        // Looper mode (B2a) trailing field.
+        expect(snapshot.looperMode, LooperMode.band);
       } finally {
         calloc.free(ptr);
       }
@@ -585,6 +619,7 @@ void main() {
       int countInBars = 0,
       bool countingIn = false,
       int countInBeatsLeft = 0,
+      LooperMode looperMode = LooperMode.multi,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -618,6 +653,7 @@ void main() {
       countInBars: countInBars,
       countingIn: countingIn,
       countInBeatsLeft: countInBeatsLeft,
+      looperMode: looperMode,
     );
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
@@ -717,6 +753,10 @@ void main() {
 
     test('countInBeatsLeft participates in equality', () {
       expect(build(), isNot(equals(build(countInBeatsLeft: 3))));
+    });
+
+    test('looperMode participates in equality', () {
+      expect(build(), isNot(equals(build(looperMode: LooperMode.sync))));
     });
 
     test('fxAddedLatencyMs is 0 when the sample rate is unknown', () {

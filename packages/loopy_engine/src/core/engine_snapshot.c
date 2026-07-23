@@ -194,6 +194,8 @@ void le_engine_get_snapshot(le_engine* engine, le_snapshot* out) {
   out->count_in_bars = load_i32(&engine->a_count_in_bars);
   out->counting_in = load_i32(&engine->a_counting_in);
   out->count_in_beats_left = load_i32(&engine->a_count_in_beats_left);
+  /* Looper mode (B2a, D4; trailing block; default reads 0 = MULTI). */
+  out->looper_mode = load_i32(&engine->a_looper_mode);
 }
 
 void le_engine_get_track(le_engine* engine, int32_t channel,

@@ -187,6 +187,64 @@ enum ClickMode {
   };
 }
 
+/// The five architectural looper modes (B2a, D4/D10 —
+/// `2026-07-22-feat-tempo-aware-looper-modes-plan.md`).
+///
+/// [multi] is today's behavior (independent per-track loops) and stays the
+/// default. The other four values do not have their SEMANTICS implemented
+/// yet — Sync's primary-track sync + divisions, Song's section sequencing,
+/// Band's primary + quantized sections, and Free's per-track independent
+/// clocks all land in later parts (B2b onward). This part is only the field
+/// plus the D4 content-lock gate that guards switching it: the engine
+/// silently rejects `LooperModeControl.setLooperMode` while any track has
+/// content, and its audio path stays the [multi] behavior regardless of
+/// which value is published.
+///
+/// This is a DIFFERENT axis from `InteractionMode` (record/mute — what a
+/// track press does): the two names never coexist (D10) and must not be
+/// confused with each other.
+///
+/// Mirrors the native `le_looper_mode` enum.
+enum LooperMode {
+  /// Independent per-track loops — today's behavior, and the default.
+  multi,
+
+  /// Primary-track ("crown") sync with multiples and divisions. Semantics
+  /// land in part B3; unimplemented here.
+  sync,
+
+  /// Section sequencing. Semantics land in part B4; unimplemented here.
+  song,
+
+  /// Primary track plus independently start/stoppable, quantized section
+  /// tracks. Semantics land in part B3; unimplemented here.
+  band,
+
+  /// Independent per-track clocks. Semantics land in part B2b;
+  /// unimplemented here.
+  free;
+
+  /// The native `le_looper_mode` integer for this mode.
+  int get code => switch (this) {
+    LooperMode.multi => 0,
+    LooperMode.sync => 1,
+    LooperMode.song => 2,
+    LooperMode.band => 3,
+    LooperMode.free => 4,
+  };
+
+  /// Maps a native `le_looper_mode` integer to a [LooperMode]. Unknown
+  /// values map to [LooperMode.multi].
+  static LooperMode fromCode(int code) => switch (code) {
+    0 => LooperMode.multi,
+    1 => LooperMode.sync,
+    2 => LooperMode.song,
+    3 => LooperMode.band,
+    4 => LooperMode.free,
+    _ => LooperMode.multi,
+  };
+}
+
 /// An immutable per-lane projection of the native `le_lane_snapshot`.
 ///
 /// A lane is a track's fundamental recordable unit: it records one hardware
@@ -498,6 +556,7 @@ class EngineSnapshot {
     this.countInBars = 0,
     this.countingIn = false,
     this.countInBeatsLeft = 0,
+    this.looperMode = LooperMode.multi,
     this.tracks = const [],
   });
 
@@ -541,6 +600,7 @@ class EngineSnapshot {
       countInBars = 0,
       countingIn = false,
       countInBeatsLeft = 0,
+      looperMode = LooperMode.multi,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -590,6 +650,7 @@ class EngineSnapshot {
     countInBars: native.count_in_bars,
     countingIn: native.counting_in != 0,
     countInBeatsLeft: native.count_in_beats_left,
+    looperMode: LooperMode.fromCode(native.looper_mode),
     tracks: tracks,
   );
 
@@ -750,6 +811,13 @@ class EngineSnapshot {
   /// reads 4, 3, 2, 1, then 0 as the recording starts). `0` when idle.
   final int countInBeatsLeft;
 
+  // ---- looper mode (B2a) ----
+
+  /// The five-mode axis (default [LooperMode.multi]). Locked (rejected,
+  /// no-op) while any track has content (D4) — see [LooperMode]'s class doc.
+  /// No semantics beyond the field exist yet for the non-multi values.
+  final LooperMode looperMode;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -823,6 +891,7 @@ class EngineSnapshot {
           countInBars == other.countInBars &&
           countingIn == other.countingIn &&
           countInBeatsLeft == other.countInBeatsLeft &&
+          looperMode == other.looperMode &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -865,6 +934,7 @@ class EngineSnapshot {
     countInBars,
     countingIn,
     countInBeatsLeft,
+    looperMode,
     ...tracks,
   ]);
 
