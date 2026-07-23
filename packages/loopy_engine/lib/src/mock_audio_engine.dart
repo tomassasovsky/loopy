@@ -66,6 +66,44 @@ class MockAudioEngine implements AudioEngine {
   bool _perfArmed = false;
   int _perfFrames = 0;
 
+  // ---- tempo grid + click/count-in (TempoControl) ----
+  //
+  // Mirrors the native engine's persistence model (engine.c:552-571): these
+  // are SETTINGS, seeded once (here, at construction) and left untouched by
+  // start()/stop() — unlike e.g. _masterGain, which the native engine resets
+  // to unity on every fresh start.
+  double _tempoBpm = 0;
+  TempoSource _tempoSource = TempoSource.none;
+  int _tsNum = 4;
+  int _tsDen = 4;
+  bool _syncTempo = true;
+  GridDivision _quantizeDiv = GridDivision.off;
+  ClickMode _clickMode = ClickMode.off;
+  int _clickMask = 0;
+  double _clickVolume = 1;
+  int _countInBars = 0;
+
+  /// Wall-clock timestamp of the previous [tapTempo] call, `null` before the
+  /// first tap or after a fresh [start]. The mock has no audio-thread frame
+  /// clock, so it uses real elapsed time as the tap interval (the native
+  /// engine uses block-granular `frame_clock`, `engine_process.c:282-305`).
+  DateTime? _lastTapAt;
+
+  /// Tempo clamp bounds, mirroring `tempo_grid.h`'s `LE_GRID_TEMPO_MIN`/`MAX`
+  /// (not in the generated bindings — `tempo_grid.h` is not an ffigen entry
+  /// point, only `loopy_engine_api.h` is).
+  static const double _minTempoBpm = 30;
+  static const double _maxTempoBpm = 300;
+
+  /// Whether `{num, den}` is one of the 17 Sheeran-verified time signatures
+  /// (mirrors `tempo_grid.h`'s `le_grid_signature_valid`): `den == 4` takes
+  /// `num` 2..7, `den == 8` takes `num` 5..15; anything else is invalid.
+  static bool _isValidTimeSignature(int num, int den) {
+    if (den == 4) return num >= 2 && num <= 7;
+    if (den == 8) return num >= 5 && num <= 15;
+    return false;
+  }
+
   final List<_MockTrack> _tracks = List<_MockTrack>.generate(
     LE_MAX_TRACKS,
     (_) => _MockTrack(),
@@ -98,6 +136,10 @@ class MockAudioEngine implements AudioEngine {
     _masterGain = 1; // unity on every fresh start, mirroring the native engine
     _perfArmed = false; // disarmed on every fresh start/reconfigure
     _perfFrames = 0;
+    // The tap-tempo pair state is transient (per-session), unlike the tempo
+    // grid/click SETTINGS above it, which persist across start/stop —
+    // mirrors engine.c:371-372 (has_tap/last_tap_frame reset on configure).
+    _lastTapAt = null;
     return EngineResult.ok;
   }
 
@@ -142,6 +184,19 @@ class MockAudioEngine implements AudioEngine {
       perfFrames: _perfFrames,
       // perfOverruns defaults to 0: the mock models no ring capacity, so
       // nothing ever overflows.
+      tempoBpm: _tempoBpm,
+      tempoSource: _tempoSource,
+      tsNum: _tsNum,
+      tsDen: _tsDen,
+      syncTempo: _syncTempo,
+      quantizeDiv: _quantizeDiv,
+      // loopBars/currentBeat/countingIn/countInBeatsLeft stay at their
+      // grid-off/idle defaults (0/false): the mock runs no real transport, so
+      // there is no live loop or count-in to derive them from.
+      clickMode: _clickMode,
+      clickMask: _clickMask,
+      clickVolume: _clickVolume,
+      countInBars: _countInBars,
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -464,6 +519,96 @@ class MockAudioEngine implements AudioEngine {
 
   @override
   EngineResult setAutoRecord({required bool enabled}) => _requireRunning();
+
+  // ---- tempo grid + click/count-in (TempoControl) ----
+
+  @override
+  EngineResult setTempo(double bpm) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _tempoBpm = bpm.clamp(_minTempoBpm, _maxTempoBpm);
+    _tempoSource = TempoSource.manual;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTimeSignature(int num, int den) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (!_isValidTimeSignature(num, den)) return EngineResult.invalid;
+    _tsNum = num;
+    _tsDen = den;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult tapTempo() {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    final now = DateTime.now();
+    final last = _lastTapAt;
+    if (last != null) {
+      final intervalMs = now.difference(last).inMicroseconds / 1000.0;
+      if (intervalMs > 0) {
+        final bpm = 60000.0 / intervalMs;
+        if (bpm >= _minTempoBpm && bpm <= _maxTempoBpm) {
+          _tempoBpm = bpm;
+          _tempoSource = TempoSource.tapped;
+        }
+      }
+    }
+    _lastTapAt = now;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setSyncTempo({required bool on}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _syncTempo = on;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setQuantizeDiv(GridDivision div) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _quantizeDiv = div;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickMode(ClickMode mode) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _clickMode = mode;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickOutput(int mask) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _clickMask = mask;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickVolume(double volume) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    _clickVolume = volume.clamp(0.0, LE_MAX_GAIN);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setCountIn(int bars) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (bars < 0 || bars > LE_COUNT_IN_MAX_BARS) return EngineResult.invalid;
+    _countInBars = bars;
+    return EngineResult.ok;
+  }
 
   @override
   EngineResult setLaneFx({

@@ -277,6 +277,79 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  // ---- TempoControl ----
+
+  double? lastTempoBpm;
+  (int, int)? lastTimeSignature;
+  bool? lastSyncTempo;
+  GridDivision? lastQuantizeDiv;
+  ClickMode? lastClickMode;
+  int? lastClickOutput;
+  double? lastClickVolume;
+  int? lastCountIn;
+
+  @override
+  EngineResult setTempo(double bpm) {
+    lastTempoBpm = bpm;
+    calls.add('setTempo');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTimeSignature(int num, int den) {
+    lastTimeSignature = (num, den);
+    calls.add('setTimeSignature');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult tapTempo() {
+    calls.add('tapTempo');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setSyncTempo({required bool on}) {
+    lastSyncTempo = on;
+    calls.add('setSyncTempo');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setQuantizeDiv(GridDivision div) {
+    lastQuantizeDiv = div;
+    calls.add('setQuantizeDiv');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickMode(ClickMode mode) {
+    lastClickMode = mode;
+    calls.add('setClickMode');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickOutput(int mask) {
+    lastClickOutput = mask;
+    calls.add('setClickOutput');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickVolume(double volume) {
+    lastClickVolume = volume;
+    calls.add('setClickVolume');
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setCountIn(int bars) {
+    lastCountIn = bars;
+    calls.add('setCountIn');
+    return EngineResult.ok;
+  }
+
   /// The last values passed to [setLimiter] / [setOverdubFeedback].
   bool? lastLimiterEnabled;
   double? lastLimiterCeiling;

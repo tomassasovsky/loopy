@@ -193,6 +193,191 @@ void main() {
       expect(lane.outputMask, 0x40);
     });
 
+    group('TempoControl', () {
+      test('every setter requires the engine to be running', () {
+        expect(engine.setTempo(120), EngineResult.notRunning);
+        expect(engine.setTimeSignature(4, 4), EngineResult.notRunning);
+        expect(engine.tapTempo(), EngineResult.notRunning);
+        expect(engine.setSyncTempo(on: false), EngineResult.notRunning);
+        expect(
+          engine.setQuantizeDiv(GridDivision.bar),
+          EngineResult.notRunning,
+        );
+        expect(
+          engine.setClickMode(ClickMode.rec),
+          EngineResult.notRunning,
+        );
+        expect(engine.setClickOutput(0x3), EngineResult.notRunning);
+        expect(engine.setClickVolume(0.5), EngineResult.notRunning);
+        expect(engine.setCountIn(2), EngineResult.notRunning);
+      });
+
+      test('snapshot defaults to the grid-off state', () {
+        engine.start(engine.defaultConfig);
+        final s = engine.snapshot();
+        expect(s.tempoBpm, 0);
+        expect(s.tempoSource, TempoSource.none);
+        expect(s.tsNum, 4);
+        expect(s.tsDen, 4);
+        expect(s.syncTempo, isTrue);
+        expect(s.quantizeDiv, GridDivision.off);
+        expect(s.clickMode, ClickMode.off);
+        expect(s.clickMask, 0);
+        expect(s.clickVolume, 1);
+        expect(s.countInBars, 0);
+      });
+
+      test('setTempo sets the value, source, and clamps to 30..300', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setTempo(140), EngineResult.ok);
+        var s = engine.snapshot();
+        expect(s.tempoBpm, closeTo(140, 1e-6));
+        expect(s.tempoSource, TempoSource.manual);
+
+        engine.setTempo(10);
+        s = engine.snapshot();
+        expect(s.tempoBpm, 30);
+
+        engine.setTempo(1000);
+        s = engine.snapshot();
+        expect(s.tempoBpm, 300);
+      });
+
+      test(
+        'setTimeSignature accepts a valid signature and rejects an '
+        'invalid one',
+        () {
+          engine.start(engine.defaultConfig);
+          expect(engine.setTimeSignature(7, 4), EngineResult.ok);
+          var s = engine.snapshot();
+          expect(s.tsNum, 7);
+          expect(s.tsDen, 4);
+
+          expect(engine.setTimeSignature(15, 8), EngineResult.ok);
+          s = engine.snapshot();
+          expect(s.tsNum, 15);
+          expect(s.tsDen, 8);
+
+          // 2/8 and 8/4 are not among the 17 Sheeran-verified signatures.
+          expect(engine.setTimeSignature(2, 8), EngineResult.invalid);
+          expect(engine.setTimeSignature(8, 4), EngineResult.invalid);
+          // A rejected signature does not change the published state.
+          expect(engine.snapshot().tsNum, 15);
+          expect(engine.snapshot().tsDen, 8);
+        },
+      );
+
+      test('tapTempo ignores a lone first tap', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.tapTempo(), EngineResult.ok);
+        final s = engine.snapshot();
+        expect(s.tempoBpm, 0);
+        expect(s.tempoSource, TempoSource.none);
+      });
+
+      test('two taps within the 30..300 BPM window set the tempo', () async {
+        engine
+          ..start(engine.defaultConfig)
+          ..tapTempo();
+        // ~120 BPM: a 500 ms tap interval (bpm in 30..300 needs an interval
+        // in 200..2000 ms).
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        expect(engine.tapTempo(), EngineResult.ok);
+        final s = engine.snapshot();
+        expect(s.tempoSource, TempoSource.tapped);
+        expect(s.tempoBpm, greaterThan(0));
+      });
+
+      test('a fresh start clears the pending tap pair', () async {
+        engine
+          ..start(engine.defaultConfig)
+          ..tapTempo()
+          ..stop()
+          ..start(engine.defaultConfig);
+        // The pending first tap from before the restart must not pair with
+        // this one (mirrors engine.c resetting has_tap on every configure).
+        expect(engine.tapTempo(), EngineResult.ok);
+        expect(engine.snapshot().tempoSource, TempoSource.none);
+      });
+
+      test('setSyncTempo toggles and surfaces in the snapshot', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().syncTempo, isTrue);
+        expect(engine.setSyncTempo(on: false), EngineResult.ok);
+        expect(engine.snapshot().syncTempo, isFalse);
+      });
+
+      test('setQuantizeDiv surfaces in the snapshot', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setQuantizeDiv(GridDivision.eighth),
+          EngineResult.ok,
+        );
+        expect(engine.snapshot().quantizeDiv, GridDivision.eighth);
+      });
+
+      test('setClickMode surfaces in the snapshot', () {
+        engine.start(engine.defaultConfig);
+        expect(
+          engine.setClickMode(ClickMode.playRec),
+          EngineResult.ok,
+        );
+        expect(engine.snapshot().clickMode, ClickMode.playRec);
+      });
+
+      test('setClickOutput surfaces in the snapshot', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setClickOutput(0x6), EngineResult.ok);
+        expect(engine.snapshot().clickMask, 0x6);
+      });
+
+      test(
+        'setClickVolume clamps to LE_MAX_GAIN (2.0), not 0..1, mirroring '
+        'the native engine',
+        () {
+          engine.start(engine.defaultConfig);
+          expect(engine.setClickVolume(1.5), EngineResult.ok);
+          expect(engine.snapshot().clickVolume, closeTo(1.5, 1e-6));
+
+          engine.setClickVolume(2.5);
+          expect(engine.snapshot().clickVolume, closeTo(2, 1e-6));
+          engine.setClickVolume(-1);
+          expect(engine.snapshot().clickVolume, 0);
+        },
+      );
+
+      test('setCountIn accepts 0..LE_COUNT_IN_MAX_BARS and rejects beyond', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.setCountIn(2), EngineResult.ok);
+        expect(engine.snapshot().countInBars, 2);
+
+        expect(engine.setCountIn(0), EngineResult.ok);
+        expect(engine.snapshot().countInBars, 0);
+
+        expect(engine.setCountIn(-1), EngineResult.invalid);
+        expect(engine.setCountIn(65), EngineResult.invalid);
+        // A rejected value does not change the published state.
+        expect(engine.snapshot().countInBars, 0);
+      });
+
+      test('tempo grid settings persist across stop/start', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setTempo(150)
+          ..setClickMode(ClickMode.rec)
+          ..setCountIn(2)
+          ..stop()
+          ..start(engine.defaultConfig);
+        final s = engine.snapshot();
+        // Unlike masterGain (reset to unity on every fresh start), the tempo
+        // grid + click settings are SEEDED ONCE and persist across
+        // start/stop — mirrors engine.c:552-571.
+        expect(s.tempoBpm, closeTo(150, 1e-6));
+        expect(s.clickMode, ClickMode.rec);
+        expect(s.countInBars, 2);
+      });
+    });
+
     group('plugin scan stub', () {
       test('returns no results before a scan begins', () {
         expect(engine.scanResults(), isEmpty);
