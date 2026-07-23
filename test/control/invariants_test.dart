@@ -122,7 +122,7 @@ void main() {
 
       final mode = ControlContext(
         looper: looper(),
-        overlay: const ControlState(mode: InteractionMode.play),
+        overlay: const ControlState(mode: InteractionMode.mute),
         frame: frame(), // mode: rec
       );
       expect(violation(mode, 'frame-mirrors-overlay'), isNotNull);
@@ -131,14 +131,14 @@ void main() {
     test('accepts a mirrored frame', () {
       final c = ControlContext(
         looper: looper(),
-        overlay: const ControlState(mode: InteractionMode.play, cursor: 4),
+        overlay: const ControlState(mode: InteractionMode.mute, cursor: 4),
         frame: frame(mode: PedalMode.play, selectedTrack: 4, activeBank: 1),
       );
       // The overlay's activeBank defaults to 0 while its cursor is 4 — set it.
       final aligned = ControlContext(
         looper: c.looper,
         overlay: const ControlState(
-          mode: InteractionMode.play,
+          mode: InteractionMode.mute,
           cursor: 4,
           activeBank: 1,
         ),
@@ -202,7 +202,7 @@ void main() {
       expect(violation(cursor, 'empty-track-dark'), isNull);
     });
 
-    test('muted-dark-in-play: a lit muted track violates', () {
+    test('muted-dark-in-mute: a lit muted track violates', () {
       final c = ControlContext(
         looper: looper(
           tracks: tracksWith(
@@ -214,14 +214,14 @@ void main() {
           ),
           masterLengthFrames: 100,
         ),
-        overlay: const ControlState(mode: InteractionMode.play),
+        overlay: const ControlState(mode: InteractionMode.mute),
         frame: frame(
           leds: ledsWith(0, PedalTrackLed.green),
           mode: PedalMode.play,
           loopLengthMicros: 1000,
         ),
       );
-      expect(violation(c, 'muted-dark-in-play'), isNotNull);
+      expect(violation(c, 'muted-dark-in-mute'), isNotNull);
     });
 
     test('sounding-unexcluded-green: dark-but-sounding violates', () {
@@ -232,7 +232,7 @@ void main() {
           ),
           masterLengthFrames: 100,
         ),
-        overlay: const ControlState(mode: InteractionMode.play),
+        overlay: const ControlState(mode: InteractionMode.mute),
         frame: frame(mode: PedalMode.play, loopLengthMicros: 1000),
       );
       expect(violation(c, 'sounding-unexcluded-green'), isNotNull);
@@ -249,7 +249,7 @@ void main() {
             masterLengthFrames: 100,
           ),
           overlay: const ControlState(
-            mode: InteractionMode.play,
+            mode: InteractionMode.mute,
             excluded: {0},
           ),
           frame: frame(mode: PedalMode.play, loopLengthMicros: 1000),
@@ -269,7 +269,7 @@ void main() {
       final dark = ControlContext(
         looper: parked(),
         overlay: const ControlState(
-          mode: InteractionMode.play,
+          mode: InteractionMode.mute,
           parkedResume: {0},
         ),
         frame: frame(mode: PedalMode.play, loopLengthMicros: 1000),
@@ -279,7 +279,7 @@ void main() {
       // Non-member lit: violation.
       final lit = ControlContext(
         looper: parked(),
-        overlay: const ControlState(mode: InteractionMode.play),
+        overlay: const ControlState(mode: InteractionMode.mute),
         frame: frame(
           leds: ledsWith(0, PedalTrackLed.green),
           mode: PedalMode.play,
@@ -292,7 +292,7 @@ void main() {
       final ok = ControlContext(
         looper: parked(),
         overlay: const ControlState(
-          mode: InteractionMode.play,
+          mode: InteractionMode.mute,
           parkedResume: {0},
         ),
         frame: frame(

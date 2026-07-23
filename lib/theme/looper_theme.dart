@@ -55,7 +55,7 @@ enum TrackIndicator {
   /// Inactive / not armed. Dim.
   idle,
 
-  /// Playing, or armed to play (selected in play mode). Green.
+  /// Playing, or armed to play (selected in mute mode). Green.
   play,
 
   /// Recording/overdubbing, or armed to record (selected in record mode). Red.
@@ -68,7 +68,8 @@ enum TrackIndicator {
   /// A **stopped** track that still holds a loop ([hasContent]) reads as
   /// [play] — it is armed to play and will sound on the next play-all, so the
   /// indicator stays lit after a stop rather than going dark. An empty/cleared
-  /// track only arms (by mode) when [selected].
+  /// track only arms (by mode) when [selected]: green in mute mode, red in
+  /// record mode.
   factory TrackIndicator.of(
     TrackState state, {
     required bool muted,
@@ -83,7 +84,7 @@ enum TrackIndicator {
       TrackState.stopped when hasContent => TrackIndicator.play,
       TrackState.empty || TrackState.stopped =>
         selected
-            ? (mode == InteractionMode.play
+            ? (mode == InteractionMode.mute
                   ? TrackIndicator.play
                   : TrackIndicator.record)
             : TrackIndicator.idle,
@@ -105,7 +106,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     required this.waveformBackground,
     required this.recordColor,
     required this.recordMeterColors,
-    required this.playMeterColors,
+    required this.muteMeterColors,
     required this.indicatorColors,
     required this.toolbarIconColor,
   });
@@ -128,8 +129,8 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   /// Track-meter (peak bar) colors by [LooperMeterState] in record mode.
   final Map<LooperMeterState, Color> recordMeterColors;
 
-  /// Track-meter (peak bar) colors by [LooperMeterState] in play mode.
-  final Map<LooperMeterState, Color> playMeterColors;
+  /// Track-meter (peak bar) colors by [LooperMeterState] in mute mode.
+  final Map<LooperMeterState, Color> muteMeterColors;
 
   /// Per-track status-indicator colors by [TrackIndicator].
   final Map<TrackIndicator, Color> indicatorColors;
@@ -140,10 +141,10 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
   final Color toolbarIconColor;
 
   /// The meter color for [state] in the current mode ([mode] selects the
-  /// play or record table). Transparent if the table omits it.
+  /// mute or record table). Transparent if the table omits it.
   Color meterColor(LooperMeterState state, {required InteractionMode mode}) =>
       {
-        InteractionMode.play: playMeterColors,
+        InteractionMode.mute: muteMeterColors,
         InteractionMode.record: recordMeterColors,
       }[mode]![state] ??
       Colors.transparent;
@@ -161,7 +162,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     Color? waveformBackground,
     Color? recordColor,
     Map<LooperMeterState, Color>? recordMeterColors,
-    Map<LooperMeterState, Color>? playMeterColors,
+    Map<LooperMeterState, Color>? muteMeterColors,
     Map<TrackIndicator, Color>? indicatorColors,
     Color? toolbarIconColor,
   }) => LooperTheme(
@@ -171,7 +172,7 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
     waveformBackground: waveformBackground ?? this.waveformBackground,
     recordColor: recordColor ?? this.recordColor,
     recordMeterColors: recordMeterColors ?? this.recordMeterColors,
-    playMeterColors: playMeterColors ?? this.playMeterColors,
+    muteMeterColors: muteMeterColors ?? this.muteMeterColors,
     indicatorColors: indicatorColors ?? this.indicatorColors,
     toolbarIconColor: toolbarIconColor ?? this.toolbarIconColor,
   );
@@ -203,9 +204,9 @@ class LooperTheme extends ThemeExtension<LooperTheme> {
         other.recordMeterColors,
         t,
       ),
-      playMeterColors: _lerpColorMap(
-        playMeterColors,
-        other.playMeterColors,
+      muteMeterColors: _lerpColorMap(
+        muteMeterColors,
+        other.muteMeterColors,
         t,
       ),
       indicatorColors: _lerpColorMap(

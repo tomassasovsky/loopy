@@ -26,7 +26,7 @@ class ControlState extends Equatable {
   /// The number of banks.
   static const int bankCount = 2;
 
-  /// The system-wide record/play mode — every surface (pedal footswitch, `M`
+  /// The system-wide record/mute mode — every surface (pedal footswitch, `M`
   /// key, on-screen chip) toggles and reads this ONE field. Changed only by
   /// explicit mode actions (clear-all counts: a whole-rig reset → record).
   final InteractionMode mode;
@@ -40,17 +40,17 @@ class ControlState extends Equatable {
   final int cursor;
 
   /// The visible bank (`0` = A, `1` = B). A stored bit: bank BROWSE without
-  /// moving the cursor is a real flow (arming the other bank's tracks in play
+  /// moving the cursor is a real flow (arming the other bank's tracks in mute
   /// mode). Any cursor write also sets `bank = cursor ~/ 4`, so the cursor
   /// can never hide behind the other bank.
   final int activeBank;
 
-  /// Play-mode opt-outs: tracks the user deliberately pulled out of the mix.
+  /// Mute-mode opt-outs: tracks the user deliberately pulled out of the mix.
   /// A sounding track outside this set is ALWAYS armed —
   /// `armed = sounding ∖ excluded` — so redo / an on-screen play re-enters
   /// the mix with no reconciliation. Cleared when the track empties, on
   /// clear-all, on mode entry, and on session load. (No surface writes it
-  /// yet: the pedal's play-mode track press mutes rather than excludes; the
+  /// yet: the pedal's mute-mode track press mutes rather than excludes; the
   /// representation exists so a future disarm affordance cannot re-create
   /// the stale-armed-set bug class.)
   final Set<int> excluded;
@@ -58,7 +58,7 @@ class ControlState extends Equatable {
   /// What Rec/Play resumes while parked: latched at PARK-INTENT time from the
   /// then-derived armed set (Stop-park), set to ∅ by mute-last-track park
   /// (Rec/Play then falls back to ALL content), and set to all content tracks
-  /// on mode entry into Play. Members drop when their track empties; cleared
+  /// on mode entry into Mute. Members drop when their track empties; cleared
   /// on clear-all, mode entry, session load, and consumed by the next resume.
   final Set<int> parkedResume;
 

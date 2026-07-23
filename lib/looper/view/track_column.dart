@@ -15,7 +15,7 @@ import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
 /// One tall track column in the Tracks view: a header (channel number,
 /// loop-multiple badge, and undo/redo on the selected column), a tappable level
-/// meter (record/overdub in record mode, mute/unmute in play mode; long-press
+/// meter (record/overdub in record mode, mute/unmute in mute mode; long-press
 /// stops), an editable name, and an optional readiness indicator strip.
 class TrackColumn extends StatelessWidget {
   /// Creates a [TrackColumn].
@@ -38,7 +38,7 @@ class TrackColumn extends StatelessWidget {
   /// Whether this column is the selected one (a heavier white border).
   final bool selected;
 
-  /// The active system mode (Record vs Play).
+  /// The active system mode (Record vs Mute).
   final InteractionMode mode;
 
   /// Dispatches an undo for the given channel (shares the keyboard path's
@@ -59,7 +59,7 @@ class TrackColumn extends StatelessWidget {
     // bar color is one table lookup on the track's meter state (muted included;
     // see LooperTheme.meterColors).
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
-    final playMode = mode == InteractionMode.play;
+    final muteMode = mode == InteractionMode.mute;
     final barColor = looper.meterColor(meterState, mode: mode);
 
     // The track name label. On the console it renders at a uniform, larger
@@ -182,16 +182,16 @@ class TrackColumn extends StatelessWidget {
             child: FocusableTapTarget(
               key: Key('tracks_tile_${track.channel}'),
               // The tap action follows the mode (mirroring the 1–8 number
-              // keys): record/overdub in record mode, mute/unmute in play mode.
-              semanticLabel: playMode
-                  ? l10n.a11yTrackTilePlay(name, stateWord)
+              // keys): record/overdub in record mode, mute/unmute in mute mode.
+              semanticLabel: muteMode
+                  ? l10n.a11yTrackTileMute(name, stateWord)
                   : l10n.a11yTrackTile(name, stateWord),
               selected: selected,
               borderRadius: 8,
               onTap: () {
                 context.read<ControlCubit>().selectTrack(track.channel);
                 bloc.add(
-                  playMode
+                  muteMode
                       ? LooperMuteToggled(track.channel)
                       : LooperRecordPressed(track.channel),
                 );

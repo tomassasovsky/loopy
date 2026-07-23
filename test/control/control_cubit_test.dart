@@ -147,15 +147,15 @@ void main() {
     });
 
     group('mode', () {
-      test('toggleMode flips between Record and Play', () {
+      test('toggleMode flips between Record and Mute', () {
         expect(cubit.state.mode, InteractionMode.record);
         cubit.toggleMode();
-        expect(cubit.state.mode, InteractionMode.play);
+        expect(cubit.state.mode, InteractionMode.mute);
         cubit.toggleMode();
         expect(cubit.state.mode, InteractionMode.record);
       });
 
-      test('entering Play previews the whole content set as parkedResume', () {
+      test('entering Mute previews the whole content set as parkedResume', () {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.playing, lengthFrames: 48000),
@@ -172,7 +172,7 @@ void main() {
         expect(cubit.state.parkedResume, {0, 2});
       });
 
-      test('entering Play leaves a live capture recording (the mode toggle '
+      test('entering Mute leaves a live capture recording (the mode toggle '
           'is a view change, not a transport action)', () {
         setEngine(
           _tracksWith(const [Track(state: TrackState.recording)]),
@@ -182,7 +182,7 @@ void main() {
         // explicitly (back in Rec mode, Rec/Play — or Stop).
         verifyNever(() => looper.record(channel: any(named: 'channel')));
         verifyNever(() => looper.record());
-        expect(cubit.state.mode, InteractionMode.play);
+        expect(cubit.state.mode, InteractionMode.mute);
         // The capture still previews as a parked-resume member.
         expect(cubit.state.parkedResume, {0});
       });
@@ -194,25 +194,33 @@ void main() {
       });
 
       test('setDefaultMode persists the token and applies the mode', () async {
-        await cubit.setDefaultMode(InteractionMode.play);
-        expect(cubit.state.defaultMode, InteractionMode.play);
-        expect(cubit.state.mode, InteractionMode.play);
+        await cubit.setDefaultMode(InteractionMode.mute);
+        expect(cubit.state.defaultMode, InteractionMode.mute);
+        expect(cubit.state.mode, InteractionMode.mute);
         expect(
           await settings.loadDefaultInteractionMode(),
-          InteractionMode.play.token,
+          InteractionMode.mute.token,
         );
       });
 
       test('load boots the live mode into the persisted default', () async {
-        await settings.saveDefaultInteractionMode(InteractionMode.play.token);
+        await settings.saveDefaultInteractionMode(InteractionMode.mute.token);
         await cubit.load();
-        expect(cubit.state.defaultMode, InteractionMode.play);
-        expect(cubit.state.mode, InteractionMode.play);
+        expect(cubit.state.defaultMode, InteractionMode.mute);
+        expect(cubit.state.mode, InteractionMode.mute);
+      });
+
+      test('load boots into mute from the legacy persisted token "play" '
+          '(pre-rename installs)', () async {
+        await settings.saveDefaultInteractionMode('play');
+        await cubit.load();
+        expect(cubit.state.defaultMode, InteractionMode.mute);
+        expect(cubit.state.mode, InteractionMode.mute);
       });
 
       test('toggleMode does not change the persisted default mode', () async {
         cubit.toggleMode();
-        expect(cubit.state.mode, InteractionMode.play);
+        expect(cubit.state.mode, InteractionMode.mute);
         expect(cubit.state.defaultMode, InteractionMode.record);
         expect(await settings.loadDefaultInteractionMode(), isNull);
       });
@@ -287,7 +295,7 @@ void main() {
       });
     });
 
-    group('recPlay in Play mode', () {
+    group('recPlay in Mute mode', () {
       test('parked: resumes the latched set and consumes it', () {
         setEngine(
           _tracksWith(const [
@@ -296,7 +304,7 @@ void main() {
           ]),
         );
         cubit
-          ..toggleMode() // -> play, parkedResume = {0, 1}
+          ..toggleMode() // -> mute, parkedResume = {0, 1}
           ..recPlay();
         verify(() => looper.play()).called(1);
         verify(() => looper.play(channel: 1)).called(1);
@@ -393,7 +401,7 @@ void main() {
       });
 
       test(
-        'Play mode: parks every running track and latches the resume set',
+        'Mute mode: parks every running track and latches the resume set',
         () {
           setEngine(
             _tracksWith(const [
@@ -418,7 +426,7 @@ void main() {
         },
       );
 
-      test('Play mode: stop while already parked keeps the resume set', () {
+      test('Mute mode: stop while already parked keeps the resume set', () {
         setEngine(
           _tracksWith(const [
             Track(state: TrackState.stopped, lengthFrames: 48000),
@@ -458,7 +466,7 @@ void main() {
       });
     });
 
-    group('trackPressed in Play mode', () {
+    group('trackPressed in Mute mode', () {
       test('an empty track is a no-op', () {
         cubit
           ..toggleMode()
@@ -806,7 +814,7 @@ void main() {
           ..emit(0x90, PedalButton.mode.note, 100)
           ..emit(0x80, PedalButton.mode.note, 0);
         await pumpEventQueue();
-        expect(cubit.state.mode, InteractionMode.play);
+        expect(cubit.state.mode, InteractionMode.mute);
       });
 
       test('Bank toggles the active bank and moves the cursor', () async {
@@ -895,7 +903,7 @@ void main() {
             ..emit(0x80, PedalButton.mode.note, 0); // quick release == tap
           await pumpEventQueue();
 
-          expect(cubit.state.mode, InteractionMode.play);
+          expect(cubit.state.mode, InteractionMode.mute);
           expect(performance.armedDirectory, isNull);
         });
 
@@ -942,7 +950,7 @@ void main() {
         transport.sent.clear();
 
         // Rec mode (default): the cursor track (0) is red; a playing
-        // non-cursor track is off (green-for-playing is a Play-mode concern).
+        // non-cursor track is off (green-for-playing is a Mute-mode concern).
         setEngine(
           _tracksWith(const [
             Track(), // track 0 (cursor) -> red indicator

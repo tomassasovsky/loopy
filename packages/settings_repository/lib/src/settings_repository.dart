@@ -337,8 +337,9 @@ class SettingsRepository {
   static const String _defaultInteractionModeKey = 'looper.default_mode';
 
   /// Loads the persisted default interaction mode (an opaque token, e.g.
-  /// `'record'` / `'play'`), or `null` if unset. The presentation layer maps
-  /// the token to its mode enum.
+  /// `'record'` / `'mute'` — or the legacy `'play'` that older builds wrote
+  /// for the mute mode), or `null` if unset. The presentation layer maps the
+  /// token to its mode enum, including the legacy-token shim.
   Future<String?> loadDefaultInteractionMode() =>
       _store.getString(_defaultInteractionModeKey);
 
