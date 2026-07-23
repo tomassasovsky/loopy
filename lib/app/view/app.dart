@@ -138,7 +138,12 @@ class App extends StatelessWidget {
                 controller: context.read<ControllerRepository>(),
                 settings: context.read<SettingsRepository>(),
               );
-              unawaited(bloc.load()); // boot-restore the persisted mode (B5c)
+              // Boot-restore the persisted mode (B5c) — dispatched as an
+              // event, not a bloc method (bloc_lint's
+              // avoid_public_bloc_methods).
+              unawaited(
+                restoreLooperMode(bloc, context.read<SettingsRepository>()),
+              );
               return bloc;
             },
           ),
