@@ -127,6 +127,24 @@ typedef enum le_looper_mode {
   LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
 } le_looper_mode;
 
+/* MIDI clock tri-state (Phase C/E, D15), mirrored in le_snapshot.clock_mode.
+ * `off` and `send` are fully implemented by this part (C1): a native 24-PPQN
+ * emitter (src/midi/le_midi_clock.h) drives 0xF8/Start/Stop through the
+ * grid/transport each block whenever `send` is active AND the looper mode is
+ * Multi/Sync/Band (manual-verified: Song and Free stay silent regardless of
+ * this field — see le_engine_set_clock_mode). `receive` is REJECTED by the
+ * setter for now — the enum value exists so Phase E (clock follower) can
+ * reuse this same tri-state field without a breaking rename, per the index
+ * plan's "Phase 5 reuses the tri-state clock_mode introduced here". Send and
+ * receive are mutually exclusive by construction (only one non-off value is
+ * ever accepted at a time). */
+typedef enum le_clock_mode {
+  LE_CLOCK_OFF = 0,     /* default: no MIDI clock I/O */
+  LE_CLOCK_SEND = 1,    /* loopy is MIDI clock master (C1) */
+  LE_CLOCK_RECEIVE = 2, /* loopy follows an external clock (Phase E; the
+                         * setter rejects this value until then) */
+} le_clock_mode;
+
 /* Maximum count-in length in measures (le_engine_set_count_in). */
 #define LE_COUNT_IN_MAX_BARS 64
 
@@ -349,6 +367,14 @@ typedef enum le_command_code {
    * surgery the manual's Song-specific tool does not call for (deliberately
    * out of B4's scope — see the header doc above le_engine_set_one_shot). */
   LE_CMD_SET_ONE_SHOT = 47, /* arg_i = channel, arg_f = 0/1 */
+
+  /* ---- MIDI clock (Phase C/E, D15) ----
+   * The tri-state le_clock_mode. Not perf-logged, for the same reason as
+   * LE_CMD_SET_LOOPER_MODE above (clock output is a routing/sync concern,
+   * not a captured audible source — the emitter sums nothing into the mix,
+   * it only ever pushes bytes out through le_midi_out_send). */
+  LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
+                               * rejected — see le_engine_set_clock_mode. */
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -676,6 +702,11 @@ typedef struct le_snapshot {
    * Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
    * nonzero value in any other mode is inert. */
   int32_t primary_track;
+
+  /* ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
+   * reason as the blocks above). le_clock_mode; default 0 = OFF, so an
+   * untouched engine emits no clock bytes. See le_engine_set_clock_mode. */
+  int32_t clock_mode;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -1251,6 +1282,21 @@ LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
  * to re-flag it. */
 LE_EXPORT int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
                                          int32_t enabled);
+
+/* ---- MIDI clock (Phase C/E, decision D15) ----
+ * The tri-state le_clock_mode (off / send / receive). This part (C1)
+ * implements send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives
+ * 0xF8 clock ticks plus Start/Stop through the existing verbatim
+ * le_midi_out_send transport, gated on the transport actually running
+ * (recording/overdubbing/playing — manual-verified, not free-running while
+ * idle) AND the looper mode being Multi/Sync/Band (Song/Free stay silent
+ * regardless of this field). */
+
+/* Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
+ * any value outside the enum return LE_ERR_INVALID without posting — receive
+ * is Phase E's clock follower, not yet implemented; this setter stubs the
+ * tri-state field now so that part can reuse it without a breaking rename. */
+LE_EXPORT int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
