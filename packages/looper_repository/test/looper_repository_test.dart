@@ -2764,9 +2764,24 @@ void main() {
       expect(engine.lastCountIn, 0);
     });
 
+    test('setLooperMode is deferred until running, then re-applied', () {
+      final repo = buildRepo()..setLooperMode(LooperMode.sync);
+      expect(engine.lastLooperMode, isNull); // not running yet
+
+      repo.startEngine(const EngineConfig());
+      expect(engine.lastLooperMode, LooperMode.sync);
+    });
+
+    test('setLooperMode applies immediately while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setLooperMode(LooperMode.band);
+      expect(engine.lastLooperMode, LooperMode.band);
+    });
+
     test(
       'the grid-off defaults (signature 4/4, sync on, quantize div/click/ '
-      'count-in off) still re-apply on a plain start',
+      'count-in off, looper mode multi) still re-apply on a plain start',
       () {
         buildRepo().startEngine(const EngineConfig());
         expect(engine.lastTimeSignature, (4, 4));
@@ -2776,12 +2791,13 @@ void main() {
         expect(engine.lastClickOutput, 0);
         expect(engine.lastClickVolume, 1.0);
         expect(engine.lastCountIn, 0);
+        expect(engine.lastLooperMode, LooperMode.multi);
       },
     );
 
     test(
-      'signature, sync, quantize div, click mode/output/volume and count-in '
-      're-apply on every restart (device change)',
+      'signature, sync, quantize div, click mode/output/volume, count-in, '
+      'and looper mode re-apply on every restart (device change)',
       () {
         final repo = buildRepo()
           ..startEngine(const EngineConfig())
@@ -2791,7 +2807,8 @@ void main() {
           ..setClickMode(ClickMode.rec)
           ..setClickOutput(0x1)
           ..setClickVolume(0.7)
-          ..setCountIn(4);
+          ..setCountIn(4)
+          ..setLooperMode(LooperMode.free);
 
         engine
           ..lastTimeSignature = null
@@ -2800,7 +2817,8 @@ void main() {
           ..lastClickMode = null
           ..lastClickOutput = null
           ..lastClickVolume = null
-          ..lastCountIn = null;
+          ..lastCountIn = null
+          ..lastLooperMode = null;
         repo
           ..stopEngine()
           ..startEngine(const EngineConfig());
@@ -2812,6 +2830,7 @@ void main() {
         expect(engine.lastClickOutput, 0x1);
         expect(engine.lastClickVolume, 0.7);
         expect(engine.lastCountIn, 4);
+        expect(engine.lastLooperMode, LooperMode.free);
       },
     );
 
@@ -2867,8 +2886,8 @@ void main() {
     );
 
     test(
-      'TransportState projects every tempo-grid + click + count-in field '
-      'from the snapshot',
+      'TransportState projects every tempo-grid + click + count-in + '
+      'looper-mode field from the snapshot',
       () {
         engine.nextSnapshot = const EngineSnapshot(
           isRunning: true,
@@ -2894,6 +2913,7 @@ void main() {
           countInBars: 2,
           countingIn: true,
           countInBeatsLeft: 3,
+          looperMode: LooperMode.band,
         );
 
         final transport = buildRepo().state.transport;
@@ -2911,6 +2931,7 @@ void main() {
         expect(transport.countInBars, 2);
         expect(transport.countingIn, isTrue);
         expect(transport.countInBeatsLeft, 3);
+        expect(transport.looperMode, LooperMode.band);
       },
     );
 
@@ -2932,6 +2953,7 @@ void main() {
         expect(transport.countInBars, 0);
         expect(transport.countingIn, isFalse);
         expect(transport.countInBeatsLeft, 0);
+        expect(transport.looperMode, LooperMode.multi);
       },
     );
   });

@@ -387,6 +387,38 @@ abstract interface class TempoControl {
   EngineResult setTrackLengthPreset({required int channel, required int bars});
 }
 
+/// The five-mode architectural looper axis (plan §Architecture 2, decision
+/// D4; `2026-07-22-feat-tempo-aware-looper-modes-plan.md`) — Multi (default,
+/// today's independent-per-track behavior), Sync, Song, Band, and Free. A
+/// SEPARATE interface from [TempoControl] because it is a different axis
+/// entirely (which of five architectural modes the looper runs in, not
+/// tempo/click/quantize state), matching this file's interface-segregation
+/// convention.
+///
+/// MODE LOCK (D4): while any track has content (state != `TrackState.empty`),
+/// [setLooperMode] is accepted by the engine but IGNORED (a no-op on the
+/// published state) — a simpler predicate than [TempoControl]'s D6 tempo
+/// lock (content alone; no grid or count-in check). Only clearing every
+/// track releases the lock.
+///
+/// This part (B2a) ships only the field and the lock gate: [LooperMode]'s
+/// non-multi values have no engine SEMANTICS yet (Sync/Song/Band/Free land in
+/// B2b onward) — setting one changes only what [EngineSnapshot.looperMode]
+/// reports, not the engine's audio path. This is a DIFFERENT axis from the
+/// looper feature's own `InteractionMode` (record/mute — what a track press
+/// does); the two must never be confused.
+///
+/// Single-method today (B2a); expected to grow (e.g. a `crownPrimary`-style
+/// command in B3), so this stays its own interface — a role slice, not a
+/// top-level function — matching every other interface in this file.
+// ignore: one_member_abstracts
+abstract interface class LooperModeControl {
+  /// Sets the looper mode. Ignored while the mode is locked (see the class
+  /// doc). Values outside [LooperMode] are rejected with
+  /// [EngineResult.invalid] without applying.
+  EngineResult setLooperMode(LooperMode mode);
+}
+
 /// Global master-output bus: post-mix gain and the peak limiter.
 abstract interface class MasterBusControl {
   /// Sets the global master output [gain] (clamped by the engine to `0..1`),
@@ -760,6 +792,7 @@ abstract interface class AudioEngine
         LooperTransport,
         EngineRouting,
         TempoControl,
+        LooperModeControl,
         MasterBusControl,
         EffectsControl,
         MonitorControl,

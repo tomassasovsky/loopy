@@ -504,6 +504,23 @@ class SettingsRepository {
   Future<void> saveCountInBars(int bars) =>
       _store.setInt(_countInBarsKey, bars);
 
+  // ---- looper mode (B2a, D4) ----
+
+  static const String _looperModeKey = 'looper.mode';
+
+  /// Loads the five-mode axis as the native `le_looper_mode` enum code (see
+  /// `LooperMode.code` / `LooperMode.fromCode`). Defaults to `0`
+  /// (`LooperMode.multi`) when unset — the int-code convention matches this
+  /// enum's siblings ([loadQuantizeDiv] / [loadClickMode]), unlike
+  /// `loadDefaultInteractionMode`'s opaque-string-token scheme: that key
+  /// predates this plan and preserves pre-rename legacy tokens (D10), a
+  /// concern this newly-introduced enum has no analog of.
+  Future<int> loadLooperMode() async =>
+      await _store.getInt(_looperModeKey) ?? 0;
+
+  /// Saves the looper mode as its enum [code].
+  Future<void> saveLooperMode(int code) => _store.setInt(_looperModeKey, code);
+
   // ---- track length presets (A6, D17) ----
 
   String _trackLengthPresetKey(int channel) => 'tempo.length_preset.$channel';

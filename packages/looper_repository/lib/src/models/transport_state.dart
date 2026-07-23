@@ -27,6 +27,7 @@ class TransportState extends Equatable {
     this.countInBars = 0,
     this.countingIn = false,
     this.countInBeatsLeft = 0,
+    this.looperMode = LooperMode.multi,
   });
 
   /// Whether the audio device is open and processing.
@@ -81,6 +82,11 @@ class TransportState extends Equatable {
   /// Beat countdown while counting in; `0` when idle.
   final int countInBeatsLeft;
 
+  /// The five-mode axis (default [LooperMode.multi]). Locked (rejected,
+  /// no-op) while any track has content (D4). No semantics beyond the field
+  /// exist yet for the non-multi values (B2a — see [LooperMode]'s class doc).
+  final LooperMode looperMode;
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
@@ -107,5 +113,6 @@ class TransportState extends Equatable {
     countInBars,
     countingIn,
     countInBeatsLeft,
+    looperMode,
   ];
 }

@@ -1201,6 +1201,19 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
   return le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
 }
 
+/* ---- looper mode (B2a, D4; see loopy_engine_api.h's looper-mode section) ----
+ * Plain le_push producer: validation that needs no engine state runs here on
+ * the control thread; the D4 content lock is enforced on the AUDIO thread
+ * (apply_command, le_looper_mode_locked), the only side that owns track
+ * states — a locked command is accepted by this wrapper and dropped there. */
+
+int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode) {
+  if (mode < LE_LOOPER_MODE_MULTI || mode > LE_LOOPER_MODE_FREE) {
+    return LE_ERR_INVALID;
+  }
+  return le_push(engine, LE_CMD_SET_LOOPER_MODE, mode, 0.0f);
+}
+
 /* ---- click + count-in (A2; see loopy_engine_api.h's click section) ---- */
 
 int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode) {

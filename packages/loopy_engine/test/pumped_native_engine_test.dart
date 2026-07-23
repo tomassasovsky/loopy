@@ -511,6 +511,50 @@ void main() {
     );
   }, skip: skip);
 
+  group('LooperModeControl (real FFI, B2a)', () {
+    late PumpedNativeEngine engine;
+
+    setUp(() {
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 48000,
+          ),
+        );
+    });
+    tearDown(() => engine.dispose());
+
+    test('a fresh engine reads the multi default', () {
+      engine.pump(frames: 0);
+      expect(engine.snapshot().looperMode, LooperMode.multi);
+    });
+
+    test('setLooperMode publishes every value while every track is empty', () {
+      for (final mode in LooperMode.values) {
+        expect(engine.setLooperMode(mode), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.snapshot().looperMode, mode);
+      }
+    });
+
+    test('setLooperMode is rejected (D4) while a track has content', () {
+      expect(engine.record(), EngineResult.ok);
+      engine.pump(frames: 256, input: 0.5);
+      expect(engine.record(), EngineResult.ok); // finalize -> PLAYING
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tracks.first.state, isNot(TrackState.empty));
+
+      // Accepted by the exported wrapper (control-thread validation only);
+      // dropped by the audio thread's le_looper_mode_locked gate.
+      expect(engine.setLooperMode(LooperMode.sync), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().looperMode, LooperMode.multi);
+    });
+  }, skip: skip);
+
   group('fx chain fingerprint (native-side properties)', () {
     late PumpedNativeEngine engine;
 
