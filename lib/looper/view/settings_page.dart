@@ -12,12 +12,13 @@ import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
+import 'package:loopy/looper/view/tempo_settings_section.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
-enum _Section { view, audio, tracks }
+enum _Section { view, audio, tempo, tracks }
 
 /// The app settings page, reachable from the Tracks view via right-click or
 /// the `S` key, and from the system menu bar on macOS.
@@ -111,6 +112,7 @@ class _SettingsPageState extends State<SettingsPage> {
   List<Widget> _sectionChildren(BuildContext context) => switch (_section) {
     _Section.view => _viewSection(context),
     _Section.audio => _audioSection(context),
+    _Section.tempo => _tempoSection(context),
     _Section.tracks => _tracksSection(context),
   };
 
@@ -205,6 +207,10 @@ class _SettingsPageState extends State<SettingsPage> {
 
   List<Widget> _audioSection(BuildContext context) => const [
     AudioSettingsSection(),
+  ];
+
+  List<Widget> _tempoSection(BuildContext context) => const [
+    TempoSettingsSection(),
   ];
 
   List<Widget> _tracksSection(BuildContext context) {
@@ -319,6 +325,7 @@ class _SectionTab extends StatelessWidget {
     final label = switch (section) {
       _Section.view => l10n.settingsSectionView,
       _Section.audio => l10n.settingsSectionAudio,
+      _Section.tempo => l10n.settingsSectionTempo,
       _Section.tracks => l10n.settingsSectionTracks,
     };
     return SizedBox(

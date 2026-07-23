@@ -8,6 +8,8 @@ import 'package:loopy/looper/looper.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:settings_repository/settings_repository.dart';
 
+import '../../helpers/helpers.dart';
+
 class _MockLooperRepository extends Mock implements LooperRepository {}
 
 class _MockSettingsRepository extends Mock implements SettingsRepository {}
@@ -35,6 +37,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(<TrackEffect>[]);
     registerFallbackValue(const PluginRef(format: PluginFormat.vst3, id: ''));
+    registerFallbackValue(ClickMode.off);
   });
 
   setUp(() {
@@ -43,6 +46,11 @@ void main() {
     when(
       () => repository.looperState,
     ).thenAnswer((_) => stateController.stream);
+    // A fresh synchronous snapshot read, distinct from the bloc's own
+    // (stream-driven) `state` — `_cancelPendingArms` reads this directly
+    // (narrows the cancel-arm TOCTOU race; see its doc). Defaults to no
+    // tracks; per-test overrides stub a pending track set.
+    when(() => repository.state).thenReturn(const LooperState());
     when(
       () => repository.record(channel: any(named: 'channel')),
     ).thenReturn(EngineResult.ok);
@@ -190,6 +198,8 @@ void main() {
         enabled: any(named: 'enabled'),
       ),
     ).thenReturn(EngineResult.ok);
+    when(repository.tapTempo).thenReturn(EngineResult.ok);
+    when(() => repository.setClickMode(any())).thenReturn(EngineResult.ok);
   });
 
   tearDown(() => stateController.close());
@@ -983,6 +993,217 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       verify(() => repository.record()).called(1);
+    });
+
+    test(
+      'play/playAll/stopAll drive the repository under a custom mapping '
+      '(not in the built-in default)',
+      () async {
+        const kind = ControllerSourceKind.midiCc;
+        final mapping = ControllerMapping.defaults().merge(
+          const ControllerMapping(
+            entries: [
+              MappingEntry(
+                trigger: MappingTrigger(kind: kind, id: 90),
+                action: LooperAction.play,
+              ),
+              MappingEntry(
+                trigger: MappingTrigger(kind: kind, id: 91),
+                action: LooperAction.playAll,
+              ),
+              MappingEntry(
+                trigger: MappingTrigger(kind: kind, id: 92),
+                action: LooperAction.stopAll,
+              ),
+            ],
+          ),
+        );
+        final customController = ControllerRepository(
+          sources: [source],
+          mapping: mapping,
+        );
+        addTearDown(customController.dispose);
+        final bloc = LooperBloc(
+          repository: repository,
+          controller: customController,
+        );
+        addTearDown(bloc.close);
+
+        source.press(kind, 90);
+        await Future<void>.delayed(Duration.zero);
+        source.press(kind, 91);
+        await Future<void>.delayed(Duration.zero);
+        source.press(kind, 92);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        verify(() => repository.play()).called(1);
+      },
+    );
+
+    test('stop (CC 81) forwards to repository.stopTrack', () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.press(ControllerSourceKind.midiCc, 81);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(() => repository.stopTrack()).called(1);
+    });
+
+    test('undo (CC 82) forwards to repository.undo', () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.press(ControllerSourceKind.midiCc, 82);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(() => repository.undo()).called(1);
+    });
+
+    test('clear (CC 83) forwards to repository.clear', () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.press(ControllerSourceKind.midiCc, 83);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(() => repository.clear()).called(1);
+    });
+
+    test('tapTempo (CC 84) forwards to repository.tapTempo', () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.press(ControllerSourceKind.midiCc, 84);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(repository.tapTempo).called(1);
+    });
+
+    test('toggleMetronome (CC 85) turns the click on from off', () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.press(ControllerSourceKind.midiCc, 85);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verify(() => repository.setClickMode(ClickMode.rec)).called(1);
+    });
+
+    test(
+      'toggleMetronome (CC 85) turns the click back off when audible',
+      () async {
+        final bloc = LooperBloc(
+          repository: repository,
+          controller: controller,
+        );
+        addTearDown(bloc.close);
+        // Posted after the bloc subscribes (stateController is a broadcast
+        // stream — an earlier post would be missed).
+        stateController.add(
+          const LooperState(
+            transport: TransportState(clickMode: ClickMode.playRec),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        source.press(ControllerSourceKind.midiCc, 85);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        verify(() => repository.setClickMode(ClickMode.off)).called(1);
+      },
+    );
+
+    test('toggleMetronome persists the resulting mode via settings', () async {
+      final settings = SettingsRepository(store: FakeKeyValueStore());
+      final bloc = LooperBloc(
+        repository: repository,
+        controller: controller,
+        settings: settings,
+      );
+      addTearDown(bloc.close);
+
+      source.press(ControllerSourceKind.midiCc, 85);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(await settings.loadClickMode(), ClickMode.rec.code);
+    });
+
+    test(
+      'cancelArm (CC 86) re-presses record on every pending track',
+      () async {
+        // _cancelPendingArms reads repository.state directly (a fresh
+        // synchronous snapshot), not the bloc's own stream-driven state —
+        // see its doc — so the pending set is stubbed there, not posted
+        // through stateController.
+        when(() => repository.state).thenReturn(
+          const LooperState(
+            tracks: [
+              Track(pending: true),
+              Track(channel: 1),
+              Track(channel: 2, pending: true),
+            ],
+          ),
+        );
+        final bloc = LooperBloc(
+          repository: repository,
+          controller: controller,
+        );
+        addTearDown(bloc.close);
+
+        source.press(ControllerSourceKind.midiCc, 86);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        verify(() => repository.record()).called(1);
+        verify(() => repository.record(channel: 2)).called(1);
+        verifyNever(() => repository.record(channel: 1));
+      },
+    );
+
+    test(
+      'cancelArm (CC 86) reads a fresh repository snapshot, not the '
+      "bloc's own ~16ms-stale polled state (narrows the TOCTOU race)",
+      () async {
+        // The bloc's own (stream-driven) state says nothing is pending —
+        // stale relative to the engine, as it would be mid-poll-interval.
+        final bloc = LooperBloc(repository: repository, controller: controller);
+        addTearDown(bloc.close);
+        expect(bloc.state.tracks, isEmpty);
+        // repository.state (a fresh synchronous engine read) says
+        // otherwise. If cancelArm read `state.tracks` (the bloc's own,
+        // stale) instead of `_repository.state.tracks`, this would find
+        // nothing to cancel.
+        when(
+          () => repository.state,
+        ).thenReturn(const LooperState(tracks: [Track(pending: true)]));
+
+        source.press(ControllerSourceKind.midiCc, 86);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        verify(() => repository.record()).called(1);
+      },
+    );
+
+    test('cancelArm (CC 86) is a no-op when nothing is pending', () async {
+      // Default stub (setUp): repository.state has no tracks.
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.press(ControllerSourceKind.midiCc, 86);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      verifyNever(() => repository.record(channel: any(named: 'channel')));
     });
   });
 }
