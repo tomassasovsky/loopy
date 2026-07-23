@@ -256,6 +256,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_redo_depth, 0);
     store_i32(&tr->a_multiple, 1);
+    store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
     store_i32(&tr->a_pending, 0);
     store_i32(&tr->a_length_preset_bars, 0); /* AUTO */
     tr->length_preset_target_frames = 0;
@@ -585,6 +586,12 @@ le_engine* le_engine_create(void) {
    * kept explicit anyway, matching every sibling setting here, so the
    * default is legible at the seed site rather than implied by calloc. */
   store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
+  /* Primary track SETTING (B3, D18): same seeded-once persistence as the
+   * looper mode above — -1 (none) until an explicit crown, surviving both
+   * configure() and any track clear (D18: no auto-reassignment). Unlike
+   * a_looper_mode, -1 is NOT calloc's zero-fill, so this store is load-
+   * bearing, not just legibility. */
+  store_i32(&engine->a_primary_track, -1);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
