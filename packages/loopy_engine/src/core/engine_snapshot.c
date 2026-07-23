@@ -48,6 +48,7 @@ static void le_fill_track_snapshot(le_track* tr, int active,
   out->pending = load_i32(&tr->a_pending);
   out->length_preset_bars = load_i32(&tr->a_length_preset_bars);
   out->sync_divisor = load_i32(&tr->a_sync_divisor);
+  out->one_shot = load_i32(&tr->a_one_shot);
 }
 
 /* Max added latency (frames) across every active octaver in any record-route or
@@ -222,6 +223,7 @@ void le_engine_get_track(le_engine* engine, int32_t channel,
     out->pending = 0;
     out->length_preset_bars = 0;
     out->sync_divisor = 0;
+    out->one_shot = 0;
     return;
   }
   le_fill_track_snapshot(&engine->tracks[channel], 1, out);

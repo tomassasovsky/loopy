@@ -259,6 +259,9 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
     store_i32(&tr->a_pending, 0);
     store_i32(&tr->a_length_preset_bars, 0); /* AUTO */
+    store_i32(&tr->a_one_shot, 0); /* B4: per-track setting, resets like the
+                                    * length preset above (not by clear —
+                                    * see le_engine_set_one_shot's doc) */
     tr->length_preset_target_frames = 0;
     tr->pending_record = 0;
     tr->pending_trigger = 0;
