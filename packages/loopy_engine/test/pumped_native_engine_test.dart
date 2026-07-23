@@ -6,6 +6,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy_engine/loopy_engine.dart';
+import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart'
+    show LE_COUNT_IN_MAX_BARS, LE_MAX_GAIN;
 
 /// Drives the REAL native engine through the device-free pump: configure (no
 /// device), record a loop by pumping blocks, and read the snapshot back —
@@ -311,6 +313,167 @@ void main() {
     },
     skip: skip,
   );
+
+  group('TempoControl (real FFI)', () {
+    late PumpedNativeEngine engine;
+
+    setUp(() {
+      engine = PumpedNativeEngine()
+        ..start(
+          const EngineConfig(
+            sampleRate: 48000,
+            inputChannels: 1,
+            outputChannels: 1,
+            maxLoopFrames: 48000,
+          ),
+        );
+    });
+    tearDown(() => engine.dispose());
+
+    test('a fresh engine reads the grid-off defaults', () {
+      engine.pump(frames: 0);
+      final s = engine.snapshot();
+      expect(s.tempoBpm, 0);
+      expect(s.tempoSource, TempoSource.none);
+      expect(s.tsNum, 4);
+      expect(s.tsDen, 4);
+      expect(s.syncTempo, isTrue);
+      expect(s.quantizeDiv, GridDivision.off);
+      expect(s.clickMode, ClickMode.off);
+      expect(s.clickMask, 0);
+      expect(s.clickVolume, 1);
+      expect(s.countInBars, 0);
+      expect(s.countingIn, isFalse);
+      expect(s.countInBeatsLeft, 0);
+    });
+
+    test('setTempo sets the bpm and manual source, clamped to 30..300', () {
+      expect(engine.setTempo(140), EngineResult.ok);
+      engine.pump(frames: 0);
+      var s = engine.snapshot();
+      expect(s.tempoBpm, closeTo(140, 1e-3));
+      expect(s.tempoSource, TempoSource.manual);
+
+      engine
+        ..setTempo(1000)
+        ..pump(frames: 0);
+      s = engine.snapshot();
+      expect(s.tempoBpm, closeTo(300, 1e-3));
+
+      engine
+        ..setTempo(1)
+        ..pump(frames: 0);
+      s = engine.snapshot();
+      expect(s.tempoBpm, closeTo(30, 1e-3));
+    });
+
+    test(
+      'setTimeSignature accepts every valid signature and rejects an '
+      'invalid one',
+      () {
+        expect(engine.setTimeSignature(7, 4), EngineResult.ok);
+        engine.pump(frames: 0);
+        var s = engine.snapshot();
+        expect(s.tsNum, 7);
+        expect(s.tsDen, 4);
+
+        expect(engine.setTimeSignature(15, 8), EngineResult.ok);
+        engine.pump(frames: 0);
+        s = engine.snapshot();
+        expect(s.tsNum, 15);
+        expect(s.tsDen, 8);
+
+        // 2/8 and 8/4 are outside the 17 Sheeran-verified signatures — the
+        // exported wrapper rejects them before ever posting to the ring.
+        expect(engine.setTimeSignature(2, 8), EngineResult.invalid);
+        expect(engine.setTimeSignature(8, 4), EngineResult.invalid);
+        engine.pump(frames: 0);
+        // Rejected calls leave the published signature untouched.
+        expect(engine.snapshot().tsNum, 15);
+        expect(engine.snapshot().tsDen, 8);
+      },
+    );
+
+    test('tapTempo requires two taps in range to set the tempo', () {
+      // A lone first tap sets nothing.
+      expect(engine.tapTempo(), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().tempoSource, TempoSource.none);
+
+      // A second tap ~500 ms later (block-granular via frame_clock, which the
+      // pump advances) lands at 120 BPM, inside 30..300.
+      engine.pump(frames: 24000); // 500 ms @ 48 kHz
+      expect(engine.tapTempo(), EngineResult.ok);
+      engine.pump(frames: 0);
+      final s = engine.snapshot();
+      expect(s.tempoSource, TempoSource.tapped);
+      expect(s.tempoBpm, closeTo(120, 1));
+    });
+
+    test('setSyncTempo toggles the published flag', () {
+      expect(engine.snapshot().syncTempo, isTrue);
+      expect(engine.setSyncTempo(on: false), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().syncTempo, isFalse);
+      expect(engine.setSyncTempo(on: true), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().syncTempo, isTrue);
+    });
+
+    test('setQuantizeDiv publishes the granularity for every value', () {
+      for (final div in GridDivision.values) {
+        expect(engine.setQuantizeDiv(div), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.snapshot().quantizeDiv, div);
+      }
+    });
+
+    test('setClickMode publishes the mode for every value', () {
+      for (final mode in ClickMode.values) {
+        expect(engine.setClickMode(mode), EngineResult.ok);
+        engine.pump(frames: 0);
+        expect(engine.snapshot().clickMode, mode);
+      }
+    });
+
+    test('setClickOutput publishes the output mask', () {
+      expect(engine.setClickOutput(0x1), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().clickMask, 0x1);
+    });
+
+    test('setClickVolume clamps to 0..LE_MAX_GAIN', () {
+      expect(engine.setClickVolume(1.5), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().clickVolume, closeTo(1.5, 1e-3));
+
+      engine
+        ..setClickVolume(-1)
+        ..pump(frames: 0);
+      expect(engine.snapshot().clickVolume, 0);
+
+      engine
+        ..setClickVolume(10)
+        ..pump(frames: 0);
+      expect(engine.snapshot().clickVolume, closeTo(LE_MAX_GAIN, 1e-3));
+    });
+
+    test('setCountIn publishes bars and rejects out-of-range values', () {
+      expect(engine.setCountIn(2), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().countInBars, 2);
+
+      expect(engine.setCountIn(-1), EngineResult.invalid);
+      expect(engine.setCountIn(LE_COUNT_IN_MAX_BARS + 1), EngineResult.invalid);
+      engine.pump(frames: 0);
+      // Rejected calls leave the published count-in length untouched.
+      expect(engine.snapshot().countInBars, 2);
+
+      expect(engine.setCountIn(0), EngineResult.ok);
+      engine.pump(frames: 0);
+      expect(engine.snapshot().countInBars, 0);
+    });
+  }, skip: skip);
 
   group('fx chain fingerprint (native-side properties)', () {
     late PumpedNativeEngine engine;

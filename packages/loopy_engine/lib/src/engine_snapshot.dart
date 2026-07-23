@@ -66,6 +66,127 @@ enum TrackState {
   };
 }
 
+/// Where the current tempo came from (D7 precedence:
+/// `external > (manual | tapped, last writer wins) > derived`).
+///
+/// Mirrors the native `le_tempo_source` enum. [external] is reserved for the
+/// Phase E MIDI-clock follower and unused by anything in this slice.
+enum TempoSource {
+  /// No tempo has ever been set; [EngineSnapshot.tempoBpm] reads `0`.
+  none,
+
+  /// Set via `TempoControl.setTempo` (last writer wins against [tapped]).
+  manual,
+
+  /// Set via `TempoControl.tapTempo` (last writer wins against [manual]).
+  tapped,
+
+  /// Derived from a defining loop finalized with loop↔tempo sync on (D7).
+  /// Survives clearing the loop that produced it — only an explicit reset
+  /// returns the source to [none].
+  derived,
+
+  /// Reserved: MIDI clock receive (Phase E). Unused here.
+  external;
+
+  /// Maps a native `le_tempo_source` integer to a [TempoSource]. Unknown
+  /// values map to [TempoSource.none].
+  static TempoSource fromCode(int code) => switch (code) {
+    0 => TempoSource.none,
+    1 => TempoSource.manual,
+    2 => TempoSource.tapped,
+    3 => TempoSource.derived,
+    4 => TempoSource.external,
+    _ => TempoSource.none,
+  };
+}
+
+/// Musical quantization / click granularity.
+///
+/// Mirrors the native `le_grid_div` enum (`tempo_grid.h`). The note values
+/// are ABSOLUTE — a [quarter] is a quarter note regardless of the current
+/// time signature, since the grid's beat unit is the signature's denominator
+/// note (see `tempo_grid.h`'s header doc).
+enum GridDivision {
+  /// No quantization grid (default).
+  off,
+
+  /// One bar.
+  bar,
+
+  /// A half note.
+  half,
+
+  /// A quarter note.
+  quarter,
+
+  /// An eighth note.
+  eighth,
+
+  /// A sixteenth note.
+  sixteenth;
+
+  /// The native `le_grid_div` integer for this division.
+  int get code => switch (this) {
+    GridDivision.off => 0,
+    GridDivision.bar => 1,
+    GridDivision.half => 2,
+    GridDivision.quarter => 3,
+    GridDivision.eighth => 4,
+    GridDivision.sixteenth => 5,
+  };
+
+  /// Maps a native `le_grid_div` integer to a [GridDivision]. Unknown values
+  /// map to [GridDivision.off].
+  static GridDivision fromCode(int code) => switch (code) {
+    0 => GridDivision.off,
+    1 => GridDivision.bar,
+    2 => GridDivision.half,
+    3 => GridDivision.quarter,
+    4 => GridDivision.eighth,
+    5 => GridDivision.sixteenth,
+    _ => GridDivision.off,
+  };
+}
+
+/// Click (metronome) audibility mode — a 4-value mode (Sheeran manual
+/// §5.9.1) that gates WHEN the click voice sounds; WHERE it sounds is the
+/// click output mask (`TempoControl.setClickOutput`, default no outputs).
+///
+/// Mirrors the native `le_click_mode` enum.
+enum ClickMode {
+  /// Never audible (count-ins still run, silently).
+  off,
+
+  /// Audible while any track records or overdubs.
+  rec,
+
+  /// Audible only during the DEFINING first-layer recording (including its
+  /// count-in).
+  recFirst,
+
+  /// Audible whenever the transport plays or records.
+  playRec;
+
+  /// The native `le_click_mode` integer for this mode.
+  int get code => switch (this) {
+    ClickMode.off => 0,
+    ClickMode.rec => 1,
+    ClickMode.recFirst => 2,
+    ClickMode.playRec => 3,
+  };
+
+  /// Maps a native `le_click_mode` integer to a [ClickMode]. Unknown values
+  /// map to [ClickMode.off].
+  static ClickMode fromCode(int code) => switch (code) {
+    0 => ClickMode.off,
+    1 => ClickMode.rec,
+    2 => ClickMode.recFirst,
+    3 => ClickMode.playRec,
+    _ => ClickMode.off,
+  };
+}
+
 /// An immutable per-lane projection of the native `le_lane_snapshot`.
 ///
 /// A lane is a track's fundamental recordable unit: it records one hardware
@@ -353,6 +474,20 @@ class EngineSnapshot {
     this.isPerfArmed = false,
     this.perfFrames = 0,
     this.perfOverruns = 0,
+    this.tempoBpm = 0,
+    this.tempoSource = TempoSource.none,
+    this.tsNum = 4,
+    this.tsDen = 4,
+    this.syncTempo = true,
+    this.quantizeDiv = GridDivision.off,
+    this.loopBars = 0,
+    this.currentBeat = 0,
+    this.clickMode = ClickMode.off,
+    this.clickMask = 0,
+    this.clickVolume = 1,
+    this.countInBars = 0,
+    this.countingIn = false,
+    this.countInBeatsLeft = 0,
     this.tracks = const [],
   });
 
@@ -382,6 +517,20 @@ class EngineSnapshot {
       isPerfArmed = false,
       perfFrames = 0,
       perfOverruns = 0,
+      tempoBpm = 0,
+      tempoSource = TempoSource.none,
+      tsNum = 4,
+      tsDen = 4,
+      syncTempo = true,
+      quantizeDiv = GridDivision.off,
+      loopBars = 0,
+      currentBeat = 0,
+      clickMode = ClickMode.off,
+      clickMask = 0,
+      clickVolume = 1,
+      countInBars = 0,
+      countingIn = false,
+      countInBeatsLeft = 0,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -417,6 +566,20 @@ class EngineSnapshot {
     isPerfArmed: native.perf_armed != 0,
     perfFrames: native.perf_frames,
     perfOverruns: native.perf_overruns,
+    tempoBpm: native.tempo_bpm,
+    tempoSource: TempoSource.fromCode(native.tempo_source),
+    tsNum: native.ts_num,
+    tsDen: native.ts_den,
+    syncTempo: native.sync_tempo != 0,
+    quantizeDiv: GridDivision.fromCode(native.quantize_div),
+    loopBars: native.loop_bars,
+    currentBeat: native.current_beat,
+    clickMode: ClickMode.fromCode(native.click_mode),
+    clickMask: native.click_mask,
+    clickVolume: native.click_volume,
+    countInBars: native.count_in_bars,
+    countingIn: native.counting_in != 0,
+    countInBeatsLeft: native.count_in_beats_left,
     tracks: tracks,
   );
 
@@ -521,6 +684,62 @@ class EngineSnapshot {
   /// `AudioEngine.perfArm`. `0` when never armed or nothing has overflowed.
   final int perfOverruns;
 
+  // ---- tempo grid (A1) ----
+
+  /// Denominator-note beats per minute; `0` when [tempoSource] is
+  /// [TempoSource.none] (no tempo ever set).
+  final double tempoBpm;
+
+  /// Where [tempoBpm] came from (D7 precedence).
+  final TempoSource tempoSource;
+
+  /// Time-signature numerator (default `4`).
+  final int tsNum;
+
+  /// Time-signature denominator, `4` or `8` (default `4`).
+  final int tsDen;
+
+  /// Whether loop↔grid sync is on (default `true`): finalizing the DEFINING
+  /// loop establishes the loop↔grid relationship (bar count / tempo
+  /// derivation — see `TempoControl.setSyncTempo`).
+  final bool syncTempo;
+
+  /// Musical quantization granularity (default [GridDivision.off]).
+  final GridDivision quantizeDiv;
+
+  /// Whole bars in the master loop, or `0` when no grid relationship exists
+  /// (sync off, no loop, or the loop predates any grid). The loop's audio
+  /// length is never altered by the grid — this is a derived count.
+  final int loopBars;
+
+  /// Beat index (`0..tsNum-1`) within the bar: loop-driven, or driven by the
+  /// count-in / free-running click; `0` when idle.
+  final int currentBeat;
+
+  // ---- click + count-in (A2) ----
+
+  /// Click audibility mode (default [ClickMode.off]).
+  final ClickMode clickMode;
+
+  /// Bitmask of hardware output channels the click sounds on (bit c => out
+  /// c). Default `0`: no outputs until explicitly routed.
+  final int clickMask;
+
+  /// Click volume in `0..LE_MAX_GAIN` (default `1`) — the click's only gain
+  /// stage; master gain and the limiter never touch it.
+  final double clickVolume;
+
+  /// Count-in length in measures; `0` = off (default).
+  final int countInBars;
+
+  /// Whether a count-in is currently running.
+  final bool countingIn;
+
+  /// Beat countdown while counting in: the number of count-in beats still to
+  /// come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
+  /// reads 4, 3, 2, 1, then 0 as the recording starts). `0` when idle.
+  final int countInBeatsLeft;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -580,6 +799,20 @@ class EngineSnapshot {
           isPerfArmed == other.isPerfArmed &&
           perfFrames == other.perfFrames &&
           perfOverruns == other.perfOverruns &&
+          tempoBpm == other.tempoBpm &&
+          tempoSource == other.tempoSource &&
+          tsNum == other.tsNum &&
+          tsDen == other.tsDen &&
+          syncTempo == other.syncTempo &&
+          quantizeDiv == other.quantizeDiv &&
+          loopBars == other.loopBars &&
+          currentBeat == other.currentBeat &&
+          clickMode == other.clickMode &&
+          clickMask == other.clickMask &&
+          clickVolume == other.clickVolume &&
+          countInBars == other.countInBars &&
+          countingIn == other.countingIn &&
+          countInBeatsLeft == other.countInBeatsLeft &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -608,6 +841,20 @@ class EngineSnapshot {
     isPerfArmed,
     perfFrames,
     perfOverruns,
+    tempoBpm,
+    tempoSource,
+    tsNum,
+    tsDen,
+    syncTempo,
+    quantizeDiv,
+    loopBars,
+    currentBeat,
+    clickMode,
+    clickMask,
+    clickVolume,
+    countInBars,
+    countingIn,
+    countInBeatsLeft,
     ...tracks,
   ]);
 
