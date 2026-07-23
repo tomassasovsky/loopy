@@ -350,6 +350,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  final Map<int, int> trackLengthPreset = {};
+
+  @override
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
+    trackLengthPreset[channel] = bars;
+    calls.add('setTrackLengthPreset');
+    return EngineResult.ok;
+  }
+
   /// The last values passed to [setLimiter] / [setOverdubFeedback].
   bool? lastLimiterEnabled;
   double? lastLimiterCeiling;

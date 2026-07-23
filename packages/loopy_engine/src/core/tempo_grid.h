@@ -108,6 +108,19 @@ float le_grid_derive_bpm(int32_t loop_frames, int32_t ts_num,
  * beat_at). Returns 0 when len or total_beats <= 0. */
 int32_t le_grid_beat_at(int32_t pos, int32_t len, int32_t total_beats);
 
+/* Derives the BPM that makes a `loop_frames`-long loop hold EXACTLY `bars`
+ * whole bars in the current signature (A6, D17's "N-bars + click-off derives
+ * tempo from recording-length / N" rule) — the exact algebraic inverse of
+ * le_grid_frames_per_bar, unlike le_grid_derive_bpm which SEARCHES for the
+ * bar count nearest 120 (that function doesn't apply here: `bars` is already
+ * fixed by the preset, not something to choose). Clamped to
+ * [LE_GRID_TEMPO_MIN, LE_GRID_TEMPO_MAX]; a clamped result means the loop's
+ * true length no longer divides into exactly `bars` bars at the reported
+ * tempo — the loop's AUDIO length is never altered regardless. Returns 0.0
+ * for degenerate input (any argument <= 0). */
+float le_grid_bpm_for_length(int32_t loop_frames, int32_t bars,
+                             int32_t ts_num, int32_t sample_rate);
+
 /* ---- loop-locked subdivision grid (A3: musical quantize arming) ----
  *
  * Once a live loop exists, subdivision boundaries derive from the LOOP-LOCKED

@@ -30,7 +30,12 @@ enum EngineResult {
   /// A plugin's bus topology is not a stereo (or mono-adaptable) effect —
   /// instrument / multi-bus / sidechain / wrong channel count (D-BUS). The
   /// insert is rejected with no partial slot created.
-  unsupported;
+  unsupported,
+
+  /// A requested allocation would exceed engine capacity (A6, D17): e.g. a
+  /// track length preset that would not fit `max_loop_frames` even at the
+  /// slowest possible tempo.
+  capacity;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -42,6 +47,7 @@ enum EngineResult {
     -3 => EngineResult.notRunning,
     -4 => EngineResult.device,
     -5 => EngineResult.unsupported,
+    -6 => EngineResult.capacity,
     _ => EngineResult.invalid,
   };
 
@@ -346,6 +352,39 @@ abstract interface class TempoControl {
   /// with [LooperTransport.setAutoRecord]: enabling count-in disables
   /// auto-record and vice versa; count-in wins if both are somehow set.
   EngineResult setCountIn(int bars);
+
+  /// Sets track [channel]'s length preset (A6, D17): `0` = AUTO, or `1..64`
+  /// to fix the DEFINING (first/master) recording to [bars] bars. Orthogonal
+  /// to [LooperTransport.setTrackMultiple], which governs a NON-defining
+  /// track once a master already exists.
+  ///
+  /// Implements the manual's preset × click-mode matrix
+  /// (`song-mode-spec.md` §1):
+  ///  * AUTO + click off: tempo AND bar count are both derived from the
+  ///    recording (unchanged D7 behavior).
+  ///  * AUTO + click on: only the bar count is derived; an already-set tempo
+  ///    is never re-derived. With no tempo set, this falls back to deriving
+  ///    both — the same as click off.
+  ///  * N bars + click off: the tempo is derived from recorded length ÷ N —
+  ///    UNCONDITIONALLY, even over an existing tempo (distinct from AUTO's
+  ///    D7 "never re-derive" precedence, per the manual's explicit rule for
+  ///    this preset).
+  ///  * N bars + click on: requires a tempo already set when recording
+  ///    begins; the recording then auto-finishes into overdub at exactly N
+  ///    bars. An early record press disarms the preset (closes normally,
+  ///    like AUTO). With no tempo set at record start, this degrades to the
+  ///    N-bars + click-off behavior (documented A6 judgment call).
+  ///
+  /// The loop's audio length is never altered in any case. Requires
+  /// [setSyncTempo] on; with sync off the preset is dormant. A change on an
+  /// already-recorded track is inert until the track is cleared and
+  /// re-recorded.
+  ///
+  /// Returns [EngineResult.invalid] for a bad channel/bars, or a capacity
+  /// error when [bars] at the current signature and the slowest possible
+  /// tempo (30 BPM) would exceed engine capacity — checked before recording
+  /// starts.
+  EngineResult setTrackLengthPreset({required int channel, required int bars});
 }
 
 /// Global master-output bus: post-mix gain and the peak limiter.

@@ -2816,6 +2816,57 @@ void main() {
     );
 
     test(
+      'setTrackLengthPreset is deferred until running, then re-applied',
+      () {
+        final repo = buildRepo()..setTrackLengthPreset(channel: 1, bars: 4);
+        expect(engine.trackLengthPreset, isEmpty); // not running yet
+
+        repo.startEngine(const EngineConfig());
+        expect(engine.trackLengthPreset[1], 4);
+      },
+    );
+
+    test('setTrackLengthPreset applies immediately while running', () {
+      buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackLengthPreset(channel: 2, bars: 8);
+      expect(engine.trackLengthPreset[2], 8);
+    });
+
+    test('setTrackLengthPreset(0) clears a remembered preset (AUTO)', () {
+      final repo = buildRepo()
+        ..startEngine(const EngineConfig())
+        ..setTrackLengthPreset(channel: 1, bars: 4);
+      expect(engine.trackLengthPreset[1], 4);
+
+      repo.setTrackLengthPreset(channel: 1, bars: 0);
+      expect(engine.trackLengthPreset[1], 0);
+
+      // A restart no longer replays the cleared preset.
+      engine.trackLengthPreset.clear();
+      repo
+        ..stopEngine()
+        ..startEngine(const EngineConfig());
+      expect(engine.trackLengthPreset, isEmpty);
+    });
+
+    test(
+      'per-track length presets re-apply on every restart (device change)',
+      () {
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          ..setTrackLengthPreset(channel: 1, bars: 3);
+        expect(engine.trackLengthPreset[1], 3);
+
+        engine.trackLengthPreset.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.trackLengthPreset[1], 3);
+      },
+    );
+
+    test(
       'TransportState projects every tempo-grid + click + count-in field '
       'from the snapshot',
       () {
@@ -2910,8 +2961,10 @@ void main() {
       bool muted = false,
       int outputMask = 0x3,
       int inputChannel = 0,
+      int lengthPresetBars = 0,
     }) => SessionRigTrack(
       channel: channel,
+      lengthPresetBars: lengthPresetBars,
       lanes: [
         SessionRigLane(
           lane: 0,
@@ -3004,6 +3057,68 @@ void main() {
       expect(engine.laneVol, {(0, 0): 0.5});
       expect(engine.laneMute, {(0, 0): false});
     });
+
+    test(
+      'resets a stale length preset to AUTO when the loaded session leaves '
+      'it undefined (A6)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()
+          ..startEngine(const EngineConfig())
+          // A live/prior session left track 0 at a 4-bar preset.
+          ..setTrackLengthPreset(channel: 0, bars: 4);
+        addTearDown(repo.dispose);
+        expect(engine.trackLengthPreset[0], 4);
+
+        // The loaded session's track 0 has content but no preset (AUTO),
+        // and it says nothing at all about track 1.
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.trackLengthPreset[0], 0);
+        expect(engine.trackLengthPreset[1], 0);
+
+        // A restart replays only the loaded (AUTO) value, not the stale 4.
+        engine.trackLengthPreset.clear();
+        repo
+          ..stopEngine()
+          ..startEngine(const EngineConfig());
+        expect(engine.trackLengthPreset.containsKey(0), isFalse);
+      },
+    );
+
+    test(
+      "applies the loaded session's own nonzero length preset per track "
+      '(A6)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(
+                0,
+                Float32List.fromList([1, 1, 1, 1]),
+                lengthPresetBars: 8,
+              ),
+            ],
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.trackLengthPreset[0], 8);
+      },
+    );
 
     test('resets remembered chains the rig does not define — lane and '
         'monitor (F2c)', () async {

@@ -611,6 +611,22 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setTrackLengthPreset({
+    required int channel,
+    required int bars,
+  }) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (bars < 0 || bars > LE_LENGTH_PRESET_MAX_BARS) {
+      return EngineResult.invalid;
+    }
+    // The mock models no real transport/capacity, so unlike the native
+    // engine's D17 allocation guard, every in-range value is accepted.
+    _tracks[channel].lengthPresetBars = bars;
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult setLaneFx({
     required int channel,
     required int lane,
@@ -889,6 +905,9 @@ class _MockTrack {
     (_) => _MockLane(),
   );
 
+  /// The DEFINING-recording length preset (A6, D17): `0` = AUTO.
+  int lengthPresetBars = 0;
+
   _MockLane laneAt(int lane) => _lanes[lane.clamp(0, kMaxLanes - 1)];
 
   TrackSnapshot snapshot() {
@@ -916,6 +935,7 @@ class _MockTrack {
       peak: 0,
       inputMask: inputMask,
       outputMask: lane0.outputMask,
+      lengthPresetBars: lengthPresetBars,
       lanes: lanes,
     );
   }

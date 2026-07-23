@@ -132,6 +132,21 @@ int32_t le_grid_beat_at(int32_t pos, int32_t len, int32_t total_beats) {
   return (int32_t)(((int64_t)pos * (int64_t)total_beats) / (int64_t)len);
 }
 
+float le_grid_bpm_for_length(int32_t loop_frames, int32_t bars,
+                             int32_t ts_num, int32_t sample_rate) {
+  if (loop_frames <= 0 || bars <= 0 || ts_num <= 0 || sample_rate <= 0) {
+    return 0.0f;
+  }
+  /* frames_per_bar = sample_rate * 60 * ts_num / bpm (le_grid_frames_per_bar,
+   * with frames_per_bar == loop_frames / bars) inverted for bpm. */
+  const double bpm = 60.0 * (double)sample_rate * (double)ts_num *
+                     (double)bars / (double)loop_frames;
+  if (!(bpm > 0.0)) return 0.0f;
+  if (bpm < (double)LE_GRID_TEMPO_MIN) return LE_GRID_TEMPO_MIN;
+  if (bpm > (double)LE_GRID_TEMPO_MAX) return LE_GRID_TEMPO_MAX;
+  return (float)bpm;
+}
+
 /* ---- loop-locked subdivision grid (A3) — see the header block comment ---- */
 
 int le_grid_loop_subdiv_ratio(int32_t total_beats, int32_t ts_num,

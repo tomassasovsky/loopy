@@ -1009,6 +1009,14 @@ class NativeAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_length_preset(_engine, channel, bars),
+    );
+  }
+
+  @override
   EngineResult setLaneFx({
     required int channel,
     required int lane,

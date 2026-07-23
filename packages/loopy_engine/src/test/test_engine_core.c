@@ -2671,6 +2671,17 @@ static le_engine* tg_make_engine(int sr) {
   return e;
 }
 
+/* Like tg_make_engine but with an explicit max_loop_frames cap. Used by the
+ * A6 length-preset tests: the D17 worst-case-30-BPM allocation guard
+ * (le_engine_set_track_length_preset) needs more headroom than
+ * tg_make_engine's tight 20000-frame default gives a several-bar preset at
+ * sr 1000 (a 4-bar 4/4 preset alone needs 32000 worst-case). */
+static le_engine* tg_make_engine_cap(int sr, int32_t max_loop_frames) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, max_loop_frames);
+  return e;
+}
+
 /* Records a `len`-frame silent defining loop on track `ch` and finalizes it.
  * The finalize press defers sr/100 frames for the seam crossfade
  * (request_master_finalize), so advance exactly that overlap: the loop
@@ -2867,6 +2878,35 @@ static void test_tempo_grid_derive_bpm(void) {
   CHECK(le_grid_beat_at(9, 10, 3) == 2);
   CHECK(le_grid_beat_at(5, 0, 3) == 0);
   CHECK(le_grid_beat_at(5, 10, 0) == 0);
+}
+
+static void test_tempo_grid_bpm_for_length(void) {
+  printf("test_tempo_grid_bpm_for_length\n");
+  /* A6/D17: the exact algebraic inverse of frames-per-bar, unlike
+   * le_grid_derive_bpm (which searches for the bar count nearest 120) —
+   * `bars` is already fixed by the preset. */
+
+  /* 8000 frames / 4 bars at sr 1000 in 4/4: frames-per-bar 2000 -> 120 bpm
+   * (matches every other 120 bpm/4-bar fixture in this suite). */
+  CHECK(fabsf(le_grid_bpm_for_length(8000, 4, 4, 1000) - 120.0f) < 0.01f);
+
+  /* 6000 frames / 4 bars: frames-per-bar 1500 -> 160 bpm. */
+  CHECK(fabsf(le_grid_bpm_for_length(6000, 4, 4, 1000) - 160.0f) < 0.01f);
+
+  /* Signature-generic: 7/8 changes the bar size just as le_grid_derive_bpm's
+   * generic case does. 7000 frames / 2 bars in 7/8 -> 120 bpm. */
+  CHECK(fabsf(le_grid_bpm_for_length(7000, 2, 7, 1000) - 120.0f) < 0.01f);
+
+  /* Out-of-range results clamp rather than extrapolate past the engine's
+   * tempo ceiling/floor. */
+  CHECK(le_grid_bpm_for_length(100, 4, 4, 1000) == LE_GRID_TEMPO_MAX);
+  CHECK(le_grid_bpm_for_length(1000000, 1, 4, 1000) == LE_GRID_TEMPO_MIN);
+
+  /* Degenerate input. */
+  CHECK(le_grid_bpm_for_length(0, 4, 4, 1000) == 0.0f);
+  CHECK(le_grid_bpm_for_length(8000, 0, 4, 1000) == 0.0f);
+  CHECK(le_grid_bpm_for_length(8000, 4, 0, 1000) == 0.0f);
+  CHECK(le_grid_bpm_for_length(8000, 4, 4, 0) == 0.0f);
 }
 
 static void test_tempo_grid_defaults_and_persistence(void) {
@@ -3190,6 +3230,491 @@ static void test_derive_only_from_none(void) {
   CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* never re-derived */
   CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
   CHECK(s.loop_bars == 2);
+
+  le_engine_destroy(e);
+}
+
+/* ---- track length presets (A6, D17; song-mode-spec.md §1 matrix) ---- */
+
+static void test_length_preset_auto_click_off_unchanged(void) {
+  printf("test_length_preset_auto_click_off_unchanged\n");
+  /* AUTO (the default, and explicitly set to 0) + click off is exactly A1's
+   * existing sync_grid_to_loop path: derive tempo AND bars from the loop. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_track_length_preset(e, 0, 0) == LE_OK);
+  tg_record_defining_loop(e, 4000);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_preset_bars == 0);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.loop_bars == 2);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_auto_click_on_derives_bars_only(void) {
+  printf("test_length_preset_auto_click_on_derives_bars_only\n");
+  /* AUTO + click ON, with a tempo already set: only the bar count is
+   * derived, tempo untouched — the click-mode axis doesn't change AUTO's
+   * behavior at all (sync_grid_to_loop never reads click_mode). */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 1800); /* 0.9 bars at 120 -> rounds to 1 */
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 1800);
+  CHECK(s.loop_bars == 1);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_auto_click_on_no_tempo_falls_back(void) {
+  printf("test_length_preset_auto_click_on_no_tempo_falls_back\n");
+  /* AUTO + click ON with NO tempo set: the documented A6 fallback derives
+   * tempo AND bars, identically to click off (nothing else to preserve). */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.loop_bars == 2);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_n_bars_click_off_derives_tempo(void) {
+  printf("test_length_preset_n_bars_click_off_derives_tempo\n");
+  /* N bars + click off: tempo is derived from recorded-length / N
+   * UNCONDITIONALLY, even overriding an existing manual tempo — distinct
+   * from AUTO's D7 "never re-derive an existing tempo" precedence. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 90.0f); /* set before any content: unlocked */
+  tg_advance(e, 1);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_record_defining_loop(e, 8000); /* length/4 = 2000 fpbar -> 120 bpm */
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 8000); /* audio length never altered */
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* overrides the manual 90 */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_n_bars_click_on_auto_finalizes(void) {
+  printf("test_length_preset_n_bars_click_on_auto_finalizes\n");
+  /* N bars + click ON, with a tempo already set: the defining recording
+   * auto-finalizes into overdub at EXACTLY N bars' worth of frames, no
+   * second press — and (unlike the click-off row) the already-set tempo is
+   * NOT re-derived. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0); /* single press: no manual finalize */
+  tg_advance(e, 8000 - 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* not yet: one frame short */
+
+  tg_advance(e, 1 + 1000 / 100); /* reach the target + the seam crossfade */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING); /* auto-finalized */
+  CHECK(s.master_length_frames == 8000);
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched, not re-derived */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_n_bars_click_on_arms_through_count_in(void) {
+  printf("test_length_preset_n_bars_click_on_arms_through_count_in\n");
+  /* Code-review coverage gap: le_arm_length_preset_target has TWO call
+   * sites — handle_record's immediate-press EMPTY branch (covered by
+   * test_length_preset_n_bars_click_on_auto_finalizes above) and
+   * le_count_in_commit, the count-in downbeat path, entirely untested until
+   * now (confirmed by mutation: deleting the count-in call site left every
+   * other length-preset test green). With a count-in running, the defining
+   * take does not actually begin until the commit fires — the target must
+   * arm THERE, not at the original press, and then auto-finalize correctly
+   * from that later start. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f); /* 500 frames/beat, 2000 frames/bar (4/4) */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* 1 bar = 4*500 = 2000 frames */
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK); /* target 8000 */
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0); /* enters the count-in, not RECORDING yet */
+  tg_advance(e, 1999);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  tg_advance(e, 1); /* the 2000th frame: count-in commits, defining take begins */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  /* From the commit, the SAME 8000-frame target as the plain-press case must
+   * arm and fire — proving le_count_in_commit's le_arm_length_preset_target
+   * call actually ran (not the mutant that skips it, which would leave this
+   * take running forever with no auto-finalize). */
+  tg_advance(e, 8000 - 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* one frame short */
+
+  tg_advance(e, 1 + 1000 / 100); /* reach the target + the seam crossfade */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING); /* auto-finalized */
+  CHECK(s.master_length_frames == 8000);
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched, not re-derived */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_n_bars_click_on_early_press_disarms(void) {
+  printf("test_length_preset_n_bars_click_on_early_press_disarms\n");
+  /* D17: an early record press before the N-bar target disarms the preset —
+   * the take closes through the NORMAL path (existing tempo, round to
+   * whatever bars the shorter take actually spans), not the derive-from-
+   * length override, and NOT forced into overdub (a manual press without
+   * rec/dub ends in PLAYING). */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK); /* target 8000 */
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0);
+  tg_advance(e, 3000); /* well short of the 8000-frame target */
+  le_engine_record(e, 0); /* manual finalize: disarms the preset */
+  tg_advance(e, 1000 / 100); /* seam crossfade */
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* not forced into overdub */
+  CHECK(s.master_length_frames == 3000);
+  CHECK(s.loop_bars == 2); /* 3000 / 2000 fpbar = 1.5 -> round to 2 */
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_n_bars_click_on_handoff_before_target(void) {
+  printf("test_length_preset_n_bars_click_on_handoff_before_target\n");
+  /* Code-review coverage gap: a DIFFERENT track's record press (the one-
+   * capturer hand-off, close_active_capture) is a second way the defining
+   * track's capture can end before its target — distinct from the same-
+   * track early re-press covered above. close_active_capture finalizes the
+   * defining track IMMEDIATELY via finalize_master (bypassing request_
+   * master_finalize's seam crossfade — "one capturer" is a hard cut), with
+   * whatever record_pos it currently holds. length_preset_target_frames is
+   * still armed (nonzero) and not yet reached, so this must behave exactly
+   * like the same-track early-press case: normal path, tempo untouched,
+   * bars rounded from the actual (short) length. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK); /* target 8000 */
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0);
+  tg_advance(e, 3000); /* well short of the 8000-frame target */
+  le_engine_record(e, 1); /* a DIFFERENT track's press: hand-off, not re-press */
+  tg_advance(e, 1); /* the hand-off finalize is immediate, no crossfade defer */
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* hand-off always -> PLAYING */
+  CHECK(s.master_length_frames == 3000);
+  CHECK(s.loop_bars == 2); /* 3000 / 2000 fpbar = 1.5 -> round to 2 */
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_n_bars_click_on_handoff_during_crossfade(
+    void) {
+  printf("test_length_preset_n_bars_click_on_handoff_during_crossfade\n");
+  /* Code-review coverage gap: a hand-off landing INSIDE the deferred seam-
+   * crossfade window (the target was already reached — request_master_
+   * finalize armed xfade_capture — but the crossfade hasn't completed).
+   * close_active_capture's xfade_capture>0 branch snaps record_pos back to
+   * xfade_len (the intended final length) and cancels the deferral before
+   * finalizing, so the result must come out identical to a clean on-time
+   * auto-finalize: bars == the full preset, tempo untouched. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK); /* target 8000 */
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0);
+  tg_advance(e, 8000); /* reaches the target: xfade_capture arms (F = 10) */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* still deferring the seam */
+
+  tg_advance(e, 5); /* mid-crossfade: xfade_capture counts 10 -> 5, not done */
+  le_engine_record(e, 1); /* hand-off lands inside the deferral window */
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* hand-off always -> PLAYING */
+  CHECK(s.master_length_frames == 8000); /* snapped to the intended length */
+  CHECK(s.loop_bars == 4); /* the full preset, as if it had finished cleanly */
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_n_bars_click_on_no_tempo_fallback(void) {
+  printf("test_length_preset_n_bars_click_on_no_tempo_fallback\n");
+  /* The A6 edge-case decision: N bars + click ON but NO tempo set at record
+   * start cannot arm an auto-finalize target (frames-per-bar is unknowable),
+   * so it degrades to the N-bars + click-off behavior — an ordinary manual
+   * take, tempo derived from length / N on finalize. Runs well past what
+   * would have been the N-bar mark with no auto-finalize firing, proving no
+   * target was armed. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0);
+  tg_advance(e, 8500); /* past where a 4-bar-at-any-tempo target could sit */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* still: no target armed */
+
+  le_engine_record(e, 0); /* manual finalize */
+  tg_advance(e, 1000 / 100);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 8500);
+  CHECK(s.loop_bars == 4);
+  /* length/4 = 2125 fpbar -> bpm = 60*1000*4/2125 */
+  CHECK(fabsf(s.tempo_bpm - 112.941177f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_signature_drift_after_set_degrades_cleanly(
+    void) {
+  printf("test_length_preset_signature_drift_after_set_degrades_cleanly\n");
+  /* Code-review fix: the D17 capacity guard in le_engine_set_track_length_
+   * preset validates ONLY at set time, against whatever signature is live
+   * then. Nothing locks the signature/tempo between setting the preset and
+   * actually recording (no track has content yet, so D6 doesn't block it),
+   * so a drift in between can make the live target unreachable even though
+   * the set-time check passed. Exact repro: 2/4 @ 30 BPM, a 5-bar preset
+   * (validates: 5 * 4000 fpbar == 20000, the cap, exactly) — then drift to
+   * 7/4 (5 * 14000 fpbar = 70000, 3.5x the cap) before recording.
+   *
+   * le_arm_length_preset_target must re-guard with the LIVE grid and leave
+   * NO target armed (rather than arming an unreachable 70000-frame target
+   * that finalize_master would later find still nonzero and mistake for "on
+   * time", silently taking the plain sync_grid_to_loop path instead of the
+   * degrade-to-derive-from-length path — the bug: loop_bars 1 / tempo stuck
+   * at the manual 30, with the caller never told anything went wrong). With
+   * the fix, the take runs to the pre-existing max_loop_frames safety net
+   * (this part was always fine — traced, no overflow) and finalizes through
+   * the click-off derive-from-length override: a SANE result that actually
+   * reflects the 20000-frame recording as 5 bars, not a nonsense default. */
+  le_engine* e = tg_make_engine_cap(1000, 20000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_time_signature(e, 2, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_set_tempo(e, 30.0f);
+  tg_advance(e, 1);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 5) ==
+        LE_OK); /* 5*4000 == 20000: fits exactly at set time */
+  tg_advance(e, 1);
+
+  CHECK(le_engine_set_time_signature(e, 7, 4) == LE_OK); /* the drift */
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0); /* live target would be 5*14000 = 70000: unreachable */
+  tg_advance(e, 20000);   /* runs into the max_loop_frames safety net */
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* the cap's own finalize */
+  CHECK(s.master_length_frames == 20000);
+  /* Sane, NOT the bug's bars=1/bpm=30: reflects the actual 20000-frame take
+   * as 5 bars at 7/4 -> bpm = 60*1000*7*5/20000 = 105. */
+  CHECK(s.loop_bars == 5);
+  CHECK(fabsf(s.tempo_bpm - 105.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_setter_validates_args(void) {
+  printf("test_length_preset_setter_validates_args\n");
+  le_engine* e = tg_make_engine(1000);
+
+  CHECK(le_engine_set_track_length_preset(NULL, 0, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_preset(e, -1, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_preset(e, 0, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_preset(e, 0, LE_LENGTH_PRESET_MAX_BARS + 1) ==
+        LE_ERR_INVALID);
+  CHECK(le_engine_set_track_length_preset(e, 0, 0) == LE_OK); /* AUTO always ok */
+  /* In-range but capacity-rejected (64 bars * 8000 fpbar(30bpm,4/4,sr1000) =
+   * 512000 >> the 20000 cap): LE_ERR_CAPACITY, not LE_ERR_INVALID — the
+   * allocation guard is a distinct failure mode, covered in depth by
+   * test_length_preset_allocation_capacity below. A small in-range value
+   * that fits is the LE_OK case. */
+  CHECK(le_engine_set_track_length_preset(e, 0, LE_LENGTH_PRESET_MAX_BARS) ==
+        LE_ERR_CAPACITY);
+  CHECK(le_engine_set_track_length_preset(e, 0, 1) == LE_OK);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_allocation_capacity(void) {
+  printf("test_length_preset_allocation_capacity\n");
+  /* D17: N bars x the CURRENT signature x the slowest possible tempo (30
+   * BPM) must fit max_loop_frames, checked before recording starts. */
+  le_engine* e = tg_make_engine(1000); /* max_loop_frames 20000 */
+  le_snapshot s;
+
+  /* The canonical example: 64 bars of 15/8 at 30 BPM is nowhere close. The
+   * signature change must be DRAINED (a ring command, not yet applied to the
+   * live engine atomics the capacity check reads) before it takes effect. */
+  CHECK(le_engine_set_time_signature(e, 15, 8) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_set_track_length_preset(e, 0, 64) == LE_ERR_CAPACITY);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_preset_bars == 0); /* rejected: never applied */
+
+  /* Back to 4/4: worst-case frames-per-bar at 30 BPM is 8000 (sr 1000), so
+   * 2 bars (16000) fits the 20000 cap and 3 bars (24000) does not. */
+  CHECK(le_engine_set_time_signature(e, 4, 4) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(le_engine_set_track_length_preset(e, 0, 2) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_preset_bars == 2);
+
+  CHECK(le_engine_set_track_length_preset(e, 0, 3) == LE_ERR_CAPACITY);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_preset_bars == 2); /* unchanged by the rejection */
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_allocation_capacity_exact_fit(void) {
+  printf("test_length_preset_allocation_capacity_exact_fit\n");
+  /* Pins the guard's strict `>` as intentional (code review): a preset that
+   * needs EXACTLY max_loop_frames — not one frame more — fits. 4/4 at worst-
+   * case 30 BPM, sr 1000: frames-per-bar 8000; 3 bars is exactly 24000. */
+  le_engine* e = tg_make_engine_cap(1000, 24000);
+
+  CHECK(le_engine_set_track_length_preset(e, 0, 3) == LE_OK); /* 24000 == cap */
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) ==
+        LE_ERR_CAPACITY); /* 32000 > cap */
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_inert_until_rerecord(void) {
+  printf("test_length_preset_inert_until_rerecord\n");
+  /* Setting a preset on an already-recorded track is stored but never
+   * retroactive; it takes effect only on the NEXT defining recording, after
+   * a clear + re-record. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000); /* AUTO: derives 120 bpm, 2 bars */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].length_preset_bars == 4); /* stored... */
+  CHECK(s.master_length_frames == 4000);       /* ...but nothing retroactive */
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 6000); /* click off: length/4 = 1500 fpbar -> 160 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 6000);
+  CHECK(s.loop_bars == 4);
+  CHECK(fabsf(s.tempo_bpm - 160.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
+static void test_length_preset_dormant_with_sync_off(void) {
+  printf("test_length_preset_dormant_with_sync_off\n");
+  /* With loop<->grid sync off, an N-bars preset is dormant (matches a plain
+   * grid-off recording): no auto-finalize target, no tempo derivation. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  le_engine_set_tempo(e, 120.0f);
+  CHECK(le_engine_set_click_mode(e, LE_CLICK_REC) == LE_OK);
+  CHECK(le_engine_set_track_length_preset(e, 0, 4) == LE_OK);
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0);
+  tg_advance(e, 8500); /* past where an armed target would have fired */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING); /* no auto-finalize */
+
+  le_engine_record(e, 0);
+  tg_advance(e, 1000 / 100);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 8500);
+  CHECK(s.loop_bars == 0);                    /* free-form, matches sync off */
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* untouched */
 
   le_engine_destroy(e);
 }
@@ -13450,6 +13975,7 @@ int main(void) {
   test_tempo_grid_next_boundary();
   test_tempo_grid_signature_validation();
   test_tempo_grid_derive_bpm();
+  test_tempo_grid_bpm_for_length();
   test_tempo_grid_defaults_and_persistence();
   test_tempo_set_and_clamp();
   test_tap_tempo();
@@ -13461,6 +13987,22 @@ int main(void) {
   test_sync_off_keeps_free_form();
   test_loop_derives_tempo_from_none();
   test_derive_only_from_none();
+  test_length_preset_auto_click_off_unchanged();
+  test_length_preset_auto_click_on_derives_bars_only();
+  test_length_preset_auto_click_on_no_tempo_falls_back();
+  test_length_preset_n_bars_click_off_derives_tempo();
+  test_length_preset_n_bars_click_on_auto_finalizes();
+  test_length_preset_n_bars_click_on_arms_through_count_in();
+  test_length_preset_n_bars_click_on_early_press_disarms();
+  test_length_preset_n_bars_click_on_handoff_before_target();
+  test_length_preset_n_bars_click_on_handoff_during_crossfade();
+  test_length_preset_n_bars_click_on_no_tempo_fallback();
+  test_length_preset_signature_drift_after_set_degrades_cleanly();
+  test_length_preset_setter_validates_args();
+  test_length_preset_allocation_capacity();
+  test_length_preset_allocation_capacity_exact_fit();
+  test_length_preset_inert_until_rerecord();
+  test_length_preset_dormant_with_sync_off();
   test_loop_drives_beat_counter();
   test_beat_counter_generic_signature();
   test_tempo_lock_with_content();
