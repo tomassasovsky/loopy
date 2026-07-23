@@ -373,15 +373,23 @@ def platform_h(v):
 # zone -- load runs faceplate -> post -> base -> floor. The posts anchor to the
 # BASE only; the faceplate bears on their felt caps, so the lid still lifts off and
 # NOTHING shows on the top face. Cut+bend only.
-POST_V     = 170.0                 # web depth: just in front of the 16in aperture edge (v 178)
-POST_U     = [568.0, 682.0]        # two posts spread under the aperture width (u 454..796)
+POST_V     = 158.0                 # web depth: pulled forward, ~16 mm clear of the 16in aperture (v 174)
+POST_U     = [610.0, 725.0]        # two posts under the aperture (u 454..796), clear of the vent (u<=571)
 POST_PW    = 40.0                  # post width (u) -- lateral stability
 POST_PAD   = 30.0                  # top pad length (v) -- bears on the faceplate underside
 POST_FOOTL = 35.0                  # foot flange length (v) -- bolts to the base floor
-POST_FELT  = 2.0                   # compliant cap (felt/rubber): slope + tolerance + anti-rattle
+POST_FELT  = 2.0                   # compliant cap (felt/rubber): tolerance + anti-rattle
+POST_TILT  = SLOPE_ANGLE           # pad tilt (deg) so it beds FLUSH on the sloped faceplate underside
 POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
-POST_H     = lid_top_z(POST_V) - 3*T - POST_FELT            # web height (foot on floor -> pad under skin)
-_POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected foot depth on the flat base
+# The shell is soft 1050 aluminium, but the posts are made in STEEL 1.6 mm: ~3x stiffer
+# (E 200 vs 69 GPa), tougher, and only ~+60 g for the pair -- rigidity where it costs no
+# weight (issue #292). Felt cap isolates the steel pad from the soft-Al faceplate.
+POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), NOT the shell's 2.0 Al
+# foot + pad both extend FORWARD of the web (a C, all in the clear strip in front of the
+# aperture); nothing sits under the display.
+POST_H     = lid_top_z(POST_V) - 3*POST_T - POST_FELT       # web height (foot on floor -> pad under skin)
+_POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
+_POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
 
 def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
@@ -567,18 +575,19 @@ def _check():
     for u in POST_U:
         assert s16["u"] <= u <= s16["u"] + s16["w"], \
             f"post u={u:.0f} not under the 16in aperture ({s16['u']:.0f}..{s16['u']+s16['w']:.0f})"
-    # post pad bears on solid panel (in front of the aperture, clear of the LED slots)
-    assert 128.0 < POST_V - POST_PAD/2.0 and POST_V < 178.0, \
-        "POST pad not on the clear solid strip in front of the aperture"
-    # post feet on the base must clear the intake vent (they extend BEHIND the web)
-    vfeet = _POST_VP + POST_FOOTL/2.0
+    # pad bears on solid panel in front of the aperture (>=10 mm clear of its edge) and
+    # behind the front-pedal LED slots (v>=128).
+    assert 128.0 < POST_V - POST_PAD/2.0, "POST pad reaches back over the front-pedal LED slots"
+    assert POST_V < s16["v"] - 10.0, \
+        f"POST web v={POST_V:.0f} too close to the 16in aperture edge (v={s16['v']:.0f}); crowds the display"
+    # post feet on the base must clear the intake vent (forward of the web)
     vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T) if c.get("kind") == "rect"]
     vu0 = min(b[0] for b in vent_bb); vu1 = max(b[2] for b in vent_bb)
     vv0 = min(b[1] for b in vent_bb); vv1 = max(b[3] for b in vent_bb)
     for u in POST_U:
         for du in (-POST_BOLT_DU, POST_BOLT_DU):
-            assert not (vu0 <= u+du <= vu1 and vv0-3 <= vfeet <= vv1+3), \
-                f"POST foot ({u+du:.0f},{vfeet:.0f}) collides with the intake vent"
+            assert not (vu0 <= u+du <= vu1 and vv0-3 <= _POST_FOOT_VP <= vv1+3), \
+                f"POST foot ({u+du:.0f},{_POST_FOOT_VP:.0f}) collides with the intake vent"
 
     # 3. platform head-room for BOTH rows: foot-plate flush+proud at each depth
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
@@ -939,9 +948,9 @@ def dxf_base(path):
             _circle(msp, x, y, D_FOOT)
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
     for u in POST_U:                               # 2 base-anchored support-post feet (issue #292)
-        for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot extends BEHIND the web -> clears the intake vent
-            _circle(msp, u+du, _POST_VP + POST_FOOTL/2.0, D_M4)
-    _text(msp, POST_U[0]-24, _POST_VP + POST_FOOTL/2.0 + 8, 5,
+        for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot forward of the web, clear of vent + display
+            _circle(msp, u+du, _POST_FOOT_VP, D_M4)
+    _text(msp, POST_U[0]-24, _POST_FOOT_VP + 8, 5,
           "SUPPORT POST feet x2 (M4; issue #292)", "NOTE")
 
     # ---- front wall: lid front-lip screws | rear wall: I/O + transition PEM --------
@@ -1009,24 +1018,27 @@ def dxf_screen_bracket(path):
     doc.saveas(path); return {}
 
 def dxf_post(path):
-    """Base-anchored faceplate support post (issue #292), x2: a folded Z -- foot
-    (bolts to the base floor, M4 x2) + vertical web + top pad. A felt cap on the pad
-    bears on the faceplate underside just in front of the 16in aperture, propping the
-    one zone the perimeter folds do not reach. Load runs to the base, not the lid, so
-    nothing shows on the top face and the lid still lifts off. 2 folds 90deg;
-    bend deduction PROVISIONAL (nominal segments); non-critical (felt takes slack)."""
+    """Base-anchored faceplate support post (issue #292), x2: a folded C -- foot
+    (bolts to the base floor, M4 x2) + vertical web + top pad, foot and pad both
+    forward of the web (all in the clear strip in front of the 16in aperture, nothing
+    under the display). A felt cap on the pad bears on the faceplate underside,
+    propping the one zone the perimeter folds do not reach. Load runs to the base, not
+    the lid, so nothing shows on the top face and the lid still lifts off. The
+    pad->web fold is 90 - POST_TILT deg so the pad beds FLUSH on the sloped underside;
+    the foot->web fold is 90. Bend deduction PROVISIONAL (nominal segments)."""
     doc = _doc(); msp = doc.modelspace()
     pw, pad, web, foot = POST_PW, POST_PAD, POST_H, POST_FOOTL
     Wd = pad + web + foot
     _poly(msp, [(0, 0), (pw, 0), (pw, Wd), (0, Wd)], "CUT")
-    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web
-    _poly(msp, [(0, pad+web), (pw, pad+web)], "BEND", closed=False)   # web -> foot
+    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web (fold 90 - tilt)
+    _poly(msp, [(0, pad+web), (pw, pad+web)], "BEND", closed=False)   # web -> foot (fold 90)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot
         _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
     _text(msp, 5, Wd+6, 9,
-          f"VAMP FACEPLATE SUPPORT POST  2.0mm  x2  Z-fold (pad {pad:.0f} / web {web:.0f} / "
-          f"foot {foot:.0f} mm); foot bolts to the base floor (M4 x2), felt cap on the pad "
-          f"bears on the faceplate underside; deduction PROVISIONAL", "NOTE")
+          f"VAMP FACEPLATE SUPPORT POST  {POST_T:.1f}mm COLD-ROLLED STEEL (not the Al shell)  x2  "
+          f"C-fold (pad {pad:.0f} / web {web:.0f} / foot {foot:.0f} mm); pad fold {90-POST_TILT:.1f}deg "
+          f"(beds flush on the {POST_TILT:.1f}deg slope), foot fold 90deg; foot bolts to the base floor "
+          f"(M4 x2), felt cap on the pad; deduction PROVISIONAL", "NOTE")
     doc.saveas(path); return {}
 
 # ===========================================================================
@@ -1178,16 +1190,19 @@ def build_post_step():
     """Folded 3D of the base-anchored support post (issue #292, x2): foot flat on
     the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up."""
     import cadquery as cq
-    pw, pad, web, foot, t = POST_PW, POST_PAD, POST_H, POST_FOOTL, T
-    # Z-fold: pad forward (v 0..pad, top), web at v=pad, foot BEHIND (v pad..pad+foot,
-    # on the floor) so the feet clear the intake vent.
-    pad_p  = cq.Workplane("XY").box(pw, pad, t, centered=False).translate((0, 0, web))   # top, forward
-    web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, pad, 0))   # vertical at v=pad
-    foot_p = cq.Workplane("XY").box(pw, foot, t, centered=False).translate((0, pad, 0))  # floor, behind
-    body = pad_p.union(web_p).union(foot_p)
-    for du in (-POST_BOLT_DU, POST_BOLT_DU):                                             # M4 through the foot
+    pw, pad, web, foot, t = POST_PW, POST_PAD, POST_H, POST_FOOTL, POST_T
+    # C-fold, foot + pad both FORWARD of the web. Local X=u(width), Y=v(depth), Z=up.
+    # foot on the floor (Y 0..foot), web vertical at its back edge (Y=foot), pad hinged
+    # at the web top and TILTED down-forward by POST_TILT to bed on the sloped underside.
+    foot_p = cq.Workplane("XY").box(pw, foot, t, centered=False)                          # floor, Y 0..foot
+    web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
+    pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
+              .translate((0, foot - pad, web))                                            # flat at the top, forward
+              .rotate((0, foot, web), (1, foot, web), POST_TILT))                         # tilt to the slope
+    body = foot_p.union(web_p).union(pad_p)
+    for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
         body = body.cut(cq.Workplane("XY").cylinder(
-            2*t, D_M4/2.0, centered=(True, True, False)).translate((pw/2.0+du, pad + foot/2.0, 0)))
+            2*t, D_M4/2.0, centered=(True, True, False)).translate((pw/2.0+du, foot/2.0, 0)))
     step = os.path.join(OUT, "vamp_post.step")
     cq.exporters.export(body.val(), step)
     return step
