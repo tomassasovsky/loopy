@@ -13,12 +13,12 @@ IMAGE_INSTALL:append = " \
     alsa-utils \
     alsa-plugins \
     gsettings-desktop-schemas \
-    dconf \
     seatd \
     "
-# gsettings-desktop-schemas + dconf back the embedder's GNOME settings lookups
-# (silences the G_IS_SETTINGS warning); alsa-plugins provides the dmix/dsnoop
-# slaves the bare ALSA config references.
+# gsettings-desktop-schemas provides the schema the embedder's settings lookup
+# needs (silences the G_IS_SETTINGS warning); the dconf persistent backend lives
+# in meta-gnome (not included) — not worth a whole layer for cosmetic polish.
+# alsa-plugins provides the dmix/dsnoop slaves the bare ALSA config references.
 #
 # seatd = the seat provider weston's libseat needs to open input devices. On this
 # minimal image weston has no active logind session and no seatd → keyboard/mouse
