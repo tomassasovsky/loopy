@@ -35,15 +35,19 @@ void main() {
     test('matches the independent reference encoder', () {
       // Cross-check the production codec against the test-only packer.
       final frame = goldenFrames()['playing_bankb']!;
-      final reference = buildStateSysEx([
-        0x01, // flags: mode=play
-        GlobalColor.amber.index,
-        1, // bank B
-        4, // armed
-        ...[1, 1, 1, 1, 0, 0, 0, 0], // green x4 then off
-        0x60, 0xE3, 0x16, 0x00, // 1_500_000 µs LE
-        153, // master gain 153/255
-      ]);
+      final reference = buildStateSysEx(
+        [
+          0x01, // flags: mode=play (looperMode=multi/countingIn=false, both
+          // default, contribute nothing to bits4-7)
+          GlobalColor.amber.index,
+          1, // bank B
+          4, // armed
+          ...[1, 1, 1, 1, 0, 0, 0, 0], // green x4 then off
+          0x60, 0xE3, 0x16, 0x00, // 1_500_000 µs LE
+          153, // master gain 153/255
+        ],
+        version: PedalCodec.protocolVersionV2,
+      );
       expect(PedalCodec.encodeFrame(frame), reference);
     });
   });
@@ -85,6 +89,182 @@ void main() {
         final decoded = PedalCodec.decodeFrame(oldStyle);
         expect(decoded, isNotNull);
         expect(decoded!.performanceArmed, isFalse);
+      },
+    );
+  });
+
+  group('PedalCodec protocol v2: looperMode + countingIn (D11)', () {
+    test('protocolVersion (the encode default) is v2', () {
+      expect(PedalCodec.protocolVersion, PedalCodec.protocolVersionV2);
+    });
+
+    test('encodeFrame emits protocolVersionV2 by default', () {
+      final bytes = PedalCodec.encodeFrame(PedalStateFrame.blank());
+      expect(bytes[2], PedalCodec.protocolVersionV2);
+    });
+
+    test('looperMode and countingIn round-trip at v2', () {
+      final frame = goldenFrames()['mode_counting_in']!;
+      final decoded = PedalCodec.decodeFrame(PedalCodec.encodeFrame(frame));
+      expect(decoded!.looperMode, PedalLooperMode.sync);
+      expect(decoded.countingIn, isTrue);
+    });
+
+    test(
+      'every PedalLooperMode value round-trips through the real encode -> '
+      'decode path (not just sync/song/band, which fit in 2 bits and would '
+      'hide a `& 0x03` vs `& 0x07` mask bug -- free needs bit 6 too)',
+      () {
+        for (final mode in PedalLooperMode.values) {
+          final frame = PedalStateFrame.blank().copyWith(
+            looperMode: mode,
+            countingIn: true,
+          );
+          final decoded = PedalCodec.decodeFrame(PedalCodec.encodeFrame(frame));
+          expect(
+            decoded!.looperMode,
+            mode,
+            reason: 'PedalLooperMode.$mode did not round-trip',
+          );
+          expect(decoded.countingIn, isTrue);
+        }
+      },
+    );
+
+    test('decodeFrame accepts a v1 header alongside v2', () {
+      final v1Bytes = PedalCodec.encodeFrame(
+        goldenFrames()['idle_rec']!,
+        targetVersion: PedalCodec.protocolVersionV1,
+      );
+      expect(v1Bytes[2], PedalCodec.protocolVersionV1);
+      expect(PedalCodec.decodeFrame(v1Bytes), isNotNull);
+    });
+
+    test(
+      'a v1-shaped frame decodes with looperMode multi and countingIn false '
+      '(backward compat: firmware v2 receiving an app v1 frame)',
+      () {
+        // Built exactly as today's (pre-B5a) app would have sent it: version
+        // byte 0x01, flags bits4-7 never set (they didn't exist on this
+        // wire). Proves a genuinely old-app-shaped frame still decodes.
+        final oldAppStyle = buildStateSysEx([
+          0x00, // flags: rec mode, no clear fade/goodbye/performanceArmed
+          GlobalColor.green.index,
+          0,
+          0,
+          ...List.filled(8, 0),
+          0, 0, 0, 0,
+          255, // master gain (unity)
+        ]);
+        final decoded = PedalCodec.decodeFrame(oldAppStyle);
+        expect(decoded, isNotNull);
+        expect(decoded!.looperMode, PedalLooperMode.multi);
+        expect(decoded.countingIn, isFalse);
+      },
+    );
+
+    test(
+      'downgrading a v2-intent frame to v1 loses looperMode and countingIn '
+      '(the D11 degrade: app v2 talking to firmware v1)',
+      () {
+        final intent = goldenFrames()['mode_counting_in']!; // sync, counting in
+        final v1Bytes = PedalCodec.encodeFrame(
+          intent,
+          targetVersion: PedalCodec.protocolVersionV1,
+        );
+        final decoded = PedalCodec.decodeFrame(v1Bytes);
+        // The wire genuinely lost the information — decode does NOT recover
+        // the original intent, only the v1-representable fields.
+        expect(decoded, isNot(intent));
+        expect(decoded!.looperMode, PedalLooperMode.multi);
+        expect(decoded.countingIn, isFalse);
+        expect(decoded.mode, intent.mode); // v1-representable fields survive
+        expect(decoded.globalColor, intent.globalColor);
+      },
+    );
+
+    test('rejects a reserved looperMode code (5-7) on a v2 frame', () {
+      // flags byte with looperMode nibble = 5 (0b101 << 4), one past `free`
+      // (index 4) — the highest currently-defined value.
+      final bytes = buildStateSysEx([
+        0x50, // bits4-6 = 5 (reserved)
+        GlobalColor.off.index,
+        0,
+        0,
+        ...List.filled(8, 0),
+        0, 0, 0, 0,
+        255,
+      ], version: PedalCodec.protocolVersionV2);
+      expect(PedalCodec.decodeFrame(bytes), isNull);
+    });
+
+    test(
+      'a reserved looperMode code on a v1 frame is irrelevant -- v1 never '
+      'reads bits 4-6 at all',
+      () {
+        final bytes = buildStateSysEx([
+          0x50, // would be an invalid looperMode nibble at v2
+          GlobalColor.off.index,
+          0,
+          0,
+          ...List.filled(8, 0),
+          0, 0, 0, 0,
+          255,
+        ]); // version defaults to protocolVersionV1, exercised here on purpose
+        final decoded = PedalCodec.decodeFrame(bytes);
+        expect(decoded, isNotNull);
+        expect(decoded!.looperMode, PedalLooperMode.multi);
+        expect(decoded.countingIn, isFalse);
+      },
+    );
+
+    test('encodeFrame rejects an unrecognized targetVersion', () {
+      expect(
+        () => PedalCodec.encodeFrame(PedalStateFrame.blank(), targetVersion: 3),
+        throwsA(isA<AssertionError>()),
+      );
+    });
+  });
+
+  group('PedalCodec.firmwareNeedsUpdate (D11)', () {
+    test('is true for v1 firmware', () {
+      expect(
+        PedalCodec.firmwareNeedsUpdate(PedalCodec.protocolVersionV1),
+        isTrue,
+      );
+    });
+
+    test('is false for v2 firmware', () {
+      expect(
+        PedalCodec.firmwareNeedsUpdate(PedalCodec.protocolVersionV2),
+        isFalse,
+      );
+    });
+
+    test('is false for any firmware version at least as new as v2', () {
+      expect(PedalCodec.firmwareNeedsUpdate(99), isFalse);
+    });
+  });
+
+  group('D11 version-pairing fixture (bit-identical baseline)', () {
+    test(
+      'idle_rec_v1 reproduces the exact pre-B5a wire bytes byte-for-byte',
+      () {
+        // Historical bytes, hand-transcribed from the pre-B5a committed
+        // MANIFEST.md for `idle_rec.syx` — the "today's baseline, must stay
+        // bit-identical" pairing (D11). Only the header's version byte
+        // (index 2, still 0x01 here) is meaningful to this claim; everything
+        // else was already covered by the generic golden round-trip.
+        const historical = [
+          0xF0, 0x7D, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, //
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, //
+          0x04, 0x00, 0x00, 0x7F, 0x7A, 0xF7,
+        ];
+        final bytes = PedalCodec.encodeFrame(
+          explicitVersionGoldenFrames()['idle_rec_v1']!.frame,
+          targetVersion: PedalCodec.protocolVersionV1,
+        );
+        expect(bytes, historical);
       },
     );
   });
@@ -233,8 +413,9 @@ void main() {
     });
 
     test('an unrecognized protocol version', () {
+      // 0x01 and 0x02 are both recognized (D11); 0x03 is not.
       expect(
-        PedalCodec.decodeFrame(buildStateSysEx(validPayload(), version: 0x02)),
+        PedalCodec.decodeFrame(buildStateSysEx(validPayload(), version: 0x03)),
         isNull,
       );
     });
