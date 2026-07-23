@@ -347,6 +347,101 @@ static void sync_grid_to_loop(le_engine* e, int32_t len) {
   e->grid_total_beats = bars * num;
 }
 
+/* ---- track length presets (A6, D17; song-mode-spec.md §1) ----
+ *
+ * A per-track preset on the DEFINING (first/master) recording, orthogonal to
+ * le_effective_multiple (which fixes a NON-defining track's length once a
+ * master already exists — engine_private.h). Two hooks implement the full
+ * preset x click-mode matrix with no change to the AUTO path:
+ *   - le_arm_length_preset_target, called once when a defining recording
+ *     actually begins (handle_record's EMPTY branch and le_count_in_commit),
+ *     latches this take's auto-finalize target in frames, or 0 when none
+ *     applies.
+ *   - The target (if any) is consumed in advance_transport_frame (auto-
+ *     finalizes into overdub at exactly N bars) or at finalize_master (an
+ *     unarmed take with an N-bars preset derives tempo from length / N).
+ * See le_engine_set_track_length_preset's header doc for the matrix itself. */
+
+/* Arms (or clears) track [t]'s auto-finalize target for the CURRENT defining
+ * take. Only armed — target_frames > 0 — when ALL of: an N-bars preset is set,
+ * loop<->grid sync is on (a preset is dormant without a grid, matching a
+ * plain grid-off recording), the click is audible during recording (any mode
+ * but off), and a tempo is already established (source != none) — the auto-
+ * finalize frame count requires a known frames-per-bar, which requires a
+ * tempo. Reads click_mode / tempo ONCE here, at record-start commitment (like
+ * le_count_in_begin's frozen schedule): a later mid-take change never moves
+ * this take's target. Left at 0 (no auto-finalize) covers AUTO, N-bars with
+ * click off, and N-bars with click on but no tempo yet — all three finalize
+ * through the length-preset-derive-tempo path in finalize_master instead
+ * (the A6 fallback for the no-tempo edge case, documented on the header). */
+static void le_arm_length_preset_target(le_engine* e, le_track* t) {
+  t->length_preset_target_frames = 0;
+  const int32_t bars = load_i32(&t->a_length_preset_bars);
+  if (bars <= 0) return; /* AUTO: no target, ever */
+  if (!load_i32(&e->a_sync_tempo)) return; /* grid disabled: preset dormant */
+  if (load_i32(&e->a_click_mode) == LE_CLICK_OFF) return;
+  if (load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_NONE) return;
+  int32_t num = load_i32(&e->a_ts_num);
+  if (num <= 0) num = 4;
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  const le_tempo_grid g = {load_f32(&e->a_tempo_bpm_bits), num,
+                           load_i32(&e->a_ts_den), sr};
+  const double fpbar = le_grid_frames_per_bar(&g);
+  if (!(fpbar > 0.0)) return;
+  const double target = (double)bars * fpbar;
+  if (!(target >= 1.0)) return;
+  /* Re-validate against capacity with the LIVE grid (code-review fix): the
+   * D17 allocation guard in le_engine_set_track_length_preset only checked
+   * the signature at SET time, worst-case 30 BPM. Nothing stops a signature
+   * (or tempo) change between setting the preset and actually recording — no
+   * track has content yet, so D6's lock does not apply — and this take's
+   * live grid can need far more frames than the guard ever saw. Using the
+   * ACTUAL live-computed target here (not another worst-case estimate) is
+   * the precise, correct check: this is exactly the frame count the auto-
+   * finalize would need to reach. If it can't fit, leave the target unarmed
+   * so the take degrades cleanly to the click-off derive-from-length path at
+   * finalize (the same fallback already used for the no-tempo edge case)
+   * instead of arming a target that can never fire — which would otherwise
+   * leave a stale length_preset_target_frames for finalize_master to trip
+   * over silently (the bug this guard fixes). */
+  if (target > (double)e->max_loop_frames) return;
+  t->length_preset_target_frames = (int32_t)llround(target);
+}
+
+/* The N-bars length-preset finalize override, used by finalize_master in
+ * place of sync_grid_to_loop whenever a defining take with an N-bars preset
+ * finalizes WITHOUT having reached its auto-finalize target (click was off,
+ * so no target was ever armed; or click was on but no tempo existed yet at
+ * record start — the A6 fallback). Per the manual's explicit rule for this
+ * preset, tempo is derived from the ACTUAL recorded length divided by `bars`
+ * UNCONDITIONALLY — even over an existing manual/tapped tempo, unlike AUTO's
+ * D7 "never re-derive an existing tempo" precedence. The loop's AUDIO length
+ * is never altered; only bars/tempo are set to describe it. Mirrors
+ * sync_grid_to_loop's guard shape (sync off / degenerate input -> grid-free)
+ * so the two stay easy to compare. */
+static void le_apply_length_preset_tempo(le_engine* e, int32_t len,
+                                         int32_t bars) {
+  e->grid_prev_beat = -1; /* re-arm beat publication at the next frame */
+  if (!load_i32(&e->a_sync_tempo) || len <= 0 || bars <= 0) {
+    e->grid_total_beats = 0;
+    store_i32(&e->a_loop_bars, 0);
+    return;
+  }
+  int32_t num = load_i32(&e->a_ts_num);
+  if (num <= 0) num = 4;
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  const float bpm = le_grid_bpm_for_length(len, bars, num, sr);
+  if (bpm <= 0.0f) { /* degenerate input: stay grid-free, like sync_grid_to_loop */
+    e->grid_total_beats = 0;
+    store_i32(&e->a_loop_bars, 0);
+    return;
+  }
+  store_f32(&e->a_tempo_bpm_bits, bpm);
+  store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_DERIVED);
+  store_i32(&e->a_loop_bars, bars);
+  e->grid_total_beats = bars * num;
+}
+
 /* Per-frame beat publication, loop-driven: once a grid exists the beat index
  * derives from the master position so beats divide the loop exactly (the
  * 2f0513a loop-synced branch; the free-running branch lives in click_frame).
@@ -460,7 +555,21 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   le_plog_push(e, frame,
               (le_command){.code = LE_PLOG_RECORD_END,
                            .arg_i = (int32_t)(t - e->tracks)});
-  sync_grid_to_loop(e, len);
+  /* A6/D17: an N-bars length preset that finalizes WITHOUT its auto-finalize
+   * target having been armed (click was off, or click was on but no tempo
+   * existed at record start — le_arm_length_preset_target) derives tempo from
+   * the actual length / N instead of the normal AUTO path. An armed target
+   * (target reached on time, OR an early press that disarms it — D17) takes
+   * the normal path unchanged: on-time, the existing tempo already makes len
+   * round back to bars == N; early, the shorter take rounds to whatever bars
+   * it actually spans, exactly the "early press disarms the preset" rule. */
+  const int32_t preset_bars = load_i32(&t->a_length_preset_bars);
+  if (preset_bars > 0 && t->length_preset_target_frames == 0) {
+    le_apply_length_preset_tempo(e, len, preset_bars);
+  } else {
+    sync_grid_to_loop(e, len);
+  }
+  t->length_preset_target_frames = 0; /* consumed; the next take re-arms */
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
 }
 
@@ -832,6 +941,7 @@ static void handle_record(le_engine* e, int32_t ch, uint64_t frame) {
         t->record_start = 0;
         le_loop_clock_reset(&e->clock);
         store_i32(&t->a_state, LE_TRACK_RECORDING);
+        le_arm_length_preset_target(e, t); /* A6: may arm an N-bars target */
       } else {
         /* New track over an existing master: begin capturing immediately at the
          * current loop phase — no waiting for the loop top. record_pos seeds to
@@ -973,6 +1083,13 @@ static void handle_clear(le_engine* e, int32_t ch) {
   t->pending_record = 0;
   t->od_gain = 0.0f;
   t->xfade_capture = 0; /* cancel any in-flight seam-crossfade deferral */
+  /* Same class of per-take audio-thread-local deferral state as xfade_capture
+   * above (A6): a stale armed target from an aborted take must not survive
+   * into whatever the track records next. Defensive — le_arm_length_preset_
+   * target already unconditionally overwrites this at the START of every
+   * defining take, so a clear between takes has no reachable window where a
+   * stale value would be read, but it costs nothing to reset it here too. */
+  t->length_preset_target_frames = 0;
   store_i32(&t->a_pending, 0);
   store_i32(&t->a_state, LE_TRACK_EMPTY);
   le_track_set_len(t, 0);
@@ -1532,6 +1649,17 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (e->count_in_total > 0) le_count_in_reset(e);
       break;
     }
+    /* ---- track length presets (A6, D17; see the helper block above
+     * finalize_master). Not perf-logged, like the tempo grid / click block
+     * above — state only, no direct audible effect at the moment it's set. */
+    case LE_CMD_SET_LENGTH_PRESET: {
+      if (!valid_channel(e, cmd->arg_i)) break;
+      int32_t bars = (int32_t)cmd->arg_f;
+      if (bars < 0) bars = 0;
+      if (bars > LE_LENGTH_PRESET_MAX_BARS) bars = LE_LENGTH_PRESET_MAX_BARS;
+      store_i32(&e->tracks[cmd->arg_i].a_length_preset_bars, bars);
+      break;
+    }
     case LE_CMD_SET_MASTER_GAIN: {
       le_plog_push(e, frame, *cmd);
       float g = cmd->arg_f;
@@ -2025,6 +2153,7 @@ static void le_count_in_commit(le_engine* e, uint64_t frame) {
   t->record_start = 0;
   le_loop_clock_reset(&e->clock);
   store_i32(&t->a_state, LE_TRACK_RECORDING);
+  le_arm_length_preset_target(e, t); /* A6: may arm an N-bars target */
   le_plog_push(e, frame,
                (le_command){.code = LE_PLOG_RECORD_START, .arg_i = ch});
   le_capture_start_unmute(e, t, frame);
@@ -2173,6 +2302,16 @@ static inline void advance_transport_frame(le_engine* e, int tc,
          * point, then fold it into the head and finalize at the intended
          * length. The buffer room was checked when the deferral was armed. */
         if (--tr->xfade_capture == 0) finalize_master_xfade(e, tr, frame);
+      } else if (tr->length_preset_target_frames > 0 &&
+                 tr->record_pos >= tr->length_preset_target_frames) {
+        /* A6/D17: N-bars + click-on auto-finalize — exactly N bars' worth of
+         * frames were captured (target armed at record start by
+         * le_arm_length_preset_target). Finalizes into overdub UNCONDITIONALLY
+         * — the manual's "auto-finishes... and starts overdubbing" is not
+         * gated on rec_dub like a manual second press would be. Deferred via
+         * request_master_finalize (not a direct finalize_master call) so the
+         * seam gets the same click-free crossfade as a manual press. */
+        request_master_finalize(e, tr, LE_TRACK_OVERDUBBING, frame);
       } else if (tr->record_pos >= e->max_loop_frames) {
         finalize_master(e, tr, LE_TRACK_PLAYING, frame);
       }

@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy_engine/loopy_engine.dart';
 import 'package:loopy_engine/src/generated/loopy_engine_bindings.dart'
-    show LE_COUNT_IN_MAX_BARS, LE_MAX_GAIN;
+    show LE_COUNT_IN_MAX_BARS, LE_LENGTH_PRESET_MAX_BARS, LE_MAX_GAIN;
 
 /// Drives the REAL native engine through the device-free pump: configure (no
 /// device), record a loop by pumping blocks, and read the snapshot back —
@@ -473,6 +473,42 @@ void main() {
       engine.pump(frames: 0);
       expect(engine.snapshot().countInBars, 0);
     });
+
+    test(
+      'setTrackLengthPreset publishes AUTO, rejects bad args and capacity',
+      () {
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: 0), // AUTO
+          EngineResult.ok,
+        );
+        engine.pump(frames: 0);
+        expect(engine.snapshot().tracks.first.lengthPresetBars, 0);
+
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: -1),
+          EngineResult.invalid,
+        );
+        expect(
+          engine.setTrackLengthPreset(
+            channel: 0,
+            bars: LE_LENGTH_PRESET_MAX_BARS + 1,
+          ),
+          EngineResult.invalid,
+        );
+
+        // 1 bar at 4/4, worst-case 30 BPM, sr 48000 needs 384000 frames —
+        // this engine's maxLoopFrames (48000, 1 second) cannot hold it, so
+        // the D17 allocation guard rejects it through the real FFI call
+        // (le_result -6 round-tripping to EngineResult.capacity).
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: 1),
+          EngineResult.capacity,
+        );
+        engine.pump(frames: 0);
+        // Rejected calls leave the published preset untouched.
+        expect(engine.snapshot().tracks.first.lengthPresetBars, 0);
+      },
+    );
   }, skip: skip);
 
   group('fx chain fingerprint (native-side properties)', () {

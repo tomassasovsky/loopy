@@ -296,6 +296,7 @@ class TrackSnapshot {
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.lengthPresetBars = 0,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -315,6 +316,7 @@ class TrackSnapshot {
       outputMask = 0x3,
       layerInFlight = false,
       pending = false,
+      lengthPresetBars = 0,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -340,6 +342,7 @@ class TrackSnapshot {
     outputMask: native.output_mask,
     layerInFlight: native.layer_in_flight != 0,
     pending: native.pending != 0,
+    lengthPresetBars: native.length_preset_bars,
     lanes: lanes,
   );
 
@@ -378,6 +381,11 @@ class TrackSnapshot {
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// The DEFINING-recording length preset (A6, D17): `0` = AUTO, `1..64` =
+  /// fixed N bars. Inert on a track that already has content; applies to the
+  /// next defining recording only. See `TempoControl.setTrackLengthPreset`.
+  final int lengthPresetBars;
 
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
@@ -421,6 +429,7 @@ class TrackSnapshot {
           outputMask == other.outputMask &&
           layerInFlight == other.layerInFlight &&
           pending == other.pending &&
+          lengthPresetBars == other.lengthPresetBars &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -438,6 +447,7 @@ class TrackSnapshot {
     outputMask,
     layerInFlight,
     pending,
+    lengthPresetBars,
     Object.hashAll(lanes),
   );
 }

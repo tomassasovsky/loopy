@@ -43,6 +43,10 @@ typedef enum le_result {
   LE_ERR_UNSUPPORTED = -5,   /* a plugin's bus topology is not a stereo (or
                               * mono-adaptable) effect — instrument / multi-bus /
                               * sidechain / wrong channel count (D-BUS) */
+  LE_ERR_CAPACITY = -6,      /* a requested allocation would exceed engine
+                              * capacity (A6, D17): N bars of the current
+                              * signature at the slowest possible tempo (30
+                              * BPM) would not fit in max_loop_frames */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -92,6 +96,10 @@ typedef enum le_click_mode {
 
 /* Maximum count-in length in measures (le_engine_set_count_in). */
 #define LE_COUNT_IN_MAX_BARS 64
+
+/* Maximum track length preset in bars (A6, D17;
+ * le_engine_set_track_length_preset). 0 is AUTO, not a bar count. */
+#define LE_LENGTH_PRESET_MAX_BARS 64
 
 /* Classification of a cable-free loopback path used to auto-measure latency.
  * All of these capture the *digital* round-trip (output → OS mixer → capture);
@@ -251,6 +259,21 @@ typedef enum le_command_code {
   LE_CMD_PERF_ARM = 41,    /* begin publishing to the perf capture rings */
   LE_CMD_PERF_DISARM = 42, /* stop; control frees the rings after a quiescent
                             * handshake once the audio thread acks this */
+
+  /* ---- track length presets (A6, D17) ----
+   * A per-track DEFINING-recording length preset, orthogonal to the existing
+   * fixed-multiple machinery (le_effective_multiple / target_multiple,
+   * engine_private.h): the multiple mechanism fixes a NON-defining track's
+   * length in whole BASE loops once a master already exists; this preset
+   * governs the DEFINING (first/master) recording itself — before any base
+   * loop length exists — and drives whether tempo, bar count, or both are
+   * derived from it (see le_arm_length_preset_target / finalize_master,
+   * engine_process.c). Values 0 (AUTO) or 1..LE_LENGTH_PRESET_MAX_BARS
+   * (fixed N bars) round-trip identically; anything else is clamped by the
+   * audio thread on apply, matching every other per-track setter. Inert on
+   * an already-recorded track until it is re-recorded. */
+  LE_CMD_SET_LENGTH_PRESET = 44, /* arg_i = channel, arg_f = bars (0 = AUTO,
+                                  * 1..LE_LENGTH_PRESET_MAX_BARS = fixed). */
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -433,6 +456,11 @@ typedef struct le_track_snapshot {
                             * captured/drained (punch tail window). Session
                             * capture waits this out before exporting. */
   int32_t pending;         /* 0/1: a quantized/signal arm is waiting to fire */
+  /* Trailing (A6, D17): the DEFINING-recording length preset — 0 = AUTO,
+   * 1..LE_LENGTH_PRESET_MAX_BARS = fixed N bars. Inert on a track that
+   * already has content; applies to the next defining recording only. See
+   * le_engine_set_track_length_preset. */
+  int32_t length_preset_bars;
 } le_track_snapshot;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -1085,6 +1113,54 @@ LE_EXPORT int32_t le_engine_set_track_multiple(le_engine* engine,
  * [multiple] whole base loops (>= 1), or 0 to auto-round-up on stop. */
 LE_EXPORT int32_t le_engine_set_default_multiple(le_engine* engine,
                                                  int32_t multiple);
+
+/* ---- track length presets (A6, D17) ----
+ * A per-track preset governing the DEFINING (first/master) recording only —
+ * orthogonal to le_engine_set_track_multiple above, which fixes a
+ * NON-defining track's length once a master already exists. Implements the
+ * Sheeran manual's preset x click-mode matrix (song-mode-spec.md §1):
+ *   - AUTO (0) + click off: tempo AND bar count are both derived from the
+ *     recording (unchanged A1 sync_grid_to_loop path).
+ *   - AUTO (0) + click on: bar count only is derived; an already-set tempo is
+ *     never re-derived. With NO tempo set, this falls back to deriving both
+ *     (the same as click off) — there is nothing else to preserve.
+ *   - N bars + click off: the recording proceeds as an ordinary manual take;
+ *     on finalize, tempo is derived from recorded-length / N — UNCONDITIONALLY,
+ *     even over an existing manual/tapped tempo (the manual's explicit rule for
+ *     this preset; distinct from AUTO's D7 "never re-derive" precedence).
+ *   - N bars + click on: REQUIRES a tempo already set (source != none) at the
+ *     moment recording begins, so frames-per-bar is computable — the defining
+ *     recording then auto-finalizes into overdub at exactly N bars' worth of
+ *     frames. An early record press before N bars disarms the preset (closes
+ *     normally, like AUTO, per D17's general early-press rule). With NO tempo
+ *     set at record start, auto-finalize cannot be armed (there is no way to
+ *     know how many frames N bars is) — this degrades to the N-bars + click-off
+ *     behavior: an ordinary manual take, tempo derived from length / N on
+ *     finalize (documented A6 judgment call).
+ * In every case the loop's AUDIO length is never altered — only tempo/bars are
+ * set to describe it. Requires loop<->grid sync on (le_engine_set_sync_tempo);
+ * with sync off the preset is dormant (matches a plain grid-off recording).
+ * Preset changes on an already-recorded track are inert until the track is
+ * cleared and re-recorded (stored, not retroactively applied). */
+
+/* Sets track [channel]'s length preset: 0 = AUTO, or 1..
+ * LE_LENGTH_PRESET_MAX_BARS to fix the defining recording to N bars (see the
+ * matrix above). Returns LE_ERR_INVALID for a bad channel/bars, or
+ * LE_ERR_CAPACITY when N bars of the CURRENT time signature at the slowest
+ * possible tempo (30 BPM) would exceed the engine's max_loop_frames — checked
+ * here, before recording starts, so a doomed preset is rejected outright
+ * rather than silently failing mid-take. This is a best-effort check against
+ * the signature live NOW: nothing locks the signature/tempo between setting
+ * the preset and actually recording (no track has content yet, so D6's lock
+ * does not apply), so a change in between can still make an N-bars+click-on
+ * take's auto-finalize target unreachable. That case is re-guarded with the
+ * ACTUAL live grid when recording starts (engine_process.c's
+ * le_arm_length_preset_target) — an unreachable target is never armed, so
+ * the take degrades cleanly to the click-off derive-from-length path at
+ * finalize instead of silently stalling. */
+LE_EXPORT int32_t le_engine_set_track_length_preset(le_engine* engine,
+                                                     int32_t channel,
+                                                     int32_t bars);
 
 /* Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
  * with a record press continues into overdub instead of playback. A stop press

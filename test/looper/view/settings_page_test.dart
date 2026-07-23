@@ -26,6 +26,9 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
     implements MidiSetupCubit {}
 
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
+
 void main() {
   late SettingsRepository settings;
   late TracksCubit tracks;
@@ -42,6 +45,7 @@ void main() {
   late MonitorCubit monitor;
   late RecordOptionsCubit recordOptions;
   late LooperRepository repository;
+  late LooperBloc looperBloc;
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -112,6 +116,17 @@ void main() {
       repository: repository,
       settings: settings,
     );
+    // The Tracks section's length-preset picker reads/drives LooperBloc,
+    // provided app-wide in the real app (lib/app/view/app.dart) — mirrored
+    // here (mocked, like the other MockCubit/MockBloc fixtures above) so the
+    // settings route can find it.
+    looperBloc = _MockLooperBloc();
+    when(() => looperBloc.state).thenReturn(const LooperState());
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: const LooperState(),
+    );
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -137,6 +152,7 @@ void main() {
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+            BlocProvider<LooperBloc>.value(value: looperBloc),
           ],
           child: const SettingsPage(),
         ),
@@ -211,6 +227,81 @@ void main() {
 
     expect(find.text('DRUMS'), findsOneWidget);
     expect(await settings.loadTrackName(0), 'DRUMS');
+  });
+
+  testWidgets(
+    'the length preset row shows the current preset and dispatches a change',
+    (tester) async {
+      const seeded = LooperState(tracks: [Track(lengthPresetBars: 4)]);
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const Key('settings_trackLengthPreset_0'));
+      await tester.ensureVisible(row);
+      expect(row, findsOneWidget);
+      expect(find.text('4 bars'), findsOneWidget);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('8 bars').last);
+      await tester.pumpAndSettle();
+
+      verify(
+        () => looperBloc.add(const LooperTrackLengthPresetChanged(0, 8)),
+      ).called(1);
+    },
+  );
+
+  testWidgets(
+    'the length preset row uses the singular "1 bar" for a 1-bar preset',
+    (tester) async {
+      // ICU plural coverage (code review): "{bars} bars" alone would render
+      // "1 bars" for the singular case — the ARB uses a plural rule instead.
+      const seeded = LooperState(tracks: [Track(lengthPresetBars: 1)]);
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const Key('settings_trackLengthPreset_0'));
+      await tester.ensureVisible(row);
+      expect(row, findsOneWidget);
+      expect(find.text('1 bar'), findsOneWidget);
+      expect(find.text('1 bars'), findsNothing);
+    },
+  );
+
+  testWidgets('the length preset row shows AUTO by default', (tester) async {
+    const seeded = LooperState(tracks: [Track()]);
+    when(() => looperBloc.state).thenReturn(seeded);
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: seeded,
+    );
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const Key('settings_trackLengthPreset_0'));
+    await tester.ensureVisible(row);
+    expect(row, findsOneWidget);
+    expect(find.text('AUTO'), findsOneWidget);
   });
 
   testWidgets('choosing a default mode persists it', (
@@ -329,6 +420,7 @@ void main() {
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+            BlocProvider<LooperBloc>.value(value: looperBloc),
           ],
           child: MaterialApp(
             theme: AppTheme.neon,

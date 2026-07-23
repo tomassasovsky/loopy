@@ -187,6 +187,12 @@ class LooperRepository {
   double _clickVolume = 1;
   int _countInBars = 0;
 
+  /// Per-track length presets (A6, D17; absent => AUTO). Remembered and
+  /// re-applied on every successful (re)start, mirroring [_trackMultiple] —
+  /// a fresh engine start resets every track's preset to AUTO
+  /// (`engine.c`'s per-track init loop, run from `le_engine_configure`).
+  final Map<int, int> _trackLengthPreset = {};
+
   /// Per-track active lane count (absent => 1). Remembered and re-applied on
   /// every successful (re)start.
   final Map<int, int> _laneCount = {};
@@ -460,6 +466,7 @@ class LooperRepository {
           redoDepth: s.tracks[i].redoDepth,
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
+          lengthPresetBars: s.tracks[i].lengthPresetBars,
           multiple: s.tracks[i].multiple,
           inputMask: s.tracks[i].inputMask,
           outputMask: s.tracks[i].outputMask,
@@ -554,6 +561,10 @@ class LooperRepository {
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
+      );
+      _trackLengthPreset.forEach(
+        (channel, bars) =>
+            _engine.setTrackLengthPreset(channel: channel, bars: bars),
       );
       // Re-apply per-lane state: counts first (so added lanes are allocated),
       // then routing / mix / effects per lane.
@@ -986,6 +997,12 @@ class LooperRepository {
     _laneOutput.clear();
     _laneVolume.clear();
     _laneMute.clear();
+    // Same wholesale-replace reasoning for length presets (A6): `clear`
+    // deliberately leaves a_length_preset_bars untouched (so a manual
+    // clear+re-record keeps the user's preset), which means a session load
+    // must scrub it itself or a track this session declares AUTO would keep
+    // whatever preset a PRIOR session/live session left armed.
+    _trackLengthPreset.clear();
     if (!await _awaitCleared(clearPollInterval, clearPollAttempts)) {
       throw StateError('engine did not clear before applying the session');
     }
@@ -1008,7 +1025,12 @@ class LooperRepository {
           ..setLaneOutput(channel: channel, lane: 0, mask: 0x3)
           ..setLaneVolume(1, channel: channel)
           ..setLaneMute(muted: false, channel: channel)
-          ..setLaneCount(channel: channel, count: 1);
+          ..setLaneCount(channel: channel, count: 1)
+          // a_length_preset_bars survives `clear` by design (see above) — a
+          // session load resets every track to AUTO here, same as the lane
+          // config it sits alongside; the rig loop below re-arms a nonzero
+          // preset for any track this session actually defines one for.
+          ..setTrackLengthPreset(channel: channel, bars: 0);
       }
     }
 
@@ -1107,6 +1129,15 @@ class LooperRepository {
         );
         setLaneVolume(lane.volume, channel: track.channel, lane: lane.lane);
         setLaneMute(muted: lane.muted, channel: track.channel, lane: lane.lane);
+      }
+      // Length preset (A6): inert for the audio just imported (it only
+      // governs a future defining recording), but must round-trip so a track
+      // re-recorded after a load still honors the preset it was saved with.
+      if (track.lengthPresetBars != 0) {
+        setTrackLengthPreset(
+          channel: track.channel,
+          bars: track.lengthPresetBars,
+        );
       }
     }
 
@@ -2202,6 +2233,25 @@ class LooperRepository {
     _countInBars = bars < 0 ? 0 : bars;
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setCountIn(_countInBars);
+  }
+
+  /// Sets track [channel]'s length preset (A6, D17): `0` = AUTO, or `1..64`
+  /// to fix the DEFINING recording to [bars] bars — see
+  /// [TempoControl.setTrackLengthPreset]'s class doc for the full preset ×
+  /// click-mode matrix. Remembered and re-applied on every (re)start, like
+  /// [setTrackMultiple]. A change on an already-recorded track is inert
+  /// until the track is cleared and re-recorded.
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
+    if (bars <= 0) {
+      _trackLengthPreset.remove(channel);
+    } else {
+      _trackLengthPreset[channel] = bars;
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTrackLengthPreset(
+      channel: channel,
+      bars: bars <= 0 ? 0 : bars,
+    );
   }
 
   /// Releases the repository and the underlying engine.

@@ -210,6 +210,10 @@ void main() {
         expect(engine.setClickOutput(0x3), EngineResult.notRunning);
         expect(engine.setClickVolume(0.5), EngineResult.notRunning);
         expect(engine.setCountIn(2), EngineResult.notRunning);
+        expect(
+          engine.setTrackLengthPreset(channel: 0, bars: 4),
+          EngineResult.notRunning,
+        );
       });
 
       test('snapshot defaults to the grid-off state', () {
@@ -358,6 +362,47 @@ void main() {
         expect(engine.setCountIn(65), EngineResult.invalid);
         // A rejected value does not change the published state.
         expect(engine.snapshot().countInBars, 0);
+      });
+
+      test(
+        'setTrackLengthPreset accepts 0..LE_LENGTH_PRESET_MAX_BARS and '
+        'rejects beyond',
+        () {
+          engine.start(engine.defaultConfig);
+          expect(
+            engine.setTrackLengthPreset(channel: 0, bars: 4),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().tracks[0].lengthPresetBars, 4);
+
+          expect(
+            engine.setTrackLengthPreset(channel: 0, bars: 0),
+            EngineResult.ok,
+          );
+          expect(engine.snapshot().tracks[0].lengthPresetBars, 0);
+
+          expect(
+            engine.setTrackLengthPreset(channel: 0, bars: -1),
+            EngineResult.invalid,
+          );
+          expect(
+            engine.setTrackLengthPreset(channel: 0, bars: 65),
+            EngineResult.invalid,
+          );
+          // A rejected value does not change the published state.
+          expect(engine.snapshot().tracks[0].lengthPresetBars, 0);
+        },
+      );
+
+      test('setTrackLengthPreset is per-track', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setTrackLengthPreset(channel: 0, bars: 4)
+          ..setTrackLengthPreset(channel: 1, bars: 8);
+        final tracks = engine.snapshot().tracks;
+        expect(tracks[0].lengthPresetBars, 4);
+        expect(tracks[1].lengthPresetBars, 8);
+        expect(tracks[2].lengthPresetBars, 0);
       });
 
       test('tempo grid settings persist across stop/start', () {
