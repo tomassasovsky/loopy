@@ -284,6 +284,25 @@ static inline void grid_beat_frame(le_engine* e, int32_t pos) {
   }
 }
 
+/* Loads the loop-locked subdivision ratio for the CURRENT quantize division
+ * (A3), or returns 0 when subdivision arming is inactive — division off, no
+ * loop-locked grid (grid_total_beats == 0: sync off / free-form loop), or no
+ * loop. Inactive means the boolean loop-top machinery stands alone, exactly
+ * the pre-A3 behavior. Reads the LIVE a_quantize_div on purpose: a granularity
+ * change while an arm is pending re-evaluates on the very next check (D8), and
+ * a change to OFF reverts the pending fire to the loop top with no extra
+ * bookkeeping. */
+static int le_live_subdiv_ratio(le_engine* e, int64_t* num, int64_t* den) {
+  const int32_t div = load_i32(&e->a_quantize_div);
+  if (div == LE_GRID_DIV_OFF || e->grid_total_beats <= 0 ||
+      e->clock.length <= 0) {
+    return 0;
+  }
+  return le_grid_loop_subdiv_ratio(e->grid_total_beats,
+                                   load_i32(&e->a_ts_num),
+                                   load_i32(&e->a_ts_den), div, num, den);
+}
+
 /* An unlocked tempo/signature change can land over a SURVIVING grid (all
  * tracks empty but the master kept for redo — the undo-to-empty edge, or a
  * whole-rig clear that was undone). Recompute the bar count and beat grid
@@ -606,6 +625,15 @@ static void close_active_capture(le_engine* e, int32_t except_ch,
     if (t == except_ch) continue;
     le_track* tr = &e->tracks[t];
     const int32_t st = load_i32(&tr->a_state);
+    if (st != LE_TRACK_RECORDING && st != LE_TRACK_OVERDUBBING) continue;
+    /* The hand-off supersedes any armed (quantized) end on the closed track:
+     * the finalize it was waiting for happens right here, so a stale pending
+     * would re-fire at the next boundary on the now-PLAYING track and start a
+     * spurious overdub — the same reasoning as le_apply_mute_cmd's punch-out
+     * clear. */
+    tr->pending_record = 0;
+    tr->pending_trigger = 0;
+    store_i32(&tr->a_pending, 0);
     if (st == LE_TRACK_RECORDING) {
       if (e->clock.length == 0) {
         /* Hand-off is immediate (one capturer): if this master was mid seam-
@@ -915,6 +943,37 @@ static void le_fx_route(float* out, int f, int ch_out, uint32_t mask, float l,
   }
 }
 
+/* Drops the last `drop` captured frames of a RECORDING non-defining track
+ * (audio thread; A3's quantized record END, round-down case): zeroes them in
+ * every lane's live buffer — mirroring the record write head's own mapping,
+ * including the fixed-multiple wrap — and rewinds record_pos, so the finalize
+ * that follows lands exactly on the rounded-down grid boundary. The zeroed
+ * region was silence before the capture began (le_prepare_new_capture memsets
+ * the take's buffers), so this restores the pre-capture state. Bounded: a
+ * round-down drop is under half a subdivision unit (<= half a bar), a
+ * one-shot cost on the press's apply, not a per-frame one. */
+static void le_truncate_capture_tail(le_engine* e, le_track* t, int32_t drop) {
+  if (drop <= 0 || drop > t->record_pos) return;
+  const int32_t ch = (int32_t)(t - e->tracks);
+  const int32_t offset = load_i32(&e->a_record_offset);
+  const int32_t k = le_effective_multiple(e, ch);
+  const int32_t known_len =
+      (k >= 1 && e->clock.length > 0) ? k * e->clock.length : 0;
+  const int32_t lanes = le_lanes_active(t);
+  for (int32_t l = 0; l < lanes; ++l) {
+    float* b = t->lanes[l].pool[load_i32(&t->lanes[l].a_live)];
+    if (b == NULL) continue;
+    for (int64_t p = (int64_t)t->record_pos - drop; p < t->record_pos; ++p) {
+      int64_t w = p - offset; /* the same mapping the write head used */
+      if (w < 0) continue;    /* latency-window frames were never written */
+      if (known_len > 0 && w >= known_len) w %= known_len;
+      if (w >= e->max_loop_frames) continue;
+      b[(int32_t)w] = 0.0f;
+    }
+  }
+  t->record_pos -= drop;
+}
+
 /* Performance event log emission (part 3): the audited subset of LE_CMD_* that
  * affects audibility gets logged verbatim (same code, same union arm) at
  * `frame` — the elapsed-frames-since-arm value at the START of the buffer
@@ -963,11 +1022,92 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       break;
     case LE_CMD_ARM:
       if (valid_channel(e, cmd->arg_i)) {
-        /* arg_f carries the trigger: 0 = loop-top (quantize), 1 = input level
+        le_track* t = &e->tracks[cmd->arg_i];
+        /* arg_f carries the trigger: 0 = grid (quantize), 1 = input level
          * (sound-activated auto-record). */
-        e->tracks[cmd->arg_i].pending_record = 1;
-        e->tracks[cmd->arg_i].pending_trigger = cmd->arg_f != 0.0f ? 1 : 0;
-        store_i32(&e->tracks[cmd->arg_i].a_pending, 1);
+        const int trig = cmd->arg_f != 0.0f ? 1 : 0;
+        int64_t sn, sd;
+        if (trig == 0 && load_i32(&t->a_state) == LE_TRACK_RECORDING &&
+            e->clock.length > 0 && le_live_subdiv_ratio(e, &sn, &sd)) {
+          /* Quantized record END (D8): the capture must end on the NEAREST
+           * loop-locked subdivision boundary. Strictly nearer behind ->
+           * truncate right now (drop the tail past that boundary and finalize);
+           * nearer ahead — or the exact midpoint, which rounds up — -> keep
+           * capturing and let the per-frame boundary check fire the finalize.
+           * A truncation must leave at least one whole subdivision unit of
+           * capture (min 1 unit); anything shorter rounds up instead. Only the
+           * non-defining path: the defining master (clock.length == 0 while it
+           * records) never arms its end — its finalize keeps the seam-crossfade
+           * machinery and A1's whole-bar rounding.
+           *
+           * DESIGN DECISION (code review, A3 follow-up) — min-1-unit's scope
+           * under a live granularity change: this check runs ONCE, here, at
+           * the press — using whichever division is live AT THE PRESS. When
+           * it fails (round-down would leave < 1 unit) the arm falls through
+           * to the plain pending_record wait below, which is STATELESS: no
+           * target boundary or armed division is latched anywhere, so the
+           * eventual fire re-reads le_live_subdiv_ratio's CURRENT value (via
+           * advance_transport_frame's boundary check) at the moment it
+           * actually fires — the same "live division, no latching" rule as
+           * every other pending re-evaluation in A3 (the record-START and
+           * granularity-change-while-armed tests rely on exactly this). A
+           * granularity change during the wait (e.g. QUARTER -> SIXTEENTH)
+           * is therefore honored immediately, on the SIXTEENTH's own next
+           * boundary — which can be a shorter span, in SIXTEENTH units, than
+           * the QUARTER unit the original press's min-1-unit check reasoned
+           * about. This is chosen deliberately (option (a) of two): "min 1
+           * unit" means "at least one unit of whichever division is live
+           * when the boundary fires", not a length invariant carried from
+           * the press — latching the press-time target length (option (b))
+           * would need new per-track state (the target unit length, or an
+           * armed-division snapshot) purely to serve a rare
+           * disarm-mid-granularity-change edge case, contradicting A3's
+           * minimal-ABI-growth, no-latched-arm-state design throughout.
+           * Pinned by test_quantize_div_min_one_unit_reevaluates_on_
+           * granularity_change. */
+          const int32_t len = e->clock.length;
+          const int32_t pos = e->clock.position;
+          const int32_t idx = le_grid_loop_subdiv_at(pos, len, sn, sd);
+          const int32_t pb = le_grid_loop_subdiv_start(idx, len, sn, sd);
+          const int32_t nb = le_grid_loop_next_subdiv(pos, len, sn, sd);
+          const int32_t behind = pos - pb;
+          const int32_t ahead = nb > pos ? nb - pos : 0;
+          /* record_pos is phase-locked to the master, so the boundary behind
+           * sits exactly `behind` frames back on the capture timeline. The
+           * span check is the rational min-1-unit test:
+           * span >= len/subdivs  <=>  span * sub_num >= len * sub_den. */
+          const int64_t span =
+              (int64_t)(t->record_pos - behind) - (int64_t)t->record_start;
+          if (behind >= 0 && behind < ahead &&
+              span * sn >= (int64_t)len * sd) {
+            le_truncate_capture_tail(e, t, behind);
+            /* The truncated boundary is `behind` frames EARLIER than `frame`
+             * (this ARM command's buffer-start perf-log tag): `frame` and
+             * `pos` are read at the same instant (perf_frame_base is
+             * snapshotted before the ring drains, clock.position is
+             * unchanged since the previous buffer — see le_engine_process),
+             * so the boundary's own perf-log frame is frame - behind, not
+             * frame itself. Passing the raw (too-late) `frame` here would
+             * inflate finalize_new_track's LE_PLOG_RECORD_END tag by `behind`
+             * frames, and perf_render.c's le_pr_record_end_phase folds that
+             * tag straight into (end_frame - start_frame) — an export render
+             * of a round-down-truncated take would start its finalized
+             * segment `behind` frames late, at the wrong loop phase. Live
+             * playback is unaffected (it reads clock.position directly, not
+             * this log tag) — export-render only. `frame` only grows while
+             * perf recording is armed (0 otherwise) and `behind` is bounded
+             * to under one subdivision unit, so underflow should not occur,
+             * but the subtraction is clamped defensively rather than trusted
+             * to never see it. */
+            const uint64_t end_frame =
+                frame > (uint64_t)behind ? frame - (uint64_t)behind : 0;
+            handle_record(e, cmd->arg_i, end_frame); /* finalize at the boundary */
+            break;
+          }
+        }
+        t->pending_record = 1;
+        t->pending_trigger = trig;
+        store_i32(&t->a_pending, 1);
       }
       break;
     case LE_CMD_DISARM:
@@ -1683,15 +1823,49 @@ static inline void advance_transport_frame(le_engine* e, int tc,
       }
     }
     if (any_active) {
-      if (le_loop_clock_tick(&e->clock)) {
-        e->loop_iteration++;
-        /* The loop just crossed its top (position == 0). Fire loop-top
-         * (quantize) pending records here so a deferred start/finalize/overdub
-         * lands exactly on the grid. Signal-triggered arms fire above, not
-         * here. handle_record enforces one-capturer hand-off. */
+      const int wrapped = le_loop_clock_tick(&e->clock);
+      if (wrapped) e->loop_iteration++;
+      /* Grid-armed fire check. The loop top (wrap) is every division's
+       * boundary AND the layer boundary, so it fires everything — the exact
+       * pre-A3 behavior, and the whole behavior when the quantize division is
+       * OFF. With a division set and a loop-locked grid live, a mid-loop
+       * subdivision boundary — the first frame whose loop-locked subdivision
+       * index differs from the previous frame's (le_grid_loop_subdiv_at over
+       * the ACTUAL length, never nominal-BPM multiples) — also fires, except
+       * an overdubbing track's punch-out, which stays at the layer boundary
+       * (D8: overdub end unchanged). Reading the live division here is what
+       * re-evaluates a pending arm on a granularity change: the next check
+       * simply uses the new division, and OFF reverts to loop-top-only.
+       * Stateless per-frame index compare, gated on an actual trigger-0
+       * pending so the dormant cost is a few flag reads. */
+      int boundary = wrapped;
+      if (!boundary) {
+        int has_pending = 0;
         for (int qt = 0; qt < tc; ++qt) {
           if (e->tracks[qt].pending_record &&
               e->tracks[qt].pending_trigger == 0) {
+            has_pending = 1;
+            break;
+          }
+        }
+        int64_t sn, sd;
+        if (has_pending && le_live_subdiv_ratio(e, &sn, &sd)) {
+          const int32_t p = e->clock.position; /* just ticked to p >= 1 */
+          boundary =
+              le_grid_loop_subdiv_at(p, e->clock.length, sn, sd) !=
+              le_grid_loop_subdiv_at(p - 1, e->clock.length, sn, sd);
+        }
+      }
+      if (boundary) {
+        /* Fire the grid-armed pending records so a deferred start/finalize/
+         * overdub lands exactly on the grid. Signal-triggered arms fire in
+         * process_input_frame, not here. handle_record enforces the
+         * one-capturer hand-off. */
+        for (int qt = 0; qt < tc; ++qt) {
+          if (e->tracks[qt].pending_record &&
+              e->tracks[qt].pending_trigger == 0 &&
+              (wrapped ||
+               load_i32(&e->tracks[qt].a_state) != LE_TRACK_OVERDUBBING)) {
             e->tracks[qt].pending_record = 0;
             store_i32(&e->tracks[qt].a_pending, 0);
             handle_record(e, qt, frame);
