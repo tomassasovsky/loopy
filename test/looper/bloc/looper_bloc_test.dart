@@ -1004,31 +1004,44 @@ void main() {
     );
   });
 
-  group('load() (B5c boot restore)', () {
+  group('restoreLooperMode() (B5c boot restore)', () {
     late SettingsRepository settings;
 
     setUp(() {
       settings = _MockSettingsRepository();
+      when(() => settings.saveLooperMode(any())).thenAnswer((_) async {});
     });
 
-    test('applies the persisted looper mode to the repository', () async {
-      when(() => settings.loadLooperMode()).thenAnswer((_) async => 2);
+    test(
+      'dispatches the persisted looper mode as a LooperModeChanged event '
+      "(a free function, not a bloc method — bloc_lint's "
+      'avoid_public_bloc_methods)',
+      () async {
+        when(() => settings.loadLooperMode()).thenAnswer((_) async => 2);
+        final bloc = LooperBloc(repository: repository, settings: settings);
+        addTearDown(bloc.close);
+
+        await restoreLooperMode(bloc, settings);
+        // bloc.add() only enqueues the event; the on<LooperModeChanged>
+        // handler runs on a later microtask via the bloc package's internal
+        // event transformer — yield once so it has actually run before
+        // asserting its effect.
+        await Future<void>.delayed(Duration.zero);
+
+        // Code 2 == LooperMode.song (engine_snapshot.dart's code mapping).
+        verify(() => repository.setLooperMode(LooperMode.song)).called(1);
+      },
+    );
+
+    test('defaults to Multi when nothing was ever persisted', () async {
+      when(() => settings.loadLooperMode()).thenAnswer((_) async => 0);
       final bloc = LooperBloc(repository: repository, settings: settings);
       addTearDown(bloc.close);
 
-      await bloc.load();
+      await restoreLooperMode(bloc, settings);
+      await Future<void>.delayed(Duration.zero);
 
-      // Code 2 == LooperMode.song (engine_snapshot.dart's code mapping).
-      verify(() => repository.setLooperMode(LooperMode.song)).called(1);
-    });
-
-    test('is a no-op with no settings repository', () async {
-      final bloc = buildBloc();
-      addTearDown(bloc.close);
-
-      await bloc.load(); // must not throw
-
-      verifyNever(() => repository.setLooperMode(any()));
+      verify(() => repository.setLooperMode(LooperMode.multi)).called(1);
     });
   });
 

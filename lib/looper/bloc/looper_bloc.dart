@@ -320,19 +320,6 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
   /// closed editor never leaves a ticking timer (D-WIN/D-SYNC).
   final Map<(int, int, int), Timer> _lanePluginEditorTimers = {};
 
-  /// Restores the persisted looper mode (B5c) and applies it to the
-  /// repository — the same "seeded settings cubit" `load()` convention as
-  /// `TempoCubit`/`TracksCubit`/etc (see `app.dart`'s
-  /// `unawaited(cubit.load())` wiring). Calls the repository directly
-  /// (rather than dispatching [LooperModeChanged]) so a boot restore never
-  /// re-persists the value it just read back.
-  Future<void> load() async {
-    final settings = _settings;
-    if (settings == null) return;
-    final mode = LooperMode.fromCode(await settings.loadLooperMode());
-    _repository.setLooperMode(mode);
-  }
-
   bool _isMuted(int channel) =>
       channel >= 0 &&
       channel < state.tracks.length &&
@@ -502,4 +489,23 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     unawaited(_controllerSubscription?.cancel());
     return super.close();
   }
+}
+
+/// Restores the persisted looper mode (B5c) and dispatches it through
+/// [bloc] — the boot-time counterpart of the "seeded settings cubit" `load()`
+/// convention used elsewhere (`TempoCubit`/`TracksCubit`/etc, called via
+/// `app.dart`'s `unawaited(cubit.load())` wiring), but as a top-level
+/// function rather than a bloc method: `Bloc` instances are driven only
+/// through events (bloc_lint's `avoid_public_bloc_methods`), so this reads
+/// [settings] itself and dispatches [LooperModeChanged] rather than adding a
+/// second, non-event entry point to [LooperBloc]. Reuses the same event a
+/// user-driven mode change dispatches, so the boot restore also re-persists
+/// the value it just read — harmless (writing back the same value is a
+/// no-op on disk) and keeps this to one code path instead of two.
+Future<void> restoreLooperMode(
+  LooperBloc bloc,
+  SettingsRepository settings,
+) async {
+  final mode = LooperMode.fromCode(await settings.loadLooperMode());
+  bloc.add(LooperModeChanged(mode));
 }
