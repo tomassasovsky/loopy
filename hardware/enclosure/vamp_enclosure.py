@@ -387,7 +387,10 @@ POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
 POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), NOT the shell's 2.0 Al
 # foot + pad both extend FORWARD of the web (a C, all in the clear strip in front of the
 # aperture); nothing sits under the display.
-POST_H     = lid_top_z(POST_V) - 3*POST_T - POST_FELT       # web height (foot on floor -> pad under skin)
+# web height: foot on the floor -> pad ~POST_FELT under the ASSEMBLED faceplate underside.
+# (Verified in Fusion: the assembled lid rests +T on the wall tops, ~2 mm above lid_top_z's
+# bare slope, so subtract only POST_T + felt -- gave a measured 2.1 mm felt gap.)
+POST_H     = lid_top_z(POST_V) - POST_T - POST_FELT
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
 _POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
 
@@ -1036,7 +1039,7 @@ def dxf_post(path):
         _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
     _text(msp, 5, Wd+6, 9,
           f"VAMP FACEPLATE SUPPORT POST  {POST_T:.1f}mm COLD-ROLLED STEEL (not the Al shell)  x2  "
-          f"C-fold (pad {pad:.0f} / web {web:.0f} / foot {foot:.0f} mm); pad fold {90-POST_TILT:.1f}deg "
+          f"C-fold (pad {pad:.0f} / web {web:.0f} / foot {foot:.0f} mm); pad fold {90+POST_TILT:.1f}deg "
           f"(beds flush on the {POST_TILT:.1f}deg slope), foot fold 90deg; foot bolts to the base floor "
           f"(M4 x2), felt cap on the pad; deduction PROVISIONAL", "NOTE")
     doc.saveas(path); return {}
@@ -1198,7 +1201,7 @@ def build_post_step():
     web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
     pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
               .translate((0, foot - pad, web))                                            # flat at the top, forward
-              .rotate((0, foot, web), (1, foot, web), POST_TILT))                         # tilt to the slope
+              .rotate((0, foot, web), (1, foot, web), -POST_TILT))                        # tilt to the slope (free end drops toward the FRONT to match)
     body = foot_p.union(web_p).union(pad_p)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
         body = body.cut(cq.Workplane("XY").cylinder(
