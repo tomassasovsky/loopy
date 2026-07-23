@@ -567,6 +567,21 @@ struct le_engine {
   _Atomic int32_t a_master_len;
   _Atomic int32_t a_master_pos;
 
+  /* Tempo grid (published — see le_snapshot's trailing tempo block). The
+   * SETTINGS (tempo/signature/sync/quantize_div/source) are seeded in
+   * le_engine_create and persist across configure; the loop-derived state
+   * (loop_bars, current_beat) is transient and reset per session. All default
+   * to grid-off values so the untouched engine is bit-identical to the
+   * tempo-free build. */
+  _Atomic uint32_t a_tempo_bpm_bits; /* float bits; 0 = unset (source none) */
+  _Atomic int32_t a_ts_num;          /* default 4 */
+  _Atomic int32_t a_ts_den;          /* 4 or 8; default 4 */
+  _Atomic int32_t a_sync_tempo;      /* default 1 */
+  _Atomic int32_t a_quantize_div;    /* le_grid_div; default 0 = off */
+  _Atomic int32_t a_tempo_source;    /* le_tempo_source; default 0 = none */
+  _Atomic int32_t a_loop_bars;       /* whole bars in the master loop; 0 none */
+  _Atomic int32_t a_current_beat;    /* 0..ts_num-1, loop-driven */
+
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
   /* Global master output gain (float bits, 0..1), applied post-mix to the final
@@ -636,6 +651,18 @@ struct le_engine {
   /* Audio-thread-local transport. */
   le_loop_clock clock;
   uint64_t loop_iteration; /* free-running count of base-loop wraps */
+
+  /* Audio-thread-local tempo state. frame_clock is a running frame counter
+   * (advanced once per process call by the block size — tap timing needs only
+   * block granularity because taps arrive via the ring, which drains at block
+   * start). grid_total_beats > 0 iff a loop-driven beat grid is live
+   * (loop_bars * ts_num); grid_prev_beat is the last published beat index
+   * (-1 re-arms publication at the next frame). */
+  uint64_t frame_clock;
+  uint64_t last_tap_frame;
+  int has_tap;
+  int32_t grid_total_beats;
+  int32_t grid_prev_beat;
 
   /* Quantized recording (control-thread-owned). When `quantize` is set, a record
    * press over an existing master arms `armed[ch]` (and does the one-time prep

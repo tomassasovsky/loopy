@@ -30,6 +30,7 @@
 #include "loop_clock.h"      /* le_loop_clock_* */
 #include "loopy_engine_api.h"
 #include "perf_log_ring.h" /* le_perf_log_ring_push, le_perf_log_code (perf event log) */
+#include "tempo_grid.h"    /* le_grid_* (pure tempo/bar/subdivision math) */
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
     defined(_M_IX86)
@@ -160,6 +161,149 @@ static int32_t le_consume_pending_mutes(le_engine* e, le_track* t,
   return end_state;
 }
 
+/* ---- tempo grid (audio thread) ----
+ *
+ * State + locks only in this part (A1): no click, no count-in, no musical arm
+ * machinery. Everything here is dormant with the grid-off defaults — the pure
+ * math lives in tempo_grid.c; these helpers wire it to engine state. None of
+ * these commands is perf-logged: in this part they change no audible output
+ * (the audited-command contract above logs audibility-affecting commands
+ * only; the click, when it lands in A2, is what earns a log row). */
+
+/* The D6 tempo lock: manual tempo / signature changes (and taps) are ignored
+ * while any track has content AND a grid exists (loop_bars > 0 or
+ * tempo_source != none). Only clearing every track releases it — a paused or
+ * stopped track still holds the lock, and a derived tempo's source loop being
+ * cleared does not (the surviving grid keeps the lock while siblings play).
+ * Deliberate: content recorded free-form (sync off) with a manually-set
+ * tempo also locks — the tempo was audible context for the take, and
+ * pre-stretch there is no way to honor a change (D6's safe reading; matches
+ * the Sheeran, which locks tempo after any recording).
+ * The loop_bars half of the disjunct is defensive redundancy today: every
+ * path that sets loop_bars > 0 also leaves tempo_source != none (sync
+ * derivation marks DERIVED; the round-to-bars path requires a source), so no
+ * reachable state distinguishes it. It stays per the plan's literal predicate
+ * as a belt against future states that might break that invariant. */
+static int le_tempo_locked(le_engine* e) {
+  int any_content = 0;
+  for (int32_t t = 0; t < e->track_count; ++t) {
+    if (load_i32(&e->tracks[t].a_state) != LE_TRACK_EMPTY) {
+      any_content = 1;
+      break;
+    }
+  }
+  if (!any_content) return 0;
+  return load_i32(&e->a_loop_bars) > 0 ||
+         load_i32(&e->a_tempo_source) != LE_TEMPO_SOURCE_NONE;
+}
+
+/* Two-tap tempo (modernized from 2f0513a): the interval between this tap and
+ * the previous one, in frames of e->frame_clock (block-granular — taps arrive
+ * via the ring, which drains at block start, so finer resolution would be
+ * fiction). Intervals outside the 30..300 BPM window are ignored, so a stale
+ * first tap never produces an absurd tempo. The lock is checked by the caller
+ * (a locked tap is ignored WHOLESALE — not even recorded, so unlocking does
+ * not inherit half of a stale tap pair). */
+static void handle_tap(le_engine* e) {
+  const uint64_t now = e->frame_clock;
+  if (e->has_tap) {
+    const uint64_t interval = now - e->last_tap_frame;
+    const int sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+    if (interval > 0) {
+      const double bpm = 60.0 * (double)sr / (double)interval;
+      if (bpm >= (double)LE_GRID_TEMPO_MIN &&
+          bpm <= (double)LE_GRID_TEMPO_MAX) {
+        store_f32(&e->a_tempo_bpm_bits, (float)bpm);
+        store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_TAPPED);
+      }
+    }
+  }
+  e->last_tap_frame = now;
+  e->has_tap = 1;
+}
+
+/* Establishes the loop<->grid relationship for a freshly defined master loop
+ * (modernized from 2f0513a's sync_tempo_to_loop, generic over signatures and
+ * following D7's precedence — the loop's AUDIO length is never altered):
+ *   - sync off: no grid (loop_bars 0, tempo untouched) — free-form.
+ *   - sync on, tempo already set (manual/tapped/derived): round the loop to a
+ *     whole-bar COUNT of the existing grid; the tempo is NOT re-derived and
+ *     NOT snapped (deliberate change from the old stack, which snapped the
+ *     displayed tempo to the loop).
+ *   - sync on, no tempo (source none): derive the tempo from the loop (whole
+ *     bars in the current signature, BPM in 30..300 nearest 120) and mark the
+ *     source derived.
+ * The beat grid then divides the loop exactly (grid_total_beats over len),
+ * whatever the nominal BPM says — the loop is the truth once it exists. */
+static void sync_grid_to_loop(le_engine* e, int32_t len) {
+  e->grid_prev_beat = -1; /* re-arm beat publication at the next frame */
+  if (!load_i32(&e->a_sync_tempo) || len <= 0) {
+    e->grid_total_beats = 0;
+    store_i32(&e->a_loop_bars, 0);
+    return;
+  }
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  int32_t num = load_i32(&e->a_ts_num);
+  if (num <= 0) num = 4;
+  int32_t bars = 0;
+  if (load_i32(&e->a_tempo_source) == LE_TEMPO_SOURCE_NONE) {
+    const float bpm = le_grid_derive_bpm(len, num, sr, &bars);
+    if (bpm <= 0.0f || bars < 1) { /* degenerate input: stay grid-free */
+      e->grid_total_beats = 0;
+      store_i32(&e->a_loop_bars, 0);
+      return;
+    }
+    store_f32(&e->a_tempo_bpm_bits, bpm);
+    store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_DERIVED);
+  } else {
+    const le_tempo_grid g = {load_f32(&e->a_tempo_bpm_bits), num,
+                             load_i32(&e->a_ts_den), sr};
+    bars = le_grid_bars_for_loop(&g, len);
+    if (bars < 1) bars = 1;
+  }
+  store_i32(&e->a_loop_bars, bars);
+  e->grid_total_beats = bars * num;
+}
+
+/* Per-frame beat publication, loop-driven: once a grid exists the beat index
+ * derives from the master position so beats divide the loop exactly (the
+ * 2f0513a loop-synced branch; the free-running branch returns with the click
+ * in A2). Dormant-grid cost is the single grid_total_beats compare. Note:
+ * with the default sync-on, a grid derives at the first defining finalize, so
+ * the per-frame divide runs from then on — the same cost profile as the old
+ * stack's loop-synced metronome; gating it on actual consumers (click,
+ * quantize) is A2/A3's call if ever needed. */
+static inline void grid_beat_frame(le_engine* e, int32_t pos) {
+  if (e->grid_total_beats <= 0 || e->clock.length <= 0) return;
+  const int32_t beat =
+      le_grid_beat_at(pos, e->clock.length, e->grid_total_beats);
+  if (beat != e->grid_prev_beat) {
+    e->grid_prev_beat = beat;
+    const int32_t num = load_i32(&e->a_ts_num);
+    store_i32(&e->a_current_beat, num > 0 ? beat % num : 0);
+  }
+}
+
+/* An unlocked tempo/signature change can land over a SURVIVING grid (all
+ * tracks empty but the master kept for redo — the undo-to-empty edge, or a
+ * whole-rig clear that was undone). Recompute the bar count and beat grid
+ * against the surviving master so the published grid stays coherent with the
+ * new value. Deliberately bypasses sync_grid_to_loop: the sync toggle only
+ * governs future finalizes and must never destroy a live grid. */
+static void regrid_surviving_master(le_engine* e) {
+  if (e->clock.length <= 0 || load_i32(&e->a_loop_bars) <= 0) return;
+  const int32_t sr = e->sample_rate > 0 ? e->sample_rate : 48000;
+  int32_t num = load_i32(&e->a_ts_num);
+  if (num <= 0) num = 4;
+  const le_tempo_grid g = {load_f32(&e->a_tempo_bpm_bits), num,
+                           load_i32(&e->a_ts_den), sr};
+  int32_t bars = le_grid_bars_for_loop(&g, e->clock.length);
+  if (bars < 1) bars = 1;
+  store_i32(&e->a_loop_bars, bars);
+  e->grid_total_beats = bars * num;
+  e->grid_prev_beat = -1;
+}
+
 static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
                             uint64_t frame) {
   /* A mute deferred during the take lands with the finalize (and blocks a
@@ -185,6 +329,7 @@ static void finalize_master(le_engine* e, le_track* t, int32_t end_state,
   le_plog_push(e, frame,
               (le_command){.code = LE_PLOG_RECORD_END,
                            .arg_i = (int32_t)(t - e->tracks)});
+  sync_grid_to_loop(e, len);
   if (end_state == LE_TRACK_OVERDUBBING) le_dub_session_start(e, t);
 }
 
@@ -685,6 +830,20 @@ static void handle_clear(le_engine* e, int32_t ch) {
     e->loop_iteration = 0;
     store_i32(&e->a_master_len, 0);
     store_i32(&e->a_master_pos, 0);
+    /* The grid dies with its loop — but ONLY the loop-derived part. The tempo
+     * value and its source survive (D6 dead-tempo survival: the next defining
+     * loop rounds to the surviving tempo instead of re-deriving), and this
+     * all-empty reset is also exactly what releases the D6 tempo lock. */
+    store_i32(&e->a_loop_bars, 0);
+    store_i32(&e->a_current_beat, 0);
+    e->grid_total_beats = 0;
+    e->grid_prev_beat = -1;
+    /* The tap pair dies with the lock: a tap latched before the D6 lock
+     * engaged must not pair with the first tap after this release (a
+     * record+clear span inside the 0.2–2 s window would otherwise publish a
+     * plausible-looking but meaningless TAPPED tempo). */
+    e->has_tap = 0;
+    e->last_tap_frame = 0;
     /* Clear the loop waveform so a re-record starts from silence. */
     e->loop_viz_bucket = -1;
     for (int i = 0; i < LE_VIZ_POINTS; ++i) {
@@ -938,6 +1097,13 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
           le_loop_clock_set_length(&e->clock, cmd->restore.master_len);
           e->loop_iteration = 0;
           store_i32(&e->a_master_len, cmd->restore.master_len);
+          /* ...and the tempo grid: the clear's all-empty reset dropped the
+           * loop-derived grid while the tempo value survived (D6). Without
+           * this the restored state would be locked (content + source) yet
+           * grid-less — tempo commands permanently no-ops. With a surviving
+           * tempo sync_grid_to_loop reproduces the pre-clear grid exactly;
+           * with sync off it correctly stays grid-free. */
+          sync_grid_to_loop(e, cmd->restore.master_len);
         }
         const int32_t base = e->clock.length > 0 ? e->clock.length : len;
         int32_t k = len / base;
@@ -973,6 +1139,55 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
         le_apply_mute_cmd(e, cmd->arg_i, 0, cmd->arg_f != 0.0f, cmd, frame);
       }
       break;
+    /* ---- tempo grid (see the helper block above finalize_master). Not
+     * perf-logged: in this part none of these changes audible output. */
+    case LE_CMD_SET_TEMPO: {
+      if (le_tempo_locked(e)) break; /* D6: rejected (no-op) while locked */
+      float bpm = cmd->arg_f;
+      /* NaN-rejecting clamp: !(x >= MIN) is true for NaN as well as for low
+       * values, so a non-finite bpm can never reach the grid math (a NaN
+       * interval would spin le_grid_next_boundary forever). */
+      if (!(bpm >= LE_GRID_TEMPO_MIN)) {
+        bpm = LE_GRID_TEMPO_MIN;
+      } else if (bpm > LE_GRID_TEMPO_MAX) {
+        bpm = LE_GRID_TEMPO_MAX;
+      }
+      store_f32(&e->a_tempo_bpm_bits, bpm);
+      store_i32(&e->a_tempo_source, LE_TEMPO_SOURCE_MANUAL);
+      regrid_surviving_master(e);
+      break;
+    }
+    case LE_CMD_SET_TIME_SIGNATURE: {
+      if (le_tempo_locked(e)) break; /* D6: rejected (no-op) while locked */
+      const int32_t num = cmd->arg_i;
+      const int32_t den = (int32_t)cmd->arg_f;
+      /* Re-validated here (the exported wrapper already rejects) so a raw
+       * le_engine_post_command can never publish an unsupported signature. */
+      if (!le_grid_signature_valid(num, den)) break;
+      store_i32(&e->a_ts_num, num);
+      store_i32(&e->a_ts_den, den);
+      /* Unlocked with a surviving grid (the undo-to-empty edge): recompute
+       * bars AND beats against the surviving master — a new signature changes
+       * the bar length, so keeping the old bar count would be as stale as
+       * counting the old numerator. */
+      regrid_surviving_master(e);
+      break;
+    }
+    case LE_CMD_TAP_TEMPO:
+      if (!le_tempo_locked(e)) handle_tap(e); /* D6: taps ignored wholesale */
+      break;
+    case LE_CMD_SET_SYNC_TEMPO:
+      /* A settings toggle, deliberately not locked: it only governs FUTURE
+       * defining-loop finalizes (sync_grid_to_loop), never a live grid. */
+      store_i32(&e->a_sync_tempo, cmd->arg_f != 0.0f ? 1 : 0);
+      break;
+    case LE_CMD_SET_QUANTIZE_DIV: {
+      int32_t d = cmd->arg_i;
+      if (d < LE_GRID_DIV_OFF) d = LE_GRID_DIV_OFF;
+      if (d > LE_GRID_DIV_SIXTEENTH) d = LE_GRID_DIV_SIXTEENTH;
+      store_i32(&e->a_quantize_div, d);
+      break;
+    }
     case LE_CMD_SET_MASTER_GAIN: {
       le_plog_push(e, frame, *cmd);
       float g = cmd->arg_f;
@@ -1225,6 +1440,15 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       le_loop_clock_set_length(&e->clock, base);
       e->loop_iteration = 0;
       store_i32(&e->a_master_len, base);
+      /* A session import replaces the loop wholesale: the pre-import beat
+       * grid (if any) described the OLD loop and must not be applied to the
+       * new one. Reset the loop-derived grid; the tempo value and source
+       * survive (D6). Deriving a grid for imported audio from the manifest is
+       * A7's job — until then an import is grid-free. */
+      store_i32(&e->a_loop_bars, 0);
+      store_i32(&e->a_current_beat, 0);
+      e->grid_total_beats = 0;
+      e->grid_prev_beat = -1;
       for (int32_t t = 0; t < e->track_count; ++t) {
         le_track* tr = &e->tracks[t];
         if (load_i32(&tr->a_state) != LE_TRACK_EMPTY) continue;
@@ -2051,6 +2275,7 @@ void le_engine_process(le_engine* e, float* output, const float* input,
                      lim_release, &out_sumsq, &frame_out_peak);
     perf_tap_master_frame(e, out, f, ch_out);
     viz_tap_frame(e, tc, pos, frame_out_peak, frame_trk_peak);
+    grid_beat_frame(e, pos); /* dormant-grid cost: one int compare */
     advance_transport_frame(e, tc, st, perf_frame_base + f);
   }
 
@@ -2079,6 +2304,10 @@ void le_engine_process(le_engine* e, float* output, const float* input,
   store_i32(&e->a_master_pos, e->clock.position);
   atomic_fetch_add_explicit(&e->a_frames, (uint64_t)frames,
                             memory_order_relaxed);
+  /* Tap-tempo frame clock, advanced once per block (taps arrive via the ring,
+   * which drains before the frame loop, so block granularity IS the command's
+   * real timing resolution — no per-frame work on the hot path). */
+  e->frame_clock += (uint64_t)frames;
   /* Elapsed-frames-since-arm, batched once per block like a_frames above
    * (armed is fixed for the whole call — commands drain before the frame
    * loop starts) rather than a per-frame atomic add. Counts every frame this

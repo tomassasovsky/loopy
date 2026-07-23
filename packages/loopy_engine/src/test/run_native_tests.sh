@@ -38,6 +38,7 @@ esac
 # with the core primitives. Mirrors src/CMakeLists.txt's library sources (minus
 # the MIDI TUs, which the engine test does not link).
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
+  src/core/tempo_grid.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
   src/platform/engine_*.c src/miniaudio/miniaudio_impl.c"
 

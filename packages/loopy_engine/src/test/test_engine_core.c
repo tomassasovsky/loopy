@@ -23,6 +23,7 @@
 #include <wchar.h>
 
 #include "audio_ring.h"       /* le_audio_ring (performance-recording capture) */
+#include "engine_core.h"      /* le_push (raw ring pushes for the tempo tests) */
 #include "engine_internal.h"
 #include "engine_private.h"   /* LE_POOL_SLOTS (per-pass undo pool cap) */
 #include "engine_miniaudio.h" /* le_miniaudio_backend (le_select_backend target) */
@@ -32,6 +33,7 @@
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
+#include "tempo_grid.h" /* le_tempo_grid, le_grid_* (pure grid math) */
 
 static int g_failures = 0;
 
@@ -2646,6 +2648,957 @@ static void test_visualization_tap(void) {
   CHECK(le_engine_read_visual(e, viz, 0) == 0);
   CHECK(le_engine_read_visual(NULL, viz, LE_VIZ_POINTS) == 0);
   CHECK(le_engine_read_track_visual(e, 99, tviz, LE_VIZ_POINTS) == 0);
+
+  le_engine_destroy(e);
+}
+
+/* ---- tempo grid (A1: pure math + state + locks + loop<->tempo sync) ---- */
+
+/* Processes `total` frames of silence in <=64-frame chunks. */
+static void tg_advance(le_engine* e, int total) {
+  float in[64] = {0};
+  float out[64];
+  while (total > 0) {
+    const int n = total > 64 ? 64 : total;
+    le_engine_process(e, out, in, (uint32_t)n);
+    total -= n;
+  }
+}
+
+static le_engine* tg_make_engine(int sr) {
+  le_engine* e = le_engine_create();
+  le_engine_configure(e, sr, 1, 1, 20000);
+  return e;
+}
+
+/* Records a `len`-frame silent defining loop on track `ch` and finalizes it.
+ * The finalize press defers sr/100 frames for the seam crossfade
+ * (request_master_finalize), so advance exactly that overlap: the loop
+ * finalizes at `len` on the overlap's last frame and the clock ticks once —
+ * the master position is 1 on return. */
+static void tg_record_defining_loop(le_engine* e, int len) {
+  le_engine_record(e, 0);
+  tg_advance(e, len);
+  le_engine_record(e, 0); /* queue finalize (defers for the seam crossfade) */
+  tg_advance(e, e->sample_rate / 100);
+}
+
+static void test_tempo_grid_math(void) {
+  printf("test_tempo_grid_math\n");
+  /* 4/4 at 120: the beat unit is a quarter, 500 frames at sr 1000. */
+  le_tempo_grid g44 = {120.0f, 4, 4, 1000};
+  CHECK(fabs(le_grid_frames_per_beat_unit(&g44) - 500.0) < 1e-9);
+  CHECK(fabs(le_grid_frames_per_bar(&g44) - 2000.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g44, LE_GRID_DIV_BAR) - 2000.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g44, LE_GRID_DIV_HALF) - 1000.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g44, LE_GRID_DIV_QUARTER) - 500.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g44, LE_GRID_DIV_EIGHTH) - 250.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g44, LE_GRID_DIV_SIXTEENTH) - 125.0) < 1e-9);
+
+  /* 7/8 at 120: the beat unit is an EIGHTH (500 frames — same fpb; the
+   * denominator cancels), the bar is 7 of them, and the absolute note values
+   * double relative to x/4 (a 1/4 note is now two beat units). */
+  le_tempo_grid g78 = {120.0f, 7, 8, 1000};
+  CHECK(fabs(le_grid_frames_per_beat_unit(&g78) - 500.0) < 1e-9);
+  CHECK(fabs(le_grid_frames_per_bar(&g78) - 3500.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g78, LE_GRID_DIV_HALF) - 2000.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g78, LE_GRID_DIV_QUARTER) - 1000.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g78, LE_GRID_DIV_EIGHTH) - 500.0) < 1e-9);
+  CHECK(fabs(le_grid_div_frames(&g78, LE_GRID_DIV_SIXTEENTH) - 250.0) < 1e-9);
+
+  /* 15/8 and 3/4 bars. */
+  le_tempo_grid g158 = {120.0f, 15, 8, 1000};
+  CHECK(fabs(le_grid_frames_per_bar(&g158) - 7500.0) < 1e-9);
+  le_tempo_grid g34 = {120.0f, 3, 4, 1000};
+  CHECK(fabs(le_grid_frames_per_bar(&g34) - 1500.0) < 1e-9);
+
+  /* bars_for_loop: nearest-bar rounding with the documented min-1 clamp.
+   * g44's bar is 2000 frames. */
+  CHECK(le_grid_bars_for_loop(&g44, 2000) == 1);
+  CHECK(le_grid_bars_for_loop(&g44, 3000) == 2); /* 1.5 rounds up */
+  CHECK(le_grid_bars_for_loop(&g44, 1800) == 1); /* 0.9 rounds to 1 */
+  CHECK(le_grid_bars_for_loop(&g44, 500) == 1);  /* quarter-bar: min-1 clamp */
+  CHECK(le_grid_bars_for_loop(&g44, 4900) == 2); /* 2.45 rounds down */
+  CHECK(le_grid_bars_for_loop(&g44, 0) == 0);
+  CHECK(le_grid_bars_for_loop(NULL, 2000) == 0);
+
+  /* Degenerate grids yield 0. */
+  le_tempo_grid bad = {0.0f, 4, 4, 1000};
+  CHECK(le_grid_frames_per_beat_unit(&bad) == 0.0);
+  CHECK(le_grid_frames_per_bar(NULL) == 0.0);
+  CHECK(le_grid_div_frames(&g44, LE_GRID_DIV_OFF) == 0.0);
+  CHECK(le_grid_div_frames(&g44, 99) == 0.0);
+}
+
+static void test_tempo_grid_next_boundary(void) {
+  printf("test_tempo_grid_next_boundary\n");
+  le_tempo_grid g = {120.0f, 4, 4, 1000}; /* quarter beat = 500 frames */
+
+  /* Strictly-after contract at all five subdivisions: a pos exactly ON a
+   * boundary yields the NEXT one. */
+  CHECK(le_grid_next_boundary(&g, 0, LE_GRID_DIV_BAR) == 2000);
+  CHECK(le_grid_next_boundary(&g, 1999, LE_GRID_DIV_BAR) == 2000);
+  CHECK(le_grid_next_boundary(&g, 2000, LE_GRID_DIV_BAR) == 4000);
+  CHECK(le_grid_next_boundary(&g, 0, LE_GRID_DIV_HALF) == 1000);
+  CHECK(le_grid_next_boundary(&g, 600, LE_GRID_DIV_QUARTER) == 1000);
+  CHECK(le_grid_next_boundary(&g, 500, LE_GRID_DIV_QUARTER) == 1000);
+  CHECK(le_grid_next_boundary(&g, 0, LE_GRID_DIV_EIGHTH) == 250);
+  CHECK(le_grid_next_boundary(&g, 130, LE_GRID_DIV_SIXTEENTH) == 250);
+
+  /* Generic signature: in 7/8 the bar is 3500 frames and a 1/16 is 250. */
+  le_tempo_grid g78 = {120.0f, 7, 8, 1000};
+  CHECK(le_grid_next_boundary(&g78, 3500, LE_GRID_DIV_BAR) == 7000);
+  CHECK(le_grid_next_boundary(&g78, 3400, LE_GRID_DIV_BAR) == 3500);
+  CHECK(le_grid_next_boundary(&g78, 0, LE_GRID_DIV_SIXTEENTH) == 250);
+
+  /* Non-integer interval (sr 44100 at 113 bpm -> ~23415.93 frames/beat):
+   * boundaries render from their index k, so walking 100 of them stays within
+   * rounding of the exact grid — no cumulative drift. */
+  le_tempo_grid gf = {113.0f, 4, 4, 44100};
+  const double interval = le_grid_div_frames(&gf, LE_GRID_DIV_QUARTER);
+  int64_t prev = 0;
+  for (int k = 1; k <= 100; ++k) {
+    const int64_t b = le_grid_next_boundary(&gf, prev, LE_GRID_DIV_QUARTER);
+    CHECK(b > prev);
+    /* Each boundary sits within 1 frame of the exact multiple. */
+    CHECK(fabs((double)b - (double)k * interval) <= 0.5 + 1e-9);
+    prev = b;
+  }
+
+  /* Degenerate inputs. */
+  CHECK(le_grid_next_boundary(&g, 0, LE_GRID_DIV_OFF) == -1);
+  CHECK(le_grid_next_boundary(&g, -1, LE_GRID_DIV_BAR) == -1);
+  le_tempo_grid bad = {0.0f, 4, 4, 1000};
+  CHECK(le_grid_next_boundary(&bad, 0, LE_GRID_DIV_BAR) == -1);
+
+  /* A NaN bpm is refused (positive-form guards), never spun on: a NaN
+   * interval used to make the boundary loop non-terminating. */
+  le_tempo_grid gnan = {NAN, 4, 4, 1000};
+  CHECK(le_grid_frames_per_beat_unit(&gnan) == 0.0);
+  CHECK(le_grid_div_frames(&gnan, LE_GRID_DIV_QUARTER) == 0.0);
+  CHECK(le_grid_next_boundary(&gnan, 0, LE_GRID_DIV_BAR) == -1);
+  CHECK(le_grid_bars_for_loop(&gnan, 4000) == 0);
+
+  /* Past 2^52 frames double integer precision is gone: refuse, don't
+   * mis-round. Just below the limit still works. */
+  CHECK(le_grid_next_boundary(&g, (int64_t)1 << 52, LE_GRID_DIV_QUARTER) ==
+        -1);
+  CHECK(le_grid_next_boundary(&g, ((int64_t)1 << 52) - 1,
+                              LE_GRID_DIV_QUARTER) > ((int64_t)1 << 52) - 1);
+}
+
+static void test_tempo_grid_signature_validation(void) {
+  printf("test_tempo_grid_signature_validation\n");
+  /* The 17 supported signatures: 2/4..7/4 and 5/8..15/8. */
+  for (int n = 2; n <= 7; ++n) CHECK(le_grid_signature_valid(n, 4) == 1);
+  for (int n = 5; n <= 15; ++n) CHECK(le_grid_signature_valid(n, 8) == 1);
+  /* Rejected: outside either family. */
+  CHECK(le_grid_signature_valid(2, 8) == 0);
+  CHECK(le_grid_signature_valid(3, 8) == 0);
+  CHECK(le_grid_signature_valid(4, 8) == 0);
+  CHECK(le_grid_signature_valid(8, 4) == 0);
+  CHECK(le_grid_signature_valid(15, 4) == 0);
+  CHECK(le_grid_signature_valid(1, 4) == 0);
+  CHECK(le_grid_signature_valid(16, 8) == 0);
+  CHECK(le_grid_signature_valid(4, 6) == 0);
+  CHECK(le_grid_signature_valid(0, 4) == 0);
+  CHECK(le_grid_signature_valid(-3, 8) == 0);
+}
+
+static void test_tempo_grid_derive_bpm(void) {
+  printf("test_tempo_grid_derive_bpm\n");
+  int32_t bars = 0;
+
+  /* 4000 frames at sr 1000 in 4/4: whole-bar candidates are 60*b bpm; 120
+   * (2 bars) is nearest 120. */
+  CHECK(fabsf(le_grid_derive_bpm(4000, 4, 1000, &bars) - 120.0f) < 0.01f);
+  CHECK(bars == 2);
+
+  /* 3000 frames: candidates 80/160/240 — 80 and 160 are equidistant from 120
+   * and the SLOWER one (fewer bars) wins the tie. */
+  CHECK(fabsf(le_grid_derive_bpm(3000, 4, 1000, &bars) - 80.0f) < 0.01f);
+  CHECK(bars == 1);
+
+  /* A loop shorter than one bar at 300 bpm clamps to the ceiling. */
+  CHECK(fabsf(le_grid_derive_bpm(100, 4, 1000, &bars) - 300.0f) < 0.01f);
+  CHECK(bars == 1);
+
+  /* A slow loop walks up into the window: 12000 frames -> 20*b bpm, and b=6
+   * lands exactly on 120. */
+  CHECK(fabsf(le_grid_derive_bpm(12000, 4, 1000, &bars) - 120.0f) < 0.01f);
+  CHECK(bars == 6);
+
+  /* Signature-generic: 7/8 changes the bar size (7 beat units per bar). A
+   * 7000-frame loop at sr 1000: bpm(b) = 60*b -> 120 at 2 bars. */
+  CHECK(fabsf(le_grid_derive_bpm(7000, 7, 1000, &bars) - 120.0f) < 0.01f);
+  CHECK(bars == 2);
+
+  /* One more nearest-120 spot check for the closed form: 6000 frames gives
+   * 40*b candidates; b=3 lands exactly on 120. */
+  CHECK(fabsf(le_grid_derive_bpm(6000, 4, 1000, &bars) - 120.0f) < 0.01f);
+  CHECK(bars == 3);
+
+  /* Extreme-but-valid arguments terminate (the old walk's int32 candidate
+   * index overflowed here) and still land in the window near 120. */
+  {
+    int32_t big_bars = 0;
+    const float big = le_grid_derive_bpm(2147483647, 4, 1, &big_bars);
+    CHECK(big >= LE_GRID_TEMPO_MIN && big <= LE_GRID_TEMPO_MAX);
+    CHECK(fabsf(big - 120.0f) < 1.0f);
+    CHECK(big_bars >= 1);
+    /* And when even the nearest whole-bar count would overflow int32, the
+     * result is grid-free rather than a truncated bar count. */
+    CHECK(le_grid_derive_bpm(2147483647, 1, 1, &big_bars) == 0.0f);
+    CHECK(big_bars == 0);
+  }
+
+  /* Degenerate input. */
+  CHECK(le_grid_derive_bpm(0, 4, 1000, &bars) == 0.0f);
+  CHECK(bars == 0);
+  CHECK(le_grid_derive_bpm(4000, 4, 1000, NULL) == 0.0f);
+
+  /* beat_at distributes a non-dividing remainder evenly (len 10, 3 beats:
+   * boundaries at 0, 4, 7). */
+  CHECK(le_grid_beat_at(0, 10, 3) == 0);
+  CHECK(le_grid_beat_at(3, 10, 3) == 0);
+  CHECK(le_grid_beat_at(4, 10, 3) == 1);
+  CHECK(le_grid_beat_at(6, 10, 3) == 1);
+  CHECK(le_grid_beat_at(7, 10, 3) == 2);
+  CHECK(le_grid_beat_at(9, 10, 3) == 2);
+  CHECK(le_grid_beat_at(5, 0, 3) == 0);
+  CHECK(le_grid_beat_at(5, 10, 0) == 0);
+}
+
+static void test_tempo_grid_defaults_and_persistence(void) {
+  printf("test_tempo_grid_defaults_and_persistence\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  /* Grid-off defaults: no tempo (0 = unset, source none), 4/4, sync on,
+   * quantize granularity OFF (deliberately unlike the old stack's BAR). */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_bpm == 0.0f);
+  CHECK(s.ts_num == 4);
+  CHECK(s.ts_den == 4);
+  CHECK(s.sync_tempo == 1);
+  CHECK(s.quantize_div == LE_GRID_DIV_OFF);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_NONE);
+  CHECK(s.loop_bars == 0);
+  CHECK(s.current_beat == 0);
+
+  /* Settings persist across a reconfigure (the 2f0513a pattern): tempo,
+   * signature, quantize granularity, and the source survive; the transient
+   * loop-derived state resets. */
+  CHECK(le_engine_set_tempo(e, 100.0f) == LE_OK);
+  CHECK(le_engine_set_time_signature(e, 7, 8) == LE_OK);
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_QUARTER) == LE_OK);
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_configure(e, 1000, 1, 1, 20000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 100.0f) < 0.01f);
+  CHECK(s.ts_num == 7);
+  CHECK(s.ts_den == 8);
+  CHECK(s.quantize_div == LE_GRID_DIV_QUARTER);
+  CHECK(s.sync_tempo == 0);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  CHECK(s.loop_bars == 0);
+  CHECK(s.current_beat == 0);
+
+  /* The reset/survival split with a REAL grid (not fields already at their
+   * defaults): derive a live grid + beat, reconfigure, and assert only the
+   * per-session state died while the settings — including the source that
+   * travels with the tempo value — survived. */
+  CHECK(le_engine_set_sync_tempo(e, 1) == LE_OK);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4200); /* 100 bpm in 7/8: fpbar 4200 -> 1 bar */
+  tg_advance(e, 700);               /* onto beat 1 (a beat every 600) */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 1);
+  CHECK(s.current_beat == 1);
+  le_engine_configure(e, 1000, 1, 1, 20000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 0);     /* per-session grid state reset... */
+  CHECK(s.current_beat == 0);
+  CHECK(s.master_length_frames == 0);
+  CHECK(fabsf(s.tempo_bpm - 100.0f) < 0.01f); /* ...settings survived */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  CHECK(s.ts_num == 7);
+  CHECK(s.ts_den == 8);
+  CHECK(s.sync_tempo == 1);
+  CHECK(s.quantize_div == LE_GRID_DIV_QUARTER);
+
+  le_engine_destroy(e);
+}
+
+static void test_tempo_set_and_clamp(void) {
+  printf("test_tempo_set_and_clamp\n");
+  le_engine* e = tg_make_engine(48000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_tempo(e, 90.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 90.0f) < 0.5f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_set_tempo(e, 10.0f); /* clamps to 30 */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 30.0f) < 0.5f);
+
+  le_engine_set_tempo(e, 1000.0f); /* clamps to 300 */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 300.0f) < 0.5f);
+
+  /* NaN never reaches the published tempo: the NaN-rejecting clamp treats it
+   * like an under-range value (a published NaN would make every derived grid
+   * interval NaN and spin next_boundary forever). */
+  le_engine_set_tempo(e, NAN);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_bpm == s.tempo_bpm); /* finite (a NaN fails self-equality) */
+  CHECK(fabsf(s.tempo_bpm - 30.0f) < 0.5f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_tap_tempo(void) {
+  printf("test_tap_tempo\n");
+  le_engine* e = tg_make_engine(100);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 200.0f);
+  tg_advance(e, 1);
+
+  /* Two taps 50 frames apart at 100 Hz == 0.5 s == 120 bpm. */
+  CHECK(le_engine_tap_tempo(e) == LE_OK);
+  tg_advance(e, 50);
+  le_engine_tap_tempo(e);
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 2.0f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_TAPPED);
+
+  /* An interval outside 30..300 bpm is ignored (600 frames -> 10 bpm). */
+  le_engine_tap_tempo(e);
+  tg_advance(e, 600);
+  le_engine_tap_tempo(e);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 2.0f);
+
+  le_engine_destroy(e);
+}
+
+static void test_manual_vs_tap_last_writer(void) {
+  printf("test_manual_vs_tap_last_writer\n");
+  le_engine* e = tg_make_engine(100);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 100.0f);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  /* Tap overrides manual (last writer wins). */
+  le_engine_tap_tempo(e);
+  tg_advance(e, 50);
+  le_engine_tap_tempo(e);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 2.0f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_TAPPED);
+
+  /* And manual overrides tap right back. */
+  le_engine_set_tempo(e, 90.0f);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 90.0f) < 0.5f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_time_signature_validation(void) {
+  printf("test_time_signature_validation\n");
+  le_engine* e = tg_make_engine(48000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_time_signature(e, 7, 8) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.ts_num == 7);
+  CHECK(s.ts_den == 8);
+
+  /* The wrapper rejects everything outside the 17 supported signatures. */
+  CHECK(le_engine_set_time_signature(e, 16, 8) == LE_ERR_INVALID);
+  CHECK(le_engine_set_time_signature(e, 1, 4) == LE_ERR_INVALID);
+  CHECK(le_engine_set_time_signature(e, 2, 8) == LE_ERR_INVALID);
+  CHECK(le_engine_set_time_signature(e, 8, 4) == LE_ERR_INVALID);
+  CHECK(le_engine_set_time_signature(e, 4, 16) == LE_ERR_INVALID);
+
+  /* The audio thread re-validates: a raw ring push of an unsupported
+   * signature (bypassing the wrapper) is dropped there too. */
+  CHECK(le_push(e, LE_CMD_SET_TIME_SIGNATURE, 10, 4.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.ts_num == 7);
+  CHECK(s.ts_den == 8);
+
+  /* 15/8 (the top of the x/8 family) is valid. */
+  CHECK(le_engine_set_time_signature(e, 15, 8) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.ts_num == 15);
+  CHECK(s.ts_den == 8);
+
+  le_engine_destroy(e);
+}
+
+static void test_quantize_div_setter(void) {
+  printf("test_quantize_div_setter\n");
+  le_engine* e = tg_make_engine(48000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_quantize_div(e, LE_GRID_DIV_EIGHTH) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize_div == LE_GRID_DIV_EIGHTH);
+
+  CHECK(le_engine_set_quantize_div(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_quantize_div(e, 6) == LE_ERR_INVALID);
+
+  /* A raw ring push clamps rather than publishing an out-of-range value. */
+  CHECK(le_push(e, LE_CMD_SET_QUANTIZE_DIV, 9, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.quantize_div == LE_GRID_DIV_SIXTEENTH);
+
+  le_engine_destroy(e);
+}
+
+static void test_loop_syncs_tempo(void) {
+  printf("test_loop_syncs_tempo\n");
+  /* sr 1000 at 120 bpm in 4/4 -> 500 frames/beat, 2000 frames/bar. A
+   * 4000-frame loop is exactly 2 bars: the tempo stays 120 and the snapshot
+   * reports 2 bars. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.5f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_loop_rounds_to_bar_keeps_tempo(void) {
+  printf("test_loop_rounds_to_bar_keeps_tempo\n");
+  /* An 1800-frame loop at 120 bpm is 0.9 bars, which rounds to 1 bar. D7:
+   * with a tempo already set the bar COUNT rounds to the existing grid and
+   * the tempo is NOT touched (the old stack snapped it to ~133.3 — that
+   * behaviour is deliberately gone). The loop's audio length is never
+   * altered either. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 1800);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 1800); /* audio length untouched */
+  CHECK(s.loop_bars == 1);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* tempo untouched */
+
+  le_engine_destroy(e);
+}
+
+static void test_sync_off_keeps_free_form(void) {
+  printf("test_sync_off_keeps_free_form\n");
+  /* With sync disabled the loop keeps its recorded length, no bars are
+   * derived, and the tempo is left exactly as the user set it. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  le_engine_set_tempo(e, 137.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 1800);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.sync_tempo == 0);
+  CHECK(s.master_length_frames == 1800);
+  CHECK(s.loop_bars == 0);
+  CHECK(fabsf(s.tempo_bpm - 137.0f) < 0.5f);
+
+  le_engine_destroy(e);
+}
+
+static void test_loop_derives_tempo_from_none(void) {
+  printf("test_loop_derives_tempo_from_none\n");
+  /* D7: with sync on (the default) and NO tempo ever set, finalizing the
+   * defining loop derives one — whole bars in the current signature, BPM in
+   * 30..300 nearest 120 — and marks the source derived. A 4000-frame loop at
+   * sr 1000 in 4/4 lands exactly on 120 with 2 bars. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.loop_bars == 2);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_destroy(e);
+}
+
+static void test_derive_only_from_none(void) {
+  printf("test_derive_only_from_none\n");
+  /* D7's dead-tempo rule end to end: a derived tempo survives clear-all, and
+   * the NEXT defining loop rounds to the surviving grid instead of
+   * re-deriving. The 3000-frame second loop would re-derive to 80 bpm (the
+   * tie-break test above) — instead it must keep 120 and round to 2 bars
+   * (3000 / 2000 frames-per-bar = 1.5 -> 2). */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000); /* derives 120, 2 bars */
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.loop_bars == 0); /* the grid died with its loop... */
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* ...the tempo did not */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  tg_record_defining_loop(e, 3000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 3000);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* never re-derived */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+  CHECK(s.loop_bars == 2);
+
+  le_engine_destroy(e);
+}
+
+static void test_loop_drives_beat_counter(void) {
+  printf("test_loop_drives_beat_counter\n");
+  /* With a 2-bar loop (8 beats over 4000 frames, a beat every 500), the beat
+   * grid is locked to the loop position: the published beat advances
+   * 0,1,2,3 and wraps to 0 at the bar boundary. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000); /* master position 1 on return */
+
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+  CHECK(s.current_beat == 0);
+
+  tg_advance(e, 600); /* cross 500 -> beat 1 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
+  tg_advance(e, 500); /* cross 1000 -> beat 2 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 2);
+  tg_advance(e, 500); /* cross 1500 -> beat 3 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 3);
+  tg_advance(e, 500); /* cross 2000 -> bar 2's downbeat: beat 4 % 4 == 0 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 0);
+
+  /* Clear-all resets the published beat along with the grid. */
+  tg_advance(e, 600); /* move onto a non-zero beat first */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 0);
+  CHECK(s.loop_bars == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_beat_counter_generic_signature(void) {
+  printf("test_beat_counter_generic_signature\n");
+  /* 7/8 at 120: the beat unit is an eighth (500 frames at sr 1000), a bar is
+   * 3500 frames. A 7000-frame loop is 2 bars = 14 beats; the counter runs
+   * 0..6 within each bar. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_time_signature(e, 7, 8) == LE_OK);
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 7000);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+  CHECK(s.ts_num == 7);
+  CHECK(s.ts_den == 8);
+
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 0);
+  tg_advance(e, 600); /* cross 500 -> beat 1 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
+  tg_advance(e, 2400); /* pos ~3002 -> beat 6 (3000..3499) */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 6);
+  tg_advance(e, 500); /* cross 3500 -> bar 2's downbeat: beat 7 % 7 == 0 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_tempo_lock_with_content(void) {
+  printf("test_tempo_lock_with_content\n");
+  /* D6: while any track has content AND a grid exists, manual tempo, time
+   * signature, and taps are all ignored; clearing every track releases the
+   * lock (and the tempo VALUE survives the clear). */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000);
+
+  le_engine_set_tempo(e, 90.0f); /* locked: ignored */
+  le_engine_set_time_signature(e, 3, 4); /* locked: ignored */
+  tg_advance(e, 1);
+  /* Locked taps at an interval that WOULD otherwise set 100 bpm (600 frames
+   * at sr 1000 — inside the 30..300 window, so this assertion is not
+   * satisfied vacuously by the interval filter). */
+  le_engine_tap_tempo(e);
+  tg_advance(e, 600);
+  le_engine_tap_tempo(e);
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.ts_num == 4);
+  CHECK(s.ts_den == 4);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  /* Clear-all unlocks; the tempo value + source survive the clear. */
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+  CHECK(s.loop_bars == 0);
+
+  le_engine_set_tempo(e, 90.0f); /* unlocked: applies */
+  le_engine_set_time_signature(e, 3, 4);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 90.0f) < 0.01f);
+  CHECK(s.ts_num == 3);
+
+  le_engine_destroy(e);
+}
+
+static void test_dead_tempo_survives_source_clear(void) {
+  printf("test_dead_tempo_survives_source_clear\n");
+  /* Clearing the DEFINING loop while a sibling still plays: the grid (and
+   * the lock) survive — tempo, bar count, and the master length all hold,
+   * and a fresh recording on the cleared track lands back on the surviving
+   * grid unchanged. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000);
+
+  /* A second track over the master (immediate start, rounds up on stop). */
+  le_engine_record(e, 1);
+  tg_advance(e, 2000);
+  le_engine_record(e, 1);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_OVERDUBBING ||
+        s.tracks[1].state == LE_TRACK_PLAYING);
+
+  /* Clear the source loop: the sibling keeps the grid alive. */
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  /* Still locked (content + grid): a manual change is ignored. */
+  le_engine_set_tempo(e, 90.0f);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  /* Re-record the cleared track: a non-defining take rounds up to the
+   * existing master — the grid state is untouched by it. */
+  le_engine_record(e, 0);
+  tg_advance(e, 2000);
+  le_engine_record(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(s.loop_bars == 2);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  le_engine_destroy(e);
+}
+
+static void test_clear_undo_restores_grid(void) {
+  printf("test_clear_undo_restores_grid\n");
+  /* Undoing a whole-rig clear must bring the GRID back with the loop: the
+   * clear kept the tempo (D6) but dropped loop_bars, so without the restore
+   * the state would be locked (content + source) yet grid-less — tempo
+   * commands permanently no-ops and the beat frozen. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 4000); /* derives 120, 2 bars */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 0);
+  CHECK(s.loop_bars == 0);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f); /* dead tempo survives */
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* restore the cleared take */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 4000);
+  CHECK(s.loop_bars == 2); /* the grid came back with the loop */
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  /* The restored grid is live: the beat advances again... */
+  tg_advance(e, 700); /* restore reset the playhead; cross 500 -> beat 1 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
+
+  /* ...and the restored state is locked exactly like the original. */
+  le_engine_set_tempo(e, 90.0f);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+
+  /* A plain clear-all still unlocks: tempo commands apply again. */
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_set_tempo(e, 90.0f);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 90.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_surviving_grid_regrid_on_tempo_change(void) {
+  printf("test_surviving_grid_regrid_on_tempo_change\n");
+  /* Undo-to-empty keeps the master + grid while releasing the D6 lock (no
+   * content). An unlocked signature or tempo change must then RECOMPUTE the
+   * surviving grid (bars and beat cadence), not leave it describing the old
+   * value. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000); /* 2 bars of 4/4 at 120 */
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* undo past the base layer */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.master_length_frames == 4000); /* grid survives for redo */
+  CHECK(s.loop_bars == 2);
+
+  /* Unlocked signature change: 3/4 at 120 is a 1500-frame bar, so the
+   * surviving 4000-frame master re-rounds to 3 bars (stale would be 2). */
+  CHECK(le_engine_set_time_signature(e, 3, 4) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.ts_num == 3);
+  CHECK(s.loop_bars == 3);
+
+  /* Unlocked tempo change: 60 bpm in 3/4 is a 3000-frame bar -> 1 bar. */
+  le_engine_set_tempo(e, 60.0f);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 60.0f) < 0.01f);
+  CHECK(s.loop_bars == 1);
+
+  le_engine_destroy(e);
+}
+
+static void test_commit_session_resets_stale_grid(void) {
+  printf("test_commit_session_resets_stale_grid\n");
+  /* A session import replaces the loop wholesale: the pre-import grid
+   * described the OLD loop and must not be applied to the imported one. The
+   * import stays grid-free in this part (manifest-driven derivation is A7);
+   * the tempo value and source survive per D6. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000); /* 2 bars */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 2);
+
+  CHECK(le_push(e, LE_CMD_COMMIT_SESSION, 3000, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.master_length_frames == 3000);
+  CHECK(s.loop_bars == 0);
+  CHECK(s.current_beat == 0);
+  CHECK(fabsf(s.tempo_bpm - 120.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  /* No beat publication on the grid-free imported loop. */
+  tg_advance(e, 600);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_tap_pair_dies_with_clear(void) {
+  printf("test_tap_pair_dies_with_clear\n");
+  /* Regression: a lone tap latched BEFORE the D6 lock engaged must not pair
+   * with the first tap after clear-all releases it — the record+clear span
+   * can land inside the valid 30..300 window and would publish a plausible-
+   * looking but meaningless TAPPED tempo over the surviving derived one. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_tap_tempo(e); /* lone pre-lock tap (frame ~0) */
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 700); /* sub-bar loop: derives the 300 clamp */
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 300.0f) < 0.01f);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED);
+
+  le_engine_clear(e, 0); /* all empty: unlock + tap pair reset */
+  tg_advance(e, 1);
+  le_engine_tap_tempo(e); /* ~713 frames after the first tap: 84 bpm if the
+                           * stale pair survived the clear */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 300.0f) < 0.01f); /* unchanged */
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_DERIVED); /* not TAPPED */
+
+  le_engine_destroy(e);
+}
+
+static void test_lock_engages_with_sync_off_content(void) {
+  printf("test_lock_engages_with_sync_off_content\n");
+  /* Free-form content (sync off -> loop_bars 0) with a manually-set tempo
+   * still locks — the tempo_source half of the D6 predicate alone. Pinned
+   * deliberately (see le_tempo_locked): the set tempo was audible context
+   * for the take, pre-stretch a change cannot be honored, and the Sheeran
+   * locks tempo after any recording. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_sync_tempo(e, 0) == LE_OK);
+  le_engine_set_tempo(e, 137.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 1800);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 0); /* free-form: no grid half to the lock */
+
+  le_engine_set_tempo(e, 90.0f); /* locked via the source half alone */
+  le_engine_set_time_signature(e, 3, 4);
+  tg_advance(e, 1);
+  le_engine_tap_tempo(e); /* in-window interval: would set ~100 bpm */
+  tg_advance(e, 600);
+  le_engine_tap_tempo(e);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(fabsf(s.tempo_bpm - 137.0f) < 0.01f);
+  CHECK(s.ts_num == 4);
+  CHECK(s.tempo_source == LE_TEMPO_SOURCE_MANUAL);
+
+  le_engine_destroy(e);
+}
+
+static void test_beat_division_locks_to_loop(void) {
+  printf("test_beat_division_locks_to_loop\n");
+  /* An 1800-frame loop at nominal 120 (2000-frame bar) rounds to 1 bar: its
+   * 4 beats divide the LOOP — boundaries every 450 frames — not the nominal
+   * tempo's 500. A beat counter running on nominal frames-per-beat would
+   * still read beat 0 at position ~460 and beat 1 at ~900. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 1800); /* master position 1 on return */
+
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.loop_bars == 1);
+  CHECK(s.current_beat == 0);
+
+  tg_advance(e, 460); /* pos ~462: past 450 (loop beat 1), before 500 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
+
+  tg_advance(e, 440); /* pos ~902: past 900 (loop beat 2), before 1000 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 2);
+
+  le_engine_destroy(e);
+}
+
+static void test_beat_boundary_on_block_edge(void) {
+  printf("test_beat_boundary_on_block_edge\n");
+  /* A beat boundary landing exactly on a process-block edge publishes on the
+   * block whose FIRST frame is the boundary — no off-by-one at the seam. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+  float in[1] = {0};
+  float out[4];
+
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+  tg_record_defining_loop(e, 4000); /* beats every 500; position 1 on return */
+
+  tg_advance(e, 1);   /* publishes beat 0, position -> 2 */
+  tg_advance(e, 498); /* start positions 2..499: still beat 0, position 500 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 0);
+
+  le_engine_process(e, out, in, 1); /* one-frame block AT the boundary */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.current_beat == 1);
 
   le_engine_destroy(e);
 }
@@ -10706,6 +11659,32 @@ int main(void) {
   test_routing_input_mask_clamped();
   test_routing_output_mask_clamped();
   test_visualization_tap();
+  test_tempo_grid_math();
+  test_tempo_grid_next_boundary();
+  test_tempo_grid_signature_validation();
+  test_tempo_grid_derive_bpm();
+  test_tempo_grid_defaults_and_persistence();
+  test_tempo_set_and_clamp();
+  test_tap_tempo();
+  test_manual_vs_tap_last_writer();
+  test_time_signature_validation();
+  test_quantize_div_setter();
+  test_loop_syncs_tempo();
+  test_loop_rounds_to_bar_keeps_tempo();
+  test_sync_off_keeps_free_form();
+  test_loop_derives_tempo_from_none();
+  test_derive_only_from_none();
+  test_loop_drives_beat_counter();
+  test_beat_counter_generic_signature();
+  test_tempo_lock_with_content();
+  test_dead_tempo_survives_source_clear();
+  test_clear_undo_restores_grid();
+  test_surviving_grid_regrid_on_tempo_change();
+  test_commit_session_resets_stale_grid();
+  test_tap_pair_dies_with_clear();
+  test_lock_engages_with_sync_off_content();
+  test_beat_division_locks_to_loop();
+  test_beat_boundary_on_block_edge();
   test_classify_capture_device();
   test_detect_loopback_runs();
   test_enumerate_devices_runs();
