@@ -1268,6 +1268,17 @@ int32_t le_engine_crown_primary(le_engine* engine, int32_t channel) {
   return le_push(engine, LE_CMD_CROWN_PRIMARY, channel, 0.0f);
 }
 
+/* ---- One Shot (B4, Sheeran manual §5.9.4; see loopy_engine_api.h's
+ * LE_CMD_SET_ONE_SHOT / le_engine_set_one_shot docs for the full mode-
+ * gating rationale) ---- */
+
+int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
+                               int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_ONE_SHOT, channel, enabled ? 1.0f : 0.0f);
+}
+
 /* Reuses le_engine_record's own quantize-arm TOGGLE shape (armed[] /
  * armed_trigger[], LE_CMD_ARM/DISARM) with trigger 2 instead of inventing
  * parallel bookkeeping. B3b BUG 2 (adversarial review): armed[]/

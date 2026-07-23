@@ -97,21 +97,31 @@ typedef enum le_click_mode {
 /* The five architectural looper modes (B2a, D4/D10), mirrored in
  * le_snapshot.looper_mode. MULTI is today's behavior — independent per-track
  * loops, the whole engine as it exists before this series — and stays the
- * default. Sync/Song/Band/Free semantics (primary-track sync + divisions,
- * section sequencing, quantized section tracks, per-track independent
- * clocks) are NOT implemented yet: this part is only the field plus D4's
- * content-lock gate (le_looper_mode_locked, engine_process.c) that guards
- * switching it. Later B-series parts (B2b onward) give the non-MULTI values
- * their behavior; setting one here today just changes what is published,
- * with the engine's audio path staying exactly the MULTI behavior
- * regardless of the published value. This is a DIFFERENT axis from
- * InteractionMode (Dart-only: record/mute, what a track press does) — the
- * two never coexist under the same name (D10) and must not be confused. */
+ * default. Sync/Band (primary-track sync + multiples/divisions, B3/B3b),
+ * Free (independent per-track clocks, B2b), and Song (independent per-track
+ * sections, B4) all have their full behavior as of this part; B2a itself was
+ * only the field plus D4's content-lock gate (le_looper_mode_locked,
+ * engine_process.c) that guards switching it, with every value's audio path
+ * staying MULTI behavior until its own part landed. This is a DIFFERENT axis
+ * from InteractionMode (Dart-only: record/mute, what a track press does) —
+ * the two never coexist under the same name (D10) and must not be
+ * confused. */
 typedef enum le_looper_mode {
   LE_LOOPER_MODE_MULTI = 0, /* default: independent per-track loops (today's
                              * behavior, unchanged by this part) */
   LE_LOOPER_MODE_SYNC = 1,  /* primary-track sync + multiples/divisions (B3) */
-  LE_LOOPER_MODE_SONG = 2,  /* section sequencing (B4) */
+  /* Song (B4): a "section" IS a track (song-mode-spec.md §2 Q1) — up to
+   * LE_MAX_TRACKS independent sections, each started/stopped directly via
+   * its OWN track press (record/play/stop), exactly like every other mode's
+   * per-track controls. No separate section object, no advance gesture (the
+   * plan's original `advanceSection` was explicitly dropped once the manual
+   * research showed no such gesture exists on the Sheeran — see the spec's
+   * six B1 answers). Structurally IDENTICAL to Free's transport (independent
+   * lengths, no primary, no shared grid obligation): B4 reuses B2b's
+   * per-track clock machinery outright by broadening every FREE-only gate to
+   * also cover SONG (see free_clock's doc, engine_private.h) rather than
+   * inventing a parallel mechanism. */
+  LE_LOOPER_MODE_SONG = 2,
   LE_LOOPER_MODE_BAND = 3,  /* primary + independently-quantized sections
                              * (B3) */
   LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
@@ -326,6 +336,20 @@ typedef enum le_command_code {
    * transport behavior. */
   LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
 
+  /* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+   * A per-track flag: "plays just once and then stops" instead of looping.
+   * Settable on any channel in any mode (mirrors LE_CMD_CROWN_PRIMARY's D18
+   * pattern — a persistent per-track designation, not gated by the D4 mode
+   * lock or by mode itself), but only behaviorally active where the engine
+   * has a per-track transport wrap to hook: FREE and SONG (both driven by
+   * each track's own free_clock — see advance_track_clock_frame,
+   * engine_process.c). Inert in Multi/Sync/Band, where a track's own "lap"
+   * is a derived point on the SHARED master clock, not an independent
+   * per-track event this flag can observe without much larger transport
+   * surgery the manual's Song-specific tool does not call for (deliberately
+   * out of B4's scope — see the header doc above le_engine_set_one_shot). */
+  LE_CMD_SET_ONE_SHOT = 47, /* arg_i = channel, arg_f = 0/1 */
+
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
   LE_EVT_LAYER_RETIRED = 100, /* a completed overdub-pass snapshot. evt arm:
@@ -520,6 +544,9 @@ typedef struct le_track_snapshot {
    * a division track). Only ever nonzero in Sync/Band mode on a non-primary
    * track. See le_sync_quantize_active (engine_private.h) for how it's set. */
   int32_t sync_divisor;
+  /* Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
+   * behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc. */
+  int32_t one_shot;
 } le_track_snapshot;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -1190,6 +1217,40 @@ LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
  * sync-quantized recording has finalized). */
 LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
                                            int32_t channel);
+
+/* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+ * "A track plays just once and then stops" — the manual's tool for a
+ * non-looping section (an intro/outro, or a one-off sample bed), "particularly
+ * useful for playing backing tracks". A per-track boolean; the manual does
+ * not gate it by mode, but loopy's engine currently has a natural per-track
+ * transport-wrap hook ONLY in Free and Song mode (each track ticks its own
+ * free_clock there — see le_track's doc, engine_private.h); in Multi/Sync/
+ * Band a track's own "lap" is a derived point on the ONE shared master
+ * clock, and giving it an independent per-track stop-after-one-lap would
+ * mean much larger transport surgery (and raises un-spec'd questions, e.g.
+ * how a one-shot interacts with a Sync/Band division's multiple/divisor)
+ * that the manual's Song-specific tool does not call for. Deliberate,
+ * documented scope line: the FLAG itself is settable and persists in ANY
+ * mode (mirrors LE_CMD_CROWN_PRIMARY's D18 pattern), but the STOP-instead-
+ * of-loop behavior only fires in Free/Song — see
+ * advance_track_clock_frame's doc, engine_process.c. Applies at the natural
+ * wrap point (le_loop_clock_tick's boundary return on that track's OWN
+ * clock), reusing handle_stop's exact PLAYING/OVERDUBBING -> STOPPED
+ * transition (pending mutes land the same way a manual Stop press would;
+ * an overdub in flight ends its capture and drains/retires normally). */
+
+/* Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
+ * channel; accepted in every looper mode, though inert outside Free/Song
+ * (see the class doc above). A SETTING, not content: like
+ * a_length_preset_bars and target_multiple, it is untouched by clear /
+ * undo-to-empty / mode switches — handle_clear's per-track reset
+ * (engine_process.c) deliberately does not include it, the same "cleared
+ * content starts fresh, configured PREFERENCES survive" split every other
+ * per-track setting in this engine already follows. A cleared-then-re-
+ * recorded one-shot track is one-shot again on its next take, with no need
+ * to re-flag it. */
+LE_EXPORT int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
+                                         int32_t enabled);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
