@@ -14,10 +14,18 @@ IMAGE_INSTALL:append = " \
     alsa-plugins \
     gsettings-desktop-schemas \
     dconf \
+    seatd \
     "
 # gsettings-desktop-schemas + dconf back the embedder's GNOME settings lookups
 # (silences the G_IS_SETTINGS warning); alsa-plugins provides the dmix/dsnoop
 # slaves the bare ALSA config references.
+#
+# seatd = the seat provider weston's libseat needs to open input devices. On this
+# minimal image weston has no active logind session and no seatd → keyboard/mouse
+# dead. Ship + enable seatd and point weston at it. NEEDS ON-DEVICE VALIDATION:
+# weston must reach /run/seatd.sock (the weston user in seatd's group, or seatd
+# started with a shared group) and run with LIBSEAT_BACKEND=seatd.
+SYSTEMD_AUTO_ENABLE:pn-seatd = "enable"
 
 # ALSA-only by design (no PipeWire/JACK): the engine falls straight to ALSA, so no
 # pw-jack shim is needed (cleaner than the Pi OS / Tier 2 path). See plan §Phase 3.
