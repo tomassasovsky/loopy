@@ -1,3 +1,4 @@
+import 'package:loopy_engine/loopy_engine.dart';
 import 'package:meta/meta.dart';
 import 'package:session_repository/src/session_exception.dart';
 
@@ -157,6 +158,7 @@ class SessionTrack {
     required this.multiple,
     required this.lengthFrames,
     required this.lanes,
+    this.lengthPresetBars = 0,
   });
 
   /// Projects a [SessionTrack] from a decoded JSON map.
@@ -213,6 +215,7 @@ class SessionTrack {
       multiple: (json['multiple'] as num).toInt(),
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       lanes: lanes,
+      lengthPresetBars: (json['lengthPresetBars'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -228,12 +231,25 @@ class SessionTrack {
   /// The track's lanes, each with its own mix/routing and audio layers.
   final List<SessionLane> lanes;
 
+  /// This track's persisted length preset in bars (schema v4, Phase A);
+  /// `0` = AUTO (no preset — today's only behavior).
+  ///
+  /// Placeholder pending A6 (`2026-07-22-feat-tempo-aware-looper-modes-part-1
+  /// -plan.md`, task A6 — track length presets): as of this PR the looper
+  /// domain's `Track` model has no length-preset field yet, so
+  /// `session_repository`'s capture path always writes `0` here. The field
+  /// exists now — matching the manifest v4 schema in full per D12 — so a
+  /// session saved on this code round-trips the value once A6 lands the
+  /// real per-track preset choice; no migration is needed later.
+  final int lengthPresetBars;
+
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
     'multiple': multiple,
     'lengthFrames': lengthFrames,
     'lanes': [for (final l in lanes) l.toJson()],
+    'lengthPresetBars': lengthPresetBars,
   };
 
   @override
@@ -244,11 +260,17 @@ class SessionTrack {
           channel == other.channel &&
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
+          lengthPresetBars == other.lengthPresetBars &&
           _listEquals(lanes, other.lanes);
 
   @override
-  int get hashCode =>
-      Object.hash(channel, multiple, lengthFrames, Object.hashAll(lanes));
+  int get hashCode => Object.hash(
+    channel,
+    multiple,
+    lengthFrames,
+    lengthPresetBars,
+    Object.hashAll(lanes),
+  );
 }
 
 /// One lane's effect chain within a [Session] (schema v2+).
@@ -377,6 +399,18 @@ class SessionMonitor {
 /// A saved Loopy session: the transport/tempo settings, the tracks, and (schema
 /// v2+) the lane + monitor effect chains. Paired with per-lane, per-layer WAV
 /// files (schema v3) in a `.loopy` bundle directory.
+///
+/// Schema v4 (`2026-07-22-feat-tempo-aware-looper-modes-plan.md`, decision
+/// D12) adds the Phase-A tempo grid + click + count-in fields below. Every
+/// one of them defaults to the tempo-free/grid-off value, so a v3 manifest
+/// loads as "Multi, grid off" with zero data loss — the same
+/// "grid-off is the compatible default" pattern used across the whole tempo
+/// series (D6). [clickMode]/[clickOutputMask]/[clickVolume] and
+/// [countInBars] intentionally carry the richer shape the engine/repository
+/// layer actually shipped in A1/A2 (`TransportState`/`EngineSnapshot`) rather
+/// than the index plan ERD's earlier sketch (`bool metronomeOn`,
+/// `bool countIn`) — the ERD predates those implementation details and the
+/// plan's own D12 says to prefer fidelity to the real model.
 @immutable
 class Session {
   /// Creates a [Session].
@@ -387,14 +421,26 @@ class Session {
     required this.tracks,
     this.laneChains = const [],
     this.monitors = const [],
+    this.tempoBpm = 0,
+    this.tempoSource = TempoSource.none,
+    this.tsNum = 4,
+    this.tsDen = 4,
+    this.quantizeDiv = GridDivision.off,
+    this.clickMode = ClickMode.off,
+    this.clickOutputMask = 0,
+    this.clickVolume = 1,
+    this.countInBars = 0,
   });
 
   /// Projects a [Session] from a decoded JSON map.
   ///
   /// A v1 manifest (no `laneChains` / `monitors`) loads with empty chains, so a
-  /// legacy bundle restores explicitly-cleared chains rather than leftovers.
-  /// Throws [SessionUnsupportedVersion] for a manifest written by a newer,
-  /// incompatible schema version than this code understands.
+  /// legacy bundle restores explicitly-cleared chains rather than leftovers. A
+  /// v3-or-earlier manifest (no tempo grid fields at all) loads with every new
+  /// field at its grid-off default (see the class doc) — zero data loss, and
+  /// indistinguishable from a v4 session someone deliberately saved with the
+  /// grid off. Throws [SessionUnsupportedVersion] for a manifest written by a
+  /// newer, incompatible schema version than this code understands.
   factory Session.fromJson(Map<String, dynamic> json) {
     final version = (json['version'] as num?)?.toInt() ?? formatVersion;
     if (version > formatVersion) {
@@ -419,15 +465,27 @@ class Session {
         for (final m in (json['monitors'] as List<dynamic>? ?? const []))
           SessionMonitor.fromJson(m as Map<String, dynamic>),
       ],
+      tempoBpm: (json['tempoBpm'] as num?)?.toDouble() ?? 0,
+      tempoSource: _tempoSourceFromJson(json['tempoSource'] as String?),
+      tsNum: (json['tsNum'] as num?)?.toInt() ?? 4,
+      tsDen: (json['tsDen'] as num?)?.toInt() ?? 4,
+      quantizeDiv: _gridDivisionFromJson(json['quantizeDiv'] as String?),
+      clickMode: _clickModeFromJson(json['clickMode'] as String?),
+      clickOutputMask: (json['clickOutputMask'] as num?)?.toInt() ?? 0,
+      clickVolume: (json['clickVolume'] as num?)?.toDouble() ?? 1,
+      countInBars: (json['countInBars'] as num?)?.toInt() ?? 0,
     );
   }
 
-  /// The manifest schema version this code writes and accepts. v3 replaced the
-  /// per-track single `stem` with per-lane [SessionTrack.lanes] (each holding
-  /// ordered audio layers); v2 added the lane + monitor effect chains. v1 and
-  /// v2 bundles still load — a legacy track migrates to one lane-0 live layer,
-  /// and a v1 bundle loads with empty chains.
-  static const int formatVersion = 3;
+  /// The manifest schema version this code writes and accepts. v4 adds the
+  /// tempo-grid + click + count-in fields (see the class doc); every field is
+  /// additive and defaults to grid-off, so v3 (and earlier) manifests still
+  /// load losslessly. v3 replaced the per-track single `stem` with per-lane
+  /// [SessionTrack.lanes] (each holding ordered audio layers); v2 added the
+  /// lane + monitor effect chains. v1, v2, and v3 bundles still load — a
+  /// legacy track migrates to one lane-0 live layer, and a v1 bundle loads
+  /// with empty chains.
+  static const int formatVersion = 4;
 
   /// The manifest filename within a session bundle.
   static const String manifestName = 'session.json';
@@ -450,7 +508,46 @@ class Session {
   /// The per-input live monitors the session defines (empty for a v1 bundle).
   final List<SessionMonitor> monitors;
 
-  /// Serializes this session manifest to a JSON map.
+  /// Denominator-note beats per minute (schema v4, Phase A); `0` = unset (no
+  /// tempo was ever set — mirrors `TransportState.tempoBpm`/
+  /// `EngineSnapshot.tempoBpm`).
+  final double tempoBpm;
+
+  /// Where [tempoBpm] came from (D7 precedence); [TempoSource.none] when
+  /// unset (default, and every pre-v4 session).
+  final TempoSource tempoSource;
+
+  /// Time-signature numerator (schema v4, Phase A; default `4`).
+  final int tsNum;
+
+  /// Time-signature denominator, `4` or `8` (schema v4, Phase A; default
+  /// `4`).
+  final int tsDen;
+
+  /// Musical quantization granularity (schema v4, Phase A; default
+  /// [GridDivision.off]).
+  final GridDivision quantizeDiv;
+
+  /// Click audibility mode (schema v4, Phase A; default [ClickMode.off]).
+  /// The richer 4-value replacement for the index plan ERD's `metronomeOn`
+  /// sketch — see the class doc.
+  final ClickMode clickMode;
+
+  /// Bitmask of hardware output channels the click sounds on (schema v4,
+  /// Phase A; default `0`, no outputs — matches D5's "click defaults to no
+  /// master outputs").
+  final int clickOutputMask;
+
+  /// Click volume in `0..LE_MAX_GAIN` (schema v4, Phase A; default `1`).
+  final double clickVolume;
+
+  /// Count-in length in measures (schema v4, Phase A); `0` = off (default).
+  /// The richer measures-count replacement for the index plan ERD's
+  /// `countIn` boolean sketch — see the class doc.
+  final int countInBars;
+
+  /// Serializes this session manifest to a JSON map. Always writes the
+  /// current [formatVersion] (v4, per D12 — this code never writes v3).
   Map<String, dynamic> toJson() => {
     'version': formatVersion,
     'sampleRate': sampleRate,
@@ -459,6 +556,15 @@ class Session {
     'tracks': [for (final t in tracks) t.toJson()],
     'laneChains': [for (final c in laneChains) c.toJson()],
     'monitors': [for (final m in monitors) m.toJson()],
+    'tempoBpm': tempoBpm,
+    'tempoSource': tempoSource.name,
+    'tsNum': tsNum,
+    'tsDen': tsDen,
+    'quantizeDiv': quantizeDiv.name,
+    'clickMode': clickMode.name,
+    'clickOutputMask': clickOutputMask,
+    'clickVolume': clickVolume,
+    'countInBars': countInBars,
   };
 
   @override
@@ -469,6 +575,15 @@ class Session {
           sampleRate == other.sampleRate &&
           channels == other.channels &&
           baseLengthFrames == other.baseLengthFrames &&
+          tempoBpm == other.tempoBpm &&
+          tempoSource == other.tempoSource &&
+          tsNum == other.tsNum &&
+          tsDen == other.tsDen &&
+          quantizeDiv == other.quantizeDiv &&
+          clickMode == other.clickMode &&
+          clickOutputMask == other.clickOutputMask &&
+          clickVolume == other.clickVolume &&
+          countInBars == other.countInBars &&
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
           _listEquals(monitors, other.monitors);
@@ -478,11 +593,41 @@ class Session {
     sampleRate,
     channels,
     baseLengthFrames,
+    tempoBpm,
+    tempoSource,
+    tsNum,
+    tsDen,
+    quantizeDiv,
+    clickMode,
+    clickOutputMask,
+    clickVolume,
+    countInBars,
     Object.hashAll(tracks),
     Object.hashAll(laneChains),
     Object.hashAll(monitors),
   );
 }
+
+/// Maps a persisted [Session.tempoSource] name back to a [TempoSource].
+/// Absent (pre-v4) or unrecognized (a hypothetical future value this code
+/// predates) values map to [TempoSource.none] — the same "grid-off" default
+/// every other new v4 field falls back to.
+TempoSource _tempoSourceFromJson(String? name) => TempoSource.values.firstWhere(
+  (v) => v.name == name,
+  orElse: () => TempoSource.none,
+);
+
+/// Maps a persisted [Session.quantizeDiv] name back to a [GridDivision].
+/// Absent or unrecognized values map to [GridDivision.off].
+GridDivision _gridDivisionFromJson(String? name) => GridDivision.values
+    .firstWhere((v) => v.name == name, orElse: () => GridDivision.off);
+
+/// Maps a persisted [Session.clickMode] name back to a [ClickMode]. Absent or
+/// unrecognized values map to [ClickMode.off].
+ClickMode _clickModeFromJson(String? name) => ClickMode.values.firstWhere(
+  (v) => v.name == name,
+  orElse: () => ClickMode.off,
+);
 
 bool _listEquals<T>(List<T> a, List<T> b) {
   if (a.length != b.length) return false;

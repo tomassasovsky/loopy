@@ -15,7 +15,17 @@ import 'package:meta/meta.dart';
 @immutable
 class DawProject {
   /// Creates a [DawProject].
-  const DawProject({required this.tracks, this.tempoBpm = 120.0});
+  ///
+  /// [tempoBpm] is normalized at construction: a non-positive value (`<= 0`,
+  /// including the default-free-looper "unset" sentinel a v4 session manifest
+  /// reports — `Session.tempoBpm`, `session_repository`'s "0 = unset") falls
+  /// back to [kFallbackTempoBpm] rather than being stored verbatim, so this
+  /// model can never carry a tempo that would make `als_builder.dart`'s
+  /// beat-time math (`secondsToBeats`) degenerate. Every construction path —
+  /// a direct fixture, or `DawManifestReader.read` — goes through this same
+  /// normalization.
+  const DawProject({required this.tracks, double tempoBpm = kFallbackTempoBpm})
+    : tempoBpm = tempoBpm > 0 ? tempoBpm : kFallbackTempoBpm;
 
   /// One entry per non-empty Loopy track or live-input stem. An empty track
   /// (nothing recorded) is never represented here — the caller building this
@@ -23,10 +33,26 @@ class DawProject {
   /// `buildAls` never needs to re-derive "empty."
   final List<DawTrack> tracks;
 
-  /// Fixed project tempo in BPM (D-TEMPO: always 120 for this feature —
-  /// every clip's beat-time math in `als_builder.dart` assumes this).
+  /// Project tempo in BPM, applied uniformly to every clip/automation's
+  /// beat-time math in `als_builder.dart` (D-TEMPO: a captured performance
+  /// still renders at one fixed tempo start-to-finish — Loopy has no
+  /// mid-performance tempo changes to represent).
+  ///
+  /// This is the session's REAL tempo once the caller has one to supply
+  /// (`DawManifestReader.read`'s `tempoBpm` argument, threaded from the v4
+  /// session manifest's `Session.tempoBpm`) — no longer hardcoded to 120 for
+  /// every export. [kFallbackTempoBpm] (120 BPM, this feature's original
+  /// fixed assumption) remains the compatible fallback for a legacy v3
+  /// session or grid-off (`TempoSource.none`) content, where there is no real
+  /// tempo to export — see the constructor doc.
   final double tempoBpm;
 }
+
+/// The fallback project tempo in BPM: this feature's original fixed-tempo
+/// assumption (D-TEMPO), now used specifically for the "no real tempo known"
+/// case — a legacy v3 session, or v4 grid-off content, both of which report
+/// `Session.tempoBpm == 0` ("unset").
+const double kFallbackTempoBpm = 120;
 
 /// One Ableton audio track: an optional arrangement-view clip (the full
 /// bounced performance, placed at capture t=0), zero or more session-view
