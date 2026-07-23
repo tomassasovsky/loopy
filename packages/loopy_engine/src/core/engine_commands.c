@@ -322,6 +322,7 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
                              * stale nonzero length (mirrors the live-tap and
                              * clear paths) */
     store_i32(&t->a_multiple, 1);
+    store_i32(&t->a_sync_divisor, 0); /* B3: coherent-snapshot mirror */
     store_i32(&t->a_redo_depth, t->redo_count);
     break; /* empty now — further queued taps are no-ops */
   }
@@ -725,9 +726,23 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
    * transport is held (everything parked/empty): the clock never ticks then, a
    * deferred arm would deadlock, and the held position IS the loop top, so
    * immediate is on-grid by definition. Per-track overrides win over the
-   * global default. */
-  if (le_effective_quantize(engine, channel) && has_master &&
-      le_transport_active(engine)) {
+   * global default.
+   *
+   * B3, D16: a Sync/Band non-primary EMPTY track's DEFINING recording is
+   * ALSO force-armed here, regardless of the ordinary quantize setting —
+   * the manual's "automatically quantized to keep them in sync with the
+   * primary track" (song-mode-spec.md §1). Scoped to st == EMPTY only:
+   * this is what makes the take START at the loop top (record_pos seeds to
+   * e->clock.position, which the fire lands on exactly 0), the
+   * precondition finalize_new_track's division-playback formula depends on
+   * (mix_tracks_frame reads a division phase-locked to the primary's top,
+   * which only holds if the take BEGAN there). Finalize / punch-in
+   * quantization is unaffected — governed only by the ordinary setting,
+   * unchanged. */
+  const int sync_force_arm =
+      st == LE_TRACK_EMPTY && le_sync_quantize_active(engine, channel);
+  if ((le_effective_quantize(engine, channel) || sync_force_arm) &&
+      has_master && le_transport_active(engine)) {
     /* If we armed this track but the boundary already fired it, the arm is
      * spent (published a_pending cleared); fall through to a fresh decision on
      * the now-current state. */
@@ -1037,6 +1052,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   le_mark_state_cmd(t, LE_TRACK_EMPTY);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
   store_i32(&t->a_multiple, 1);
+  store_i32(&t->a_sync_divisor, 0); /* B3: coherent-snapshot mirror */
   store_i32(&t->a_redo_depth, t->redo_count);
   return LE_OK;
 }
@@ -1212,6 +1228,15 @@ int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode) {
     return LE_ERR_INVALID;
   }
   return le_push(engine, LE_CMD_SET_LOOPER_MODE, mode, 0.0f);
+}
+
+/* ---- primary track / Sync (B3, D16/D18; Band's section-transport arming
+ * is a follow-on, B3b) ---- */
+
+int32_t le_engine_crown_primary(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_CROWN_PRIMARY, channel, 0.0f);
 }
 
 /* ---- click + count-in (A2; see loopy_engine_api.h's click section) ---- */
