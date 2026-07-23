@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
+import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:loopy/looper/view/shortcuts_help_sheet.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
@@ -67,6 +69,7 @@ class TracksToolbar extends StatelessWidget {
         ModeIndicator(mode: mode, onToggle: onToggleMode),
         const SizedBox(width: 12),
         BankSwitch(active: activeBank),
+        const TransportTempoDisplay(),
         const Spacer(),
         const ArmedIndicator(),
         const PerfRecordButton(),
@@ -336,6 +339,151 @@ class BankSwitch extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The current tempo/beat readout — absent entirely on the tempo-free
+/// (grid-off) path (`TransportState.tempoSource == TempoSource.none`), so
+/// today's chrome stays visually unchanged until a tempo is actually set
+/// (plan A5's minimal-addition scope: this is a small readout, not a chrome
+/// redesign). Self-contained (mirrors [ArmedIndicator]'s pattern): decides
+/// its own visibility from [LooperBloc] rather than the host conditionally
+/// including it.
+///
+/// Shows a distinct counting-in state with a beat countdown (D9) while
+/// [TransportState.countingIn] is true; otherwise the current effective BPM
+/// (manual, tapped, or loop-derived) plus a beat-position indicator
+/// ([_BeatIndicator]).
+///
+/// Overflow-safety (a dense toolbar has little slack to spare): the outer
+/// [Flexible] lets the whole readout shrink within [TracksToolbar]'s Row;
+/// inside, only the tempo [Text] is itself [Flexible] (ellipsis-safe down to
+/// any width), while [_BeatIndicator] — bounded to a small, fixed max size —
+/// is gated by a [LayoutBuilder] that hides it entirely once the available
+/// width drops below [_kBeatIndicatorMinWidth]. That combination guarantees
+/// this Row can never demand more than it's given, at any window width.
+class TransportTempoDisplay extends StatelessWidget {
+  /// Creates a [TransportTempoDisplay].
+  const TransportTempoDisplay({super.key});
+
+  /// Below this available width, [_BeatIndicator] is dropped rather than
+  /// squeezed — chosen with margin over its worst case (8 dots ≈ 69px, D1's
+  /// signatures never need more since 9-15 beats fall back to compact text)
+  /// plus row spacing, so showing it never risks starving the tempo text.
+  static const double _kBeatIndicatorMinWidth = 100;
+
+  @override
+  Widget build(BuildContext context) {
+    final transport = context.watch<LooperBloc>().state.transport;
+    if (transport.tempoSource == TempoSource.none) {
+      return const SizedBox.shrink();
+    }
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final looper = theme.extension<LooperTheme>()!;
+
+    // Flexible so a cramped toolbar (a narrow window with every icon button
+    // still showing) shrinks this readout instead of forcing a hard
+    // overflow — valid directly at a StatelessWidget's build() root:
+    // Flutter's ParentDataWidget resolution walks through non-RenderObject
+    // ancestors to reach the enclosing Row.
+    return Flexible(
+      child: Padding(
+        key: const Key('tracks_transportTempo'),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final showBeatIndicator =
+                !transport.countingIn &&
+                transport.tsNum > 0 &&
+                constraints.maxWidth >= _kBeatIndicatorMinWidth;
+            return Row(
+              spacing: 8,
+              children: [
+                Flexible(
+                  child: Text(
+                    transport.countingIn
+                        ? l10n.countingInLabel(transport.countInBeatsLeft)
+                        : l10n.currentTempoLabel(
+                            transport.tempoBpm.toStringAsFixed(1),
+                          ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (showBeatIndicator)
+                  _BeatIndicator(
+                    count: transport.tsNum,
+                    current: transport.currentBeat,
+                    color: looper.recordColor,
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// The compact beat-position indicator for [TransportTempoDisplay]: a row of
+/// small dots, one per beat, highlighting the current beat — UNLESS [count]
+/// exceeds [_maxDots] (time signatures go up to 15 beats per bar, D1's
+/// 15/8), in which case dots give way to a compact "beat N/M" text instead.
+/// 15 non-shrinkable dots would be ~130px of fixed width; capping at
+/// [_maxDots] bounds this widget's own natural size to a small constant
+/// (≈69px) regardless of the signature, which is what lets
+/// [TransportTempoDisplay]'s width-threshold gate reason about a single
+/// worst case instead of an unbounded one. Every den-4 signature (up to 7
+/// beats) and the smaller den-8 ones still get the nicer dot row; only
+/// 9/8-15/8 fall back to text.
+class _BeatIndicator extends StatelessWidget {
+  const _BeatIndicator({
+    required this.count,
+    required this.current,
+    required this.color,
+  });
+
+  final int count;
+  final int current;
+  final Color color;
+
+  /// Beat counts above this fall back to the compact "beat N/M" text.
+  static const int _maxDots = 8;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count > _maxDots) {
+      return Text(
+        context.l10n.beatPositionLabel(current + 1, count),
+        overflow: TextOverflow.ellipsis,
+        maxLines: 1,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: 3,
+      children: [
+        for (var i = 0; i < count; i++)
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: i == current ? color : Colors.white24,
+              shape: BoxShape.circle,
+            ),
+            child: const SizedBox.square(dimension: 6),
+          ),
+      ],
     );
   }
 }

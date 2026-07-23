@@ -92,6 +92,7 @@ void main() {
   late MidiDeviceRepository midi;
   late PedalCubit pedal;
   late ControlCubit control;
+  late _ScreenshotLooperBloc looperBloc;
 
   const runningAudio = AudioSetupState(
     status: AudioSetupStatus.running,
@@ -171,6 +172,28 @@ void main() {
       keepAliveInterval: Duration.zero,
     );
     addTearDown(control.close);
+    // Backs the Tempo section (reads live values from LooperBloc's
+    // TransportState, not a cached cubit copy — see
+    // TempoSettingsSection's class doc): a representative grid-on state so
+    // its golden shows real values rather than the tempo-free defaults.
+    looperBloc = _ScreenshotLooperBloc();
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: const LooperState(
+        transport: TransportState(
+          tempoBpm: 120,
+          tempoSource: TempoSource.manual,
+          currentBeat: 1,
+          quantizeDiv: GridDivision.quarter,
+          clickMode: ClickMode.rec,
+          clickMask: 0x3,
+          clickVolume: 0.8,
+          countInBars: 1,
+        ),
+        status: EngineStatus(outputChannels: 4),
+      ),
+    );
   });
 
   Future<void> pump(WidgetTester tester) async {
@@ -232,6 +255,10 @@ void main() {
               ),
               BlocProvider<PedalCubit>.value(value: pedal),
               BlocProvider<ControlCubit>.value(value: control),
+              BlocProvider<LooperBloc>.value(value: looperBloc),
+              BlocProvider<TempoCubit>.value(
+                value: TempoCubit(repository: repository, settings: settings),
+              ),
             ],
             child: const SettingsPage(),
           ),
@@ -271,6 +298,23 @@ void main() {
     await expectLater(
       find.byType(SettingsPage),
       matchesGoldenFile('goldens/settings_audio_recording.png'),
+    );
+  }, skip: !hasScreenshotFonts);
+
+  testWidgets('Tempo section — grid, click, and count-in', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
+    await tester.pumpAndSettle();
+    // Reveal the CLICK + COUNT-IN groups below the fold.
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('tempoSettings_countIn_0')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(SettingsPage),
+      matchesGoldenFile('goldens/settings_tempo.png'),
     );
   }, skip: !hasScreenshotFonts);
 

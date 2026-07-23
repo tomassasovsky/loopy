@@ -103,7 +103,8 @@ class TrackColumn extends StatelessWidget {
           if (kConsoleMode)
             // Console mode: the foot pedals own undo/redo, so the on-screen
             // buttons are hidden entirely and the channel number is centred.
-            // The loop-multiple badge still rides the right edge.
+            // The loop-multiple badge still rides the right edge; a pending
+            // arm badge (A5) rides the left.
             Stack(
               alignment: Alignment.center,
               children: [
@@ -125,6 +126,11 @@ class TrackColumn extends StatelessWidget {
                       ),
                     ),
                   ),
+                if (track.pending)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: _PendingArmBadge(color: looper.recordColor),
+                  ),
               ],
             )
           else
@@ -136,6 +142,10 @@ class TrackColumn extends StatelessWidget {
                     color: Colors.white70,
                   ),
                 ),
+                if (track.pending) ...[
+                  const SizedBox(width: 6),
+                  _PendingArmBadge(color: looper.recordColor),
+                ],
                 const Spacer(),
                 if (track.isMultiple)
                   Text(
@@ -365,6 +375,24 @@ class _TrackIndicator extends StatelessWidget {
         ),
         child: const SizedBox(height: 5, width: double.infinity),
       ),
+    );
+  }
+}
+
+/// A small badge marking a track with a pending quantized/signal-triggered
+/// record arm ([Track.pending], A3) — armed and waiting for its boundary,
+/// cancellable by a second press on the tile or the pedal/controller's
+/// global cancel-arm action (A5).
+class _PendingArmBadge extends StatelessWidget {
+  const _PendingArmBadge({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: context.l10n.a11yTrackArmed,
+      child: Icon(Icons.schedule_outlined, size: 14, color: color),
     );
   }
 }

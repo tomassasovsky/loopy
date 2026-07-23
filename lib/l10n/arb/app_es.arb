@@ -780,5 +780,89 @@
     "perfExportReExportFailed": "No se pudo regenerar la exportación.",
     "@perfExportReExportFailed": {
         "description": "Error message shown when re-export fails."
+    },
+    "settingsSectionTempo": "Tempo",
+    "tempoSettingsIntro": "Configura la cuadrícula de tempo, el clic y la cuenta de entrada a la que el looper alinea las grabaciones.",
+    "tempoGroupLabel": "TEMPO",
+    "currentTempoLabel": "{bpm} BPM",
+    "@currentTempoLabel": {
+        "description": "The live effective tempo readout (manual, tapped, or derived from a loop).",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "tempoNotSetLabel": "Sin definir",
+    "@tempoNotSetLabel": {
+        "description": "Shown in place of a BPM readout before any tempo has ever been established."
+    },
+    "bpmFieldLabel": "BPM",
+    "tapTempoButton": "Tap",
+    "tapTempoTooltip": "Toca para marcar el tempo",
+    "timeSignatureLabel": "Compás",
+    "timeSignatureNoteValueLabel": "Valor de nota",
+    "timeSignatureQuarterNote": "Negra (/4)",
+    "timeSignatureEighthNote": "Corchea (/8)",
+    "timeSignatureOption": "{num}/{den}",
+    "@timeSignatureOption": {
+        "description": "One selectable time-signature chip, e.g. \"7/8\".",
+        "placeholders": {
+            "num": {
+                "type": "int"
+            },
+            "den": {
+                "type": "int"
+            }
+        }
+    },
+    "syncTempoTitle": "Sincronizar loop con el tempo",
+    "syncTempoSubtitle": "Mantiene la duración del loop enlazada a la cuadrícula de tempo; una grabación definitoria nueva puede derivar el tempo de su duración en su lugar.",
+    "quantizeGroupLabel": "CUANTIZACIÓN",
+    "quantizeDivIntro": "Cuantización musical — alinea el inicio/fin de la grabación al pulso, no solo al inicio del loop.",
+    "quantizeDivOffLabel": "Desactivada",
+    "quantizeDivBarLabel": "1 compás",
+    "quantizeDivHalfLabel": "1/2",
+    "quantizeDivQuarterLabel": "1/4",
+    "quantizeDivEighthLabel": "1/8",
+    "quantizeDivSixteenthLabel": "1/16",
+    "clickGroupLabel": "CLIC",
+    "clickModeIntro": "Cuándo se oye el clic (metrónomo).",
+    "clickModeOffLabel": "Desactivado",
+    "clickModeRecLabel": "Grabación",
+    "clickModeRecFirstLabel": "Primera toma",
+    "clickModePlayRecLabel": "Siempre",
+    "clickOutputLabel": "Salida del clic",
+    "clickVolumeLabel": "Volumen del clic",
+    "countInGroupLabel": "CUENTA DE ENTRADA",
+    "countInIntro": "Compases contados antes de que comience una grabación definitoria.",
+    "countInOffLabel": "Desactivada",
+    "countInBarsLabel1": "1 compás",
+    "countInBarsLabel2": "2 compases",
+    "countInBarsLabel4": "4 compases",
+    "countingInLabel": "Cuenta de entrada {beats}",
+    "@countingInLabel": {
+        "description": "Shown in the transport while a count-in is running, with the beat countdown.",
+        "placeholders": {
+            "beats": {
+                "type": "int"
+            }
+        }
+    },
+    "beatPositionLabel": "{beat}/{count}",
+    "@beatPositionLabel": {
+        "description": "Compact beat-position readout (e.g. \"3/15\") used instead of individual dots for time signatures with a large numerator, where dots would risk overflowing a narrow toolbar.",
+        "placeholders": {
+            "beat": {
+                "type": "int"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "a11yTrackArmed": "Armado, esperando el siguiente límite",
+    "@a11yTrackArmed": {
+        "description": "Accessible label for the small badge shown on a track tile with a pending quantized/signal-triggered record arm."
     }
 }
