@@ -266,6 +266,17 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   (`vcgencmd get_throttled` must read `0x0`). The pedal's **LEDs need their
   external 9V rail**: USB-MIDI carries only the LED *frames*, not power, so the LEDs
   stay dark on USB alone even when the MIDI is correct.
+- **USB audio glitches are a Pi 4 bus-contention artifact (expected here).** The
+  Pi 4 funnels **all four USB-A ports through one shared USB2 hub**, so the audio
+  interface contends with every other USB device (wireless dongles, the USB-MIDI
+  pedal). Under contention — or at a small buffer — the kernel logs
+  `usb …: next package FIFO overflow` (see `dmesg`) and audio hiccups. Mitigations
+  that *do* help: a **larger buffer** (trade latency for stability — latency is a
+  non-goal here), and **taking devices off USB** — a powered hub adds *power* but
+  not *bandwidth*, so it does not fix this; the shipped console puts the
+  footswitches/encoder on **GPIO** (`gpio_client`), leaving USB to the interface.
+  On the **Pi 5** the redesigned USB (RP1, dedicated controllers) largely removes
+  this — another reason Pi 4B audio-timing is not representative.
 - **Connectors.** Pi 4 has 2× **micro-HDMI** → `HDMI-A-1` / `HDMI-A-2`. Set
   `LOOPY_MAIN_OUTPUT` / `LOOPY_WAVE_OUTPUT` and the per-panel `--scale` in
   [`deploy/rpi/pin-displays.sh`](../deploy/rpi/pin-displays.sh). On the **TV**,
