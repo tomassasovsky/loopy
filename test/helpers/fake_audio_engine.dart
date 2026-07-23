@@ -360,6 +360,15 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// The last value passed to [setLooperMode].
+  LooperMode? lastLooperMode;
+
+  @override
+  EngineResult setLooperMode(LooperMode mode) {
+    lastLooperMode = mode;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;

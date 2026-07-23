@@ -187,6 +187,18 @@ class LooperRepository {
   double _clickVolume = 1;
   int _countInBars = 0;
 
+  /// The five-mode axis (B2a, D4). Remembered and re-applied on every
+  /// successful (re)start, exactly like the tempo grid settings above: the
+  /// native engine seeds it once in `le_engine_create` and never resets it in
+  /// `le_engine_configure`, so this field only matters for re-establishing
+  /// state on a genuinely fresh engine instance. Unlike [_tempoBpm], `multi`
+  /// (the zero value) IS pushed on every (re)start — there is no "unset"
+  /// sentinel to special-case, mirroring [_syncTempo] / [_quantizeDiv].
+  /// Never reset on [clear]: the plan specifies no engine-side "revert to
+  /// Multi" event, so the mode simply persists across a clear-all the same
+  /// way it persists across a device restart.
+  LooperMode _looperMode = LooperMode.multi;
+
   /// Per-track length presets (A6, D17; absent => AUTO). Remembered and
   /// re-applied on every successful (re)start, mirroring [_trackMultiple] —
   /// a fresh engine start resets every track's preset to AUTO
@@ -449,6 +461,7 @@ class LooperRepository {
       countInBars: s.countInBars,
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
+      looperMode: s.looperMode,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -544,11 +557,13 @@ class LooperRepository {
       // instead of restoring). A device change / reconnect with a real offset
       // still gets it back.
       if (_recordOffset > 0) _engine.setRecordOffset(_recordOffset);
-      // Re-apply the tempo grid + click/count-in state (A1/A2): a fresh start
-      // resets all of it to the tempo-free defaults, same as quantize/gain
-      // above. Only an explicitly-set tempo is restored (see [_tempoBpm]'s
-      // doc) — pushing the unset `0` would clamp up to 30 BPM and falsely
-      // leave the grid on.
+      // Re-apply the tempo grid + click/count-in state (A1/A2), plus the
+      // looper mode (B2a): a fresh start resets all of it to the tempo-free/
+      // Multi defaults, same as quantize/gain above. Only an explicitly-set
+      // tempo is restored (see [_tempoBpm]'s doc) — pushing the unset `0`
+      // would clamp up to 30 BPM and falsely leave the grid on; the mode has
+      // no such sentinel (`multi` IS the default), so it is always pushed,
+      // like sync/quantize/click above.
       if (_tempoBpm > 0) _engine.setTempo(_tempoBpm);
       _engine
         ..setTimeSignature(_tsNum, _tsDen)
@@ -557,7 +572,8 @@ class LooperRepository {
         ..setClickMode(_clickMode)
         ..setClickOutput(_clickMask)
         ..setClickVolume(_clickVolume)
-        ..setCountIn(_countInBars);
+        ..setCountIn(_countInBars)
+        ..setLooperMode(_looperMode);
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
@@ -2252,6 +2268,21 @@ class LooperRepository {
       channel: channel,
       bars: bars <= 0 ? 0 : bars,
     );
+  }
+
+  /// Sets the looper mode (B2a, D4). Remembered and re-applied on every
+  /// (re)start. Ignored by the engine while any track has content (see
+  /// [LooperModeControl]'s class doc) — locked, not queued: a rejected
+  /// switch here still overwrites the remembered value, so the NEXT
+  /// (re)start pushes the value the caller asked for, not the one the engine
+  /// is currently holding (matching [setTempo]'s "remembered ≠ live"
+  /// posture rather than [setCountIn]'s clamp-before-remember one, since
+  /// there is no invalid value to clamp here — every [LooperMode] is
+  /// in-range by construction).
+  EngineResult setLooperMode(LooperMode mode) {
+    _looperMode = mode;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setLooperMode(mode);
   }
 
   /// Releases the repository and the underlying engine.
