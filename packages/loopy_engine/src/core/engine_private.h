@@ -452,22 +452,38 @@ typedef struct le_track {
   int32_t xfade_len;
   int32_t xfade_end_state;
 
-  /* Free mode (B2b, index Architecture §4): this track's OWN loop clock,
-   * structurally identical to (and reusing) the master's le_loop_clock —
-   * length 0 means "not yet established", exactly like e->clock before the
-   * first defining recording. DORMANT outside Free mode: nothing writes or
-   * reads free_clock/free_iteration unless a_looper_mode == LE_LOOPER_MODE_
-   * FREE (verified by construction — see finalize_master, mix_tracks_frame,
-   * advance_transport_frame, viz_tap_frame's Free-mode-guarded call sites in
-   * engine_process.c). In Multi/Sync/Song/Band every track's length is a
-   * multiple of the ONE shared e->clock (seg_base's `k` multiples), so this
-   * stays untouched at its zero-initialized value for the engine's whole
-   * lifetime in those modes. free_iteration mirrors e->loop_iteration (a
-   * free-running wrap count) for the same reason e->loop_iteration exists:
-   * future per-track-multiple work (Band's non-primary sections, B3/B4) has
-   * the same shape available without inventing a second counter later. */
+  /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
+   * clock, structurally identical to (and reusing) the master's
+   * le_loop_clock — length 0 means "not yet established", exactly like
+   * e->clock before the first defining recording. B4: Song mode's
+   * "independent lengths, no primary, no shared grid obligation" transport
+   * (song-mode-spec.md §2) is structurally IDENTICAL to Free's, so B4
+   * reuses this same machinery outright rather than inventing a parallel
+   * one — every gate below was broadened from a single `mode == FREE` check
+   * to `mode == FREE || mode == SONG`, never duplicated. DORMANT outside
+   * Free/Song: nothing writes or reads free_clock/free_iteration unless
+   * a_looper_mode is one of those two (verified by construction — see
+   * finalize_master, mix_tracks_frame, advance_transport_frame,
+   * viz_tap_frame's Free/Song-guarded call sites in engine_process.c). In
+   * Multi/Sync/Band every track's length is a multiple of the ONE shared
+   * e->clock (seg_base's `k` multiples), so this stays untouched at its
+   * zero-initialized value for the engine's whole lifetime in those modes.
+   * free_iteration mirrors e->loop_iteration (a free-running wrap count) for
+   * the same reason e->loop_iteration exists: Band's non-primary sections
+   * (B3b) instead reuse Sync's primary/multiple-division machinery, so this
+   * field's only two consumers remain Free and Song. */
   le_loop_clock free_clock;
   uint64_t free_iteration;
+
+  /* One Shot (B4, Sheeran manual §5.9.4): "plays just once and then stops"
+   * instead of looping. A SETTING (like a_length_preset_bars above),
+   * untouched by handle_clear/UNDO_TO_EMPTY — see LE_CMD_SET_ONE_SHOT's doc,
+   * loopy_engine_api.h, for the full mode-gating rationale. Consumed only by
+   * advance_track_clock_frame's free_clock wrap check (engine_process.c);
+   * dormant (read but inert) outside Free/Song for the same reason
+   * free_clock itself is — there is no per-track wrap event to hook in
+   * Multi/Sync/Band. */
+  _Atomic int32_t a_one_shot;
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,

@@ -14573,6 +14573,627 @@ static void test_free_mode_punch_in_ramps_not_hard_cuts(void) {
   le_engine_destroy(e);
 }
 
+/* ---- Song mode per-track clocks (B4) ----
+ *
+ * Song mode's transport ("independent lengths, no primary, no shared grid
+ * obligation" — song-mode-spec.md §2) is structurally identical to Free's,
+ * so B4 reuses B2b's per-track free_clock machinery outright: every gate
+ * above that used to read `mode == FREE` now reads `mode == FREE || mode ==
+ * SONG`, and nothing else changed. These tests are deliberately NOT a
+ * wholesale re-run of every Free-mode test above — they exist to prove the
+ * gate-broadening itself is correct at each of the sites B4 touched
+ * (finalize_master, le_dub_block_update, LE_CMD_REDO_FROM_EMPTY,
+ * LE_CMD_RESTORE_CLEAR, the viz taps, mix_tracks_frame's trk_pos/trk_len
+ * seeding, and the NEW commit-session guard), not to re-prove Free-mode
+ * math the code path is byte-for-byte shared with. fm_record_track /
+ * fm_record_track_value / fm_advance_value above are mode-agnostic (they
+ * only call le_engine_record / tg_advance) and are reused verbatim. */
+
+/* A fresh engine, switched into Song mode (every track starts empty, so the
+ * D4 gate accepts it immediately). */
+static le_engine* sm_make_song_engine(int sr) {
+  le_engine* e = tg_make_engine(sr);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  tg_advance(e, 1);
+  return e;
+}
+
+static void test_song_mode_defining_recording_sets_own_clock_not_master(
+    void) {
+  printf("test_song_mode_defining_recording_sets_own_clock_not_master\n");
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 1500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 1500);
+  CHECK(s.tracks[0].multiple == 1);
+
+  /* The shared master never moves -- Song mode's sections are simply tracks
+   * with no shared grid (song-mode-spec.md §1). */
+  CHECK(s.master_length_frames == 0);
+  CHECK(e->clock.length == 0);
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->loop_iteration == 0);
+
+  CHECK(e->tracks[0].free_clock.length == 1500);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_independent_lengths_wraps(void) {
+  printf("test_song_mode_independent_lengths_wraps\n");
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  /* 4 mutually prime lengths (a section per track): enough to prove no
+   * shared-grid interference between sections without wholesale duplicating
+   * Free's own 8-track proof of the same underlying clock math. */
+  const int32_t len[4] = {97, 101, 103, 107};
+  for (int32_t ch = 0; ch < 4; ++ch) {
+    fm_record_track(e, ch, len[ch]);
+  }
+
+  le_engine_get_snapshot(e, &s);
+  for (int32_t ch = 0; ch < 4; ++ch) {
+    CHECK(s.tracks[ch].state == LE_TRACK_PLAYING);
+    CHECK(s.tracks[ch].length_frames == len[ch]);
+    CHECK(e->tracks[ch].free_clock.length == len[ch]);
+  }
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->clock.length == 0);
+
+  int32_t base_pos[4];
+  uint64_t base_iter[4];
+  for (int32_t ch = 0; ch < 4; ++ch) {
+    base_pos[ch] = e->tracks[ch].free_clock.position;
+    base_iter[ch] = e->tracks[ch].free_iteration;
+  }
+
+  const int N = 1500; /* several wraps on every section, even the longest */
+  tg_advance(e, N);
+
+  for (int32_t ch = 0; ch < 4; ++ch) {
+    const int64_t total = (int64_t)base_pos[ch] + N;
+    const int32_t expect_pos = (int32_t)(total % len[ch]);
+    const uint64_t expect_iter = base_iter[ch] + (uint64_t)(total / len[ch]);
+    CHECK(e->tracks[ch].free_clock.position == expect_pos);
+    CHECK(e->tracks[ch].free_iteration == expect_iter);
+    CHECK(expect_iter >= base_iter[ch] + 3);
+  }
+
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->clock.length == 0);
+  CHECK(e->loop_iteration == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_one_capturer_handoff_finalizes_to_own_length(
+    void) {
+  printf("test_song_mode_one_capturer_handoff_finalizes_to_own_length\n");
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  /* Section 0 already established. */
+  fm_record_track(e, 0, 2000);
+  le_engine_get_snapshot(e, &s);
+  const int32_t sec0_len_before = e->tracks[0].free_clock.length;
+
+  /* Section 1 starts its own defining recording, left in flight. */
+  le_engine_record(e, 1);
+  tg_advance(e, 400);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_RECORDING);
+
+  /* Punching in on section 0 hands off the one input stream
+   * (close_active_capture -- unconditional and mode-agnostic, unchanged by
+   * B4): section 1's in-flight recording finalizes RIGHT HERE, to ITS OWN
+   * length -- direct per-track presses, exactly as the spec's "no advance
+   * gesture, no special in-flight rule" (song-mode-spec.md §2 Q4) says. */
+  le_engine_record(e, 0);
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[1].length_frames == 400);
+  CHECK(e->tracks[1].free_clock.length == 400);
+  CHECK(e->tracks[1].free_clock.length != sec0_len_before);
+
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+  CHECK(e->tracks[0].free_clock.length == sec0_len_before);
+
+  CHECK(load_i32(&e->a_master_len) == 0);
+  CHECK(e->clock.length == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_commit_session_rejected_leaves_master_dormant(
+    void) {
+  printf("test_song_mode_commit_session_rejected_leaves_master_dormant\n");
+  /* NEW guard (B4): session import's single-shared-base COMMIT_SESSION is
+   * just as incompatible with Song's independent per-track lengths as it is
+   * with Free's -- le_engine_commit_session (engine_session.c) and the
+   * audio-thread handler's own defensive copy (engine_process.c) both now
+   * reject SONG, mirroring the exact two-layer guard B2b already had for
+   * FREE (adversarial-review BUG 2). */
+  le_engine* e = sm_make_song_engine(1000);
+
+  /* Layer 1: the normal wrapper rejects synchronously, before posting. */
+  CHECK(le_engine_commit_session(e, 2000) == LE_ERR_INVALID);
+  tg_advance(e, 1);
+  CHECK(e->clock.length == 0);
+  CHECK(load_i32(&e->a_master_len) == 0);
+
+  /* Layer 2: even a raw post (bypassing the wrapper) is declined audio-side. */
+  CHECK(le_push(e, LE_CMD_COMMIT_SESSION, 2000, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  CHECK(e->clock.length == 0);
+  CHECK(load_i32(&e->a_master_len) == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_dub_layer_retires_not_stuck(void) {
+  printf("test_song_mode_dub_layer_retires_not_stuck\n");
+  /* Regression pin for the SAME bug class B2b's adversarial review found and
+   * fixed for Free (le_dub_block_update's `base` must read the TRACK's own
+   * free_clock.length, not the permanently-dormant e->clock.length) --
+   * proves B4's gate-broadening covers this site too. Without it, a Song-
+   * mode partially-covered overdub shadow would never drain: a_layer_in_
+   * flight stuck at 1 forever, the shadow slot never returned to the
+   * shared bounded pool. */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 900);
+
+  le_engine_record(e, 0); /* PLAYING -> OVERDUBBING */
+  fm_advance_value(e, 0.3f, 50); /* less than a full lap */
+  le_engine_record(e, 0); /* OVERDUBBING -> PLAYING */
+
+  tg_advance(e, e->sample_rate / 100 + 5); /* let the punch-out fade decay */
+
+  settle_layers(e);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].layer_in_flight == 0);
+  CHECK(e->tracks[0].dub_slot == -1);
+  CHECK(e->tracks[0].dub_retire_slot == -1);
+
+  le_engine_destroy(e);
+}
+
+/* GAP-style coverage (mirroring the Free-mode section's own four
+ * lifecycle-path tests): the defensive free_clock/free_iteration/
+ * track_viz_bucket resets in handle_clear / LE_CMD_UNDO_TO_EMPTY /
+ * LE_CMD_REDO_FROM_EMPTY / LE_CMD_RESTORE_CLEAR are exercised in Song mode
+ * specifically because REDO_FROM_EMPTY and RESTORE_CLEAR are sites B4
+ * actually changed (broadened from a FREE-only check) -- handle_clear and
+ * UNDO_TO_EMPTY's resets are unconditional (mode-agnostic already) and are
+ * included here mainly for symmetry / a complete lifecycle picture. */
+
+static void test_song_mode_clear_resets_targeted_track_only(void) {
+  printf("test_song_mode_clear_resets_targeted_track_only\n");
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 811);
+  fm_record_track(e, 1, 823);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+  CHECK(sib_pos > 0);
+
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(e->tracks[0].free_clock.length == 0);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 0);
+  CHECK(e->track_viz_bucket[0] == -1);
+
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos + 1);
+  CHECK(e->tracks[1].free_iteration == sib_iter);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_undo_to_empty_resets_targeted_track_only(void) {
+  printf("test_song_mode_undo_to_empty_resets_targeted_track_only\n");
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 811);
+  fm_record_track(e, 1, 823);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* no layers -> UNDO_TO_EMPTY */
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(e->tracks[0].free_clock.length == 0);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 0);
+  CHECK(e->track_viz_bucket[0] == -1);
+
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos + 1);
+  CHECK(e->tracks[1].free_iteration == sib_iter);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_redo_from_empty_restores_targeted_track_only(
+    void) {
+  printf("test_song_mode_redo_from_empty_restores_targeted_track_only\n");
+  /* B4-touched site: before this PR, LE_CMD_REDO_FROM_EMPTY's mode check
+   * only matched FREE, so a Song-mode redo would have fallen into the
+   * ELSE branch (le_restore_multiple_or_divisor against e->clock.length,
+   * always 0 in Song) instead of restoring this track's OWN free_clock --
+   * silently corrupting the restored section's playback position. */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 811);
+  fm_record_track(e, 1, 823);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos_before = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter_before = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+
+  CHECK(le_engine_undo(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  CHECK(le_engine_redo(e, 0) == LE_OK); /* -> LE_CMD_REDO_FROM_EMPTY */
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 811);
+  CHECK(e->tracks[0].free_clock.length == 811);
+  CHECK(e->tracks[0].free_clock.position == 1);
+  CHECK(e->tracks[0].free_iteration == 0);
+
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos_before + 2);
+  CHECK(e->tracks[1].free_iteration == sib_iter_before);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_restore_clear_restores_targeted_track_only(void) {
+  printf("test_song_mode_restore_clear_restores_targeted_track_only\n");
+  /* B4-touched site: the LE_CMD_RESTORE_CLEAR twin of the redo test above. */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 811);
+  fm_record_track(e, 1, 823);
+  tg_advance(e, 300);
+
+  const int32_t sib_pos_before = e->tracks[1].free_clock.position;
+  const uint64_t sib_iter_before = e->tracks[1].free_iteration;
+  const int32_t sib_len = e->tracks[1].free_clock.length;
+
+  CHECK(le_engine_clear_undoable(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(e->tracks[0].free_clock.length == 0);
+
+  CHECK(le_engine_undo(e, 0) == LE_OK); /* history is cleared -> RESTORE_CLEAR */
+  tg_advance(e, 1);
+
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 811);
+  CHECK(e->tracks[0].free_clock.length == 811);
+  CHECK(e->tracks[0].free_iteration == 0);
+
+  CHECK(s.tracks[1].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[1].free_clock.length == sib_len);
+  CHECK(e->tracks[1].free_clock.position == sib_pos_before + 2);
+  CHECK(e->tracks[1].free_iteration == sib_iter_before);
+
+  le_engine_destroy(e);
+}
+
+static void test_song_mode_per_track_viz_independent(void) {
+  printf("test_song_mode_per_track_viz_independent\n");
+  le_engine* e = sm_make_song_engine(1000);
+
+  fm_record_track_value(e, 0, 900, 0.8f);
+  fm_record_track_value(e, 1, 1100, 0.3f);
+
+  tg_advance(e, 2500);
+
+  float tviz0[LE_VIZ_POINTS];
+  float tviz1[LE_VIZ_POINTS];
+  CHECK(le_engine_read_track_visual(e, 0, tviz0, LE_VIZ_POINTS) == LE_VIZ_POINTS);
+  CHECK(le_engine_read_track_visual(e, 1, tviz1, LE_VIZ_POINTS) == LE_VIZ_POINTS);
+
+  CHECK(max_of(tviz0, LE_VIZ_POINTS) > 0.79f);
+  CHECK(max_of(tviz0, LE_VIZ_POINTS) < 0.81f);
+  CHECK(max_of(tviz1, LE_VIZ_POINTS) > 0.29f);
+  CHECK(max_of(tviz1, LE_VIZ_POINTS) < 0.31f);
+
+  /* The MASTER waveform is never touched in Song mode either. */
+  float loopviz[LE_VIZ_POINTS];
+  le_engine_read_visual(e, loopviz, LE_VIZ_POINTS);
+  CHECK(max_of(loopviz, LE_VIZ_POINTS) < 1e-6f);
+
+  le_engine_destroy(e);
+}
+
+/* Regression: B2a's D4 content-lock gate (le_looper_mode_locked) is
+ * UNCHANGED by B4 -- it never became mode-specific, and reusing Free's
+ * gates for Song didn't touch it. Chains Multi -> Song (locked, then
+ * unlocked) and Song -> Free (locked, then unlocked), the two transitions
+ * the task explicitly calls out. */
+static void test_looper_mode_switch_multi_song_free_locked_with_content(
+    void) {
+  printf("test_looper_mode_switch_multi_song_free_locked_with_content\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  tg_record_defining_loop(e, 2000); /* Multi-mode content on track 0 */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state != LE_TRACK_EMPTY);
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI); /* still locked */
+
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SONG); /* unlocked: applies */
+
+  /* Song-mode content locks switching AWAY too -- reusing Free's gates
+   * didn't quietly weaken Song's own D4 lock. */
+  fm_record_track(e, 0, 500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state != LE_TRACK_EMPTY);
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_FREE) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SONG); /* still locked */
+
+  le_engine_clear(e, 0);
+  tg_advance(e, 1);
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_FREE) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_FREE); /* unlocked: applies */
+
+  le_engine_destroy(e);
+}
+
+/* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+ *
+ * A per-track "plays just once and then stops" flag (LE_CMD_SET_ONE_SHOT).
+ * Settable in any mode (mirrors a_primary_track's D18 persistence pattern),
+ * but only behaviorally active in Free/Song -- the only two modes with a
+ * per-track transport-wrap event to hook (advance_track_clock_frame's
+ * free_clock wrap). Dormant elsewhere: proven below in Multi mode. */
+
+static void test_one_shot_default_off(void) {
+  printf("test_one_shot_default_off\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].one_shot == 0);
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_setter_rejects_invalid_channel(void) {
+  printf("test_one_shot_setter_rejects_invalid_channel\n");
+  le_engine* e = make_configured_engine();
+  CHECK(le_engine_set_one_shot(e, -1, 1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_one_shot(e, 999, 1) == LE_ERR_INVALID);
+  drain(e);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].one_shot == 0); /* untouched by the rejected calls */
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_setter_accepted_in_any_mode(void) {
+  printf("test_one_shot_setter_accepted_in_any_mode\n");
+  le_engine* e = make_configured_engine();
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+  CHECK(le_engine_set_one_shot(e, 1, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[1].one_shot == 1);
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_persists_through_clear_reset_by_configure(void) {
+  printf("test_one_shot_persists_through_clear_reset_by_configure\n");
+  le_engine* e = sm_make_song_engine(1000);
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+  fm_record_track(e, 0, 500);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].one_shot == 1);
+
+  /* A SETTING, not content: clear does not reset it -- like
+   * a_length_preset_bars, a re-recorded track keeps its flag. */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].one_shot == 1);
+
+  /* A full reconfigure DOES reset it, exactly like a_length_preset_bars /
+   * target_multiple / track_quantize -- the "fresh engine" boundary. */
+  CHECK(le_engine_configure(e, 1000, 1, 1, 20000) == LE_OK);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].one_shot == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_stops_track_at_wrap_in_song_mode(void) {
+  printf("test_one_shot_stops_track_at_wrap_in_song_mode\n");
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+
+  fm_record_track(e, 0, 300);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[0].free_clock.position == 0);
+
+  /* Just short of one full lap: still playing normally. */
+  tg_advance(e, 299);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* The 300th frame completes the lap: One Shot fires instead of wrapping
+   * into a second pass. */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  const int32_t pos_at_stop = e->tracks[0].free_clock.position;
+  const uint64_t iter_at_stop = e->tracks[0].free_iteration;
+  CHECK(pos_at_stop == 0); /* the wrap itself completed */
+  CHECK(iter_at_stop == 1);
+
+  /* A STOPPED track's clock never ticks, one-shot or not (mirrors
+   * test_free_mode_stopped_track_freezes_phase). */
+  tg_advance(e, 500);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
+  CHECK(e->tracks[0].free_clock.position == pos_at_stop);
+  CHECK(e->tracks[0].free_iteration == iter_at_stop);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_off_track_keeps_looping_in_song_mode(void) {
+  printf("test_one_shot_off_track_keeps_looping_in_song_mode\n");
+  /* Control for the test above: the SAME section, WITHOUT the flag, keeps
+   * looping past several laps -- proves the stop is the flag's doing, not
+   * some other Song-mode side effect. */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  fm_record_track(e, 0, 300);
+
+  tg_advance(e, 300); /* exactly one full lap */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[0].free_clock.position == 0);
+  CHECK(e->tracks[0].free_iteration == 1);
+
+  tg_advance(e, 350); /* well into a second lap */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(e->tracks[0].free_iteration >= 2);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_dormant_in_multi_mode(void) {
+  printf("test_one_shot_dormant_in_multi_mode\n");
+  /* B4 design decision: One Shot only has a wrap event to hook in Free/
+   * Song (advance_track_clock_frame's free_clock check) -- in Multi/Sync/
+   * Band a track's own "lap" is a derived point on the ONE shared master
+   * clock, not an independent per-track event. The flag is still settable
+   * and published here (test_one_shot_setter_accepted_in_any_mode), but
+   * this proves it has ZERO effect on playback in Multi: several full
+   * master-loop laps with the flag set, still PLAYING throughout. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+
+  tg_record_defining_loop(e, 300);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].one_shot == 1); /* published, but... */
+
+  tg_advance(e, 300 * 4); /* several master-loop laps */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING); /* dormant: never stopped */
+  CHECK(e->loop_iteration >= 3);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_overdubbing_track_stops_cleanly_at_wrap(void) {
+  printf("test_one_shot_overdubbing_track_stops_cleanly_at_wrap\n");
+  /* One Shot's stop reuses handle_stop's exact PLAYING/OVERDUBBING ->
+   * STOPPED transition (le_consume_pending_mutes lands the same way) --
+   * pins that a One-Shot fire mid-overdub ends the capture cleanly: the
+   * in-flight layer still drains and retires through the ordinary post-
+   * punch-out path, exactly as a manual Stop press mid-overdub would leave
+   * it (no stuck a_layer_in_flight / dub_slot). */
+  le_engine* e = sm_make_song_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+  fm_record_track(e, 0, 300);
+
+  tg_advance(e, 100);
+  le_engine_record(e, 0); /* PLAYING -> OVERDUBBING, punch in */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_OVERDUBBING);
+
+  /* Cross the loop top while still overdubbing. */
+  tg_advance(e, 300);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED); /* fired mid-overdub */
+
+  settle_layers(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].layer_in_flight == 0);
+  CHECK(e->tracks[0].dub_slot == -1);
+  CHECK(e->tracks[0].dub_retire_slot == -1);
+
+  le_engine_destroy(e);
+}
+
 /* ---- B3: primary track (D18), Sync mode (D16) ----
  *
  * D18: a_primary_track (-1 = none) persists through a crowned track's
@@ -16105,6 +16726,27 @@ int main(void) {
   test_free_mode_restore_clear_restores_targeted_track_only();
   test_free_mode_playback_output_scans_own_position();
   test_free_mode_punch_in_ramps_not_hard_cuts();
+
+  test_song_mode_defining_recording_sets_own_clock_not_master();
+  test_song_mode_independent_lengths_wraps();
+  test_song_mode_one_capturer_handoff_finalizes_to_own_length();
+  test_song_mode_commit_session_rejected_leaves_master_dormant();
+  test_song_mode_dub_layer_retires_not_stuck();
+  test_song_mode_clear_resets_targeted_track_only();
+  test_song_mode_undo_to_empty_resets_targeted_track_only();
+  test_song_mode_redo_from_empty_restores_targeted_track_only();
+  test_song_mode_restore_clear_restores_targeted_track_only();
+  test_song_mode_per_track_viz_independent();
+  test_looper_mode_switch_multi_song_free_locked_with_content();
+
+  test_one_shot_default_off();
+  test_one_shot_setter_rejects_invalid_channel();
+  test_one_shot_setter_accepted_in_any_mode();
+  test_one_shot_persists_through_clear_reset_by_configure();
+  test_one_shot_stops_track_at_wrap_in_song_mode();
+  test_one_shot_off_track_keeps_looping_in_song_mode();
+  test_one_shot_dormant_in_multi_mode();
+  test_one_shot_overdubbing_track_stops_cleanly_at_wrap();
 
   test_primary_track_default_none();
   test_crown_primary_rejects_invalid_channel();
