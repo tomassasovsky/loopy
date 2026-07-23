@@ -374,6 +374,27 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->grid_prev_beat = -1;
   store_i32(&engine->a_loop_bars, 0);
   store_i32(&engine->a_current_beat, 0);
+  /* Click + count-in (A2): the RUNNING state (voice envelope, free-run beat
+   * phase, an in-progress count-in) resets per session; the settings persist
+   * like the tempo settings above. */
+  engine->click_remaining = 0;
+  engine->click_len = 0;
+  engine->click_phase = 0.0f;
+  engine->click_freq = 0.0f;
+  engine->click_grid_gate = 0;
+  engine->click_free_running = 0;
+  engine->click_free_frame = 0;
+  engine->click_free_fpb = 0;
+  engine->click_free_beat = 0;
+  engine->count_in_total = 0;
+  engine->count_in_elapsed = 0;
+  engine->count_in_beats = 0;
+  engine->count_in_beat = 0;
+  engine->count_in_fpb = 0.0;
+  engine->count_in_channel = 0;
+  engine->count_in_grace_channel = -1; /* no cancel-race grace window open */
+  store_i32(&engine->a_counting_in, 0);
+  store_i32(&engine->a_count_in_beats_left, 0);
   atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
@@ -541,6 +562,13 @@ le_engine* le_engine_create(void) {
   store_i32(&engine->a_quantize_div, LE_GRID_DIV_OFF);
   store_i32(&engine->a_tempo_source, LE_TEMPO_SOURCE_NONE);
   engine->grid_prev_beat = -1;
+  /* Click + count-in SETTINGS (A2): same seeded-once persistence as the tempo
+   * settings. Mode off, mask 0 (unrouted), volume unity, count-in off — with
+   * these defaults no click code past one dormant compare ever runs. */
+  store_i32(&engine->a_click_mode, LE_CLICK_OFF);
+  atomic_store_explicit(&engine->a_click_mask, 0u, memory_order_relaxed);
+  store_f32(&engine->a_click_volume_bits, 1.0f);
+  store_i32(&engine->a_count_in_bars, 0);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);
