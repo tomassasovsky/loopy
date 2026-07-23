@@ -389,6 +389,13 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         add(const LooperPlayAllPressed());
       case LooperAction.stopAll:
         add(const LooperStopAllPressed());
+      case LooperAction.tapTempo ||
+          LooperAction.toggleMetronome ||
+          LooperAction.cancelArm:
+        // Recognized (D20) but not yet wired to a looper event — that lands
+        // with the tempo cubit/bloc events in A5 (tempo-aware looper modes
+        // part 1); A4b is repository-layer plumbing only.
+        break;
     }
   }
 

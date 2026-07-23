@@ -85,4 +85,19 @@ void main() {
     verifyNever(() => repository.record());
     verifyNever(() => repository.clear());
   });
+
+  test(
+    'the default tapTempo mapping (CC 84) is recognized but not yet '
+    'actionable — A4b is repository-layer only, bloc wiring lands in A5',
+    () async {
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.pushForTest(_cc, 84, 127);
+      await pumpEventQueue();
+
+      verifyNever(() => repository.record());
+      verifyNever(() => repository.clear());
+    },
+  );
 }

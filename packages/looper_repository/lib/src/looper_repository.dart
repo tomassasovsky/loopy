@@ -158,6 +158,35 @@ class LooperRepository {
   /// until set or measured.
   int _recordOffset = 0;
 
+  /// The tempo grid (A1) + click/count-in (A2) desired state, re-applied to
+  /// the engine on every successful (re)start. Unlike [_quantize] above, this
+  /// re-apply is a narrower safety net than a source of truth: the native
+  /// engine's own tempo-grid settings are seeded once in `le_engine_create`
+  /// and are NOT reset by `le_engine_configure` (which runs on every start),
+  /// so a live device (one `le_engine*`, reused across `stop`/`startEngine`)
+  /// keeps a tapped or loop-derived tempo across a reconnect natively — these
+  /// fields only matter for re-establishing state on a genuinely fresh engine
+  /// instance (e.g. after a full app restart), not a within-session reconnect.
+  ///
+  /// [_tempoBpm] only remembers an EXPLICIT [setTempo] call, never a tapped or
+  /// loop-derived tempo (those are the engine's own runtime state, not an
+  /// argument this repository was given) — this field is deliberately a
+  /// narrower "what to push on a fresh engine" shadow, not a mirror of what's
+  /// currently live; do not treat `0`/unset here as evidence the engine has
+  /// lost a tapped or derived tempo. `0` means "never explicitly set"; unlike
+  /// the other fields below, `0` is NOT re-applied (see [startEngine]), since
+  /// the engine clamps [TempoControl.setTempo] to `30..300` rather than
+  /// treating `0` as "unset".
+  double _tempoBpm = 0;
+  int _tsNum = 4;
+  int _tsDen = 4;
+  bool _syncTempo = true;
+  GridDivision _quantizeDiv = GridDivision.off;
+  ClickMode _clickMode = ClickMode.off;
+  int _clickMask = 0;
+  double _clickVolume = 1;
+  int _countInBars = 0;
+
   /// Per-track active lane count (absent => 1). Remembered and re-applied on
   /// every successful (re)start.
   final Map<int, int> _laneCount = {};
@@ -400,6 +429,20 @@ class LooperRepository {
       isRunning: s.isRunning,
       masterLengthFrames: s.masterLengthFrames,
       masterPositionFrames: s.masterPositionFrames,
+      tempoBpm: s.tempoBpm,
+      tempoSource: s.tempoSource,
+      tsNum: s.tsNum,
+      tsDen: s.tsDen,
+      syncTempo: s.syncTempo,
+      quantizeDiv: s.quantizeDiv,
+      loopBars: s.loopBars,
+      currentBeat: s.currentBeat,
+      clickMode: s.clickMode,
+      clickMask: s.clickMask,
+      clickVolume: s.clickVolume,
+      countInBars: s.countInBars,
+      countingIn: s.countingIn,
+      countInBeatsLeft: s.countInBeatsLeft,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -494,6 +537,20 @@ class LooperRepository {
       // instead of restoring). A device change / reconnect with a real offset
       // still gets it back.
       if (_recordOffset > 0) _engine.setRecordOffset(_recordOffset);
+      // Re-apply the tempo grid + click/count-in state (A1/A2): a fresh start
+      // resets all of it to the tempo-free defaults, same as quantize/gain
+      // above. Only an explicitly-set tempo is restored (see [_tempoBpm]'s
+      // doc) — pushing the unset `0` would clamp up to 30 BPM and falsely
+      // leave the grid on.
+      if (_tempoBpm > 0) _engine.setTempo(_tempoBpm);
+      _engine
+        ..setTimeSignature(_tsNum, _tsDen)
+        ..setSyncTempo(on: _syncTempo)
+        ..setQuantizeDiv(_quantizeDiv)
+        ..setClickMode(_clickMode)
+        ..setClickOutput(_clickMask)
+        ..setClickVolume(_clickVolume)
+        ..setCountIn(_countInBars);
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
@@ -2056,6 +2113,95 @@ class LooperRepository {
     _quantize = enabled;
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setQuantize(enabled: enabled);
+  }
+
+  // ---- tempo grid (A1) + click/count-in (A2) passthroughs ----
+  //
+  // Every setter below remembers its value (mirroring [setQuantize] /
+  // [setMasterGain] above) so [startEngine] can re-apply it on every (re)start
+  // — a fresh start resets the engine's tempo grid to the tempo-free defaults.
+  // Takes effect immediately only while running, like every other remembered
+  // setter in this file; while stopped the call still reports
+  // [EngineResult.ok] and is applied on the next start.
+
+  /// Sets the tempo in denominator-note beats per minute. Remembered and
+  /// re-applied on every (re)start; see [_tempoBpm]'s doc for why a device
+  /// reconnect only restores an explicitly-set tempo, never a tapped or
+  /// loop-derived one. Ignored by the engine while the tempo is locked (D6 —
+  /// see [TempoControl]'s class doc).
+  EngineResult setTempo(double bpm) {
+    _tempoBpm = bpm;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTempo(bpm);
+  }
+
+  /// Sets the time signature to [num]/[den] (only the 17 Sheeran-verified
+  /// signatures are valid — the engine rejects anything else without
+  /// applying). Remembered and re-applied on every (re)start. Ignored by the
+  /// engine while the tempo is locked.
+  EngineResult setTimeSignature(int num, int den) {
+    _tsNum = num;
+    _tsDen = den;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setTimeSignature(num, den);
+  }
+
+  /// Registers a tempo tap; two taps within the engine's window set the tempo
+  /// from their interval. A momentary action, not remembered state — never
+  /// re-applied on restart (there is nothing to replay: the resulting tempo,
+  /// if any, is not this repository's to remember — see [_tempoBpm]'s doc).
+  EngineResult tapTempo() => _engine.tapTempo();
+
+  /// Enables/disables loop↔grid sync (default on). Remembered and re-applied
+  /// on every (re)start.
+  EngineResult setSyncTempo({required bool on}) {
+    _syncTempo = on;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setSyncTempo(on: on);
+  }
+
+  /// Sets the musical quantization granularity (the arming grid consumed by
+  /// A3 — distinct from [setQuantize]'s loop-top record quantize). Remembered
+  /// and re-applied on every (re)start.
+  EngineResult setQuantizeDiv(GridDivision div) {
+    _quantizeDiv = div;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setQuantizeDiv(div);
+  }
+
+  /// Sets the click's audibility mode (WHEN it sounds; WHERE is
+  /// [setClickOutput]). Remembered and re-applied on every (re)start.
+  EngineResult setClickMode(ClickMode mode) {
+    _clickMode = mode;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setClickMode(mode);
+  }
+
+  /// Routes the click to the output channels set in [mask]. Remembered and
+  /// re-applied on every (re)start.
+  EngineResult setClickOutput(int mask) {
+    _clickMask = mask;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setClickOutput(mask);
+  }
+
+  /// Sets the click [volume] (`0..LE_MAX_GAIN`, the click's only gain stage —
+  /// clamped by the engine, like [setLaneVolume] / [setMonitorVolume]; this
+  /// repository does not duplicate that range here since `LE_MAX_GAIN` is not
+  /// part of this package's public surface). Remembered and re-applied on
+  /// every (re)start.
+  EngineResult setClickVolume(double volume) {
+    _clickVolume = volume;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setClickVolume(volume);
+  }
+
+  /// Sets the count-in length in measures (`0` = off). Remembered and
+  /// re-applied on every (re)start.
+  EngineResult setCountIn(int bars) {
+    _countInBars = bars < 0 ? 0 : bars;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setCountIn(_countInBars);
   }
 
   /// Releases the repository and the underlying engine.

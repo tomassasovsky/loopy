@@ -587,6 +587,95 @@ void main() {
     });
   });
 
+  group('tempo bpm', () {
+    test('defaults to 0 (never set) when unset', () async {
+      expect(await repository.loadTempoBpm(), 0);
+    });
+
+    test('round-trips a saved tempo', () async {
+      await repository.saveTempoBpm(128.5);
+      expect(await repository.loadTempoBpm(), 128.5);
+    });
+  });
+
+  group('time signature', () {
+    test('defaults to 4/4 when unset', () async {
+      expect(await repository.loadTimeSignature(), (4, 4));
+    });
+
+    test('round-trips a saved signature', () async {
+      await repository.saveTimeSignature(7, 8);
+      expect(await repository.loadTimeSignature(), (7, 8));
+    });
+  });
+
+  group('sync tempo', () {
+    test('defaults to on when unset', () async {
+      expect(await repository.loadSyncTempo(), isTrue);
+    });
+
+    test('round-trips a saved preference', () async {
+      await repository.saveSyncTempo(value: false);
+      expect(await repository.loadSyncTempo(), isFalse);
+    });
+  });
+
+  group('quantize div', () {
+    test('defaults to 0 (off) when unset', () async {
+      expect(await repository.loadQuantizeDiv(), 0);
+    });
+
+    test('round-trips a saved enum code', () async {
+      await repository.saveQuantizeDiv(3);
+      expect(await repository.loadQuantizeDiv(), 3);
+    });
+  });
+
+  group('click mode', () {
+    test('defaults to 0 (off) when unset', () async {
+      expect(await repository.loadClickMode(), 0);
+    });
+
+    test('round-trips a saved enum code', () async {
+      await repository.saveClickMode(2);
+      expect(await repository.loadClickMode(), 2);
+    });
+  });
+
+  group('click output mask', () {
+    test('defaults to 0 (no outputs) when unset', () async {
+      expect(await repository.loadClickOutputMask(), 0);
+    });
+
+    test('round-trips a saved mask', () async {
+      await repository.saveClickOutputMask(0x3);
+      expect(await repository.loadClickOutputMask(), 0x3);
+    });
+  });
+
+  group('click volume', () {
+    test('defaults to 1.0 when unset', () async {
+      expect(await repository.loadClickVolume(), 1.0);
+    });
+
+    test('round-trips a saved volume', () async {
+      await repository.saveClickVolume(0.5);
+      expect(await repository.loadClickVolume(), 0.5);
+    });
+  });
+
+  group('count-in bars', () {
+    test('defaults to 0 (off) when unset — the wire default, not the '
+        'UI-suggested one bar', () async {
+      expect(await repository.loadCountInBars(), 0);
+    });
+
+    test('round-trips a saved bar count', () async {
+      await repository.saveCountInBars(2);
+      expect(await repository.loadCountInBars(), 2);
+    });
+  });
+
   group('StoredAudioConfig.maxLoopMinutes', () {
     test(
       'defaults to 0 (engine default) and round-trips a saved value',
