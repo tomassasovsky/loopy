@@ -407,6 +407,7 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
+          lengthPresetBars: track.lengthPresetBars,
           lanes: lanes,
         ),
       );

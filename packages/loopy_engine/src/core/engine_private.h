@@ -402,6 +402,17 @@ typedef struct le_track {
   _Atomic int32_t a_pending; /* published arm state (1 = waiting for the loop top
                               * to fire a quantized record action); read by the
                               * control thread to reconcile arm vs. fired. */
+  /* Published DEFINING-recording length preset (A6, D17): 0 = AUTO, 1..
+   * LE_LENGTH_PRESET_MAX_BARS = fixed N bars. Set via LE_CMD_SET_LENGTH_PRESET;
+   * read by both threads like a_multiple (audio thread applies it at record
+   * start / finalize; control thread's setter validates before pushing). */
+  _Atomic int32_t a_length_preset_bars;
+  /* Audio-thread-local: the auto-finalize target (in frames) armed for the
+   * CURRENT defining take by le_arm_length_preset_target, or 0 when no
+   * auto-finalize applies this take (AUTO preset, click off, or click on with
+   * no tempo set yet — see the header doc on le_engine_set_track_length_preset
+   * for the full matrix). Consumed and reset to 0 by finalize_master. */
+  int32_t length_preset_target_frames;
   int32_t pending_record; /* audio-thread-local: a deferred record is armed. */
   int32_t pending_trigger; /* what fires the pending record: 0 = next base-loop
                             * top (quantize), 1 = input level threshold

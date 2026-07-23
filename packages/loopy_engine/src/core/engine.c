@@ -257,6 +257,8 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_redo_depth, 0);
     store_i32(&tr->a_multiple, 1);
     store_i32(&tr->a_pending, 0);
+    store_i32(&tr->a_length_preset_bars, 0); /* AUTO */
+    tr->length_preset_target_frames = 0;
     tr->pending_record = 0;
     tr->pending_trigger = 0;
     tr->record_pos = 0;

@@ -155,6 +155,37 @@ void main() {
       expect(lanes[1].livePcm, l1[1]);
     });
 
+    test('carries the track length preset (A6) through to the rig', () {
+      final l0 = Float32List.fromList([1, 1, 1, 1]);
+      final bundle = (
+        session: sessionWith([
+          SessionTrack(
+            channel: 0,
+            multiple: 1,
+            lengthFrames: 4,
+            lengthPresetBars: 4,
+            lanes: [lane(0, 'track0_lane0_L0.wav')],
+          ),
+          SessionTrack(
+            channel: 1,
+            multiple: 1,
+            lengthFrames: 4,
+            // AUTO (0, the default) round-trips too, not just a set value.
+            lanes: [lane(0, 'track1_lane0_L0.wav')],
+          ),
+        ]),
+        laneStems: {
+          (0, 0): [l0],
+          (1, 0): [l0],
+        },
+      );
+
+      final rig = rigFromBundle(bundle);
+      expect(rig.tracks, hasLength(2));
+      expect(rig.tracks[0].lengthPresetBars, 4);
+      expect(rig.tracks[1].lengthPresetBars, 0);
+    });
+
     test('drops a lane whose PCM is missing but keeps its siblings', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (

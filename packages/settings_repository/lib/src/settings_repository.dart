@@ -504,6 +504,18 @@ class SettingsRepository {
   Future<void> saveCountInBars(int bars) =>
       _store.setInt(_countInBarsKey, bars);
 
+  // ---- track length presets (A6, D17) ----
+
+  String _trackLengthPresetKey(int channel) => 'tempo.length_preset.$channel';
+
+  /// Loads track [channel]'s length preset (`0` = AUTO; `0` if unset).
+  Future<int> loadTrackLengthPreset(int channel) async =>
+      await _store.getInt(_trackLengthPresetKey(channel)) ?? 0;
+
+  /// Saves track [channel]'s length preset (`0` = AUTO, `1..64` = fixed bars).
+  Future<void> saveTrackLengthPreset(int channel, int bars) =>
+      _store.setInt(_trackLengthPresetKey(channel), bars);
+
   // Legacy single-route monitor keys (one route per input). No longer written
   // by the live app; read once by the v2 lane migration and then cleared. The
   // v1 courtesy migration still writes monitor_input.N (global flag →
