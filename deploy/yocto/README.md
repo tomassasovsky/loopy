@@ -14,7 +14,7 @@ and measure boot-to-interactive. Plan: [`docs/plan/2026-07-23-spike-tier3a-yocto
 ## What's here
 
 ```
-kas-loopy-rpi4.yml          kas project: poky + meta-openembedded + meta-raspberrypi (scarthgap), MACHINE=raspberrypi4-64
+kas-loopy-rpi4.yml          kas project: poky + meta-openembedded + meta-raspberrypi (walnascar), MACHINE=raspberrypi4-64
 meta-loopy/
   conf/layer.conf
   recipes-core/images/loopy-kiosk-image.bb          core-image-weston + our bundle + GTK3/Mesa/ALSA
