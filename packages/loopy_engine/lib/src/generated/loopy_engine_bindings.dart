@@ -1726,6 +1726,29 @@ class LoopyEngineBindings {
   late final _le_engine_set_looper_mode = _le_engine_set_looper_modePtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Crowns [channel] the primary track (D18). Rejects only an out-of-range
+  /// channel; accepted in every looper mode (the crown persists regardless of
+  /// mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
+  /// exists — re-crowning a different channel is the only way to change it.
+  int le_engine_crown_primary(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_crown_primary(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_crown_primaryPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_crown_primary');
+  late final _le_engine_crown_primary = _le_engine_crown_primaryPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the click audibility mode (le_click_mode, 0..3). Values outside the
   /// enum return LE_ERR_INVALID. Default off.
   int le_engine_set_click_mode(
@@ -3505,6 +3528,9 @@ enum le_command_code {
   /// arg_i = le_looper_mode (0..4)
   LE_CMD_SET_LOOPER_MODE(45),
 
+  /// arg_i = channel
+  LE_CMD_CROWN_PRIMARY(46),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -3559,6 +3585,7 @@ enum le_command_code {
     42 => LE_CMD_PERF_DISARM,
     44 => LE_CMD_SET_LENGTH_PRESET,
     45 => LE_CMD_SET_LOOPER_MODE,
+    46 => LE_CMD_CROWN_PRIMARY,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -3773,6 +3800,16 @@ final class le_track_snapshot extends ffi.Struct {
   /// le_engine_set_track_length_preset.
   @ffi.Int32()
   external int length_preset_bars;
+
+  /// Trailing (B3, D16): 0 = this track's length is an ordinary multiple of
+  /// the base loop (see `multiple` above — the common case in every mode,
+  /// including Sync/Band multiples). 2 or 4 = this track is a SYNC DIVISION:
+  /// it plays a repeating 1/2 or 1/4 slice of the primary track's length,
+  /// phase-locked to the primary's loop top (`multiple` reads 1, inertly, for
+  /// a division track). Only ever nonzero in Sync/Band mode on a non-primary
+  /// track. See le_sync_quantize_active (engine_private.h) for how it's set.
+  @ffi.Int32()
+  external int sync_divisor;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -3974,6 +4011,15 @@ final class le_snapshot extends ffi.Struct {
   /// le_looper_mode (default 0 = MULTI)
   @ffi.Int32()
   external int looper_mode;
+
+  /// ---- primary track (B3, D18; trailing for the same offset-stability
+  /// reason as the blocks above). -1 = none (default). Persists through the
+  /// primary track being cleared/undone-to-empty; only an explicit re-crown
+  /// (le_engine_crown_primary) changes it — see LE_CMD_CROWN_PRIMARY's doc.
+  /// Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
+  /// nonzero value in any other mode is inert.
+  @ffi.Int32()
+  external int primary_track;
 }
 
 /// The plugin format a descriptor was discovered in.
