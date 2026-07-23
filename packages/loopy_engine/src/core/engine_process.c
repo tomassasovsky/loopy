@@ -1572,8 +1572,11 @@ static void apply_command(le_engine* e, const le_command* cmd, uint64_t frame) {
       if (valid_channel(e, cmd->arg_i)) {
         le_track* t = &e->tracks[cmd->arg_i];
         /* arg_f carries the trigger: 0 = grid (quantize), 1 = input level
-         * (sound-activated auto-record). */
-        const int trig = cmd->arg_f != 0.0f ? 1 : 0;
+         * (sound-activated auto-record), 2 = Band section transport (B3b) —
+         * see LE_CMD_ARM's doc, loopy_engine_api.h. Only 0/1/2 are ever
+         * pushed (le_engine_record / le_engine_toggle_section); the >= 1.5
+         * split keeps 1.0f mapping to 1 exactly, unchanged from before B3b. */
+        const int trig = cmd->arg_f >= 1.5f ? 2 : (cmd->arg_f != 0.0f ? 1 : 0);
         int64_t sn, sd;
         if (trig == 0 && load_i32(&t->a_state) == LE_TRACK_RECORDING &&
             e->clock.length > 0 && le_live_subdiv_ratio(e, &sn, &sd)) {
@@ -2679,6 +2682,25 @@ static inline void advance_track_clock_frame(le_track* t, int32_t state) {
   if (le_loop_clock_tick(&t->free_clock)) t->free_iteration++;
 }
 
+/* Fires a Band section-transport arm (B3b, trigger 2, LE_CMD_ARM's doc): the
+ * arm carries no explicit "which direction" — it's a TOGGLE of whatever a
+ * press on this track would currently do, exactly like handle_record's own
+ * per-state dispatch. STOPPED starts it (mirrors handle_play); PLAYING,
+ * OVERDUBBING, or RECORDING stops/finalizes it (handle_stop already covers
+ * all three). EMPTY has nothing to toggle — the arm simply expires with no
+ * effect (a section reaches this call only after its own defining recording
+ * has finalized in practice, but this stays correct even if that invariant
+ * is ever violated). */
+static void le_fire_section_arm(le_engine* e, int32_t ch, uint64_t frame) {
+  const int32_t st = load_i32(&e->tracks[ch].a_state);
+  if (st == LE_TRACK_STOPPED) {
+    handle_play(e, ch, frame);
+  } else if (st == LE_TRACK_PLAYING || st == LE_TRACK_OVERDUBBING ||
+            st == LE_TRACK_RECORDING) {
+    handle_stop(e, ch, frame);
+  }
+}
+
 /* Advances the record heads and then the master transport for one frame. An
  * auto-multiple track grows freely (rounded up only on stop); a fixed-multiple
  * track auto-finalizes after exactly K base loops, and a track recorded over an
@@ -2778,6 +2800,24 @@ static inline void advance_transport_frame(le_engine* e, int tc,
             e->tracks[qt].pending_record = 0;
             store_i32(&e->tracks[qt].a_pending, 0);
             handle_record(e, qt, frame);
+          }
+        }
+      }
+      /* Band section transport (B3b, trigger 2): fires ONLY on the true
+       * primary-track loop top (`wrapped`) — deliberately NOT on a
+       * subdivision `boundary` like trigger 0 above. The spec's "quantized
+       * to the primary track" (song-mode-spec.md §2 Q3, §3's STOP-pedal
+       * table) means the primary's CYCLE, not a musical subdivision of it;
+       * with mode/primary established this way, the primary defines
+       * e->clock (le_sync_quantize_active), so a wrap here IS "the primary
+       * track returns to its beginning". */
+      if (wrapped) {
+        for (int qt = 0; qt < tc; ++qt) {
+          if (e->tracks[qt].pending_record &&
+              e->tracks[qt].pending_trigger == 2) {
+            e->tracks[qt].pending_record = 0;
+            store_i32(&e->tracks[qt].a_pending, 0);
+            le_fire_section_arm(e, qt, frame);
           }
         }
       }

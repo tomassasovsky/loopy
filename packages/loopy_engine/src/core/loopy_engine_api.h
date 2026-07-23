@@ -176,8 +176,15 @@ typedef enum le_command_code {
                                   * track, arg_i = input bitmask) */
   LE_CMD_SET_OUTPUT_MASK = 15,   /* route a track's playback destinations
                                   * (arg_f = track, arg_i = output bitmask) */
-  LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop top) */
-  LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record */
+  LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop
+                       * top). arg_f selects the trigger: 0 = grid/loop-top
+                       * (quantize), 1 = input level (auto-record), 2 = Band
+                       * section transport (B3b) -- a play/stop TOGGLE on a
+                       * content-bearing non-primary track, deferred to the
+                       * next primary-track loop top rather than a record
+                       * action; see le_engine_toggle_section. */
+  LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record
+                       * (any trigger). */
   LE_CMD_SET_QUANTIZE_DIV = 18, /* arg_i = le_grid_div (tempo_grid.h): 0 off /
                                  * 1 bar / 2..5 = 1/2..1/16 note. State only in
                                  * this part — the musical arm machinery that
@@ -315,7 +322,8 @@ typedef enum le_command_code {
    * effect outside Sync/Band); rejected only for an out-of-range channel.
    * There is no "un-crown": D18's no-auto-reassignment rule means the only
    * way to change it is another CROWN_PRIMARY. See le_sync_quantize_active
-   * (engine_private.h) for how this gates Sync/Band's finalize behavior. */
+   * (engine_private.h) for how this gates Sync/Band's finalize + section-
+   * transport behavior. */
   LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
@@ -1150,26 +1158,38 @@ LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
  * locked (see the class doc) — the audio thread silently drops it. */
 LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
 
-/* ---- primary track / Sync (B3, decisions D16/D18; Band's independently
- * start/stoppable section tracks are a follow-on part, B3b) ----
- * One primary track; every other track's DEFINING recording is
+/* ---- primary track / Sync + Band (B3/B3b, decisions D16/D18) ----
+ * Sync: one primary track; every other track's DEFINING recording is
  * auto-quantized (D16) to the nearest of {1/4, 1/2, 1, 2, 4} times the
  * primary's established length — a multiple (1/2/4) plays like today's
  * fixed-multiple tracks; a division (1/4, 1/2) plays a repeating slice of
- * ITS OWN (shorter) buffer, phase-locked to the primary's loop top. Inert
- * until a primary is crowned AND that primary already has an established
- * (single-base-loop) length; until then Sync's non-primary tracks record
- * exactly like Multi (D16 fallback). The gate (le_sync_quantize_active,
- * engine_private.h) already also recognizes BAND mode — Band shares this
- * SAME primary/multiple-division machinery per D16 — but Band's
- * ADDITIONAL independently start/stoppable section tracks have no engine
- * surface yet in this part. */
+ * ITS OWN (shorter) buffer, phase-locked to the primary's loop top. Band
+ * layers the SAME primary/multiple-division machinery, plus non-primary
+ * "section" tracks that start/stop independently — see
+ * le_engine_toggle_section. Both are inert until a primary is crowned AND
+ * that primary already has an established (single-base-loop) length; until
+ * then Sync/Band's non-primary tracks record exactly like Multi (D16
+ * fallback). */
 
 /* Crowns [channel] the primary track (D18). Rejects only an out-of-range
  * channel; accepted in every looper mode (the crown persists regardless of
  * mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
  * exists — re-crowning a different channel is the only way to change it. */
 LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
+
+/* Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop
+ * press on a non-primary, content-bearing track in BAND mode, deferred
+ * (quantized) to the next time the PRIMARY track returns to its loop top —
+ * matching the manual's "quantized to the primary track" section semantics,
+ * genuinely different from Sync (where non-primary tracks are locked to
+ * always play, never independently started/stopped). A second call before
+ * the boundary fires cancels the pending toggle (mirrors le_engine_record's
+ * quantize-arm toggle shape). Returns LE_ERR_INVALID outside BAND mode, for
+ * the primary track itself, or for a still-EMPTY track (nothing to
+ * start/stop — a section reaches this only after its own defining,
+ * sync-quantized recording has finalized). */
+LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
+                                           int32_t channel);
 
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
