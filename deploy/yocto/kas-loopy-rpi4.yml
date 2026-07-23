@@ -6,7 +6,7 @@
 #
 # See deploy/yocto/README.md for the full flow. UNTESTED SCAFFOLD — the recipes
 # below encode the research decisions but need iteration on the build host
-# (blocked-verify per the plan). Branch/versions target scarthgap.
+# (blocked-verify per the plan). Branch/versions target walnascar.
 header:
   version: 14
 
@@ -24,14 +24,14 @@ repos:
 
   poky:
     url: https://git.yoctoproject.org/poky
-    branch: scarthgap
+    branch: walnascar
     layers:
       meta:
       meta-poky:
 
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
-    branch: scarthgap
+    branch: walnascar
     layers:
       meta-oe:
       meta-python:
@@ -39,7 +39,7 @@ repos:
 
   meta-raspberrypi:
     url: https://git.yoctoproject.org/meta-raspberrypi
-    branch: scarthgap
+    branch: walnascar
 
 local_conf_header:
   standard: |

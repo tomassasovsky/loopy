@@ -15,7 +15,8 @@ LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch"
 
-S = "${WORKDIR}"
+# No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
+# files land in ${UNPACKDIR}, which do_install references directly.
 
 # These are prebuilt aarch64 target binaries we install verbatim — do not let
 # Yocto strip/relocate them or run host-oriented QA that assumes we compiled them.
@@ -60,8 +61,8 @@ do_install() {
     chown -R root:root ${D}/opt/loopy
 
     install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/loopy-kiosk-launch ${D}${bindir}/loopy-kiosk-launch
+    install -m 0755 ${UNPACKDIR}/loopy-kiosk-launch ${D}${bindir}/loopy-kiosk-launch
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/loopy.service ${D}${systemd_system_unitdir}/loopy.service
+    install -m 0644 ${UNPACKDIR}/loopy.service ${D}${systemd_system_unitdir}/loopy.service
 }
