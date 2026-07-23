@@ -6,5 +6,6 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI += "file://weston.ini"
 
 do_install:append() {
-    install -Dm 0644 ${WORKDIR}/weston.ini ${D}${sysconfdir}/xdg/weston/weston.ini
+    # walnascar: SRC_URI files land in ${UNPACKDIR}, not ${WORKDIR}.
+    install -Dm 0644 ${UNPACKDIR}/weston.ini ${D}${sysconfdir}/xdg/weston/weston.ini
 }
