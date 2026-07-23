@@ -14946,6 +14946,62 @@ static void test_song_mode_per_track_viz_independent(void) {
   le_engine_destroy(e);
 }
 
+static void test_song_mode_playback_output_scans_own_position(void) {
+  printf("test_song_mode_playback_output_scans_own_position\n");
+  /* B4 GAP 5 (Song twin of test_free_mode_playback_output_scans_own_position,
+   * above): pins mix_tracks_frame's READ side specifically (loopsample =
+   * lbuf[seg_base[t] + trk_pos[t]]) via the AUDIBLE OUTPUT (out[]) for SONG
+   * mode -- adversarial review found that test_song_mode_per_track_viz_
+   * independent, above, records a CONSTANT value across the whole loop, so
+   * it cannot distinguish "reads this track's own live position" from
+   * "stuck reading position 0 forever": both read the same constant. Two
+   * DISTINGUISHABLE halves, sampled through REAL le_engine_process() output
+   * at two different loop positions (mirroring the Free-mode GAP 5 test
+   * exactly), close that gap: a revert of just mix_tracks_frame's Free/Song
+   * position-seeding guard (engine_process.c, the free_track_positions_frame
+   * call) would leave Song-mode playback stuck at position-0 content
+   * forever, and this is the test that catches it directly rather than as
+   * an incidental side effect of unrelated overdub bookkeeping. */
+  le_engine* e = sm_make_song_engine(1000);
+
+  /* Two distinguishable halves of an 800-frame section. The seam-crossfade
+   * deferral (finalize press, below) is fed the SAME value as the head
+   * (0.2f) so the equal-gain blend of "continuation" into "head" over the
+   * first few frames stays a clean 0.2f rather than smearing toward
+   * whatever the deferral window happened to capture. */
+  le_engine_record(e, 0);
+  fm_advance_value(e, 0.2f, 400); /* first half: buf[0..399] */
+  fm_advance_value(e, 0.9f, 400); /* second half: buf[400..799] */
+  le_engine_record(e, 0);         /* finalize (defers for the seam crossfade) */
+  fm_advance_value(e, 0.2f, e->sample_rate / 100);
+
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].length_frames == 800);
+
+  float in[1] = {0.0f};
+  float out[1];
+
+  /* Rewind to the loop top (a whole number of laps) so the next frame reads
+   * index 0 of the first half. */
+  const int32_t pos_now = e->tracks[0].free_clock.position;
+  tg_advance(e, (800 - pos_now) % 800);
+  CHECK(e->tracks[0].free_clock.position == 0);
+
+  le_engine_process(e, out, in, 1); /* reads index 0: first half */
+  CHECK(fabsf(out[0] - 0.2f) < 1e-5f);
+
+  /* Advance to the middle of the loop (index 400: second half) and sample
+   * the output there too -- proves the read position actually moved. */
+  tg_advance(e, 399); /* one frame already consumed by the process() above */
+  CHECK(e->tracks[0].free_clock.position == 400);
+  le_engine_process(e, out, in, 1);
+  CHECK(fabsf(out[0] - 0.9f) < 1e-5f);
+
+  le_engine_destroy(e);
+}
+
 /* Regression: B2a's D4 content-lock gate (le_looper_mode_locked) is
  * UNCHANGED by B4 -- it never became mode-specific, and reusing Free's
  * gates for Song didn't touch it. Chains Multi -> Song (locked, then
@@ -15190,6 +15246,72 @@ static void test_one_shot_overdubbing_track_stops_cleanly_at_wrap(void) {
   CHECK(s.tracks[0].layer_in_flight == 0);
   CHECK(e->tracks[0].dub_slot == -1);
   CHECK(e->tracks[0].dub_retire_slot == -1);
+
+  le_engine_destroy(e);
+}
+
+static void test_one_shot_persists_across_mode_switch_fires_on_first_wrap(
+    void) {
+  printf("test_one_shot_persists_across_mode_switch_fires_on_first_wrap\n");
+  /* Adversarial review (B4): the "settable in any mode" design (LE_CMD_SET_
+   * ONE_SHOT's doc, loopy_engine_api.h; a_one_shot's doc, engine_private.h)
+   * is deliberate -- mirrors LE_CMD_CROWN_PRIMARY's D18 persistent-
+   * designation pattern -- but no existing test exercised the actual
+   * cross-mode path: set while in Multi (where test_one_shot_dormant_in_
+   * multi_mode, above, already proves it inert), clear (D4 needs an empty
+   * rig), switch to Song, then record fresh content. handle_clear does NOT
+   * reset a_one_shot (only le_engine_configure does -- see test_one_shot_
+   * persists_through_clear_reset_by_configure, above, for the same-mode
+   * case), so the flag survives all the way from Multi into Song with no
+   * re-arm, and fires on the very first Song-mode wrap. This is TODAY'S
+   * actual, intentional engine behavior, pinned so a future change to it
+   * (e.g. B5c deciding to reset One Shot on mode switch as a UX guard) is a
+   * deliberate, visible edit to this test -- not a silent regression. */
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_MULTI);
+
+  /* Record real content in Multi mode, then flag it one-shot -- settable and
+   * (per test_one_shot_dormant_in_multi_mode) INERT here. */
+  tg_record_defining_loop(e, 300);
+  CHECK(le_engine_set_one_shot(e, 0, 1) == LE_OK);
+  drain(e);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].one_shot == 1);
+
+  /* D4 needs an empty rig to switch mode -- clear (handle_clear does NOT
+   * touch a_one_shot). */
+  CHECK(le_engine_clear(e, 0) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+  CHECK(s.tracks[0].one_shot == 1); /* survives the clear */
+
+  CHECK(le_engine_set_looper_mode(e, LE_LOOPER_MODE_SONG) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.looper_mode == LE_LOOPER_MODE_SONG);
+  CHECK(s.tracks[0].one_shot == 1); /* survives the mode switch too */
+
+  /* Record a brand-new section in Song mode -- the flag was never re-set
+   * since Multi mode, two steps ago. */
+  fm_record_track(e, 0, 300);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+  CHECK(s.tracks[0].one_shot == 1);
+
+  /* Just short of the first lap: still playing normally. */
+  tg_advance(e, 299);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_PLAYING);
+
+  /* The very first Song-mode wrap fires the flag that was set back in
+   * Multi -- no separate LE_CMD_SET_ONE_SHOT was ever posted in Song. */
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.tracks[0].state == LE_TRACK_STOPPED);
 
   le_engine_destroy(e);
 }
@@ -16737,6 +16859,7 @@ int main(void) {
   test_song_mode_redo_from_empty_restores_targeted_track_only();
   test_song_mode_restore_clear_restores_targeted_track_only();
   test_song_mode_per_track_viz_independent();
+  test_song_mode_playback_output_scans_own_position();
   test_looper_mode_switch_multi_song_free_locked_with_content();
 
   test_one_shot_default_off();
@@ -16747,6 +16870,7 @@ int main(void) {
   test_one_shot_off_track_keeps_looping_in_song_mode();
   test_one_shot_dormant_in_multi_mode();
   test_one_shot_overdubbing_track_stops_cleanly_at_wrap();
+  test_one_shot_persists_across_mode_switch_fires_on_first_wrap();
 
   test_primary_track_default_none();
   test_crown_primary_rejects_invalid_channel();
