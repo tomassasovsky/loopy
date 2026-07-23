@@ -274,6 +274,80 @@ abstract interface class EngineRouting {
   });
 }
 
+/// The tempo grid, tap tempo, loop↔tempo sync, musical quantize granularity,
+/// and the click (metronome) + count-in built on it (plan §Architecture
+/// 1–3; index `2026-07-22-feat-tempo-aware-looper-modes-plan.md`).
+///
+/// TEMPO LOCK (D6): while any track has content AND a grid exists ([setTempo]
+/// / [setTimeSignature] / [tapTempo] are accepted by the engine but IGNORED
+/// (a no-op on the published state) — only clearing every track releases the
+/// lock. The tempo value and its [TempoSource] survive the clear: a
+/// [TempoSource.derived] tempo outlives the loop that produced it.
+///
+/// With every setting at its grid-off default (no tempo ever set, quantize
+/// div off, click mode off, count-in `0`) the engine behaves exactly like the
+/// tempo-free build — this whole interface is additive.
+abstract interface class TempoControl {
+  /// Sets the tempo in denominator-note beats per minute, clamped by the
+  /// engine to `30..300`. Sets [EngineSnapshot.tempoSource] to
+  /// [TempoSource.manual] (last writer wins). Ignored while the tempo is
+  /// locked (see the class doc).
+  EngineResult setTempo(double bpm);
+
+  /// Sets the time signature to [num]/[den]. Only the 17 Sheeran-verified
+  /// signatures are valid — `num` 2..7 for `den == 4`, `num` 5..15 for
+  /// `den == 8` — anything else returns [EngineResult.invalid] without
+  /// applying. Ignored while the tempo is locked.
+  EngineResult setTimeSignature(int num, int den);
+
+  /// Registers a tap; two taps set the tempo from their interval (an
+  /// interval outside the `30..300` BPM window is ignored, so a stale first
+  /// tap never yields an absurd tempo). Sets [EngineSnapshot.tempoSource] to
+  /// [TempoSource.tapped] on success; taps are ignored entirely while the
+  /// tempo is locked.
+  EngineResult tapTempo();
+
+  /// Enables/disables loop↔grid sync (default on). When [on], finalizing the
+  /// DEFINING loop establishes the grid relationship: with a tempo already
+  /// set, the loop's whole-bar count is rounded to the existing grid and the
+  /// tempo is untouched; with no tempo set, a tempo is derived from the loop
+  /// (D7) and [EngineSnapshot.tempoSource] becomes [TempoSource.derived].
+  /// The loop's audio length is never altered either way. When off, the loop
+  /// stays free-form ([EngineSnapshot.loopBars] `0`, tempo untouched) — the
+  /// tempo-free behavior.
+  EngineResult setSyncTempo({required bool on});
+
+  /// Sets the musical quantization granularity. State only in this slice —
+  /// published in [EngineSnapshot.quantizeDiv]; the musical arm machinery
+  /// that consumes it is engine-side (A3).
+  EngineResult setQuantizeDiv(GridDivision div);
+
+  /// Sets the click's audibility mode: WHEN the click voice sounds. WHERE it
+  /// sounds is [setClickOutput] (default no outputs). Default
+  /// [ClickMode.off].
+  EngineResult setClickMode(ClickMode mode);
+
+  /// Routes the click to the output channels set in [mask] (a bitmask; bit c
+  /// => hardware output channel c). Default `0`: the click sounds on no
+  /// outputs until explicitly routed.
+  EngineResult setClickOutput(int mask);
+
+  /// Sets the click [volume], clamped by the engine to `0..LE_MAX_GAIN`
+  /// (default `1.0`). This is the click's only gain stage — master gain and
+  /// the limiter never touch it.
+  EngineResult setClickVolume(double volume);
+
+  /// Sets the count-in length in measures (`0` = off, up to
+  /// `LE_COUNT_IN_MAX_BARS`). With count-in on and a tempo set, a record
+  /// press on an idle, empty looper first clicks [bars] measures — published
+  /// via [EngineSnapshot.countingIn] / [EngineSnapshot.countInBeatsLeft] —
+  /// then recording starts on the downbeat. A record or stop press during the
+  /// count-in cancels it, as does setting this to `0`. Mutually exclusive
+  /// with [LooperTransport.setAutoRecord]: enabling count-in disables
+  /// auto-record and vice versa; count-in wins if both are somehow set.
+  EngineResult setCountIn(int bars);
+}
+
 /// Global master-output bus: post-mix gain and the peak limiter.
 abstract interface class MasterBusControl {
   /// Sets the global master output [gain] (clamped by the engine to `0..1`),
@@ -646,6 +720,7 @@ abstract interface class AudioEngine
         EngineMetering,
         LooperTransport,
         EngineRouting,
+        TempoControl,
         MasterBusControl,
         EffectsControl,
         MonitorControl,

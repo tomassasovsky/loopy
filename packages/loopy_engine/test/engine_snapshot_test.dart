@@ -34,6 +34,94 @@ void main() {
       expect(snapshot.isPerfArmed, isFalse);
       expect(snapshot.perfFrames, 0);
       expect(snapshot.perfOverruns, 0);
+      // Tempo grid + click/count-in (A1/A2) grid-off defaults.
+      expect(snapshot.tempoBpm, 0);
+      expect(snapshot.tempoSource, TempoSource.none);
+      expect(snapshot.tsNum, 4);
+      expect(snapshot.tsDen, 4);
+      expect(snapshot.syncTempo, isTrue);
+      expect(snapshot.quantizeDiv, GridDivision.off);
+      expect(snapshot.loopBars, 0);
+      expect(snapshot.currentBeat, 0);
+      expect(snapshot.clickMode, ClickMode.off);
+      expect(snapshot.clickMask, 0);
+      expect(snapshot.clickVolume, 1);
+      expect(snapshot.countInBars, 0);
+      expect(snapshot.countingIn, isFalse);
+      expect(snapshot.countInBeatsLeft, 0);
+    });
+  });
+
+  group('TempoSource.fromCode', () {
+    test('maps each known code', () {
+      expect(TempoSource.fromCode(0), TempoSource.none);
+      expect(TempoSource.fromCode(1), TempoSource.manual);
+      expect(TempoSource.fromCode(2), TempoSource.tapped);
+      expect(TempoSource.fromCode(3), TempoSource.derived);
+      expect(TempoSource.fromCode(4), TempoSource.external);
+    });
+
+    test('falls back to none for unknown codes', () {
+      expect(TempoSource.fromCode(99), TempoSource.none);
+      expect(TempoSource.fromCode(-1), TempoSource.none);
+    });
+  });
+
+  group('GridDivision', () {
+    test('fromCode maps each known code', () {
+      expect(GridDivision.fromCode(0), GridDivision.off);
+      expect(GridDivision.fromCode(1), GridDivision.bar);
+      expect(GridDivision.fromCode(2), GridDivision.half);
+      expect(GridDivision.fromCode(3), GridDivision.quarter);
+      expect(GridDivision.fromCode(4), GridDivision.eighth);
+      expect(GridDivision.fromCode(5), GridDivision.sixteenth);
+    });
+
+    test('falls back to off for unknown codes', () {
+      expect(GridDivision.fromCode(99), GridDivision.off);
+      expect(GridDivision.fromCode(-1), GridDivision.off);
+    });
+
+    test('code round-trips through fromCode for every value', () {
+      for (final div in GridDivision.values) {
+        expect(GridDivision.fromCode(div.code), div);
+      }
+    });
+
+    test('code matches the native le_grid_div integer values', () {
+      expect(GridDivision.off.code, 0);
+      expect(GridDivision.bar.code, 1);
+      expect(GridDivision.half.code, 2);
+      expect(GridDivision.quarter.code, 3);
+      expect(GridDivision.eighth.code, 4);
+      expect(GridDivision.sixteenth.code, 5);
+    });
+  });
+
+  group('ClickMode', () {
+    test('fromCode maps each known code', () {
+      expect(ClickMode.fromCode(0), ClickMode.off);
+      expect(ClickMode.fromCode(1), ClickMode.rec);
+      expect(ClickMode.fromCode(2), ClickMode.recFirst);
+      expect(ClickMode.fromCode(3), ClickMode.playRec);
+    });
+
+    test('falls back to off for unknown codes', () {
+      expect(ClickMode.fromCode(99), ClickMode.off);
+      expect(ClickMode.fromCode(-1), ClickMode.off);
+    });
+
+    test('code round-trips through fromCode for every value', () {
+      for (final mode in ClickMode.values) {
+        expect(ClickMode.fromCode(mode.code), mode);
+      }
+    });
+
+    test('code matches the native le_click_mode integer values', () {
+      expect(ClickMode.off.code, 0);
+      expect(ClickMode.rec.code, 1);
+      expect(ClickMode.recFirst.code, 2);
+      expect(ClickMode.playRec.code, 3);
     });
   });
 
@@ -266,7 +354,21 @@ void main() {
           ..perf_armed = 1
           ..perf_frames = 96000
           ..perf_overruns = 7
-          ..track_count = 2;
+          ..track_count = 2
+          ..tempo_bpm = 128.5
+          ..ts_num = 7
+          ..ts_den = 8
+          ..sync_tempo = 1
+          ..quantize_div = 3
+          ..tempo_source = 2
+          ..loop_bars = 4
+          ..current_beat = 3
+          ..click_mode = 1
+          ..click_mask = 0x5
+          ..click_volume = 0.8
+          ..count_in_bars = 2
+          ..counting_in = 1
+          ..count_in_beats_left = 5;
 
         const tracks = [
           TrackSnapshot(
@@ -307,6 +409,47 @@ void main() {
         expect(snapshot.trackVolume, closeTo(0.75, 1e-6));
         expect(snapshot.trackMuted, isTrue);
         expect(snapshot.tracks, tracks);
+        // Tempo grid + click/count-in (A1/A2) trailing fields.
+        expect(snapshot.tempoBpm, closeTo(128.5, 1e-4));
+        expect(snapshot.tsNum, 7);
+        expect(snapshot.tsDen, 8);
+        expect(snapshot.syncTempo, isTrue);
+        expect(snapshot.quantizeDiv, GridDivision.quarter);
+        expect(snapshot.tempoSource, TempoSource.tapped);
+        expect(snapshot.loopBars, 4);
+        expect(snapshot.currentBeat, 3);
+        expect(snapshot.clickMode, ClickMode.rec);
+        expect(snapshot.clickMask, 0x5);
+        expect(snapshot.clickVolume, closeTo(0.8, 1e-6));
+        expect(snapshot.countInBars, 2);
+        expect(snapshot.countingIn, isTrue);
+        expect(snapshot.countInBeatsLeft, 5);
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('sync_tempo == 0 maps to syncTempo false', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        ptr.ref.sync_tempo = 0;
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).syncTempo,
+          isFalse,
+        );
+      } finally {
+        calloc.free(ptr);
+      }
+    });
+
+    test('counting_in == 0 maps to countingIn false', () {
+      final ptr = calloc<le_snapshot>();
+      try {
+        ptr.ref.counting_in = 0;
+        expect(
+          EngineSnapshot.fromNative(ptr.ref, const []).countingIn,
+          isFalse,
+        );
       } finally {
         calloc.free(ptr);
       }
@@ -410,6 +553,20 @@ void main() {
       bool isPerfArmed = false,
       int perfFrames = 0,
       int perfOverruns = 0,
+      double tempoBpm = 0,
+      TempoSource tempoSource = TempoSource.none,
+      int tsNum = 4,
+      int tsDen = 4,
+      bool syncTempo = true,
+      GridDivision quantizeDiv = GridDivision.off,
+      int loopBars = 0,
+      int currentBeat = 0,
+      ClickMode clickMode = ClickMode.off,
+      int clickMask = 0,
+      double clickVolume = 1,
+      int countInBars = 0,
+      bool countingIn = false,
+      int countInBeatsLeft = 0,
     }) => EngineSnapshot(
       isRunning: true,
       devicePresent: devicePresent,
@@ -429,6 +586,20 @@ void main() {
       isPerfArmed: isPerfArmed,
       perfFrames: perfFrames,
       perfOverruns: perfOverruns,
+      tempoBpm: tempoBpm,
+      tempoSource: tempoSource,
+      tsNum: tsNum,
+      tsDen: tsDen,
+      syncTempo: syncTempo,
+      quantizeDiv: quantizeDiv,
+      loopBars: loopBars,
+      currentBeat: currentBeat,
+      clickMode: clickMode,
+      clickMask: clickMask,
+      clickVolume: clickVolume,
+      countInBars: countInBars,
+      countingIn: countingIn,
+      countInBeatsLeft: countInBeatsLeft,
     );
 
     test('distinct equal snapshots compare equal and share a hashCode', () {
@@ -469,6 +640,65 @@ void main() {
 
     test('perfOverruns participates in equality', () {
       expect(build(), isNot(equals(build(perfOverruns: 3))));
+    });
+
+    test('tempoBpm participates in equality', () {
+      expect(build(), isNot(equals(build(tempoBpm: 120))));
+    });
+
+    test('tempoSource participates in equality', () {
+      expect(
+        build(),
+        isNot(equals(build(tempoSource: TempoSource.manual))),
+      );
+    });
+
+    test('tsNum participates in equality', () {
+      expect(build(), isNot(equals(build(tsNum: 3))));
+    });
+
+    test('tsDen participates in equality', () {
+      expect(build(), isNot(equals(build(tsDen: 8))));
+    });
+
+    test('syncTempo participates in equality', () {
+      expect(build(), isNot(equals(build(syncTempo: false))));
+    });
+
+    test('quantizeDiv participates in equality', () {
+      expect(build(), isNot(equals(build(quantizeDiv: GridDivision.bar))));
+    });
+
+    test('loopBars participates in equality', () {
+      expect(build(), isNot(equals(build(loopBars: 4))));
+    });
+
+    test('currentBeat participates in equality', () {
+      expect(build(), isNot(equals(build(currentBeat: 2))));
+    });
+
+    test('clickMode participates in equality', () {
+      expect(build(), isNot(equals(build(clickMode: ClickMode.rec))));
+    });
+
+    test('clickMask participates in equality', () {
+      expect(build(), isNot(equals(build(clickMask: 0x3))));
+    });
+
+    test('clickVolume participates in equality', () {
+      expect(build(), isNot(equals(build(clickVolume: 0.5))));
+    });
+
+    test('countInBars participates in equality', () {
+      expect(build(), isNot(equals(build(countInBars: 2))));
+    });
+
+    test('countingIn participates in equality', () {
+      expect(build(), isNot(equals(build(countingIn: true))));
+    });
+
+    test('countInBeatsLeft participates in equality', () {
+      expect(build(), isNot(equals(build(countInBeatsLeft: 3))));
     });
 
     test('fxAddedLatencyMs is 0 when the sample rate is unknown', () {
