@@ -3,7 +3,7 @@ part of 'tracks_cubit.dart';
 /// State for [TracksCubit]: the persisted tracks-view preferences (per-track
 /// names, indicator visibility).
 ///
-/// The track cursor, active bank, and record/play mode are control state
+/// The track cursor, active bank, and record/mute mode are control state
 /// owned by `ControlOverlayCubit` — one cursor for every surface, so the
 /// keyboard, the tiles, and the pedal can never target different tracks.
 class TracksState extends Equatable {

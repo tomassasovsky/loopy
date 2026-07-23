@@ -94,7 +94,7 @@ class ControlCubit extends Cubit<ControlState> {
   bool _undoHandled = false;
   int _undoChannel = 0;
 
-  // MODE press/release timing (tap = toggle Rec/Play mode, long-press =
+  // MODE press/release timing (tap = toggle Rec/Mute mode, long-press =
   // arm/disarm performance recording, D-PEDAL). No spare footswitch/pin
   // exists on the physical pedal, so the gesture rides the existing MODE
   // button rather than a new one — mirrors the undo/redo split above.
@@ -147,7 +147,7 @@ class ControlCubit extends Cubit<ControlState> {
         t.channel,
   };
 
-  /// Restores the persisted boot-default mode (applying it — a `play`
+  /// Restores the persisted boot-default mode (applying it — a `mute`
   /// default runs the same entry side effects as a live toggle) and the
   /// undo long-press threshold.
   Future<void> load() => _loadFuture ??= _restore();
@@ -205,23 +205,24 @@ class ControlCubit extends Cubit<ControlState> {
   // Mode
   // ---------------------------------------------------------------------------
 
-  /// Toggles Record / Play mode (identical from every surface).
+  /// Toggles Record / Mute mode (identical from every surface).
   void toggleMode() => setMode(
     state.mode == InteractionMode.record
-        ? InteractionMode.play
+        ? InteractionMode.mute
         : InteractionMode.record,
   );
 
   /// Applies [next] with its entry side effects; a no-op when already there.
   ///
-  /// Entering Play previews the whole content set: `parkedResume` = every
+  /// Entering Mute previews the whole content set: `parkedResume` = every
   /// track holding (or capturing) a loop, so Rec/Play resumes them all and
   /// the parked LEDs show it — including stopped and muted tracks, which
   /// pure `sounding` could never cover. A LIVE CAPTURE deliberately survives
   /// the switch: the mode toggle is a view change, not a transport action,
   /// so a take the user did not explicitly end keeps recording until they
   /// return to Rec mode and hit Rec/Play (or end it with an explicit Stop).
-  /// Any mode entry clears the stored play intent (the invalidation table).
+  /// Any mode entry clears the stored mute-mode intent (the invalidation
+  /// table).
   void setMode(InteractionMode next) {
     if (next == state.mode) return;
     switch (next) {
@@ -233,10 +234,10 @@ class ControlCubit extends Cubit<ControlState> {
             parkedResume: const <int>{},
           ),
         );
-      case InteractionMode.play:
+      case InteractionMode.mute:
         emit(
           state.copyWith(
-            mode: InteractionMode.play,
+            mode: InteractionMode.mute,
             excluded: const <int>{},
             parkedResume: {
               for (final track in _tracks)
@@ -272,7 +273,7 @@ class ControlCubit extends Cubit<ControlState> {
   }
 
   /// Reveals [bank] WITHOUT moving the cursor — the browse flow (e.g. arming
-  /// the other bank's tracks in play mode).
+  /// the other bank's tracks in mute mode).
   void browseBank(int bank) {
     if (bank < 0 || bank >= ControlState.bankCount) return;
     emit(state.copyWith(activeBank: bank));
@@ -292,8 +293,8 @@ class ControlCubit extends Cubit<ControlState> {
     switch (state.mode) {
       case InteractionMode.record:
         _recAdvance(state.cursor);
-      case InteractionMode.play:
-        _playRecPlay();
+      case InteractionMode.mute:
+        _muteRecPlay();
     }
   }
 
@@ -317,9 +318,9 @@ class ControlCubit extends Cubit<ControlState> {
     _looper.record(channel: channel);
   }
 
-  /// Play mode Rec/Play: resume while parked; while running, expand to the
+  /// Mute mode Rec/Play: resume while parked; while running, expand to the
   /// whole content set (a no-op when everything audible is already in).
-  void _playRecPlay() {
+  void _muteRecPlay() {
     if (isParked(_l)) {
       final resume = state.parkedResume.isNotEmpty
           ? state.parkedResume
@@ -381,7 +382,7 @@ class ControlCubit extends Cubit<ControlState> {
     switch (state.mode) {
       case InteractionMode.record:
         _recStop(state.cursor);
-      case InteractionMode.play:
+      case InteractionMode.mute:
         parkAll();
     }
   }
@@ -426,8 +427,8 @@ class ControlCubit extends Cubit<ControlState> {
     switch (state.mode) {
       case InteractionMode.record:
         _recTrackPressed(channel);
-      case InteractionMode.play:
-        _playTrackPressed(channel);
+      case InteractionMode.mute:
+        _muteTrackPressed(channel);
     }
   }
 
@@ -446,12 +447,12 @@ class ControlCubit extends Cubit<ControlState> {
     }
   }
 
-  /// Play mode: while parked, toggle resume membership (arming a muted track
+  /// Mute mode: while parked, toggle resume membership (arming a muted track
   /// unmutes it so it reads green). While running, a live track toggles its
   /// mute — muting the last audible one parks everything with an empty
   /// resume set (Rec/Play then brings back ALL content) — and a track out of
   /// the mix joins it (un-exclude, unmute, play).
-  void _playTrackPressed(int channel) {
+  void _muteTrackPressed(int channel) {
     final track = _trackAt(channel);
     if (!_playable(track)) return;
     final t = track!;

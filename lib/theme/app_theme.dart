@@ -33,8 +33,8 @@ const _recordMeterColors = <LooperMeterState, Color>{
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 
-/// Track meter (peak bar) color per meter state while in **play** mode.
-const _playMeterColors = <LooperMeterState, Color>{
+/// Track meter (peak bar) color per meter state while in **mute** mode.
+const _muteMeterColors = <LooperMeterState, Color>{
   LooperMeterState.empty: Color(0xFF2C313A),
   LooperMeterState.recording: Color(0xFFFF1744),
   LooperMeterState.overdubbing: Color(0xFFFF1744),
@@ -51,12 +51,12 @@ const _hcRecordMeterColors = <LooperMeterState, Color>{
   LooperMeterState.recording: Color(0xFFFF5470),
   LooperMeterState.overdubbing: Color(0xFFFF5470),
   LooperMeterState.playing: Color(0xFF6EE77F),
-  // Visible frozen-level bar for a stopped loop (matches the play table).
+  // Visible frozen-level bar for a stopped loop (matches the mute table).
   LooperMeterState.stopped: Color(0xFFFFFFFF),
   LooperMeterState.muted: Color(0xFFFFFFFF),
 };
 
-const _hcPlayMeterColors = <LooperMeterState, Color>{
+const _hcMuteMeterColors = <LooperMeterState, Color>{
   LooperMeterState.empty: Color(0xFF6B6D78),
   LooperMeterState.recording: Color(0xFFFF5470),
   LooperMeterState.overdubbing: Color(0xFFFF5470),
@@ -103,7 +103,7 @@ abstract final class AppTheme {
         waveformBackground: Color(0xFF06060A),
         recordColor: Color(0xFFFF1744),
         recordMeterColors: _recordMeterColors,
-        playMeterColors: _playMeterColors,
+        muteMeterColors: _muteMeterColors,
         indicatorColors: _indicatorColors,
         toolbarIconColor: Colors.white70,
       ),
@@ -131,7 +131,7 @@ abstract final class AppTheme {
         waveformBackground: Color(0xFF000000),
         recordColor: Color(0xFFFF5470),
         recordMeterColors: _hcRecordMeterColors,
-        playMeterColors: _hcPlayMeterColors,
+        muteMeterColors: _hcMuteMeterColors,
         indicatorColors: _hcIndicatorColors,
         // SurfaceTheme.highContrast.textSecondary — brighter than the neon
         // theme's white70 to clear the HC contrast threshold.

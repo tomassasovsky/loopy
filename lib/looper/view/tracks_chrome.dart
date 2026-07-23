@@ -220,7 +220,7 @@ class SessionMenu extends StatelessWidget {
   }
 }
 
-/// Shows the active system mode (REC / PLAY). Tap to toggle.
+/// Shows the active system mode (REC / MUTE). Tap to toggle.
 class ModeIndicator extends StatelessWidget {
   /// Creates a [ModeIndicator].
   const ModeIndicator({required this.mode, required this.onToggle, super.key});
@@ -239,7 +239,9 @@ class ModeIndicator extends StatelessWidget {
     final looper = theme.extension<LooperTheme>()!;
     final recording = mode == InteractionMode.record;
     final color = recording ? looper.recordColor : theme.colorScheme.primary;
-    final modeName = recording ? l10n.looperModeRec : l10n.looperModePlay;
+    final modeName = recording
+        ? l10n.interactionModeRec
+        : l10n.interactionModeMute;
 
     return FocusableTapTarget(
       key: const Key('tracks_mode_indicator'),
@@ -257,7 +259,7 @@ class ModeIndicator extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              recording ? Icons.fiber_manual_record : Icons.play_arrow_rounded,
+              recording ? Icons.fiber_manual_record : Icons.volume_off_rounded,
               size: 16,
               color: color,
             ),

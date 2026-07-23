@@ -190,15 +190,15 @@ void main() {
     verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
   });
 
-  testWidgets('tapping a tile mutes/unmutes that channel in play mode', (
+  testWidgets('tapping a tile mutes/unmutes that channel in mute mode', (
     tester,
   ) async {
-    control.toggleMode(); // record -> play
+    control.toggleMode(); // record -> mute
     seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
     await pump(tester);
 
     await tester.tap(find.byKey(const Key('tracks_tile_1')));
-    // Mirrors the play-mode number-key behavior; does not arm recording.
+    // Mirrors the mute-mode number-key behavior; does not arm recording.
     verify(() => bloc.add(const LooperMuteToggled(1))).called(1);
     verifyNever(() => bloc.add(const LooperRecordPressed(1)));
     // The tap also selects the tapped channel.
@@ -238,7 +238,7 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
       await tester.pump();
-      expect(control.state.mode, InteractionMode.play);
+      expect(control.state.mode, InteractionMode.mute);
     });
 
     testWidgets('a number key selects that track', (tester) async {
@@ -259,12 +259,12 @@ void main() {
       verify(() => bloc.add(const LooperRecordPressed(1))).called(1);
     });
 
-    testWidgets('play mode: a number key selects and toggles mute', (
+    testWidgets('mute mode: a number key selects and toggles mute', (
       tester,
     ) async {
       seed(const LooperState(tracks: [Track(), Track(channel: 1)]));
       await pump(tester);
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyM); // -> play mode
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyM); // -> mute mode
       await tester.sendKeyEvent(LogicalKeyboardKey.digit1);
       await tester.pump();
       expect(control.state.cursor, 0);
@@ -327,7 +327,7 @@ void main() {
     expect(await settings.loadTrackName(0), 'GUITAR');
   });
 
-  group('play-mode visuals', () {
+  group('mute-mode visuals', () {
     final looper = AppTheme.neon.extension<LooperTheme>()!;
 
     // The meter Container inside a track tile (the _PeakBar's fill).
@@ -422,13 +422,13 @@ void main() {
       );
     });
 
-    testWidgets('play mode uses the play-mode meter table', (tester) async {
-      control.toggleMode(); // record -> play
+    testWidgets('mute mode uses the mute-mode meter table', (tester) async {
+      control.toggleMode(); // record -> mute
       seed(const LooperState(tracks: [Track(state: TrackState.playing)]));
       await pump(tester);
       expect(
         barOf(tester, 0).color,
-        looper.meterColor(LooperMeterState.playing, mode: InteractionMode.play),
+        looper.meterColor(LooperMeterState.playing, mode: InteractionMode.mute),
       );
     });
 
@@ -558,15 +558,15 @@ void main() {
       );
     });
 
-    testWidgets('play mode arms the selected empty tile green', (tester) async {
+    testWidgets('mute mode arms the selected empty tile green', (tester) async {
       control
-        ..toggleMode() // record -> play
+        ..toggleMode() // record -> mute
         ..selectTrack(0);
       seed(const LooperState(tracks: [Track()])); // empty + selected
       await pump(tester);
 
-      // Proves playMode flows from the shared PedalCubit mode into
-      // TrackIndicator.of: an empty selected track arms play (green) in play
+      // Proves muteMode flows from the shared PedalCubit mode into
+      // TrackIndicator.of: an empty selected track arms play (green) in mute
       // mode, not record (red).
       expect(
         indicatorColorOf(tester, 0),

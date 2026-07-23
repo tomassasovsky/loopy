@@ -22,7 +22,7 @@ import 'package:loopy/window/window_chrome.dart';
 /// per build over the host's [BuildContext] and used synchronously (in
 /// [handleKey] and the button/tile callbacks) while mounted.
 ///
-/// The record/play mode is read from (and toggled on) the shared `PedalCubit`,
+/// The record/mute mode is read from (and toggled on) the shared `PedalCubit`,
 /// so `M` here and the pedal's MODE footswitch move the same system state.
 class TracksCommands {
   /// Creates commands bound to [context].
@@ -93,14 +93,14 @@ class TracksCommands {
         tracks[channel].isCapturing;
   }
 
-  /// Toggles the system record/play mode (the same [ControlCubit] method the
+  /// Toggles the system record/mute mode (the same [ControlCubit] method the
   /// pedal footswitch drives) and announces the mode it landed on.
   void toggleMode() {
     final overlay = context.read<ControlCubit>()..toggleMode();
     _announce(
       overlay.state.mode == InteractionMode.record
           ? context.l10n.a11yModeRecord
-          : context.l10n.a11yModePlay,
+          : context.l10n.a11yModeMute,
     );
   }
 
@@ -125,7 +125,7 @@ class TracksCommands {
   /// `Space` play/pause all · `C` clear all · `A` arm/disarm performance
   /// recording · `Cmd/Ctrl+Z` undo · `Cmd/Ctrl+Y` (or `Shift+Z`) redo.
   /// Record mode: `1`–`8` select · `R` record/overdub · `P` play/pause.
-  /// Play mode: `1`–`8` select + mute/unmute.
+  /// Mute mode: `1`–`8` select + mute/unmute.
   KeyEventResult handleKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
@@ -223,14 +223,14 @@ class TracksCommands {
       return KeyEventResult.handled;
     }
 
-    // Number keys 1–8 select a track (auto-revealing its bank). In play mode
+    // Number keys 1–8 select a track (auto-revealing its bank). In mute mode
     // they also toggle mute on that track.
     final digit = _digitOf(key);
     if (digit != null) {
       final channel = digit - 1;
       if (channel <= 7) {
         overlay.selectTrack(channel); // moves the cursor and reveals its bank
-        if (mode == InteractionMode.play) {
+        if (mode == InteractionMode.mute) {
           bloc.add(LooperMuteToggled(channel));
         }
       }

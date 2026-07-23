@@ -38,7 +38,7 @@ bool isSounding(Track track) =>
     (track.state == TrackState.playing ||
         track.state == TrackState.overdubbing);
 
-/// The play-mode armed set, DERIVED on every read:
+/// The mute-mode armed set, DERIVED on every read:
 /// `parked ? parkedResume : sounding ∖ excluded`. A redo, an on-screen play,
 /// or any future engine state is reflected the moment the snapshot changes —
 /// there is no stored set to forget to update.
@@ -52,7 +52,7 @@ Set<int> armedTracks(LooperState looper, ControlState overlay) {
 
 /// The pedal-track LED for [channel] under the current mode.
 ///
-/// Play mode: green = armed AND audible (a muted or excluded track reads
+/// Mute mode: green = armed AND audible (a muted or excluded track reads
 /// off; while parked, the parked-resume members show what Rec/Play brings
 /// back). Record mode: the cursor and any capturing track read red.
 PedalTrackLed projectTrackLed(
@@ -64,7 +64,7 @@ PedalTrackLed projectTrackLed(
       ? looper.tracks[channel]
       : null;
   switch (overlay.mode) {
-    case InteractionMode.play:
+    case InteractionMode.mute:
       final armed = armedTracks(looper, overlay).contains(channel);
       return armed && !(track?.muted ?? false)
           ? PedalTrackLed.green
@@ -92,7 +92,7 @@ PedalStateFrame projectFrame(
   ];
   // global_color carries the ring's activity color: red while recording,
   // amber while overdubbing, green while a loop plays, off when idle. (The
-  // pedal's Rec/Play mode is shown separately by the mode LED.)
+  // pedal's Rec/Mute interaction mode is shown separately by the mode LED.)
   final anyRecording = looper.tracks.any(
     (t) => t.state == TrackState.recording,
   );
@@ -124,7 +124,10 @@ PedalStateFrame projectFrame(
     trackLeds: leds,
     activeBank: overlay.activeBank,
     selectedTrack: overlay.cursor,
-    mode: overlay.mode == InteractionMode.play ? PedalMode.play : PedalMode.rec,
+    // The wire frame still calls mute mode PLAY: PedalMode is the pedal
+    // firmware's protocol enum (its mode LED predates the rename), so the
+    // mapping — not the wire token — carries the new name.
+    mode: overlay.mode == InteractionMode.mute ? PedalMode.play : PedalMode.rec,
     loopLengthMicros: lengthMicros.clamp(
       0,
       PedalStateFrame.maxLoopLengthMicros,

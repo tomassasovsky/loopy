@@ -35,7 +35,7 @@ void main() {
         LooperMeterState.playing: Color(0xFF00FF00),
         LooperMeterState.muted: Color(0xFFFFFFFF),
       },
-      playMeterColors: {
+      muteMeterColors: {
         LooperMeterState.playing: Color(0xFF0000FF),
       },
       indicatorColors: {
@@ -47,7 +47,7 @@ void main() {
     );
 
     test('meterColor picks the table for the current mode', () {
-      // Record mode uses recordMeterColors; play mode uses playMeterColors.
+      // Record mode uses recordMeterColors; mute mode uses muteMeterColors.
       expect(
         theme.meterColor(
           LooperMeterState.playing,
@@ -56,7 +56,7 @@ void main() {
         const Color(0xFF00FF00),
       );
       expect(
-        theme.meterColor(LooperMeterState.playing, mode: InteractionMode.play),
+        theme.meterColor(LooperMeterState.playing, mode: InteractionMode.mute),
         const Color(0xFF0000FF),
       );
       // A state the active table omits resolves to transparent.
@@ -68,7 +68,7 @@ void main() {
         Colors.transparent,
       );
       expect(
-        theme.meterColor(LooperMeterState.muted, mode: InteractionMode.play),
+        theme.meterColor(LooperMeterState.muted, mode: InteractionMode.mute),
         Colors.transparent,
       );
     });
@@ -96,7 +96,7 @@ void main() {
         waveformBackground: Color(0xFF000000),
         recordColor: Color(0xFFFF1744),
         recordMeterColors: {},
-        playMeterColors: {},
+        muteMeterColors: {},
         indicatorColors: {},
         toolbarIconColor: Color(0xFFB0B3BC),
       );
@@ -108,7 +108,7 @@ void main() {
       expect(updated.recordColor, const Color(0xFFABCDEF));
       expect(updated.waveformColor, theme.waveformColor);
       expect(updated.recordMeterColors, theme.recordMeterColors);
-      expect(updated.playMeterColors, theme.playMeterColors);
+      expect(updated.muteMeterColors, theme.muteMeterColors);
       expect(updated.indicatorColors, theme.indicatorColors);
     });
 
@@ -201,14 +201,14 @@ void main() {
     });
 
     test('live transport beats the armed derivation', () {
-      // Recording/overdubbing -> record, even when unselected in play mode.
+      // Recording/overdubbing -> record, even when unselected in mute mode.
       expect(
         TrackIndicator.of(
           TrackState.recording,
           muted: false,
           hasContent: false,
           selected: false,
-          mode: InteractionMode.play,
+          mode: InteractionMode.mute,
         ),
         TrackIndicator.record,
       );
@@ -218,7 +218,7 @@ void main() {
           muted: false,
           hasContent: true,
           selected: false,
-          mode: InteractionMode.play,
+          mode: InteractionMode.mute,
         ),
         TrackIndicator.record,
       );
@@ -239,7 +239,7 @@ void main() {
       // Regardless of selection or mode — it will sound on the next play-all,
       // so the indicator stays lit after a stop rather than going dark.
       for (final selected in [true, false]) {
-        for (final mode in [InteractionMode.play, InteractionMode.record]) {
+        for (final mode in [InteractionMode.mute, InteractionMode.record]) {
           expect(
             TrackIndicator.of(
               TrackState.stopped,
@@ -275,17 +275,17 @@ void main() {
             muted: false,
             hasContent: false,
             selected: true,
-            mode: InteractionMode.play,
+            mode: InteractionMode.mute,
           ),
           TrackIndicator.play,
-          reason: 'play mode arms green',
+          reason: 'mute mode arms green',
         );
       }
     });
 
     test('empty/contentless + unselected is idle in either mode', () {
       for (final state in [TrackState.empty, TrackState.stopped]) {
-        for (final mode in [InteractionMode.play, InteractionMode.record]) {
+        for (final mode in [InteractionMode.mute, InteractionMode.record]) {
           expect(
             TrackIndicator.of(
               state,
@@ -301,11 +301,11 @@ void main() {
     });
   });
 
-  test('AppTheme maps every meter state in both record and play modes', () {
+  test('AppTheme maps every meter state in both record and mute modes', () {
     final theme = AppTheme.neon.extension<LooperTheme>()!;
     for (final state in LooperMeterState.values) {
       expect(theme.recordMeterColors[state], isNotNull);
-      expect(theme.playMeterColors[state], isNotNull);
+      expect(theme.muteMeterColors[state], isNotNull);
     }
     expect(AppTheme.neon.useMaterial3, isTrue);
   });
