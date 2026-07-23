@@ -247,10 +247,20 @@ the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh
   **labwc**. As above, `wlr-randr` must list the outputs; if it errors with
   "compositor doesn't support wlr-output-management-unstable-v1" the image is still
   on Wayfire and output pinning will not work.
-- **`pipewire-jack` present.** Goal 3 needs Loopy to land on the **JACK** backend;
-  the PulseAudio backend captures silence (see
-  [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)). Confirm the package is installed and
-  that the app selects JACK, not "Monitor of …".
+- **`pipewire-jack` present, and launch via `pw-jack`.** Goal 3 needs Loopy to
+  land on the **JACK** backend; the PulseAudio backend captures silence (see
+  [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)). Install `pipewire-jack`, and run the
+  binary under **`pw-jack`** (`pw-jack …/loopy`) — without it the engine loads the
+  real `libjack`, finds no running `jackd`, and **hangs retrying** (`Cannot connect
+  to server socket … jack server is not running`). The kiosk `autostart` already
+  wraps the launch in `pw-jack`; confirm the app selects JACK, not "Monitor of …".
+- **Sample rate must match the interface, and use "Pro Audio".** Set the card's
+  profile to **Pro Audio** (raw channels, not `analog-surround`) and pick the app
+  **sample rate to match what the device actually runs** (check with `pw-top` — both
+  the interface and `dev.loopy.loopy` nodes should show the same RATE). A mismatch
+  (e.g. app @ 96 k, device @ 48 k) makes PipeWire insert a **resampler** that adds
+  latency and xruns (climbing `ERR` in `pw-top`). Pin the CPU governor to
+  `performance` to kill DVFS jitter.
 - **Power / USB (Pi 4 specifics).** Use a **powered USB hub** for the Focusrite —
   the Pi 4's per-port current budget is tight — and the official **5V/3A** PSU
   (`vcgencmd get_throttled` must read `0x0`). The pedal's **LEDs need their
