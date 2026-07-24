@@ -14,12 +14,13 @@
 #if defined(__linux__)
 
 #include <dlfcn.h>
-#include <pthread.h>  /* pthread_setschedparam for the appliance RT audio thread */
-#include <sched.h>    /* SCHED_FIFO, struct sched_param */
+#include <pthread.h>   /* pthread_setschedparam for the appliance RT audio thread */
+#include <sched.h>     /* SCHED_FIFO, struct sched_param */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
 
 #include "engine_platform.h"  /* the seam */
 #include "engine_private.h"   /* struct le_engine, enumerate_devices, store_i32;
@@ -244,8 +245,75 @@ static void le_jack_pretty_name(void* client, const char* node,
   jfree(uuid_str);
 }
 
-int le_platform_enumerate_devices(le_device_info* out, int32_t max,
-                                  int32_t* count, int capture) {
+/* Lowest PCM device index on ALSA card `card` that has a stream in the requested
+ * direction, or -1 if none — probed from /proc/asound/cardN/pcm<dev><c|p>. */
+static int le_alsa_card_pcm_dev(int card, int capture) {
+  const char suffix = capture ? 'c' : 'p';
+  for (int dev = 0; dev < 8; ++dev) {
+    char path[64];
+    struct stat st;
+    snprintf(path, sizeof(path), "/proc/asound/card%d/pcm%d%c", card, dev,
+             suffix);
+    if (stat(path, &st) == 0) return dev;
+  }
+  return -1;
+}
+
+/* Appliance ALSA enumeration: one clean entry per real sound card from
+ * /proc/asound/cards (e.g. "Scarlett 4i4 USB"), NOT the ALSA PCM-hint namespace
+ * (default, sysdefault, plughw, dmix, front, surround40, samplerate, speex, ...)
+ * which is the clutter miniaudio would otherwise surface. The id is
+ * ":<card>,<dev>", which is exactly the token miniaudio's simplified ALSA
+ * enumeration produces for that hardware device, so le_resolve_device_id still
+ * pins it and it opens the raw device directly. Cards without a PCM in the
+ * requested direction (HDMI has no capture, say) are skipped. */
+static int le_alsa_enumerate_cards(le_device_info* out, int32_t max,
+                                   int32_t* count, int capture) {
+  *count = 0;
+  FILE* f = fopen("/proc/asound/cards", "r");
+  if (f == NULL) return 0;
+
+  char line[512];
+  int32_t n = 0;
+  while (n < max && fgets(line, sizeof(line), f) != NULL) {
+    /* Card header lines start with the index: " 2 [USB    ]: USB-Audio - Name".
+     * The indented continuation line (the longname) has no leading digit. */
+    const char* p = line;
+    while (*p == ' ') ++p;
+    if (*p < '0' || *p > '9') continue;
+    const int card = (int)strtol(p, NULL, 10);
+    if (card < 0) continue;
+
+    /* Card name = text after " - " (the driver's card name, e.g. the friendly
+     * interface name), trimmed. */
+    char* name = strstr(line, " - ");
+    if (name == NULL) continue;
+    name += 3;
+    size_t len = strlen(name);
+    while (len > 0 && (name[len - 1] == '\n' || name[len - 1] == '\r' ||
+                       name[len - 1] == ' ')) {
+      name[--len] = '\0';
+    }
+    if (len == 0) continue;
+
+    const int dev = le_alsa_card_pcm_dev(card, capture);
+    if (dev < 0) continue; /* no PCM in this direction on this card */
+
+    le_device_info* d = &out[n];
+    memset(d, 0, sizeof(*d));
+    snprintf(d->id, sizeof(d->id), ":%d,%d", card, dev);
+    strncpy(d->name, name, sizeof(d->name) - 1);
+    d->name[sizeof(d->name) - 1] = '\0';
+    ++n;
+  }
+
+  fclose(f);
+  *count = n;
+  return n > 0 ? 1 : 0;
+}
+
+static int le_jack_enumerate_devices(le_device_info* out, int32_t max,
+                                     int32_t* count, int capture) {
   *count = 0;
   void* lib = dlopen("libjack.so.0", RTLD_NOW | RTLD_LOCAL);
   if (lib == NULL) lib = dlopen("libjack.so", RTLD_NOW | RTLD_LOCAL);
@@ -331,6 +399,17 @@ int le_platform_enumerate_devices(le_device_info* out, int32_t max,
   if (n == 0) return 0; /* JACK up but no hardware ports -> let ALSA try */
   *count = n;
   return 1;
+}
+
+int le_platform_enumerate_devices(le_device_info* out, int32_t max,
+                                  int32_t* count, int capture) {
+  /* Appliance (direct ALSA, no JACK): list real sound cards cleanly. Desktop
+   * Linux runs under PipeWire/JACK, so use the JACK enumeration there (clean
+   * names + only real interfaces). Either way, no ALSA PCM-hint clutter. */
+  if (le_alsa_only()) {
+    return le_alsa_enumerate_cards(out, max, count, capture);
+  }
+  return le_jack_enumerate_devices(out, max, count, capture);
 }
 
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
