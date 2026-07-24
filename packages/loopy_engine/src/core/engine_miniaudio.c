@@ -16,6 +16,7 @@
  */
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h> /* getenv — appliance exclusive-mode check */
 #include <string.h>
 
 #include "engine_internal.h"  /* le_engine_process */
@@ -119,6 +120,20 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
    * readi/writei path pumps correctly (verified against arecord). MMAP's only win
    * is a marginal CPU saving, irrelevant here. */
   cfg.alsa.noMMap = MA_TRUE;
+#if defined(__linux__)
+  /* Appliance (LOOPY_ALSA_ONLY): open the card EXCLUSIVELY (raw "hw:") rather
+   * than miniaudio's default shared mode, which on ALSA routes through the dmix
+   * (playback) / dsnoop (capture) plugins. Those plugins fail / misbehave for
+   * this duplex USB interface ("dsnoop unable to open slave", capture avail stuck
+   * at 0), whereas the raw hw device works perfectly (verified with speaker-test
+   * + arecord). Single-app appliance, so exclusive access is correct anyway. Not
+   * applied on macOS/Windows (there exclusive maps to WASAPI-exclusive / CoreAudio
+   * hog mode, a behaviour change we don't want on the shipping desktop app). */
+  if (getenv("LOOPY_ALSA_ONLY") != NULL) {
+    cfg.capture.shareMode = ma_share_mode_exclusive;
+    cfg.playback.shareMode = ma_share_mode_exclusive;
+  }
+#endif
 
   /* An explicit context lets us pick the backend (see below) and resolve a
    * pinned/loopback device id. We always open one; a detected loopback device
@@ -200,6 +215,9 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
 /* Starts the real-time callback. Publishes device-present + running on success;
  * on failure the caller (le_engine_start) invokes close() to release. */
 static int32_t le_miniaudio_start(le_engine* engine) {
+  /* Promote the (idle) audio worker to real-time before it starts, so its first
+   * reads run at the right priority (see le_platform_after_device_open). */
+  le_platform_after_device_open(engine);
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     return LE_ERR_DEVICE;
   }

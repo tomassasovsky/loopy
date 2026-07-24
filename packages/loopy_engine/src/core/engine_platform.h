@@ -34,6 +34,14 @@ void le_platform_before_context_init(const le_config* config);
  * selected device and clamps the published channel count. No-op elsewhere. */
 void le_platform_after_device_start(le_engine* engine, const le_config* config);
 
+/* Called after the device is opened but BEFORE it is started, while the audio
+ * worker thread exists yet is still idle. Linux promotes that thread to
+ * real-time here so it is already SCHED_FIFO when it enters the data loop —
+ * doing it after start races the worker's first (deadline-critical) reads at
+ * normal priority, overruns the capture, and the recovery leaves audible
+ * artifacts. No-op elsewhere. */
+void le_platform_after_device_open(le_engine* engine);
+
 /* Called from le_engine_stop and le_engine_destroy. Linux restores PipeWire's
  * dynamic quantum (force-quantum 0). No-op elsewhere. */
 void le_platform_on_engine_teardown(void);

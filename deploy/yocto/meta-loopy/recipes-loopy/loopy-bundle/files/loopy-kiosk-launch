@@ -38,4 +38,10 @@ mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop"
 # deadlock is fixed in the engine). The audio thread self-promotes to SCHED_FIFO;
 # that needs the RT limits on loopy.service.
 export LOOPY_ALSA_ONLY=1
+# Promote the engine's audio thread to SCHED_FIFO (needs the RT limits on
+# loopy.service). Required for glitch-free low-latency: at small buffers (64-128
+# frames, ~1-3ms) a normal-priority thread misses the period deadline and the
+# monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
+# rather than busy-spinning.
+export LOOPY_RT_AUDIO=1
 exec /opt/loopy/loopy "$@"
