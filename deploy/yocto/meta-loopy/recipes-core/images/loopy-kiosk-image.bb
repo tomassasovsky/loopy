@@ -14,7 +14,12 @@ IMAGE_INSTALL:append = " \
     alsa-plugins \
     gsettings-desktop-schemas \
     seatd \
+    xdg-user-dirs \
     "
+# xdg-user-dirs provides the `xdg-user-dir` binary. Flutter's path_provider shells
+# out to it for getApplicationDocumentsDirectory; without it the app throws
+# MissingPlatformDirectoryException on startup. The launcher seeds a user-dirs.dirs
+# so it resolves ~/Documents (see loopy-kiosk-launch). Validated on device.
 # gsettings-desktop-schemas provides the schema the embedder's settings lookup
 # needs (silences the G_IS_SETTINGS warning); the dconf persistent backend lives
 # in meta-gnome (not included) — not worth a whole layer for cosmetic polish.

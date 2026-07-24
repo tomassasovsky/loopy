@@ -13,7 +13,8 @@ LICENSE = "CLOSED"
 LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 
 SRC_URI = "file://loopy.service \
-           file://loopy-kiosk-launch"
+           file://loopy-kiosk-launch \
+           file://loopy-runtime.conf"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -39,7 +40,7 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
 inherit systemd
 SYSTEMD_SERVICE:${PN} = "loopy.service"
 
-FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${systemd_system_unitdir}/loopy.service"
+FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${systemd_system_unitdir}/loopy.service ${sysconfdir}/tmpfiles.d/loopy-runtime.conf"
 
 python do_fetch:prepend() {
     if not d.getVar('LOOPY_BUNDLE_DIR'):
@@ -65,4 +66,9 @@ do_install() {
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/loopy.service ${D}${systemd_system_unitdir}/loopy.service
+
+    # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot
+    # (no logind session makes it otherwise; weston crash-loops without it).
+    install -d ${D}${sysconfdir}/tmpfiles.d
+    install -m 0644 ${UNPACKDIR}/loopy-runtime.conf ${D}${sysconfdir}/tmpfiles.d/loopy-runtime.conf
 }
