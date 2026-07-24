@@ -1,4 +1,7 @@
-# We boot straight from the rootfs (no initramfs), so plymouth's runtime dracut
-# dependency (for regenerating an initramfs with the plymouth module) is dead
-# weight and isn't provided by our layers. Drop it.
-RDEPENDS:${PN}:remove = "dracut"
+# Boot is straight from the rootfs (no initramfs): drop the 'initrd' PACKAGECONFIG
+# so the plymouth-initrd package (which RDEPENDS dracut, unprovided here) isn't built.
+PACKAGECONFIG:remove = "initrd"
+
+# The 'drm' renderer is only auto-enabled for x86 in the base recipe, but the Pi 4
+# needs it to draw the splash on the vc4 framebuffer. 'script' is our theme's engine.
+PACKAGECONFIG:append = " drm script"
