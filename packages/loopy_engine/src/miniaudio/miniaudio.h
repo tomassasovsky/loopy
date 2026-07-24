@@ -28158,22 +28158,46 @@ static ma_result ma_device_wait__alsa(ma_device* pDevice, ma_snd_pcm_t* pPCM, st
             continue;
         }
 
-        /* Authoritative readiness check, independent of poll revents. */
-        availResult = ((ma_snd_pcm_avail_update_proc)pDevice->pContext->alsa.snd_pcm_avail_update)(pPCM);
-        if (availResult < 0) {
-            int recovered = ((ma_snd_pcm_recover_proc)pDevice->pContext->alsa.snd_pcm_recover)(pPCM, (int)availResult, MA_TRUE);
-            if (recovered < 0) {
-                ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] Failed to recover device in wait (avail).\n");
-                return ma_result_from_errno(-recovered);
+        /* Authoritative readiness check, independent of poll revents. Use
+         * snd_pcm_avail (NOT _update): it forces a hwsync so the returned count
+         * reflects the true hardware pointer. snd_pcm_avail_update only reads the
+         * cached pointer, which on this driver is refreshed by the poll/IRQ that
+         * never fires here, so it returns a stale 0 once the startup backlog is
+         * drained and the stream stalls. */
+        availResult = ((ma_snd_pcm_avail_proc)pDevice->pContext->alsa.snd_pcm_avail)(pPCM);
+        if (availResult != 0) {
+            /* availResult > 0: frames to read / space to write.
+             * availResult < 0: an XRUN (or similar). We deliberately do NOT
+             *   recover here — snd_pcm_recover() prepares the stream but does not
+             *   restart capture, which would leave it stuck in PREPARED. Instead
+             *   we return so ma_device_read__alsa / _write__alsa hit the error on
+             *   readi/writei and run THEIR recovery, which calls snd_pcm_start()
+             *   and correctly resumes the stream. Either way, stop waiting.
+             * We must NOT demand a full period here: on playback the buffer can be
+             * smaller than a period plus its start-threshold, so requiring a full
+             * period of free space deadlocks (never fills enough to auto-start, so
+             * never drains). snd_pcm_wait() already paces us; this is just the "is
+             * there anything to do (or an error to handle)" gate. */
+            break;
+        }
+
+        /* avail == 0. Normally the stream is just running with nothing ready yet,
+         * so loop and let snd_pcm_wait() sleep again. But a CAPTURE that stalled
+         * (a startup XRUN whose recovery landed it in PREPARED/XRUN) also reports
+         * avail 0 forever and would trap us here waiting for data that can never
+         * arrive on a stopped stream. Detect a non-running capture and return, so
+         * ma_device_read__alsa's readi hits the error and re-runs recovery (which
+         * retries recover + snd_pcm_start until the stream resumes). Playback does
+         * not need this: a stalled playback reports space (avail > 0) or an XRUN
+         * error (avail < 0), both handled above. */
+        if (requiredEvent == POLLIN) {
+            ma_snd_pcm_state_t st =
+                ((ma_snd_pcm_state_proc)pDevice->pContext->alsa.snd_pcm_state)(pPCM);
+            if (st != MA_SND_PCM_STATE_RUNNING && st != MA_SND_PCM_STATE_DRAINING) {
+                break;
             }
-            continue;
         }
-
-        if (availResult >= (ma_snd_pcm_sframes_t)periodFrames) {
-            break;  /* A period is ready to read, or there is room to write one. */
-        }
-
-        /* Not ready yet; snd_pcm_wait() will sleep again on the next iteration. */
+        (void)periodFrames;
     }
 
     return MA_SUCCESS;
@@ -28211,7 +28235,6 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
 
         /* Getting here means we should have data available. */
         resultALSA = ((ma_snd_pcm_readi_proc)pDevice->pContext->alsa.snd_pcm_readi)((ma_snd_pcm_t*)pDevice->alsa.pPCMCapture, pFramesOut, frameCount);
-        { static int d=0; if(d<24){d++; fprintf(stderr,"[LR]fc=%u readi=%ld\n",(unsigned)frameCount,(long)resultALSA); } }
         if (resultALSA >= 0) {
             break;  /* Success. */
         } else {
@@ -28221,17 +28244,23 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
             } else if (resultALSA == -EPIPE) {
                 ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "EPIPE (read)\n");
 
-                /* Overrun. Recover and try again. If this fails we need to return an error. */
+                /* Overrun. Recover + restart, then try again. LOOPY PATCH: on a
+                 * failure here we CONTINUE (retry) rather than returning an error.
+                 * Returning would exit miniaudio's data loop and leave the device
+                 * stuck in PREPARED — which is exactly the intermittent startup
+                 * race at tiny buffers (e.g. 64 frames @ 96k): the capture overruns
+                 * before the first read and the recover/start occasionally loses
+                 * the race. The outer while-loop's ma_device_wait_read__alsa()
+                 * sleeps (snd_pcm_wait), so this retry is paced, not a spin, and it
+                 * ends the moment the device leaves the started state. */
                 resultALSA = ((ma_snd_pcm_recover_proc)pDevice->pContext->alsa.snd_pcm_recover)((ma_snd_pcm_t*)pDevice->alsa.pPCMCapture, resultALSA, MA_TRUE);
                 if (resultALSA < 0) {
-                    ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] Failed to recover device after overrun.");
-                    return ma_result_from_errno((int)-resultALSA);
+                    continue;
                 }
 
                 resultALSA = ((ma_snd_pcm_start_proc)pDevice->pContext->alsa.snd_pcm_start)((ma_snd_pcm_t*)pDevice->alsa.pPCMCapture);
                 if (resultALSA < 0) {
-                    ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] Failed to start device after underrun.");
-                    return ma_result_from_errno((int)-resultALSA);
+                    continue;
                 }
 
                 continue;   /* Try reading again. */
@@ -28276,11 +28305,13 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
             } else if (resultALSA == -EPIPE) {
                 ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "EPIPE (write)\n");
 
-                /* Underrun. Recover and try again. If this fails we need to return an error. */
+                /* Underrun. Recover and try again. LOOPY PATCH: retry (continue)
+                 * on failure instead of returning an error, so a startup underrun
+                 * can't tear down the data loop and leave the device PREPARED (see
+                 * the matching note in ma_device_read__alsa). Paced by the wait. */
                 resultALSA = ((ma_snd_pcm_recover_proc)pDevice->pContext->alsa.snd_pcm_recover)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback, resultALSA, MA_TRUE);    /* MA_TRUE=silent (don't print anything on error). */
                 if (resultALSA < 0) {
-                    ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] Failed to recover device after underrun.");
-                    return ma_result_from_errno((int)-resultALSA);
+                    continue;
                 }
 
                 /*
@@ -28292,8 +28323,7 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
                 */
                 resultALSA = ((ma_snd_pcm_start_proc)pDevice->pContext->alsa.snd_pcm_start)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
                 if (resultALSA < 0) {
-                    ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] Failed to start device after underrun.");
-                    return ma_result_from_errno((int)-resultALSA);
+                    continue;   /* LOOPY PATCH: retry, don't tear down the loop. */
                 }
 
                 continue;   /* Try writing again. */

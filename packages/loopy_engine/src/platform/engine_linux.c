@@ -486,13 +486,18 @@ static void le_alsa_set_rt_priority(le_engine* engine) {
   (void)pthread_setschedparam(engine->device.thread, SCHED_FIFO, &sp);
 }
 
+void le_platform_after_device_open(le_engine* engine) {
+  /* Appliance: promote the audio thread to real-time BEFORE it starts reading,
+   * while it is still idle, so it never runs its deadline-critical first reads
+   * at normal priority (which overruns the capture at tiny buffers). */
+  le_alsa_set_rt_priority(engine);
+}
+
 void le_platform_after_device_start(le_engine* engine, const le_config* config) {
   /* Repin JACK ports to the selected interface (overriding miniaudio's connect-
    * to-every-physical-port default), so channels map to that device only. No-op
    * unless the JACK backend is active, so it does nothing on the ALSA appliance. */
   le_jack_pin_to_device(engine, config);
-  /* Appliance: promote the audio thread to real-time (direct ALSA path). */
-  le_alsa_set_rt_priority(engine);
 }
 
 void le_platform_on_engine_teardown(void) {
