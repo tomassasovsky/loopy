@@ -54,6 +54,13 @@ local_conf_header:
     # systemd so we can order the app after weston with a unit.
     INIT_MANAGER = "systemd"
 
+  kiosk-console: |
+    # Keep the kernel console OFF the HDMI framebuffer so it never paints over
+    # weston (on-device, audit + console spam covered the app). fbcon=map:9 moves
+    # the framebuffer console away, audit=0 kills the audit flood, quiet/loglevel
+    # trim kernel noise, and vt.global_cursor_default=0 hides the text cursor.
+    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=0"
+
   rpi-wayland: |
     # Pi 4 GPU + KMS so Mesa/Wayland/weston work. `pam` is required by systemd +
     # packagegroup-core-weston; keep x11 in so the image GTK3 stays a close ABI
