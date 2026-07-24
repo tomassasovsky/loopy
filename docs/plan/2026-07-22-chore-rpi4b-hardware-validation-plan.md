@@ -27,7 +27,7 @@ Two deliverables, each its own PR:
    in `docs/RUNNING_ON_RPI.md` with the Pi-4-only deltas + the 3 goals + a results
    table. Executing it is `blocked-verify`; results get recorded back into it.
 
-VST3 is **documented-only** (answered in the brainstorm + research doc); no plugins are
+VST3 is **documented-only** (answered in the brainstorm); no plugins are
 tested this pass.
 
 ## Problem Statement / Motivation
@@ -141,7 +141,7 @@ only).
 
 ### VST3 (documented only)
 
-Link the brainstorm §VST3 + research doc §4.3 from the runbook: host cross-compiles to
+Link the brainstorm's §VST3 from the runbook: host cross-compiles to
 aarch64; ceiling is aarch64-native plugin availability; editor GUIs need XWayland (Tier
 2/3a) or are GUI-less (3b); Pi 4 headroom tight. A small aarch64 plugin spike is a
 **follow-up issue**, not this pass.
@@ -166,7 +166,7 @@ SUCCESS CRITERIA:
 - Goal 1 dual-display (see Proposed Solution §Goal 1) | verify: manual 1) boot kiosk 2) both outputs render 3) reboot 3x, mapping holds 4) unplug TV, banner appears
 - Goal 2 USB-MIDI pedal (see §Goal 2) | verify: manual 1) bind both pickers 2) reboot, auto-selected 3) stomp CC80-83, correct actions 4) LEDs follow state 5) replug re-attaches without engine restart
 - Goal 3 Focusrite audio (see §Goal 3) | verify: manual 1) select in+out @512 2) input audible not silent 3) record+overdub+playback 4) no xruns
-- VST3 answer linked from the runbook (no hands-on test) | verify: manual 1) runbook links brainstorm/research VST3 section
+- VST3 answer linked from the runbook (no hands-on test) | verify: manual 1) runbook links the brainstorm's VST3 section
 
 NON-GOALS:
 - GPIO footswitches / WS2812 controls (gpio_client/led_client) — not wired
@@ -220,6 +220,6 @@ rail off → LEDs dark despite correct MIDI; release-mode GTK build unproven by 
 - MIDI pedal: `docs/MIDI_FOOT_CONTROLLER.md` (CC 80–83); LED-out `packages/pedal_repository/lib/src/native_pedal_repository.dart`, `lib/pedal/cubit/pedal_cubit.dart`
 - Console mode: `lib/common/console_mode.dart:14`
 - Dual-display: `lib/visualizer/waveform_window_service.dart`; single-display fallback `lib/app/view/app.dart:369`
-- VST3 on Pi: brainstorm §VST3 + research §4.3
+- VST3 on Pi: brainstorm §VST3
 - Related: PRs #86–#93 (floor-console), #85 (USB-MIDI pedal), #202 (Linux native audio)
 </content>
