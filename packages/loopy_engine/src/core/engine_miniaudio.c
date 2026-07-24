@@ -112,6 +112,13 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   cfg.dataCallback = data_callback;
   cfg.notificationCallback = notification_callback;
   cfg.pUserData = engine;
+  /* Force plain readi/writei on ALSA (no MMAP). Only the ALSA backend reads this
+   * field (ignored by JACK/CoreAudio/WASAPI). On the direct-ALSA appliance,
+   * miniaudio's MMAP *duplex* read/write loop stalls in poll() — the device runs
+   * (hardware pointer advances) but not one frame is read/written — whereas the
+   * readi/writei path pumps correctly (verified against arecord). MMAP's only win
+   * is a marginal CPU saving, irrelevant here. */
+  cfg.alsa.noMMap = MA_TRUE;
 
   /* An explicit context lets us pick the backend (see below) and resolve a
    * pinned/loopback device id. We always open one; a detected loopback device

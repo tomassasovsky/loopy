@@ -296,6 +296,13 @@ static int le_alsa_enumerate_cards(le_device_info* out, int32_t max,
     }
     if (len == 0) continue;
 
+    /* Drop the SoC HDMI audio outputs — a live-looping appliance routes through
+     * its audio interface, not the display's HDMI audio, so they are only clutter
+     * in the picker. Matched by the vc4-hdmi card name. */
+    if (strstr(line, "vc4-hdmi") != NULL || strstr(line, "vc4hdmi") != NULL) {
+      continue;
+    }
+
     const int dev = le_alsa_card_pcm_dev(card, capture);
     if (dev < 0) continue; /* no PCM in this direction on this card */
 
@@ -468,6 +475,11 @@ void le_platform_before_context_init(const le_config* config) {
  * loopy.service; without them it EPERMs and is a harmless no-op. */
 static void le_alsa_set_rt_priority(le_engine* engine) {
   if (!le_alsa_only() || !engine->device_initialised) return;
+  /* Opt-in via LOOPY_RT_AUDIO=1 (set by the kiosk launcher once the ALSA path is
+   * validated). Gated so a misbehaving audio loop cannot hard-starve the machine
+   * at SCHED_FIFO before it has been proven to sleep between periods. */
+  const char* rt = getenv("LOOPY_RT_AUDIO");
+  if (rt == NULL || rt[0] != '1') return;
   struct sched_param sp;
   memset(&sp, 0, sizeof(sp));
   sp.sched_priority = 80;
