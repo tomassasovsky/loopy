@@ -407,6 +407,8 @@ class SessionRepository {
           channel: i,
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
+          lengthPresetBars: track.lengthPresetBars,
+          oneShot: track.oneShot,
           lanes: lanes,
         ),
       );
@@ -421,14 +423,51 @@ class SessionRepository {
       channels: 1,
       // The engine keeps the master grid alive after the last track is undone
       // to empty (redo needs it), but a session with zero tracks must not
-      // persist that ghost tempo — loading it would re-establish a grid with
-      // no content, silently locking the next recording's length.
+      // persist that ghost length — loading it would re-establish a grid
+      // with no content, silently locking the next recording's length.
       baseLengthFrames: captured.tracks.isEmpty
           ? 0
           : snapshot.masterLengthFrames,
       tracks: captured.tracks,
       laneChains: chains.laneChains,
       monitors: chains.monitors,
+      // Tempo/signature/quantize/click/count-in are session-level settings,
+      // not derived-from-track-content state, so — unlike baseLengthFrames
+      // above — they persist regardless of whether any track has content.
+      // This is deliberate, not an oversight: D6 says a derived tempo
+      // survives clearing its source loop ("clearing all tracks offers a
+      // tempo reset, never forces it"), and D7 lets a manual/tapped tempo be
+      // dialed in before the first recording ever starts — both cases are a
+      // zero-track snapshot the app must still round-trip faithfully.
+      tempoBpm: snapshot.tempoBpm,
+      tempoSource: snapshot.tempoSource,
+      tsNum: snapshot.tsNum,
+      tsDen: snapshot.tsDen,
+      quantizeDiv: snapshot.quantizeDiv,
+      clickMode: snapshot.clickMode,
+      clickOutputMask: snapshot.clickMask,
+      clickVolume: snapshot.clickVolume,
+      countInBars: snapshot.countInBars,
+      // Looper mode + crown (schema v4, B5c) are session-level SETTINGS, not
+      // derived-from-track-content state either — same reasoning as the
+      // tempo-grid fields above, and [snapshot.looperMode]/
+      // [snapshot.primaryTrack] persist regardless of track content by
+      // construction (D18; [LooperModeControl]'s class doc).
+      looperMode: snapshot.looperMode,
+      primaryTrack: snapshot.primaryTrack,
+      // One Shot, per channel (post-B5c independent review fix): read
+      // straight off `snapshot.tracks` — EVERY channel, unconditional on
+      // `state`/`lengthFrames` — rather than off `captured.tracks` (which
+      // the loop above only builds for a settled, content-bearing channel).
+      // `LooperModeControl.setOneShot` is explicitly "not gated by the D4
+      // content lock" and settable on an empty track in advance of
+      // recording, so this is the one content-independent home the flag
+      // needs to round-trip a pre-armed-but-empty channel through save/load
+      // — see [Session.oneShotChannels]'s doc.
+      oneShotChannels: [
+        for (var i = 0; i < snapshot.tracks.length; i++)
+          if (snapshot.tracks[i].oneShot) i,
+      ],
     );
   }
 

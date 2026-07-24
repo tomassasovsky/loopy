@@ -313,6 +313,38 @@ void main() {
       expect(engine.lastDefaultMultiple, 1);
     });
 
+    test('restores saved per-track length presets on launch', () async {
+      await settings.saveAudioConfig(
+        const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+      );
+      // Save a preset for channel 1 only; channel 0 has none (exercises the
+      // null-guard skip in the restore loop, mirroring the multiple/quantize
+      // restores above).
+      await settings.saveTrackLengthPreset(1, 8);
+      engine.nextSnapshot = const EngineSnapshot(
+        isRunning: true,
+        sampleRate: 48000,
+        bufferFrames: 128,
+        framesProcessed: 0,
+        xrunCount: 0,
+        inputRms: 0,
+        inputPeak: 0,
+        outputRms: 0,
+        latencyState: le.LatencyState.idle,
+        measuredLatencyMs: -1,
+        tracks: [TrackSnapshot.empty(), TrackSnapshot.empty()],
+      );
+
+      final started = await tryAutoStartEngine(
+        repository: repository,
+        settings: settings,
+      );
+
+      expect(started.started, isTrue);
+      expect(engine.trackLengthPreset[1], 8);
+      expect(engine.trackLengthPreset.containsKey(0), isFalse);
+    });
+
     test('restores saved per-lane effects on launch', () async {
       await settings.saveAudioConfig(
         const StoredAudioConfig(

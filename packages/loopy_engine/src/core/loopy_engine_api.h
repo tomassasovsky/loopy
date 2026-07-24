@@ -43,6 +43,10 @@ typedef enum le_result {
   LE_ERR_UNSUPPORTED = -5,   /* a plugin's bus topology is not a stereo (or
                               * mono-adaptable) effect — instrument / multi-bus /
                               * sidechain / wrong channel count (D-BUS) */
+  LE_ERR_CAPACITY = -6,      /* a requested allocation would exceed engine
+                              * capacity (A6, D17): N bars of the current
+                              * signature at the slowest possible tempo (30
+                              * BPM) would not fit in max_loop_frames */
 } le_result;
 
 /* Latency-harness phase, mirrored in le_snapshot.latency_state. */
@@ -90,8 +94,63 @@ typedef enum le_click_mode {
   LE_CLICK_PLAY_REC = 3,  /* whenever the transport plays or records */
 } le_click_mode;
 
+/* The five architectural looper modes (B2a, D4/D10), mirrored in
+ * le_snapshot.looper_mode. MULTI is today's behavior — independent per-track
+ * loops, the whole engine as it exists before this series — and stays the
+ * default. Sync/Band (primary-track sync + multiples/divisions, B3/B3b),
+ * Free (independent per-track clocks, B2b), and Song (independent per-track
+ * sections, B4) all have their full behavior as of this part; B2a itself was
+ * only the field plus D4's content-lock gate (le_looper_mode_locked,
+ * engine_process.c) that guards switching it, with every value's audio path
+ * staying MULTI behavior until its own part landed. This is a DIFFERENT axis
+ * from InteractionMode (Dart-only: record/mute, what a track press does) —
+ * the two never coexist under the same name (D10) and must not be
+ * confused. */
+typedef enum le_looper_mode {
+  LE_LOOPER_MODE_MULTI = 0, /* default: independent per-track loops (today's
+                             * behavior, unchanged by this part) */
+  LE_LOOPER_MODE_SYNC = 1,  /* primary-track sync + multiples/divisions (B3) */
+  /* Song (B4): a "section" IS a track (song-mode-spec.md §2 Q1) — up to
+   * LE_MAX_TRACKS independent sections, each started/stopped directly via
+   * its OWN track press (record/play/stop), exactly like every other mode's
+   * per-track controls. No separate section object, no advance gesture (the
+   * plan's original `advanceSection` was explicitly dropped once the manual
+   * research showed no such gesture exists on the Sheeran — see the spec's
+   * six B1 answers). Structurally IDENTICAL to Free's transport (independent
+   * lengths, no primary, no shared grid obligation): B4 reuses B2b's
+   * per-track clock machinery outright by broadening every FREE-only gate to
+   * also cover SONG (see free_clock's doc, engine_private.h) rather than
+   * inventing a parallel mechanism. */
+  LE_LOOPER_MODE_SONG = 2,
+  LE_LOOPER_MODE_BAND = 3,  /* primary + independently-quantized sections
+                             * (B3) */
+  LE_LOOPER_MODE_FREE = 4,  /* independent per-track clocks (B2b) */
+} le_looper_mode;
+
+/* MIDI clock tri-state (Phase C/E, D15), mirrored in le_snapshot.clock_mode.
+ * `off` and `send` are fully implemented by this part (C1): a native 24-PPQN
+ * emitter (src/midi/le_midi_clock.h) drives 0xF8/Start/Stop through the
+ * grid/transport each block whenever `send` is active AND the looper mode is
+ * Multi/Sync/Band (manual-verified: Song and Free stay silent regardless of
+ * this field — see le_engine_set_clock_mode). `receive` is REJECTED by the
+ * setter for now — the enum value exists so Phase E (clock follower) can
+ * reuse this same tri-state field without a breaking rename, per the index
+ * plan's "Phase 5 reuses the tri-state clock_mode introduced here". Send and
+ * receive are mutually exclusive by construction (only one non-off value is
+ * ever accepted at a time). */
+typedef enum le_clock_mode {
+  LE_CLOCK_OFF = 0,     /* default: no MIDI clock I/O */
+  LE_CLOCK_SEND = 1,    /* loopy is MIDI clock master (C1) */
+  LE_CLOCK_RECEIVE = 2, /* loopy follows an external clock (Phase E; the
+                         * setter rejects this value until then) */
+} le_clock_mode;
+
 /* Maximum count-in length in measures (le_engine_set_count_in). */
 #define LE_COUNT_IN_MAX_BARS 64
+
+/* Maximum track length preset in bars (A6, D17;
+ * le_engine_set_track_length_preset). 0 is AUTO, not a bar count. */
+#define LE_LENGTH_PRESET_MAX_BARS 64
 
 /* Classification of a cable-free loopback path used to auto-measure latency.
  * All of these capture the *digital* round-trip (output → OS mixer → capture);
@@ -145,8 +204,15 @@ typedef enum le_command_code {
                                   * track, arg_i = input bitmask) */
   LE_CMD_SET_OUTPUT_MASK = 15,   /* route a track's playback destinations
                                   * (arg_f = track, arg_i = output bitmask) */
-  LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop top) */
-  LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record */
+  LE_CMD_ARM = 16,    /* arg_i = track: arm a quantized record (fire at loop
+                       * top). arg_f selects the trigger: 0 = grid/loop-top
+                       * (quantize), 1 = input level (auto-record), 2 = Band
+                       * section transport (B3b) -- a play/stop TOGGLE on a
+                       * content-bearing non-primary track, deferred to the
+                       * next primary-track loop top rather than a record
+                       * action; see le_engine_toggle_section. */
+  LE_CMD_DISARM = 17, /* arg_i = track: cancel a pending quantized record
+                       * (any trigger). */
   LE_CMD_SET_QUANTIZE_DIV = 18, /* arg_i = le_grid_div (tempo_grid.h): 0 off /
                                  * 1 bar / 2..5 = 1/2..1/16 note. State only in
                                  * this part — the musical arm machinery that
@@ -251,6 +317,64 @@ typedef enum le_command_code {
   LE_CMD_PERF_ARM = 41,    /* begin publishing to the perf capture rings */
   LE_CMD_PERF_DISARM = 42, /* stop; control frees the rings after a quiescent
                             * handshake once the audio thread acks this */
+
+  /* ---- track length presets (A6, D17) ----
+   * A per-track DEFINING-recording length preset, orthogonal to the existing
+   * fixed-multiple machinery (le_effective_multiple / target_multiple,
+   * engine_private.h): the multiple mechanism fixes a NON-defining track's
+   * length in whole BASE loops once a master already exists; this preset
+   * governs the DEFINING (first/master) recording itself — before any base
+   * loop length exists — and drives whether tempo, bar count, or both are
+   * derived from it (see le_arm_length_preset_target / finalize_master,
+   * engine_process.c). Values 0 (AUTO) or 1..LE_LENGTH_PRESET_MAX_BARS
+   * (fixed N bars) round-trip identically; anything else is clamped by the
+   * audio thread on apply, matching every other per-track setter. Inert on
+   * an already-recorded track until it is re-recorded. */
+  LE_CMD_SET_LENGTH_PRESET = 44, /* arg_i = channel, arg_f = bars (0 = AUTO,
+                                  * 1..LE_LENGTH_PRESET_MAX_BARS = fixed). */
+
+  /* ---- looper mode (B2a, D4) ----
+   * The five-mode axis (le_looper_mode). LOCKED (silently rejected, no-op)
+   * whenever ANY track has content (state != EMPTY) — le_looper_mode_locked,
+   * engine_process.c. Simpler than the D6 tempo lock: content alone, no grid
+   * or count-in check. Only clearing every track releases the lock. Mode
+   * semantics beyond the field itself land in B2b onward; this part accepts
+   * any of the 5 values unconditionally once unlocked. Not perf-logged (a
+   * mode switch changes no audible output in this part). */
+  LE_CMD_SET_LOOPER_MODE = 45, /* arg_i = le_looper_mode (0..4) */
+
+  /* ---- primary track / Sync + Band (B3, D16/D18) ----
+   * Designates track [arg_i] the "crowned" primary track for Sync/Band's
+   * multiple-or-division sync (a_primary_track). Accepted in ANY mode (the
+   * crown is a persistent per-session designation per D18 — it simply has no
+   * effect outside Sync/Band); rejected only for an out-of-range channel.
+   * There is no "un-crown": D18's no-auto-reassignment rule means the only
+   * way to change it is another CROWN_PRIMARY. See le_sync_quantize_active
+   * (engine_private.h) for how this gates Sync/Band's finalize + section-
+   * transport behavior. */
+  LE_CMD_CROWN_PRIMARY = 46, /* arg_i = channel */
+
+  /* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+   * A per-track flag: "plays just once and then stops" instead of looping.
+   * Settable on any channel in any mode (mirrors LE_CMD_CROWN_PRIMARY's D18
+   * pattern — a persistent per-track designation, not gated by the D4 mode
+   * lock or by mode itself), but only behaviorally active where the engine
+   * has a per-track transport wrap to hook: FREE and SONG (both driven by
+   * each track's own free_clock — see advance_track_clock_frame,
+   * engine_process.c). Inert in Multi/Sync/Band, where a track's own "lap"
+   * is a derived point on the SHARED master clock, not an independent
+   * per-track event this flag can observe without much larger transport
+   * surgery the manual's Song-specific tool does not call for (deliberately
+   * out of B4's scope — see the header doc above le_engine_set_one_shot). */
+  LE_CMD_SET_ONE_SHOT = 47, /* arg_i = channel, arg_f = 0/1 */
+
+  /* ---- MIDI clock (Phase C/E, D15) ----
+   * The tri-state le_clock_mode. Not perf-logged, for the same reason as
+   * LE_CMD_SET_LOOPER_MODE above (clock output is a routing/sync concern,
+   * not a captured audible source — the emitter sums nothing into the mix,
+   * it only ever pushes bytes out through le_midi_out_send). */
+  LE_CMD_SET_CLOCK_MODE = 48, /* arg_i = le_clock_mode. RECEIVE (2) is
+                               * rejected — see le_engine_set_clock_mode. */
 
   /* Event codes (audio thread -> control thread, on the engine's evt_ring —
    * the reverse SPSC direction; numbered apart from the commands for clarity). */
@@ -433,6 +557,22 @@ typedef struct le_track_snapshot {
                             * captured/drained (punch tail window). Session
                             * capture waits this out before exporting. */
   int32_t pending;         /* 0/1: a quantized/signal arm is waiting to fire */
+  /* Trailing (A6, D17): the DEFINING-recording length preset — 0 = AUTO,
+   * 1..LE_LENGTH_PRESET_MAX_BARS = fixed N bars. Inert on a track that
+   * already has content; applies to the next defining recording only. See
+   * le_engine_set_track_length_preset. */
+  int32_t length_preset_bars;
+  /* Trailing (B3, D16): 0 = this track's length is an ordinary multiple of
+   * the base loop (see `multiple` above — the common case in every mode,
+   * including Sync/Band multiples). 2 or 4 = this track is a SYNC DIVISION:
+   * it plays a repeating 1/2 or 1/4 slice of the primary track's length,
+   * phase-locked to the primary's loop top (`multiple` reads 1, inertly, for
+   * a division track). Only ever nonzero in Sync/Band mode on a non-primary
+   * track. See le_sync_quantize_active (engine_private.h) for how it's set. */
+  int32_t sync_divisor;
+  /* Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
+   * behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc. */
+  int32_t one_shot;
 } le_track_snapshot;
 
 /* Lock-free snapshot of engine state, published by the audio thread and read by
@@ -548,6 +688,25 @@ typedef struct le_snapshot {
    * come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
    * reads 4, 3, 2, 1, then 0 as the recording starts). 0 when idle. */
   int32_t count_in_beats_left;
+
+  /* ---- looper mode (B2a, D4; trailing for the same offset-stability reason
+   * as the tempo/click blocks above). Default MULTI (0) — an untouched
+   * engine's mode reads MULTI, today's behavior. See le_looper_mode's doc for
+   * the content-lock gate and what each value means. */
+  int32_t looper_mode; /* le_looper_mode (default 0 = MULTI) */
+
+  /* ---- primary track (B3, D18; trailing for the same offset-stability
+   * reason as the blocks above). -1 = none (default). Persists through the
+   * primary track being cleared/undone-to-empty; only an explicit re-crown
+   * (le_engine_crown_primary) changes it — see LE_CMD_CROWN_PRIMARY's doc.
+   * Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
+   * nonzero value in any other mode is inert. */
+  int32_t primary_track;
+
+  /* ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
+   * reason as the blocks above). le_clock_mode; default 0 = OFF, so an
+   * untouched engine emits no clock bytes. See le_engine_set_clock_mode. */
+  int32_t clock_mode;
 } le_snapshot;
 
 /* ============================ Plugin hosting ==============================
@@ -1035,6 +1194,110 @@ LE_EXPORT int32_t le_engine_set_sync_tempo(le_engine* engine, int32_t on);
  * consumed by the musical arm machinery in a later part). */
 LE_EXPORT int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div);
 
+/* ---- looper mode (B2a, decision D4) ----
+ * The five architectural looper modes (le_looper_mode). Mode is a
+ * session-level choice, LOCKED while any track has content (state != EMPTY):
+ * a switch attempted then is silently rejected (no-op) — a simpler predicate
+ * than the D6 tempo lock (content alone, no grid or count-in check; see
+ * le_looper_mode_locked, engine_process.c). Only clearing every track
+ * releases the lock. Mode switching is NOT a pedal action (D4) and has no UI
+ * in this part (that lands in B5c). Semantics beyond the field itself
+ * (Sync/Song/Band/Free behavior) land in B2b onward — this part accepts any
+ * of the 5 values unconditionally once unlocked, with the engine's audio path
+ * staying today's MULTI behavior regardless of the published value. Persists
+ * across configure() exactly like tempo_source: seeded once in
+ * le_engine_create, never reset by configure (same 2f0513a persistence
+ * pattern) — and untouched by clear-all, since no engine-side "revert to
+ * Multi" event is specified anywhere in the plan; the mode simply stays at
+ * whatever it was last explicitly set to. */
+
+/* Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
+ * return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
+ * locked (see the class doc) — the audio thread silently drops it. */
+LE_EXPORT int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode);
+
+/* ---- primary track / Sync + Band (B3/B3b, decisions D16/D18) ----
+ * Sync: one primary track; every other track's DEFINING recording is
+ * auto-quantized (D16) to the nearest of {1/4, 1/2, 1, 2, 4} times the
+ * primary's established length — a multiple (1/2/4) plays like today's
+ * fixed-multiple tracks; a division (1/4, 1/2) plays a repeating slice of
+ * ITS OWN (shorter) buffer, phase-locked to the primary's loop top. Band
+ * layers the SAME primary/multiple-division machinery, plus non-primary
+ * "section" tracks that start/stop independently — see
+ * le_engine_toggle_section. Both are inert until a primary is crowned AND
+ * that primary already has an established (single-base-loop) length; until
+ * then Sync/Band's non-primary tracks record exactly like Multi (D16
+ * fallback). */
+
+/* Crowns [channel] the primary track (D18). Rejects only an out-of-range
+ * channel; accepted in every looper mode (the crown persists regardless of
+ * mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
+ * exists — re-crowning a different channel is the only way to change it. */
+LE_EXPORT int32_t le_engine_crown_primary(le_engine* engine, int32_t channel);
+
+/* Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop
+ * press on a non-primary, content-bearing track in BAND mode, deferred
+ * (quantized) to the next time the PRIMARY track returns to its loop top —
+ * matching the manual's "quantized to the primary track" section semantics,
+ * genuinely different from Sync (where non-primary tracks are locked to
+ * always play, never independently started/stopped). A second call before
+ * the boundary fires cancels the pending toggle (mirrors le_engine_record's
+ * quantize-arm toggle shape). Returns LE_ERR_INVALID outside BAND mode, for
+ * the primary track itself, or for a still-EMPTY track (nothing to
+ * start/stop — a section reaches this only after its own defining,
+ * sync-quantized recording has finalized). */
+LE_EXPORT int32_t le_engine_toggle_section(le_engine* engine,
+                                           int32_t channel);
+
+/* ---- One Shot (B4, Sheeran manual §5.9.4) ----
+ * "A track plays just once and then stops" — the manual's tool for a
+ * non-looping section (an intro/outro, or a one-off sample bed), "particularly
+ * useful for playing backing tracks". A per-track boolean; the manual does
+ * not gate it by mode, but loopy's engine currently has a natural per-track
+ * transport-wrap hook ONLY in Free and Song mode (each track ticks its own
+ * free_clock there — see le_track's doc, engine_private.h); in Multi/Sync/
+ * Band a track's own "lap" is a derived point on the ONE shared master
+ * clock, and giving it an independent per-track stop-after-one-lap would
+ * mean much larger transport surgery (and raises un-spec'd questions, e.g.
+ * how a one-shot interacts with a Sync/Band division's multiple/divisor)
+ * that the manual's Song-specific tool does not call for. Deliberate,
+ * documented scope line: the FLAG itself is settable and persists in ANY
+ * mode (mirrors LE_CMD_CROWN_PRIMARY's D18 pattern), but the STOP-instead-
+ * of-loop behavior only fires in Free/Song — see
+ * advance_track_clock_frame's doc, engine_process.c. Applies at the natural
+ * wrap point (le_loop_clock_tick's boundary return on that track's OWN
+ * clock), reusing handle_stop's exact PLAYING/OVERDUBBING -> STOPPED
+ * transition (pending mutes land the same way a manual Stop press would;
+ * an overdub in flight ends its capture and drains/retires normally). */
+
+/* Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
+ * channel; accepted in every looper mode, though inert outside Free/Song
+ * (see the class doc above). A SETTING, not content: like
+ * a_length_preset_bars and target_multiple, it is untouched by clear /
+ * undo-to-empty / mode switches — handle_clear's per-track reset
+ * (engine_process.c) deliberately does not include it, the same "cleared
+ * content starts fresh, configured PREFERENCES survive" split every other
+ * per-track setting in this engine already follows. A cleared-then-re-
+ * recorded one-shot track is one-shot again on its next take, with no need
+ * to re-flag it. */
+LE_EXPORT int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
+                                         int32_t enabled);
+
+/* ---- MIDI clock (Phase C/E, decision D15) ----
+ * The tri-state le_clock_mode (off / send / receive). This part (C1)
+ * implements send: a native 24-PPQN emitter (src/midi/le_midi_clock.h) drives
+ * 0xF8 clock ticks plus Start/Stop through the existing verbatim
+ * le_midi_out_send transport, gated on the transport actually running
+ * (recording/overdubbing/playing — manual-verified, not free-running while
+ * idle) AND the looper mode being Multi/Sync/Band (Song/Free stay silent
+ * regardless of this field). */
+
+/* Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
+ * any value outside the enum return LE_ERR_INVALID without posting — receive
+ * is Phase E's clock follower, not yet implemented; this setter stubs the
+ * tri-state field now so that part can reuse it without a breaking rename. */
+LE_EXPORT int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode);
+
 /* ---- click + count-in (A2, decisions D5/D9) ----
  * The click is a synthesized voice (sine 1000 Hz on beats / 1500 Hz on the
  * bar downbeat, 30 ms linear decay) with its OWN output routing and volume,
@@ -1085,6 +1348,54 @@ LE_EXPORT int32_t le_engine_set_track_multiple(le_engine* engine,
  * [multiple] whole base loops (>= 1), or 0 to auto-round-up on stop. */
 LE_EXPORT int32_t le_engine_set_default_multiple(le_engine* engine,
                                                  int32_t multiple);
+
+/* ---- track length presets (A6, D17) ----
+ * A per-track preset governing the DEFINING (first/master) recording only —
+ * orthogonal to le_engine_set_track_multiple above, which fixes a
+ * NON-defining track's length once a master already exists. Implements the
+ * Sheeran manual's preset x click-mode matrix (song-mode-spec.md §1):
+ *   - AUTO (0) + click off: tempo AND bar count are both derived from the
+ *     recording (unchanged A1 sync_grid_to_loop path).
+ *   - AUTO (0) + click on: bar count only is derived; an already-set tempo is
+ *     never re-derived. With NO tempo set, this falls back to deriving both
+ *     (the same as click off) — there is nothing else to preserve.
+ *   - N bars + click off: the recording proceeds as an ordinary manual take;
+ *     on finalize, tempo is derived from recorded-length / N — UNCONDITIONALLY,
+ *     even over an existing manual/tapped tempo (the manual's explicit rule for
+ *     this preset; distinct from AUTO's D7 "never re-derive" precedence).
+ *   - N bars + click on: REQUIRES a tempo already set (source != none) at the
+ *     moment recording begins, so frames-per-bar is computable — the defining
+ *     recording then auto-finalizes into overdub at exactly N bars' worth of
+ *     frames. An early record press before N bars disarms the preset (closes
+ *     normally, like AUTO, per D17's general early-press rule). With NO tempo
+ *     set at record start, auto-finalize cannot be armed (there is no way to
+ *     know how many frames N bars is) — this degrades to the N-bars + click-off
+ *     behavior: an ordinary manual take, tempo derived from length / N on
+ *     finalize (documented A6 judgment call).
+ * In every case the loop's AUDIO length is never altered — only tempo/bars are
+ * set to describe it. Requires loop<->grid sync on (le_engine_set_sync_tempo);
+ * with sync off the preset is dormant (matches a plain grid-off recording).
+ * Preset changes on an already-recorded track are inert until the track is
+ * cleared and re-recorded (stored, not retroactively applied). */
+
+/* Sets track [channel]'s length preset: 0 = AUTO, or 1..
+ * LE_LENGTH_PRESET_MAX_BARS to fix the defining recording to N bars (see the
+ * matrix above). Returns LE_ERR_INVALID for a bad channel/bars, or
+ * LE_ERR_CAPACITY when N bars of the CURRENT time signature at the slowest
+ * possible tempo (30 BPM) would exceed the engine's max_loop_frames — checked
+ * here, before recording starts, so a doomed preset is rejected outright
+ * rather than silently failing mid-take. This is a best-effort check against
+ * the signature live NOW: nothing locks the signature/tempo between setting
+ * the preset and actually recording (no track has content yet, so D6's lock
+ * does not apply), so a change in between can still make an N-bars+click-on
+ * take's auto-finalize target unreachable. That case is re-guarded with the
+ * ACTUAL live grid when recording starts (engine_process.c's
+ * le_arm_length_preset_target) — an unreachable target is never armed, so
+ * the take degrades cleanly to the click-off derive-from-length path at
+ * finalize instead of silently stalling. */
+LE_EXPORT int32_t le_engine_set_track_length_preset(le_engine* engine,
+                                                     int32_t channel,
+                                                     int32_t bars);
 
 /* Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
  * with a record press continues into overdub instead of playback. A stop press

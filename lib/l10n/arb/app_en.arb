@@ -318,6 +318,16 @@
     "defaultLabel": "Default",
     "tracksIntro": "Rename tracks.",
     "tracksGroupLabel": "TRACKS",
+    "lengthPresetLabel": "Length preset",
+    "lengthPresetAuto": "AUTO",
+    "lengthPresetBars": "{bars, plural, one{1 bar} other{{bars} bars}}",
+    "@lengthPresetBars": {
+        "placeholders": {
+            "bars": {
+                "type": "int"
+            }
+        }
+    },
     "inputChannelLabel": "In {channelNumber}",
     "@inputChannelLabel": {
         "placeholders": {
@@ -918,5 +928,121 @@
     "perfExportReExportFailed": "Couldn't regenerate the export.",
     "@perfExportReExportFailed": {
         "description": "Error message shown when re-export fails."
+    },
+    "settingsSectionTempo": "Tempo",
+    "tempoSettingsIntro": "Set the tempo grid, click, and count-in the looper aligns recordings to.",
+    "tempoGroupLabel": "TEMPO",
+    "currentTempoLabel": "{bpm} BPM",
+    "@currentTempoLabel": {
+        "description": "The live effective tempo readout (manual, tapped, or derived from a loop).",
+        "placeholders": {
+            "bpm": {
+                "type": "String"
+            }
+        }
+    },
+    "tempoNotSetLabel": "Not set",
+    "@tempoNotSetLabel": {
+        "description": "Shown in place of a BPM readout before any tempo has ever been established."
+    },
+    "bpmFieldLabel": "BPM",
+    "tapTempoButton": "Tap",
+    "tapTempoTooltip": "Tap to set the tempo",
+    "timeSignatureLabel": "Time signature",
+    "timeSignatureNoteValueLabel": "Note value",
+    "timeSignatureQuarterNote": "Quarter note (/4)",
+    "timeSignatureEighthNote": "Eighth note (/8)",
+    "timeSignatureOption": "{num}/{den}",
+    "@timeSignatureOption": {
+        "description": "One selectable time-signature chip, e.g. \"7/8\".",
+        "placeholders": {
+            "num": {
+                "type": "int"
+            },
+            "den": {
+                "type": "int"
+            }
+        }
+    },
+    "syncTempoTitle": "Sync loop to tempo",
+    "syncTempoSubtitle": "Keep the loop length locked to the tempo grid; a fresh defining recording can derive the tempo from its length instead.",
+    "quantizeGroupLabel": "QUANTIZE",
+    "quantizeDivIntro": "Musical quantization — align recording start/stop to the beat, not just the loop top.",
+    "quantizeDivOffLabel": "Off",
+    "quantizeDivBarLabel": "1 bar",
+    "quantizeDivHalfLabel": "1/2",
+    "quantizeDivQuarterLabel": "1/4",
+    "quantizeDivEighthLabel": "1/8",
+    "quantizeDivSixteenthLabel": "1/16",
+    "clickGroupLabel": "CLICK",
+    "clickModeIntro": "When the click (metronome) is audible.",
+    "clickModeOffLabel": "Off",
+    "clickModeRecLabel": "Recording",
+    "clickModeRecFirstLabel": "First take",
+    "clickModePlayRecLabel": "Always",
+    "clickOutputLabel": "Click output",
+    "clickVolumeLabel": "Click volume",
+    "countInGroupLabel": "COUNT-IN",
+    "countInIntro": "Measures counted in before a defining recording starts.",
+    "countInOffLabel": "Off",
+    "countInBarsLabel1": "1 bar",
+    "countInBarsLabel2": "2 bars",
+    "countInBarsLabel4": "4 bars",
+    "countingInLabel": "Count-in {beats}",
+    "@countingInLabel": {
+        "description": "Shown in the transport while a count-in is running, with the beat countdown.",
+        "placeholders": {
+            "beats": {
+                "type": "int"
+            }
+        }
+    },
+    "beatPositionLabel": "{beat}/{count}",
+    "@beatPositionLabel": {
+        "description": "Compact beat-position readout (e.g. \"3/15\") used instead of individual dots for time signatures with a large numerator, where dots would risk overflowing a narrow toolbar.",
+        "placeholders": {
+            "beat": {
+                "type": "int"
+            },
+            "count": {
+                "type": "int"
+            }
+        }
+    },
+    "a11yTrackArmed": "Armed, waiting for the next boundary",
+    "@a11yTrackArmed": {
+        "description": "Accessible label for the small badge shown on a track tile with a pending quantized/signal-triggered record arm."
+    },
+    "settingsSectionMode": "Mode",
+    "looperModeIntro": "Choose how the looper's tracks relate to each other and the tempo grid.",
+    "looperModeGroupLabel": "MODE",
+    "looperModeMultiLabel": "Multi",
+    "looperModeMultiSub": "Same length tracks",
+    "looperModeSyncLabel": "Sync",
+    "looperModeSyncSub": "Locked to primary",
+    "looperModeSongLabel": "Song",
+    "looperModeSongSub": "Independent sections",
+    "looperModeBandLabel": "Band",
+    "looperModeBandSub": "Primary + sections",
+    "looperModeFreeLabel": "Free",
+    "looperModeFreeSub": "Un-synced tracks",
+    "modeChangeConfirmTitle": "Switch mode?",
+    "modeChangeConfirmBody": "Changing mode clears every track — there's no way to keep the current loops. Clear all tracks and switch?",
+    "modeChangeConfirmConfirm": "Clear & Switch",
+    "modeChangeConfirmCancel": "Cancel",
+    "modeChangeTimedOut": "Mode switch timed out — the clear is still finishing. Try again in a moment.",
+    "oneShotGroupLabel": "ONE SHOT",
+    "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
+    "a11yTrackPrimary": "Primary track",
+    "@a11yTrackPrimary": {
+        "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
+    },
+    "a11yCrownTrack": "Crown as primary track",
+    "@a11yCrownTrack": {
+        "description": "Accessible label for the tappable crown badge on a non-primary track in Sync/Band mode."
+    },
+    "a11yTrackCrowned": "Crowned primary",
+    "@a11yTrackCrowned": {
+        "description": "Screen-reader announcement after crowning a track the Sync/Band primary."
     }
 }

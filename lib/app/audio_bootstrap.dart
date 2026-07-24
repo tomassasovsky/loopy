@@ -150,6 +150,13 @@ Future<AutoStartResult> tryAutoStartEngine({
     if (multiple > 0) {
       repository.setTrackMultiple(channel: track.channel, multiple: multiple);
     }
+    final lengthPreset = await settings.loadTrackLengthPreset(track.channel);
+    if (lengthPreset > 0) {
+      repository.setTrackLengthPreset(
+        channel: track.channel,
+        bars: lengthPreset,
+      );
+    }
     // Restore the saved lane count first so the engine allocates the added
     // lanes before they are configured below.
     final laneCount = await settings.loadLaneCount(track.channel);

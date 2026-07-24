@@ -555,3 +555,214 @@ class SetupTrackNameRow extends StatelessWidget {
     );
   }
 }
+
+/// A row picking track [channel]'s length preset (A6, D17): `0` = AUTO, or a
+/// fixed bar count. Tapping opens a menu of common presets; [onChanged]
+/// fires with the selected value. A minimal picker — the full tempo/click
+/// surface lives elsewhere (`tempo_settings_section.dart`).
+class SetupTrackLengthPresetRow extends StatelessWidget {
+  /// Creates a [SetupTrackLengthPresetRow].
+  const SetupTrackLengthPresetRow({
+    required this.rowKey,
+    required this.channel,
+    required this.bars,
+    required this.label,
+    required this.autoLabel,
+    required this.barsLabel,
+    required this.onChanged,
+    super.key,
+  });
+
+  /// The curated preset choices offered by the menu (`0` = AUTO).
+  static const List<int> presets = [0, 1, 2, 4, 8, 16, 32, 64];
+
+  final Key rowKey;
+
+  /// The track this row controls.
+  final int channel;
+
+  /// The current preset (`0` = AUTO).
+  final int bars;
+
+  /// The row's leading label (e.g. "Length preset").
+  final String label;
+
+  /// The displayed value when [bars] is `0`.
+  final String autoLabel;
+
+  /// Formats a nonzero bar count for display (e.g. "8 bars").
+  final String Function(int bars) barsLabel;
+
+  /// Called with the newly selected preset when the user picks one.
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    final valueLabel = bars <= 0 ? autoLabel : barsLabel(bars);
+    return Material(
+      color: surface.card,
+      borderRadius: BorderRadius.circular(14),
+      child: PopupMenuButton<int>(
+        key: rowKey,
+        initialValue: bars,
+        tooltip: '',
+        onSelected: onChanged,
+        itemBuilder: (context) => [
+          for (final preset in presets)
+            PopupMenuItem<int>(
+              value: preset,
+              child: Text(preset <= 0 ? autoLabel : barsLabel(preset)),
+            ),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: surface.line),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: surface.cardHigh,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: surface.line),
+                ),
+                child: Text(
+                  '${channel + 1}',
+                  style: TextStyle(
+                    color: surface.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: surface.textPrimary,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+              Text(
+                valueLabel,
+                style: TextStyle(
+                  color: surface.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.expand_more,
+                size: 18,
+                color: surface.textTertiary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A row toggling track [channel]'s One Shot flag (song-mode-spec.md §2,
+/// B5c): the track plays once and then stops instead of looping. Settable in
+/// any looper mode, but only behaviorally active in Free/Song. Mirrors
+/// [SetupTrackLengthPresetRow]'s per-track-row shape (channel badge + label),
+/// with a [Switch] trailing control instead of a value picker.
+class SetupTrackOneShotRow extends StatelessWidget {
+  /// Creates a [SetupTrackOneShotRow].
+  const SetupTrackOneShotRow({
+    required this.rowKey,
+    required this.channel,
+    required this.oneShot,
+    required this.label,
+    required this.onChanged,
+    super.key,
+  });
+
+  final Key rowKey;
+
+  /// The track this row controls.
+  final int channel;
+
+  /// The current flag value.
+  final bool oneShot;
+
+  /// The row's leading label (e.g. the track's display name).
+  final String label;
+
+  /// Called with the new flag value when the switch is toggled.
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: surface.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: surface.line),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: surface.cardHigh,
+              shape: BoxShape.circle,
+              border: Border.all(color: surface.line),
+            ),
+            child: Text(
+              '${channel + 1}',
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+          Switch(
+            key: rowKey,
+            value: oneShot,
+            onChanged: onChanged,
+            activeThumbColor: surface.onAccent,
+            activeTrackColor: surface.accent,
+            inactiveThumbColor: surface.textSecondary,
+            inactiveTrackColor: surface.cardHigh,
+            trackOutlineColor: WidgetStatePropertyAll(surface.line),
+          ),
+        ],
+      ),
+    );
+  }
+}

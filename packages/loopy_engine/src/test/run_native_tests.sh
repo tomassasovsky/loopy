@@ -27,20 +27,31 @@ EXTRA_CFLAGS="${EXTRA_CFLAGS:-}"
 STD="-std=gnu11 -I src/core -I src/midi -I src/asio -I src/miniaudio"
 
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm" ;;
+  MINGW*|MSYS*|CYGWIN*) ENGINE_LIBS="-lole32 -lwinmm -lm"; MIDI_LIBS="-lwinmm -lm" ;;
   Darwin) ENGINE_LIBS="-framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreFoundation -lpthread -lm"
-          MIDI_LIBS="-framework CoreMIDI -framework CoreFoundation" ;;
-  *) ENGINE_LIBS="-lpthread -lm -ldl"; MIDI_LIBS="-lasound -lpthread" ;;  # Linux: miniaudio dlopen()s its backends
+          MIDI_LIBS="-framework CoreMIDI -framework CoreFoundation -lm" ;;
+  *) ENGINE_LIBS="-lpthread -lm -ldl"; MIDI_LIBS="-lasound -lpthread -lm" ;;  # Linux: miniaudio dlopen()s its backends
 esac
+# MIDI_LIBS gained -lm above (C1, D15): the midi test binary now also links
+# src/core/tempo_grid.c (le_midi_clock.c's PPQN math depends on
+# le_grid_div_frames), which pulls in <math.h> (floor/llround). Darwin/MinGW
+# resolve libm implicitly via their default libs so this is redundant there
+# (harmless, kept for consistency); Linux's `ld` does NOT auto-resolve
+# transitive shared-library symbols, so omitting it there is a hard link
+# failure ("undefined reference to symbol 'floor@@GLIBC_2.2.5'") — caught by
+# CI's ubuntu-latest job, not the author's macOS run.
 
 # Glob every engine TU (the core/ TUs incl. the miniaudio backend, the platform/
 # seams, and the miniaudio impl) so this tracks the split with no edits. Pairs
 # with the core primitives. Mirrors src/CMakeLists.txt's library sources (minus
-# the MIDI TUs, which the engine test does not link).
+# the MIDI TUs, which the engine test does not link) -- EXCEPT
+# src/midi/le_midi_clock.c (C1, D15), which IS an engine dependency
+# (engine_process.c calls le_midi_clock_advance every block) despite living in
+# midi/ per the plan's file placement; keep it in sync with CMakeLists.txt.
 ENGINE_SRC="src/core/engine*.c src/core/lockfree_ring.c src/core/loop_clock.c \
   src/core/tempo_grid.c \
   src/core/audio_ring.c src/core/perf_drain.c src/core/perf_log_ring.c src/core/layer_staging_ring.c src/core/json_read.c src/core/perf_render.c src/core/plugin_disabled.c \
-  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c"
+  src/platform/engine_*.c src/miniaudio/miniaudio_impl.c src/midi/le_midi_clock.c"
 
 echo "== building engine tests =="
 # shellcheck disable=SC2086
@@ -51,7 +62,8 @@ $CC $STD $EXTRA_CFLAGS src/test/test_engine_core.c $ENGINE_SRC $ENGINE_LIBS \
 echo "== building midi tests =="
 # shellcheck disable=SC2086
 $CC $STD $EXTRA_CFLAGS src/test/test_midi_core.c src/midi/midi.c src/midi/midi_backend_linux.c \
-  src/midi/midi_backend_apple.c src/midi/midi_backend_windows.c $MIDI_LIBS \
+  src/midi/midi_backend_apple.c src/midi/midi_backend_windows.c src/midi/le_midi_clock.c \
+  src/core/tempo_grid.c $MIDI_LIBS \
   -o "$OUT/loopy_midi_tests.exe"
 "$OUT/loopy_midi_tests.exe"
 

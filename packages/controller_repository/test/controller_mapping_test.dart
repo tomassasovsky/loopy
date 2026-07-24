@@ -9,6 +9,16 @@ void main() {
       expect(LooperAction.playAll.isChannelScoped, isFalse);
       expect(LooperAction.stopAll.isChannelScoped, isFalse);
     });
+
+    test(
+      'tapTempo, toggleMetronome and cancelArm are global (D20), like '
+      'stopAll — not per-track',
+      () {
+        expect(LooperAction.tapTempo.isChannelScoped, isFalse);
+        expect(LooperAction.toggleMetronome.isChannelScoped, isFalse);
+        expect(LooperAction.cancelArm.isChannelScoped, isFalse);
+      },
+    );
   });
 
   group('ControllerMapping.resolve', () {
@@ -43,6 +53,40 @@ void main() {
       );
       expect(mapping.resolve(input), isNull);
     });
+
+    test(
+      'resolves the default tapTempo / toggleMetronome / cancelArm triggers '
+      '(D20 — id 84 restores the pre-2f0513a tapTempo slot; 85/86 are new)',
+      () {
+        const tapTempo = RawControllerInput(
+          kind: ControllerSourceKind.midiCc,
+          id: 84,
+          value: 127,
+        );
+        const toggleMetronome = RawControllerInput(
+          kind: ControllerSourceKind.midiCc,
+          id: 85,
+          value: 127,
+        );
+        const cancelArm = RawControllerInput(
+          kind: ControllerSourceKind.midiCc,
+          id: 86,
+          value: 127,
+        );
+        expect(
+          mapping.resolve(tapTempo),
+          const ControllerEvent(action: LooperAction.tapTempo),
+        );
+        expect(
+          mapping.resolve(toggleMetronome),
+          const ControllerEvent(action: LooperAction.toggleMetronome),
+        );
+        expect(
+          mapping.resolve(cancelArm),
+          const ControllerEvent(action: LooperAction.cancelArm),
+        );
+      },
+    );
   });
 
   group('ControllerMapping.merge', () {

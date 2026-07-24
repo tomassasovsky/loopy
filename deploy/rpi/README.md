@@ -24,29 +24,36 @@ keyboard or mouse.
 
 ## Install
 
-1. Build the release bundle on the Pi with **console/kiosk mode** on:
+1. Build the release bundle with **console/kiosk mode** on:
    ```bash
-   flutter build linux --release --dart-define=LOOPY_CONSOLE=true
+   flutter build linux --release --target lib/main_production.dart --dart-define=LOOPY_CONSOLE=true
    ```
    `LOOPY_CONSOLE=true` hides the on-screen tracks toolbar (the foot pedals
    drive transport/mode/clear) and tightens the layout for the fixed 16″ panel
    — see [`lib/common/console_mode.dart`](../../lib/common/console_mode.dart). Omit
    the define for a normal desktop build. (The `build-linux-arm64` CI job guards
    that this compiles for arm64.)
+
+   From a Mac (which cannot build a Linux bundle natively), run the containerized
+   arm64 build instead — it wraps the exact command above and can `rsync` the
+   result to the Pi:
+   ```bash
+   deploy/rpi/build/build-arm64-bundle.sh --deploy pi@<host>
+   ```
+   See [`build/build-arm64-bundle.sh`](build/build-arm64-bundle.sh) and
+   [`build/Dockerfile.arm64`](build/Dockerfile.arm64).
 2. Enable the labwc Wayland compositor (Pi OS default on Pi 5; confirm with
    `wlr-randr`, which must list outputs — see `docs/RUNNING_ON_RPI.md`).
-3. Copy the config:
+3. Install the kiosk (systemd unit + labwc config) with the one-command installer,
+   which sets it up for **your** user — no `pi` user required:
    ```bash
-   mkdir -p ~/.config/labwc
-   cp deploy/rpi/compositor/labwc/* ~/.config/labwc/
-   chmod +x deploy/rpi/pin-displays.sh \
-            deploy/rpi/start-kiosk.sh \
-            deploy/rpi/boot-integrity-check.sh
-   sudo cp deploy/rpi/loopy-kiosk.service /etc/systemd/system/
-   sudo systemctl enable loopy-kiosk.service
+   deploy/rpi/install-kiosk.sh
    ```
-   For power-cut resilience (read-only root + a writable data partition that the
-   boot integrity check fscks and mounts), follow
+   It substitutes your user/home/uid into the unit, copies the compositor config
+   to `~/.config/labwc/`, sets the Pi to boot to console (so the kiosk owns the
+   display), and enables the service. The boot integrity check is **opt-in** — a
+   stock single-partition SD card boots straight to the app; set `LOOPY_DATA_DEV`
+   only if you follow the read-only-root + writable-data-partition setup in
    [`overlayfs/README.md`](overlayfs/README.md).
 4. **Edit `pin-displays.sh`** for your wiring: run `wlr-randr` to get the real
    connector names (e.g. `HDMI-A-1`, `HDMI-A-2`, or `DSI-1`) and set

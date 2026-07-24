@@ -33,20 +33,43 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// readout; [renderPollInterval] paces polling
   /// [PerformanceRepository.renderProgress] after a disarm. [now] supplies
   /// the double-press-guard clock; injectable for deterministic tests.
+  ///
+  /// [currentTempoBpm] resolves the REAL tempo to stamp the `.als` export
+  /// with (`_writeDawExports` → `DawManifestReader.read`'s `tempoBpm`
+  /// argument), read fresh at each export rather than captured once — a
+  /// narrow function dependency (matching [now]/[freeSpaceBytes]'s own
+  /// pattern here) rather than this cubit taking a `LooperRepository`
+  /// dependency outright, since only this one `double` is needed. Defaults
+  /// to "unknown" (`0`), which `daw_export`'s own fallback resolves to 120
+  /// BPM — this cubit's composition root
+  /// (`lib/app/view/app.dart`) wires the live `LooperRepository`'s
+  /// `state.transport.tempoBpm` in production. This is the tempo active
+  /// *at export time*, not necessarily the exact tempo throughout an older
+  /// capture (`performance.json` does not itself persist a tempo — out of
+  /// this scope) — correct for the common case of exporting right after a
+  /// capture finalizes, since D6 locks tempo/signature while any
+  /// grid-recorded content exists.
   PerformanceRecorderCubit({
     required PerformanceRepository performance,
     Duration armedTickInterval = const Duration(milliseconds: 250),
     Duration renderPollInterval = const Duration(milliseconds: 200),
     DateTime Function() now = DateTime.now,
     Future<int?> Function(String path)? freeSpaceBytes,
+    double Function() currentTempoBpm = _unknownTempoBpm,
   }) : _performance = performance,
        _armedTickInterval = armedTickInterval,
        _renderPollInterval = renderPollInterval,
        _now = now,
        _freeSpaceBytes = freeSpaceBytes ?? _dfFreeSpaceBytes,
+       _currentTempoBpm = currentTempoBpm,
        super(const PerformanceRecorderIdle()) {
     _statusSubscription = _performance.captureStatus.listen(_onStatus);
   }
+
+  /// The default `currentTempoBpm`: `0` ("unknown"), which `daw_export`
+  /// resolves to its own 120 BPM fallback — the same outcome as today, for
+  /// any caller that does not wire a real tempo source.
+  static double _unknownTempoBpm() => 0;
 
   /// Below this, [PerformanceRecorderArmed.lowDiskWarning] is set (D-FAIL).
   static const int lowDiskThresholdBytes = 500 * 1024 * 1024;
@@ -54,6 +77,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   final PerformanceRepository _performance;
   final DateTime Function() _now;
   final Future<int?> Function(String path) _freeSpaceBytes;
+  final double Function() _currentTempoBpm;
 
   /// How often [PerformanceRecorderArmed.elapsed] refreshes while armed.
   final Duration _armedTickInterval;
@@ -338,7 +362,7 @@ class PerformanceRecorderCubit extends Cubit<PerformanceRecorderState> {
   /// returning the resolved [DawTrack]s (empty when the manifest couldn't be
   /// read) for the caller to carry on [PerformanceRecorderCompleted.tracks].
   Future<List<DawTrack>> _writeDawExports(String dir) async {
-    final project = DawManifestReader.read(dir);
+    final project = DawManifestReader.read(dir, tempoBpm: _currentTempoBpm());
     if (project != null) {
       await File('$dir/project.als').writeAsBytes(buildAls(project));
     }

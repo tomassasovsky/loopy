@@ -17,16 +17,22 @@ export 'src/audio_engine.dart'
         EnginePluginHosting,
         EngineResult,
         EngineRouting,
+        LooperModeControl,
         LooperTransport,
         MasterBusControl,
         MonitorControl,
-        SessionIo;
+        SessionIo,
+        TempoControl;
 export 'src/engine_config.dart' show AudioBackend, EngineConfig;
 export 'src/engine_snapshot.dart'
     show
+        ClickMode,
         EngineSnapshot,
+        GridDivision,
         LaneSnapshot,
         LatencyState,
+        LooperMode,
+        TempoSource,
         TrackSnapshot,
         TrackState,
         kMaxInputs,

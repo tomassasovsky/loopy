@@ -938,6 +938,110 @@ class NativeAudioEngine implements AudioEngine {
     );
   }
 
+  // ---- tempo grid + click/count-in (TempoControl, A4a) ----
+
+  @override
+  EngineResult setTempo(double bpm) {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_set_tempo(_engine, bpm));
+  }
+
+  @override
+  EngineResult setTimeSignature(int num, int den) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_time_signature(_engine, num, den),
+    );
+  }
+
+  @override
+  EngineResult tapTempo() {
+    _checkAlive();
+    return EngineResult.fromCode(_bindings.le_engine_tap_tempo(_engine));
+  }
+
+  @override
+  EngineResult setSyncTempo({required bool on}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_sync_tempo(_engine, on ? 1 : 0),
+    );
+  }
+
+  @override
+  EngineResult setQuantizeDiv(GridDivision div) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_quantize_div(_engine, div.code),
+    );
+  }
+
+  @override
+  EngineResult setClickMode(ClickMode mode) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_click_mode(_engine, mode.code),
+    );
+  }
+
+  @override
+  EngineResult setClickOutput(int mask) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_click_output(_engine, mask),
+    );
+  }
+
+  @override
+  EngineResult setClickVolume(double volume) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_click_volume(_engine, volume),
+    );
+  }
+
+  @override
+  EngineResult setCountIn(int bars) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_count_in(_engine, bars),
+    );
+  }
+
+  @override
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_track_length_preset(_engine, channel, bars),
+    );
+  }
+
+  // ---- looper mode (LooperModeControl, B2a) ----
+
+  @override
+  EngineResult setLooperMode(LooperMode mode) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_looper_mode(_engine, mode.code),
+    );
+  }
+
+  @override
+  EngineResult crownPrimary({required int channel}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_crown_primary(_engine, channel),
+    );
+  }
+
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) {
+    _checkAlive();
+    return EngineResult.fromCode(
+      _bindings.le_engine_set_one_shot(_engine, channel, oneShot ? 1 : 0),
+    );
+  }
+
   @override
   EngineResult setLaneFx({
     required int channel,
@@ -1311,6 +1415,21 @@ class PumpedNativeEngine extends NativeAudioEngine {
       isPerfArmed: s.isPerfArmed,
       perfFrames: s.perfFrames,
       perfOverruns: s.perfOverruns,
+      tempoBpm: s.tempoBpm,
+      tempoSource: s.tempoSource,
+      tsNum: s.tsNum,
+      tsDen: s.tsDen,
+      syncTempo: s.syncTempo,
+      quantizeDiv: s.quantizeDiv,
+      loopBars: s.loopBars,
+      currentBeat: s.currentBeat,
+      clickMode: s.clickMode,
+      clickMask: s.clickMask,
+      clickVolume: s.clickVolume,
+      countInBars: s.countInBars,
+      countingIn: s.countingIn,
+      countInBeatsLeft: s.countInBeatsLeft,
+      looperMode: s.looperMode,
       tracks: s.tracks,
     );
   }

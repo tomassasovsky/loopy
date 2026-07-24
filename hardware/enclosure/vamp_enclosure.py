@@ -117,8 +117,13 @@ PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
 ASP1_MOUNT      = (55.0, 80.0)  # ASP-1 base-screw rectangle (W x D) -- PROVISIONAL until measured
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
-BIG_BEZEL  = (360.0, 224.0)   # 15.6" no-shell capacitive panel outline (glass edge-to-edge)
-BIG_W, BIG_H     = 342.5, 193.0   # 15.6" faceplate APERTURE -- sits ~0.8mm/side inside the 344.16 x 193.59 active area so the faceplate lip overlaps the panel edge (no light leak, no grey border); the 1080p decal behind it is cropped ~0.8mm/side W, 0.3mm/side H
+BIG_BEZEL  = (359.5, 223.75)  # 15.6" panel BODY (measured): glass 359.5x206.5 edge-to-edge + a
+                              # connector strip at the bottom extending the body to 223.75. Used for
+                              # slab clearance; note this is ~0.25mm SHORTER than the old 224 so it fits.
+BIG_W, BIG_H     = 342.5, 193.0   # 15.6" faceplate APERTURE -- ~0.8mm/side inside the 344.16 x 193.59
+                              # ACTIVE area so the faceplate lip overlaps the active edge (no light leak).
+                              # The decal (active image, 344.2x193.6) stays; the aperture reveals IT, not
+                              # the full glass -- the glass bezel (up to 359.5x206.5) hides behind the lip.
 BIG_DEPTH  = 8.0              # thin panel (3-6 mm); HDMI/USB driver board mounts flat inside
 SMALL_BEZEL = (165.0, 100.0)  # 7" module outline (APROTII: ears 164x99)
 SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
@@ -361,6 +366,49 @@ def platform_h(v):
     top at depth v (FOOTPLATE_PROUD: 0 = flush, <0 = slightly recessed)."""
     return lid_top_z(v) + FOOTPLATE_PROUD - ASP1_H
 
+# ---------------------------------------------------------------------------
+# FACEPLATE SUPPORT POSTS  (base-anchored props -- issue #292)
+# ---------------------------------------------------------------------------
+# The shop's STD aluminium is soft 1050 (yield ~105 vs 193 MPa for 5052). The
+# faceplate's own perimeter folds already stiffen its edges (~70x at a fold line),
+# so the pedal band (close to the front lip) is fine. The ONE zone the perimeter
+# folds do NOT reach is the interior just in front of the big 16in aperture: bare
+# 2 mm 1050 there dents at only ~11 kg (issue #292). Rather than a rib on the
+# VISIBLE top face, TWO vertical posts rise from the base floor to just under that
+# zone -- load runs faceplate -> post -> base -> floor. The posts anchor to the
+# BASE only; the faceplate bears on their felt caps, so the lid still lifts off and
+# NOTHING shows on the top face. Cut+bend only.
+POST_V     = 137.0                 # web depth: COMPACT post pulled forward of the 15.6in body (front ~v142
+                                   # in the manufacturing doc) -- pad+foot fit the pedals(v113)->body band
+POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
+                                   # clears the LED slots; still under the 16in aperture, clear of the vent
+POST_PW    = 40.0                  # post width (u) -- lateral stability
+POST_PAD   = 20.0                  # top pad length (v) -- COMPACT; bears on the faceplate underside
+POST_FOOTL = 20.0                  # foot flange length (v) -- COMPACT; bolts to the base floor
+POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) felt/foam cap on the
+                                   # pad compresses into this ~1 mm when the lid seats -> preloaded,
+                                   # firm, rattle-free contact without jacking the lid.
+POST_TILT  = SLOPE_ANGLE           # pad tilt (deg) so it beds FLUSH on the sloped faceplate underside
+POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
+# The shell is soft 1050 aluminium, but the posts are made in STEEL 1.6 mm: ~3x stiffer
+# (E 200 vs 69 GPa), tougher, and only ~+60 g for the pair -- rigidity where it costs no
+# weight (issue #292). Felt cap isolates the steel pad from the soft-Al faceplate.
+POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), NOT the shell's 2.0 Al
+# foot + pad both extend FORWARD of the web (a C, all in the clear strip in front of the
+# aperture); nothing sits under the display.
+# web height: foot rests ON the base bottom plate (top at z=T, not z=0), pad ~POST_FELT
+# below the faceplate underside. The formula (floor plate T + foot POST_T + felt gap +
+# a ~1.5 mm faceplate seating drift below lid_top_z's bare slope) was calibrated against
+# "VAMP console (populated)" (the MANUFACTURING source of truth) at POST_V=158, giving
+# web 40.9 mm -> foot on the floor, flush pad, 1.01 mm felt gap, no base interference.
+# POST_V has since moved to 137 (post pulled forward, issue #296), which changes the
+# computed web height to ~36.3 mm -- NOT yet re-checked against that doc at this new
+# position; re-verify there before fabrication.
+POST_FACEDRIFT = 1.5
+POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT
+_POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
+_POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
+
 def faceplate_holes():
     """All faceplate features. Pedal slots have NO mounting holes (the pedals
     stand on internal welded platforms). u=player L->R, v=front->rear."""
@@ -415,6 +463,8 @@ def faceplate_holes():
     # The lid bolts to the body through its DOWN-TURNED SKIRT FLANGES (front lip +
     # sides + rear), NOT through this top face -- those screw holes live on the
     # flanges, added in dxf_faceplate / the render. So nothing more on the top here.
+    # NOTE: the faceplate is reinforced by base-anchored SUPPORT POSTS (issue #292)
+    # that bear on the underside -- they add NO holes here, keeping the top face clean.
     return cuts, engr
 
 def rear_holes():
@@ -534,6 +584,38 @@ def _check():
     for ref, b in boxes:
         assert b[0] >= 8 and b[2] <= FP_W - 8 and b[1] >= 8 and b[3] <= FP_V - 8, \
             f"BOUNDS: {ref} outside the faceplate usable area"
+
+    # 2b. support posts (issue #292): bear on the panel JUST in front of the 16in
+    # aperture (v<178), under the aperture width, tall enough to reach the underside.
+    _aperture_edge_v = SCREEN_TOP_V - BIG_H
+    assert POST_V < _aperture_edge_v, \
+        f"POST_V {POST_V:.0f} not in front of the aperture edge ({_aperture_edge_v:.0f})"
+    assert POST_H > 10.0, f"POST height {POST_H:.1f} mm too short at v={POST_V:.0f}"
+    s16 = byref["SCREEN_16IN"]
+    for u in POST_U:
+        assert s16["u"] <= u <= s16["u"] + s16["w"], \
+            f"post u={u:.0f} not under the 16in aperture ({s16['u']:.0f}..{s16['u']+s16['w']:.0f})"
+    # COMPACT post sits in the band between the front pedals and the 15.6in BODY, and in the
+    # TRACK LED-slot GAPS (in u) so the pad also clears the slots.
+    assert POST_V - POST_PAD > PEDAL_ROW1_V + FSW_SLOT_D/2.0, \
+        f"POST pad reaches back over the front pedals (v{POST_V-POST_PAD:.0f} vs {PEDAL_ROW1_V+FSW_SLOT_D/2:.0f})"
+    body_front = SCREEN_TOP_V - BIG_BEZEL[1]   # 15.6in body extends forward to here
+    assert POST_V < body_front, \
+        f"POST web v={POST_V:.0f} not clear of the 15.6in body front (v={body_front:.0f})"
+    # posts in the LED-slot gaps: no TRACK LED slot overlaps a post's pad (u +/- POST_PW/2)
+    led = [_bbox(c) for c in cuts if c.get("ref","").endswith("_LEDSLOT")]
+    for u in POST_U:
+        for lb in led:
+            assert not (lb[0] < u+POST_PW/2 and u-POST_PW/2 < lb[2]), \
+                f"POST at u={u:.0f} overlaps an LED slot (u {lb[0]:.0f}..{lb[2]:.0f}) -- move to a gap"
+    # post feet on the base must clear the intake vent (forward of the web)
+    vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T) if c.get("kind") == "rect"]
+    vu0 = min(b[0] for b in vent_bb); vu1 = max(b[2] for b in vent_bb)
+    vv0 = min(b[1] for b in vent_bb); vv1 = max(b[3] for b in vent_bb)
+    for u in POST_U:
+        for du in (-POST_BOLT_DU, POST_BOLT_DU):
+            assert not (vu0 <= u+du <= vu1 and vv0-3 <= _POST_FOOT_VP <= vv1+3), \
+                f"POST foot ({u+du:.0f},{_POST_FOOT_VP:.0f}) collides with the intake vent"
 
     # 3. platform head-room for BOTH rows: foot-plate flush+proud at each depth
     for v in (PEDAL_ROW1_V, PEDAL_ROW2_V):
@@ -893,6 +975,11 @@ def dxf_base(path):
         for y in (45, BD-45):
             _circle(msp, x, y, D_FOOT)
     _emit(msp, platform_foot_holes())              # M3 holes for the 10 pedal-platform feet
+    for u in POST_U:                               # 2 base-anchored support-post feet (issue #292)
+        for du in (-POST_BOLT_DU, POST_BOLT_DU):   # foot forward of the web, clear of vent + display
+            _circle(msp, u+du, _POST_FOOT_VP, D_M4)
+    _text(msp, POST_U[0]-24, _POST_FOOT_VP + 8, 5,
+          "SUPPORT POST feet x2 (M4; issue #292)", "NOTE")
 
     # ---- front wall: lid front-lip screws | rear wall: I/O + transition PEM --------
     for u in FRONT_SCREW_U:
@@ -956,6 +1043,30 @@ def dxf_screen_bracket(path):
         _circle(msp, x, -bf/2.0, PEM_M4)
         _circle(msp, x, bh/2.0, D_M4)
     _text(msp, 5, bh+6, 6, "VAMP SCREEN BRACKET  2.0mm  x4 (16in) + x4 (7in)", "NOTE")
+    doc.saveas(path); return {}
+
+def dxf_post(path):
+    """Base-anchored faceplate support post (issue #292), x2: a folded C -- foot
+    (bolts to the base floor, M4 x2) + vertical web + top pad, foot and pad both
+    forward of the web (all in the clear strip in front of the 16in aperture, nothing
+    under the display). A felt cap on the pad bears on the faceplate underside,
+    propping the one zone the perimeter folds do not reach. Load runs to the base, not
+    the lid, so nothing shows on the top face and the lid still lifts off. The
+    pad->web fold is 90 + POST_TILT deg so the pad beds FLUSH on the sloped underside;
+    the foot->web fold is 90. Bend deduction PROVISIONAL (nominal segments)."""
+    doc = _doc(); msp = doc.modelspace()
+    pw, pad, web, foot = POST_PW, POST_PAD, POST_H, POST_FOOTL
+    Wd = pad + web + foot
+    _poly(msp, [(0, 0), (pw, 0), (pw, Wd), (0, Wd)], "CUT")
+    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web (fold 90 + tilt)
+    _poly(msp, [(0, pad+web), (pw, pad+web)], "BEND", closed=False)   # web -> foot (fold 90)
+    for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot
+        _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
+    _text(msp, 5, Wd+6, 9,
+          f"VAMP FACEPLATE SUPPORT POST  {POST_T:.1f}mm COLD-ROLLED STEEL (not the Al shell)  x2  "
+          f"C-fold (pad {pad:.0f} / web {web:.0f} / foot {foot:.0f} mm); pad fold {90+POST_TILT:.1f}deg "
+          f"(beds flush on the {POST_TILT:.1f}deg slope), foot fold 90deg; foot bolts to the base floor "
+          f"(M4 x2), felt cap on the pad; deduction PROVISIONAL", "NOTE")
     doc.saveas(path); return {}
 
 # ===========================================================================
@@ -1100,6 +1211,28 @@ def build_ring_diffuser_step():
     step = os.path.join(OUT, "vamp_ring_diffuser.step")
     cq.exporters.export(ins.val(), step)
     cq.exporters.export(ins.val(), os.path.join(OUT, "vamp_ring_diffuser.stl"))
+    return step
+
+
+def build_post_step():
+    """Folded 3D of the base-anchored support post (issue #292, x2): foot flat on
+    the floor, vertical web, top pad. X=u (width POST_PW), Y=v, Z=up."""
+    import cadquery as cq
+    pw, pad, web, foot, t = POST_PW, POST_PAD, POST_H, POST_FOOTL, POST_T
+    # C-fold, foot + pad both FORWARD of the web. Local X=u(width), Y=v(depth), Z=up.
+    # foot on the floor (Y 0..foot), web vertical at its back edge (Y=foot), pad hinged
+    # at the web top and TILTED down-forward by POST_TILT to bed on the sloped underside.
+    foot_p = cq.Workplane("XY").box(pw, foot, t, centered=False)                          # floor, Y 0..foot
+    web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
+    pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
+              .translate((0, foot - pad, web))                                            # flat at the top, forward
+              .rotate((0, foot, web), (1, foot, web), POST_TILT))                         # tilt to the slope (free end drops toward the FRONT to bed flush; verified against the rotation's actual sign, not just its label)
+    body = foot_p.union(web_p).union(pad_p)
+    for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
+        body = body.cut(cq.Workplane("XY").cylinder(
+            2*t, D_M4/2.0, centered=(True, True, False)).translate((pw/2.0+du, foot/2.0, 0)))
+    step = os.path.join(OUT, "vamp_post.step")
+    cq.exporters.export(body.val(), step)
     return step
 
 
@@ -1409,6 +1542,7 @@ DXF_PARTS = [
     ("vamp_corner_bracket_rear",  lambda p: dxf_corner_bracket(p, CORNER_HT, CORNER_ZR_WALL, CORNER_ZR_SIDE, "REAR x2")),
     ("vamp_rear_panel_pi",    lambda p: dxf_rear_panel(p, "pi")),    # swappable rear I/O
     ("vamp_rear_panel_nopi",  lambda p: dxf_rear_panel(p, "nopi")),
+    ("vamp_post",             dxf_post),  # base-anchored faceplate support post x2 (issue #292)
 ]
 NO_PDF = set()   # every sheet part ships with a PDF drawing
 
@@ -1433,7 +1567,8 @@ def build_quote_packages():
     pack("vamp_sheetmetal.zip", sheet, (".dxf", ".pdf"))
     pack("vamp_sheetmetal_step.zip",
          ["vamp_assembly", "vamp_base", "vamp_faceplate", "vamp_screen_bracket",
-          "vamp_corner_bracket_rear", "vamp_rear_panel_pi", "vamp_ring_disc"],
+          "vamp_corner_bracket_rear", "vamp_rear_panel_pi", "vamp_ring_disc",
+          "vamp_post"],
          (".step",))
     pack("vamp_3dprint.zip",
          ["vamp_platform_front", "vamp_platform_mid",
@@ -1468,6 +1603,8 @@ def main(argv):
             print("\nLED diffuser insert (3D print, x6): out/" + os.path.basename(d) + " (+ .stl)")
             r = build_ring_diffuser_step()
             print("Ring diffuser insert (3D print, x1): out/" + os.path.basename(r) + " (+ .stl)")
+            s = build_post_step()
+            print("Faceplate support post (base-anchored, x2): out/" + os.path.basename(s))
             for pp in build_platform_steps():
                 print("Printed platform: out/" + os.path.basename(pp) + " (+ .stl)")
             p = build_step()

@@ -290,6 +290,36 @@ class FakePerformanceEngine implements AudioEngine {
   @override
   EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
   @override
+  EngineResult setTempo(double bpm) => EngineResult.ok;
+  @override
+  EngineResult setTimeSignature(int num, int den) => EngineResult.ok;
+  @override
+  EngineResult tapTempo() => EngineResult.ok;
+  @override
+  EngineResult setSyncTempo({required bool on}) => EngineResult.ok;
+  @override
+  EngineResult setQuantizeDiv(GridDivision div) => EngineResult.ok;
+  @override
+  EngineResult setClickMode(ClickMode mode) => EngineResult.ok;
+  @override
+  EngineResult setClickOutput(int mask) => EngineResult.ok;
+  @override
+  EngineResult setClickVolume(double volume) => EngineResult.ok;
+  @override
+  EngineResult setCountIn(int bars) => EngineResult.ok;
+  @override
+  EngineResult setTrackLengthPreset({
+    required int channel,
+    required int bars,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
+  @override
+  EngineResult crownPrimary({required int channel}) => EngineResult.ok;
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) =>
+      EngineResult.ok;
+  @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;
   @override

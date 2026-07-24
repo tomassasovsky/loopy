@@ -66,6 +66,185 @@ enum TrackState {
   };
 }
 
+/// Where the current tempo came from (D7 precedence:
+/// `external > (manual | tapped, last writer wins) > derived`).
+///
+/// Mirrors the native `le_tempo_source` enum. [external] is reserved for the
+/// Phase E MIDI-clock follower and unused by anything in this slice.
+enum TempoSource {
+  /// No tempo has ever been set; [EngineSnapshot.tempoBpm] reads `0`.
+  none,
+
+  /// Set via `TempoControl.setTempo` (last writer wins against [tapped]).
+  manual,
+
+  /// Set via `TempoControl.tapTempo` (last writer wins against [manual]).
+  tapped,
+
+  /// Derived from a defining loop finalized with loop↔tempo sync on (D7).
+  /// Survives clearing the loop that produced it — only an explicit reset
+  /// returns the source to [none].
+  derived,
+
+  /// Reserved: MIDI clock receive (Phase E). Unused here.
+  external;
+
+  /// Maps a native `le_tempo_source` integer to a [TempoSource]. Unknown
+  /// values map to [TempoSource.none].
+  static TempoSource fromCode(int code) => switch (code) {
+    0 => TempoSource.none,
+    1 => TempoSource.manual,
+    2 => TempoSource.tapped,
+    3 => TempoSource.derived,
+    4 => TempoSource.external,
+    _ => TempoSource.none,
+  };
+}
+
+/// Musical quantization / click granularity.
+///
+/// Mirrors the native `le_grid_div` enum (`tempo_grid.h`). The note values
+/// are ABSOLUTE — a [quarter] is a quarter note regardless of the current
+/// time signature, since the grid's beat unit is the signature's denominator
+/// note (see `tempo_grid.h`'s header doc).
+enum GridDivision {
+  /// No quantization grid (default).
+  off,
+
+  /// One bar.
+  bar,
+
+  /// A half note.
+  half,
+
+  /// A quarter note.
+  quarter,
+
+  /// An eighth note.
+  eighth,
+
+  /// A sixteenth note.
+  sixteenth;
+
+  /// The native `le_grid_div` integer for this division.
+  int get code => switch (this) {
+    GridDivision.off => 0,
+    GridDivision.bar => 1,
+    GridDivision.half => 2,
+    GridDivision.quarter => 3,
+    GridDivision.eighth => 4,
+    GridDivision.sixteenth => 5,
+  };
+
+  /// Maps a native `le_grid_div` integer to a [GridDivision]. Unknown values
+  /// map to [GridDivision.off].
+  static GridDivision fromCode(int code) => switch (code) {
+    0 => GridDivision.off,
+    1 => GridDivision.bar,
+    2 => GridDivision.half,
+    3 => GridDivision.quarter,
+    4 => GridDivision.eighth,
+    5 => GridDivision.sixteenth,
+    _ => GridDivision.off,
+  };
+}
+
+/// Click (metronome) audibility mode — a 4-value mode (Sheeran manual
+/// §5.9.1) that gates WHEN the click voice sounds; WHERE it sounds is the
+/// click output mask (`TempoControl.setClickOutput`, default no outputs).
+///
+/// Mirrors the native `le_click_mode` enum.
+enum ClickMode {
+  /// Never audible (count-ins still run, silently).
+  off,
+
+  /// Audible while any track records or overdubs.
+  rec,
+
+  /// Audible only during the DEFINING first-layer recording (including its
+  /// count-in).
+  recFirst,
+
+  /// Audible whenever the transport plays or records.
+  playRec;
+
+  /// The native `le_click_mode` integer for this mode.
+  int get code => switch (this) {
+    ClickMode.off => 0,
+    ClickMode.rec => 1,
+    ClickMode.recFirst => 2,
+    ClickMode.playRec => 3,
+  };
+
+  /// Maps a native `le_click_mode` integer to a [ClickMode]. Unknown values
+  /// map to [ClickMode.off].
+  static ClickMode fromCode(int code) => switch (code) {
+    0 => ClickMode.off,
+    1 => ClickMode.rec,
+    2 => ClickMode.recFirst,
+    3 => ClickMode.playRec,
+    _ => ClickMode.off,
+  };
+}
+
+/// The five architectural looper modes (B2a, D4/D10 —
+/// `2026-07-22-feat-tempo-aware-looper-modes-plan.md`).
+///
+/// [multi] is today's behavior (independent per-track loops) and stays the
+/// default. The other four values do not have their SEMANTICS implemented
+/// yet — Sync's primary-track sync + divisions, Song's section sequencing,
+/// Band's primary + quantized sections, and Free's per-track independent
+/// clocks all land in later parts (B2b onward). This part is only the field
+/// plus the D4 content-lock gate that guards switching it: the engine
+/// silently rejects `LooperModeControl.setLooperMode` while any track has
+/// content, and its audio path stays the [multi] behavior regardless of
+/// which value is published.
+///
+/// This is a DIFFERENT axis from `InteractionMode` (record/mute — what a
+/// track press does): the two names never coexist (D10) and must not be
+/// confused with each other.
+///
+/// Mirrors the native `le_looper_mode` enum.
+enum LooperMode {
+  /// Independent per-track loops — today's behavior, and the default.
+  multi,
+
+  /// Primary-track ("crown") sync with multiples and divisions. Semantics
+  /// land in part B3; unimplemented here.
+  sync,
+
+  /// Section sequencing. Semantics land in part B4; unimplemented here.
+  song,
+
+  /// Primary track plus independently start/stoppable, quantized section
+  /// tracks. Semantics land in part B3; unimplemented here.
+  band,
+
+  /// Independent per-track clocks. Semantics land in part B2b;
+  /// unimplemented here.
+  free;
+
+  /// The native `le_looper_mode` integer for this mode.
+  int get code => switch (this) {
+    LooperMode.multi => 0,
+    LooperMode.sync => 1,
+    LooperMode.song => 2,
+    LooperMode.band => 3,
+    LooperMode.free => 4,
+  };
+
+  /// Maps a native `le_looper_mode` integer to a [LooperMode]. Unknown
+  /// values map to [LooperMode.multi].
+  static LooperMode fromCode(int code) => switch (code) {
+    0 => LooperMode.multi,
+    1 => LooperMode.sync,
+    2 => LooperMode.song,
+    3 => LooperMode.band,
+    4 => LooperMode.free,
+    _ => LooperMode.multi,
+  };
+}
+
 /// An immutable per-lane projection of the native `le_lane_snapshot`.
 ///
 /// A lane is a track's fundamental recordable unit: it records one hardware
@@ -175,6 +354,8 @@ class TrackSnapshot {
     this.outputMask = 0x3,
     this.layerInFlight = false,
     this.pending = false,
+    this.lengthPresetBars = 0,
+    this.oneShot = false,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -194,6 +375,8 @@ class TrackSnapshot {
       outputMask = 0x3,
       layerInFlight = false,
       pending = false,
+      lengthPresetBars = 0,
+      oneShot = false,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -219,6 +402,8 @@ class TrackSnapshot {
     outputMask: native.output_mask,
     layerInFlight: native.layer_in_flight != 0,
     pending: native.pending != 0,
+    lengthPresetBars: native.length_preset_bars,
+    oneShot: native.one_shot != 0,
     lanes: lanes,
   );
 
@@ -257,6 +442,21 @@ class TrackSnapshot {
 
   /// Whether a quantized/signal-triggered record arm is waiting to fire.
   final bool pending;
+
+  /// The DEFINING-recording length preset (A6, D17): `0` = AUTO, `1..64` =
+  /// fixed N bars. Inert on a track that already has content; applies to the
+  /// next defining recording only. See `TempoControl.setTrackLengthPreset`.
+  final int lengthPresetBars;
+
+  /// One Shot (song-mode-spec.md §2, B4/B5c): when `true`, this track plays
+  /// once and then stops instead of looping. Settable in any looper mode via
+  /// `LooperModeControl.setOneShot`, but only behaviorally active in
+  /// Free/Song. A per-track SETTING, not content — survives a clear/
+  /// undo-to-empty and a mode switch, but resets to `false` on a fresh
+  /// (re)start of the engine (unlike [lengthPresetBars]'s live behavior,
+  /// which persists — see `LooperRepository`'s re-apply cache for the
+  /// Dart-side mirror of this reset).
+  final bool oneShot;
 
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
@@ -300,6 +500,8 @@ class TrackSnapshot {
           outputMask == other.outputMask &&
           layerInFlight == other.layerInFlight &&
           pending == other.pending &&
+          lengthPresetBars == other.lengthPresetBars &&
+          oneShot == other.oneShot &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -317,6 +519,8 @@ class TrackSnapshot {
     outputMask,
     layerInFlight,
     pending,
+    lengthPresetBars,
+    oneShot,
     Object.hashAll(lanes),
   );
 }
@@ -353,6 +557,22 @@ class EngineSnapshot {
     this.isPerfArmed = false,
     this.perfFrames = 0,
     this.perfOverruns = 0,
+    this.tempoBpm = 0,
+    this.tempoSource = TempoSource.none,
+    this.tsNum = 4,
+    this.tsDen = 4,
+    this.syncTempo = true,
+    this.quantizeDiv = GridDivision.off,
+    this.loopBars = 0,
+    this.currentBeat = 0,
+    this.clickMode = ClickMode.off,
+    this.clickMask = 0,
+    this.clickVolume = 1,
+    this.countInBars = 0,
+    this.countingIn = false,
+    this.countInBeatsLeft = 0,
+    this.looperMode = LooperMode.multi,
+    this.primaryTrack = -1,
     this.tracks = const [],
   });
 
@@ -382,6 +602,22 @@ class EngineSnapshot {
       isPerfArmed = false,
       perfFrames = 0,
       perfOverruns = 0,
+      tempoBpm = 0,
+      tempoSource = TempoSource.none,
+      tsNum = 4,
+      tsDen = 4,
+      syncTempo = true,
+      quantizeDiv = GridDivision.off,
+      loopBars = 0,
+      currentBeat = 0,
+      clickMode = ClickMode.off,
+      clickMask = 0,
+      clickVolume = 1,
+      countInBars = 0,
+      countingIn = false,
+      countInBeatsLeft = 0,
+      looperMode = LooperMode.multi,
+      primaryTrack = -1,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -417,6 +653,22 @@ class EngineSnapshot {
     isPerfArmed: native.perf_armed != 0,
     perfFrames: native.perf_frames,
     perfOverruns: native.perf_overruns,
+    tempoBpm: native.tempo_bpm,
+    tempoSource: TempoSource.fromCode(native.tempo_source),
+    tsNum: native.ts_num,
+    tsDen: native.ts_den,
+    syncTempo: native.sync_tempo != 0,
+    quantizeDiv: GridDivision.fromCode(native.quantize_div),
+    loopBars: native.loop_bars,
+    currentBeat: native.current_beat,
+    clickMode: ClickMode.fromCode(native.click_mode),
+    clickMask: native.click_mask,
+    clickVolume: native.click_volume,
+    countInBars: native.count_in_bars,
+    countingIn: native.counting_in != 0,
+    countInBeatsLeft: native.count_in_beats_left,
+    looperMode: LooperMode.fromCode(native.looper_mode),
+    primaryTrack: native.primary_track,
     tracks: tracks,
   );
 
@@ -521,6 +773,79 @@ class EngineSnapshot {
   /// `AudioEngine.perfArm`. `0` when never armed or nothing has overflowed.
   final int perfOverruns;
 
+  // ---- tempo grid (A1) ----
+
+  /// Denominator-note beats per minute; `0` when [tempoSource] is
+  /// [TempoSource.none] (no tempo ever set).
+  final double tempoBpm;
+
+  /// Where [tempoBpm] came from (D7 precedence).
+  final TempoSource tempoSource;
+
+  /// Time-signature numerator (default `4`).
+  final int tsNum;
+
+  /// Time-signature denominator, `4` or `8` (default `4`).
+  final int tsDen;
+
+  /// Whether loop↔grid sync is on (default `true`): finalizing the DEFINING
+  /// loop establishes the loop↔grid relationship (bar count / tempo
+  /// derivation — see `TempoControl.setSyncTempo`).
+  final bool syncTempo;
+
+  /// Musical quantization granularity (default [GridDivision.off]).
+  final GridDivision quantizeDiv;
+
+  /// Whole bars in the master loop, or `0` when no grid relationship exists
+  /// (sync off, no loop, or the loop predates any grid). The loop's audio
+  /// length is never altered by the grid — this is a derived count.
+  final int loopBars;
+
+  /// Beat index (`0..tsNum-1`) within the bar: loop-driven, or driven by the
+  /// count-in / free-running click; `0` when idle.
+  final int currentBeat;
+
+  // ---- click + count-in (A2) ----
+
+  /// Click audibility mode (default [ClickMode.off]).
+  final ClickMode clickMode;
+
+  /// Bitmask of hardware output channels the click sounds on (bit c => out
+  /// c). Default `0`: no outputs until explicitly routed.
+  final int clickMask;
+
+  /// Click volume in `0..LE_MAX_GAIN` (default `1`) — the click's only gain
+  /// stage; master gain and the limiter never touch it.
+  final double clickVolume;
+
+  /// Count-in length in measures; `0` = off (default).
+  final int countInBars;
+
+  /// Whether a count-in is currently running.
+  final bool countingIn;
+
+  /// Beat countdown while counting in: the number of count-in beats still to
+  /// come, INCLUSIVE of the one currently sounding (a one-bar 4/4 count-in
+  /// reads 4, 3, 2, 1, then 0 as the recording starts). `0` when idle.
+  final int countInBeatsLeft;
+
+  // ---- looper mode (B2a) ----
+
+  /// The five-mode axis (default [LooperMode.multi]). Locked (rejected,
+  /// no-op) while any track has content (D4) — see [LooperMode]'s class doc.
+  /// No semantics beyond the field exist yet for the non-multi values.
+  final LooperMode looperMode;
+
+  // ---- primary track (B3/B5c, D18) ----
+
+  /// The crowned primary track's channel index, or `-1` when none has ever
+  /// been crowned (default). Set by `LooperModeControl.crownPrimary`; only
+  /// behaviorally meaningful in Sync/Band, but the designation itself
+  /// persists across a clear/undo-to-empty and every mode switch (D18) —
+  /// there is no "un-crown" call, so this only ever moves to another
+  /// in-range channel, never back to `-1`, once first crowned.
+  final int primaryTrack;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -580,6 +905,22 @@ class EngineSnapshot {
           isPerfArmed == other.isPerfArmed &&
           perfFrames == other.perfFrames &&
           perfOverruns == other.perfOverruns &&
+          tempoBpm == other.tempoBpm &&
+          tempoSource == other.tempoSource &&
+          tsNum == other.tsNum &&
+          tsDen == other.tsDen &&
+          syncTempo == other.syncTempo &&
+          quantizeDiv == other.quantizeDiv &&
+          loopBars == other.loopBars &&
+          currentBeat == other.currentBeat &&
+          clickMode == other.clickMode &&
+          clickMask == other.clickMask &&
+          clickVolume == other.clickVolume &&
+          countInBars == other.countInBars &&
+          countingIn == other.countingIn &&
+          countInBeatsLeft == other.countInBeatsLeft &&
+          looperMode == other.looperMode &&
+          primaryTrack == other.primaryTrack &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -608,6 +949,22 @@ class EngineSnapshot {
     isPerfArmed,
     perfFrames,
     perfOverruns,
+    tempoBpm,
+    tempoSource,
+    tsNum,
+    tsDen,
+    syncTempo,
+    quantizeDiv,
+    loopBars,
+    currentBeat,
+    clickMode,
+    clickMask,
+    clickVolume,
+    countInBars,
+    countingIn,
+    countInBeatsLeft,
+    looperMode,
+    primaryTrack,
     ...tracks,
   ]);
 
