@@ -7872,6 +7872,7 @@ struct ma_device
             int wakeupfdCapture;    /* eventfd for waking up from poll() when the capture device is stopped. */
             ma_bool8 isUsingMMapPlayback;
             ma_bool8 isUsingMMapCapture;
+            ma_bool8 loopyCaptureFlushPending; /* LOOPY PATCH: one-shot flush of the startup capture backlog on the first read. */
         } alsa;
 #endif
 #ifdef MA_SUPPORT_PULSEAUDIO
@@ -28053,6 +28054,25 @@ static ma_result ma_device_start__alsa(ma_device* pDevice)
         /* Don't need to do anything for playback because it'll be started automatically when enough data has been written. */
     }
 
+    /* LOOPY PATCH: arm a one-shot capture flush for the first read (duplex/capture).
+     *
+     * Between snd_pcm_start(capture) above and the worker thread's first readi, the
+     * capture ring free-runs. During app launch that thread is heavily contended
+     * (weston/Flutter/GTK bring-up), so it can be preempted for milliseconds — long
+     * enough for the capture buffer to accumulate a large backlog or overrun
+     * outright (observed on device: capture avail_max == full buffer). When the
+     * thread finally runs it then drains that backlog in a burst of back-to-back
+     * reads/writes, which slams the playback stream off its steady phase; combined
+     * with miniaudio's stop_threshold==boundary (playback loops instead of stopping
+     * on underrun) the stream can settle a fixed offset behind the hardware and
+     * never recover — a whole-session "robotic" monitor. Flushing the accumulated
+     * backlog once, at the moment the loop actually starts consuming, makes the
+     * thread begin from a clean slate no matter how long the startup stall was, so
+     * playback auto-starts from steady real data with the thread actively feeding. */
+    if (pDevice->type == ma_device_type_capture || pDevice->type == ma_device_type_duplex) {
+        pDevice->alsa.loopyCaptureFlushPending = MA_TRUE;
+    }
+
     return MA_SUCCESS;
 }
 
@@ -28179,20 +28199,39 @@ static ma_result ma_device_wait__alsa(ma_device* pDevice, ma_snd_pcm_t* pPCM, st
          * never fires here, so it returns a stale 0 once the startup backlog is
          * drained and the stream stalls. */
         availResult = ((ma_snd_pcm_avail_proc)pDevice->pContext->alsa.snd_pcm_avail)(pPCM);
-        if (availResult != 0) {
-            /* availResult > 0: frames to read / space to write.
-             * availResult < 0: an XRUN (or similar). We deliberately do NOT
-             *   recover here — snd_pcm_recover() prepares the stream but does not
-             *   restart capture, which would leave it stuck in PREPARED. Instead
-             *   we return so ma_device_read__alsa / _write__alsa hit the error on
-             *   readi/writei and run THEIR recovery, which calls snd_pcm_start()
-             *   and correctly resumes the stream. Either way, stop waiting.
-             * We must NOT demand a full period here: on playback the buffer can be
-             * smaller than a period plus its start-threshold, so requiring a full
-             * period of free space deadlocks (never fills enough to auto-start, so
-             * never drains). snd_pcm_wait() already paces us; this is just the "is
-             * there anything to do (or an error to handle)" gate. */
+        if (availResult < 0) {
+            /* An XRUN (or similar). We deliberately do NOT recover here —
+             * snd_pcm_recover() prepares the stream but does not restart capture,
+             * which would leave it stuck in PREPARED. Instead we return so
+             * ma_device_read__alsa / _write__alsa hit the error on readi/writei and
+             * run THEIR recovery, which calls snd_pcm_start() and correctly resumes
+             * the stream. Either way, stop waiting. */
             break;
+        }
+        {
+            /* LOOPY PATCH: direction-dependent readiness threshold.
+             *
+             * CAPTURE (POLLIN): wait for a FULL period before returning, so every
+             * read consumes a clean, period-aligned 64 frames. Breaking on any
+             * avail>0 lets readi return whatever happens to have landed (1..period)
+             * depending on how the wakeup falls relative to the hardware period
+             * boundary. That phase is set at startup and, on an unlucky launch, the
+             * loop locks into split-chunk reads for the whole session — the
+             * capture->playback delay then wanders ~1 period (measured on device:
+             * playback delay oscillating ~120..226 frames) and sounds "robotic".
+             * Demanding a whole period removes the phase dependence, so reads are
+             * regular every launch. A running capture always reaches a full period
+             * within a wait cycle or two; a stalled one is caught below.
+             *
+             * PLAYBACK (POLLOUT): any space is enough — demanding a full period of
+             * FREE space deadlocks on a small buffer against the start-threshold
+             * (never fills enough to auto-start, so never drains). snd_pcm_wait()
+             * already paces us. */
+            ma_snd_pcm_sframes_t need =
+                (requiredEvent == POLLIN) ? (ma_snd_pcm_sframes_t)periodFrames : 1;
+            if (availResult >= need) {
+                break;
+            }
         }
 
         /* avail == 0. Normally the stream is just running with nothing ready yet,
@@ -28236,6 +28275,21 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
 
     if (pFramesRead != NULL) {
         *pFramesRead = 0;
+    }
+
+    /* LOOPY PATCH: one-shot flush of the startup capture backlog (see the note in
+     * ma_device_start__alsa). The capture ring free-ran from snd_pcm_start until
+     * this first read; on a contended launch that backlog can be large or overrun.
+     * snd_pcm_reset() discards it so the loop begins reading fresh, period-aligned
+     * frames instead of draining a burst that knocks the duplex phase off. Best
+     * effort: if the stream overran and reset can't run, the -EPIPE path below
+     * recovers it (which likewise starts capture empty), so either way we begin
+     * clean. Cleared unconditionally so it fires exactly once per start. */
+    if (pDevice->alsa.loopyCaptureFlushPending) {
+        pDevice->alsa.loopyCaptureFlushPending = MA_FALSE;
+        if (pDevice->pContext->alsa.snd_pcm_reset != NULL) {
+            ((ma_snd_pcm_reset_proc)pDevice->pContext->alsa.snd_pcm_reset)((ma_snd_pcm_t*)pDevice->alsa.pPCMCapture);
+        }
     }
 
     while (ma_device_get_state(pDevice) == ma_device_state_started) {
@@ -28298,6 +28352,34 @@ static ma_result ma_device_write__alsa(ma_device* pDevice, const void* pFrames, 
 
     if (pFramesWritten != NULL) {
         *pFramesWritten = 0;
+    }
+
+    /* LOOPY PATCH: self-heal a playback stream that has slipped behind the hardware.
+     *
+     * miniaudio sets the playback stop_threshold to the ring boundary so an underrun
+     * loops instead of stopping (no XRUN is raised). The downside on this duplex
+     * appliance: if the worker thread stalls even once (startup contention is the
+     * usual culprit) the app write pointer falls behind the hardware pointer and,
+     * with no XRUN to trigger recovery, stays there for the whole session — the
+     * card replays stale ring content on a fixed offset, i.e. a permanent "robotic"
+     * monitor. The signature is unambiguous: snd_pcm_avail() reports MORE than a
+     * full buffer of free space (appl_ptr is behind hw_ptr; observed 535 on a
+     * 192-frame buffer, equivalently a negative snd_pcm_delay).
+     *
+     * Detect that here and resync: drop + prepare the playback stream so it restarts
+     * empty, then let the (by now steadily-running) data loop re-prime it to the
+     * start threshold on a fresh, correct phase. One short reset instead of a
+     * session-long artifact, and it is self-correcting on any future slip too. */
+    if (pDevice->pContext->alsa.snd_pcm_avail != NULL) {
+        ma_uint32 bufFrames = pDevice->playback.internalPeriods * pDevice->playback.internalPeriodSizeInFrames;
+        ma_snd_pcm_state_t st = ((ma_snd_pcm_state_proc)pDevice->pContext->alsa.snd_pcm_state)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
+        if (st == MA_SND_PCM_STATE_RUNNING && bufFrames > 0) {
+            ma_snd_pcm_sframes_t a = ((ma_snd_pcm_avail_proc)pDevice->pContext->alsa.snd_pcm_avail)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
+            if (a > (ma_snd_pcm_sframes_t)bufFrames) {
+                ((ma_snd_pcm_drop_proc)pDevice->pContext->alsa.snd_pcm_drop)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
+                ((ma_snd_pcm_prepare_proc)pDevice->pContext->alsa.snd_pcm_prepare)((ma_snd_pcm_t*)pDevice->alsa.pPCMPlayback);
+            }
+        }
     }
 
     while (ma_device_get_state(pDevice) == ma_device_state_started) {

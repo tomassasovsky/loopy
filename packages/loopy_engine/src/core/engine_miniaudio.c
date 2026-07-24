@@ -109,6 +109,25 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   if (config->buffer_frames > 0) {
     cfg.periodSizeInFrames = (ma_uint32)config->buffer_frames;
     cfg.periods = 2;
+#if defined(__linux__)
+    /* Appliance tunable: buffer depth (period count) for the direct-ALSA duplex.
+     * miniaudio starts capture immediately but leaves playback to auto-start once
+     * start_threshold (= 2 periods) is buffered, on a buffer only `periods` deep.
+     * At tiny periods (64 frames) a 2-period buffer runs the playback write side
+     * right at the underrun edge: on an unlucky startup phase the capture->playback
+     * monitoring delay oscillates near-empty and sounds "robotic" (no XRUN — it
+     * never quite underruns). A deeper buffer gives the write side a stable cushion
+     * so writei always lands a clean full period, at the cost of a little (stable)
+     * output latency. Env-gated so it can be swept live on the device; default 2
+     * keeps the shipping desktop/JACK behaviour untouched. */
+    {
+      const char* periods_env = getenv("LOOPY_ALSA_PERIODS");
+      if (periods_env != NULL) {
+        int p = atoi(periods_env);
+        if (p >= 2 && p <= 8) cfg.periods = (ma_uint32)p;
+      }
+    }
+#endif
   }
   cfg.dataCallback = data_callback;
   cfg.notificationCallback = notification_callback;

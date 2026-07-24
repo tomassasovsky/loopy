@@ -44,4 +44,12 @@ export LOOPY_ALSA_ONLY=1
 # monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
 # rather than busy-spinning.
 export LOOPY_RT_AUDIO=1
+# ALSA duplex buffer depth (period count). The engine's startup fixes (capture
+# backlog flush + period-aligned reads + self-healing playback resync) make the
+# monitor path robust, but a 3-period buffer gives the playback write side a
+# stable cushion above the underrun edge. Validated on device: 10/10 clean cold
+# starts under a worst-case input transient at 96kHz/64 frames with periods=3
+# (~5ms), where 2 periods intermittently latched a "robotic" monitor. Retest at
+# 2 (reclaims ~1.3ms) is tracked separately; default 2 stays in the engine.
+export LOOPY_ALSA_PERIODS=3
 exec /opt/loopy/loopy "$@"
