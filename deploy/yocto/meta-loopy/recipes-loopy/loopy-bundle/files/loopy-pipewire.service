@@ -10,6 +10,13 @@ Wants=weston.service
 [Service]
 Type=simple
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+# Realtime scheduling + memory locking. Without these (systemd defaults RTPRIO=0,
+# MEMLOCK=8M) pipewire failed to create its context -> Restart=always cascade ->
+# a 414-restart crash loop that thrashed the Scarlett and blocked the app's engine
+# init (no window). Validated on-device: 0 restarts with these.
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+LimitNICE=-19
 ExecStart=/usr/bin/pipewire
 Restart=always
 RestartSec=2

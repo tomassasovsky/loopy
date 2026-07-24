@@ -18,7 +18,8 @@ SRC_URI = "file://loopy.service \
            file://loopy-pipewire.service \
            file://loopy-wireplumber.service \
            file://wireplumber/50-loopy-no-midi.conf \
-           file://wireplumber/51-scarlett-pro-audio.conf"
+           file://wireplumber/51-scarlett-pro-audio.conf \
+           file://pipewire/10-loopy-no-autospawn.conf"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -53,7 +54,8 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch \
                 ${systemd_system_unitdir}/loopy-wireplumber.service \
                 ${sysconfdir}/tmpfiles.d/loopy-runtime.conf \
                 ${sysconfdir}/wireplumber/wireplumber.conf.d/50-loopy-no-midi.conf \
-                ${sysconfdir}/wireplumber/wireplumber.conf.d/51-scarlett-pro-audio.conf"
+                ${sysconfdir}/wireplumber/wireplumber.conf.d/51-scarlett-pro-audio.conf \
+                ${sysconfdir}/pipewire/pipewire.conf.d/10-loopy-no-autospawn.conf"
 
 python do_fetch:prepend() {
     if not d.getVar('LOOPY_BUNDLE_DIR'):
@@ -92,4 +94,8 @@ do_install() {
     install -d ${D}${sysconfdir}/wireplumber/wireplumber.conf.d
     install -m 0644 ${UNPACKDIR}/wireplumber/50-loopy-no-midi.conf ${D}${sysconfdir}/wireplumber/wireplumber.conf.d/50-loopy-no-midi.conf
     install -m 0644 ${UNPACKDIR}/wireplumber/51-scarlett-pro-audio.conf ${D}${sysconfdir}/wireplumber/wireplumber.conf.d/51-scarlett-pro-audio.conf
+
+    # pipewire: stop it auto-spawning a second daemon (crash-loop fix).
+    install -d ${D}${sysconfdir}/pipewire/pipewire.conf.d
+    install -m 0644 ${UNPACKDIR}/pipewire/10-loopy-no-autospawn.conf ${D}${sysconfdir}/pipewire/pipewire.conf.d/10-loopy-no-autospawn.conf
 }
