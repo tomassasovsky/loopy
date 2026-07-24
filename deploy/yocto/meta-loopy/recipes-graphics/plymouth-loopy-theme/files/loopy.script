@@ -1,0 +1,37 @@
+# Loopy floor-console boot splash. Segno mark centred on the console's near-black
+# (#08080A) with two subtle motions: a "breathe" (slow scale in/out) and a
+# "shimmer" (gentle luminance pulse). No progress bar, no text, no Pi rainbow.
+
+Window.SetBackgroundTopColor(0.031, 0.031, 0.039);
+Window.SetBackgroundBottomColor(0.031, 0.031, 0.039);
+
+logo.image = Image("loopy-segno.png");
+logo.base_w = logo.image.GetWidth();
+logo.base_h = logo.image.GetHeight();
+screen_w = Window.GetWidth();
+screen_h = Window.GetHeight();
+logo.sprite = Sprite();
+logo.sprite.SetZ(10);
+
+tick = 0;
+fun refresh_cb() {
+    tick++;
+
+    # breathe: scale between ~0.96 and ~1.04 on a slow sine
+    scale = 1.0 + 0.04 * Math.Sin(tick * 0.045);
+    img = logo.image.Scale(logo.base_w * scale, logo.base_h * scale);
+    logo.sprite.SetImage(img);
+    logo.sprite.SetX((screen_w - img.GetWidth()) / 2);
+    logo.sprite.SetY((screen_h - img.GetHeight()) / 2);
+
+    # shimmer: luminance pulse ~0.78 .. 1.0, slightly out of phase with breathe
+    opacity = 0.89 + 0.11 * Math.Sin(tick * 0.085 + 1.2);
+    logo.sprite.SetOpacity(opacity);
+}
+Plymouth.SetRefreshFunction(refresh_cb);
+
+# Keep it clean during shutdown/reboot too.
+fun quit_cb() {
+    logo.sprite.SetOpacity(0);
+}
+Plymouth.SetQuitFunction(quit_cb);

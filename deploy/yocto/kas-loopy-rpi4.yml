@@ -64,7 +64,10 @@ local_conf_header:
     # boot (the firmware/EDID default is the TV's 4K preferred mode). weston.ini
     # uses mode=current to inherit this. Set on both ports so it holds whichever
     # one the cable is in. Validated on a 4K LG TV -> came up 1920x1080@60.
-    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1920x1080@60 video=HDMI-A-2:1920x1080@60"
+    CMDLINE:append = " console=tty3 fbcon=map:9 audit=0 quiet loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=0 video=HDMI-A-1:1920x1080@60 video=HDMI-A-2:1920x1080@60 splash plymouth.ignore-serial-consoles"
+    # Kill the Raspberry Pi firmware's rainbow test square at boot (the plymouth
+    # segno splash replaces it). `splash` above triggers plymouth despite `quiet`.
+    RPI_EXTRA_CONFIG:append = "\ndisable_splash=1"
 
   rpi-wayland: |
     # Pi 4 GPU + KMS so Mesa/Wayland/weston work. `pam` is required by systemd +

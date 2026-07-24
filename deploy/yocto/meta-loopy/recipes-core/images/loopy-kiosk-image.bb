@@ -19,7 +19,11 @@ IMAGE_INSTALL:append = " \
     pipewire-jack \
     pipewire-tools \
     wireplumber \
+    plymouth \
+    plymouth-loopy-theme \
     "
+# plymouth boot splash (segno mark, breathe + shimmer) covers the black screen from
+# power-on until weston/loopy render. plymouth-loopy-theme sets itself active.
 # PipeWire audio stack: the engine prefers JACK on Linux and runs cleanly on it
 # (tunable quantum, no ALSA-duplex reconfigure deadlock). pipewire-jack gives
 # pw-jack + the libjack replacement; pipewire-tools gives pw-metadata (the engine
