@@ -397,10 +397,13 @@ POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), N
 # foot + pad both extend FORWARD of the web (a C, all in the clear strip in front of the
 # aperture); nothing sits under the display.
 # web height: foot rests ON the base bottom plate (top at z=T, not z=0), pad ~POST_FELT
-# below the faceplate underside. CALIBRATED to "VAMP console (populated)" (the MANUFACTURING
-# source of truth): floor plate T + foot POST_T + felt gap + a ~1.5 mm faceplate seating
-# drift below lid_top_z's bare slope. Verified in that doc: web 40.9 mm -> foot on the
-# floor, flush pad, 1.01 mm felt gap, no base interference.
+# below the faceplate underside. The formula (floor plate T + foot POST_T + felt gap +
+# a ~1.5 mm faceplate seating drift below lid_top_z's bare slope) was calibrated against
+# "VAMP console (populated)" (the MANUFACTURING source of truth) at POST_V=158, giving
+# web 40.9 mm -> foot on the floor, flush pad, 1.01 mm felt gap, no base interference.
+# POST_V has since moved to 137 (post pulled forward, issue #296), which changes the
+# computed web height to ~36.3 mm -- NOT yet re-checked against that doc at this new
+# position; re-verify there before fabrication.
 POST_FACEDRIFT = 1.5
 POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
@@ -584,7 +587,9 @@ def _check():
 
     # 2b. support posts (issue #292): bear on the panel JUST in front of the 16in
     # aperture (v<178), under the aperture width, tall enough to reach the underside.
-    assert POST_V < 176.0, f"POST_V {POST_V:.0f} not in front of the aperture edge (178)"
+    _aperture_edge_v = SCREEN_TOP_V - BIG_H
+    assert POST_V < _aperture_edge_v, \
+        f"POST_V {POST_V:.0f} not in front of the aperture edge ({_aperture_edge_v:.0f})"
     assert POST_H > 10.0, f"POST height {POST_H:.1f} mm too short at v={POST_V:.0f}"
     s16 = byref["SCREEN_16IN"]
     for u in POST_U:
@@ -1047,13 +1052,13 @@ def dxf_post(path):
     under the display). A felt cap on the pad bears on the faceplate underside,
     propping the one zone the perimeter folds do not reach. Load runs to the base, not
     the lid, so nothing shows on the top face and the lid still lifts off. The
-    pad->web fold is 90 - POST_TILT deg so the pad beds FLUSH on the sloped underside;
+    pad->web fold is 90 + POST_TILT deg so the pad beds FLUSH on the sloped underside;
     the foot->web fold is 90. Bend deduction PROVISIONAL (nominal segments)."""
     doc = _doc(); msp = doc.modelspace()
     pw, pad, web, foot = POST_PW, POST_PAD, POST_H, POST_FOOTL
     Wd = pad + web + foot
     _poly(msp, [(0, 0), (pw, 0), (pw, Wd), (0, Wd)], "CUT")
-    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web (fold 90 - tilt)
+    _poly(msp, [(0, pad), (pw, pad)], "BEND", closed=False)           # pad -> web (fold 90 + tilt)
     _poly(msp, [(0, pad+web), (pw, pad+web)], "BEND", closed=False)   # web -> foot (fold 90)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                          # 2 M4 in the foot
         _circle(msp, pw/2.0 + du, pad + web + foot/2.0, D_M4)
@@ -1221,7 +1226,7 @@ def build_post_step():
     web_p  = cq.Workplane("XY").box(pw, t, web, centered=False).translate((0, foot, 0))   # vertical at Y=foot
     pad_p  = (cq.Workplane("XY").box(pw, pad, t, centered=False)
               .translate((0, foot - pad, web))                                            # flat at the top, forward
-              .rotate((0, foot, web), (1, foot, web), -POST_TILT))                        # tilt to the slope (free end drops toward the FRONT to match)
+              .rotate((0, foot, web), (1, foot, web), POST_TILT))                         # tilt to the slope (free end drops toward the FRONT to bed flush; verified against the rotation's actual sign, not just its label)
     body = foot_p.union(web_p).union(pad_p)
     for du in (-POST_BOLT_DU, POST_BOLT_DU):                                              # M4 through the foot
         body = body.cut(cq.Workplane("XY").cylinder(
