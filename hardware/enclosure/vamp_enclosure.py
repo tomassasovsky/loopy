@@ -378,11 +378,13 @@ def platform_h(v):
 # zone -- load runs faceplate -> post -> base -> floor. The posts anchor to the
 # BASE only; the faceplate bears on their felt caps, so the lid still lifts off and
 # NOTHING shows on the top face. Cut+bend only.
-POST_V     = 158.0                 # web depth: pulled forward, ~16 mm clear of the 16in aperture (v 174)
-POST_U     = [610.0, 725.0]        # two posts under the aperture (u 454..796), clear of the vent (u<=571)
+POST_V     = 137.0                 # web depth: COMPACT post pulled forward of the 15.6in body (front ~v142
+                                   # in the manufacturing doc) -- pad+foot fit the pedals(v113)->body band
+POST_U     = [625.0, 726.0]        # in the TRACK LED-slot GAPS (T2-T3 @625, T3-T4 @726) so the pad also
+                                   # clears the LED slots; still under the 16in aperture, clear of the vent
 POST_PW    = 40.0                  # post width (u) -- lateral stability
-POST_PAD   = 30.0                  # top pad length (v) -- bears on the faceplate underside
-POST_FOOTL = 35.0                  # foot flange length (v) -- bolts to the base floor
+POST_PAD   = 20.0                  # top pad length (v) -- COMPACT; bears on the faceplate underside
+POST_FOOTL = 20.0                  # foot flange length (v) -- COMPACT; bolts to the base floor
 POST_FELT  = 1.0                   # ASSEMBLED metal gap: a thicker (2-3 mm) felt/foam cap on the
                                    # pad compresses into this ~1 mm when the lid seats -> preloaded,
                                    # firm, rattle-free contact without jacking the lid.
@@ -588,11 +590,19 @@ def _check():
     for u in POST_U:
         assert s16["u"] <= u <= s16["u"] + s16["w"], \
             f"post u={u:.0f} not under the 16in aperture ({s16['u']:.0f}..{s16['u']+s16['w']:.0f})"
-    # pad bears on solid panel in front of the aperture (>=10 mm clear of its edge) and
-    # behind the front-pedal LED slots (v>=128).
-    assert 128.0 < POST_V - POST_PAD/2.0, "POST pad reaches back over the front-pedal LED slots"
-    assert POST_V < s16["v"] - 10.0, \
-        f"POST web v={POST_V:.0f} too close to the 16in aperture edge (v={s16['v']:.0f}); crowds the display"
+    # COMPACT post sits in the band between the front pedals and the 15.6in BODY, and in the
+    # TRACK LED-slot GAPS (in u) so the pad also clears the slots.
+    assert POST_V - POST_PAD > PEDAL_ROW1_V + FSW_SLOT_D/2.0, \
+        f"POST pad reaches back over the front pedals (v{POST_V-POST_PAD:.0f} vs {PEDAL_ROW1_V+FSW_SLOT_D/2:.0f})"
+    body_front = SCREEN_TOP_V - BIG_BEZEL[1]   # 15.6in body extends forward to here
+    assert POST_V < body_front, \
+        f"POST web v={POST_V:.0f} not clear of the 15.6in body front (v={body_front:.0f})"
+    # posts in the LED-slot gaps: no TRACK LED slot overlaps a post's pad (u +/- POST_PW/2)
+    led = [_bbox(c) for c in cuts if c.get("ref","").endswith("_LEDSLOT")]
+    for u in POST_U:
+        for lb in led:
+            assert not (lb[0] < u+POST_PW/2 and u-POST_PW/2 < lb[2]), \
+                f"POST at u={u:.0f} overlaps an LED slot (u {lb[0]:.0f}..{lb[2]:.0f}) -- move to a gap"
     # post feet on the base must clear the intake vent (forward of the web)
     vent_bb = [_bbox(c) for c in _bottom_vents_local(W-2*T, D-2*T) if c.get("kind") == "rect"]
     vu0 = min(b[0] for b in vent_bb); vu1 = max(b[2] for b in vent_bb)
