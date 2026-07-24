@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Loopy
+Description=Loopy floor-console boot splash (segno mark, breathe + shimmer)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/loopy
+ScriptFile=/usr/share/plymouth/themes/loopy/loopy.script
