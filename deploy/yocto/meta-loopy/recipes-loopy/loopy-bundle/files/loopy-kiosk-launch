@@ -11,4 +11,32 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
 
+# path_provider's getApplicationDocumentsDirectory shells out to `xdg-user-dir
+# DOCUMENTS` (xdg-user-dirs package). On this minimal image there is no
+# user-dirs.dirs, so without seeding one the lookup fails and the app throws
+# MissingPlatformDirectoryException on startup. Seed a default (idempotent) and
+# create the dirs so session import/export land under ~/Documents. Validated on
+# device: with the xdg-user-dir binary + this file the startup exception is gone.
+if [ ! -f "$XDG_CONFIG_HOME/user-dirs.dirs" ]; then
+  cat > "$XDG_CONFIG_HOME/user-dirs.dirs" <<'EOF'
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_MUSIC_DIR="$HOME/Documents"
+XDG_PICTURES_DIR="$HOME/Documents"
+XDG_PUBLICSHARE_DIR="$HOME/Documents"
+XDG_TEMPLATES_DIR="$HOME/Documents"
+XDG_VIDEOS_DIR="$HOME/Documents"
+EOF
+fi
+mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop"
+
+# Audio: the engine prefers the JACK backend on Linux (jack -> pulse -> alsa).
+# When pipewire-jack is installed, pw-jack points miniaudio's dlopen("libjack.so.0")
+# at PipeWire's JACK implementation so the engine runs on PipeWire (tunable quantum,
+# clean device reconfigure — the raw-ALSA path deadlocks on rate change). Fall back
+# to a direct exec (raw ALSA) when pw-jack is absent.
+if command -v pw-jack >/dev/null 2>&1; then
+  exec pw-jack /opt/loopy/loopy "$@"
+fi
 exec /opt/loopy/loopy "$@"

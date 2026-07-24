@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Loopy floor-console spike <to.sasovsky@gmail.com>
+Date: Thu, 24 Jul 2026 00:00:00 +0000
+Subject: [PATCH] drm: don't abort plane assignment on unplaceable views (RPi4)
+
+On the Raspberry Pi 4 (vc4 / V3D KMS), drm_output_find_plane_for_view()
+aborts the whole compositor the moment a Wayland or Xwayland client sets
+a pointer cursor: a view reaches the plane-candidate switch with a NULL
+framebuffer (or a non-shm cursor buffer) and trips one of the asserts in
+backend-drm/state-propose.c. The crash takes the kiosk app down on every
+mouse movement.
+
+The asserts encode "this can't happen" invariants that the vc4 cursor /
+overlay plane path violates. Turn them into graceful `continue`s: an
+incompatible view simply skips that hardware plane and falls through to
+GL renderer compositing (weston's normal fallback), so the pointer no
+longer crashes the compositor and the cursor stays visible.
+
+Upstream-Status: Inappropriate [hardware/config-specific workaround]
+
+---
+ libweston/backend-drm/state-propose.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/libweston/backend-drm/state-propose.c b/libweston/backend-drm/state-propose.c
+index 1e62e2b..d5e89cb 100644
+--- a/libweston/backend-drm/state-propose.c
++++ b/libweston/backend-drm/state-propose.c
+@@ -517,11 +517,13 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
+
+ 		switch (plane->type) {
+ 		case WDRM_PLANE_TYPE_CURSOR:
+-			assert(buffer->shm_buffer);
++			if (!buffer->shm_buffer)
++				continue;
+ 			assert(plane == output->cursor_plane);
+ 			break;
+ 		case WDRM_PLANE_TYPE_PRIMARY:
+-			assert(fb);
++			if (!fb)
++				continue;
+ 			if (plane != output->scanout_plane)
+ 				continue;
+ 			if (mode != DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY)
+@@ -530,8 +532,10 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
+ 				continue;
+ 			break;
+ 		case WDRM_PLANE_TYPE_OVERLAY:
+-			assert(fb);
+-			assert(mode != DRM_OUTPUT_PROPOSE_STATE_RENDERER_ONLY);
++			if (!fb)
++				continue;
++			if (mode == DRM_OUTPUT_PROPOSE_STATE_RENDERER_ONLY)
++				continue;
+ 			/* if the view covers the whole output, put it in the
+ 			 * scanout plane, not overlay */
+ 			if (view_matches_entire_output &&
