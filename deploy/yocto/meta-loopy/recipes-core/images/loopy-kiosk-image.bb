@@ -33,9 +33,8 @@ PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # us to PipeWire is fixed in the engine (ma_device_stop before uninit), so runtime
 # sample-rate / buffer changes work on raw ALSA. No pipewire/wireplumber packages,
 # no session daemons, no plugin clutter in the device list. Low-latency tuning is
-# system-level (performance governor + threadirqs via CMDLINE, full-CONFIG_PREEMPT
-# kernel, SCHED_FIFO audio thread + rtirq) rather than a sound server. True
-# PREEMPT_RT needs a 6.12 kernel (arm64 ARCH_SUPPORTS_RT) — tracked separately.
+# system-level (performance governor + threadirqs via CMDLINE, PREEMPT_RT kernel
+# on 6.12, SCHED_FIFO audio thread + rtirq) rather than a sound server.
 
 # Headroom for the app/session data + the kernel & modules.
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"

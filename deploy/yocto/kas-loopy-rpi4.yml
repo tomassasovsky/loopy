@@ -88,3 +88,9 @@ local_conf_header:
     # LOOPY_BUNDLE_DIR to deploy/yocto/prebuilt/bundle (staged by the build steps
     # in deploy/yocto/README.md); override here only to point elsewhere.
     IMAGE_INSTALL:append = " loopy-bundle"
+
+    # Kernel: use the 6.12 LTS instead of meta-raspberrypi's weak default (6.6, in
+    # rpi-default-versions.inc). arm64 only selects ARCH_SUPPORTS_RT from ~6.12, so
+    # CONFIG_PREEMPT_RT is selectable here (it is NOT on 6.6). The linux-raspberrypi
+    # bbappend adds the rt.cfg fragment that turns it on.
+    PREFERRED_VERSION_linux-raspberrypi = "6.12.%"
