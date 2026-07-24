@@ -221,3 +221,124 @@ and a Pi 5 are available:
       `vcgencmd get_throttled` stays `0x0`, no xrun-rate regression; record
       results here.
 - [ ] Stompable footswitch panel survives stage-abuse testing.
+
+## Pi 4B validation pass (substitute gear: SD + monitor + TV)
+
+First **on-hardware** run of the floor-console stack (PRs #86–#93) — the labwc
+kiosk, `desktop_multi_window` dual-display, the `midi_client` pedal-in +
+`pedal_repository` LED-out path, and the miniaudio→JACK audio — none of which has
+run on a real device yet. It uses the gear on hand — a **Pi 4B**, an **SD card**,
+and a **PC monitor + TV** for the two panels — to validate the **Tier 2
+GTK-on-Wayland** stack (what ships today; no Yocto), **kiosk-first**, at a
+**functional-smoke** bar.
+
+This is a **delta** against the Pi 5 bring-up checklist above, not a replacement:
+the labwc / `wlr-randr` / overscan / single-display / reboot-stability checks are
+shared. Because it runs off an SD card on the slower Pi 4 CPU, the boot-time,
+NVMe, latency, and thermal gates are **not** representative — those stay Pi-5-only.
+Executing this pass is **hardware-gated**; record outcomes in the results table at
+the end. Build the `aarch64` bundle with `deploy/rpi/build/build-arm64-bundle.sh`
+(the Mac cannot build a Linux bundle natively; see
+[`deploy/rpi/README.md`](../deploy/rpi/README.md)).
+
+### Pre-flight (resolve before boot)
+
+- **Compositor = labwc, not Wayfire.** `raspi-config` → Advanced → Wayland →
+  **labwc**. As above, `wlr-randr` must list the outputs; if it errors with
+  "compositor doesn't support wlr-output-management-unstable-v1" the image is still
+  on Wayfire and output pinning will not work.
+- **`pipewire-jack` present, and launch via `pw-jack`.** Goal 3 needs Loopy to
+  land on the **JACK** backend; the PulseAudio backend captures silence (see
+  [RUNNING_ON_LINUX.md](RUNNING_ON_LINUX.md)). Install `pipewire-jack`, and run the
+  binary under **`pw-jack`** (`pw-jack …/loopy`) — without it the engine loads the
+  real `libjack`, finds no running `jackd`, and **hangs retrying** (`Cannot connect
+  to server socket … jack server is not running`). The kiosk `autostart` already
+  wraps the launch in `pw-jack`; confirm the app selects JACK, not "Monitor of …".
+- **Sample rate must match the interface, and use "Pro Audio".** Set the card's
+  profile to **Pro Audio** (raw channels, not `analog-surround`) and pick the app
+  **sample rate to match what the device actually runs** (check with `pw-top` — both
+  the interface and `dev.loopy.loopy` nodes should show the same RATE). A mismatch
+  (e.g. app @ 96 k, device @ 48 k) makes PipeWire insert a **resampler** that adds
+  latency and xruns (climbing `ERR` in `pw-top`). Pin the CPU governor to
+  `performance` to kill DVFS jitter.
+- **Power / USB (Pi 4 specifics).** Use a **powered USB hub** for the Focusrite —
+  the Pi 4's per-port current budget is tight — and the official **5V/3A** PSU
+  (`vcgencmd get_throttled` must read `0x0`). The pedal's **LEDs need their
+  external 9V rail**: USB-MIDI carries only the LED *frames*, not power, so the LEDs
+  stay dark on USB alone even when the MIDI is correct.
+- **USB audio glitches are a Pi 4 bus-contention artifact (expected here).** The
+  Pi 4 funnels **all four USB-A ports through one shared USB2 hub**, so the audio
+  interface contends with every other USB device (wireless dongles, the USB-MIDI
+  pedal). Under contention — or at a small buffer — the kernel logs
+  `usb …: next package FIFO overflow` (see `dmesg`) and audio hiccups. Mitigations
+  that *do* help: a **larger buffer** (trade latency for stability — latency is a
+  non-goal here), and **taking devices off USB** — a powered hub adds *power* but
+  not *bandwidth*, so it does not fix this; the shipped console puts the
+  footswitches/encoder on **GPIO** (`gpio_client`), leaving USB to the interface.
+  On the **Pi 5** the redesigned USB (RP1, dedicated controllers) largely removes
+  this — another reason Pi 4B audio-timing is not representative.
+- **Connectors.** Pi 4 has 2× **micro-HDMI** → `HDMI-A-1` / `HDMI-A-2`. Set
+  `LOOPY_MAIN_OUTPUT` / `LOOPY_WAVE_OUTPUT` and the per-panel `--scale` in
+  [`deploy/rpi/pin-displays.sh`](../deploy/rpi/pin-displays.sh). On the **TV**,
+  turn **overscan** off ("Just Scan" / 1:1 in the TV's picture menu, or
+  `disable_overscan=1` in `config.txt`) or the UI edges are clipped.
+- **First-run device setup.** `LOOPY_CONSOLE` hides the transport chrome, so the
+  device pickers live in **Settings** (right-click, or press `S`). Bind: (a) the
+  **MIDI FOOT CONTROLLER** input, (b) the **PEDAL LINK** output, and (c) the
+  **audio interface as both input and output @ 512 frames**. These persist across
+  reboots (`tryAutoStartEngine` + hotplug reconnect). **Open question:** confirm
+  Settings is reachable in a console build; if it is not, do the first-run bind
+  with a **non-console** bundle (omit `--dart-define=LOOPY_CONSOLE=true` — no new
+  tooling), then switch back to the console bundle.
+
+### Goal 1 — Dual-display
+
+- **Procedure.** Boot the kiosk; the main UI should land on the monitor and the
+  waveform on the TV via `desktop_multi_window` + `pin-displays.sh`.
+- **Functional-smoke pass:** both outputs render; the mapping holds across **≥3
+  reboots**; unplugging the TV shows the single-display / waveform-failed banner
+  (not a dark half-screen).
+- **Isolate a failure:** confirm labwc is active; run the bundle by hand under a
+  manual labwc session; check that the three window plugins (`desktop_multi_window`,
+  `window_manager`, `screen_retriever`) load.
+
+### Goal 2 — USB-MIDI pedal
+
+- **Procedure.** Input arrives as **CC 80/81/82/83 on track 0**
+  (`MidiControllerSource`); LED-out runs `pedal_repository` →
+  `NativePedalTransport` → `MidiOutClient`
+  (see [MIDI_FOOT_CONTROLLER.md](MIDI_FOOT_CONTROLLER.md)).
+- **Functional-smoke pass:** the pedal is auto-selected on each boot; every switch
+  fires the correct action (**one stomp = one action**, no double-fire); the LEDs
+  track engine state; a hotplug re-attaches without an engine restart.
+- **Isolate a failure:** `aconnect -l` / `amidi -l` to confirm the OS sees the
+  device; confirm **PEDAL LINK** is bound and the **9V rail is on**; the on-screen
+  faceplate mirrors the intended LEDs, which isolates firmware from app.
+
+### Goal 3 — Focusrite audio
+
+- **Procedure.** Select the Focusrite as **both input and output @ 512 frames**.
+- **Functional-smoke pass:** the input is **heard, not silent** (proves the JACK
+  backend + port pinning); a loop records, overdubs, and plays back **xrun-free**;
+  the channels land on the real interface (not a "Monitor of …" source).
+- **Isolate a failure:** `pw-record` / `arecord` to prove capture outside Loopy;
+  verify `pipewire-jack` is installed and that Loopy selected the JACK backend.
+
+### VST3 on the Pi (documented only — no hands-on test this pass)
+
+VST3 is answered on paper, not tested here: the host cross-compiles to `aarch64`;
+the ceiling is **`aarch64`-native plugin availability**; plugin editor GUIs need
+XWayland (Tier 2 / 3a) or run GUI-less (3b); and Pi 4 headroom is tight. The full
+answer is in the brainstorm's *"VST3 plugins on the Pi"* section
+([brainstorm](brainstorm/2026-07-22-rpi4b-hardware-validation-brainstorm-doc.md)).
+A small `aarch64` plugin spike (find/compile one plugin, host it headless) is a
+**follow-up issue**, not part of this pass.
+
+### Results (fill in on hardware)
+
+| Check | Result | Notes (buffer, xruns, reboots, quirks) |
+|---|---|---|
+| Goal 1 — Dual-display (monitor + TV) | ☐ pass ☐ fail | |
+| Goal 2 — USB-MIDI pedal (in + LED out) | ☐ pass ☐ fail | |
+| Goal 3 — Focusrite audio (in + out @ 512) | ☐ pass ☐ fail | |
+| `aarch64` bundle builds from the Mac | ☐ pass ☐ fail | `deploy/rpi/build/build-arm64-bundle.sh` |
