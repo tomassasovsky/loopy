@@ -3355,6 +3355,31 @@ void main() {
     );
 
     test(
+      'ignores an out-of-range rig.primaryTrack rather than pushing an '
+      'invalid channel to the engine or poisoning the re-apply cache '
+      '(a manifest saved on a build with more physical tracks than this '
+      'engine)',
+      () async {
+        engine.nextSnapshot = clearedSnapshot(2);
+        final repo = buildRepo()..startEngine(const EngineConfig());
+        addTearDown(repo.dispose);
+
+        await repo.applySession(
+          SessionRig(
+            baseLengthFrames: 4,
+            tracks: [
+              rigTrack(0, Float32List.fromList([1, 1, 1, 1])),
+            ],
+            primaryTrack: 7,
+          ),
+          clearPollInterval: Duration.zero,
+        );
+
+        expect(engine.lastCrownedChannel, isNull);
+      },
+    );
+
+    test(
       "applies the loaded session's looper mode and crown (B5c)",
       () async {
         engine.nextSnapshot = clearedSnapshot(2);

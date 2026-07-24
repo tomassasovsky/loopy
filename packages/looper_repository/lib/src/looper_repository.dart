@@ -1129,7 +1129,11 @@ class LooperRepository {
     // `_primaryTrack = null` for why an undefined crown cannot be un-set on
     // the live engine.
     setLooperMode(rig.looperMode);
-    if (rig.primaryTrack >= 0) {
+    // Bounded to `trackCount` — same rationale as `rig.oneShotChannels` below:
+    // a manifest saved on a build with more physical tracks than this engine
+    // must not push an out-of-range channel, nor poison `_primaryTrack` with
+    // a value this engine can never actually crown.
+    if (rig.primaryTrack >= 0 && rig.primaryTrack < trackCount) {
       crownPrimary(channel: rig.primaryTrack);
     }
 
