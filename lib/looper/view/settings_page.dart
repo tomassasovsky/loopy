@@ -11,6 +11,7 @@ import 'package:loopy/looper/cubit/high_contrast_cubit.dart';
 import 'package:loopy/looper/cubit/refresh_rate_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
+import 'package:loopy/looper/view/looper_mode_section.dart';
 import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/tempo_settings_section.dart';
 import 'package:loopy/setup/setup_surface.dart';
@@ -18,7 +19,7 @@ import 'package:loopy/theme/surface_theme.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
-enum _Section { view, audio, tempo, tracks }
+enum _Section { view, audio, tempo, mode, tracks }
 
 /// The app settings page, reachable from the Tracks view via right-click or
 /// the `S` key, and from the system menu bar on macOS.
@@ -113,6 +114,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _Section.view => _viewSection(context),
     _Section.audio => _audioSection(context),
     _Section.tempo => _tempoSection(context),
+    _Section.mode => _modeSection(context),
     _Section.tracks => _tracksSection(context),
   };
 
@@ -213,6 +215,10 @@ class _SettingsPageState extends State<SettingsPage> {
     TempoSettingsSection(),
   ];
 
+  List<Widget> _modeSection(BuildContext context) => const [
+    LooperModeSection(),
+  ];
+
   List<Widget> _tracksSection(BuildContext context) {
     final l10n = context.l10n;
     final tracks = context.watch<TracksCubit>();
@@ -252,6 +258,26 @@ class _SettingsPageState extends State<SettingsPage> {
           barsLabel: l10n.lengthPresetBars,
           onChanged: (bars) => context.read<LooperBloc>().add(
             LooperTrackLengthPresetChanged(i, bars),
+          ),
+        ),
+        if (i < looperTracks.length - 1) const SizedBox(height: 8),
+      ],
+      const SizedBox(height: 28),
+      SetupGroupLabel(l10n.oneShotGroupLabel),
+      const SizedBox(height: 12),
+      Text(l10n.oneShotIntro, style: setupBody),
+      const SizedBox(height: 12),
+      for (var i = 0; i < looperTracks.length; i++) ...[
+        SetupTrackOneShotRow(
+          rowKey: Key('settings_trackOneShot_$i'),
+          channel: i,
+          oneShot: looperTracks[i].oneShot,
+          label: l10n.displayTrackName(
+            i < tracks.state.names.length ? tracks.state.names[i] : '',
+            i,
+          ),
+          onChanged: (oneShot) => context.read<LooperBloc>().add(
+            LooperOneShotToggled(i, oneShot: oneShot),
           ),
         ),
         if (i < looperTracks.length - 1) const SizedBox(height: 8),
@@ -326,6 +352,7 @@ class _SectionTab extends StatelessWidget {
       _Section.view => l10n.settingsSectionView,
       _Section.audio => l10n.settingsSectionAudio,
       _Section.tempo => l10n.settingsSectionTempo,
+      _Section.mode => l10n.settingsSectionMode,
       _Section.tracks => l10n.settingsSectionTracks,
     };
     return SizedBox(

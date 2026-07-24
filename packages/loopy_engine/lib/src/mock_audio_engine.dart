@@ -93,6 +93,13 @@ class MockAudioEngine implements AudioEngine {
   // rules; the lock gate is covered by the native C tests.
   LooperMode _looperMode = LooperMode.multi;
 
+  /// The crowned primary track (B3/B5c, D18): `-1` = none (default). Same
+  /// seeded-once persistence as [_looperMode] above — mirrors the native
+  /// engine's `a_primary_track`, which `le_engine_create` seeds once and
+  /// `configure()` never resets. There is no "un-crown" call, matching
+  /// native.
+  int _primaryTrack = -1;
+
   /// Wall-clock timestamp of the previous [tapTempo] call, `null` before the
   /// first tap or after a fresh [start]. The mock has no audio-thread frame
   /// clock, so it uses real elapsed time as the tap interval (the native
@@ -208,6 +215,7 @@ class MockAudioEngine implements AudioEngine {
       clickVolume: _clickVolume,
       countInBars: _countInBars,
       looperMode: _looperMode,
+      primaryTrack: _primaryTrack,
       tracks: [for (final track in _tracks) track.snapshot()],
     );
   }
@@ -649,6 +657,24 @@ class MockAudioEngine implements AudioEngine {
   }
 
   @override
+  EngineResult crownPrimary({required int channel}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    _primaryTrack = channel;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) {
+    final result = _requireRunning();
+    if (!result.isOk) return result;
+    if (channel < 0 || channel >= LE_MAX_TRACKS) return EngineResult.invalid;
+    _tracks[channel].oneShot = oneShot;
+    return EngineResult.ok;
+  }
+
+  @override
   EngineResult setLaneFx({
     required int channel,
     required int lane,
@@ -930,6 +956,14 @@ class _MockTrack {
   /// The DEFINING-recording length preset (A6, D17): `0` = AUTO.
   int lengthPresetBars = 0;
 
+  /// One Shot (song-mode-spec.md §2, B4/B5c): `true` = play once then stop.
+  /// Not reset on stop/start, mirroring [lengthPresetBars]'s existing
+  /// (native-inaccurate) mock treatment above — the mock is a simplified
+  /// simulation, not a byte-for-byte reimplementation of the native
+  /// engine's `configure()` reset (see `LooperModeControl.setOneShot`'s
+  /// doc).
+  bool oneShot = false;
+
   _MockLane laneAt(int lane) => _lanes[lane.clamp(0, kMaxLanes - 1)];
 
   TrackSnapshot snapshot() {
@@ -958,6 +992,7 @@ class _MockTrack {
       inputMask: inputMask,
       outputMask: lane0.outputMask,
       lengthPresetBars: lengthPresetBars,
+      oneShot: oneShot,
       lanes: lanes,
     );
   }

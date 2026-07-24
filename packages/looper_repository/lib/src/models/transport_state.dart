@@ -28,6 +28,7 @@ class TransportState extends Equatable {
     this.countingIn = false,
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
+    this.primaryTrack = -1,
   });
 
   /// Whether the audio device is open and processing.
@@ -87,6 +88,11 @@ class TransportState extends Equatable {
   /// exist yet for the non-multi values (B2a — see [LooperMode]'s class doc).
   final LooperMode looperMode;
 
+  /// The crowned primary track's channel index (Sync/Band, D18), or `-1`
+  /// when none has ever been crowned (default). See
+  /// [EngineSnapshot.primaryTrack]'s doc.
+  final int primaryTrack;
+
   /// Whether a master loop length has been established.
   bool get hasLoop => masterLengthFrames > 0;
 
@@ -114,5 +120,6 @@ class TransportState extends Equatable {
     countingIn,
     countInBeatsLeft,
     looperMode,
+    primaryTrack,
   ];
 }
