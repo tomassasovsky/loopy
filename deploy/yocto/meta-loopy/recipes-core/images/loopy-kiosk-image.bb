@@ -15,7 +15,22 @@ IMAGE_INSTALL:append = " \
     gsettings-desktop-schemas \
     seatd \
     xdg-user-dirs \
+    pipewire \
+    pipewire-jack \
+    pipewire-tools \
+    wireplumber \
     "
+# PipeWire audio stack: the engine prefers JACK on Linux and runs cleanly on it
+# (tunable quantum, no ALSA-duplex reconfigure deadlock). pipewire-jack gives
+# pw-jack + the libjack replacement; pipewire-tools gives pw-metadata (the engine
+# forces the graph quantum through it — without it the buffer selector does
+# nothing). wireplumber is the session manager. The pipewire bbappend switches
+# jack->pipewire-jack and drops the camera/video plugins. Custom root services +
+# WirePlumber drop-ins ship with loopy-bundle. Validated end-to-end on a Pi 4B.
+
+# The base image was already ~590MB and 100% full once PipeWire was added on-
+# device; give the rootfs real headroom (pipewire ~100MB + app/session data).
+IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
 # xdg-user-dirs provides the `xdg-user-dir` binary. Flutter's path_provider shells
 # out to it for getApplicationDocumentsDirectory; without it the app throws
 # MissingPlatformDirectoryException on startup. The launcher seeds a user-dirs.dirs

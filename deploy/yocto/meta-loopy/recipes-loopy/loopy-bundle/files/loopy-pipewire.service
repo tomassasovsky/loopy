@@ -1,0 +1,17 @@
+# PipeWire for the Loopy appliance. Runs as root sharing the weston user's
+# XDG_RUNTIME_DIR (/run/user/1000, created by the loopy-runtime tmpfiles rule) so
+# the pipewire-0 socket lands next to wayland-1 and the app (also there via
+# loopy.service) finds it. We run our own unit rather than the packaged
+# pipewire.service (which runs as the 'pipewire' user with a different runtime dir).
+[Unit]
+Description=PipeWire (Loopy appliance)
+After=systemd-tmpfiles-setup.service weston.service
+Wants=weston.service
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/usr/bin/pipewire
+Restart=always
+RestartSec=2
+[Install]
+WantedBy=multi-user.target

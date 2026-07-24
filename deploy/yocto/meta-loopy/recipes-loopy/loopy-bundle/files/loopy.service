@@ -7,8 +7,11 @@
 # the image — confirm on device and adjust WAYLAND_DISPLAY / XDG_RUNTIME_DIR / User.
 [Unit]
 Description=Loopy floor-console app (Wayland client under weston)
-After=weston.service
+After=weston.service loopy-wireplumber.service
 Requires=weston.service
+# Audio: order after PipeWire/WirePlumber so the launcher's pw-jack finds the
+# server. Wants (not Requires) — the app still runs (silent) if audio is down.
+Wants=loopy-wireplumber.service
 
 [Service]
 Type=simple
