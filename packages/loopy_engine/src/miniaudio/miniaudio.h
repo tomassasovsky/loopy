@@ -28131,7 +28131,21 @@ static ma_result ma_device_wait__alsa(ma_device* pDevice, ma_snd_pcm_t* pPCM, st
     if (periodFrames == 0) {
         periodFrames = 1;
     }
+    int waitTimeoutMS;
     (void)pollDescriptorCount;
+
+    /* snd_pcm_wait() timeout: roughly one period, clamped to [1, 5] ms. In the
+     * normal case snd_pcm_wait returns as soon as the device is ready and this is
+     * irrelevant, but if a driver stops signalling poll (observed right after an
+     * XRUN recovery) it is the fallback wake interval — a fixed 20 ms there makes
+     * reads lurch in 20 ms chunks and the audio sounds robotic. Period-sized keeps
+     * the fallback smooth; it also bounds stop-request latency. */
+    {
+        ma_uint32 rate = pDevice->sampleRate > 0 ? pDevice->sampleRate : 48000;
+        waitTimeoutMS = (int)((periodFrames * 1000u) / rate);
+        if (waitTimeoutMS < 1) { waitTimeoutMS = 1; }
+        if (waitTimeoutMS > 5) { waitTimeoutMS = 5; }
+    }
 
     for (;;) {
         int waitResult;
@@ -28148,7 +28162,7 @@ static ma_result ma_device_wait__alsa(ma_device* pDevice, ma_snd_pcm_t* pPCM, st
         }
 
         /* Sleep until the device is ready, or a short timeout so we re-check stop. */
-        waitResult = ((ma_snd_pcm_wait_proc)pDevice->pContext->alsa.snd_pcm_wait)(pPCM, 20);
+        waitResult = ((ma_snd_pcm_wait_proc)pDevice->pContext->alsa.snd_pcm_wait)(pPCM, waitTimeoutMS);
         if (waitResult < 0) {
             int recovered = ((ma_snd_pcm_recover_proc)pDevice->pContext->alsa.snd_pcm_recover)(pPCM, waitResult, MA_TRUE);   /* MA_TRUE = silent. */
             if (recovered < 0) {
