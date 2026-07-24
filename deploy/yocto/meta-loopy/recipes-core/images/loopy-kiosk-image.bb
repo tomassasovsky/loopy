@@ -12,13 +12,10 @@ IMAGE_INSTALL:append = " \
     alsa-lib \
     alsa-utils \
     alsa-plugins \
+    util-linux-chrt \
     gsettings-desktop-schemas \
     seatd \
     xdg-user-dirs \
-    pipewire \
-    pipewire-jack \
-    pipewire-tools \
-    wireplumber \
     plymouth \
     plymouth-loopy-theme \
     "
@@ -29,16 +26,17 @@ IMAGE_INSTALL:append = " \
 IMAGE_INSTALL:remove = "psplash psplash-raspberrypi"
 BAD_RECOMMENDATIONS += "psplash psplash-raspberrypi"
 PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
-# PipeWire audio stack: the engine prefers JACK on Linux and runs cleanly on it
-# (tunable quantum, no ALSA-duplex reconfigure deadlock). pipewire-jack gives
-# pw-jack + the libjack replacement; pipewire-tools gives pw-metadata (the engine
-# forces the graph quantum through it — without it the buffer selector does
-# nothing). wireplumber is the session manager. The pipewire bbappend switches
-# jack->pipewire-jack and drops the camera/video plugins. Custom root services +
-# WirePlumber drop-ins ship with loopy-bundle. Validated end-to-end on a Pi 4B.
+# Audio: DIRECT ALSA, no PipeWire/JACK/Pulse. This is a single-app appliance that
+# owns the sound card, so the engine drives ALSA directly (LOOPY_ALSA_ONLY, set by
+# loopy-kiosk-launch) for the lowest latency and zero IPC — the textbook mono-app
+# embedded-audio path. The ALSA-duplex reconfigure deadlock that originally pushed
+# us to PipeWire is fixed in the engine (ma_device_stop before uninit), so runtime
+# sample-rate / buffer changes work on raw ALSA. No pipewire/wireplumber packages,
+# no session daemons, no plugin clutter in the device list. Low-latency tuning is
+# system-level (performance governor + threadirqs via CMDLINE, PREEMPT_RT kernel,
+# SCHED_FIFO audio thread + rtirq) rather than a sound server.
 
-# The base image was already ~590MB and 100% full once PipeWire was added on-
-# device; give the rootfs real headroom (pipewire ~100MB + app/session data).
+# Headroom for the app/session data + the PREEMPT_RT kernel & modules.
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
 # xdg-user-dirs provides the `xdg-user-dir` binary. Flutter's path_provider shells
 # out to it for getApplicationDocumentsDirectory; without it the app throws

@@ -31,12 +31,11 @@ EOF
 fi
 mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop"
 
-# Audio: the engine prefers the JACK backend on Linux (jack -> pulse -> alsa).
-# When pipewire-jack is installed, pw-jack points miniaudio's dlopen("libjack.so.0")
-# at PipeWire's JACK implementation so the engine runs on PipeWire (tunable quantum,
-# clean device reconfigure — the raw-ALSA path deadlocks on rate change). Fall back
-# to a direct exec (raw ALSA) when pw-jack is absent.
-if command -v pw-jack >/dev/null 2>&1; then
-  exec pw-jack /opt/loopy/loopy "$@"
-fi
+# Audio: DIRECT ALSA. This appliance owns the sound card, so LOOPY_ALSA_ONLY tells
+# the engine to force miniaudio's ALSA backend (lowest latency, zero IPC) instead
+# of the desktop JACK->pulse->alsa preference. No PipeWire/JACK in the image, so no
+# pw-jack shim. Runtime rate/buffer changes are safe (the ALSA-duplex uninit
+# deadlock is fixed in the engine). The audio thread self-promotes to SCHED_FIFO;
+# that needs the RT limits on loopy.service.
+export LOOPY_ALSA_ONLY=1
 exec /opt/loopy/loopy "$@"
