@@ -16505,6 +16505,228 @@ test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time(void) {
   le_engine_destroy(e);
 }
 
+/* ---- MIDI clock send (C1, D15) --------------------------------------------
+ *
+ * Engine-level wiring: the tri-state a_clock_mode field/command, the
+ * Multi/Sync/Band-only gate (le_clock_send_gate_open), and real Start timing
+ * against a genuine count-in. The pure tick/Start/Stop decision logic itself
+ * (jitter bound, 24*beats between Starts, no double-counting) is unit-tested
+ * directly against le_midi_clock_advance in test_midi_core.c -- these tests
+ * only prove engine_process.c wires that logic to the right engine state.
+ */
+
+/* Pops up to `max` pending MIDI clock bytes (e->midi_clock_ring, C1) into
+ * `out`, returning the count popped. Direct ring access, not a public API --
+ * this test TU already includes engine_private.h for the tempo-grid section
+ * above. */
+static int32_t clock_drain(le_engine* e, uint8_t* out, int32_t max) {
+  int32_t n = 0;
+  le_command cmd;
+  while (n < max && le_ring_pop(&e->midi_clock_ring, &cmd)) {
+    out[n++] = (uint8_t)cmd.code;
+  }
+  return n;
+}
+
+static void test_clock_mode_defaults_and_persistence(void) {
+  printf("test_clock_mode_defaults_and_persistence\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  /* Grid-off-style default: OFF (0) on a fresh engine. */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_OFF);
+
+  /* Settings persist across a reconfigure, same pattern as looper_mode /
+   * primary_track: seeded once in le_engine_create, never reset by
+   * configure. */
+  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_SEND);
+
+  le_engine_configure(e, 1000, 1, 1, 20000);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_SEND); /* survived the reconfigure */
+
+  le_engine_destroy(e);
+}
+
+static void test_clock_mode_setter_validates_args(void) {
+  printf("test_clock_mode_setter_validates_args\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  /* RECEIVE is a real enum value (Phase E) but explicitly stubbed as
+   * rejected in this part -- and everything outside the enum is rejected
+   * too. Nothing is posted; the published mode stays OFF. */
+  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_RECEIVE) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_mode(e, -1) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_mode(e, 3) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_mode(e, 99) == LE_ERR_INVALID);
+  CHECK(le_engine_set_clock_mode(NULL, LE_CLOCK_SEND) == LE_ERR_INVALID);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_OFF);
+
+  /* OFF and SEND both round-trip. */
+  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_SEND);
+  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_OFF) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_OFF);
+
+  le_engine_destroy(e);
+}
+
+/* A raw LE_CMD_SET_CLOCK_MODE post (bypassing the exported wrapper's
+ * validation entirely) must still be re-validated on the audio thread --
+ * mirrors every other setter's "re-validated here" defense (LE_CMD_SET_
+ * LOOPER_MODE, LE_CMD_SET_TIME_SIGNATURE, ...). */
+static void test_clock_mode_raw_command_revalidates(void) {
+  printf("test_clock_mode_raw_command_revalidates\n");
+  le_engine* e = tg_make_engine(1000);
+  le_snapshot s;
+
+  CHECK(le_push(e, LE_CMD_SET_CLOCK_MODE, LE_CLOCK_RECEIVE, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_OFF); /* dropped, not applied */
+
+  CHECK(le_push(e, LE_CMD_SET_CLOCK_MODE, 99, 0.0f) == LE_OK);
+  tg_advance(e, 1);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.clock_mode == LE_CLOCK_OFF);
+
+  le_engine_destroy(e);
+}
+
+static void test_clock_off_emits_nothing_even_when_active(void) {
+  printf("test_clock_off_emits_nothing_even_when_active\n");
+  /* clock_mode stays at its OFF default throughout: a fully active Multi-
+   * mode transport with a tempo set produces zero clock bytes. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_engine_set_tempo(e, 120.0f);
+  tg_advance(e, 1);
+
+  tg_record_defining_loop(e, 4000);
+  tg_advance(e, 4000); /* a couple more loop cycles of playback */
+
+  uint8_t bytes[256];
+  CHECK(clock_drain(e, bytes, 256) == 0);
+
+  le_engine_destroy(e);
+}
+
+static void test_clock_silent_in_song_and_free_modes(void) {
+  printf("test_clock_silent_in_song_and_free_modes\n");
+  /* Manual-verified (D15, song-mode-spec.md): send is active ONLY in Multi/
+   * Sync/Band -- Song and Free stay silent no matter what clock_mode says. */
+  const int32_t modes[] = {LE_LOOPER_MODE_SONG, LE_LOOPER_MODE_FREE};
+  for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+    le_engine* e = tg_make_engine_cap(1000, 100000);
+    CHECK(le_engine_set_looper_mode(e, modes[i]) == LE_OK);
+    CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+    le_engine_set_tempo(e, 120.0f);
+    tg_advance(e, 1);
+
+    tg_record_defining_loop(e, 4000);
+    tg_advance(e, 4000);
+
+    uint8_t bytes[256];
+    CHECK(clock_drain(e, bytes, 256) == 0);
+
+    le_engine_destroy(e);
+  }
+}
+
+/* Records a defining loop of `len` frames on channel 0 with clock send
+ * active, then drains and returns the emitted byte sequence's length,
+ * writing it into `out` (capacity `cap`). Shared by the Multi/Sync/Band gate
+ * test below -- the three modes are expected to behave identically here
+ * (none of B3/B4's primary-relative machinery changes whether the transport
+ * itself is "active", which is all the clock gate reads). */
+static int32_t clock_record_and_drain(int32_t mode, int32_t len, uint8_t* out,
+                                      int32_t cap) {
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  CHECK(le_engine_set_looper_mode(e, mode) == LE_OK);
+  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  le_engine_set_tempo(e, 120.0f); /* 500 fpb, 1000 fp-quarter -> 41.67 fp-tick */
+  tg_advance(e, 1);
+
+  tg_record_defining_loop(e, len);
+  tg_advance(e, len); /* one more full loop of playback */
+  CHECK(le_engine_stop_track(e, 0) == LE_OK);
+  tg_advance(e, 1);
+
+  const int32_t n = clock_drain(e, out, cap);
+  le_engine_destroy(e);
+  return n;
+}
+
+static void test_clock_multi_sync_band_emit_start_ticks_stop(void) {
+  printf("test_clock_multi_sync_band_emit_start_ticks_stop\n");
+  const int32_t modes[] = {LE_LOOPER_MODE_MULTI, LE_LOOPER_MODE_SYNC,
+                           LE_LOOPER_MODE_BAND};
+  for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
+    uint8_t bytes[4096];
+    const int32_t n = clock_record_and_drain(modes[i], 4000, bytes, 4096);
+    CHECK(n >= 2); /* at least a Start and a Stop */
+    CHECK(bytes[0] == LE_MIDI_CLOCK_START);
+    CHECK(bytes[n - 1] == LE_MIDI_CLOCK_STOP);
+    /* Exactly one Start and one Stop across one continuous active run. */
+    int starts = 0, stops = 0, ticks = 0;
+    for (int32_t b = 0; b < n; ++b) {
+      if (bytes[b] == LE_MIDI_CLOCK_START) starts++;
+      else if (bytes[b] == LE_MIDI_CLOCK_STOP) stops++;
+      else if (bytes[b] == LE_MIDI_CLOCK_TICK) ticks++;
+    }
+    CHECK(starts == 1);
+    CHECK(stops == 1);
+    CHECK(ticks > 0); /* some clock ticks actually fired */
+  }
+}
+
+static void test_clock_start_not_at_count_in_start(void) {
+  printf("test_clock_start_not_at_count_in_start\n");
+  /* D15: Start is sent at the loop downbeat (end of count-in), never at
+   * count-in start. Mirrors test_length_preset_n_bars_click_on_arms_
+   * through_count_in's count-in drive pattern above. */
+  le_engine* e = tg_make_engine_cap(1000, 100000);
+  le_snapshot s;
+
+  le_engine_set_tempo(e, 120.0f); /* 500 frames/beat, 2000 frames/bar (4/4) */
+  CHECK(le_engine_set_count_in(e, 1) == LE_OK); /* 1 bar = 2000 frames */
+  CHECK(le_engine_set_clock_mode(e, LE_CLOCK_SEND) == LE_OK);
+  tg_advance(e, 1);
+
+  le_engine_record(e, 0); /* enters the count-in, not RECORDING yet */
+  tg_advance(e, 1999);
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 1);
+  CHECK(s.tracks[0].state == LE_TRACK_EMPTY);
+
+  /* Nothing on the clock ring while counting in -- no premature Start. */
+  uint8_t bytes[64];
+  CHECK(clock_drain(e, bytes, 64) == 0);
+
+  tg_advance(e, 1); /* the 2000th frame: count-in commits, recording begins */
+  le_engine_get_snapshot(e, &s);
+  CHECK(s.counting_in == 0);
+  CHECK(s.tracks[0].state == LE_TRACK_RECORDING);
+
+  /* Exactly the downbeat's Start appears now -- not before. */
+  const int32_t n = clock_drain(e, bytes, 64);
+  CHECK(n >= 1);
+  CHECK(bytes[0] == LE_MIDI_CLOCK_START);
+  for (int32_t b = 1; b < n; ++b) CHECK(bytes[b] != LE_MIDI_CLOCK_START);
+
+  le_engine_destroy(e);
+}
+
 int main(void) {
   printf("== loopy_engine_core native tests ==\n");
   test_lane_setters_reject_invalid_args();
@@ -16903,6 +17125,14 @@ int main(void) {
   test_band_section_pending_toggle_survives_immediate_record_press();
   test_band_section_toggle_ignores_subdivision_boundary();
   test_band_section_toggle_reacts_to_state_at_fire_time_not_arm_time();
+
+  test_clock_mode_defaults_and_persistence();
+  test_clock_mode_setter_validates_args();
+  test_clock_mode_raw_command_revalidates();
+  test_clock_off_emits_nothing_even_when_active();
+  test_clock_silent_in_song_and_free_modes();
+  test_clock_multi_sync_band_emit_start_ticks_stop();
+  test_clock_start_not_at_count_in_start();
 
   if (g_failures == 0) {
     printf("ALL PASSED\n");
