@@ -14,7 +14,11 @@ LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 
 SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch \
-           file://loopy-runtime.conf"
+           file://loopy-runtime.conf \
+           file://loopy-pipewire.service \
+           file://loopy-wireplumber.service \
+           file://wireplumber/50-loopy-no-midi.conf \
+           file://wireplumber/51-scarlett-pro-audio.conf"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -38,9 +42,18 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++"
 
 inherit systemd
-SYSTEMD_SERVICE:${PN} = "loopy.service"
+# Enable the app + the PipeWire/WirePlumber audio services (our own units that run
+# as root sharing /run/user/1000; see the unit files). The packaged pipewire.service
+# is left disabled via the pipewire bbappend.
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-pipewire.service loopy-wireplumber.service"
 
-FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${systemd_system_unitdir}/loopy.service ${sysconfdir}/tmpfiles.d/loopy-runtime.conf"
+FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch \
+                ${systemd_system_unitdir}/loopy.service \
+                ${systemd_system_unitdir}/loopy-pipewire.service \
+                ${systemd_system_unitdir}/loopy-wireplumber.service \
+                ${sysconfdir}/tmpfiles.d/loopy-runtime.conf \
+                ${sysconfdir}/wireplumber/wireplumber.conf.d/50-loopy-no-midi.conf \
+                ${sysconfdir}/wireplumber/wireplumber.conf.d/51-scarlett-pro-audio.conf"
 
 python do_fetch:prepend() {
     if not d.getVar('LOOPY_BUNDLE_DIR'):
@@ -66,9 +79,17 @@ do_install() {
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/loopy.service ${D}${systemd_system_unitdir}/loopy.service
+    install -m 0644 ${UNPACKDIR}/loopy-pipewire.service ${D}${systemd_system_unitdir}/loopy-pipewire.service
+    install -m 0644 ${UNPACKDIR}/loopy-wireplumber.service ${D}${systemd_system_unitdir}/loopy-wireplumber.service
 
     # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot
     # (no logind session makes it otherwise; weston crash-loops without it).
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${UNPACKDIR}/loopy-runtime.conf ${D}${sysconfdir}/tmpfiles.d/loopy-runtime.conf
+
+    # WirePlumber drop-ins: disable the crashy ALSA-MIDI monitor + default the
+    # Scarlett to the Pro Audio profile.
+    install -d ${D}${sysconfdir}/wireplumber/wireplumber.conf.d
+    install -m 0644 ${UNPACKDIR}/wireplumber/50-loopy-no-midi.conf ${D}${sysconfdir}/wireplumber/wireplumber.conf.d/50-loopy-no-midi.conf
+    install -m 0644 ${UNPACKDIR}/wireplumber/51-scarlett-pro-audio.conf ${D}${sysconfdir}/wireplumber/wireplumber.conf.d/51-scarlett-pro-audio.conf
 }
