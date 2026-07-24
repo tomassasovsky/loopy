@@ -34,6 +34,14 @@ void le_platform_before_context_init(const le_config* config);
  * selected device and clamps the published channel count. No-op elsewhere. */
 void le_platform_after_device_start(le_engine* engine, const le_config* config);
 
+/* Called after the device is opened but BEFORE it is started, while the audio
+ * worker thread exists yet is still idle. Linux promotes that thread to
+ * real-time here so it is already SCHED_FIFO when it enters the data loop —
+ * doing it after start races the worker's first (deadline-critical) reads at
+ * normal priority, overruns the capture, and the recovery leaves audible
+ * artifacts. No-op elsewhere. */
+void le_platform_after_device_open(le_engine* engine);
+
 /* Called from le_engine_stop and le_engine_destroy. Linux restores PipeWire's
  * dynamic quantum (force-quantum 0). No-op elsewhere. */
 void le_platform_on_engine_teardown(void);
@@ -46,6 +54,17 @@ void le_platform_on_engine_teardown(void);
  * channel-label source yet; PipeWire port labels are future work). All paths
  * route through the shared le_excluded_mask_from_names / le_label_is_loopback. */
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
+
+/* Platform-native device enumeration, taking precedence over the portable
+ * miniaudio (ALSA) path when it succeeds. Returns 1 if it enumerated the host's
+ * real interfaces itself — writing up to `max` entries into `out` and the count
+ * into *count — or 0 to defer to the miniaudio enumeration. `capture` selects
+ * the direction. Linux enumerates via JACK so the list is one entry per real
+ * PipeWire/JACK interface (not the ALSA plugin clutter) and each `id` is the
+ * JACK client/node name that le_jack_pin_to_device pins by; macOS/Windows return
+ * 0 (miniaudio's CoreAudio/WASAPI enumeration is already the right list). */
+int le_platform_enumerate_devices(le_device_info* out, int32_t max,
+                                  int32_t* count, int capture);
 
 /* Serializes a miniaudio device id into a printable, round-trippable token used
  * to match a user-selected device back to its native id. On the string-id
