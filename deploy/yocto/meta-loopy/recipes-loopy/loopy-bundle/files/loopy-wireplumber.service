@@ -6,6 +6,8 @@ Requires=loopy-pipewire.service
 [Service]
 Type=simple
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
 ExecStart=/usr/bin/wireplumber
 Restart=always
 RestartSec=2
