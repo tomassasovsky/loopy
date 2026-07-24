@@ -126,7 +126,8 @@ BIG_W, BIG_H     = 342.5, 193.0   # 15.6" faceplate APERTURE -- ~0.8mm/side insi
                               # the full glass -- the glass bezel (up to 359.5x206.5) hides behind the lip.
 BIG_DEPTH  = 8.0              # thin panel (3-6 mm); HDMI/USB driver board mounts flat inside
 SMALL_BEZEL = (165.0, 100.0)  # 7" module outline (APROTII: ears 164x99)
-SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
+SMALL_W, SMALL_H = 153.75, 85.5   # 7" aperture = the 153.75 x 85.5 visible (active) area; reveals it
+                              # fully (mounted from behind), no lip overlap on this screen.
 SMALL_DEPTH = 12.0           # 7" panel body 9 mm + connectors (APROTII sheet)
 
 # --- LEDs / encoder -----------------------------------------------------------
