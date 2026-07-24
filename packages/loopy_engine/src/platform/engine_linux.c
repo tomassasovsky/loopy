@@ -40,6 +40,12 @@ static void le_pipewire_force_quantum(int frames) {
 /* JACK port flags (jack/types.h). */
 #define LE_JACK_INPUT 0x1UL
 #define LE_JACK_OUTPUT 0x2UL
+#define LE_JACK_PHYSICAL 0x4UL
+/* jack_client_open option: never auto-start a JACK server for a transient probe. */
+#define LE_JACK_NO_START_SERVER 0x1
+/* Well-known JACK metadata key (jack/metadata.h) — PipeWire publishes a node's
+ * description here, giving us "Scarlett 4i4 USB" instead of the raw node id. */
+#define LE_JACK_PRETTY_NAME "http://jackaudio.org/metadata/pretty-name"
 
 /* The trailing decimal index of a port name (e.g. "…AUX10" -> 10), or -1 when it
  * has none — used to sort ports numerically rather than by registration order. */
@@ -48,32 +54,6 @@ static long le_trailing_int(const char* s) {
   size_t i = end;
   while (i > 0 && s[i - 1] >= '0' && s[i - 1] <= '9') --i;
   return i < end ? strtol(s + i, NULL, 10) : -1;
-}
-
-/* JACK port names are "<friendly device name>:<port>" (e.g.
- * "Clarett+ 8Pre Pro:capture_AUX0"), not the alsa object id we pin by. Resolve
- * the friendly name for a selected device id via our own enumeration. (The
- * enumeration runs on the default backend; on PipeWire its node description
- * matches the JACK port prefix, which is the case this targets.) */
-static void le_jack_device_name(const char* id, int capture, char* out,
-                                size_t cap) {
-  out[0] = '\0';
-  if (id == NULL || id[0] == '\0') return;
-  le_device_info* devs = (le_device_info*)calloc(64, sizeof(le_device_info));
-  if (devs == NULL) return;
-  int32_t n = 0;
-  if (enumerate_devices(devs, 64, &n, capture) != LE_OK) {
-    free(devs);
-    return;
-  }
-  for (int32_t i = 0; i < n; ++i) {
-    if (strcmp(devs[i].id, id) == 0) {
-      strncpy(out, devs[i].name, cap - 1);
-      out[cap - 1] = '\0';
-      break;
-    }
-  }
-  free(devs);
 }
 
 /* Reconnects our `count` JACK ports (ppPorts) to the selected device's ports
@@ -176,13 +156,16 @@ static void le_jack_pin_to_device(le_engine* engine, const le_config* config) {
 
   if (get_ports && connect_port && disconnect_port && port_name && port_conns &&
       jfree) {
-    char name[256];
+    /* The selected device id IS the JACK client/node name (that is how
+     * le_platform_enumerate_devices reports it), so the port prefix is just
+     * "<id>:capture_" / "<id>:playback_" — no name resolution needed. An empty
+     * id (system default) or a stale non-JACK id simply matches no ports, and
+     * le_jack_rewire leaves miniaudio's default auto-connections in place. */
     char prefix[300];
 
-    le_jack_device_name(config->capture_device_id, /*capture=*/1, name,
-                        sizeof(name));
-    if (name[0] != '\0') {
-      snprintf(prefix, sizeof(prefix), "%s:capture_", name);
+    const char* cap_id = config->capture_device_id;
+    if (cap_id != NULL && cap_id[0] != '\0') {
+      snprintf(prefix, sizeof(prefix), "%s:capture_", cap_id);
       int32_t m = le_jack_rewire(
           client, get_ports, connect_port, disconnect_port, port_name,
           port_conns, jfree, (void**)engine->device.jack.ppPortsCapture,
@@ -192,10 +175,9 @@ static void le_jack_pin_to_device(le_engine* engine, const le_config* config) {
       }
     }
 
-    le_jack_device_name(config->playback_device_id, /*capture=*/0, name,
-                        sizeof(name));
-    if (name[0] != '\0') {
-      snprintf(prefix, sizeof(prefix), "%s:playback_", name);
+    const char* play_id = config->playback_device_id;
+    if (play_id != NULL && play_id[0] != '\0') {
+      snprintf(prefix, sizeof(prefix), "%s:playback_", play_id);
       int32_t m = le_jack_rewire(
           client, get_ports, connect_port, disconnect_port, port_name,
           port_conns, jfree, (void**)engine->device.jack.ppPortsPlayback,
@@ -209,6 +191,132 @@ static void le_jack_pin_to_device(le_engine* engine, const le_config* config) {
 }
 
 /* ---- platform seam ---- */
+
+/* JACK entry points used only for enumeration (opened transiently, separate from
+ * the engine's own client). jack_client_open is variadic in the header, but we
+ * pass no variadic args, so a fixed 3-arg pointer is ABI-correct. The metadata
+ * trio is optional — older libjack lacks it — so each is NULL-guarded. */
+typedef void* (*le_jack_open_t)(const char*, int, int*);
+typedef int (*le_jack_close_t)(void*);
+typedef char* (*le_jack_uuid_for_name_t)(void*, const char*);
+typedef int (*le_jack_uuid_parse_t)(const char*, uint64_t*);
+typedef int (*le_jack_get_prop_t)(uint64_t, const char*, char**, char**);
+
+/* Resolve a JACK client/node's friendly name via its pretty-name metadata
+ * (PipeWire publishes node.description there). Leaves out[0]='\0' if the
+ * metadata API or the property is absent, so the caller can fall back. */
+static void le_jack_pretty_name(void* client, const char* node,
+                                le_jack_uuid_for_name_t uuid_for_name,
+                                le_jack_uuid_parse_t uuid_parse,
+                                le_jack_get_prop_t get_prop,
+                                le_jack_free_t jfree, char* out, size_t cap) {
+  out[0] = '\0';
+  if (!uuid_for_name || !uuid_parse || !get_prop) return;
+  char* uuid_str = uuid_for_name(client, node);
+  if (uuid_str == NULL) return;
+  uint64_t uuid = 0;
+  if (uuid_parse(uuid_str, &uuid) == 0) {
+    char* value = NULL;
+    char* type = NULL;
+    if (get_prop(uuid, LE_JACK_PRETTY_NAME, &value, &type) == 0 &&
+        value != NULL) {
+      strncpy(out, value, cap - 1);
+      out[cap - 1] = '\0';
+    }
+    if (value) jfree(value);
+    if (type) jfree(type);
+  }
+  jfree(uuid_str);
+}
+
+int le_platform_enumerate_devices(le_device_info* out, int32_t max,
+                                  int32_t* count, int capture) {
+  *count = 0;
+  void* lib = dlopen("libjack.so.0", RTLD_NOW | RTLD_LOCAL);
+  if (lib == NULL) lib = dlopen("libjack.so", RTLD_NOW | RTLD_LOCAL);
+  if (lib == NULL) return 0; /* no JACK/PipeWire -> defer to ALSA enumeration */
+
+  le_jack_open_t jopen = (le_jack_open_t)dlsym(lib, "jack_client_open");
+  le_jack_close_t jclose = (le_jack_close_t)dlsym(lib, "jack_client_close");
+  le_jack_get_ports_t get_ports =
+      (le_jack_get_ports_t)dlsym(lib, "jack_get_ports");
+  le_jack_free_t jfree = (le_jack_free_t)dlsym(lib, "jack_free");
+  le_jack_uuid_for_name_t uuid_for_name =
+      (le_jack_uuid_for_name_t)dlsym(lib, "jack_get_uuid_for_client_name");
+  le_jack_uuid_parse_t uuid_parse =
+      (le_jack_uuid_parse_t)dlsym(lib, "jack_uuid_parse");
+  le_jack_get_prop_t get_prop =
+      (le_jack_get_prop_t)dlsym(lib, "jack_get_property");
+
+  if (!jopen || !jclose || !get_ports || !jfree) {
+    dlclose(lib);
+    return 0;
+  }
+
+  int status = 0;
+  void* client = jopen("loopy-enum", LE_JACK_NO_START_SERVER, &status);
+  if (client == NULL) {
+    dlclose(lib); /* server not running -> defer to ALSA enumeration */
+    return 0;
+  }
+
+  /* One entry per real interface. capture wants the device's OUTPUT ports (it
+   * produces audio into the graph), playback its INPUT ports; physical-only
+   * keeps it to hardware, not app/monitor nodes. Group ports by their
+   * "<node>:" prefix — that prefix is the id le_jack_pin_to_device pins by. */
+  const unsigned long flags =
+      (capture ? LE_JACK_OUTPUT : LE_JACK_INPUT) | LE_JACK_PHYSICAL;
+  const char** ports = get_ports(client, NULL, NULL, flags);
+
+  int32_t n = 0;
+  for (int k = 0; ports != NULL && ports[k] != NULL && n < max; ++k) {
+    const char* colon = strchr(ports[k], ':');
+    if (colon == NULL) continue;
+    const size_t plen = (size_t)(colon - ports[k]);
+    if (plen == 0 || plen >= sizeof(out[0].id)) continue;
+
+    int32_t found = -1;
+    for (int32_t d = 0; d < n; ++d) {
+      if (strncmp(out[d].id, ports[k], plen) == 0 && out[d].id[plen] == '\0') {
+        found = d;
+        break;
+      }
+    }
+    if (found >= 0) {
+      if (capture) {
+        out[found].input_channels++;
+      } else {
+        out[found].output_channels++;
+      }
+      continue;
+    }
+
+    le_device_info* dev = &out[n];
+    memset(dev, 0, sizeof(*dev));
+    memcpy(dev->id, ports[k], plen);
+    dev->id[plen] = '\0';
+    if (capture) {
+      dev->input_channels = 1;
+    } else {
+      dev->output_channels = 1;
+    }
+    le_jack_pretty_name(client, dev->id, uuid_for_name, uuid_parse, get_prop,
+                        jfree, dev->name, sizeof(dev->name));
+    if (dev->name[0] == '\0') {
+      strncpy(dev->name, dev->id, sizeof(dev->name) - 1);
+      dev->name[sizeof(dev->name) - 1] = '\0';
+    }
+    ++n;
+  }
+
+  if (ports != NULL) jfree((void*)ports);
+  jclose(client);
+  dlclose(lib);
+
+  if (n == 0) return 0; /* JACK up but no hardware ports -> let ALSA try */
+  *count = n;
+  return 1;
+}
 
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
   /* miniaudio's PulseAudio backend returns silent capture buffers under

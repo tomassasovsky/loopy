@@ -47,6 +47,17 @@ void le_platform_on_engine_teardown(void);
  * route through the shared le_excluded_mask_from_names / le_label_is_loopback. */
 uint32_t le_platform_excluded_input_mask(const char* uid, int channel_count);
 
+/* Platform-native device enumeration, taking precedence over the portable
+ * miniaudio (ALSA) path when it succeeds. Returns 1 if it enumerated the host's
+ * real interfaces itself — writing up to `max` entries into `out` and the count
+ * into *count — or 0 to defer to the miniaudio enumeration. `capture` selects
+ * the direction. Linux enumerates via JACK so the list is one entry per real
+ * PipeWire/JACK interface (not the ALSA plugin clutter) and each `id` is the
+ * JACK client/node name that le_jack_pin_to_device pins by; macOS/Windows return
+ * 0 (miniaudio's CoreAudio/WASAPI enumeration is already the right list). */
+int le_platform_enumerate_devices(le_device_info* out, int32_t max,
+                                  int32_t* count, int capture);
+
 /* Serializes a miniaudio device id into a printable, round-trippable token used
  * to match a user-selected device back to its native id. On the string-id
  * backends (CoreAudio, ALSA, PulseAudio, …) the union's active member is a

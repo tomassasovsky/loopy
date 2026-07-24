@@ -101,6 +101,16 @@ void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
   *out_count = 0;
 }
 
+int le_platform_enumerate_devices(le_device_info* out, int32_t max,
+                                  int32_t* count, int capture) {
+  /* Defer to miniaudio's Core Audio enumeration (already the right list). */
+  (void)out;
+  (void)max;
+  (void)count;
+  (void)capture;
+  return 0;
+}
+
 void le_platform_before_context_init(const le_config* config) { (void)config; }
 
 void le_platform_after_device_start(le_engine* engine, const le_config* config) {
