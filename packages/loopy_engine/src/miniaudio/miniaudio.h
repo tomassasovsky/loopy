@@ -28112,54 +28112,68 @@ static ma_result ma_device_stop__alsa(ma_device* pDevice)
 
 static ma_result ma_device_wait__alsa(ma_device* pDevice, ma_snd_pcm_t* pPCM, struct pollfd* pPollDescriptors, int pollDescriptorCount, short requiredEvent)
 {
-    for (;;) {
-        unsigned short revents;
-        int resultALSA;
-        int resultPoll = poll(pPollDescriptors, pollDescriptorCount, -1);
-        if (resultPoll < 0) {
-            ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] poll() failed.\n");
-            return ma_result_from_errno(errno);
-        }
+    /*
+    LOOPY PATCH: block on ALSA's own snd_pcm_wait() (which re-derives the poll
+    descriptors correctly each call and SLEEPS) instead of miniaudio's manual
+    poll() + snd_pcm_poll_descriptors_revents() over descriptors cached at init.
+    On some drivers (observed: Focusrite Scarlett USB audio, duplex, PREEMPT_RT
+    arm64) the cached descriptors never report POLLIN/POLLOUT even though the
+    stream is running with data available, so the original poll(-1) blocked
+    forever. snd_pcm_wait() sleeps and makes progress; we additionally confirm
+    readiness with snd_pcm_avail_update() (independent of poll revents) so a
+    driver that under-reports still gets serviced, and keep the wakeup eventfd
+    (descriptor 0) for immediate stop. Crucially this NEVER busy-spins at
+    real-time priority, which would starve the machine.
+    */
+    ma_uint32 periodFrames = (requiredEvent == POLLIN)
+        ? pDevice->capture.internalPeriodSizeInFrames
+        : pDevice->playback.internalPeriodSizeInFrames;
+    if (periodFrames == 0) {
+        periodFrames = 1;
+    }
+    (void)pollDescriptorCount;
 
-        /*
-        Before checking the ALSA poll descriptor flag we need to check if the wakeup descriptor
-        has had it's POLLIN flag set. If so, we need to actually read the data and then exit
-        function. The wakeup descriptor will be the first item in the descriptors buffer.
-        */
-        if ((pPollDescriptors[0].revents & POLLIN) != 0) {
+    for (;;) {
+        int waitResult;
+        ma_snd_pcm_sframes_t availResult;
+
+        /* Stop requested? The wakeup eventfd is descriptor 0 (non-blocking check). */
+        if (poll(pPollDescriptors, 1, 0) > 0 && (pPollDescriptors[0].revents & POLLIN) != 0) {
             ma_uint64 t;
-            int resultRead = read(pPollDescriptors[0].fd, &t, sizeof(t));    /* <-- Important that we read here so that the next write() does not block. */
-            if (resultRead < 0) {
+            if (read(pPollDescriptors[0].fd, &t, sizeof(t)) < 0) {
                 ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] read() failed.\n");
                 return ma_result_from_errno(errno);
             }
-
-            ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_DEBUG, "[ALSA] POLLIN set for wakeupfd\n");
             return MA_DEVICE_NOT_STARTED;
         }
 
-        /*
-        Getting here means that some data should be able to be read. We need to use ALSA to
-        translate the revents flags for us.
-        */
-        resultALSA = ((ma_snd_pcm_poll_descriptors_revents_proc)pDevice->pContext->alsa.snd_pcm_poll_descriptors_revents)(pPCM, pPollDescriptors + 1, pollDescriptorCount - 1, &revents);   /* +1, -1 to ignore the wakeup descriptor. */
-        if (resultALSA < 0) {
-            ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] snd_pcm_poll_descriptors_revents() failed.\n");
-            return ma_result_from_errno(-resultALSA);
-        }
-
-        if ((revents & POLLERR) != 0) {
-            ma_snd_pcm_state_t state = ((ma_snd_pcm_state_proc)pDevice->pContext->alsa.snd_pcm_state)(pPCM);
-            if (state == MA_SND_PCM_STATE_XRUN) {
-                /* The PCM is in a xrun state. This will be recovered from at a higher level. We can disregard this. */
-        } else {
-                ma_log_postf(ma_device_get_log(pDevice), MA_LOG_LEVEL_WARNING, "[ALSA] POLLERR detected. status = %d\n", ((ma_snd_pcm_state_proc)pDevice->pContext->alsa.snd_pcm_state)(pPCM));
+        /* Sleep until the device is ready, or a short timeout so we re-check stop. */
+        waitResult = ((ma_snd_pcm_wait_proc)pDevice->pContext->alsa.snd_pcm_wait)(pPCM, 20);
+        if (waitResult < 0) {
+            int recovered = ((ma_snd_pcm_recover_proc)pDevice->pContext->alsa.snd_pcm_recover)(pPCM, waitResult, MA_TRUE);   /* MA_TRUE = silent. */
+            if (recovered < 0) {
+                ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] Failed to recover device in wait.\n");
+                return ma_result_from_errno(-recovered);
             }
+            continue;
         }
 
-        if ((revents & requiredEvent) == requiredEvent) {
-            break;  /* We're done. Data available for reading or writing. */
+        /* Authoritative readiness check, independent of poll revents. */
+        availResult = ((ma_snd_pcm_avail_update_proc)pDevice->pContext->alsa.snd_pcm_avail_update)(pPCM);
+        if (availResult < 0) {
+            int recovered = ((ma_snd_pcm_recover_proc)pDevice->pContext->alsa.snd_pcm_recover)(pPCM, (int)availResult, MA_TRUE);
+            if (recovered < 0) {
+                ma_log_post(ma_device_get_log(pDevice), MA_LOG_LEVEL_ERROR, "[ALSA] Failed to recover device in wait (avail).\n");
+                return ma_result_from_errno(-recovered);
+            }
+            continue;
         }
+
+        if (availResult >= (ma_snd_pcm_sframes_t)periodFrames) {
+            break;  /* A period is ready to read, or there is room to write one. */
+        }
+
+        /* Not ready yet; snd_pcm_wait() will sleep again on the next iteration. */
     }
 
     return MA_SUCCESS;
@@ -28197,6 +28211,7 @@ static ma_result ma_device_read__alsa(ma_device* pDevice, void* pFramesOut, ma_u
 
         /* Getting here means we should have data available. */
         resultALSA = ((ma_snd_pcm_readi_proc)pDevice->pContext->alsa.snd_pcm_readi)((ma_snd_pcm_t*)pDevice->alsa.pPCMCapture, pFramesOut, frameCount);
+        { static int d=0; if(d<24){d++; fprintf(stderr,"[LR]fc=%u readi=%ld\n",(unsigned)frameCount,(long)resultALSA); } }
         if (resultALSA >= 0) {
             break;  /* Success. */
         } else {
