@@ -8,9 +8,11 @@
 PACKAGECONFIG:remove = "jack"
 PACKAGECONFIG:append = " pipewire-jack"
 
-# Audio-only appliance: drop the camera/video SPA plugins. Not needed for audio,
-# and they pull in libcamera + probe ~14 bcm2835 video nodes for nothing.
-PACKAGECONFIG:remove = "v4l2 libcamera gstreamer"
+# (We leave the camera/video SPA plugins in: they're unused on this audio
+# appliance but harmless, and dropping libcamera also drops libdrm which the still-
+# enabled vulkan SPA plugin needs -> meson configure fails. Not worth the cascade;
+# the rootfs has headroom. The crash that mattered was ALSA-MIDI, fixed in the
+# WirePlumber drop-in, not here.)
 
 # We run PipeWire + WirePlumber as our own services (loopy-pipewire.service /
 # loopy-wireplumber.service, shipped by loopy-bundle) sharing the weston
