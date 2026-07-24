@@ -28,10 +28,13 @@ sed -e "s#^User=pi#User=$user#" \
     "$repo/deploy/rpi/loopy-kiosk.service" \
   | sudo tee /etc/systemd/system/loopy-kiosk.service >/dev/null
 
-# 2. labwc compositor config + executable bits on the helper scripts.
+# 2. labwc compositor config + executable bits on the helper scripts. autostart
+#    itself is not tracked with the exec bit in git, and it directly invokes
+#    pin-displays.sh by path, so give the COPY the exec bit too, not just the
+#    repo's own *.sh (harmless if labwc would have sourced it either way).
 mkdir -p "$home/.config/labwc"
 cp "$repo"/deploy/rpi/compositor/labwc/* "$home/.config/labwc/"
-chmod +x "$repo"/deploy/rpi/*.sh
+chmod +x "$repo"/deploy/rpi/*.sh "$home/.config/labwc/autostart"
 
 # 3. Boot to console (multi-user), not the desktop, so the kiosk owns the display
 #    (a desktop session on graphical.target would fight it for the DRM master).
