@@ -1,14 +1,16 @@
-SUMMARY = "Loopy floor-console Plymouth boot splash (Bravura segno, breathe + shimmer)"
-DESCRIPTION = "A script-based Plymouth theme: the segno mark (rendered to a PNG from \
-the OFL-licensed Bravura music font, SMuFL glyph U+E047) centred on the console's \
-near-black (#08080A) with a slow breathe (scale) + shimmer (luminance) animation. \
-No progress bar, no text, no Raspberry Pi rainbow. Shown from early boot until \
+SUMMARY = "Loopy floor-console Plymouth boot splash (segno lockup, shimmer + progress)"
+DESCRIPTION = "A script-based Plymouth theme: the segno lockup — the Bravura mark \
+(SMuFL glyph U+E047) over the Apple Chancery 'segno' wordmark, both pre-rendered \
+from smooth glyph vectors — centred on the console's near-black (#08080A) with a \
+gentle luminance shimmer and a determinate progress bar driven by the real boot \
+progress. No text banners, no Raspberry Pi rainbow. Shown from early boot until \
 weston/loopy takes the display."
 LICENSE = "CLOSED"
 
 SRC_URI = "file://loopy.plymouth \
            file://loopy.script \
-           file://loopy-segno.png \
+           file://loopy-lockup.png \
+           file://loopy-bar-pixel.png \
            file://weston-after-plymouth.conf"
 
 RDEPENDS:${PN} = "plymouth"
@@ -18,7 +20,8 @@ do_install() {
     install -d ${D}${datadir}/plymouth/themes/loopy
     install -m 0644 ${UNPACKDIR}/loopy.plymouth ${D}${datadir}/plymouth/themes/loopy/loopy.plymouth
     install -m 0644 ${UNPACKDIR}/loopy.script   ${D}${datadir}/plymouth/themes/loopy/loopy.script
-    install -m 0644 ${UNPACKDIR}/loopy-segno.png ${D}${datadir}/plymouth/themes/loopy/loopy-segno.png
+    install -m 0644 ${UNPACKDIR}/loopy-lockup.png    ${D}${datadir}/plymouth/themes/loopy/loopy-lockup.png
+    install -m 0644 ${UNPACKDIR}/loopy-bar-pixel.png ${D}${datadir}/plymouth/themes/loopy/loopy-bar-pixel.png
 
     # Select loopy as the active theme via the default.plymouth symlink (plymouth's
     # own plymouthd.conf leaves Theme= commented, so the symlink wins). Relative so
