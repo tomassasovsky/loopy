@@ -1,0 +1,14 @@
+# Raise the USB sound-card IRQ thread to real-time (see /usr/bin/loopy-rtirq).
+# Oneshot at boot; the xHCI IRQ thread is created when the controller probes
+# (well before multi-user), so it exists by the time this runs. RemainAfterExit
+# keeps the unit "active" for status. chrt comes from util-linux-chrt.
+[Unit]
+Description=Loopy: raise USB sound-card IRQ threads to real-time
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/loopy-rtirq
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

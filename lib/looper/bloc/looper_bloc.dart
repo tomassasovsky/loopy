@@ -255,6 +255,28 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackMultiple(event.channel, event.multiple),
       );
     });
+    on<LooperTrackLengthPresetChanged>((event, _) {
+      _repository.setTrackLengthPreset(
+        channel: event.channel,
+        bars: event.bars,
+      );
+      unawaited(
+        _settings?.saveTrackLengthPreset(event.channel, event.bars),
+      );
+    });
+    on<LooperOneShotToggled>(
+      (event, _) => _repository.setOneShot(
+        channel: event.channel,
+        oneShot: event.oneShot,
+      ),
+    );
+    on<LooperCrownPrimaryPressed>(
+      (event, _) => _repository.crownPrimary(channel: event.channel),
+    );
+    on<LooperModeChanged>((event, _) {
+      _repository.setLooperMode(event.mode);
+      unawaited(_settings?.saveLooperMode(event.mode.code));
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);
@@ -389,6 +411,66 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         add(const LooperPlayAllPressed());
       case LooperAction.stopAll:
         add(const LooperStopAllPressed());
+      case LooperAction.tapTempo:
+        _repository.tapTempo();
+      case LooperAction.toggleMetronome:
+        _toggleMetronome();
+      case LooperAction.cancelArm:
+        _cancelPendingArms();
+    }
+  }
+
+  /// Toggles the click between silent and audible (D20's `toggleMetronome`
+  /// action). A pedal/controller press has only one gesture to spend, so this
+  /// collapses the 4-value [ClickMode] to a simple on/off toggle — off vs.
+  /// [ClickMode.rec] — rather than trying to remember which of the three
+  /// audible modes was last selected; picking a *specific* mode is what the
+  /// tempo settings page (backed by `TempoCubit`) is for. Documented
+  /// simplification (A5): a controller press always lands on
+  /// [ClickMode.rec], never restoring [ClickMode.recFirst] /
+  /// [ClickMode.playRec].
+  ///
+  /// Persisted like every other bloc-driven mutation in this file (compare
+  /// [LooperTrackQuantizeChanged]): safe to do here without a second cache to
+  /// keep in sync, because the tempo settings UI reads the *live* click mode
+  /// from [TransportState] rather than from a cached cubit value — see
+  /// `TempoSettingsSection`'s class doc.
+  void _toggleMetronome() {
+    final off = state.transport.clickMode == ClickMode.off;
+    final next = off ? ClickMode.rec : ClickMode.off;
+    _repository.setClickMode(next);
+    unawaited(_settings?.saveClickMode(next.code));
+  }
+
+  /// Cancels every track's pending quantized/signal-triggered record arm
+  /// (D20's global `cancelArm` action).
+  ///
+  /// There is no standalone disarm entry point in the engine's public API:
+  /// `le_cancel_arm` (`engine_commands.c`) is file-private, invoked only as a
+  /// side effect of a second `RECORD` press on the SAME armed channel
+  /// (`engine_commands.c:699-751` — "second press before the boundary
+  /// cancels the pending action"). Re-pressing record on every pending track
+  /// reuses that existing toggle behavior instead of adding a new native
+  /// export/FFI passthrough for a single-purpose disarm call.
+  ///
+  /// Reads [LooperRepository.state] — a fresh synchronous engine
+  /// snapshot — rather than this bloc's own [state], which is only as
+  /// current as the last ~16 ms poll tick (`LooperRepository`'s snapshot
+  /// timer). That narrows, but cannot fully close, a TOCTOU race inherent
+  /// to any command that acts on a read of async engine state: if a
+  /// pending arm's boundary fires natively between this read and the
+  /// `record()` FFI call landing, the engine's own `armed[channel]`
+  /// staleness check (`engine_commands.c`) clears `armed` first and falls
+  /// through to arming a FRESH action instead of cancelling — so a cancel
+  /// press landing right at a boundary can rarely re-arm instead of
+  /// cancel. Accepted as-is (not a native-engine fix, out of scope for this
+  /// UI-layer PR): the window is now on the order of one synchronous call's
+  /// latency rather than a full poll interval, the failure is
+  /// self-correcting (a second cancel press works), and it never leaves a
+  /// track worse off than "still armed."
+  void _cancelPendingArms() {
+    for (final track in _repository.state.tracks) {
+      if (track.pending) _repository.record(channel: track.channel);
     }
   }
 
@@ -407,4 +489,23 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     unawaited(_controllerSubscription?.cancel());
     return super.close();
   }
+}
+
+/// Restores the persisted looper mode (B5c) and dispatches it through
+/// [bloc] — the boot-time counterpart of the "seeded settings cubit" `load()`
+/// convention used elsewhere (`TempoCubit`/`TracksCubit`/etc, called via
+/// `app.dart`'s `unawaited(cubit.load())` wiring), but as a top-level
+/// function rather than a bloc method: `Bloc` instances are driven only
+/// through events (bloc_lint's `avoid_public_bloc_methods`), so this reads
+/// [settings] itself and dispatches [LooperModeChanged] rather than adding a
+/// second, non-event entry point to [LooperBloc]. Reuses the same event a
+/// user-driven mode change dispatches, so the boot restore also re-persists
+/// the value it just read — harmless (writing back the same value is a
+/// no-op on disk) and keeps this to one code path instead of two.
+Future<void> restoreLooperMode(
+  LooperBloc bloc,
+  SettingsRepository settings,
+) async {
+  final mode = LooperMode.fromCode(await settings.loadLooperMode());
+  bloc.add(LooperModeChanged(mode));
 }

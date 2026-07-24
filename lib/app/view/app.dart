@@ -132,11 +132,20 @@ class App extends StatelessWidget {
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
           BlocProvider(
-            create: (context) => LooperBloc(
-              repository: context.read<LooperRepository>(),
-              controller: context.read<ControllerRepository>(),
-              settings: context.read<SettingsRepository>(),
-            ),
+            create: (context) {
+              final bloc = LooperBloc(
+                repository: context.read<LooperRepository>(),
+                controller: context.read<ControllerRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              // Boot-restore the persisted mode (B5c) — dispatched as an
+              // event, not a bloc method (bloc_lint's
+              // avoid_public_bloc_methods).
+              unawaited(
+                restoreLooperMode(bloc, context.read<SettingsRepository>()),
+              );
+              return bloc;
+            },
           ),
           BlocProvider(
             create: (context) {
@@ -178,6 +187,16 @@ class App extends StatelessWidget {
           BlocProvider(
             create: (context) {
               final cubit = QuantizeCubit(
+                repository: context.read<LooperRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          BlocProvider(
+            create: (context) {
+              final cubit = TempoCubit(
                 repository: context.read<LooperRepository>(),
                 settings: context.read<SettingsRepository>(),
               );
@@ -290,6 +309,14 @@ class App extends StatelessWidget {
             create: (context) {
               final cubit = PerformanceRecorderCubit(
                 performance: context.read<PerformanceRepository>(),
+                // The real tempo to stamp the `.als` export with, read fresh
+                // at each export (not captured once here) — the live
+                // engine's current tempo via the looper repository, the same
+                // TransportState.tempoBpm field session_repository threads
+                // into the v4 manifest. `0` (grid off / tempo never set)
+                // falls through to daw_export's own 120 BPM fallback.
+                currentTempoBpm: () =>
+                    context.read<LooperRepository>().state.transport.tempoBpm,
               );
               unawaited(cubit.load());
               return cubit;

@@ -39,6 +39,9 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 build/
+# Pi aarch64 build tooling — a real source dir the generic build/ rule above
+# would otherwise swallow (it is tooling, not build output).
+!deploy/rpi/build/
 flutter_*.png
 linked_*.ds
 unlinked.ds
@@ -146,3 +149,6 @@ __pycache__/
 
 # graphify knowledge-graph output (generated; rebuild with `graphify update .`)
 graphify-out/
+
+# Tier 3a: staged prebuilt bundle for the Yocto build (binary artifact)
+deploy/yocto/prebuilt/

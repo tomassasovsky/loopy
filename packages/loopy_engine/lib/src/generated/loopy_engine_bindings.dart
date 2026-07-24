@@ -1704,6 +1704,135 @@ class LoopyEngineBindings {
   late final _le_engine_set_quantize_div = _le_engine_set_quantize_divPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Sets the looper mode (le_looper_mode, 0..4). Values outside the enum
+  /// return LE_ERR_INVALID without posting. Ignored (no-op) while the mode is
+  /// locked (see the class doc) — the audio thread silently drops it.
+  int le_engine_set_looper_mode(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_set_looper_mode(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_set_looper_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_looper_mode');
+  late final _le_engine_set_looper_mode = _le_engine_set_looper_modePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Crowns [channel] the primary track (D18). Rejects only an out-of-range
+  /// channel; accepted in every looper mode (the crown persists regardless of
+  /// mode, per D18) though it is inert outside Sync/Band. No "un-crown" call
+  /// exists — re-crowning a different channel is the only way to change it.
+  int le_engine_crown_primary(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_crown_primary(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_crown_primaryPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_crown_primary');
+  late final _le_engine_crown_primary = _le_engine_crown_primaryPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Toggles Band section transport (D19 §2 Q3) on [channel]: a play/stop
+  /// press on a non-primary, content-bearing track in BAND mode, deferred
+  /// (quantized) to the next time the PRIMARY track returns to its loop top —
+  /// matching the manual's "quantized to the primary track" section semantics,
+  /// genuinely different from Sync (where non-primary tracks are locked to
+  /// always play, never independently started/stopped). A second call before
+  /// the boundary fires cancels the pending toggle (mirrors le_engine_record's
+  /// quantize-arm toggle shape). Returns LE_ERR_INVALID outside BAND mode, for
+  /// the primary track itself, or for a still-EMPTY track (nothing to
+  /// start/stop — a section reaches this only after its own defining,
+  /// sync-quantized recording has finalized).
+  int le_engine_toggle_section(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+  ) {
+    return _le_engine_toggle_section(
+      engine,
+      channel,
+    );
+  }
+
+  late final _le_engine_toggle_sectionPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_toggle_section');
+  late final _le_engine_toggle_section = _le_engine_toggle_sectionPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
+  /// channel; accepted in every looper mode, though inert outside Free/Song
+  /// (see the class doc above). A SETTING, not content: like
+  /// a_length_preset_bars and target_multiple, it is untouched by clear /
+  /// undo-to-empty / mode switches — handle_clear's per-track reset
+  /// (engine_process.c) deliberately does not include it, the same "cleared
+  /// content starts fresh, configured PREFERENCES survive" split every other
+  /// per-track setting in this engine already follows. A cleared-then-re-
+  /// recorded one-shot track is one-shot again on its next take, with no need
+  /// to re-flag it.
+  int le_engine_set_one_shot(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int enabled,
+  ) {
+    return _le_engine_set_one_shot(
+      engine,
+      channel,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_one_shotPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_one_shot');
+  late final _le_engine_set_one_shot = _le_engine_set_one_shotPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
+  /// any value outside the enum return LE_ERR_INVALID without posting — receive
+  /// is Phase E's clock follower, not yet implemented; this setter stubs the
+  /// tri-state field now so that part can reuse it without a breaking rename.
+  int le_engine_set_clock_mode(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_set_clock_mode(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_set_clock_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_clock_mode');
+  late final _le_engine_set_clock_mode = _le_engine_set_clock_modePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the click audibility mode (le_click_mode, 0..3). Values outside the
   /// enum return LE_ERR_INVALID. Default off.
   int le_engine_set_click_mode(
@@ -1846,6 +1975,43 @@ class LoopyEngineBindings {
   late final _le_engine_set_default_multiple =
       _le_engine_set_default_multiplePtr
           .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
+  /// Sets track [channel]'s length preset: 0 = AUTO, or 1..
+  /// LE_LENGTH_PRESET_MAX_BARS to fix the defining recording to N bars (see the
+  /// matrix above). Returns LE_ERR_INVALID for a bad channel/bars, or
+  /// LE_ERR_CAPACITY when N bars of the CURRENT time signature at the slowest
+  /// possible tempo (30 BPM) would exceed the engine's max_loop_frames — checked
+  /// here, before recording starts, so a doomed preset is rejected outright
+  /// rather than silently failing mid-take. This is a best-effort check against
+  /// the signature live NOW: nothing locks the signature/tempo between setting
+  /// the preset and actually recording (no track has content yet, so D6's lock
+  /// does not apply), so a change in between can still make an N-bars+click-on
+  /// take's auto-finalize target unreachable. That case is re-guarded with the
+  /// ACTUAL live grid when recording starts (engine_process.c's
+  /// le_arm_length_preset_target) — an unreachable target is never armed, so
+  /// the take degrades cleanly to the click-off derive-from-length path at
+  /// finalize instead of silently stalling.
+  int le_engine_set_track_length_preset(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int bars,
+  ) {
+    return _le_engine_set_track_length_preset(
+      engine,
+      channel,
+      bars,
+    );
+  }
+
+  late final _le_engine_set_track_length_presetPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_track_length_preset');
+  late final _le_engine_set_track_length_preset =
+      _le_engine_set_track_length_presetPtr
+          .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
 
   /// Sets the second-press "rec/dub" mode: when enabled, finalizing a recording
   /// with a record press continues into overdub instead of playback. A stop press
@@ -3133,7 +3299,13 @@ enum le_result {
   /// a plugin's bus topology is not a stereo (or
   /// mono-adaptable) effect — instrument / multi-bus /
   /// sidechain / wrong channel count (D-BUS)
-  LE_ERR_UNSUPPORTED(-5);
+  LE_ERR_UNSUPPORTED(-5),
+
+  /// a requested allocation would exceed engine
+  /// capacity (A6, D17): N bars of the current
+  /// signature at the slowest possible tempo (30
+  /// BPM) would not fit in max_loop_frames
+  LE_ERR_CAPACITY(-6);
 
   final int value;
   const le_result(this.value);
@@ -3145,6 +3317,7 @@ enum le_result {
     -3 => LE_ERR_NOT_RUNNING,
     -4 => LE_ERR_DEVICE,
     -5 => LE_ERR_UNSUPPORTED,
+    -6 => LE_ERR_CAPACITY,
     _ => throw ArgumentError('Unknown value for le_result: $value'),
   };
 }
@@ -3302,10 +3475,17 @@ enum le_command_code {
   /// (arg_f = track, arg_i = output bitmask)
   LE_CMD_SET_OUTPUT_MASK(15),
 
-  /// arg_i = track: arm a quantized record (fire at loop top)
+  /// arg_i = track: arm a quantized record (fire at loop
+  /// top). arg_f selects the trigger: 0 = grid/loop-top
+  /// (quantize), 1 = input level (auto-record), 2 = Band
+  /// section transport (B3b) -- a play/stop TOGGLE on a
+  /// content-bearing non-primary track, deferred to the
+  /// next primary-track loop top rather than a record
+  /// action; see le_engine_toggle_section.
   LE_CMD_ARM(16),
 
   /// arg_i = track: cancel a pending quantized record
+  /// (any trigger).
   LE_CMD_DISARM(17),
 
   /// arg_i = le_grid_div (tempo_grid.h): 0 off /
@@ -3432,6 +3612,23 @@ enum le_command_code {
   /// handshake once the audio thread acks this
   LE_CMD_PERF_DISARM(42),
 
+  /// arg_i = channel, arg_f = bars (0 = AUTO,
+  /// 1..LE_LENGTH_PRESET_MAX_BARS = fixed).
+  LE_CMD_SET_LENGTH_PRESET(44),
+
+  /// arg_i = le_looper_mode (0..4)
+  LE_CMD_SET_LOOPER_MODE(45),
+
+  /// arg_i = channel
+  LE_CMD_CROWN_PRIMARY(46),
+
+  /// arg_i = channel, arg_f = 0/1
+  LE_CMD_SET_ONE_SHOT(47),
+
+  /// arg_i = le_clock_mode. RECEIVE (2) is
+  /// rejected — see le_engine_set_clock_mode.
+  LE_CMD_SET_CLOCK_MODE(48),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -3484,6 +3681,11 @@ enum le_command_code {
     43 => LE_CMD_RESTORE_CLEAR,
     41 => LE_CMD_PERF_ARM,
     42 => LE_CMD_PERF_DISARM,
+    44 => LE_CMD_SET_LENGTH_PRESET,
+    45 => LE_CMD_SET_LOOPER_MODE,
+    46 => LE_CMD_CROWN_PRIMARY,
+    47 => LE_CMD_SET_ONE_SHOT,
+    48 => LE_CMD_SET_CLOCK_MODE,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -3691,6 +3893,28 @@ final class le_track_snapshot extends ffi.Struct {
   /// 0/1: a quantized/signal arm is waiting to fire
   @ffi.Int32()
   external int pending;
+
+  /// Trailing (A6, D17): the DEFINING-recording length preset — 0 = AUTO,
+  /// 1..LE_LENGTH_PRESET_MAX_BARS = fixed N bars. Inert on a track that
+  /// already has content; applies to the next defining recording only. See
+  /// le_engine_set_track_length_preset.
+  @ffi.Int32()
+  external int length_preset_bars;
+
+  /// Trailing (B3, D16): 0 = this track's length is an ordinary multiple of
+  /// the base loop (see `multiple` above — the common case in every mode,
+  /// including Sync/Band multiples). 2 or 4 = this track is a SYNC DIVISION:
+  /// it plays a repeating 1/2 or 1/4 slice of the primary track's length,
+  /// phase-locked to the primary's loop top (`multiple` reads 1, inertly, for
+  /// a division track). Only ever nonzero in Sync/Band mode on a non-primary
+  /// track. See le_sync_quantize_active (engine_private.h) for how it's set.
+  @ffi.Int32()
+  external int sync_divisor;
+
+  /// Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
+  /// behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc.
+  @ffi.Int32()
+  external int one_shot;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -3888,6 +4112,25 @@ final class le_snapshot extends ffi.Struct {
   /// reads 4, 3, 2, 1, then 0 as the recording starts). 0 when idle.
   @ffi.Int32()
   external int count_in_beats_left;
+
+  /// le_looper_mode (default 0 = MULTI)
+  @ffi.Int32()
+  external int looper_mode;
+
+  /// ---- primary track (B3, D18; trailing for the same offset-stability
+  /// reason as the blocks above). -1 = none (default). Persists through the
+  /// primary track being cleared/undone-to-empty; only an explicit re-crown
+  /// (le_engine_crown_primary) changes it — see LE_CMD_CROWN_PRIMARY's doc.
+  /// Meaningful only in Sync/Band mode (see le_sync_quantize_active); a
+  /// nonzero value in any other mode is inert.
+  @ffi.Int32()
+  external int primary_track;
+
+  /// ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
+  /// reason as the blocks above). le_clock_mode; default 0 = OFF, so an
+  /// untouched engine emits no clock bytes. See le_engine_set_clock_mode.
+  @ffi.Int32()
+  external int clock_mode;
 }
 
 /// The plugin format a descriptor was discovered in.
@@ -4040,6 +4283,8 @@ final class le_midi_out extends ffi.Opaque {}
 const int LE_MAX_CHANNELS = 32;
 
 const int LE_COUNT_IN_MAX_BARS = 64;
+
+const int LE_LENGTH_PRESET_MAX_BARS = 64;
 
 const int LE_FX_MAX = 8;
 

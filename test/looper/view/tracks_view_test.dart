@@ -230,6 +230,261 @@ void main() {
     expect(find.byKey(const Key('tracks_tile_0')), findsNothing);
   });
 
+  group('transport tempo display', () {
+    testWidgets('hidden when no tempo has ever been set (grid-off)', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_transportTempo')), findsNothing);
+    });
+
+    testWidgets('shows the current BPM and beat dots once a tempo is set', (
+      tester,
+    ) async {
+      // Wide enough for the beat-indicator's width-threshold gate to show
+      // it (see the dedicated fallback/narrow-toolbar cases below).
+      tester.view.physicalSize = const Size(1400, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      seed(
+        const LooperState(
+          transport: TransportState(
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            currentBeat: 1,
+          ),
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
+
+      expect(tester.takeException(), isNull);
+      final display = find.byKey(const Key('tracks_transportTempo'));
+      expect(display, findsOneWidget);
+      expect(find.text('120.0 BPM'), findsOneWidget);
+      // Small numerator (default 4/4) -> individual dots, not the "N/M"
+      // compact text the large-numerator fallback below uses.
+      expect(
+        find.descendant(of: display, matching: find.textContaining('/')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('shows a counting-in readout with a beat countdown', (
+      tester,
+    ) async {
+      seed(
+        const LooperState(
+          transport: TransportState(
+            tempoBpm: 120,
+            tempoSource: TempoSource.manual,
+            countingIn: true,
+            countInBeatsLeft: 3,
+          ),
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.text('Count-in 3'), findsOneWidget);
+    });
+
+    testWidgets(
+      'a 15/8 signature at a normal width falls back to compact "beat N/M" '
+      'text instead of 15 dots (~130px of fixed width)',
+      (tester) async {
+        // Wide enough that the beat-indicator's width-threshold gate shows
+        // it (the toolbar's full icon cluster otherwise leaves little slack
+        // at the default 800×600 test surface — see the narrow-toolbar case
+        // below for that regime).
+        tester.view.physicalSize = const Size(1400, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        seed(
+          const LooperState(
+            transport: TransportState(
+              tempoBpm: 120,
+              tempoSource: TempoSource.manual,
+              tsNum: 15,
+              tsDen: 8,
+              currentBeat: 2,
+            ),
+            tracks: [Track()],
+          ),
+        );
+
+        await pump(tester);
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('3/15'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a 15/8 signature on a narrow toolbar renders without a RenderFlex '
+      'overflow, even where the beat indicator itself is dropped',
+      (tester) async {
+        // Narrower than the default 800×600 test surface — the toolbar's
+        // full icon cluster plus this readout is already tight there (the
+        // regression this guards: 15 non-shrinkable dots at ~130px used to
+        // overflow regardless of how far the tempo text ellipsized).
+        tester.view.physicalSize = const Size(700, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        seed(
+          const LooperState(
+            transport: TransportState(
+              tempoBpm: 120,
+              tempoSource: TempoSource.manual,
+              tsNum: 15,
+              tsDen: 8,
+              currentBeat: 2,
+            ),
+            tracks: [Track()],
+          ),
+        );
+
+        await pump(tester);
+
+        // No RenderFlex overflow — the assertion the review demanded.
+        expect(tester.takeException(), isNull);
+        // At this width the LayoutBuilder gate drops the indicator
+        // entirely rather than squeezing it (still zero-overflow either
+        // way); the tempo text alone remains visible.
+        expect(find.text('120.0 BPM'), findsOneWidget);
+      },
+    );
+  });
+
+  group('pending arm badge', () {
+    testWidgets('shows on a track with a pending quantized/signal arm', (
+      tester,
+    ) async {
+      seed(const LooperState(tracks: [Track(pending: true)]));
+      await pump(tester);
+
+      expect(find.byIcon(Icons.schedule_outlined), findsOneWidget);
+    });
+
+    testWidgets('absent on a track with no pending arm', (tester) async {
+      seed(const LooperState(tracks: [Track()]));
+      await pump(tester);
+
+      expect(find.byIcon(Icons.schedule_outlined), findsNothing);
+    });
+  });
+
+  group('crown badge (D18, B5c)', () {
+    testWidgets('absent in Multi mode', (tester) async {
+      seed(
+        // LooperMode.multi is TransportState's default — explicit here only
+        // for readability (this is a Multi-mode test).
+        const LooperState(
+          tracks: [Track(), Track(channel: 1)],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_crown_0')), findsNothing);
+      expect(find.byKey(const Key('tracks_crown_1')), findsNothing);
+    });
+
+    testWidgets('absent in Song and Free modes too — Sync/Band only', (
+      tester,
+    ) async {
+      for (final mode in [LooperMode.song, LooperMode.free]) {
+        seed(
+          LooperState(
+            transport: TransportState(looperMode: mode),
+            tracks: const [Track()],
+          ),
+        );
+        await pump(tester);
+        expect(
+          find.byKey(const Key('tracks_crown_0')),
+          findsNothing,
+          reason: mode.name,
+        );
+      }
+    });
+
+    testWidgets('visible on every track in Sync mode', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(looperMode: LooperMode.sync),
+          tracks: [Track(), Track(channel: 1)],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_crown_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_crown_1')), findsOneWidget);
+    });
+
+    testWidgets('visible in Band mode too', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(looperMode: LooperMode.band),
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_crown_0')), findsOneWidget);
+    });
+
+    testWidgets(
+      'tapping a non-primary track crowns it (dispatches '
+      'LooperCrownPrimaryPressed)',
+      (tester) async {
+        seed(
+          const LooperState(
+            transport: TransportState(
+              looperMode: LooperMode.sync,
+              primaryTrack: 0,
+            ),
+            tracks: [Track(), Track(channel: 1)],
+          ),
+        );
+        await pump(tester);
+
+        await tester.tap(find.byKey(const Key('tracks_crown_1')));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => bloc.add(const LooperCrownPrimaryPressed(1)),
+        ).called(1);
+      },
+    );
+
+    testWidgets(
+      "the current primary track's own badge is inert — no un-crown "
+      'gesture exists (D18)',
+      (tester) async {
+        seed(
+          const LooperState(
+            transport: TransportState(
+              looperMode: LooperMode.sync,
+              primaryTrack: 0,
+            ),
+            tracks: [Track()],
+          ),
+        );
+        await pump(tester);
+
+        await tester.tap(find.byKey(const Key('tracks_crown_0')));
+        await tester.pumpAndSettle();
+
+        verifyNever(() => bloc.add(const LooperCrownPrimaryPressed(0)));
+      },
+    );
+  });
+
   group('keyboard', () {
     testWidgets('M toggles the tracks mode', (tester) async {
       seed(const LooperState(tracks: [Track()]));

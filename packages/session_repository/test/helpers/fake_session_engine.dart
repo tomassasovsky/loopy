@@ -41,8 +41,39 @@ class FakeSessionEngine implements AudioEngine {
   final int channels;
   final int sampleRate;
 
-  final List<_FakeTrack> _tracks = List.generate(4, (_) => _FakeTrack());
+  // 8 tracks, matching the real engine's LE_MAX_TRACKS (loopy_engine_api.h) —
+  // needed to exercise B5c's Free-mode 8-independent-lengths round trip.
+  final List<_FakeTrack> _tracks = List.generate(8, (_) => _FakeTrack());
   int masterLength = 0;
+
+  /// The session-level looper mode reported by [snapshot] (B5c). Mutable so a
+  /// test can seed a non-default mode before calling
+  /// `SessionRepository.save`, exercising the real `_sessionFrom` wiring.
+  LooperMode looperMode = LooperMode.multi;
+
+  /// The session-level crowned primary track reported by [snapshot] (B5c,
+  /// D18); `-1` = none.
+  int primaryTrack = -1;
+
+  /// Per-track One Shot flags reported by [snapshot] (B5c), keyed by
+  /// channel; absent = `false`.
+  final Map<int, bool> oneShot = {};
+
+  // ---- tempo grid + click + count-in (A1/A2, threaded to Session v4 by A7)
+  // ----
+  // Mutable so a test can seed non-default grid state before calling
+  // `SessionRepository.save`, exercising the actual `_sessionFrom` wiring
+  // rather than trusting it by inspection. Defaults mirror
+  // `EngineSnapshot`'s own tempo-free defaults.
+  double tempoBpm = 0;
+  TempoSource tempoSource = TempoSource.none;
+  int tsNum = 4;
+  int tsDen = 4;
+  GridDivision quantizeDiv = GridDivision.off;
+  ClickMode clickMode = ClickMode.off;
+  int clickMask = 0;
+  double clickVolume = 1;
+  int countInBars = 0;
 
   /// While > 0, every snapshot reports track 0's undo layer as in flight and
   /// decrements — simulating the punch-out fade-tail/drain window a capture
@@ -136,6 +167,17 @@ class FakeSessionEngine implements AudioEngine {
     latencyState: LatencyState.idle,
     measuredLatencyMs: -1,
     masterLengthFrames: masterLength,
+    tempoBpm: tempoBpm,
+    tempoSource: tempoSource,
+    tsNum: tsNum,
+    tsDen: tsDen,
+    quantizeDiv: quantizeDiv,
+    clickMode: clickMode,
+    clickMask: clickMask,
+    clickVolume: clickVolume,
+    countInBars: countInBars,
+    looperMode: looperMode,
+    primaryTrack: primaryTrack,
     tracks: [
       for (final (i, t) in _tracks.indexed)
         TrackSnapshot(
@@ -148,6 +190,7 @@ class FakeSessionEngine implements AudioEngine {
           rms: 0,
           peak: 0,
           multiple: t.multiple,
+          oneShot: oneShot[i] ?? false,
           layerInFlight: i == 0 && _consumeInFlightPoll(),
           lanes: [
             for (final lane in t.lanes)
@@ -341,6 +384,36 @@ class FakeSessionEngine implements AudioEngine {
   EngineResult setMasterGain(double gain) => EngineResult.ok;
   @override
   EngineResult setAutoRecord({required bool enabled}) => EngineResult.ok;
+  @override
+  EngineResult setTempo(double bpm) => EngineResult.ok;
+  @override
+  EngineResult setTimeSignature(int num, int den) => EngineResult.ok;
+  @override
+  EngineResult tapTempo() => EngineResult.ok;
+  @override
+  EngineResult setSyncTempo({required bool on}) => EngineResult.ok;
+  @override
+  EngineResult setQuantizeDiv(GridDivision div) => EngineResult.ok;
+  @override
+  EngineResult setClickMode(ClickMode mode) => EngineResult.ok;
+  @override
+  EngineResult setClickOutput(int mask) => EngineResult.ok;
+  @override
+  EngineResult setClickVolume(double volume) => EngineResult.ok;
+  @override
+  EngineResult setCountIn(int bars) => EngineResult.ok;
+  @override
+  EngineResult setTrackLengthPreset({
+    required int channel,
+    required int bars,
+  }) => EngineResult.ok;
+  @override
+  EngineResult setLooperMode(LooperMode mode) => EngineResult.ok;
+  @override
+  EngineResult crownPrimary({required int channel}) => EngineResult.ok;
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) =>
+      EngineResult.ok;
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;

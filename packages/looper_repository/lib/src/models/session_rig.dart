@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/src/models/track_effect.dart';
+import 'package:loopy_engine/loopy_engine.dart' show LooperMode;
 
 /// One lane's restored audio, routing, and mix inside a [SessionRigTrack].
 ///
@@ -55,7 +56,12 @@ class SessionRigLane {
 @immutable
 class SessionRigTrack {
   /// Creates a [SessionRigTrack].
-  const SessionRigTrack({required this.channel, required this.lanes});
+  const SessionRigTrack({
+    required this.channel,
+    required this.lanes,
+    this.lengthPresetBars = 0,
+    this.oneShot = false,
+  });
 
   /// Track channel index.
   final int channel;
@@ -63,6 +69,17 @@ class SessionRigTrack {
   /// The track's lanes, each with its own audio, routing, and mix. Lane 0 is
   /// first — it is the primary import that resets the track's undo state.
   final List<SessionRigLane> lanes;
+
+  /// The track's length preset (A6): `0` = AUTO, `1..64` = a fixed bar count.
+  /// Restored on session load; it only governs a FUTURE defining recording on
+  /// this track, so restoring it here is inert for the audio the load just
+  /// imported — it only matters if the user re-records the track later.
+  final int lengthPresetBars;
+
+  /// The track's One Shot flag (song-mode-spec.md §2, B5c): `true` = plays
+  /// once then stops. Restored on session load — see
+  /// `LooperRepository.applySession`'s reset-then-restore handling.
+  final bool oneShot;
 }
 
 /// One hardware input's live-monitor configuration inside a [SessionRig].
@@ -118,6 +135,9 @@ class SessionRig {
     this.tracks = const [],
     this.laneEffects = const {},
     this.monitors = const [],
+    this.looperMode = LooperMode.multi,
+    this.primaryTrack = -1,
+    this.oneShotChannels = const {},
   });
 
   /// The base (master) loop length in frames; `0` for an empty session.
@@ -133,4 +153,24 @@ class SessionRig {
 
   /// The per-input live monitors the session defines.
   final List<SessionRigMonitor> monitors;
+
+  /// The session's looper mode (schema v4, B5c). Restored unconditionally on
+  /// apply, like [baseLengthFrames] — a session with no tracks still carries a
+  /// mode choice.
+  final LooperMode looperMode;
+
+  /// The session's crowned primary track (Sync/Band, D18), or `-1` when none
+  /// was ever crowned. See `LooperRepository.applySession`'s doc for why this
+  /// cannot always be fully reset to `-1` on the LIVE engine (no "un-crown"
+  /// native call exists) even though it is captured/restored here.
+  final int primaryTrack;
+
+  /// Every channel with One Shot armed (post-B5c independent review fix),
+  /// independent of whether that channel has a [SessionRigTrack] entry — a
+  /// channel pre-armed with One Shot but never recorded onto has no track
+  /// entry at all (see `SessionRepository._capture`'s doc), so its flag only
+  /// round-trips through this session-level set, not through
+  /// [SessionRigTrack.oneShot]. Restored unconditionally on apply, like
+  /// [looperMode]/[primaryTrack] above.
+  final Set<int> oneShotChannels;
 }

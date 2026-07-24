@@ -1,0 +1,55 @@
+#!/bin/sh
+# Launch the prebuilt Loopy GTK bundle as a Wayland client under weston.
+# GDK_BACKEND=wayland forces the GTK embedder onto Wayland (not X11/XWayland).
+# LOOPY_CONSOLE is already compiled into the bundle; nothing to pass here.
+export GDK_BACKEND=wayland
+
+# The service runs as root; path_provider (session/export dirs) needs HOME + XDG
+# set or it throws MissingPlatformDirectoryException. Create + point them.
+export HOME="${HOME:-/root}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+
+# path_provider's getApplicationDocumentsDirectory shells out to `xdg-user-dir
+# DOCUMENTS` (xdg-user-dirs package). On this minimal image there is no
+# user-dirs.dirs, so without seeding one the lookup fails and the app throws
+# MissingPlatformDirectoryException on startup. Seed a default (idempotent) and
+# create the dirs so session import/export land under ~/Documents. Validated on
+# device: with the xdg-user-dir binary + this file the startup exception is gone.
+if [ ! -f "$XDG_CONFIG_HOME/user-dirs.dirs" ]; then
+  cat > "$XDG_CONFIG_HOME/user-dirs.dirs" <<'EOF'
+XDG_DESKTOP_DIR="$HOME/Desktop"
+XDG_DOCUMENTS_DIR="$HOME/Documents"
+XDG_DOWNLOAD_DIR="$HOME/Downloads"
+XDG_MUSIC_DIR="$HOME/Documents"
+XDG_PICTURES_DIR="$HOME/Documents"
+XDG_PUBLICSHARE_DIR="$HOME/Documents"
+XDG_TEMPLATES_DIR="$HOME/Documents"
+XDG_VIDEOS_DIR="$HOME/Documents"
+EOF
+fi
+mkdir -p "$HOME/Documents" "$HOME/Downloads" "$HOME/Desktop"
+
+# Audio: DIRECT ALSA. This appliance owns the sound card, so LOOPY_ALSA_ONLY tells
+# the engine to force miniaudio's ALSA backend (lowest latency, zero IPC) instead
+# of the desktop JACK->pulse->alsa preference. No PipeWire/JACK in the image, so no
+# pw-jack shim. Runtime rate/buffer changes are safe (the ALSA-duplex uninit
+# deadlock is fixed in the engine). The audio thread self-promotes to SCHED_FIFO;
+# that needs the RT limits on loopy.service.
+export LOOPY_ALSA_ONLY=1
+# Promote the engine's audio thread to SCHED_FIFO (needs the RT limits on
+# loopy.service). Required for glitch-free low-latency: at small buffers (64-128
+# frames, ~1-3ms) a normal-priority thread misses the period deadline and the
+# monitored signal buzzes. Safe now that the ALSA wait loop sleeps (snd_pcm_wait)
+# rather than busy-spinning.
+export LOOPY_RT_AUDIO=1
+# ALSA duplex buffer depth (period count). The engine's startup fixes (capture
+# backlog flush + period-aligned reads + self-healing playback resync) make the
+# monitor path robust, but a 3-period buffer gives the playback write side a
+# stable cushion above the underrun edge. Validated on device: 10/10 clean cold
+# starts under a worst-case input transient at 96kHz/64 frames with periods=3
+# (~5ms), where 2 periods intermittently latched a "robotic" monitor. Retest at
+# 2 (reclaims ~1.3ms) is tracked separately; default 2 stays in the engine.
+export LOOPY_ALSA_PERIODS=3
+exec /opt/loopy/loopy "$@"

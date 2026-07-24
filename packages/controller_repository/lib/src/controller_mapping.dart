@@ -52,6 +52,21 @@ class ControllerMapping extends Equatable {
           trigger: MappingTrigger(kind: kind, id: 83),
           action: LooperAction.clear,
         ),
+        // Trigger id 84 was the pre-`2f0513a` tapTempo default mapping;
+        // restored here (D20) now that tempo returns. 85/86 are freshly
+        // assigned — the deleted stack never had toggleMetronome/cancelArm.
+        MappingEntry(
+          trigger: MappingTrigger(kind: kind, id: 84),
+          action: LooperAction.tapTempo,
+        ),
+        MappingEntry(
+          trigger: MappingTrigger(kind: kind, id: 85),
+          action: LooperAction.toggleMetronome,
+        ),
+        MappingEntry(
+          trigger: MappingTrigger(kind: kind, id: 86),
+          action: LooperAction.cancelArm,
+        ),
       ],
     );
   }

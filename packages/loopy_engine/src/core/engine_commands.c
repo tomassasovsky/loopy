@@ -322,6 +322,7 @@ static void le_apply_queued_undo(le_engine* engine, int32_t channel) {
                              * stale nonzero length (mirrors the live-tap and
                              * clear paths) */
     store_i32(&t->a_multiple, 1);
+    store_i32(&t->a_sync_divisor, 0); /* B3: coherent-snapshot mirror */
     store_i32(&t->a_redo_depth, t->redo_count);
     break; /* empty now — further queued taps are no-ops */
   }
@@ -709,6 +710,14 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
       engine->armed[channel] = 0; /* spent: the signal already fired it */
     }
     if (engine->armed[channel]) {
+      /* B3b BUG 2 (adversarial review): armed[]/armed_trigger[] is shared
+       * across every arm-capable command on this channel (auto-record here,
+       * the quantize arm below, and le_engine_toggle_section's trigger 2).
+       * A pending arm belonging to a DIFFERENT trigger must be rejected,
+       * not silently cancelled — treating "someone else's live arm" as
+       * "my own second press" would swallow their pending action with no
+       * error to either caller. */
+      if (engine->armed_trigger[channel] != 1) return LE_ERR_INVALID;
       engine->armed[channel] = 0;
       return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
     }
@@ -725,9 +734,23 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
    * transport is held (everything parked/empty): the clock never ticks then, a
    * deferred arm would deadlock, and the held position IS the loop top, so
    * immediate is on-grid by definition. Per-track overrides win over the
-   * global default. */
-  if (le_effective_quantize(engine, channel) && has_master &&
-      le_transport_active(engine)) {
+   * global default.
+   *
+   * B3, D16: a Sync/Band non-primary EMPTY track's DEFINING recording is
+   * ALSO force-armed here, regardless of the ordinary quantize setting —
+   * the manual's "automatically quantized to keep them in sync with the
+   * primary track" (song-mode-spec.md §1). Scoped to st == EMPTY only:
+   * this is what makes the take START at the loop top (record_pos seeds to
+   * e->clock.position, which the fire lands on exactly 0), the
+   * precondition finalize_new_track's division-playback formula depends on
+   * (mix_tracks_frame reads a division phase-locked to the primary's top,
+   * which only holds if the take BEGAN there). Finalize / punch-in
+   * quantization is unaffected — governed only by the ordinary setting,
+   * unchanged. */
+  const int sync_force_arm =
+      st == LE_TRACK_EMPTY && le_sync_quantize_active(engine, channel);
+  if ((le_effective_quantize(engine, channel) || sync_force_arm) &&
+      has_master && le_transport_active(engine)) {
     /* If we armed this track but the boundary already fired it, the arm is
      * spent (published a_pending cleared); fall through to a fresh decision on
      * the now-current state. */
@@ -735,6 +758,10 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
       engine->armed[channel] = 0;
     }
     if (engine->armed[channel]) {
+      /* B3b BUG 2 (adversarial review, see the auto-record branch above for
+       * the full rationale): reject rather than cancel a DIFFERENT
+       * trigger's pending arm. */
+      if (engine->armed_trigger[channel] != 0) return LE_ERR_INVALID;
       /* Second press before the boundary cancels the pending action. */
       engine->armed[channel] = 0;
       return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
@@ -751,7 +778,25 @@ int32_t le_engine_record(le_engine* engine, int32_t channel) {
     return le_push(engine, LE_CMD_ARM, channel, 0.0f);
   }
 
-  /* Immediate (quantize off, or the defining recording). */
+  /* Immediate (quantize off, or the defining recording). A pending Band
+   * section-transport arm (trigger 2, le_engine_toggle_section) belongs to
+   * a DIFFERENT command and must not be silently discarded here — B3b
+   * BUG 2: LE_CMD_RECORD unconditionally zeroes pending_record/a_pending on
+   * the audio thread with no way to tell whose arm it was clearing, so an
+   * immediate record on a channel with a live toggle-section arm would
+   * otherwise swallow the user's original toggle with zero error to either
+   * caller. A genuinely spent arm (already fired: a_pending reads 0) still
+   * decays as normal, regardless of trigger — nothing to protect there.
+   * Scoped to trigger 2 specifically (not "any armed[channel]"): a stale
+   * trigger-0/1 arm reaching here (e.g. quantize toggled off mid-arm)
+   * predates B3b and must keep its existing behavior — falling through to
+   * an immediate record — bit-identical for Multi/Sync. */
+  if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
+    engine->armed[channel] = 0;
+  }
+  if (engine->armed[channel] && engine->armed_trigger[channel] == 2) {
+    return LE_ERR_INVALID;
+  }
   if (st == LE_TRACK_EMPTY) {
     le_begin_empty_capture(engine, channel);
     if (has_master) le_prepare_new_capture(engine, t);
@@ -1037,6 +1082,7 @@ int32_t le_engine_undo(le_engine* engine, int32_t channel) {
   le_mark_state_cmd(t, LE_TRACK_EMPTY);
   le_track_set_len(t, 0); /* coherent snapshot before the audio thread applies */
   store_i32(&t->a_multiple, 1);
+  store_i32(&t->a_sync_divisor, 0); /* B3: coherent-snapshot mirror */
   store_i32(&t->a_redo_depth, t->redo_count);
   return LE_OK;
 }
@@ -1201,6 +1247,111 @@ int32_t le_engine_set_quantize_div(le_engine* engine, int32_t div) {
   return le_push(engine, LE_CMD_SET_QUANTIZE_DIV, div, 0.0f);
 }
 
+/* ---- looper mode (B2a, D4; see loopy_engine_api.h's looper-mode section) ----
+ * Plain le_push producer: validation that needs no engine state runs here on
+ * the control thread; the D4 content lock is enforced on the AUDIO thread
+ * (apply_command, le_looper_mode_locked), the only side that owns track
+ * states — a locked command is accepted by this wrapper and dropped there. */
+
+int32_t le_engine_set_looper_mode(le_engine* engine, int32_t mode) {
+  if (mode < LE_LOOPER_MODE_MULTI || mode > LE_LOOPER_MODE_FREE) {
+    return LE_ERR_INVALID;
+  }
+  return le_push(engine, LE_CMD_SET_LOOPER_MODE, mode, 0.0f);
+}
+
+/* ---- primary track / Sync + Band (B3/B3b, D16/D18) ---- */
+
+int32_t le_engine_crown_primary(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_CROWN_PRIMARY, channel, 0.0f);
+}
+
+/* ---- One Shot (B4, Sheeran manual §5.9.4; see loopy_engine_api.h's
+ * LE_CMD_SET_ONE_SHOT / le_engine_set_one_shot docs for the full mode-
+ * gating rationale) ---- */
+
+int32_t le_engine_set_one_shot(le_engine* engine, int32_t channel,
+                               int32_t enabled) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_ONE_SHOT, channel, enabled ? 1.0f : 0.0f);
+}
+
+/* Reuses le_engine_record's own quantize-arm TOGGLE shape (armed[] /
+ * armed_trigger[], LE_CMD_ARM/DISARM) with trigger 2 instead of inventing
+ * parallel bookkeeping. B3b BUG 2 (adversarial review): armed[]/
+ * armed_trigger[] is shared with le_engine_record's own trigger-0/1 arms —
+ * "a section-transport arm and a record arm can never coexist on the same
+ * channel" is true only because BOTH sides now check armed_trigger[]
+ * before treating a live arm as their own to cancel (see this function's
+ * body and le_engine_record's two arm-check branches + its Immediate path)
+ * — a DIFFERENT trigger's pending arm is rejected, never silently
+ * cancelled. */
+int32_t le_engine_toggle_section(le_engine* engine, int32_t channel) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (!atomic_load_explicit(&engine->a_configured, memory_order_acquire)) {
+    return LE_ERR_NOT_RUNNING;
+  }
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (load_i32(&engine->a_looper_mode) != LE_LOOPER_MODE_BAND) {
+    return LE_ERR_INVALID;
+  }
+  const int32_t primary = load_i32(&engine->a_primary_track);
+  if (primary < 0 || channel == primary) return LE_ERR_INVALID;
+  /* B3b BUG 1 (adversarial review): every other primary-relative decision
+   * in B3/B3b consults le_sync_quantize_active before trusting e->clock as
+   * "the primary's cycle" — this entry point didn't. Without an
+   * established primary, D16's own fallback applies: whoever records
+   * first defines e->clock, which may be a NON-primary track (the crowned
+   * primary itself might still be EMPTY). Arming trigger 2 in that state
+   * would fire against that other track's own clock at its own loop top,
+   * not "the primary's" — directly contradicting this function's
+   * documented guarantee. Reject instead: section-transport is meaningless
+   * without an established primary reference. */
+  if (!le_sync_quantize_active(engine, channel)) return LE_ERR_INVALID;
+  le_track* t = &engine->tracks[channel];
+  const int32_t st = le_effective_state(t);
+  if (st == LE_TRACK_EMPTY) return LE_ERR_INVALID;
+  if (!le_transport_active(engine)) {
+    /* The transport is HELD (every track stopped/empty): the primary's
+     * clock never ticks then, so a deferred arm would never fire — the
+     * same deadlock le_engine_record's quantize branch avoids for record
+     * arms (see its comment above). The held position IS the primary's
+     * loop top by definition, so act immediately instead of arming. */
+    return le_push(engine, st == LE_TRACK_STOPPED ? LE_CMD_PLAY : LE_CMD_STOP,
+                   channel, 0.0f);
+  }
+  if (engine->armed[channel] && load_i32(&t->a_pending) == 0) {
+    engine->armed[channel] = 0; /* spent: the boundary already fired it */
+  }
+  if (engine->armed[channel]) {
+    /* B3b BUG 2 (adversarial review): reject rather than cancel a
+     * DIFFERENT trigger's pending arm (le_engine_record's quantize arm,
+     * trigger 0, or its auto-record arm, trigger 1) — see this function's
+     * header doc. */
+    if (engine->armed_trigger[channel] != 2) return LE_ERR_INVALID;
+    /* Second call before the boundary fires cancels the pending toggle. */
+    engine->armed[channel] = 0;
+    return le_push(engine, LE_CMD_DISARM, channel, 0.0f);
+  }
+  engine->armed[channel] = 1;
+  engine->armed_trigger[channel] = 2; /* Band section-transport trigger */
+  return le_push(engine, LE_CMD_ARM, channel, 2.0f);
+}
+
+/* ---- MIDI clock (Phase C/E, D15; see loopy_engine_api.h's MIDI-clock
+ * section) ---- */
+
+int32_t le_engine_set_clock_mode(le_engine* engine, int32_t mode) {
+  /* RECEIVE is Phase E's clock follower — stub the tri-state field now (so
+   * that part can reuse it without a breaking rename) but reject it here,
+   * same as any value outside the enum. */
+  if (mode != LE_CLOCK_OFF && mode != LE_CLOCK_SEND) return LE_ERR_INVALID;
+  return le_push(engine, LE_CMD_SET_CLOCK_MODE, mode, 0.0f);
+}
+
 /* ---- click + count-in (A2; see loopy_engine_api.h's click section) ---- */
 
 int32_t le_engine_set_click_mode(le_engine* engine, int32_t mode) {
@@ -1251,6 +1402,35 @@ int32_t le_engine_set_default_multiple(le_engine* engine, int32_t multiple) {
   /* 0 = auto (round up on stop); >= 1 fixes inheriting tracks to K base loops. */
   engine->default_multiple = multiple < 0 ? 0 : multiple;
   return LE_OK;
+}
+
+/* ---- track length presets (A6, D17; see loopy_engine_api.h's section doc for
+ * the full preset x click-mode matrix) ---- */
+
+int32_t le_engine_set_track_length_preset(le_engine* engine, int32_t channel,
+                                          int32_t bars) {
+  if (engine == NULL) return LE_ERR_INVALID;
+  if (channel < 0 || channel >= engine->track_count) return LE_ERR_INVALID;
+  if (bars < 0 || bars > LE_LENGTH_PRESET_MAX_BARS) return LE_ERR_INVALID;
+  if (bars > 0) {
+    /* D17 allocation guard: `bars` bars of the CURRENT time signature at the
+     * slowest possible tempo (30 BPM, LE_GRID_TEMPO_MIN) must fit within
+     * max_loop_frames — checked here, before recording starts, rather than
+     * discovered mid-take. Any signature is possible pre-lock, so this reads
+     * the signature live rather than assuming 4/4. A tempo at or above 30 BPM
+     * (the engine's floor) only ever needs FEWER frames per bar, so passing
+     * this check at 30 BPM guarantees every reachable actual tempo fits too. */
+    int32_t num = load_i32(&engine->a_ts_num);
+    if (num <= 0) num = 4;
+    const int32_t sr = engine->sample_rate > 0 ? engine->sample_rate : 48000;
+    const le_tempo_grid worst = {LE_GRID_TEMPO_MIN, num,
+                                 load_i32(&engine->a_ts_den), sr};
+    const double fpbar = le_grid_frames_per_bar(&worst);
+    if (fpbar > 0.0 && (double)bars * fpbar > (double)engine->max_loop_frames) {
+      return LE_ERR_CAPACITY;
+    }
+  }
+  return le_push(engine, LE_CMD_SET_LENGTH_PRESET, channel, (float)bars);
 }
 
 int32_t le_engine_set_rec_dub(le_engine* engine, int32_t enabled) {

@@ -85,4 +85,20 @@ void main() {
     verifyNever(() => repository.record());
     verifyNever(() => repository.clear());
   });
+
+  test(
+    'the default tapTempo mapping (CC 84) drives repository.tapTempo',
+    () async {
+      when(repository.tapTempo).thenReturn(EngineResult.ok);
+      final bloc = LooperBloc(repository: repository, controller: controller);
+      addTearDown(bloc.close);
+
+      source.pushForTest(_cc, 84, 127);
+      await pumpEventQueue();
+
+      verify(repository.tapTempo).called(1);
+      verifyNever(() => repository.record());
+      verifyNever(() => repository.clear());
+    },
+  );
 }

@@ -30,7 +30,12 @@ enum EngineResult {
   /// A plugin's bus topology is not a stereo (or mono-adaptable) effect —
   /// instrument / multi-bus / sidechain / wrong channel count (D-BUS). The
   /// insert is rejected with no partial slot created.
-  unsupported;
+  unsupported,
+
+  /// A requested allocation would exceed engine capacity (A6, D17): e.g. a
+  /// track length preset that would not fit `max_loop_frames` even at the
+  /// slowest possible tempo.
+  capacity;
 
   /// Maps a native `le_result` integer to an [EngineResult].
   ///
@@ -42,6 +47,7 @@ enum EngineResult {
     -3 => EngineResult.notRunning,
     -4 => EngineResult.device,
     -5 => EngineResult.unsupported,
+    -6 => EngineResult.capacity,
     _ => EngineResult.invalid,
   };
 
@@ -272,6 +278,167 @@ abstract interface class EngineRouting {
     required int lane,
     required int mask,
   });
+}
+
+/// The tempo grid, tap tempo, loop↔tempo sync, musical quantize granularity,
+/// and the click (metronome) + count-in built on it (plan §Architecture
+/// 1–3; index `2026-07-22-feat-tempo-aware-looper-modes-plan.md`).
+///
+/// TEMPO LOCK (D6): while any track has content AND a grid exists ([setTempo]
+/// / [setTimeSignature] / [tapTempo] are accepted by the engine but IGNORED
+/// (a no-op on the published state) — only clearing every track releases the
+/// lock. The tempo value and its [TempoSource] survive the clear: a
+/// [TempoSource.derived] tempo outlives the loop that produced it.
+///
+/// With every setting at its grid-off default (no tempo ever set, quantize
+/// div off, click mode off, count-in `0`) the engine behaves exactly like the
+/// tempo-free build — this whole interface is additive.
+abstract interface class TempoControl {
+  /// Sets the tempo in denominator-note beats per minute, clamped by the
+  /// engine to `30..300`. Sets [EngineSnapshot.tempoSource] to
+  /// [TempoSource.manual] (last writer wins). Ignored while the tempo is
+  /// locked (see the class doc).
+  EngineResult setTempo(double bpm);
+
+  /// Sets the time signature to [num]/[den]. Only the 17 Sheeran-verified
+  /// signatures are valid — `num` 2..7 for `den == 4`, `num` 5..15 for
+  /// `den == 8` — anything else returns [EngineResult.invalid] without
+  /// applying. Ignored while the tempo is locked.
+  EngineResult setTimeSignature(int num, int den);
+
+  /// Registers a tap; two taps set the tempo from their interval (an
+  /// interval outside the `30..300` BPM window is ignored, so a stale first
+  /// tap never yields an absurd tempo). Sets [EngineSnapshot.tempoSource] to
+  /// [TempoSource.tapped] on success; taps are ignored entirely while the
+  /// tempo is locked.
+  EngineResult tapTempo();
+
+  /// Enables/disables loop↔grid sync (default on). When [on], finalizing the
+  /// DEFINING loop establishes the grid relationship: with a tempo already
+  /// set, the loop's whole-bar count is rounded to the existing grid and the
+  /// tempo is untouched; with no tempo set, a tempo is derived from the loop
+  /// (D7) and [EngineSnapshot.tempoSource] becomes [TempoSource.derived].
+  /// The loop's audio length is never altered either way. When off, the loop
+  /// stays free-form ([EngineSnapshot.loopBars] `0`, tempo untouched) — the
+  /// tempo-free behavior.
+  EngineResult setSyncTempo({required bool on});
+
+  /// Sets the musical quantization granularity. State only in this slice —
+  /// published in [EngineSnapshot.quantizeDiv]; the musical arm machinery
+  /// that consumes it is engine-side (A3).
+  EngineResult setQuantizeDiv(GridDivision div);
+
+  /// Sets the click's audibility mode: WHEN the click voice sounds. WHERE it
+  /// sounds is [setClickOutput] (default no outputs). Default
+  /// [ClickMode.off].
+  EngineResult setClickMode(ClickMode mode);
+
+  /// Routes the click to the output channels set in [mask] (a bitmask; bit c
+  /// => hardware output channel c). Default `0`: the click sounds on no
+  /// outputs until explicitly routed.
+  EngineResult setClickOutput(int mask);
+
+  /// Sets the click [volume], clamped by the engine to `0..LE_MAX_GAIN`
+  /// (default `1.0`). This is the click's only gain stage — master gain and
+  /// the limiter never touch it.
+  EngineResult setClickVolume(double volume);
+
+  /// Sets the count-in length in measures (`0` = off, up to
+  /// `LE_COUNT_IN_MAX_BARS`). With count-in on and a tempo set, a record
+  /// press on an idle, empty looper first clicks [bars] measures — published
+  /// via [EngineSnapshot.countingIn] / [EngineSnapshot.countInBeatsLeft] —
+  /// then recording starts on the downbeat. A record or stop press during the
+  /// count-in cancels it, as does setting this to `0`. Mutually exclusive
+  /// with [LooperTransport.setAutoRecord]: enabling count-in disables
+  /// auto-record and vice versa; count-in wins if both are somehow set.
+  EngineResult setCountIn(int bars);
+
+  /// Sets track [channel]'s length preset (A6, D17): `0` = AUTO, or `1..64`
+  /// to fix the DEFINING (first/master) recording to [bars] bars. Orthogonal
+  /// to [LooperTransport.setTrackMultiple], which governs a NON-defining
+  /// track once a master already exists.
+  ///
+  /// Implements the manual's preset × click-mode matrix
+  /// (`song-mode-spec.md` §1):
+  ///  * AUTO + click off: tempo AND bar count are both derived from the
+  ///    recording (unchanged D7 behavior).
+  ///  * AUTO + click on: only the bar count is derived; an already-set tempo
+  ///    is never re-derived. With no tempo set, this falls back to deriving
+  ///    both — the same as click off.
+  ///  * N bars + click off: the tempo is derived from recorded length ÷ N —
+  ///    UNCONDITIONALLY, even over an existing tempo (distinct from AUTO's
+  ///    D7 "never re-derive" precedence, per the manual's explicit rule for
+  ///    this preset).
+  ///  * N bars + click on: requires a tempo already set when recording
+  ///    begins; the recording then auto-finishes into overdub at exactly N
+  ///    bars. An early record press disarms the preset (closes normally,
+  ///    like AUTO). With no tempo set at record start, this degrades to the
+  ///    N-bars + click-off behavior (documented A6 judgment call).
+  ///
+  /// The loop's audio length is never altered in any case. Requires
+  /// [setSyncTempo] on; with sync off the preset is dormant. A change on an
+  /// already-recorded track is inert until the track is cleared and
+  /// re-recorded.
+  ///
+  /// Returns [EngineResult.invalid] for a bad channel/bars, or a capacity
+  /// error when [bars] at the current signature and the slowest possible
+  /// tempo (30 BPM) would exceed engine capacity — checked before recording
+  /// starts.
+  EngineResult setTrackLengthPreset({required int channel, required int bars});
+}
+
+/// The five-mode architectural looper axis (plan §Architecture 2, decision
+/// D4; `2026-07-22-feat-tempo-aware-looper-modes-plan.md`) — Multi (default,
+/// today's independent-per-track behavior), Sync, Song, Band, and Free. A
+/// SEPARATE interface from [TempoControl] because it is a different axis
+/// entirely (which of five architectural modes the looper runs in, not
+/// tempo/click/quantize state), matching this file's interface-segregation
+/// convention.
+///
+/// MODE LOCK (D4): while any track has content (state != `TrackState.empty`),
+/// [setLooperMode] is accepted by the engine but IGNORED (a no-op on the
+/// published state) — a simpler predicate than [TempoControl]'s D6 tempo
+/// lock (content alone; no grid or count-in check). Only clearing every
+/// track releases the lock.
+///
+/// This part (B2a) ships only the field and the lock gate: [LooperMode]'s
+/// non-multi values have no engine SEMANTICS yet (Sync/Song/Band/Free land in
+/// B2b onward) — setting one changes only what [EngineSnapshot.looperMode]
+/// reports, not the engine's audio path. This is a DIFFERENT axis from the
+/// looper feature's own `InteractionMode` (record/mute — what a track press
+/// does); the two must never be confused.
+///
+/// Grew in B5c (as anticipated) to also carry [crownPrimary] and
+/// [setOneShot]: both are persistent, mode-adjacent per-session/per-track
+/// designations (crown: D18; One Shot: song-mode-spec.md §2) rather than
+/// tempo-grid state, so they belong here alongside [setLooperMode] rather
+/// than in [TempoControl].
+abstract interface class LooperModeControl {
+  /// Sets the looper mode. Ignored while the mode is locked (see the class
+  /// doc). Values outside [LooperMode] are rejected with
+  /// [EngineResult.invalid] without applying.
+  EngineResult setLooperMode(LooperMode mode);
+
+  /// Crowns [channel] the primary track (Sync/Band, D18). Accepted in every
+  /// looper mode and NOT gated by the D4 content lock — the crown is a
+  /// persistent per-session designation, not content — though it is inert
+  /// outside Sync/Band. Persists through a track clear/undo-to-empty and
+  /// across mode switches; only an explicit re-crown moves it (no
+  /// auto-reassignment, and no "un-crown" call exists — see
+  /// [EngineSnapshot.primaryTrack]'s doc for the `-1` = none sentinel).
+  /// Returns [EngineResult.invalid] for an out-of-range channel.
+  EngineResult crownPrimary({required int channel});
+
+  /// Sets track [channel]'s One Shot flag (song-mode-spec.md §2): when
+  /// [oneShot] is `true`, the track plays once and then stops instead of
+  /// looping. Accepted in every looper mode and NOT gated by the D4 content
+  /// lock — like [crownPrimary], it is a persistent per-track SETTING, not
+  /// content — though it is only behaviorally active in Free/Song (the only
+  /// modes with a per-track transport-wrap event to hook). Survives a track
+  /// clear/undo-to-empty and a mode switch; a fresh (re)start of the engine
+  /// resets it to `false` (see [TrackSnapshot.oneShot]'s doc). Returns
+  /// [EngineResult.invalid] for an out-of-range channel.
+  EngineResult setOneShot({required int channel, required bool oneShot});
 }
 
 /// Global master-output bus: post-mix gain and the peak limiter.
@@ -646,6 +813,8 @@ abstract interface class AudioEngine
         EngineMetering,
         LooperTransport,
         EngineRouting,
+        TempoControl,
+        LooperModeControl,
         MasterBusControl,
         EffectsControl,
         MonitorControl,

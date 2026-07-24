@@ -1,0 +1,29 @@
+# Runs the Loopy app as a Wayland client after weston is up. weston-init starts
+# weston (kiosk-shell + the HDMI outputs from weston.ini); this unit connects to
+# its Wayland socket.
+#
+# NOTE (blocked-verify): the Wayland socket name (wayland-0/wayland-1), the
+# XDG_RUNTIME_DIR, and the user weston runs as depend on the weston-init setup on
+# the image — confirm on device and adjust WAYLAND_DISPLAY / XDG_RUNTIME_DIR / User.
+[Unit]
+Description=Loopy floor-console app (Wayland client under weston)
+After=weston.service
+Requires=weston.service
+
+[Service]
+Type=simple
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WAYLAND_DISPLAY=wayland-1
+# Real-time audio: the engine puts its ALSA duplex thread on SCHED_FIFO 80 and
+# miniaudio locks its buffers. Without these limits (systemd defaults RTPRIO=0,
+# MEMLOCK=8M) the setschedparam EPERMs and the thread stays SCHED_OTHER -> jitter
+# and xruns. 95 leaves the audio thread (80) room and the USB IRQ thread (rtirq,
+# ~90) above it.
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+ExecStart=/usr/bin/loopy-kiosk-launch
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

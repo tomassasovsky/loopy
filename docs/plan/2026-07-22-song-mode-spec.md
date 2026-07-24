@@ -3,11 +3,12 @@ title: "B1: Song & Band mode spec + per-mode clock arming (from Sheeran Looper X
 type: spec
 date: 2026-07-22
 issue: 263
-status: DRAFT — awaiting plan-gate review
+status: APPROVED — plan-gate cleared 2026-07-23
 index: 2026-07-22-feat-tempo-aware-looper-modes-plan.md
 ---
 
-> **DRAFT — plan-gate.** Transcribed from the Sheeran Looper X User Guide
+> **APPROVED.** Plan-gate cleared by the user 2026-07-23. B4 (Song mode
+> engine) is unblocked. Transcribed from the Sheeran Looper X User Guide
 > v1.0.0 (§3.1, §4.2, §5.9, §6.2). Engine work for Song/Band (B4) must not
 > start until this is approved. Items marked **[loopy decision]** are places
 > the manual is silent or loopy's 8-track model differs from the Sheeran's

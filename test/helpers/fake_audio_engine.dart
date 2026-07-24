@@ -270,6 +270,123 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// The last value passed to [setTempo].
+  double? lastTempoBpm;
+
+  /// The last `(num, den)` passed to [setTimeSignature].
+  (int, int)? lastTimeSignature;
+
+  /// The number of [tapTempo] calls.
+  int tapTempoCallCount = 0;
+
+  /// The last value passed to [setSyncTempo].
+  bool? lastSyncTempo;
+
+  /// The last value passed to [setQuantizeDiv].
+  GridDivision? lastQuantizeDiv;
+
+  /// The last value passed to [setClickMode].
+  ClickMode? lastClickMode;
+
+  /// The last value passed to [setClickOutput].
+  int? lastClickOutput;
+
+  /// The last value passed to [setClickVolume].
+  double? lastClickVolume;
+
+  /// The last value passed to [setCountIn].
+  int? lastCountIn;
+
+  @override
+  EngineResult setTempo(double bpm) {
+    lastTempoBpm = bpm;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setTimeSignature(int num, int den) {
+    lastTimeSignature = (num, den);
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult tapTempo() {
+    tapTempoCallCount++;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setSyncTempo({required bool on}) {
+    lastSyncTempo = on;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setQuantizeDiv(GridDivision div) {
+    lastQuantizeDiv = div;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickMode(ClickMode mode) {
+    lastClickMode = mode;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickOutput(int mask) {
+    lastClickOutput = mask;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setClickVolume(double volume) {
+    lastClickVolume = volume;
+    return EngineResult.ok;
+  }
+
+  @override
+  EngineResult setCountIn(int bars) {
+    lastCountIn = bars;
+    return EngineResult.ok;
+  }
+
+  /// Per-track length presets passed to [setTrackLengthPreset].
+  final Map<int, int> trackLengthPreset = {};
+
+  @override
+  EngineResult setTrackLengthPreset({required int channel, required int bars}) {
+    trackLengthPreset[channel] = bars;
+    return EngineResult.ok;
+  }
+
+  /// The last value passed to [setLooperMode].
+  LooperMode? lastLooperMode;
+
+  @override
+  EngineResult setLooperMode(LooperMode mode) {
+    lastLooperMode = mode;
+    return EngineResult.ok;
+  }
+
+  /// The last channel passed to [crownPrimary].
+  int? lastCrownedChannel;
+
+  @override
+  EngineResult crownPrimary({required int channel}) {
+    lastCrownedChannel = channel;
+    return EngineResult.ok;
+  }
+
+  /// Per-track One Shot flags passed to [setOneShot].
+  final Map<int, bool> trackOneShot = {};
+
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) {
+    trackOneShot[channel] = oneShot;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;

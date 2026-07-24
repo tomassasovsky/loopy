@@ -40,6 +40,7 @@
 #include "engine_miniaudio.h"
 #include "engine_platform.h"
 #include "engine_private.h"
+#include "le_midi_clock.h" /* le_midi_clock_reset (C1 clock-send generator) */
 #include "lockfree_ring.h"
 #include "loop_clock.h"
 #include "loopy_engine_api.h"
@@ -256,7 +257,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
     store_i32(&tr->a_undo_depth, 0);
     store_i32(&tr->a_redo_depth, 0);
     store_i32(&tr->a_multiple, 1);
+    store_i32(&tr->a_sync_divisor, 0); /* B3: per-track, resets like a_multiple */
     store_i32(&tr->a_pending, 0);
+    store_i32(&tr->a_length_preset_bars, 0); /* AUTO */
+    store_i32(&tr->a_one_shot, 0); /* B4: per-track setting, resets like the
+                                    * length preset above (not by clear —
+                                    * see le_engine_set_one_shot's doc) */
+    tr->length_preset_target_frames = 0;
     tr->pending_record = 0;
     tr->pending_trigger = 0;
     tr->record_pos = 0;
@@ -347,6 +354,13 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   if (engine->lat_buf == NULL) engine->lat_buf_cap = 0;
   le_loop_clock_reset(&engine->clock);
   engine->loop_iteration = 0;
+  /* Free mode (B2b): each track's own clock resets alongside the master's —
+   * a fresh configure/session must never carry a stale established length
+   * from a previous run into the first Free-mode recording. */
+  for (int t = 0; t < LE_MAX_TRACKS; ++t) {
+    le_loop_clock_reset(&engine->tracks[t].free_clock);
+    engine->tracks[t].free_iteration = 0;
+  }
 
   /* Loop visualization: clear the master + per-track loop rings. */
   engine->loop_viz_bucket = -1;
@@ -356,6 +370,7 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   }
   for (int t = 0; t < LE_MAX_TRACKS; ++t) {
     engine->track_viz_accum[t] = 0.0f;
+    engine->track_viz_bucket[t] = -1; /* Free mode (B2b); see field doc */
     for (int i = 0; i < LE_VIZ_POINTS; ++i) {
       store_f32(&engine->a_track_viz[t][i], 0.0f);
     }
@@ -395,6 +410,12 @@ int32_t le_engine_configure(le_engine* engine, int32_t sample_rate,
   engine->count_in_grace_channel = -1; /* no cancel-race grace window open */
   store_i32(&engine->a_counting_in, 0);
   store_i32(&engine->a_count_in_beats_left, 0);
+  /* MIDI clock send (C1): the RUNNING generator state resets per session,
+   * exactly like the click/count-in state above — a fresh configure must
+   * never carry a stale active-run frame count (or an unpaired Stop owed)
+   * into the next session. The SETTING (a_clock_mode) persists, seeded once
+   * in le_engine_create like a_looper_mode/a_primary_track. */
+  le_midi_clock_reset(&engine->midi_clock);
   atomic_store_explicit(&engine->a_xruns, 0u, memory_order_relaxed); /* per session */
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity on every fresh start */
   /* Limiter off by default (the app enables it); ceiling just below full scale.
@@ -540,6 +561,8 @@ le_engine* le_engine_create(void) {
   if (engine == NULL) return NULL;
   le_ring_init(&engine->ring, engine->ring_storage, LE_RING_CAPACITY);
   le_ring_init(&engine->evt_ring, engine->evt_storage, LE_RING_CAPACITY);
+  le_ring_init(&engine->midi_clock_ring, engine->midi_clock_ring_storage,
+              LE_MIDI_CLOCK_RING_CAPACITY);
   le_perf_log_ring_init(&engine->perf.log_ring, engine->perf.log_storage,
                         LE_PERF_LOG_RING_CAPACITY);
   le_perf_log_ring_init(&engine->perf.log_ctrl_ring,
@@ -569,6 +592,23 @@ le_engine* le_engine_create(void) {
   atomic_store_explicit(&engine->a_click_mask, 0u, memory_order_relaxed);
   store_f32(&engine->a_click_volume_bits, 1.0f);
   store_i32(&engine->a_count_in_bars, 0);
+  /* Looper mode SETTING (B2a, D4): same seeded-once persistence as the
+   * tempo/click settings above. MULTI (0) is both the enum's zero value and
+   * calloc's zero-fill, so this store is redundant against the allocation —
+   * kept explicit anyway, matching every sibling setting here, so the
+   * default is legible at the seed site rather than implied by calloc. */
+  store_i32(&engine->a_looper_mode, LE_LOOPER_MODE_MULTI);
+  /* Primary track SETTING (B3, D18): same seeded-once persistence as the
+   * looper mode above — -1 (none) until an explicit crown, surviving both
+   * configure() and any track clear (D18: no auto-reassignment). Unlike
+   * a_looper_mode, -1 is NOT calloc's zero-fill, so this store is load-
+   * bearing, not just legibility. */
+  store_i32(&engine->a_primary_track, -1);
+  /* MIDI clock mode SETTING (Phase C/E, D15): same seeded-once persistence as
+   * the looper mode / primary track above. OFF (0) is both the enum's zero
+   * value and calloc's zero-fill; kept explicit for the same legibility
+   * reason as a_looper_mode's redundant store. */
+  store_i32(&engine->a_clock_mode, LE_CLOCK_OFF);
   store_f32(&engine->a_master_gain_bits, 1.0f); /* unity until set */
   store_i32(&engine->a_limiter_enabled, 0);     /* off until the app enables it */
   store_f32(&engine->a_limiter_ceiling_bits, 0.99f);

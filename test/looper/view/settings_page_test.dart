@@ -26,6 +26,9 @@ class _MockAudioSetupCubit extends MockCubit<AudioSetupState>
 class _MockMidiSetupCubit extends MockCubit<MidiSetupState>
     implements MidiSetupCubit {}
 
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
+
 void main() {
   late SettingsRepository settings;
   late TracksCubit tracks;
@@ -42,6 +45,14 @@ void main() {
   late MonitorCubit monitor;
   late RecordOptionsCubit recordOptions;
   late LooperRepository repository;
+  late LooperBloc looperBloc;
+  late TempoCubit tempo;
+
+  setUpAll(() {
+    registerFallbackValue(GridDivision.off);
+    registerFallbackValue(ClickMode.off);
+    registerFallbackValue(const LooperRecordPressed(0));
+  });
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
@@ -112,6 +123,45 @@ void main() {
       repository: repository,
       settings: settings,
     );
+    // The Tracks section's length-preset picker reads/drives LooperBloc,
+    // provided app-wide in the real app (lib/app/view/app.dart) — mirrored
+    // here (mocked, like the other MockCubit/MockBloc fixtures above) so the
+    // settings route can find it.
+    looperBloc = _MockLooperBloc();
+    when(() => looperBloc.state).thenReturn(const LooperState());
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: const LooperState(),
+    );
+    for (final stub in <void Function()>[
+      () => when(() => repository.setTempo(any())).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setTimeSignature(any(), any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setSyncTempo(on: any(named: 'on')),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setQuantizeDiv(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setClickMode(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setClickOutput(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setClickVolume(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(
+        () => repository.setCountIn(any()),
+      ).thenReturn(EngineResult.ok),
+      () => when(repository.tapTempo).thenReturn(EngineResult.ok),
+    ]) {
+      stub();
+    }
+    tempo = TempoCubit(repository: repository, settings: settings);
   });
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
@@ -137,6 +187,8 @@ void main() {
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+            BlocProvider<LooperBloc>.value(value: looperBloc),
+            BlocProvider<TempoCubit>.value(value: tempo),
           ],
           child: const SettingsPage(),
         ),
@@ -213,6 +265,81 @@ void main() {
     expect(await settings.loadTrackName(0), 'DRUMS');
   });
 
+  testWidgets(
+    'the length preset row shows the current preset and dispatches a change',
+    (tester) async {
+      const seeded = LooperState(tracks: [Track(lengthPresetBars: 4)]);
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const Key('settings_trackLengthPreset_0'));
+      await tester.ensureVisible(row);
+      expect(row, findsOneWidget);
+      expect(find.text('4 bars'), findsOneWidget);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('8 bars').last);
+      await tester.pumpAndSettle();
+
+      verify(
+        () => looperBloc.add(const LooperTrackLengthPresetChanged(0, 8)),
+      ).called(1);
+    },
+  );
+
+  testWidgets(
+    'the length preset row uses the singular "1 bar" for a 1-bar preset',
+    (tester) async {
+      // ICU plural coverage (code review): "{bars} bars" alone would render
+      // "1 bars" for the singular case — the ARB uses a plural rule instead.
+      const seeded = LooperState(tracks: [Track(lengthPresetBars: 1)]);
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const Key('settings_trackLengthPreset_0'));
+      await tester.ensureVisible(row);
+      expect(row, findsOneWidget);
+      expect(find.text('1 bar'), findsOneWidget);
+      expect(find.text('1 bars'), findsNothing);
+    },
+  );
+
+  testWidgets('the length preset row shows AUTO by default', (tester) async {
+    const seeded = LooperState(tracks: [Track()]);
+    when(() => looperBloc.state).thenReturn(seeded);
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: seeded,
+    );
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const Key('settings_trackLengthPreset_0'));
+    await tester.ensureVisible(row);
+    expect(row, findsOneWidget);
+    expect(find.text('AUTO'), findsOneWidget);
+  });
+
   testWidgets('choosing a default mode persists it', (
     tester,
   ) async {
@@ -270,6 +397,24 @@ void main() {
     verify(() => repository.setQuantize(enabled: true)).called(1);
   });
 
+  testWidgets('choosing a quantize granularity on the Tempo tab applies it', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
+    await tester.pumpAndSettle();
+    final option = find.byKey(
+      const Key('tempoSettings_quantizeDiv_quarter'),
+    );
+    await tester.ensureVisible(option);
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+
+    expect(tempo.state.quantizeDiv, GridDivision.quarter);
+    verify(() => repository.setQuantizeDiv(GridDivision.quarter)).called(1);
+  });
+
   testWidgets('selecting a section tab shows only that section', (
     tester,
   ) async {
@@ -303,9 +448,98 @@ void main() {
     );
     expect(find.byKey(const Key('settings_trackName_0')), findsNothing);
 
+    await tester.tap(find.byKey(const Key('settings_tab_tempo')));
+    await tester.pumpAndSettle();
+    // The Tempo section renders the BPM control (its own settings surface,
+    // not audio_setup — index plan UI conventions).
+    expect(find.byKey(const Key('tempoSettings_bpm_field')), findsOneWidget);
+    expect(
+      find.byKey(const Key('audioSettings_playbackDevice_picker')),
+      findsNothing,
+    );
+
     // There is no longer a Routing tab — the whole-system signal flow moved to
     // the Signal surface.
     expect(find.byKey(const Key('settings_tab_routing')), findsNothing);
+  });
+
+  testWidgets(
+    'the mode tab renders the mode picker with the live mode selected',
+    (tester) async {
+      const seeded = LooperState(
+        transport: TransportState(looperMode: LooperMode.sync),
+      );
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_mode')));
+      await tester.pumpAndSettle();
+
+      for (final mode in LooperMode.values) {
+        expect(
+          find.byKey(Key('looperMode_option_${mode.name}')),
+          findsOneWidget,
+        );
+      }
+      // Selecting the mode already active is a no-op (no content, no
+      // dialog needed either way) — proves the live transport state reached
+      // the picker, not just its default.
+      await tester.tap(find.byKey(const Key('looperMode_option_sync')));
+      await tester.pumpAndSettle();
+      verifyNever(() => looperBloc.add(any()));
+    },
+  );
+
+  testWidgets(
+    'the one-shot row shows the current flag and dispatches a change',
+    (tester) async {
+      const seeded = LooperState(tracks: [Track(oneShot: true)]);
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const Key('settings_trackOneShot_0'));
+      await tester.ensureVisible(row);
+      expect(row, findsOneWidget);
+      expect(tester.widget<Switch>(row).value, isTrue);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      verify(
+        () => looperBloc.add(const LooperOneShotToggled(0, oneShot: false)),
+      ).called(1);
+    },
+  );
+
+  testWidgets('the one-shot row is off by default', (tester) async {
+    const seeded = LooperState(tracks: [Track()]);
+    when(() => looperBloc.state).thenReturn(seeded);
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: seeded,
+    );
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const Key('settings_trackOneShot_0'));
+    await tester.ensureVisible(row);
+    expect(tester.widget<Switch>(row).value, isFalse);
   });
 
   testWidgets('Escape pops the settings page', (tester) async {
@@ -329,6 +563,8 @@ void main() {
             BlocProvider<QuantizeCubit>.value(value: quantize),
             BlocProvider<MonitorCubit>.value(value: monitor),
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
+            BlocProvider<LooperBloc>.value(value: looperBloc),
+            BlocProvider<TempoCubit>.value(value: tempo),
           ],
           child: MaterialApp(
             theme: AppTheme.neon,
