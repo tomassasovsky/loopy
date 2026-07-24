@@ -253,6 +253,119 @@ void main() {
   });
 
   test(
+    'save then read round-trips an 8-track Free-mode session with '
+    'independent per-track lengths (B5c)',
+    () async {
+      // Mutually distinct lengths, none a multiple of another — proves each
+      // track's own length round-trips independently rather than being
+      // forced to a shared base/multiple relationship (Free mode's whole
+      // point: "four un-synced, independently playing, free-form tracks",
+      // extended to loopy's 8).
+      const lengths = [5, 7, 9, 11, 13, 17, 19, 23];
+      final source = FakeSessionEngine()..looperMode = LooperMode.free;
+      for (final (channel, length) in lengths.indexed) {
+        source.seedTrack(
+          channel,
+          Float32List.fromList(List.filled(length, channel + 1.0)),
+        );
+      }
+      final dir = '${tempDir.path}/free8';
+      await repoFor(source).save(dir);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      expect(bundle.session.looperMode, LooperMode.free);
+      expect(bundle.session.tracks, hasLength(8));
+      for (final (channel, length) in lengths.indexed) {
+        final track = bundle.session.tracks.firstWhere(
+          (t) => t.channel == channel,
+        );
+        expect(track.lengthFrames, length, reason: 'track $channel');
+        expect(
+          bundle.laneStems[(channel, 0)]!.single,
+          Float32List.fromList(List.filled(length, channel + 1.0)),
+          reason: 'track $channel PCM',
+        );
+      }
+    },
+  );
+
+  test(
+    'save then read round-trips looperMode, primaryTrack, and per-track '
+    'oneShot (B5c)',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..seedTrack(1, Float32List.fromList([2, 2, 2, 2]))
+        ..looperMode = LooperMode.sync
+        ..primaryTrack = 1
+        ..oneShot[0] = true;
+      final dir = '${tempDir.path}/mode';
+      await repoFor(source).save(dir);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      expect(bundle.session.looperMode, LooperMode.sync);
+      expect(bundle.session.primaryTrack, 1);
+      final track0 = bundle.session.tracks.firstWhere((t) => t.channel == 0);
+      final track1 = bundle.session.tracks.firstWhere((t) => t.channel == 1);
+      expect(track0.oneShot, isTrue);
+      expect(track1.oneShot, isFalse);
+      // Session-level mirror also carries channel 0, matching the per-track
+      // flag for a content-bearing channel.
+      expect(bundle.session.oneShotChannels, contains(0));
+      expect(bundle.session.oneShotChannels, isNot(contains(1)));
+    },
+  );
+
+  test(
+    'save then read round-trips a One Shot flag pre-armed on a channel with '
+    'NO content (independent review of #295): SessionTrack.oneShot has no '
+    'home for a content-less channel (_capture only builds a SessionTrack '
+    'for a channel with lanes), so it must round-trip through the '
+    'session-level Session.oneShotChannels instead',
+    () async {
+      final source = FakeSessionEngine()
+        // Channel 1 is left empty on purpose — never seeded — while its One
+        // Shot flag is armed, mirroring a user pre-arming Settings > One
+        // Shot before ever recording onto the track.
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]))
+        ..oneShot[0] = true
+        ..oneShot[1] = true;
+      final dir = '${tempDir.path}/oneShotEmpty';
+      await repoFor(source).save(dir);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      // Channel 1 never got a SessionTrack at all (no content) — the old,
+      // pre-fix gap.
+      expect(bundle.session.tracks.any((t) => t.channel == 1), isFalse);
+      // But its flag survived through the content-independent session-level
+      // set, alongside channel 0's (which also has content).
+      expect(bundle.session.oneShotChannels, containsAll([0, 1]));
+    },
+  );
+
+  test(
+    'save then read defaults looperMode/primaryTrack/oneShot when the '
+    'engine reports the tempo-free/grid-off values (no data loss for a '
+    'plain Multi session)',
+    () async {
+      final source = FakeSessionEngine()
+        ..seedTrack(0, Float32List.fromList([1, 1, 1, 1]));
+      final dir = '${tempDir.path}/plain';
+      await repoFor(source).save(dir);
+
+      final bundle = await repoFor(FakeSessionEngine()).read(dir);
+
+      expect(bundle.session.looperMode, LooperMode.multi);
+      expect(bundle.session.primaryTrack, -1);
+      expect(bundle.session.tracks.single.oneShot, isFalse);
+      expect(bundle.session.oneShotChannels, isEmpty);
+    },
+  );
+
+  test(
     "save then read round-trips a lane's full overdub layer stack",
     () async {
       final undo0 = Float32List.fromList([1, 1, 1, 1]);

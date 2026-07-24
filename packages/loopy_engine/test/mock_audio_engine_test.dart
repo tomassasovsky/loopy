@@ -452,6 +452,75 @@ void main() {
           ..start(engine.defaultConfig);
         expect(engine.snapshot().looperMode, LooperMode.free);
       });
+
+      test('crownPrimary requires the engine to be running', () {
+        expect(
+          engine.crownPrimary(channel: 0),
+          EngineResult.notRunning,
+        );
+      });
+
+      test('snapshot defaults to no primary track (-1)', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().primaryTrack, -1);
+      });
+
+      test('crownPrimary surfaces in the snapshot', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.crownPrimary(channel: 2), EngineResult.ok);
+        expect(engine.snapshot().primaryTrack, 2);
+      });
+
+      test('crownPrimary rejects an out-of-range channel', () {
+        engine.start(engine.defaultConfig);
+        final outOfRange = engine.snapshot().tracks.length;
+        expect(
+          engine.crownPrimary(channel: outOfRange),
+          EngineResult.invalid,
+        );
+        expect(engine.crownPrimary(channel: -1), EngineResult.invalid);
+      });
+
+      test('the crown persists across stop/start (D18, no un-crown call)', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..crownPrimary(channel: 3)
+          ..stop()
+          ..start(engine.defaultConfig);
+        expect(engine.snapshot().primaryTrack, 3);
+      });
+
+      test('setOneShot requires the engine to be running', () {
+        expect(
+          engine.setOneShot(channel: 0, oneShot: true),
+          EngineResult.notRunning,
+        );
+      });
+
+      test('snapshot defaults every track to one-shot off', () {
+        engine.start(engine.defaultConfig);
+        expect(engine.snapshot().tracks.every((t) => !t.oneShot), isTrue);
+      });
+
+      test('setOneShot surfaces per-track in the snapshot', () {
+        engine
+          ..start(engine.defaultConfig)
+          ..setOneShot(channel: 0, oneShot: true)
+          ..setOneShot(channel: 1, oneShot: false);
+        final tracks = engine.snapshot().tracks;
+        expect(tracks[0].oneShot, isTrue);
+        expect(tracks[1].oneShot, isFalse);
+        expect(tracks[2].oneShot, isFalse);
+      });
+
+      test('setOneShot rejects an out-of-range channel', () {
+        engine.start(engine.defaultConfig);
+        final outOfRange = engine.snapshot().tracks.length;
+        expect(
+          engine.setOneShot(channel: outOfRange, oneShot: true),
+          EngineResult.invalid,
+        );
+      });
     });
 
     group('plugin scan stub', () {

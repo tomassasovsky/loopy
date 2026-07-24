@@ -199,11 +199,28 @@ class LooperRepository {
   /// way it persists across a device restart.
   LooperMode _looperMode = LooperMode.multi;
 
+  /// The crowned primary track (B3/B5c, D18): `null` = never crowned.
+  /// Remembered and re-applied on every successful (re)start, exactly like
+  /// [_looperMode] — the native engine seeds `a_primary_track` once in
+  /// `le_engine_create` and never resets it in `le_engine_configure`, so this
+  /// field only matters for re-establishing state on a genuinely fresh engine
+  /// instance. Unlike [_looperMode], there is no "reset" value to always push
+  /// (no un-crown call exists) — a (re)start only re-crowns when this is
+  /// non-null.
+  int? _primaryTrack;
+
   /// Per-track length presets (A6, D17; absent => AUTO). Remembered and
   /// re-applied on every successful (re)start, mirroring [_trackMultiple] —
   /// a fresh engine start resets every track's preset to AUTO
   /// (`engine.c`'s per-track init loop, run from `le_engine_configure`).
   final Map<int, int> _trackLengthPreset = {};
+
+  /// Per-track One Shot flags (song-mode-spec.md §2, B5c; absent => `false`).
+  /// Remembered and re-applied on every successful (re)start, mirroring
+  /// [_trackLengthPreset] — the native engine resets every track's
+  /// `a_one_shot` to `false` in `le_engine_configure`, run on every (re)start
+  /// (unlike [_primaryTrack]/[_looperMode] above, which persist across it).
+  final Map<int, bool> _trackOneShot = {};
 
   /// Per-track active lane count (absent => 1). Remembered and re-applied on
   /// every successful (re)start.
@@ -462,6 +479,17 @@ class LooperRepository {
       countingIn: s.countingIn,
       countInBeatsLeft: s.countInBeatsLeft,
       looperMode: s.looperMode,
+      // Project from the repository's own re-apply CACHE, not the raw
+      // `s.primaryTrack` (independent review of #295, D18): the native
+      // engine has no "un-crown" call, so a channel crowned by a prior/live
+      // session stays crowned on `s.primaryTrack` through an `applySession`
+      // load that defines no crown of its own — but `applySession` DOES
+      // correctly reset `_primaryTrack` to `null` in that case (see its
+      // doc). The cache is therefore the accurate "what does THIS session
+      // intend" answer; the raw snapshot is not. `crownPrimary` is the only
+      // way `_primaryTrack` is ever set to a non-null value, so the two stay
+      // in lockstep everywhere except this one documented gap.
+      primaryTrack: _primaryTrack ?? -1,
     ),
     tracks: [
       for (var i = 0; i < s.tracks.length; i++)
@@ -480,6 +508,7 @@ class LooperRepository {
           layerInFlight: s.tracks[i].layerInFlight,
           pending: s.tracks[i].pending,
           lengthPresetBars: s.tracks[i].lengthPresetBars,
+          oneShot: s.tracks[i].oneShot,
           multiple: s.tracks[i].multiple,
           inputMask: s.tracks[i].inputMask,
           outputMask: s.tracks[i].outputMask,
@@ -574,6 +603,11 @@ class LooperRepository {
         ..setClickVolume(_clickVolume)
         ..setCountIn(_countInBars)
         ..setLooperMode(_looperMode);
+      // Re-crown the primary track only when one was ever set — there is no
+      // "un-crown" call to push the null/-1 default with (see
+      // [_primaryTrack]'s doc).
+      final primary = _primaryTrack;
+      if (primary != null) _engine.crownPrimary(channel: primary);
       _trackMultiple.forEach(
         (channel, multiple) =>
             _engine.setTrackMultiple(channel: channel, multiple: multiple),
@@ -581,6 +615,10 @@ class LooperRepository {
       _trackLengthPreset.forEach(
         (channel, bars) =>
             _engine.setTrackLengthPreset(channel: channel, bars: bars),
+      );
+      _trackOneShot.forEach(
+        (channel, oneShot) =>
+            _engine.setOneShot(channel: channel, oneShot: oneShot),
       );
       // Re-apply per-lane state: counts first (so added lanes are allocated),
       // then routing / mix / effects per lane.
@@ -983,11 +1021,19 @@ class LooperRepository {
   /// LOADED session by construction, never a pre-load cache.
   ///
   /// Order: clear every track via [clear] (which forgets remembered lane
-  /// mutes), await the engine settling to empty, import the stems, commit the
-  /// master loop, re-apply mix through the cached setters, then apply the
-  /// rig's chains — explicitly resetting every remembered lane / monitor chain
-  /// the rig does not define, so a previous session's leftovers can never
-  /// sound under the loaded one.
+  /// mutes), await the engine settling to empty, reset every per-track
+  /// SETTING that survives a clear by design (length preset, One Shot) plus
+  /// the looper mode and crown (B5c) — all pushed from the rig's values or
+  /// their defaults before any content is imported — import the stems,
+  /// commit the master loop, re-apply mix through the cached setters, then
+  /// apply the rig's chains — explicitly resetting every remembered lane /
+  /// monitor chain the rig does not define, so a previous session's
+  /// leftovers can never sound (or apply) under the loaded one. The crowned
+  /// primary track is the one exception with an incomplete reset: no native
+  /// "un-crown" call exists, so a channel crowned by a live/prior session can
+  /// stay crowned on the ENGINE through a load that defines no crown of its
+  /// own (the re-apply cache is still correctly reset — see the inline doc
+  /// above `_primaryTrack = null`).
   ///
   /// Clears are applied asynchronously on the audio thread;
   /// [clearPollInterval] / [clearPollAttempts] bound how long the settle wait
@@ -1019,6 +1065,23 @@ class LooperRepository {
     // must scrub it itself or a track this session declares AUTO would keep
     // whatever preset a PRIOR session/live session left armed.
     _trackLengthPreset.clear();
+    // Same reasoning for One Shot (B4/B5c): `clear` deliberately leaves
+    // a_one_shot untouched (it is a per-track SETTING, not content — see
+    // `le_engine_set_one_shot`'s doc), so a track this session does not mark
+    // One Shot must be explicitly turned off below or a prior session/live
+    // flag would bleed into the freshly loaded one.
+    _trackOneShot.clear();
+    // The crowned primary track (D18) is the one B5c field this reset CANNOT
+    // fully undo on the live engine: there is no "un-crown" native call (see
+    // `LooperModeControl.crownPrimary`'s doc), so a channel crowned by a
+    // PRIOR session/live session stays crowned on the live engine through
+    // this load unless the loaded rig crowns a (possibly different) channel
+    // itself below. What this DOES fix is the re-apply CACHE (`_primaryTrack`)
+    // — without resetting it here, a session with no crown would still
+    // resurrect the prior session's crown on the NEXT engine (re)start
+    // (device reconnect / backend switch), which is the bleed this load path
+    // can actually prevent.
+    _primaryTrack = null;
     if (!await _awaitCleared(clearPollInterval, clearPollAttempts)) {
       throw StateError('engine did not clear before applying the session');
     }
@@ -1046,8 +1109,32 @@ class LooperRepository {
           // session load resets every track to AUTO here, same as the lane
           // config it sits alongside; the rig loop below re-arms a nonzero
           // preset for any track this session actually defines one for.
-          ..setTrackLengthPreset(channel: channel, bars: 0);
+          ..setTrackLengthPreset(channel: channel, bars: 0)
+          // a_one_shot survives `clear` by design too (see above) — reset
+          // every track to off here; the rig loop below re-arms it for any
+          // track this session actually marks One Shot.
+          ..setOneShot(channel: channel, oneShot: false);
       }
+    }
+
+    // Session-level mode + crown (B5c), applied here — before any content is
+    // imported below — because [setLooperMode] is REJECTED by the D4 content
+    // lock once a track holds audio (see [LooperModeControl]'s class doc);
+    // every track is guaranteed empty at this point. The mode is always
+    // pushed (like [setLooperMode]'s own "no unset sentinel" posture — `multi`
+    // IS the default), mirroring how the tempo grid's SETTINGS push
+    // unconditionally elsewhere in this method. The crown is NOT gated by
+    // content (D18) so its ordering here is only for symmetry; it is pushed
+    // only when the rig actually defines one — see the reset comment above
+    // `_primaryTrack = null` for why an undefined crown cannot be un-set on
+    // the live engine.
+    setLooperMode(rig.looperMode);
+    // Bounded to `trackCount` — same rationale as `rig.oneShotChannels` below:
+    // a manifest saved on a build with more physical tracks than this engine
+    // must not push an out-of-range channel, nor poison `_primaryTrack` with
+    // a value this engine can never actually crown.
+    if (rig.primaryTrack >= 0 && rig.primaryTrack < trackCount) {
+      crownPrimary(channel: rig.primaryTrack);
     }
 
     for (final track in rig.tracks) {
@@ -1155,6 +1242,28 @@ class LooperRepository {
           bars: track.lengthPresetBars,
         );
       }
+      // One Shot (B5c): only push when the rig actually marks it — the
+      // running-engine reset loop above already turned every track off, so a
+      // track this rig leaves at the default `false` needs no further call.
+      if (track.oneShot) {
+        setOneShot(channel: track.channel, oneShot: true);
+      }
+    }
+
+    // One Shot, session-level set (post-B5c independent review fix): the
+    // per-track restore just above only runs for a channel that also has a
+    // [SessionRigTrack] entry, i.e. content — a channel armed with One Shot
+    // but never recorded onto has no such entry (see
+    // `SessionRepository._capture`'s doc) and would otherwise stay off
+    // forever after this load. [rig.oneShotChannels] is the content-independent
+    // source of truth (every armed channel, captured unconditionally), so
+    // restore from it too; harmless overlap with the per-track loop above for
+    // a content-bearing channel since [setOneShot] is idempotent. Bounded to
+    // `trackCount` — a manifest saved on a build with more physical tracks
+    // than this engine must not push an out-of-range channel.
+    for (final channel in rig.oneShotChannels) {
+      if (channel < 0 || channel >= trackCount) continue;
+      setOneShot(channel: channel, oneShot: true);
     }
 
     // Chains: reset every remembered chain the rig does not define, then
@@ -2283,6 +2392,29 @@ class LooperRepository {
     _looperMode = mode;
     if (!_intendRunning) return EngineResult.ok;
     return _engine.setLooperMode(mode);
+  }
+
+  /// Crowns [channel] the primary track (Sync/Band, D18). Remembered and
+  /// re-applied on every (re)start (see [_primaryTrack]'s doc); there is no
+  /// "un-crown" call — the only way to move the crown is to crown a different
+  /// channel.
+  EngineResult crownPrimary({required int channel}) {
+    _primaryTrack = channel;
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.crownPrimary(channel: channel);
+  }
+
+  /// Sets track [channel]'s One Shot flag (song-mode-spec.md §2, B5c):
+  /// `true` = plays once then stops. Remembered and re-applied on every
+  /// (re)start, like [setTrackLengthPreset] — see [_trackOneShot]'s doc.
+  EngineResult setOneShot({required int channel, required bool oneShot}) {
+    if (oneShot) {
+      _trackOneShot[channel] = true;
+    } else {
+      _trackOneShot.remove(channel);
+    }
+    if (!_intendRunning) return EngineResult.ok;
+    return _engine.setOneShot(channel: channel, oneShot: oneShot);
   }
 
   /// Releases the repository and the underlying engine.

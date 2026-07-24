@@ -864,5 +864,37 @@
     "a11yTrackArmed": "Armado, esperando el siguiente límite",
     "@a11yTrackArmed": {
         "description": "Accessible label for the small badge shown on a track tile with a pending quantized/signal-triggered record arm."
+    },
+    "settingsSectionMode": "Modo",
+    "looperModeIntro": "Elige cómo se relacionan las pistas del looper entre sí y con la rejilla de tempo.",
+    "looperModeGroupLabel": "MODO",
+    "looperModeMultiLabel": "Multi",
+    "looperModeMultiSub": "Misma duración",
+    "looperModeSyncLabel": "Sync",
+    "looperModeSyncSub": "Sincronizada a la principal",
+    "looperModeSongLabel": "Song",
+    "looperModeSongSub": "Secciones independientes",
+    "looperModeBandLabel": "Band",
+    "looperModeBandSub": "Principal + secciones",
+    "looperModeFreeLabel": "Free",
+    "looperModeFreeSub": "Pistas sin sincronizar",
+    "modeChangeConfirmTitle": "¿Cambiar de modo?",
+    "modeChangeConfirmBody": "Cambiar de modo borra todas las pistas — no hay forma de conservar los loops actuales. ¿Borrar todo y cambiar?",
+    "modeChangeConfirmConfirm": "Borrar y cambiar",
+    "modeChangeConfirmCancel": "Cancelar",
+    "modeChangeTimedOut": "El cambio de modo tardó demasiado — el borrado aún está terminando. Inténtalo de nuevo en un momento.",
+    "oneShotGroupLabel": "UNA VEZ",
+    "oneShotIntro": "Una pista de una sola vez se reproduce una vez y se detiene en lugar de repetirse (activo en los modos Free y Song).",
+    "a11yTrackPrimary": "Pista principal",
+    "@a11yTrackPrimary": {
+        "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
+    },
+    "a11yCrownTrack": "Nombrar pista principal",
+    "@a11yCrownTrack": {
+        "description": "Accessible label for the tappable crown badge on a non-primary track in Sync/Band mode."
+    },
+    "a11yTrackCrowned": "Nombrada pista principal",
+    "@a11yTrackCrowned": {
+        "description": "Screen-reader announcement after crowning a track the Sync/Band primary."
     }
 }

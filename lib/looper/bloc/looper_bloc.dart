@@ -264,6 +264,19 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
         _settings?.saveTrackLengthPreset(event.channel, event.bars),
       );
     });
+    on<LooperOneShotToggled>(
+      (event, _) => _repository.setOneShot(
+        channel: event.channel,
+        oneShot: event.oneShot,
+      ),
+    );
+    on<LooperCrownPrimaryPressed>(
+      (event, _) => _repository.crownPrimary(channel: event.channel),
+    );
+    on<LooperModeChanged>((event, _) {
+      _repository.setLooperMode(event.mode);
+      unawaited(_settings?.saveLooperMode(event.mode.code));
+    });
     on<LooperPlayAllPressed>((_, _) {
       for (final track in state.tracks) {
         if (track.hasContent) _repository.play(channel: track.channel);
@@ -476,4 +489,23 @@ class LooperBloc extends Bloc<LooperEvent, LooperState> {
     unawaited(_controllerSubscription?.cancel());
     return super.close();
   }
+}
+
+/// Restores the persisted looper mode (B5c) and dispatches it through
+/// [bloc] — the boot-time counterpart of the "seeded settings cubit" `load()`
+/// convention used elsewhere (`TempoCubit`/`TracksCubit`/etc, called via
+/// `app.dart`'s `unawaited(cubit.load())` wiring), but as a top-level
+/// function rather than a bloc method: `Bloc` instances are driven only
+/// through events (bloc_lint's `avoid_public_bloc_methods`), so this reads
+/// [settings] itself and dispatches [LooperModeChanged] rather than adding a
+/// second, non-event entry point to [LooperBloc]. Reuses the same event a
+/// user-driven mode change dispatches, so the boot restore also re-persists
+/// the value it just read — harmless (writing back the same value is a
+/// no-op on disk) and keeps this to one code path instead of two.
+Future<void> restoreLooperMode(
+  LooperBloc bloc,
+  SettingsRepository settings,
+) async {
+  final mode = LooperMode.fromCode(await settings.loadLooperMode());
+  bloc.add(LooperModeChanged(mode));
 }

@@ -186,6 +186,88 @@ void main() {
       expect(rig.tracks[1].lengthPresetBars, 0);
     });
 
+    test(
+      'carries the looper mode, primary track, and per-track one-shot '
+      '(B5c) through to the rig',
+      () {
+        final l0 = Float32List.fromList([1, 1, 1, 1]);
+        final bundle = (
+          session: Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 4,
+            looperMode: LooperMode.band,
+            primaryTrack: 1,
+            tracks: [
+              SessionTrack(
+                channel: 0,
+                multiple: 1,
+                lengthFrames: 4,
+                oneShot: true,
+                lanes: [lane(0, 'track0_lane0_L0.wav')],
+              ),
+              SessionTrack(
+                channel: 1,
+                multiple: 1,
+                lengthFrames: 4,
+                // Off (the default) round-trips too, not just a set value.
+                lanes: [lane(0, 'track1_lane0_L0.wav')],
+              ),
+            ],
+          ),
+          laneStems: {
+            (0, 0): [l0],
+            (1, 0): [l0],
+          },
+        );
+
+        final rig = rigFromBundle(bundle);
+        expect(rig.looperMode, LooperMode.band);
+        expect(rig.primaryTrack, 1);
+        expect(rig.tracks, hasLength(2));
+        expect(rig.tracks[0].oneShot, isTrue);
+        expect(rig.tracks[1].oneShot, isFalse);
+      },
+    );
+
+    test(
+      'carries a One Shot flag pre-armed on a CONTENT-LESS channel through '
+      'to the rig via the session-level set (independent review of #295): '
+      'channel 2 has no SessionTrack at all (never recorded onto), so its '
+      'flag only reaches the rig through Session.oneShotChannels, not '
+      'through any SessionRigTrack',
+      () {
+        final l0 = Float32List.fromList([1, 1, 1, 1]);
+        final bundle = (
+          session: Session(
+            sampleRate: 48000,
+            channels: 1,
+            baseLengthFrames: 4,
+            // Channel 2 is deliberately absent from `tracks` — it holds no
+            // content — yet its One Shot flag is armed at session level.
+            oneShotChannels: const [0, 2],
+            tracks: [
+              SessionTrack(
+                channel: 0,
+                multiple: 1,
+                lengthFrames: 4,
+                oneShot: true,
+                lanes: [lane(0, 'track0_lane0_L0.wav')],
+              ),
+            ],
+          ),
+          laneStems: {
+            (0, 0): [l0],
+          },
+        );
+
+        final rig = rigFromBundle(bundle);
+
+        expect(rig.tracks, hasLength(1));
+        expect(rig.oneShotChannels, {0, 2});
+      },
+    );
+
     test('drops a lane whose PCM is missing but keeps its siblings', () {
       final l0 = Float32List.fromList([1, 1, 1, 1]);
       final bundle = (

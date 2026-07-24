@@ -379,6 +379,112 @@ void main() {
     });
   });
 
+  group('crown badge (D18, B5c)', () {
+    testWidgets('absent in Multi mode', (tester) async {
+      seed(
+        // LooperMode.multi is TransportState's default — explicit here only
+        // for readability (this is a Multi-mode test).
+        const LooperState(
+          tracks: [Track(), Track(channel: 1)],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_crown_0')), findsNothing);
+      expect(find.byKey(const Key('tracks_crown_1')), findsNothing);
+    });
+
+    testWidgets('absent in Song and Free modes too — Sync/Band only', (
+      tester,
+    ) async {
+      for (final mode in [LooperMode.song, LooperMode.free]) {
+        seed(
+          LooperState(
+            transport: TransportState(looperMode: mode),
+            tracks: const [Track()],
+          ),
+        );
+        await pump(tester);
+        expect(
+          find.byKey(const Key('tracks_crown_0')),
+          findsNothing,
+          reason: mode.name,
+        );
+      }
+    });
+
+    testWidgets('visible on every track in Sync mode', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(looperMode: LooperMode.sync),
+          tracks: [Track(), Track(channel: 1)],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_crown_0')), findsOneWidget);
+      expect(find.byKey(const Key('tracks_crown_1')), findsOneWidget);
+    });
+
+    testWidgets('visible in Band mode too', (tester) async {
+      seed(
+        const LooperState(
+          transport: TransportState(looperMode: LooperMode.band),
+          tracks: [Track()],
+        ),
+      );
+      await pump(tester);
+
+      expect(find.byKey(const Key('tracks_crown_0')), findsOneWidget);
+    });
+
+    testWidgets(
+      'tapping a non-primary track crowns it (dispatches '
+      'LooperCrownPrimaryPressed)',
+      (tester) async {
+        seed(
+          const LooperState(
+            transport: TransportState(
+              looperMode: LooperMode.sync,
+              primaryTrack: 0,
+            ),
+            tracks: [Track(), Track(channel: 1)],
+          ),
+        );
+        await pump(tester);
+
+        await tester.tap(find.byKey(const Key('tracks_crown_1')));
+        await tester.pumpAndSettle();
+
+        verify(
+          () => bloc.add(const LooperCrownPrimaryPressed(1)),
+        ).called(1);
+      },
+    );
+
+    testWidgets(
+      "the current primary track's own badge is inert — no un-crown "
+      'gesture exists (D18)',
+      (tester) async {
+        seed(
+          const LooperState(
+            transport: TransportState(
+              looperMode: LooperMode.sync,
+              primaryTrack: 0,
+            ),
+            tracks: [Track()],
+          ),
+        );
+        await pump(tester);
+
+        await tester.tap(find.byKey(const Key('tracks_crown_0')));
+        await tester.pumpAndSettle();
+
+        verifyNever(() => bloc.add(const LooperCrownPrimaryPressed(0)));
+      },
+    );
+  });
+
   group('keyboard', () {
     testWidgets('M toggles the tracks mode', (tester) async {
       seed(const LooperState(tracks: [Track()]));

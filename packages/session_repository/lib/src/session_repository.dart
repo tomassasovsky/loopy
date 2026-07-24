@@ -408,6 +408,7 @@ class SessionRepository {
           multiple: track.multiple,
           lengthFrames: track.lengthFrames,
           lengthPresetBars: track.lengthPresetBars,
+          oneShot: track.oneShot,
           lanes: lanes,
         ),
       );
@@ -447,6 +448,26 @@ class SessionRepository {
       clickOutputMask: snapshot.clickMask,
       clickVolume: snapshot.clickVolume,
       countInBars: snapshot.countInBars,
+      // Looper mode + crown (schema v4, B5c) are session-level SETTINGS, not
+      // derived-from-track-content state either — same reasoning as the
+      // tempo-grid fields above, and [snapshot.looperMode]/
+      // [snapshot.primaryTrack] persist regardless of track content by
+      // construction (D18; [LooperModeControl]'s class doc).
+      looperMode: snapshot.looperMode,
+      primaryTrack: snapshot.primaryTrack,
+      // One Shot, per channel (post-B5c independent review fix): read
+      // straight off `snapshot.tracks` — EVERY channel, unconditional on
+      // `state`/`lengthFrames` — rather than off `captured.tracks` (which
+      // the loop above only builds for a settled, content-bearing channel).
+      // `LooperModeControl.setOneShot` is explicitly "not gated by the D4
+      // content lock" and settable on an empty track in advance of
+      // recording, so this is the one content-independent home the flag
+      // needs to round-trip a pre-armed-but-empty channel through save/load
+      // — see [Session.oneShotChannels]'s doc.
+      oneShotChannels: [
+        for (var i = 0; i < snapshot.tracks.length; i++)
+          if (snapshot.tracks[i].oneShot) i,
+      ],
     );
   }
 

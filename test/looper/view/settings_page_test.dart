@@ -51,6 +51,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(GridDivision.off);
     registerFallbackValue(ClickMode.off);
+    registerFallbackValue(const LooperRecordPressed(0));
   });
 
   setUp(() {
@@ -460,6 +461,85 @@ void main() {
     // There is no longer a Routing tab — the whole-system signal flow moved to
     // the Signal surface.
     expect(find.byKey(const Key('settings_tab_routing')), findsNothing);
+  });
+
+  testWidgets(
+    'the mode tab renders the mode picker with the live mode selected',
+    (tester) async {
+      const seeded = LooperState(
+        transport: TransportState(looperMode: LooperMode.sync),
+      );
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_mode')));
+      await tester.pumpAndSettle();
+
+      for (final mode in LooperMode.values) {
+        expect(
+          find.byKey(Key('looperMode_option_${mode.name}')),
+          findsOneWidget,
+        );
+      }
+      // Selecting the mode already active is a no-op (no content, no
+      // dialog needed either way) — proves the live transport state reached
+      // the picker, not just its default.
+      await tester.tap(find.byKey(const Key('looperMode_option_sync')));
+      await tester.pumpAndSettle();
+      verifyNever(() => looperBloc.add(any()));
+    },
+  );
+
+  testWidgets(
+    'the one-shot row shows the current flag and dispatches a change',
+    (tester) async {
+      const seeded = LooperState(tracks: [Track(oneShot: true)]);
+      when(() => looperBloc.state).thenReturn(seeded);
+      whenListen(
+        looperBloc,
+        const Stream<LooperState>.empty(),
+        initialState: seeded,
+      );
+      await pump(tester);
+
+      await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+      await tester.pumpAndSettle();
+
+      final row = find.byKey(const Key('settings_trackOneShot_0'));
+      await tester.ensureVisible(row);
+      expect(row, findsOneWidget);
+      expect(tester.widget<Switch>(row).value, isTrue);
+
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+
+      verify(
+        () => looperBloc.add(const LooperOneShotToggled(0, oneShot: false)),
+      ).called(1);
+    },
+  );
+
+  testWidgets('the one-shot row is off by default', (tester) async {
+    const seeded = LooperState(tracks: [Track()]);
+    when(() => looperBloc.state).thenReturn(seeded);
+    whenListen(
+      looperBloc,
+      const Stream<LooperState>.empty(),
+      initialState: seeded,
+    );
+    await pump(tester);
+
+    await tester.tap(find.byKey(const Key('settings_tab_tracks')));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const Key('settings_trackOneShot_0'));
+    await tester.ensureVisible(row);
+    expect(tester.widget<Switch>(row).value, isFalse);
   });
 
   testWidgets('Escape pops the settings page', (tester) async {

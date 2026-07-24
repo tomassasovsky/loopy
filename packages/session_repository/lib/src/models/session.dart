@@ -159,6 +159,7 @@ class SessionTrack {
     required this.lengthFrames,
     required this.lanes,
     this.lengthPresetBars = 0,
+    this.oneShot = false,
   });
 
   /// Projects a [SessionTrack] from a decoded JSON map.
@@ -216,6 +217,7 @@ class SessionTrack {
       lengthFrames: (json['lengthFrames'] as num).toInt(),
       lanes: lanes,
       lengthPresetBars: (json['lengthPresetBars'] as num?)?.toInt() ?? 0,
+      oneShot: json['oneShot'] as bool? ?? false,
     );
   }
 
@@ -243,6 +245,11 @@ class SessionTrack {
   /// real per-track preset choice; no migration is needed later.
   final int lengthPresetBars;
 
+  /// This track's persisted One Shot flag (schema v4, B5c; song-mode-spec.md
+  /// §2): `true` = the track plays once and then stops instead of looping.
+  /// Default `false` (today's only behavior pre-B5c).
+  final bool oneShot;
+
   /// Serializes this track to a JSON map.
   Map<String, dynamic> toJson() => {
     'channel': channel,
@@ -250,6 +257,7 @@ class SessionTrack {
     'lengthFrames': lengthFrames,
     'lanes': [for (final l in lanes) l.toJson()],
     'lengthPresetBars': lengthPresetBars,
+    'oneShot': oneShot,
   };
 
   @override
@@ -261,6 +269,7 @@ class SessionTrack {
           multiple == other.multiple &&
           lengthFrames == other.lengthFrames &&
           lengthPresetBars == other.lengthPresetBars &&
+          oneShot == other.oneShot &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -269,6 +278,7 @@ class SessionTrack {
     multiple,
     lengthFrames,
     lengthPresetBars,
+    oneShot,
     Object.hashAll(lanes),
   );
 }
@@ -411,6 +421,25 @@ class SessionMonitor {
 /// than the index plan ERD's earlier sketch (`bool metronomeOn`,
 /// `bool countIn`) — the ERD predates those implementation details and the
 /// plan's own D12 says to prefer fidelity to the real model.
+///
+/// B5c adds [looperMode] and [primaryTrack] here (session-level) and
+/// [SessionTrack.oneShot] (per-track) — the `songSections`/`bandGroups`
+/// fields the index plan ERD originally sketched are DROPPED per the B1
+/// spec (a Song/Band "section" is a track, nothing separate to persist).
+///
+/// [oneShotChannels] is a post-B5c addition (independent review of #295):
+/// [SessionTrack.oneShot] only exists for a channel `_capture()` actually
+/// builds a [SessionTrack] for, which requires the channel to hold content
+/// (`lanes` non-empty) — but `LooperModeControl.setOneShot`'s own doc says
+/// One Shot is "a persistent per-track SETTING, not content" and is settable
+/// on an empty track in advance of recording (the UI honors this:
+/// `SetupTrackOneShotRow` renders for every track regardless of state). A
+/// flag armed on a still-empty channel therefore had no manifest field to
+/// round-trip through — silently dropped on save. [oneShotChannels] fixes
+/// this the same way [looperMode]/[primaryTrack] fixed the equivalent gap
+/// for those fields: hoisted to session level, captured from every channel
+/// unconditionally (see `SessionRepository._sessionFrom`), independent of
+/// whether that channel has a [SessionTrack] entry at all.
 @immutable
 class Session {
   /// Creates a [Session].
@@ -430,6 +459,9 @@ class Session {
     this.clickOutputMask = 0,
     this.clickVolume = 1,
     this.countInBars = 0,
+    this.looperMode = LooperMode.multi,
+    this.primaryTrack = -1,
+    this.oneShotChannels = const [],
   });
 
   /// Projects a [Session] from a decoded JSON map.
@@ -474,6 +506,12 @@ class Session {
       clickOutputMask: (json['clickOutputMask'] as num?)?.toInt() ?? 0,
       clickVolume: (json['clickVolume'] as num?)?.toDouble() ?? 1,
       countInBars: (json['countInBars'] as num?)?.toInt() ?? 0,
+      looperMode: _looperModeFromJson(json['looperMode'] as String?),
+      primaryTrack: (json['primaryTrack'] as num?)?.toInt() ?? -1,
+      oneShotChannels: [
+        for (final c in (json['oneShotChannels'] as List<dynamic>? ?? const []))
+          (c as num).toInt(),
+      ],
     );
   }
 
@@ -546,6 +584,24 @@ class Session {
   /// `countIn` boolean sketch — see the class doc.
   final int countInBars;
 
+  /// The session's looper mode (schema v4, B5c; default [LooperMode.multi]).
+  /// Wired through `LooperRepository.applySession` on load (unlike the
+  /// tempo-grid fields above, which are captured on save but not yet applied
+  /// on load — see that method's doc).
+  final LooperMode looperMode;
+
+  /// The session's crowned primary track (schema v4, B5c, D18); `-1` = none
+  /// was ever crowned (default).
+  final int primaryTrack;
+
+  /// Every channel with One Shot armed (schema v4, post-B5c independent
+  /// review fix), captured regardless of whether that channel holds content
+  /// — see the class doc. The authoritative, content-independent source for
+  /// restoring One Shot on load; [SessionTrack.oneShot] remains the
+  /// per-track mirror of this for a content-bearing channel (kept for a
+  /// manifest a pre-fix build might still need to read defensively).
+  final List<int> oneShotChannels;
+
   /// Serializes this session manifest to a JSON map. Always writes the
   /// current [formatVersion] (v4, per D12 — this code never writes v3).
   Map<String, dynamic> toJson() => {
@@ -565,6 +621,9 @@ class Session {
     'clickOutputMask': clickOutputMask,
     'clickVolume': clickVolume,
     'countInBars': countInBars,
+    'looperMode': looperMode.name,
+    'primaryTrack': primaryTrack,
+    'oneShotChannels': oneShotChannels,
   };
 
   @override
@@ -584,9 +643,12 @@ class Session {
           clickOutputMask == other.clickOutputMask &&
           clickVolume == other.clickVolume &&
           countInBars == other.countInBars &&
+          looperMode == other.looperMode &&
+          primaryTrack == other.primaryTrack &&
           _listEquals(tracks, other.tracks) &&
           _listEquals(laneChains, other.laneChains) &&
-          _listEquals(monitors, other.monitors);
+          _listEquals(monitors, other.monitors) &&
+          _listEquals(oneShotChannels, other.oneShotChannels);
 
   @override
   int get hashCode => Object.hash(
@@ -602,9 +664,12 @@ class Session {
     clickOutputMask,
     clickVolume,
     countInBars,
+    looperMode,
+    primaryTrack,
     Object.hashAll(tracks),
     Object.hashAll(laneChains),
     Object.hashAll(monitors),
+    Object.hashAll(oneShotChannels),
   );
 }
 
@@ -627,6 +692,15 @@ GridDivision _gridDivisionFromJson(String? name) => GridDivision.values
 ClickMode _clickModeFromJson(String? name) => ClickMode.values.firstWhere(
   (v) => v.name == name,
   orElse: () => ClickMode.off,
+);
+
+/// Maps a persisted [Session.looperMode] name back to a [LooperMode]. Absent
+/// (pre-v4, or a v4 session predating B5c) or unrecognized values map to
+/// [LooperMode.multi] — the same "grid-off"-style default every other new v4
+/// field falls back to.
+LooperMode _looperModeFromJson(String? name) => LooperMode.values.firstWhere(
+  (v) => v.name == name,
+  orElse: () => LooperMode.multi,
 );
 
 bool _listEquals<T>(List<T> a, List<T> b) {
