@@ -3713,8 +3713,11 @@ void le_engine_process(le_engine* e, float* output, const float* input,
         load_i32(&e->a_ts_den), sr, !le_transport_held(e),
         le_clock_send_gate_open(e), clock_bytes, (int32_t)sizeof(clock_bytes));
     for (int32_t i = 0; i < clock_n; ++i) {
-      le_ring_push(&e->midi_clock_ring,
-                   (le_command){.code = clock_bytes[i]});
+      if (!le_ring_push(&e->midi_clock_ring,
+                        (le_command){.code = clock_bytes[i]})) {
+        atomic_fetch_add_explicit(&e->a_midi_clock_overruns, 1u,
+                                  memory_order_relaxed);
+      }
     }
   }
 }
