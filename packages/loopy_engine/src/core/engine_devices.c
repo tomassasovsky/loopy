@@ -162,6 +162,12 @@ int32_t enumerate_devices(le_device_info* out, int32_t max, int32_t* count,
                           int capture) {
   if (out == NULL || count == NULL || max <= 0) return LE_ERR_INVALID;
   *count = 0;
+  /* Prefer the platform-native list when the OS has a better source than
+   * miniaudio's default backend. On Linux that is JACK: playback runs on the
+   * JACK backend, so enumerating via ALSA (miniaudio's default) both surfaces
+   * plugin clutter and hands back ids that never match a JACK port prefix, so a
+   * selection cannot route. When this handles it, the ids pin correctly. */
+  if (le_platform_enumerate_devices(out, max, count, capture)) return LE_OK;
   ma_context ctx;
   if (ma_context_init(NULL, 0, NULL, &ctx) != MA_SUCCESS) return LE_ERR_INVALID;
   ma_device_info* playback = NULL;
