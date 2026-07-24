@@ -389,12 +389,13 @@ POST_BOLT_DU = 12.0                # M4 foot bolts at +/- this in u
 POST_T     = 1.6                   # post sheet thickness (cold-rolled steel), NOT the shell's 2.0 Al
 # foot + pad both extend FORWARD of the web (a C, all in the clear strip in front of the
 # aperture); nothing sits under the display.
-# web height: foot on the floor -> pad ~POST_FELT under the faceplate underside.
-# CALIBRATED to the "VAMP console (populated)" doc, which is the MANUFACTURING source of
-# truth: its assembled faceplate sits ~1.5 mm BELOW lid_top_z's bare slope, so subtract an
-# extra POST_LIDCAL. Verified in that doc: web 42.9 mm -> flush pad, 1.01 mm felt gap.
-POST_LIDCAL = 1.5
-POST_H     = lid_top_z(POST_V) - POST_T - POST_FELT - POST_LIDCAL
+# web height: foot rests ON the base bottom plate (top at z=T, not z=0), pad ~POST_FELT
+# below the faceplate underside. CALIBRATED to "VAMP console (populated)" (the MANUFACTURING
+# source of truth): floor plate T + foot POST_T + felt gap + a ~1.5 mm faceplate seating
+# drift below lid_top_z's bare slope. Verified in that doc: web 40.9 mm -> foot on the
+# floor, flush pad, 1.01 mm felt gap, no base interference.
+POST_FACEDRIFT = 1.5
+POST_H     = lid_top_z(POST_V) - T - POST_T - POST_FELT - POST_FACEDRIFT
 _POST_VP   = POST_V * math.cos(math.radians(SLOPE_ANGLE))   # projected web depth on the flat base
 _POST_FOOT_VP = _POST_VP - POST_FOOTL/2.0                   # foot-bolt depth (forward of the web)
 
