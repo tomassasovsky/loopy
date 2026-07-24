@@ -59,11 +59,13 @@ echo "==> Release bundle: flutter build linux --release (main_production) $*"
 flutter build linux --release --target lib/main_production.dart "$@"
 
 # Hand the generated artifacts back to the invoking host user; without this the
-# mounted output would be root-owned on the Mac. Non-fatal if a path is absent.
+# mounted output would be root-owned on the Mac. `flutter pub get` in this
+# monorepo can also touch packages/*/pubspec.lock (see .gitignore's
+# packages/**/pubspec.lock), so chown the whole mounted tree rather than an
+# enumerated list that would miss those — safe since the container is --rm
+# and /workspace is nothing but the bind-mounted repo checkout.
 if [ -n "${HOST_UID:-}" ] && [ -n "${HOST_GID:-}" ]; then
-  chown -R "$HOST_UID:$HOST_GID" \
-    build .dart_tool linux/flutter/ephemeral \
-    .flutter-plugins .flutter-plugins-dependencies pubspec.lock 2>/dev/null || true
+  chown -R "$HOST_UID:$HOST_GID" /workspace 2>/dev/null || true
 fi
 SCRIPT
 RUN chmod +x /usr/local/bin/loopy-build
