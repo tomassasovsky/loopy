@@ -330,10 +330,8 @@ VST3 is answered on paper, not tested here: the host cross-compiles to `aarch64`
 the ceiling is **`aarch64`-native plugin availability**; plugin editor GUIs need
 XWayland (Tier 2 / 3a) or run GUI-less (3b); and Pi 4 headroom is tight. The full
 answer is in the brainstorm's *"VST3 plugins on the Pi"* section
-([brainstorm](brainstorm/2026-07-22-rpi4b-hardware-validation-brainstorm-doc.md))
-and the research doc's **§4.3**
-([research](research/2026-07-22-rpi5-embedded-boot-experience-research.md)). A
-small `aarch64` plugin spike (find/compile one plugin, host it headless) is a
+([brainstorm](brainstorm/2026-07-22-rpi4b-hardware-validation-brainstorm-doc.md)).
+A small `aarch64` plugin spike (find/compile one plugin, host it headless) is a
 **follow-up issue**, not part of this pass.
 
 ### Results (fill in on hardware)
