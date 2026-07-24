@@ -14,6 +14,8 @@
 #if defined(__linux__)
 
 #include <dlfcn.h>
+#include <pthread.h>  /* pthread_setschedparam for the appliance RT audio thread */
+#include <sched.h>    /* SCHED_FIFO, struct sched_param */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -378,10 +380,28 @@ void le_platform_before_context_init(const le_config* config) {
   le_pipewire_force_quantum(q_frames);
 }
 
+/* Appliance only: put the miniaudio worker thread (which runs the ALSA duplex
+ * read/write loop and calls the audio callback, so it is the thread that must
+ * meet the period deadline) on SCHED_FIFO 80 — above all normal work, with
+ * headroom below for the USB sound-card IRQ thread (raised higher by the rtirq
+ * service) so the interrupt delivering a period always preempts the thread
+ * consuming it. Cross-thread setschedparam is fine. Needs LimitRTPRIO/MEMLOCK on
+ * loopy.service; without them it EPERMs and is a harmless no-op. */
+static void le_alsa_set_rt_priority(le_engine* engine) {
+  if (!le_alsa_only() || !engine->device_initialised) return;
+  struct sched_param sp;
+  memset(&sp, 0, sizeof(sp));
+  sp.sched_priority = 80;
+  (void)pthread_setschedparam(engine->device.thread, SCHED_FIFO, &sp);
+}
+
 void le_platform_after_device_start(le_engine* engine, const le_config* config) {
   /* Repin JACK ports to the selected interface (overriding miniaudio's connect-
-   * to-every-physical-port default), so channels map to that device only. */
+   * to-every-physical-port default), so channels map to that device only. No-op
+   * unless the JACK backend is active, so it does nothing on the ALSA appliance. */
   le_jack_pin_to_device(engine, config);
+  /* Appliance: promote the audio thread to real-time (direct ALSA path). */
+  le_alsa_set_rt_priority(engine);
 }
 
 void le_platform_on_engine_teardown(void) {
