@@ -1,37 +1,60 @@
-# Loopy floor-console boot splash. Segno mark centred on the console's near-black
-# (#08080A) with two subtle motions: a "breathe" (slow scale in/out) and a
-# "shimmer" (gentle luminance pulse). No progress bar, no text, no Pi rainbow.
+# Loopy floor-console boot splash. The segno lockup (Bravura mark + Apple Chancery
+# "segno" wordmark, pre-rendered from the smooth glyph vectors) centred on the
+# console near-black (#08080A), with a gentle luminance shimmer and a determinate
+# progress bar driven by the real boot progress. No breathe, no text banners, no
+# Pi rainbow.
 
 Window.SetBackgroundTopColor(0.031, 0.031, 0.039);
 Window.SetBackgroundBottomColor(0.031, 0.031, 0.039);
+sw = Window.GetWidth();
+sh = Window.GetHeight();
 
-logo.image = Image("loopy-segno.png");
-logo.base_w = logo.image.GetWidth();
-logo.base_h = logo.image.GetHeight();
-screen_w = Window.GetWidth();
-screen_h = Window.GetHeight();
-logo.sprite = Sprite();
-logo.sprite.SetZ(10);
+lockup.image = Image("loopy-lockup.png");
+lockup.sprite = Sprite();
+lockup.sprite.SetImage(lockup.image);
+lockup.sprite.SetX((sw - lockup.image.GetWidth()) / 2);
+lockup.sprite.SetY((sh - lockup.image.GetHeight()) / 2 - sh * 0.04);
+lockup.sprite.SetZ(10);
+
+# --- progress bar (hairline track + fill) ---
+bar.pixel = Image("loopy-bar-pixel.png");
+bar.w = Math.Int(sw * 0.20);
+bar.h = 3;
+bar.x = Math.Int((sw - bar.w) / 2);
+bar.y = Math.Int(sh * 0.86);
+bar.track = Sprite();
+bar.track.SetImage(bar.pixel.Scale(bar.w, bar.h));
+bar.track.SetX(bar.x);
+bar.track.SetY(bar.y);
+bar.track.SetOpacity(0.10);
+bar.track.SetZ(8);
+bar.fill = Sprite();
+bar.fill.SetZ(9);
+bar.progress = 0;
 
 tick = 0;
 fun refresh_cb() {
     tick++;
-
-    # breathe: scale between ~0.96 and ~1.04 on a slow sine
-    scale = 1.0 + 0.04 * Math.Sin(tick * 0.045);
-    img = logo.image.Scale(logo.base_w * scale, logo.base_h * scale);
-    logo.sprite.SetImage(img);
-    logo.sprite.SetX((screen_w - img.GetWidth()) / 2);
-    logo.sprite.SetY((screen_h - img.GetHeight()) / 2);
-
-    # shimmer: luminance pulse ~0.78 .. 1.0, slightly out of phase with breathe
-    opacity = 0.89 + 0.11 * Math.Sin(tick * 0.085 + 1.2);
-    logo.sprite.SetOpacity(opacity);
+    # shimmer: slow luminance pulse (~2.8s) on the lockup
+    lockup.sprite.SetOpacity(0.86 + 0.14 * Math.Sin(tick * 0.045));
+    # progress fill
+    fw = Math.Int(bar.w * bar.progress);
+    if (fw < 2) fw = 2;
+    bar.fill.SetImage(bar.pixel.Scale(fw, bar.h));
+    bar.fill.SetX(bar.x);
+    bar.fill.SetY(bar.y);
+    bar.fill.SetOpacity(0.95);
 }
 Plymouth.SetRefreshFunction(refresh_cb);
 
-# Keep it clean during shutdown/reboot too.
+fun progress_cb(duration, progress) {
+    bar.progress = progress;
+}
+Plymouth.SetBootProgressFunction(progress_cb);
+
 fun quit_cb() {
-    logo.sprite.SetOpacity(0);
+    lockup.sprite.SetOpacity(0);
+    bar.track.SetOpacity(0);
+    bar.fill.SetOpacity(0);
 }
 Plymouth.SetQuitFunction(quit_cb);

@@ -24,6 +24,11 @@ IMAGE_INSTALL:append = " \
     "
 # plymouth boot splash (segno mark, breathe + shimmer) covers the black screen from
 # power-on until weston/loopy render. plymouth-loopy-theme sets itself active.
+# Keep psplash (the other splash, pulled in by the base image) out so the two don't
+# fight over the framebuffer — plymouth owns the splash.
+IMAGE_INSTALL:remove = "psplash psplash-raspberrypi"
+BAD_RECOMMENDATIONS += "psplash psplash-raspberrypi"
+PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # PipeWire audio stack: the engine prefers JACK on Linux and runs cleanly on it
 # (tunable quantum, no ALSA-duplex reconfigure deadlock). pipewire-jack gives
 # pw-jack + the libjack replacement; pipewire-tools gives pw-metadata (the engine
