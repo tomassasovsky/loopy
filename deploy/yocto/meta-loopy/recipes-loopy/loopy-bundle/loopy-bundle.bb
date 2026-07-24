@@ -15,11 +15,8 @@ LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch \
            file://loopy-runtime.conf \
-           file://loopy-pipewire.service \
-           file://loopy-wireplumber.service \
-           file://wireplumber/50-loopy-no-midi.conf \
-           file://wireplumber/51-scarlett-pro-audio.conf \
-           file://pipewire/10-loopy-no-autospawn.conf"
+           file://loopy-rtirq.service \
+           file://loopy-rtirq"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -43,19 +40,15 @@ RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
                   fontconfig freetype glib-2.0 mesa alsa-lib libstdc++"
 
 inherit systemd
-# Enable the app + the PipeWire/WirePlumber audio services (our own units that run
-# as root sharing /run/user/1000; see the unit files). The packaged pipewire.service
-# is left disabled via the pipewire bbappend.
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-pipewire.service loopy-wireplumber.service"
+# Enable the app + the rtirq oneshot (raises the USB sound-card IRQ thread to
+# real-time so it preempts the audio thread that consumes each period). Direct
+# ALSA appliance — no PipeWire/WirePlumber services.
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service"
 
-FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch \
+FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${systemd_system_unitdir}/loopy.service \
-                ${systemd_system_unitdir}/loopy-pipewire.service \
-                ${systemd_system_unitdir}/loopy-wireplumber.service \
-                ${sysconfdir}/tmpfiles.d/loopy-runtime.conf \
-                ${sysconfdir}/wireplumber/wireplumber.conf.d/50-loopy-no-midi.conf \
-                ${sysconfdir}/wireplumber/wireplumber.conf.d/51-scarlett-pro-audio.conf \
-                ${sysconfdir}/pipewire/pipewire.conf.d/10-loopy-no-autospawn.conf"
+                ${systemd_system_unitdir}/loopy-rtirq.service \
+                ${sysconfdir}/tmpfiles.d/loopy-runtime.conf"
 
 python do_fetch:prepend() {
     if not d.getVar('LOOPY_BUNDLE_DIR'):
@@ -81,21 +74,16 @@ do_install() {
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/loopy.service ${D}${systemd_system_unitdir}/loopy.service
-    install -m 0644 ${UNPACKDIR}/loopy-pipewire.service ${D}${systemd_system_unitdir}/loopy-pipewire.service
-    install -m 0644 ${UNPACKDIR}/loopy-wireplumber.service ${D}${systemd_system_unitdir}/loopy-wireplumber.service
+
+    # rtirq: oneshot that raises the USB (xhci) sound-card IRQ thread to SCHED_FIFO
+    # (above the app's audio thread) so the interrupt delivering a period preempts
+    # the thread consuming it. Only meaningful with threaded IRQs (PREEMPT_RT
+    # force-threads them; threadirqs on the cmdline otherwise).
+    install -m 0755 ${UNPACKDIR}/loopy-rtirq ${D}${bindir}/loopy-rtirq
+    install -m 0644 ${UNPACKDIR}/loopy-rtirq.service ${D}${systemd_system_unitdir}/loopy-rtirq.service
 
     # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot
     # (no logind session makes it otherwise; weston crash-loops without it).
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${UNPACKDIR}/loopy-runtime.conf ${D}${sysconfdir}/tmpfiles.d/loopy-runtime.conf
-
-    # WirePlumber drop-ins: disable the crashy ALSA-MIDI monitor + default the
-    # Scarlett to the Pro Audio profile.
-    install -d ${D}${sysconfdir}/wireplumber/wireplumber.conf.d
-    install -m 0644 ${UNPACKDIR}/wireplumber/50-loopy-no-midi.conf ${D}${sysconfdir}/wireplumber/wireplumber.conf.d/50-loopy-no-midi.conf
-    install -m 0644 ${UNPACKDIR}/wireplumber/51-scarlett-pro-audio.conf ${D}${sysconfdir}/wireplumber/wireplumber.conf.d/51-scarlett-pro-audio.conf
-
-    # pipewire: stop it auto-spawning a second daemon (crash-loop fix).
-    install -d ${D}${sysconfdir}/pipewire/pipewire.conf.d
-    install -m 0644 ${UNPACKDIR}/pipewire/10-loopy-no-autospawn.conf ${D}${sysconfdir}/pipewire/pipewire.conf.d/10-loopy-no-autospawn.conf
 }
