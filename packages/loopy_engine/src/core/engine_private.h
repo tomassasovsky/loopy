@@ -757,6 +757,10 @@ struct le_engine {
    * something pops it (a native test today). */
   le_ring midi_clock_ring;
   le_command midi_clock_ring_storage[LE_MIDI_CLOCK_RING_CAPACITY];
+  /* Bumped when the ring above is full and a clock byte is dropped — same
+   * "not surfaced via le_snapshot yet" rationale as a_perf_log_overruns; add a
+   * snapshot field once a real consumer needs to observe this. */
+  _Atomic uint32_t a_midi_clock_overruns;
 
   /* Configuration. */
   int sample_rate;
