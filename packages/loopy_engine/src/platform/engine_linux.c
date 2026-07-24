@@ -24,6 +24,19 @@
                                * le_config / le_device_info / LE_MAX_CHANNELS /
                                * LE_OK + ma_backend arrive transitively */
 
+/* The appliance sets LOOPY_ALSA_ONLY (via the kiosk launcher): a single app owns
+ * the card with no PipeWire/JACK/Pulse in the image, so we drive ALSA directly
+ * for the lowest latency and zero IPC, and skip all the PipeWire quantum plumbing.
+ * Read once and cache — the env does not change over a process's life. */
+static int le_alsa_only(void) {
+  static int cached = -1;
+  if (cached < 0) {
+    const char* v = getenv("LOOPY_ALSA_ONLY");
+    cached = (v != NULL && v[0] != '\0' && v[0] != '0') ? 1 : 0;
+  }
+  return cached;
+}
+
 /* Force PipeWire's global graph quantum to `frames` (0 restores the dynamic
  * quantum). The per-app PIPEWIRE_QUANTUM env wins only on the first connection
  * and loses to another driver's quantum on a reopen, so we force it globally.
@@ -319,17 +332,28 @@ int le_platform_enumerate_devices(le_device_info* out, int32_t max,
 }
 
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
-  /* miniaudio's PulseAudio backend returns silent capture buffers under
-   * PipeWire's pulse emulation (verified on a Clarett+ 8Pre: pulse = silence,
-   * JACK = full multichannel capture). Prefer JACK (PipeWire ships a JACK
-   * server), then PulseAudio, then ALSA. */
+  /* Appliance (LOOPY_ALSA_ONLY): drive the card directly through ALSA — lowest
+   * latency, zero IPC, and the image ships no PipeWire/JACK/Pulse anyway.
+   * Elsewhere (desktop Linux) miniaudio's PulseAudio backend returns silent
+   * capture buffers under PipeWire's pulse emulation (verified on a Clarett+
+   * 8Pre: pulse = silence, JACK = full multichannel capture), so prefer JACK
+   * (PipeWire ships a JACK server), then PulseAudio, then ALSA. */
+  static const ma_backend k_alsa_only[] = {ma_backend_alsa};
   static const ma_backend k_backends[] = {
       ma_backend_jack, ma_backend_pulseaudio, ma_backend_alsa};
-  *out_list = k_backends;
-  *out_count = 3;
+  if (le_alsa_only()) {
+    *out_list = k_alsa_only;
+    *out_count = 1;
+  } else {
+    *out_list = k_backends;
+    *out_count = 3;
+  }
 }
 
 void le_platform_before_context_init(const le_config* config) {
+  /* ALSA takes its period directly from ma_device_config (periodSizeInFrames),
+   * so the appliance needs none of the PipeWire quantum plumbing. */
+  if (le_alsa_only()) return;
   /* JACK/PipeWire takes its buffer size (quantum) from the server and ignores
    * our requested period, so the in-app buffer selector would otherwise have no
    * effect on Linux latency. Two steps make it stick:
@@ -361,6 +385,7 @@ void le_platform_after_device_start(le_engine* engine, const le_config* config) 
 }
 
 void le_platform_on_engine_teardown(void) {
+  if (le_alsa_only()) return; /* no PipeWire quantum was forced */
   le_pipewire_force_quantum(0); /* restore PipeWire's dynamic quantum */
 }
 

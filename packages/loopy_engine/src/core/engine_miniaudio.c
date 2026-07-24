@@ -69,6 +69,16 @@ static void le_uninit_context(le_engine* engine) {
  * failures as well as the seam's close(). */
 static void le_miniaudio_close(le_engine* engine) {
   if (engine->device_initialised) {
+    /* Stop before uninit. miniaudio's ma_device_uninit has its "stop if started"
+     * block compiled out (#if 0), so it only signals the worker's outer
+     * wakeupEvent and joins — it does NOT wake a *running* data loop. On the ALSA
+     * duplex backend the worker is then blocked in poll(-1) on the capture PCM
+     * (only ma_device_stop -> onDeviceDataLoopWakeup writes the wakeup eventfd
+     * that breaks it), so uninit-while-started dead­locks the join. This is
+     * exactly the hang hit on every sample-rate / buffer change (which reopens
+     * the device). ma_device_stop fires the wakeup and is a safe no-op on an
+     * already-stopped device, so it is correct on every backend. */
+    ma_device_stop(&engine->device);
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
   }
@@ -192,9 +202,10 @@ static int32_t le_miniaudio_start(le_engine* engine) {
 
 /* Stops + fully releases the device. The running/present flags and the per-OS
  * teardown hook are reset by le_engine_stop above the seam. For miniaudio,
- * ma_device_uninit both stops and releases, so stop() and close() coincide and
- * stop() just delegates; the seam keeps them separate because a future backend
- * (ASIO, Part 2) may need a distinct stop-without-release step. */
+ * le_miniaudio_close stops (explicitly — see the note there) then releases, so
+ * stop() and close() coincide and stop() just delegates; the seam keeps them
+ * separate because a future backend (ASIO, Part 2) may need a distinct
+ * stop-without-release step. */
 static int32_t le_miniaudio_stop(le_engine* engine) {
   le_miniaudio_close(engine);
   return LE_OK;
