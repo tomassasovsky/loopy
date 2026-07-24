@@ -117,8 +117,11 @@ PLAT_DECK       = 8.0         # printed top deck (full insert engagement)
 ASP1_MOUNT      = (55.0, 80.0)  # ASP-1 base-screw rectangle (W x D) -- PROVISIONAL until measured
 
 # --- screens (capacitive touch, mounted from BEHIND; aperture < bezel) --------
-BIG_BEZEL  = (360.0, 224.0)   # 15.6" no-shell capacitive panel outline (glass edge-to-edge)
-BIG_W, BIG_H     = 342.5, 193.0   # 15.6" faceplate APERTURE -- sits ~0.8mm/side inside the 344.16 x 193.59 active area so the faceplate lip overlaps the panel edge (no light leak, no grey border); the 1080p decal behind it is cropped ~0.8mm/side W, 0.3mm/side H
+BIG_BEZEL  = (359.5, 223.75)  # 15.6" panel BODY: glass 359.5x206.5 edge-to-edge + a connector
+                              # strip at the BOTTOM extending the body to 223.75 (measured part)
+BIG_W, BIG_H     = 357.9, 205.9   # 15.6" faceplate APERTURE -- ~0.8mm/side W, 0.3mm/side H inside
+                              # the 359.5 x 206.5 glass so the faceplate lip overlaps the panel edge
+                              # (no light leak). The decal (359.5x206.5) stays; the aperture reveals it.
 BIG_DEPTH  = 8.0              # thin panel (3-6 mm); HDMI/USB driver board mounts flat inside
 SMALL_BEZEL = (165.0, 100.0)  # 7" module outline (APROTII: ears 164x99)
 SMALL_W, SMALL_H = 156.0, 88.0    # 7" aperture (APROTII active 155x86)
