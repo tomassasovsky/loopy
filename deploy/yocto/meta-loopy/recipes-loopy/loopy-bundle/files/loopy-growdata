@@ -1,0 +1,34 @@
+#!/bin/sh
+# Grow the /data partition to fill the SD card, once, on first boot.
+#
+# The wic image seeds /data tiny (so the flashed image stays small); this extends
+# partition 3 to the end of the disk (MBR, online) and then grows the ext4
+# filesystem into it. Idempotent + guarded by a flag ON /data itself, so it runs
+# exactly once per card and never on a reflash that keeps the data partition.
+set -eu
+
+DEV=/dev/mmcblk0
+PART=3
+FLAG=/data/.loopy-data-grown
+
+# /data must be mounted (the flag lives on it, and resize2fs grows it online).
+if ! grep -qs ' /data ' /proc/mounts; then
+    echo "loopy-growdata: /data not mounted, skipping" >&2
+    exit 0
+fi
+
+if [ -f "$FLAG" ]; then
+    exit 0
+fi
+
+# Only the last partition can grow into trailing free space. Extend the partition
+# table entry to 100% (parted edits + tells the kernel; online for a mounted ext4),
+# then online-resize the filesystem. Failures are non-fatal: a smaller /data still
+# works, we just don't want a boot loop.
+if parted -s "$DEV" resizepart "$PART" 100%; then
+    resize2fs "${DEV}p${PART}" || echo "loopy-growdata: resize2fs failed (non-fatal)" >&2
+else
+    echo "loopy-growdata: parted resizepart failed (non-fatal)" >&2
+fi
+
+touch "$FLAG"

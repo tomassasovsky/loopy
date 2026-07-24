@@ -4,11 +4,22 @@
 # LOOPY_CONSOLE is already compiled into the bundle; nothing to pass here.
 export GDK_BACKEND=wayland
 
+# Persistent data lives on the /data partition (label "data"), which OS/app updates
+# never touch. Point HOME (and thus every XDG dir + ~/Documents) there so sessions,
+# exports and config are written to /data instead of the rootfs; a reflash then
+# preserves them. loopy.service pulls in data.mount (RequiresMountsFor=/data), so
+# /data is mounted before we get here — but fall back to /root defensively so the
+# app still starts if a card somehow lacks the data partition.
 # The service runs as root; path_provider (session/export dirs) needs HOME + XDG
 # set or it throws MissingPlatformDirectoryException. Create + point them.
-export HOME="${HOME:-/root}"
-export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+if grep -qs ' /data ' /proc/mounts; then
+  export HOME=/data
+else
+  echo "loopy-kiosk-launch: /data not mounted, falling back to /root (data will NOT persist across updates)" >&2
+  export HOME=/root
+fi
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CONFIG_HOME="$HOME/.config"
 mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
 
 # path_provider's getApplicationDocumentsDirectory shells out to `xdg-user-dir

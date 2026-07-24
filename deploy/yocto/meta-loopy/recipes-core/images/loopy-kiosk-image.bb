@@ -36,7 +36,13 @@ PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # system-level (performance governor + threadirqs via CMDLINE, PREEMPT_RT kernel
 # on 6.12, SCHED_FIFO audio thread + rtirq) rather than a sound server.
 
-# Headroom for the app/session data + the kernel & modules.
+# Custom SD layout with a persistent /data partition that survives OS/app updates
+# (Phase 0 of #300). The wks lives in meta-loopy/wic/ (auto-searched). It seeds a
+# tiny data partition grown to fill the card on first boot (loopy-growdata.service).
+WKS_FILE = "loopy-sdimage.wks"
+
+# Headroom for the kernel & modules on the rootfs. User/session data no longer
+# lives on the rootfs (it is on /data), so this is just OS headroom now.
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
 # xdg-user-dirs provides the `xdg-user-dir` binary. Flutter's path_provider shells
 # out to it for getApplicationDocumentsDirectory; without it the app throws

@@ -16,7 +16,14 @@ SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch \
            file://loopy-runtime.conf \
            file://loopy-rtirq.service \
-           file://loopy-rtirq"
+           file://loopy-rtirq \
+           file://data.mount \
+           file://loopy-growdata \
+           file://loopy-growdata.service"
+
+# Grow tools for the first-boot /data expansion (loopy-growdata): parted extends
+# the partition, resize2fs grows the ext4 filesystem. Not in the base image.
+RDEPENDS:${PN} += "parted e2fsprogs-resize2fs"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -43,11 +50,14 @@ inherit systemd
 # Enable the app + the rtirq oneshot (raises the USB sound-card IRQ thread to
 # real-time so it preempts the audio thread that consumes each period). Direct
 # ALSA appliance — no PipeWire/WirePlumber services.
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service"
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service data.mount loopy-growdata.service"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
+                ${bindir}/loopy-growdata \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
+                ${systemd_system_unitdir}/data.mount \
+                ${systemd_system_unitdir}/loopy-growdata.service \
                 ${sysconfdir}/tmpfiles.d/loopy-runtime.conf"
 
 python do_fetch:prepend() {
@@ -81,6 +91,12 @@ do_install() {
     # force-threads them; threadirqs on the cmdline otherwise).
     install -m 0755 ${UNPACKDIR}/loopy-rtirq ${D}${bindir}/loopy-rtirq
     install -m 0644 ${UNPACKDIR}/loopy-rtirq.service ${D}${systemd_system_unitdir}/loopy-rtirq.service
+
+    # Persistent data partition: mount unit for /data + the first-boot grow oneshot
+    # (extends the seeded data partition to fill the card). See loopy-sdimage.wks.
+    install -m 0644 ${UNPACKDIR}/data.mount ${D}${systemd_system_unitdir}/data.mount
+    install -m 0755 ${UNPACKDIR}/loopy-growdata ${D}${bindir}/loopy-growdata
+    install -m 0644 ${UNPACKDIR}/loopy-growdata.service ${D}${systemd_system_unitdir}/loopy-growdata.service
 
     # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot
     # (no logind session makes it otherwise; weston crash-loops without it).

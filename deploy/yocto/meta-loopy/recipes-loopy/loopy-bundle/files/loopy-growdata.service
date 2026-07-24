@@ -1,0 +1,13 @@
+[Unit]
+Description=Grow Loopy /data partition to fill the SD card (first boot)
+Requires=data.mount
+After=data.mount
+ConditionPathExists=!/data/.loopy-data-grown
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/loopy-growdata
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
