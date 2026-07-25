@@ -151,6 +151,11 @@ class _TracksViewState extends State<TracksView> {
                                       mode: mode,
                                       onUndo: commands.undo,
                                       onRedo: commands.redo,
+                                      looperMode: state.transport.looperMode,
+                                      isPrimary:
+                                          track.channel ==
+                                          state.transport.primaryTrack,
+                                      onCrownPrimary: commands.crownPrimary,
                                     ),
                                   ),
                                 ),

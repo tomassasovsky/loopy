@@ -43,20 +43,23 @@ if(MSVC)
 endif()
 
 # engine_fx.c's own includes ("engine_fx.h", "engine_internal.h", "fft.h") are
-# flat quote-includes resolved relative to its own directory (core/); the two
+# flat quote-includes resolved relative to its own directory (core/); the
 # exceptions are engine_private.h -> miniaudio.h (one level over, in
-# miniaudio/) and engine_fx.c's own `#include "../host/plugin_slot.h"`
-# (resolved relative to the including file regardless of -I flags).
+# miniaudio/), engine_private.h -> le_midi_clock.h (C1, one level over, in
+# midi/ — struct le_engine embeds a le_midi_clock_gen field), and engine_fx.c's
+# own `#include "../host/plugin_slot.h"` (resolved relative to the including
+# file regardless of -I flags).
 #
 # PUBLIC (not PRIVATE): a consumer that links loopy_dsp_core needs these same
-# two directories on its own include path to `#include "engine_fx.h"` (the
-# whole point of the split — parts 2/3's VST3 targets link loopy_dsp_core
-# PRIVATE and drive the DSP through engine_fx.h's public seam). PRIVATE here
-# would silently fail to propagate through target_link_libraries and break
-# that include the moment a consumer target is added.
+# directories on its own include path to `#include "engine_fx.h"` (the whole
+# point of the split — parts 2/3's VST3 targets link loopy_dsp_core PRIVATE
+# and drive the DSP through engine_fx.h's public seam). PRIVATE here would
+# silently fail to propagate through target_link_libraries and break that
+# include the moment a consumer target is added.
 target_include_directories(loopy_dsp_core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/core"
   "${CMAKE_CURRENT_SOURCE_DIR}/miniaudio"
+  "${CMAKE_CURRENT_SOURCE_DIR}/midi"
 )
 
 # Verified via `nm -u` on the built object: loopy_dsp_core's only unresolved
@@ -113,6 +116,11 @@ add_library(loopy_engine SHARED
   midi/midi_backend_linux.c
   midi/midi_backend_apple.c
   midi/midi_backend_windows.c
+  # le_midi_clock.c (C1, D15) is pure-value tempo/PPQN math, like
+  # core/tempo_grid.c above — it lives in midi/ (per the plan's file
+  # placement) but is a portable ENGINE dependency (engine_process.c calls
+  # le_midi_clock_advance every block), not an OS MIDI backend.
+  midi/le_midi_clock.c
   # ---- miniaudio/: the vendored backend ----
   miniaudio/miniaudio_impl.c
 )

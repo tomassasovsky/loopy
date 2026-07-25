@@ -86,6 +86,12 @@ class TracksCommands {
     _announce(context.l10n.a11yRedone);
   }
 
+  /// Crowns [channel] the primary track (Sync/Band, D18) and announces it.
+  void crownPrimary(int channel) {
+    context.read<LooperBloc>().add(LooperCrownPrimaryPressed(channel));
+    _announce(context.l10n.a11yTrackCrowned);
+  }
+
   bool _isCapturing(int channel) {
     final tracks = context.read<LooperBloc>().state.tracks;
     return channel >= 0 &&

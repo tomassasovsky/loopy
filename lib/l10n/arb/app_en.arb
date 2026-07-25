@@ -1012,5 +1012,37 @@
     "a11yTrackArmed": "Armed, waiting for the next boundary",
     "@a11yTrackArmed": {
         "description": "Accessible label for the small badge shown on a track tile with a pending quantized/signal-triggered record arm."
+    },
+    "settingsSectionMode": "Mode",
+    "looperModeIntro": "Choose how the looper's tracks relate to each other and the tempo grid.",
+    "looperModeGroupLabel": "MODE",
+    "looperModeMultiLabel": "Multi",
+    "looperModeMultiSub": "Same length tracks",
+    "looperModeSyncLabel": "Sync",
+    "looperModeSyncSub": "Locked to primary",
+    "looperModeSongLabel": "Song",
+    "looperModeSongSub": "Independent sections",
+    "looperModeBandLabel": "Band",
+    "looperModeBandSub": "Primary + sections",
+    "looperModeFreeLabel": "Free",
+    "looperModeFreeSub": "Un-synced tracks",
+    "modeChangeConfirmTitle": "Switch mode?",
+    "modeChangeConfirmBody": "Changing mode clears every track — there's no way to keep the current loops. Clear all tracks and switch?",
+    "modeChangeConfirmConfirm": "Clear & Switch",
+    "modeChangeConfirmCancel": "Cancel",
+    "modeChangeTimedOut": "Mode switch timed out — the clear is still finishing. Try again in a moment.",
+    "oneShotGroupLabel": "ONE SHOT",
+    "oneShotIntro": "A one-shot track plays once and stops instead of looping (active in Free and Song modes).",
+    "a11yTrackPrimary": "Primary track",
+    "@a11yTrackPrimary": {
+        "description": "Accessible label for the crown badge on the currently-crowned Sync/Band primary track (D18); inert, no tap action."
+    },
+    "a11yCrownTrack": "Crown as primary track",
+    "@a11yCrownTrack": {
+        "description": "Accessible label for the tappable crown badge on a non-primary track in Sync/Band mode."
+    },
+    "a11yTrackCrowned": "Crowned primary",
+    "@a11yTrackCrowned": {
+        "description": "Screen-reader announcement after crowning a track the Sync/Band primary."
     }
 }

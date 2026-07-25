@@ -126,6 +126,44 @@ final class LooperTrackLengthPresetChanged extends LooperChannelEvent {
   List<Object?> get props => [channel, bars];
 }
 
+/// Track [channel]'s One Shot flag changed (song-mode-spec.md §2, B5c):
+/// `true` = the track plays once and then stops instead of looping.
+/// Settable in any looper mode, but only behaviorally active in Free/Song.
+final class LooperOneShotToggled extends LooperChannelEvent {
+  /// Creates a [LooperOneShotToggled].
+  const LooperOneShotToggled(super.channel, {required this.oneShot});
+
+  /// The new flag value.
+  final bool oneShot;
+
+  @override
+  List<Object?> get props => [channel, oneShot];
+}
+
+/// [channel] was crowned the primary track (Sync/Band, D18;
+/// `crownPrimary` — D20). No "un-crown" event exists — the only way to move
+/// the crown is to crown a different channel.
+final class LooperCrownPrimaryPressed extends LooperChannelEvent {
+  /// Creates a [LooperCrownPrimaryPressed].
+  const LooperCrownPrimaryPressed(super.channel);
+}
+
+/// The five-mode axis (Multi/Sync/Song/Band/Free) changed (D4). The UI is
+/// responsible for the D4 clear-all confirmation BEFORE dispatching this —
+/// the engine silently ignores the change while any track has content (see
+/// `LooperModeControl.setLooperMode`'s doc), so this event assumes the
+/// caller has already confirmed/cleared.
+final class LooperModeChanged extends LooperEvent {
+  /// Creates a [LooperModeChanged].
+  const LooperModeChanged(this.mode);
+
+  /// The new looper mode.
+  final LooperMode mode;
+
+  @override
+  List<Object?> get props => [mode];
+}
+
 /// Base for events targeting one [lane] of a track [channel].
 sealed class LooperLaneEvent extends LooperChannelEvent {
   const LooperLaneEvent(super.channel, this.lane);

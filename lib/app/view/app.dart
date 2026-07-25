@@ -132,11 +132,20 @@ class App extends StatelessWidget {
           // drive routing edits through the bloc, mirroring the in-view routing
           // controls. The TracksCubit below is hoisted for the same reason.
           BlocProvider(
-            create: (context) => LooperBloc(
-              repository: context.read<LooperRepository>(),
-              controller: context.read<ControllerRepository>(),
-              settings: context.read<SettingsRepository>(),
-            ),
+            create: (context) {
+              final bloc = LooperBloc(
+                repository: context.read<LooperRepository>(),
+                controller: context.read<ControllerRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              // Boot-restore the persisted mode (B5c) — dispatched as an
+              // event, not a bloc method (bloc_lint's
+              // avoid_public_bloc_methods).
+              unawaited(
+                restoreLooperMode(bloc, context.read<SettingsRepository>()),
+              );
+              return bloc;
+            },
           ),
           BlocProvider(
             create: (context) {

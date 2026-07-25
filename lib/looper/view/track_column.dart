@@ -26,6 +26,9 @@ class TrackColumn extends StatelessWidget {
     required this.mode,
     required this.onUndo,
     required this.onRedo,
+    this.looperMode = LooperMode.multi,
+    this.isPrimary = false,
+    this.onCrownPrimary,
     super.key,
   });
 
@@ -48,6 +51,18 @@ class TrackColumn extends StatelessWidget {
   /// Dispatches a redo for the given channel.
   final void Function(int channel) onRedo;
 
+  /// The five-mode axis (B5c): governs whether the crown badge shows at all
+  /// — visible in Sync/Band, absent in Multi/Song/Free (Wave-view style, per
+  /// the brainstorm).
+  final LooperMode looperMode;
+
+  /// Whether [track] is the crowned primary track (D18).
+  final bool isPrimary;
+
+  /// Dispatches a crown-primary press for the given channel. Required
+  /// whenever [looperMode] is Sync/Band (the badge is interactive then).
+  final void Function(int channel)? onCrownPrimary;
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -61,6 +76,27 @@ class TrackColumn extends StatelessWidget {
     final meterState = LooperMeterState.of(track.state, muted: track.muted);
     final muteMode = mode == InteractionMode.mute;
     final barColor = looper.meterColor(meterState, mode: mode);
+    // Crown badge (D18, B5c): visible only in Sync/Band (Wave-view style,
+    // per the brainstorm) — an inert, empty slot in every other mode so the
+    // column layout never shifts when the mode changes.
+    final crownVisible =
+        looperMode == LooperMode.sync || looperMode == LooperMode.band;
+    // Built once and placed in whichever branch below applies (console
+    // Stack vs standard Row) — a single construction site means the two
+    // layouts can never diverge on the badge's key/callback wiring (a
+    // console-only regression the per-layout-flavor split would otherwise
+    // let slip past a plain `flutter test` run, since `kConsoleMode` is a
+    // compile-time constant no normal test toggles).
+    final crownBadge = crownVisible
+        ? _CrownBadge(
+            key: Key('tracks_crown_${track.channel}'),
+            isPrimary: isPrimary,
+            color: theme.colorScheme.primary,
+            onCrown: onCrownPrimary == null
+                ? null
+                : () => onCrownPrimary!(track.channel),
+          )
+        : null;
 
     // The track name label. On the console it renders at a uniform, larger
     // size (consistent height across columns; the longest name reaches ~60% of
@@ -131,11 +167,17 @@ class TrackColumn extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: _PendingArmBadge(color: looper.recordColor),
                   ),
+                if (crownBadge != null)
+                  Align(alignment: Alignment.topCenter, child: crownBadge),
               ],
             )
           else
             Row(
               children: [
+                if (crownBadge != null) ...[
+                  crownBadge,
+                  const SizedBox(width: 6),
+                ],
                 Text(
                   '${track.channel + 1}',
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -374,6 +416,49 @@ class _TrackIndicator extends StatelessWidget {
           borderRadius: BorderRadius.circular(2),
         ),
         child: const SizedBox(height: 5, width: double.infinity),
+      ),
+    );
+  }
+}
+
+/// The crown badge marking (and setting) the Sync/Band primary track (D18),
+/// Wave-view style per the brainstorm: a filled, inert badge on the
+/// currently-crowned track; a dim, tappable one on every other track (tap to
+/// crown IT instead — there is no separate "un-crown" gesture, matching the
+/// engine's `crownPrimary`-only API).
+class _CrownBadge extends StatelessWidget {
+  const _CrownBadge({
+    required this.isPrimary,
+    required this.color,
+    required this.onCrown,
+    super.key,
+  });
+
+  /// Whether this track is the currently-crowned primary.
+  final bool isPrimary;
+
+  /// The badge's active tint when [isPrimary] (dimmed otherwise).
+  final Color color;
+
+  /// Crowns this track. `null` renders the badge fully inert (no callback
+  /// wired) — the caller decides whether crowning is available at all.
+  final VoidCallback? onCrown;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return FocusableTapTarget(
+      // Tapping the already-primary track's own badge would be a no-op (no
+      // un-crown gesture exists), so it is presented as inert, matching
+      // FocusableTapTarget's disabled-semantics convention.
+      onTap: isPrimary ? null : onCrown,
+      semanticLabel: isPrimary ? l10n.a11yTrackPrimary : l10n.a11yCrownTrack,
+      selected: isPrimary,
+      borderRadius: 4,
+      child: Icon(
+        Icons.workspace_premium,
+        size: 14,
+        color: isPrimary ? color : color.withValues(alpha: 0.35),
       ),
     );
   }

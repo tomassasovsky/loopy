@@ -16,6 +16,7 @@
  */
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h> /* getenv — appliance exclusive-mode check */
 #include <string.h>
 
 #include "engine_internal.h"  /* le_engine_process */
@@ -69,6 +70,16 @@ static void le_uninit_context(le_engine* engine) {
  * failures as well as the seam's close(). */
 static void le_miniaudio_close(le_engine* engine) {
   if (engine->device_initialised) {
+    /* Stop before uninit. miniaudio's ma_device_uninit has its "stop if started"
+     * block compiled out (#if 0), so it only signals the worker's outer
+     * wakeupEvent and joins — it does NOT wake a *running* data loop. On the ALSA
+     * duplex backend the worker is then blocked in poll(-1) on the capture PCM
+     * (only ma_device_stop -> onDeviceDataLoopWakeup writes the wakeup eventfd
+     * that breaks it), so uninit-while-started dead­locks the join. This is
+     * exactly the hang hit on every sample-rate / buffer change (which reopens
+     * the device). ma_device_stop fires the wakeup and is a safe no-op on an
+     * already-stopped device, so it is correct on every backend. */
+    ma_device_stop(&engine->device);
     ma_device_uninit(&engine->device);
     engine->device_initialised = 0;
   }
@@ -98,10 +109,50 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
   if (config->buffer_frames > 0) {
     cfg.periodSizeInFrames = (ma_uint32)config->buffer_frames;
     cfg.periods = 2;
+#if defined(__linux__)
+    /* Appliance tunable: buffer depth (period count) for the direct-ALSA duplex.
+     * miniaudio starts capture immediately but leaves playback to auto-start once
+     * start_threshold (= 2 periods) is buffered, on a buffer only `periods` deep.
+     * At tiny periods (64 frames) a 2-period buffer runs the playback write side
+     * right at the underrun edge: on an unlucky startup phase the capture->playback
+     * monitoring delay oscillates near-empty and sounds "robotic" (no XRUN — it
+     * never quite underruns). A deeper buffer gives the write side a stable cushion
+     * so writei always lands a clean full period, at the cost of a little (stable)
+     * output latency. Env-gated so it can be swept live on the device; default 2
+     * keeps the shipping desktop/JACK behaviour untouched. */
+    {
+      const char* periods_env = getenv("LOOPY_ALSA_PERIODS");
+      if (periods_env != NULL) {
+        int p = atoi(periods_env);
+        if (p >= 2 && p <= 8) cfg.periods = (ma_uint32)p;
+      }
+    }
+#endif
   }
   cfg.dataCallback = data_callback;
   cfg.notificationCallback = notification_callback;
   cfg.pUserData = engine;
+  /* Force plain readi/writei on ALSA (no MMAP). Only the ALSA backend reads this
+   * field (ignored by JACK/CoreAudio/WASAPI). On the direct-ALSA appliance,
+   * miniaudio's MMAP *duplex* read/write loop stalls in poll() — the device runs
+   * (hardware pointer advances) but not one frame is read/written — whereas the
+   * readi/writei path pumps correctly (verified against arecord). MMAP's only win
+   * is a marginal CPU saving, irrelevant here. */
+  cfg.alsa.noMMap = MA_TRUE;
+#if defined(__linux__)
+  /* Appliance (LOOPY_ALSA_ONLY): open the card EXCLUSIVELY (raw "hw:") rather
+   * than miniaudio's default shared mode, which on ALSA routes through the dmix
+   * (playback) / dsnoop (capture) plugins. Those plugins fail / misbehave for
+   * this duplex USB interface ("dsnoop unable to open slave", capture avail stuck
+   * at 0), whereas the raw hw device works perfectly (verified with speaker-test
+   * + arecord). Single-app appliance, so exclusive access is correct anyway. Not
+   * applied on macOS/Windows (there exclusive maps to WASAPI-exclusive / CoreAudio
+   * hog mode, a behaviour change we don't want on the shipping desktop app). */
+  if (getenv("LOOPY_ALSA_ONLY") != NULL) {
+    cfg.capture.shareMode = ma_share_mode_exclusive;
+    cfg.playback.shareMode = ma_share_mode_exclusive;
+  }
+#endif
 
   /* An explicit context lets us pick the backend (see below) and resolve a
    * pinned/loopback device id. We always open one; a detected loopback device
@@ -183,6 +234,9 @@ static int32_t le_miniaudio_open(le_engine* engine, const le_config* config,
 /* Starts the real-time callback. Publishes device-present + running on success;
  * on failure the caller (le_engine_start) invokes close() to release. */
 static int32_t le_miniaudio_start(le_engine* engine) {
+  /* Promote the (idle) audio worker to real-time before it starts, so its first
+   * reads run at the right priority (see le_platform_after_device_open). */
+  le_platform_after_device_open(engine);
   if (ma_device_start(&engine->device) != MA_SUCCESS) {
     return LE_ERR_DEVICE;
   }
@@ -192,9 +246,10 @@ static int32_t le_miniaudio_start(le_engine* engine) {
 
 /* Stops + fully releases the device. The running/present flags and the per-OS
  * teardown hook are reset by le_engine_stop above the seam. For miniaudio,
- * ma_device_uninit both stops and releases, so stop() and close() coincide and
- * stop() just delegates; the seam keeps them separate because a future backend
- * (ASIO, Part 2) may need a distinct stop-without-release step. */
+ * le_miniaudio_close stops (explicitly — see the note there) then releases, so
+ * stop() and close() coincide and stop() just delegates; the seam keeps them
+ * separate because a future backend (ASIO, Part 2) may need a distinct
+ * stop-without-release step. */
 static int32_t le_miniaudio_stop(le_engine* engine) {
   le_miniaudio_close(engine);
   return LE_OK;

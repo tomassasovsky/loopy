@@ -1,0 +1,36 @@
+#!/bin/sh
+# loopy-rtirq — raise the USB sound-card IRQ handler thread(s) to real-time.
+#
+# On the Pi 4 every USB-A port is behind the VL805 xHCI controller, so the
+# Scarlett's interrupts are serviced by the "irq/NN-xhci_hcd" kernel thread. For
+# glitch-free low-latency audio that thread must run ABOVE the app's audio thread
+# (SCHED_FIFO 80) so the interrupt that delivers a period always preempts the
+# thread consuming the previous one. We put it at SCHED_FIFO 90.
+#
+# Only has an effect when IRQs are threaded: PREEMPT_RT force-threads them; on a
+# non-RT kernel the "threadirqs" cmdline arg does. Best-effort — a missing thread
+# or missing chrt is non-fatal (the audio thread still runs RT; this just tightens
+# the tail). Iterates /proc directly so it works under busybox sh.
+# Pin every CPU to the performance governor (belt-and-suspenders with the
+# cpufreq.default_governor=performance cmdline arg): the default ondemand governor
+# idles at 1.1 GHz and only ramps under load, which shows up as audio xruns.
+for gov in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+    [ -w "$gov" ] && echo performance > "$gov" 2>/dev/null
+done
+
+PRIO=90
+found=0
+for comm in /proc/[0-9]*/comm; do
+    name=$(cat "$comm" 2>/dev/null) || continue
+    case "$name" in
+        irq/*xhci*|irq/*dwc*|irq/*usb*)
+            pid=$(basename "$(dirname "$comm")")
+            if chrt -f -p "$PRIO" "$pid" 2>/dev/null; then
+                echo "loopy-rtirq: $name (pid $pid) -> SCHED_FIFO $PRIO"
+                found=1
+            fi
+            ;;
+    esac
+done
+[ "$found" = 1 ] || echo "loopy-rtirq: no threaded USB IRQ found (threadirqs / PREEMPT_RT off?)"
+exit 0

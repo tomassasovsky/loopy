@@ -14,15 +14,31 @@
 #if defined(__linux__)
 
 #include <dlfcn.h>
+#include <pthread.h>   /* pthread_setschedparam for the appliance RT audio thread */
+#include <sched.h>     /* SCHED_FIFO, struct sched_param */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>  /* stat() — probe /proc/asound/cardN pcm direction */
 
 #include "engine_platform.h"  /* the seam */
 #include "engine_private.h"   /* struct le_engine, enumerate_devices, store_i32;
                                * le_config / le_device_info / LE_MAX_CHANNELS /
                                * LE_OK + ma_backend arrive transitively */
+
+/* The appliance sets LOOPY_ALSA_ONLY (via the kiosk launcher): a single app owns
+ * the card with no PipeWire/JACK/Pulse in the image, so we drive ALSA directly
+ * for the lowest latency and zero IPC, and skip all the PipeWire quantum plumbing.
+ * Read once and cache — the env does not change over a process's life. */
+static int le_alsa_only(void) {
+  static int cached = -1;
+  if (cached < 0) {
+    const char* v = getenv("LOOPY_ALSA_ONLY");
+    cached = (v != NULL && v[0] != '\0' && v[0] != '0') ? 1 : 0;
+  }
+  return cached;
+}
 
 /* Force PipeWire's global graph quantum to `frames` (0 restores the dynamic
  * quantum). The per-app PIPEWIRE_QUANTUM env wins only on the first connection
@@ -40,6 +56,12 @@ static void le_pipewire_force_quantum(int frames) {
 /* JACK port flags (jack/types.h). */
 #define LE_JACK_INPUT 0x1UL
 #define LE_JACK_OUTPUT 0x2UL
+#define LE_JACK_PHYSICAL 0x4UL
+/* jack_client_open option: never auto-start a JACK server for a transient probe. */
+#define LE_JACK_NO_START_SERVER 0x1
+/* Well-known JACK metadata key (jack/metadata.h) — PipeWire publishes a node's
+ * description here, giving us "Scarlett 4i4 USB" instead of the raw node id. */
+#define LE_JACK_PRETTY_NAME "http://jackaudio.org/metadata/pretty-name"
 
 /* The trailing decimal index of a port name (e.g. "…AUX10" -> 10), or -1 when it
  * has none — used to sort ports numerically rather than by registration order. */
@@ -48,32 +70,6 @@ static long le_trailing_int(const char* s) {
   size_t i = end;
   while (i > 0 && s[i - 1] >= '0' && s[i - 1] <= '9') --i;
   return i < end ? strtol(s + i, NULL, 10) : -1;
-}
-
-/* JACK port names are "<friendly device name>:<port>" (e.g.
- * "Clarett+ 8Pre Pro:capture_AUX0"), not the alsa object id we pin by. Resolve
- * the friendly name for a selected device id via our own enumeration. (The
- * enumeration runs on the default backend; on PipeWire its node description
- * matches the JACK port prefix, which is the case this targets.) */
-static void le_jack_device_name(const char* id, int capture, char* out,
-                                size_t cap) {
-  out[0] = '\0';
-  if (id == NULL || id[0] == '\0') return;
-  le_device_info* devs = (le_device_info*)calloc(64, sizeof(le_device_info));
-  if (devs == NULL) return;
-  int32_t n = 0;
-  if (enumerate_devices(devs, 64, &n, capture) != LE_OK) {
-    free(devs);
-    return;
-  }
-  for (int32_t i = 0; i < n; ++i) {
-    if (strcmp(devs[i].id, id) == 0) {
-      strncpy(out, devs[i].name, cap - 1);
-      out[cap - 1] = '\0';
-      break;
-    }
-  }
-  free(devs);
 }
 
 /* Reconnects our `count` JACK ports (ppPorts) to the selected device's ports
@@ -176,13 +172,16 @@ static void le_jack_pin_to_device(le_engine* engine, const le_config* config) {
 
   if (get_ports && connect_port && disconnect_port && port_name && port_conns &&
       jfree) {
-    char name[256];
+    /* The selected device id IS the JACK client/node name (that is how
+     * le_platform_enumerate_devices reports it), so the port prefix is just
+     * "<id>:capture_" / "<id>:playback_" — no name resolution needed. An empty
+     * id (system default) or a stale non-JACK id simply matches no ports, and
+     * le_jack_rewire leaves miniaudio's default auto-connections in place. */
     char prefix[300];
 
-    le_jack_device_name(config->capture_device_id, /*capture=*/1, name,
-                        sizeof(name));
-    if (name[0] != '\0') {
-      snprintf(prefix, sizeof(prefix), "%s:capture_", name);
+    const char* cap_id = config->capture_device_id;
+    if (cap_id != NULL && cap_id[0] != '\0') {
+      snprintf(prefix, sizeof(prefix), "%s:capture_", cap_id);
       int32_t m = le_jack_rewire(
           client, get_ports, connect_port, disconnect_port, port_name,
           port_conns, jfree, (void**)engine->device.jack.ppPortsCapture,
@@ -192,10 +191,9 @@ static void le_jack_pin_to_device(le_engine* engine, const le_config* config) {
       }
     }
 
-    le_jack_device_name(config->playback_device_id, /*capture=*/0, name,
-                        sizeof(name));
-    if (name[0] != '\0') {
-      snprintf(prefix, sizeof(prefix), "%s:playback_", name);
+    const char* play_id = config->playback_device_id;
+    if (play_id != NULL && play_id[0] != '\0') {
+      snprintf(prefix, sizeof(prefix), "%s:playback_", play_id);
       int32_t m = le_jack_rewire(
           client, get_ports, connect_port, disconnect_port, port_name,
           port_conns, jfree, (void**)engine->device.jack.ppPortsPlayback,
@@ -210,18 +208,240 @@ static void le_jack_pin_to_device(le_engine* engine, const le_config* config) {
 
 /* ---- platform seam ---- */
 
+/* JACK entry points used only for enumeration (opened transiently, separate from
+ * the engine's own client). jack_client_open is variadic in the header, but we
+ * pass no variadic args, so a fixed 3-arg pointer is ABI-correct. The metadata
+ * trio is optional — older libjack lacks it — so each is NULL-guarded. */
+typedef void* (*le_jack_open_t)(const char*, int, int*);
+typedef int (*le_jack_close_t)(void*);
+typedef char* (*le_jack_uuid_for_name_t)(void*, const char*);
+typedef int (*le_jack_uuid_parse_t)(const char*, uint64_t*);
+typedef int (*le_jack_get_prop_t)(uint64_t, const char*, char**, char**);
+
+/* Resolve a JACK client/node's friendly name via its pretty-name metadata
+ * (PipeWire publishes node.description there). Leaves out[0]='\0' if the
+ * metadata API or the property is absent, so the caller can fall back. */
+static void le_jack_pretty_name(void* client, const char* node,
+                                le_jack_uuid_for_name_t uuid_for_name,
+                                le_jack_uuid_parse_t uuid_parse,
+                                le_jack_get_prop_t get_prop,
+                                le_jack_free_t jfree, char* out, size_t cap) {
+  out[0] = '\0';
+  if (!uuid_for_name || !uuid_parse || !get_prop) return;
+  char* uuid_str = uuid_for_name(client, node);
+  if (uuid_str == NULL) return;
+  uint64_t uuid = 0;
+  if (uuid_parse(uuid_str, &uuid) == 0) {
+    char* value = NULL;
+    char* type = NULL;
+    if (get_prop(uuid, LE_JACK_PRETTY_NAME, &value, &type) == 0 &&
+        value != NULL) {
+      strncpy(out, value, cap - 1);
+      out[cap - 1] = '\0';
+    }
+    if (value) jfree(value);
+    if (type) jfree(type);
+  }
+  jfree(uuid_str);
+}
+
+/* Lowest PCM device index on ALSA card `card` that has a stream in the requested
+ * direction, or -1 if none — probed from /proc/asound/cardN/pcm<dev><c|p>. */
+static int le_alsa_card_pcm_dev(int card, int capture) {
+  const char suffix = capture ? 'c' : 'p';
+  for (int dev = 0; dev < 8; ++dev) {
+    char path[64];
+    struct stat st;
+    snprintf(path, sizeof(path), "/proc/asound/card%d/pcm%d%c", card, dev,
+             suffix);
+    if (stat(path, &st) == 0) return dev;
+  }
+  return -1;
+}
+
+/* Appliance ALSA enumeration: one clean entry per real sound card from
+ * /proc/asound/cards (e.g. "Scarlett 4i4 USB"), NOT the ALSA PCM-hint namespace
+ * (default, sysdefault, plughw, dmix, front, surround40, samplerate, speex, ...)
+ * which is the clutter miniaudio would otherwise surface. The id is
+ * ":<card>,<dev>", which is exactly the token miniaudio's simplified ALSA
+ * enumeration produces for that hardware device, so le_resolve_device_id still
+ * pins it and it opens the raw device directly. Cards without a PCM in the
+ * requested direction (HDMI has no capture, say) are skipped. */
+static int le_alsa_enumerate_cards(le_device_info* out, int32_t max,
+                                   int32_t* count, int capture) {
+  *count = 0;
+  FILE* f = fopen("/proc/asound/cards", "r");
+  if (f == NULL) return 0;
+
+  char line[512];
+  int32_t n = 0;
+  while (n < max && fgets(line, sizeof(line), f) != NULL) {
+    /* Card header lines start with the index: " 2 [USB    ]: USB-Audio - Name".
+     * The indented continuation line (the longname) has no leading digit. */
+    const char* p = line;
+    while (*p == ' ') ++p;
+    if (*p < '0' || *p > '9') continue;
+    const int card = (int)strtol(p, NULL, 10);
+    if (card < 0) continue;
+
+    /* Card name = text after " - " (the driver's card name, e.g. the friendly
+     * interface name), trimmed. */
+    char* name = strstr(line, " - ");
+    if (name == NULL) continue;
+    name += 3;
+    size_t len = strlen(name);
+    while (len > 0 && (name[len - 1] == '\n' || name[len - 1] == '\r' ||
+                       name[len - 1] == ' ')) {
+      name[--len] = '\0';
+    }
+    if (len == 0) continue;
+
+    /* Drop the SoC HDMI audio outputs — a live-looping appliance routes through
+     * its audio interface, not the display's HDMI audio, so they are only clutter
+     * in the picker. Matched by the vc4-hdmi card name. */
+    if (strstr(line, "vc4-hdmi") != NULL || strstr(line, "vc4hdmi") != NULL) {
+      continue;
+    }
+
+    const int dev = le_alsa_card_pcm_dev(card, capture);
+    if (dev < 0) continue; /* no PCM in this direction on this card */
+
+    le_device_info* d = &out[n];
+    memset(d, 0, sizeof(*d));
+    snprintf(d->id, sizeof(d->id), ":%d,%d", card, dev);
+    strncpy(d->name, name, sizeof(d->name) - 1);
+    d->name[sizeof(d->name) - 1] = '\0';
+    ++n;
+  }
+
+  fclose(f);
+  *count = n;
+  return n > 0 ? 1 : 0;
+}
+
+static int le_jack_enumerate_devices(le_device_info* out, int32_t max,
+                                     int32_t* count, int capture) {
+  *count = 0;
+  void* lib = dlopen("libjack.so.0", RTLD_NOW | RTLD_LOCAL);
+  if (lib == NULL) lib = dlopen("libjack.so", RTLD_NOW | RTLD_LOCAL);
+  if (lib == NULL) return 0; /* no JACK/PipeWire -> defer to ALSA enumeration */
+
+  le_jack_open_t jopen = (le_jack_open_t)dlsym(lib, "jack_client_open");
+  le_jack_close_t jclose = (le_jack_close_t)dlsym(lib, "jack_client_close");
+  le_jack_get_ports_t get_ports =
+      (le_jack_get_ports_t)dlsym(lib, "jack_get_ports");
+  le_jack_free_t jfree = (le_jack_free_t)dlsym(lib, "jack_free");
+  le_jack_uuid_for_name_t uuid_for_name =
+      (le_jack_uuid_for_name_t)dlsym(lib, "jack_get_uuid_for_client_name");
+  le_jack_uuid_parse_t uuid_parse =
+      (le_jack_uuid_parse_t)dlsym(lib, "jack_uuid_parse");
+  le_jack_get_prop_t get_prop =
+      (le_jack_get_prop_t)dlsym(lib, "jack_get_property");
+
+  if (!jopen || !jclose || !get_ports || !jfree) {
+    dlclose(lib);
+    return 0;
+  }
+
+  int status = 0;
+  void* client = jopen("loopy-enum", LE_JACK_NO_START_SERVER, &status);
+  if (client == NULL) {
+    dlclose(lib); /* server not running -> defer to ALSA enumeration */
+    return 0;
+  }
+
+  /* One entry per real interface. capture wants the device's OUTPUT ports (it
+   * produces audio into the graph), playback its INPUT ports; physical-only
+   * keeps it to hardware, not app/monitor nodes. Group ports by their
+   * "<node>:" prefix — that prefix is the id le_jack_pin_to_device pins by. */
+  const unsigned long flags =
+      (capture ? LE_JACK_OUTPUT : LE_JACK_INPUT) | LE_JACK_PHYSICAL;
+  const char** ports = get_ports(client, NULL, NULL, flags);
+
+  int32_t n = 0;
+  for (int k = 0; ports != NULL && ports[k] != NULL && n < max; ++k) {
+    const char* colon = strchr(ports[k], ':');
+    if (colon == NULL) continue;
+    const size_t plen = (size_t)(colon - ports[k]);
+    if (plen == 0 || plen >= sizeof(out[0].id)) continue;
+
+    int32_t found = -1;
+    for (int32_t d = 0; d < n; ++d) {
+      if (strncmp(out[d].id, ports[k], plen) == 0 && out[d].id[plen] == '\0') {
+        found = d;
+        break;
+      }
+    }
+    if (found >= 0) {
+      if (capture) {
+        out[found].input_channels++;
+      } else {
+        out[found].output_channels++;
+      }
+      continue;
+    }
+
+    le_device_info* dev = &out[n];
+    memset(dev, 0, sizeof(*dev));
+    memcpy(dev->id, ports[k], plen);
+    dev->id[plen] = '\0';
+    if (capture) {
+      dev->input_channels = 1;
+    } else {
+      dev->output_channels = 1;
+    }
+    le_jack_pretty_name(client, dev->id, uuid_for_name, uuid_parse, get_prop,
+                        jfree, dev->name, sizeof(dev->name));
+    if (dev->name[0] == '\0') {
+      strncpy(dev->name, dev->id, sizeof(dev->name) - 1);
+      dev->name[sizeof(dev->name) - 1] = '\0';
+    }
+    ++n;
+  }
+
+  if (ports != NULL) jfree((void*)ports);
+  jclose(client);
+  dlclose(lib);
+
+  if (n == 0) return 0; /* JACK up but no hardware ports -> let ALSA try */
+  *count = n;
+  return 1;
+}
+
+int le_platform_enumerate_devices(le_device_info* out, int32_t max,
+                                  int32_t* count, int capture) {
+  /* Appliance (direct ALSA, no JACK): list real sound cards cleanly. Desktop
+   * Linux runs under PipeWire/JACK, so use the JACK enumeration there (clean
+   * names + only real interfaces). Either way, no ALSA PCM-hint clutter. */
+  if (le_alsa_only()) {
+    return le_alsa_enumerate_cards(out, max, count, capture);
+  }
+  return le_jack_enumerate_devices(out, max, count, capture);
+}
+
 void le_platform_backends(const ma_backend** out_list, ma_uint32* out_count) {
-  /* miniaudio's PulseAudio backend returns silent capture buffers under
-   * PipeWire's pulse emulation (verified on a Clarett+ 8Pre: pulse = silence,
-   * JACK = full multichannel capture). Prefer JACK (PipeWire ships a JACK
-   * server), then PulseAudio, then ALSA. */
+  /* Appliance (LOOPY_ALSA_ONLY): drive the card directly through ALSA — lowest
+   * latency, zero IPC, and the image ships no PipeWire/JACK/Pulse anyway.
+   * Elsewhere (desktop Linux) miniaudio's PulseAudio backend returns silent
+   * capture buffers under PipeWire's pulse emulation (verified on a Clarett+
+   * 8Pre: pulse = silence, JACK = full multichannel capture), so prefer JACK
+   * (PipeWire ships a JACK server), then PulseAudio, then ALSA. */
+  static const ma_backend k_alsa_only[] = {ma_backend_alsa};
   static const ma_backend k_backends[] = {
       ma_backend_jack, ma_backend_pulseaudio, ma_backend_alsa};
-  *out_list = k_backends;
-  *out_count = 3;
+  if (le_alsa_only()) {
+    *out_list = k_alsa_only;
+    *out_count = 1;
+  } else {
+    *out_list = k_backends;
+    *out_count = 3;
+  }
 }
 
 void le_platform_before_context_init(const le_config* config) {
+  /* ALSA takes its period directly from ma_device_config (periodSizeInFrames),
+   * so the appliance needs none of the PipeWire quantum plumbing. */
+  if (le_alsa_only()) return;
   /* JACK/PipeWire takes its buffer size (quantum) from the server and ignores
    * our requested period, so the in-app buffer selector would otherwise have no
    * effect on Linux latency. Two steps make it stick:
@@ -246,13 +466,42 @@ void le_platform_before_context_init(const le_config* config) {
   le_pipewire_force_quantum(q_frames);
 }
 
+/* Appliance only: put the miniaudio worker thread (which runs the ALSA duplex
+ * read/write loop and calls the audio callback, so it is the thread that must
+ * meet the period deadline) on SCHED_FIFO 80 — above all normal work, with
+ * headroom below for the USB sound-card IRQ thread (raised higher by the rtirq
+ * service) so the interrupt delivering a period always preempts the thread
+ * consuming it. Cross-thread setschedparam is fine. Needs LimitRTPRIO/MEMLOCK on
+ * loopy.service; without them it EPERMs and is a harmless no-op. */
+static void le_alsa_set_rt_priority(le_engine* engine) {
+  if (!le_alsa_only() || !engine->device_initialised) return;
+  /* Opt-in via LOOPY_RT_AUDIO=1 (set by the kiosk launcher once the ALSA path is
+   * validated). Gated so a misbehaving audio loop cannot hard-starve the machine
+   * at SCHED_FIFO before it has been proven to sleep between periods. */
+  const char* rt = getenv("LOOPY_RT_AUDIO");
+  if (rt == NULL || rt[0] != '1') return;
+  struct sched_param sp;
+  memset(&sp, 0, sizeof(sp));
+  sp.sched_priority = 80;
+  (void)pthread_setschedparam(engine->device.thread, SCHED_FIFO, &sp);
+}
+
+void le_platform_after_device_open(le_engine* engine) {
+  /* Appliance: promote the audio thread to real-time BEFORE it starts reading,
+   * while it is still idle, so it never runs its deadline-critical first reads
+   * at normal priority (which overruns the capture at tiny buffers). */
+  le_alsa_set_rt_priority(engine);
+}
+
 void le_platform_after_device_start(le_engine* engine, const le_config* config) {
   /* Repin JACK ports to the selected interface (overriding miniaudio's connect-
-   * to-every-physical-port default), so channels map to that device only. */
+   * to-every-physical-port default), so channels map to that device only. No-op
+   * unless the JACK backend is active, so it does nothing on the ALSA appliance. */
   le_jack_pin_to_device(engine, config);
 }
 
 void le_platform_on_engine_teardown(void) {
+  if (le_alsa_only()) return; /* no PipeWire quantum was forced */
   le_pipewire_force_quantum(0); /* restore PipeWire's dynamic quantum */
 }
 

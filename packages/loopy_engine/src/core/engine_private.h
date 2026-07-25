@@ -55,6 +55,7 @@
 #include "audio_ring.h"        /* le_audio_ring (performance-recording taps) */
 #include "layer_staging_ring.h" /* le_layer_staging_ring (retired-layer persistence) */
 #include "le_device_backend.h" /* le_device_backend (the device-backend seam) */
+#include "le_midi_clock.h"     /* le_midi_clock_gen (C1 24-PPQN clock-send emitter) */
 #include "lockfree_ring.h"     /* le_command, le_ring */
 #include "loop_clock.h"        /* le_loop_clock */
 #include "loopy_engine_api.h"  /* le_engine typedef, le_config, le_device_info,
@@ -69,6 +70,19 @@ extern "C" {
 #endif
 
 #define LE_RING_CAPACITY 256u
+
+/* MIDI clock output ring (C1, D15): audio-thread producer, drained by
+ * whichever consumer forwards the bytes to le_midi_out_send (a native test's
+ * direct le_ring_pop today; a future Dart poll loop, mirroring the existing
+ * loop-top-pulse architecture, once a destination port is wired). Reuses
+ * le_ring/le_command wholesale rather than inventing a byte-sized ring — one
+ * command-sized slot per raw status byte (in `.code`) is negligible waste for
+ * a control-rate consumer, and it means this ring needs no new push/pop
+ * implementation to review. Capacity generously covers even a multi-bar test
+ * run between drains: at the fastest supported tempo (300 BPM) one PPQN tick
+ * is ~8.3 ms of audio, so 24 * 300 / 60 ≈ 120 ticks/s — comfortably inside a
+ * few seconds of undrained backlog. */
+#define LE_MIDI_CLOCK_RING_CAPACITY 1024u
 
 /* Performance event log (part 3): 4096 slots absorbs a command storm (a
  * scripted/automated burst of >= 2000 audibility-affecting changes) within one
@@ -452,22 +466,38 @@ typedef struct le_track {
   int32_t xfade_len;
   int32_t xfade_end_state;
 
-  /* Free mode (B2b, index Architecture §4): this track's OWN loop clock,
-   * structurally identical to (and reusing) the master's le_loop_clock —
-   * length 0 means "not yet established", exactly like e->clock before the
-   * first defining recording. DORMANT outside Free mode: nothing writes or
-   * reads free_clock/free_iteration unless a_looper_mode == LE_LOOPER_MODE_
-   * FREE (verified by construction — see finalize_master, mix_tracks_frame,
-   * advance_transport_frame, viz_tap_frame's Free-mode-guarded call sites in
-   * engine_process.c). In Multi/Sync/Song/Band every track's length is a
-   * multiple of the ONE shared e->clock (seg_base's `k` multiples), so this
-   * stays untouched at its zero-initialized value for the engine's whole
-   * lifetime in those modes. free_iteration mirrors e->loop_iteration (a
-   * free-running wrap count) for the same reason e->loop_iteration exists:
-   * future per-track-multiple work (Band's non-primary sections, B3/B4) has
-   * the same shape available without inventing a second counter later. */
+  /* Free/Song mode (B2b + B4, index Architecture §4): this track's OWN loop
+   * clock, structurally identical to (and reusing) the master's
+   * le_loop_clock — length 0 means "not yet established", exactly like
+   * e->clock before the first defining recording. B4: Song mode's
+   * "independent lengths, no primary, no shared grid obligation" transport
+   * (song-mode-spec.md §2) is structurally IDENTICAL to Free's, so B4
+   * reuses this same machinery outright rather than inventing a parallel
+   * one — every gate below was broadened from a single `mode == FREE` check
+   * to `mode == FREE || mode == SONG`, never duplicated. DORMANT outside
+   * Free/Song: nothing writes or reads free_clock/free_iteration unless
+   * a_looper_mode is one of those two (verified by construction — see
+   * finalize_master, mix_tracks_frame, advance_transport_frame,
+   * viz_tap_frame's Free/Song-guarded call sites in engine_process.c). In
+   * Multi/Sync/Band every track's length is a multiple of the ONE shared
+   * e->clock (seg_base's `k` multiples), so this stays untouched at its
+   * zero-initialized value for the engine's whole lifetime in those modes.
+   * free_iteration mirrors e->loop_iteration (a free-running wrap count) for
+   * the same reason e->loop_iteration exists: Band's non-primary sections
+   * (B3b) instead reuse Sync's primary/multiple-division machinery, so this
+   * field's only two consumers remain Free and Song. */
   le_loop_clock free_clock;
   uint64_t free_iteration;
+
+  /* One Shot (B4, Sheeran manual §5.9.4): "plays just once and then stops"
+   * instead of looping. A SETTING (like a_length_preset_bars above),
+   * untouched by handle_clear/UNDO_TO_EMPTY — see LE_CMD_SET_ONE_SHOT's doc,
+   * loopy_engine_api.h, for the full mode-gating rationale. Consumed only by
+   * advance_track_clock_frame's free_clock wrap check (engine_process.c);
+   * dormant (read but inert) outside Free/Song for the same reason
+   * free_clock itself is — there is no per-track wrap event to hook in
+   * Multi/Sync/Band. */
+  _Atomic int32_t a_one_shot;
 } le_track;
 
 /* Performance-recording capture state (le_perf_arm / le_perf_disarm,
@@ -652,6 +682,14 @@ struct le_engine {
    * Meaningful only in Sync/Band; see le_sync_quantize_active below. */
   _Atomic int32_t a_primary_track;
 
+  /* MIDI clock mode (Phase C/E, D15, published — see le_snapshot's trailing
+   * clock block). A SETTING, seeded once in le_engine_create and persisting
+   * across configure exactly like a_looper_mode/a_primary_track above.
+   * Default OFF (0) so an untouched engine emits no clock bytes. Gates
+   * le_midi_clock_advance (called at the end of le_engine_process) alongside
+   * the looper mode — see le_clock_send_gate_open, engine_process.c. */
+  _Atomic int32_t a_clock_mode;
+
   _Atomic int32_t a_record_offset; /* latency compensation in frames */
 
   /* Global master output gain (float bits, 0..1), applied post-mix to the final
@@ -710,6 +748,19 @@ struct le_engine {
    * top of le_engine_get_snapshot (the UI poll) and of the transport calls. */
   le_ring evt_ring;
   le_command evt_storage[LE_RING_CAPACITY];
+
+  /* MIDI clock output ring (C1, D15; see LE_MIDI_CLOCK_RING_CAPACITY above).
+   * Audio-thread producer: le_engine_process appends one entry per emitted
+   * byte (le_midi_clock_advance's output), `.code` holding the raw status
+   * byte (LE_MIDI_CLOCK_TICK/_START/_STOP). No consumer is wired in this part
+   * — see le_midi_clock.h's header doc — so this simply accumulates until
+   * something pops it (a native test today). */
+  le_ring midi_clock_ring;
+  le_command midi_clock_ring_storage[LE_MIDI_CLOCK_RING_CAPACITY];
+  /* Bumped when the ring above is full and a clock byte is dropped — same
+   * "not surfaced via le_snapshot yet" rationale as a_perf_log_overruns; add a
+   * snapshot field once a real consumer needs to observe this. */
+  _Atomic uint32_t a_midi_clock_overruns;
 
   /* Configuration. */
   int sample_rate;
@@ -783,6 +834,15 @@ struct le_engine {
    * cancel-wins, matching the precondition that a press was already in
    * flight before the commit landed. */
   int32_t count_in_grace_channel; /* -1 = no grace window open */
+
+  /* MIDI clock send (C1, D15): audio-thread-local generator state driving
+   * le_midi_clock_advance once per block (engine_process.c, the very end of
+   * le_engine_process — after the per-frame loop, since the emitter runs at
+   * BLOCK granularity like the tap-tempo frame clock above, not per-sample).
+   * Reset per session (le_engine_configure) via le_midi_clock_reset, exactly
+   * like the click/count-in running state above — its SETTING twin
+   * (a_clock_mode) is seeded once in le_engine_create and persists. */
+  le_midi_clock_gen midi_clock;
 
   /* Quantized recording (control-thread-owned). When `quantize` is set, a record
    * press over an existing master arms `armed[ch]` (and does the one-time prep

@@ -369,6 +369,24 @@ class FakeAudioEngine implements AudioEngine {
     return EngineResult.ok;
   }
 
+  /// The last channel passed to [crownPrimary].
+  int? lastCrownedChannel;
+
+  @override
+  EngineResult crownPrimary({required int channel}) {
+    lastCrownedChannel = channel;
+    return EngineResult.ok;
+  }
+
+  /// Per-track One Shot flags passed to [setOneShot].
+  final Map<int, bool> trackOneShot = {};
+
+  @override
+  EngineResult setOneShot({required int channel, required bool oneShot}) {
+    trackOneShot[channel] = oneShot;
+    return EngineResult.ok;
+  }
+
   @override
   EngineResult setLimiter({required bool enabled, double ceiling = 0.99}) =>
       EngineResult.ok;
