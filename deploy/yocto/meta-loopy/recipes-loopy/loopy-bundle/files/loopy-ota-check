@@ -1,0 +1,73 @@
+#!/bin/sh
+# Loopy appliance OTA update check. Polls the device's channel manifest on
+# segno.aquiles.dev, and if a newer signed bundle is published, downloads it,
+# verifies its sha256, and `rauc install`s it to the INACTIVE A/B slot. It does
+# NOT reboot — activation is deferred to a session-safe moment (Phase 4); we just
+# drop a marker the UI / a user action acts on.
+#
+# Version model (deliberately simple + RAUC-version-independent):
+#   current = the running image's build number   (/etc/loopy/build-version, baked by CI)
+#   staged  = the build number already installed to the inactive slot (/data marker)
+#   install when  manifest.version > current  AND  manifest.version > staged
+# After a reboot into the new slot, current == the new number, so it won't re-stage.
+set -eu
+
+BASE_URL="${LOOPY_UPDATE_BASE:-https://segno.aquiles.dev/updates/appliance}"
+CHANNEL_FILE="${LOOPY_CHANNEL_FILE:-/etc/loopy/update-channel}"
+CUR_FILE="${LOOPY_VERSION_FILE:-/etc/loopy/build-version}"
+STAGED_FILE="/data/.ota-staged-version"      # on /data so it survives OS updates
+PENDING_FLAG="/run/loopy-update-pending"     # tmpfs marker: "reboot to activate"
+WORK="$(mktemp -d /tmp/loopy-ota.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+
+log() { echo "loopy-ota: $*" >&2; }
+
+command -v rauc >/dev/null 2>&1 || { log "rauc not installed, skipping"; exit 0; }
+
+channel=$(cat "$CHANNEL_FILE" 2>/dev/null || echo "production")
+current=$(cat "$CUR_FILE" 2>/dev/null || echo 0)
+staged=$(cat "$STAGED_FILE" 2>/dev/null || echo 0)
+manifest_url="${BASE_URL}/${channel}/manifest.json"
+
+log "channel=$channel current=$current staged=$staged"
+
+man="$WORK/manifest.json"
+if ! curl -fsSL --max-time 30 -o "$man" "$manifest_url"; then
+    log "no manifest at $manifest_url (offline or nothing published)"; exit 0
+fi
+
+version=$(jq -r '.version // 0' "$man" 2>/dev/null || echo 0)
+bundle=$(jq -r '.bundle // empty' "$man" 2>/dev/null || echo "")
+sha=$(jq -r '.sha256 // empty' "$man" 2>/dev/null || echo "")
+
+# jq/int guard: treat non-numeric as 0.
+case "$version" in ''|*[!0-9]*) version=0 ;; esac
+
+if [ -z "$bundle" ] || [ "$version" -le "$current" ] || [ "$version" -le "$staged" ]; then
+    log "up to date (published=$version)"; exit 0
+fi
+
+log "new version $version available: $bundle"
+bfile="$WORK/$bundle"
+if ! curl -fsSL --max-time 1800 -o "$bfile" "${BASE_URL}/${channel}/${bundle}"; then
+    log "bundle download failed"; exit 1
+fi
+
+# Integrity: sha256 from the manifest (defence in depth — RAUC also verifies the
+# bundle's own X.509 signature, which is the real security boundary).
+if [ -n "$sha" ]; then
+    actual=$(sha256sum "$bfile" | cut -d' ' -f1)
+    if [ "$actual" != "$sha" ]; then
+        log "sha256 mismatch (want $sha got $actual) — refusing"; exit 1
+    fi
+fi
+
+# Install to the inactive slot. RAUC verifies the signature against the baked-in
+# keyring and refuses anything it can't validate. No reboot here (deferred).
+if rauc install "$bfile"; then
+    echo "$version" > "$STAGED_FILE" 2>/dev/null || true
+    : > "$PENDING_FLAG" 2>/dev/null || true
+    log "installed v$version to inactive slot; reboot pending (deferred activation)"
+else
+    log "rauc install failed"; exit 1
+fi
