@@ -6,24 +6,16 @@ import 'package:loopy/update/appliance/appliance_env.dart';
 /// The production [ApplianceEnv]: real files, HTTP, and the privileged helper.
 ///
 /// The helper (`loopy-update-ctl`, shipped by the appliance image) does the
-/// privileged RAUC work; it is invoked through `pkexec` so a polkit rule — not
-/// setuid — grants the kiosk user the specific action. This class is the I/O
-/// boundary and is excluded from coverage; the testable logic lives in
+/// RAUC work. On the single-purpose appliance the kiosk app runs as root, so
+/// the helper is invoked directly — no pkexec/polkit/setuid. This class is the
+/// I/O boundary and is excluded from coverage; the testable logic lives in
 /// `AppliancePlatformBackend` over a fake [ApplianceEnv].
 class SystemApplianceEnv implements ApplianceEnv {
-  /// Creates a [SystemApplianceEnv]. [helperPath] is the privileged helper and
-  /// [pkexec] the privilege-elevation launcher (overridable for a distro that
-  /// puts it elsewhere).
-  const SystemApplianceEnv({
-    this.helperPath = '/usr/bin/loopy-update-ctl',
-    this.pkexec = 'pkexec',
-  });
+  /// Creates a [SystemApplianceEnv]. [helperPath] is the update helper.
+  const SystemApplianceEnv({this.helperPath = '/usr/bin/loopy-update-ctl'});
 
-  /// Path to the privileged update helper.
+  /// Path to the update helper (run directly; the appliance app is root).
   final String helperPath;
-
-  /// The privilege-elevation launcher.
-  final String pkexec;
 
   @override
   String? readTextSync(String path) {
@@ -54,8 +46,8 @@ class SystemApplianceEnv implements ApplianceEnv {
 
   @override
   Stream<double> stage(int version) async* {
-    final args = [helperPath, 'install', '$version'];
-    final process = await Process.start(pkexec, args);
+    final args = ['install', '$version'];
+    final process = await Process.start(helperPath, args);
     final progress = RegExp(r'^PROGRESS\s+(\d+)');
     await for (final line
         in process.stdout
@@ -68,17 +60,21 @@ class SystemApplianceEnv implements ApplianceEnv {
     }
     final code = await process.exitCode;
     if (code != 0) {
-      throw ProcessException(pkexec, args, 'update helper failed', code);
+      throw ProcessException(helperPath, args, 'update helper failed', code);
     }
     yield 1;
   }
 
   @override
   Future<void> reboot() async {
-    final args = [helperPath, 'reboot'];
-    final result = await Process.run(pkexec, args);
+    final result = await Process.run(helperPath, ['reboot']);
     if (result.exitCode != 0) {
-      throw ProcessException(pkexec, args, '${result.stderr}', result.exitCode);
+      throw ProcessException(
+        helperPath,
+        const ['reboot'],
+        '${result.stderr}',
+        result.exitCode,
+      );
     }
   }
 }
