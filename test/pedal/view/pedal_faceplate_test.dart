@@ -166,16 +166,20 @@ void main() {
   });
 
   group('PedalFaceplate rendering', () {
-    testWidgets('shows a blank (all-off) plate before any frame arrives', (
+    testWidgets('lights the projected initial frame the moment it binds', (
       tester,
     ) async {
+      // On bind the pedal (and its on-screen faceplate) light up from the
+      // current looper snapshot, before any LooperState streams in — in Rec
+      // mode the cursor track (0) is red. Regression: the plate used to stay
+      // blank until some audio activity streamed a state.
       await pumpFaceplate(tester);
       final led = tester.widget<Container>(
         find.byKey(const Key('pedalFaceplate_led_track0')),
       );
       expect(
         (led.decoration! as BoxDecoration).color,
-        SurfaceTheme.dark.ledOff,
+        SurfaceTheme.dark.ledRed,
       );
     });
 

@@ -24,15 +24,19 @@ void main() {
   late LooperBloc bloc;
   late TracksCubit tracks;
   late ControlCubit control;
+  late _MockLooperRepository looper;
 
   setUp(() {
     final settings = SettingsRepository(store: FakeKeyValueStore());
     bloc = _MockLooperBloc();
     tracks = TracksCubit(settings: settings);
-    final looper = _MockLooperRepository();
+    looper = _MockLooperRepository();
     when(
       () => looper.looperState,
     ).thenAnswer((_) => const Stream<LooperState>.empty());
+    // The control cubit projects the pedal frame from looper.state (its
+    // synchronous snapshot); seed() keeps it in step with the bloc state.
+    when(() => looper.state).thenReturn(const LooperState());
     // The row reads the mode / cursor / bank from the shared control cubit.
     final pedalRepo = PedalRepository(const NoopPedalTransport());
     addTearDown(pedalRepo.dispose);
@@ -54,6 +58,7 @@ void main() {
   void seed(LooperState state) {
     when(() => bloc.state).thenReturn(state);
     whenListen(bloc, const Stream<LooperState>.empty(), initialState: state);
+    when(() => looper.state).thenReturn(state);
   }
 
   Future<void> pump(WidgetTester tester) => tester.pumpWidget(
