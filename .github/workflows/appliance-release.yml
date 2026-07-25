@@ -100,6 +100,11 @@ jobs:
           name: loopy-app-bundle
           path: deploy/yocto/prebuilt/bundle
 
+      - name: Restore the app binary's executable bit
+        # loopy-bundle.bb's do_install checks `[ -x "${bundle}/loopy" ]`; the
+        # upload/download-artifact round-trip doesn't reliably preserve it.
+        run: chmod +x deploy/yocto/prebuilt/bundle/loopy
+
       - name: Stage RAUC signing material
         run: |
           kd=deploy/yocto/meta-loopy/.rauc-keys
