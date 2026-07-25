@@ -7,6 +7,7 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:loopy/looper/view/coming_soon_stub.dart';
 import 'package:loopy/looper/view/signal_graph/signal_graph.dart';
+import 'package:loopy/looper/view/signal_graph/signal_style.dart';
 import 'package:loopy/theme/theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
@@ -27,9 +28,9 @@ class SettingsTray extends StatefulWidget {
 }
 
 class _SettingsTrayState extends State<SettingsTray> {
-  /// The tray panel's fully-open height — sized for one row of five shortcut
-  /// buttons plus the brightness slider.
-  static const double _kTrayHeight = 200;
+  /// The tray panel's fully-open height — sized for one row of five badged
+  /// shortcut buttons, the divider, and the brightness slider.
+  static const double _kTrayHeight = 232;
 
   /// True for the lifetime of a handle drag. While true, the panel height and
   /// scrim opacity track the pointer with no animation (every frame is a
@@ -80,6 +81,8 @@ class _SettingsTrayState extends State<SettingsTray> {
           child: Column(
             children: [
               _TrayHandle(
+                progress: state.dragProgress.clamp(0.0, 1.0),
+                duration: motion,
                 onDragStart: () => setState(() => _dragging = true),
                 // Reads `cubit.state` (always current) rather than the
                 // `state` closed over from this build — several pointer-move
@@ -135,11 +138,22 @@ class _SettingsTrayState extends State<SettingsTray> {
 /// isolation breaks silently — keep drag handling on this widget alone.
 class _TrayHandle extends StatelessWidget {
   const _TrayHandle({
+    required this.progress,
+    required this.duration,
     required this.onDragStart,
     required this.onDragUpdate,
     required this.onDragEnd,
     required this.onTap,
   });
+
+  /// Live/settled drag progress (`0..1`) — brightens the tab and turns its
+  /// chevron as the tray opens, so the handle itself previews the motion
+  /// rather than sitting as a static affordance.
+  final double progress;
+
+  /// Reduced-motion-aware duration for the chevron's rotation and the tab's
+  /// colour lerp (zero during an active drag, so both track the pointer).
+  final Duration duration;
 
   final VoidCallback onDragStart;
   final ValueChanged<double> onDragUpdate;
@@ -149,7 +163,8 @@ class _TrayHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
+    final surface = context.surface;
+    final tint = Color.lerp(surface.textTertiary, surface.accent, progress)!;
     return Semantics(
       button: true,
       label: l10n.a11yTrayHandle,
@@ -162,15 +177,50 @@ class _TrayHandle extends StatelessWidget {
         onTap: onTap,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.only(bottom: 6),
           color: Colors.transparent,
-          alignment: Alignment.center,
-          child: Container(
-            width: 44,
-            height: 5,
+          alignment: Alignment.topCenter,
+          // A small protruding tab (rather than a bare line floating on the
+          // tracks grid) — reads as a physical pull, and its own drop shadow
+          // separates it from whatever's directly behind it.
+          child: AnimatedContainer(
+            duration: duration,
+            padding: const EdgeInsets.fromLTRB(16, 7, 12, 7),
             decoration: BoxDecoration(
-              color: scheme.onSurface.withValues(alpha: 0.4),
-              borderRadius: BorderRadius.circular(3),
+              color: surface.card,
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(14),
+                bottomRight: Radius.circular(14),
+              ),
+              border: Border.all(color: surface.line),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: duration,
+                  width: 28,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: tint,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedRotation(
+                  duration: duration,
+                  turns: progress > 0.5 ? 0.5 : 0,
+                  curve: Curves.easeOut,
+                  child: Icon(Icons.keyboard_arrow_down, size: 16, color: tint),
+                ),
+              ],
             ),
           ),
         ),
@@ -195,99 +245,172 @@ class _TrayPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
+    final surface = context.surface;
     return Material(
-      color: scheme.surfaceContainerHighest,
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // Both nav buttons disable for the duration of a pending
-                  // push: functionally required for Signal (`showSignalPage`
-                  // has no re-entrancy guard of its own — a rapid double-tap
-                  // would double-push it), and applied to Settings too for
-                  // UX consistency — `openLoopySettings` self-guards against
-                  // a real double-push, but leaving its button tappable
-                  // mid-push would still look live when it isn't.
-                  _TrayButton(
-                    key: const Key('settingsTray_settings'),
-                    icon: Icons.settings_outlined,
-                    label: l10n.settingsTooltip,
-                    onTap: isNavigating
-                        ? null
-                        : () => unawaited(
-                            _navigate(context, openLoopySettings),
-                          ),
-                  ),
-                  _TrayButton(
-                    key: const Key('settingsTray_signal'),
-                    icon: Icons.account_tree_outlined,
-                    label: l10n.signalTooltip,
-                    onTap: isNavigating
-                        ? null
-                        : () => unawaited(
-                            _navigate(context, () => showSignalPage(context)),
-                          ),
-                  ),
-                  _TrayButton(
-                    key: const Key('settingsTray_wifi'),
-                    icon: Icons.wifi,
-                    label: l10n.trayWifiLabel,
-                    onTap: () => unawaited(
-                      showComingSoonStub(context, feature: l10n.trayWifiLabel),
+      color: Colors.transparent,
+      child: DecoratedBox(
+        // A little vertical depth (cardHigh -> card) so the panel reads as
+        // a raised instrument-panel surface rather than a flat sheet, matching
+        // the Signal surface's chrome (see signal_chrome.dart).
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [surface.cardHigh, surface.card],
+          ),
+          borderRadius: const BorderRadius.vertical(
+            bottom: Radius.circular(18),
+          ),
+          border: Border(bottom: BorderSide(color: surface.line)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Both nav buttons disable for the duration of a pending
+                    // push: functionally required for Signal (`showSignalPage`
+                    // has no re-entrancy guard of its own — a rapid
+                    // double-tap would double-push it), and applied to
+                    // Settings too for UX consistency — `openLoopySettings`
+                    // self-guards against a real double-push, but leaving
+                    // its button tappable mid-push would still look live
+                    // when it isn't.
+                    _TrayButton(
+                      key: const Key('settingsTray_settings'),
+                      icon: Icons.settings_outlined,
+                      label: l10n.settingsTooltip,
+                      accent: surface.textSecondary,
+                      onTap: isNavigating
+                          ? null
+                          : () => unawaited(
+                              _navigate(context, openLoopySettings),
+                            ),
                     ),
-                  ),
-                  _TrayButton(
-                    key: const Key('settingsTray_bluetooth'),
-                    icon: Icons.bluetooth,
-                    label: l10n.trayBluetoothLabel,
-                    onTap: () => unawaited(
-                      showComingSoonStub(
-                        context,
-                        feature: l10n.trayBluetoothLabel,
+                    _TrayButton(
+                      key: const Key('settingsTray_signal'),
+                      icon: Icons.account_tree_outlined,
+                      label: l10n.signalTooltip,
+                      // Signal-flow blue — the same hue that names "wet"
+                      // routing on the Signal surface itself.
+                      accent: surface.wetRoute,
+                      onTap: isNavigating
+                          ? null
+                          : () => unawaited(
+                              _navigate(
+                                context,
+                                () => showSignalPage(context),
+                              ),
+                            ),
+                    ),
+                    _TrayButton(
+                      key: const Key('settingsTray_wifi'),
+                      icon: Icons.wifi,
+                      label: l10n.trayWifiLabel,
+                      accent: surface.laneColor(7),
+                      onTap: () => unawaited(
+                        showComingSoonStub(
+                          context,
+                          feature: l10n.trayWifiLabel,
+                        ),
                       ),
                     ),
-                  ),
-                  _TrayButton(
-                    key: const Key('settingsTray_tuner'),
-                    icon: Icons.graphic_eq,
-                    label: l10n.trayTunerLabel,
-                    onTap: () => unawaited(
-                      showComingSoonStub(context, feature: l10n.trayTunerLabel),
+                    _TrayButton(
+                      key: const Key('settingsTray_bluetooth'),
+                      icon: Icons.bluetooth,
+                      label: l10n.trayBluetoothLabel,
+                      accent: surface.laneColor(3),
+                      onTap: () => unawaited(
+                        showComingSoonStub(
+                          context,
+                          feature: l10n.trayBluetoothLabel,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.brightness_6_outlined,
-                    size: 18,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Slider(
-                      key: const Key('settingsTray_brightness'),
-                      value: brightness,
-                      label: l10n.trayBrightnessLabel,
-                      semanticFormatterCallback: (value) =>
-                          '${l10n.trayBrightnessLabel} '
-                          '${(value * 100).round()}%',
-                      onChanged: onBrightnessChanged,
+                    _TrayButton(
+                      key: const Key('settingsTray_tuner'),
+                      icon: Icons.graphic_eq,
+                      label: l10n.trayTunerLabel,
+                      accent: surface.laneColor(2),
+                      onTap: () => unawaited(
+                        showComingSoonStub(
+                          context,
+                          feature: l10n.trayTunerLabel,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1, thickness: 1, color: surface.line),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: surface.accent.withValues(alpha: 0.14),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.brightness_6_outlined,
+                        size: 16,
+                        color: surface.accent,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderThemeData(
+                          trackHeight: 3,
+                          activeTrackColor: surface.accent,
+                          inactiveTrackColor: surface.line,
+                          thumbColor: surface.accent,
+                          overlayColor: surface.accent.withValues(alpha: 0.12),
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 7,
+                          ),
+                        ),
+                        child: Slider(
+                          key: const Key('settingsTray_brightness'),
+                          value: brightness,
+                          label: l10n.trayBrightnessLabel,
+                          semanticFormatterCallback: (value) =>
+                              '${l10n.trayBrightnessLabel} '
+                              '${(value * 100).round()}%',
+                          onChanged: onBrightnessChanged,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 34,
+                      child: Text(
+                        '${(brightness * 100).round()}%',
+                        textAlign: TextAlign.end,
+                        style: signalMono(color: surface.textSecondary),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -314,43 +437,62 @@ Future<void> _navigate(
   }
 }
 
-/// One tray shortcut: an icon over a short label, focusable and
-/// screen-reader operable via [FocusableTapTarget]. Null [onTap] renders
-/// dimmed and inert (used while a nav push from this tray is in flight).
+/// One tray shortcut: an icon in a coloured circular badge over a short
+/// label, focusable and screen-reader operable via [FocusableTapTarget].
+/// Null [onTap] renders dimmed and inert (used while a nav push from this
+/// tray is in flight).
 class _TrayButton extends StatelessWidget {
   const _TrayButton({
     required this.icon,
     required this.label,
+    required this.accent,
     required this.onTap,
     super.key,
   });
 
   final IconData icon;
   final String label;
+
+  /// The badge's tint — distinguishes each destination at a glance rather
+  /// than five identical grey glyphs in a row (e.g. [SurfaceTheme.wetRoute]
+  /// for Signal, a lane hue per stub).
+  final Color accent;
+
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final toolbarIconColor = Theme.of(
-      context,
-    ).extension<LooperTheme>()!.toolbarIconColor;
-    final color = onTap == null
-        ? toolbarIconColor.withValues(alpha: 0.4)
-        : toolbarIconColor;
+    final surface = context.surface;
+    final enabled = onTap != null;
+    final tint = enabled ? accent : surface.textTertiary;
     return FocusableTapTarget(
       onTap: onTap,
       semanticLabel: label,
-      borderRadius: 10,
+      borderRadius: 14,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 4),
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: tint.withValues(alpha: enabled ? 0.16 : 0.08),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: tint.withValues(alpha: enabled ? 0.4 : 0.16),
+                ),
+              ),
+              child: Icon(icon, color: tint, size: 20),
+            ),
+            const SizedBox(height: 6),
             Text(
               label,
-              style: TextStyle(color: color, fontSize: 11),
+              style: signalLabel(
+                color: enabled ? surface.textSecondary : surface.textTertiary,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
