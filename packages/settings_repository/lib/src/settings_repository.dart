@@ -824,6 +824,35 @@ class SettingsRepository {
   Future<void> saveLaneEffects(int channel, int lane, String encoded) =>
       _store.setString(_laneEffectsKey(channel, lane), encoded);
 
+  static const String _updateAutoCheckKey = 'updates.auto_check';
+  static const String _updateDismissedKey = 'updates.dismissed';
+
+  /// Whether the app runs the passive, read-only update check automatically.
+  /// Defaults to `true` (checking is read-only; applying stays opt-in).
+  Future<bool> loadUpdateAutoCheck() async =>
+      await _store.getBool(_updateAutoCheckKey) ?? true;
+
+  /// Persists whether the passive update check runs automatically.
+  Future<void> saveUpdateAutoCheck({required bool value}) =>
+      _store.setBool(_updateAutoCheckKey, value: value);
+
+  /// Loads the set of update build numbers whose notification the user
+  /// dismissed. Stored as a comma-separated list of ints (the same
+  /// encoded-scalar idiom as [loadLaneEffects]); bad entries are ignored.
+  Future<Set<int>> loadDismissedUpdateVersions() async {
+    final raw = await _store.getString(_updateDismissedKey);
+    if (raw == null || raw.isEmpty) return const {};
+    return raw
+        .split(',')
+        .map((s) => int.tryParse(s.trim()))
+        .whereType<int>()
+        .toSet();
+  }
+
+  /// Saves the set of dismissed update build numbers (sorted, comma-separated).
+  Future<void> saveDismissedUpdateVersions(Set<int> versions) => _store
+      .setString(_updateDismissedKey, (versions.toList()..sort()).join(','));
+
   /// Clears all settings.
   Future<void> clear() => _store.clear();
 }

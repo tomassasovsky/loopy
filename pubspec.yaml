@@ -41,6 +41,8 @@ dependencies:
     path: packages/session_repository
   settings_repository:
     path: packages/settings_repository
+  update_repository:
+    path: packages/update_repository
   url_launcher: ^6.3.0
   window_manager: ^0.5.2
 
