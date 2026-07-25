@@ -12,11 +12,21 @@ LICENSE = "CLOSED"
 # override via LOOPY_BUNDLE_DIR in kas/local.conf to point elsewhere.
 LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 
+# Build number stamped into /etc/loopy/build-version; the OTA client compares the
+# channel manifest's version against it. CI sets LOOPY_BUILD_VERSION per release.
+LOOPY_BUILD_VERSION ?= "0"
+
 SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch \
            file://loopy-runtime.conf \
            file://loopy-rtirq.service \
-           file://loopy-rtirq"
+           file://loopy-rtirq \
+           file://data.mount \
+           file://boot.mount \
+           file://loopy-ota-check \
+           file://loopy-ota-check.service \
+           file://loopy-ota-check.timer \
+           file://update-channel"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
@@ -34,20 +44,26 @@ INSANE_SKIP:${PN} += "already-stripped ldflags arch textrel file-rdeps"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 # Runtime libs the GTK embedder + native engine link against, named explicitly so
-# they're guaranteed in the image. Verify the full set on device with
-# `ldd /opt/loopy/loopy` — this is the ABI-matching risk (plan §Risks).
+# they're guaranteed in the image (hard `=`, so keep everything ON this line).
+# curl/jq/ca-certificates: the OTA client (loopy-ota-check). rauc: the installer.
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
-                  fontconfig freetype glib-2.0 mesa alsa-lib libstdc++"
+                  fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
+                  curl jq ca-certificates rauc"
 
 inherit systemd
-# Enable the app + the rtirq oneshot (raises the USB sound-card IRQ thread to
-# real-time so it preempts the audio thread that consumes each period). Direct
-# ALSA appliance — no PipeWire/WirePlumber services.
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service"
+# App + rtirq oneshot + the /boot(tryboot selector) and /data mounts + the OTA
+# update timer. Direct-ALSA appliance — no PipeWire/WirePlumber.
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service boot.mount data.mount loopy-ota-check.timer"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
+                ${bindir}/loopy-ota-check \
+                ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
+                ${systemd_system_unitdir}/boot.mount \
+                ${systemd_system_unitdir}/data.mount \
+                ${systemd_system_unitdir}/loopy-ota-check.service \
+                ${systemd_system_unitdir}/loopy-ota-check.timer \
                 ${sysconfdir}/tmpfiles.d/loopy-runtime.conf"
 
 python do_fetch:prepend() {
@@ -81,6 +97,22 @@ do_install() {
     # force-threads them; threadirqs on the cmdline otherwise).
     install -m 0755 ${UNPACKDIR}/loopy-rtirq ${D}${bindir}/loopy-rtirq
     install -m 0644 ${UNPACKDIR}/loopy-rtirq.service ${D}${systemd_system_unitdir}/loopy-rtirq.service
+
+    # Mount units: /boot = tryboot selector (autoboot.txt, for the RAUC backend),
+    # /data = persistent app data (survives updates).
+    install -m 0644 ${UNPACKDIR}/boot.mount ${D}${systemd_system_unitdir}/boot.mount
+    install -m 0644 ${UNPACKDIR}/data.mount ${D}${systemd_system_unitdir}/data.mount
+
+    # OTA update client: timer-driven check that polls the channel manifest on
+    # segno.aquiles.dev and rauc-installs newer signed bundles (deferred activation).
+    install -m 0755 ${UNPACKDIR}/loopy-ota-check ${D}${bindir}/loopy-ota-check
+    install -m 0644 ${UNPACKDIR}/loopy-ota-check.service ${D}${systemd_system_unitdir}/loopy-ota-check.service
+    install -m 0644 ${UNPACKDIR}/loopy-ota-check.timer ${D}${systemd_system_unitdir}/loopy-ota-check.timer
+
+    # /etc/loopy: update channel (default production) + this build's version number.
+    install -d ${D}${sysconfdir}/loopy
+    install -m 0644 ${UNPACKDIR}/update-channel ${D}${sysconfdir}/loopy/update-channel
+    echo "${LOOPY_BUILD_VERSION}" > ${D}${sysconfdir}/loopy/build-version
 
     # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot
     # (no logind session makes it otherwise; weston crash-loops without it).

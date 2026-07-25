@@ -9,6 +9,10 @@
 Description=Loopy floor-console app (Wayland client under weston)
 After=weston.service
 Requires=weston.service
+# Persistent user data lives on /data (data.mount). Block startup until it is
+# mounted so the app never writes sessions/exports to the rootfs by mistake (the
+# launcher also guards, but this makes the ordering explicit).
+RequiresMountsFor=/data
 
 [Service]
 Type=simple

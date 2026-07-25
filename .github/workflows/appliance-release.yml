@@ -1,0 +1,113 @@
+# Appliance (Pi 4B) update release pipeline — #304.
+# Builds the signed RAUC .raucb + a channel manifest and publishes them to a GitHub
+# Release; the segno.aquiles.dev mirror then serves them to devices per channel.
+#
+#   push to `experimental`  -> experimental channel (GitHub prerelease)
+#   push tag `v*`           -> production  channel (GitHub full release)
+#   workflow_dispatch       -> pick the channel
+#
+# Runs on a native arm64 runner (kas + the app bundle are aarch64; no QEMU).
+#
+# PREREQUISITES (repo settings):
+#   - Secrets: RAUC_SIGNING_KEY (development-1.key.pem), RAUC_SIGNING_CERT
+#     (development-1.cert.pem).  NOTE: the CA/keyring is baked into the image; this
+#     signs bundles.
+#   - A full Yocto build is heavy. First run is cold (long); later runs restore the
+#     sstate/downloads cache below. For speed/reliability, point SSTATE_MIRRORS at a
+#     hosted mirror instead of relying only on actions/cache (10 GB repo-cache cap).
+name: appliance-release
+
+on:
+  push:
+    branches: [experimental]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [experimental, production]
+        default: experimental
+
+permissions:
+  contents: write        # create releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04-arm      # native aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine channel + version
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            channel="${{ github.event.inputs.channel }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            channel="production"
+          else
+            channel="experimental"
+          fi
+          version="${{ github.run_number }}"     # monotonic build number
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building channel=$channel version=$version"
+
+      - name: Build the aarch64 app bundle
+        run: |
+          docker build -t loopy-arm64-build deploy/rpi/build
+          docker run --rm -v "$PWD":/workspace loopy-arm64-build --dart-define=LOOPY_CONSOLE=true
+          rm -rf deploy/yocto/prebuilt/bundle
+          mkdir -p deploy/yocto/prebuilt
+          cp -a build/linux/arm64/release/bundle deploy/yocto/prebuilt/bundle
+
+      - name: Stage RAUC signing material
+        run: |
+          kd=deploy/yocto/meta-loopy/.rauc-keys
+          mkdir -p "$kd"
+          printf '%s' "${{ secrets.RAUC_SIGNING_KEY }}"  > "$kd/development-1.key.pem"
+          printf '%s' "${{ secrets.RAUC_SIGNING_CERT }}" > "$kd/development-1.cert.pem"
+          chmod 600 "$kd/development-1.key.pem"
+
+      - name: Restore Yocto sstate + downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/yocto-build/sstate-cache
+            ~/yocto-build/downloads
+          key: yocto-sstate-${{ runner.os }}-${{ hashFiles('deploy/yocto/**') }}
+          restore-keys: yocto-sstate-${{ runner.os }}-
+
+      - name: Build the signed RAUC bundle
+        run: |
+          curl -fsSL -O https://raw.githubusercontent.com/siemens/kas/master/kas-container
+          chmod +x kas-container
+          mkdir -p ~/yocto-build
+          KAS_WORK_DIR=~/yocto-build KAS_CONTAINER_ENGINE=docker \
+            ./kas-container shell deploy/yocto/kas-loopy-rpi4.yml \
+            -c "LOOPY_BUILD_VERSION=${{ steps.meta.outputs.version }} bitbake loopy-update-bundle"
+
+      - name: Collect bundle + write manifest
+        id: artifacts
+        run: |
+          set -eu
+          out=release-artifacts; mkdir -p "$out"
+          raucb=$(readlink -f ~/yocto-build/*/tmp/deploy/images/raspberrypi4-64/loopy-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
+                  || find ~/yocto-build -name 'loopy-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
+          bundle="loopy-appliance-${{ steps.meta.outputs.version }}.raucb"
+          cp "$raucb" "$out/$bundle"
+          sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
+          cat > "$out/manifest.json" <<EOF
+          { "version": ${{ steps.meta.outputs.version }}, "bundle": "$bundle", "sha256": "$sha", "channel": "${{ steps.meta.outputs.channel }}" }
+          EOF
+          cat "$out/manifest.json"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: appliance-${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.version }}
+          name: "Appliance ${{ steps.meta.outputs.channel }} #${{ steps.meta.outputs.version }}"
+          prerelease: ${{ steps.meta.outputs.channel == 'experimental' }}
+          files: |
+            release-artifacts/*.raucb
+            release-artifacts/manifest.json

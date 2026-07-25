@@ -152,3 +152,4 @@ graphify-out/
 
 # Tier 3a: staged prebuilt bundle for the Yocto build (binary artifact)
 deploy/yocto/prebuilt/
+deploy/yocto/meta-loopy/.rauc-keys/
