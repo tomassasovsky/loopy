@@ -1,35 +1,49 @@
 #!/bin/sh
-# Grow the /data partition to fill the SD card, once, on first boot.
+# Grow the /data partition (mmcblk0p3) to fill the SD card. Runs ONCE, early in
+# boot, BEFORE data.mount mounts it — you cannot repartition a mounted device (the
+# kernel refuses to re-read the table while it is in use), and resizing in place
+# (not reformatting) preserves the user data, which is the whole point of /data.
 #
-# The wic image seeds /data tiny (so the flashed image stays small); this extends
-# partition 3 to the end of the disk (MBR, online) and then grows the ext4
-# filesystem into it. Idempotent + guarded by a flag ON /data itself, so it runs
-# exactly once per card and never on a reflash that keeps the data partition.
+# Idempotency is by geometry, NOT a flag file: if the partition already reaches the
+# end of the disk there is nothing to do. This deliberately avoids a flag, because a
+# flag on the rootfs would be reset by a Phase-1 A/B OS update (→ it would reformat
+# your data), and a flag on /data can't be read before /data is mounted. Comparing
+# partition end to disk size is correct across reflashes AND rootfs-only updates.
 set -eu
 
-DEV=/dev/mmcblk0
+DISK=mmcblk0
+DEV=/dev/${DISK}
 PART=3
-FLAG=/data/.loopy-data-grown
+PDEV=${DEV}p${PART}
+SLACK=204800   # sectors (~100 MiB): treat "within this of the disk end" as grown
 
-# /data must be mounted (the flag lives on it, and resize2fs grows it online).
-if ! grep -qs ' /data ' /proc/mounts; then
-    echo "loopy-growdata: /data not mounted, skipping" >&2
+sysval() { cat "/sys/block/$1/$2" 2>/dev/null || echo 0; }
+
+disk_sectors=$(sysval "$DISK" size)
+p_start=$(sysval "$DISK/${DISK}p${PART}" start)
+p_sectors=$(sysval "$DISK/${DISK}p${PART}" size)
+
+if [ "$disk_sectors" -eq 0 ] || [ "$p_sectors" -eq 0 ]; then
+    echo "loopy-growdata: cannot read geometry, skipping" >&2
     exit 0
 fi
 
-if [ -f "$FLAG" ]; then
+free=$(( disk_sectors - (p_start + p_sectors) ))
+if [ "$free" -lt "$SLACK" ]; then
+    exit 0   # already fills the card
+fi
+
+# /data must NOT be mounted here (service is ordered Before=data.mount). Bail rather
+# than risk resizing a mounted/in-use fs (which corrupts it).
+if grep -qs ' /data ' /proc/mounts; then
+    echo "loopy-growdata: /data is mounted, refusing to resize; skipping" >&2
     exit 0
 fi
 
-# Only the last partition can grow into trailing free space. Extend the partition
-# table entry to 100% (parted edits + tells the kernel; online for a mounted ext4),
-# then online-resize the filesystem. Set the done-flag ONLY on full success, so a
-# transient failure (or a missing tool) retries on the next boot instead of latching
-# a partially-grown /data forever. A smaller /data still works meanwhile — no boot
-# loop (the service is a flag-guarded oneshot, not Restart=).
-if parted -s "$DEV" resizepart "$PART" 100% && resize2fs "${DEV}p${PART}"; then
-    touch "$FLAG"
-    echo "loopy-growdata: /data grown to fill the card" >&2
-else
-    echo "loopy-growdata: grow failed (tools missing / transient) — will retry next boot" >&2
-fi
+echo "loopy-growdata: growing ${PDEV} to fill the card..." >&2
+parted -s "$DEV" resizepart "$PART" 100%
+partprobe "$DEV" 2>/dev/null || true
+# fsck then offline-resize the (unmounted) filesystem in place, preserving contents.
+e2fsck -pf "$PDEV" || true
+resize2fs "$PDEV"
+echo "loopy-growdata: done" >&2

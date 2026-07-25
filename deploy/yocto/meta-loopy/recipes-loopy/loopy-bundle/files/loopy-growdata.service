@@ -1,8 +1,11 @@
 [Unit]
-Description=Grow Loopy /data partition to fill the SD card (first boot)
-Requires=data.mount
-After=data.mount
-ConditionPathExists=!/data/.loopy-data-grown
+Description=Grow Loopy /data partition to fill the SD card (runs before data.mount)
+DefaultDependencies=no
+After=local-fs-pre.target
+Wants=local-fs-pre.target
+# Must complete before /data is mounted — you cannot repartition a mounted device.
+Before=data.mount local-fs.target
+ConditionPathExists=/dev/mmcblk0p3
 
 [Service]
 Type=oneshot
@@ -10,4 +13,4 @@ ExecStart=/usr/bin/loopy-growdata
 RemainAfterExit=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=local-fs.target
