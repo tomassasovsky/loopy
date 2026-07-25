@@ -15,6 +15,7 @@ import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/performance/performance.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/update/cubit/update_cubit.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/window/window_chrome.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
@@ -22,6 +23,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
 
 /// How often the main window pushes a waveform frame to the second window.
 const _waveformFrame = Duration(milliseconds: 33); // ~30 fps
@@ -48,8 +50,16 @@ class App extends StatelessWidget {
     this.displayCount,
     this.audioRecoveryConfig,
     this.initialAsioDrivers = const [],
+    this.updates = const UpdateRepository(
+      backend: UnsupportedPlatformBackend(),
+    ),
     super.key,
   });
+
+  /// The software-update repository. Defaults to an inert
+  /// (unsupported-platform) instance so the update UI stays hidden; the app
+  /// entrypoint injects the platform-appropriate one.
+  final UpdateRepository updates;
 
   /// The shared looper repository (owns the audio engine).
   final LooperRepository repository;
@@ -124,9 +134,24 @@ class App extends StatelessWidget {
         RepositoryProvider.value(value: sessionRepository),
         RepositoryProvider.value(value: performanceRepository),
         RepositoryProvider.value(value: pedalSim),
+        RepositoryProvider.value(value: updates),
       ],
       child: MultiBlocProvider(
         providers: [
+          // Provided app-wide so the startup update banner and the settings
+          // Updates section share one cubit. lazy:false so the passive check
+          // (when auto-check is on) runs at launch to power the banner.
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = UpdateCubit(
+                updates: context.read<UpdateRepository>(),
+                settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
           // Provided app-wide (not just on the looper page) so the settings
           // route — pushed on the root navigator, above the looper page — can
           // drive routing edits through the bloc, mirroring the in-view routing
@@ -546,6 +571,47 @@ class _AppViewState extends State<_AppView> {
     );
   }
 
+  /// Startup notification that a newer build is available. Dismissible per
+  /// version: "Not now" records the version so it never nags again for it (a
+  /// later version re-notifies). "Update…" opens the Settings Updates section,
+  /// where downloading/installing is an explicit, opt-in action.
+  void _showUpdateBanner(BuildContext context, UpdateState state) {
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+    final manifest = state.available;
+    if (!state.shouldNotify || manifest == null) {
+      messenger.clearMaterialBanners();
+      return;
+    }
+    final l10n = _l10n;
+    final cubit = context.read<UpdateCubit>();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        key: const Key('app_update_banner'),
+        content: Text(l10n.updateBannerTitle(manifest.version)),
+        leading: const Icon(Icons.system_update_outlined),
+        actions: [
+          TextButton(
+            key: const Key('app_update_banner_dismiss'),
+            onPressed: () {
+              messenger.clearMaterialBanners();
+              unawaited(cubit.dismiss(manifest.version));
+            },
+            child: Text(l10n.updateBannerDismissAction),
+          ),
+          TextButton(
+            key: const Key('app_update_banner_update'),
+            onPressed: () {
+              messenger.clearMaterialBanners();
+              unawaited(openLoopySettings());
+            },
+            child: Text(l10n.updateBannerUpdateAction),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Operator-visible banner when the secondary waveform window failed to come
   /// up (the open path would otherwise degrade silently to a dark screen).
   void _showWaveformWindowFailedBanner() {
@@ -624,6 +690,12 @@ class _AppViewState extends State<_AppView> {
         BlocListener<AudioRecoveryCubit, AudioRecoveryState>(
           listenWhen: (previous, current) => previous.status != current.status,
           listener: (_, state) => _showAudioRecoveryBanner(state),
+        ),
+        BlocListener<UpdateCubit, UpdateState>(
+          listenWhen: (previous, current) =>
+              previous.shouldNotify != current.shouldNotify ||
+              previous.available?.version != current.available?.version,
+          listener: _showUpdateBanner,
         ),
       ],
       child: MaterialApp(

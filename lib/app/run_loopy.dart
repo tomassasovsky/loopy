@@ -7,6 +7,7 @@ import 'package:loopy/app/monitor_migration.dart';
 import 'package:loopy/app/view/app.dart';
 import 'package:loopy/bootstrap.dart';
 import 'package:loopy/session_directory.dart';
+import 'package:loopy/update/update_backend.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy/visualizer/waveform_window_args.dart';
 import 'package:loopy/window/window_chrome.dart';
@@ -15,6 +16,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
 
 /// Shared entrypoint for every flavor: routes the secondary waveform window,
 /// otherwise wires the repositories, auto-starts the engine (from the saved
@@ -96,6 +98,9 @@ Future<void> runLoopy(
   final (repo: pedalRepository, sim: pedalSimulator) =
       createSimAwarePedalRepository(midiSource);
   final settings = SettingsRepository(store: SharedPreferencesKeyValueStore());
+  // In-app updates. The backend is inert until the appliance/desktop backends
+  // are wired, so the update UI stays hidden on unsupported builds.
+  final updates = UpdateRepository(backend: createPlatformUpdateBackend());
   // Owns the MIDI input device lifecycle (enumerate / open / close, hotplug,
   // persistence). Borrows the shared [midiSource] (owned by the controller
   // pipeline) and never disposes it. Held independent of the engine so MIDI
@@ -146,6 +151,7 @@ Future<void> runLoopy(
       performanceRepository: performance,
       exportDirectory: defaultExportDirectory,
       initialAsioDrivers: asioDrivers,
+      updates: updates,
     ),
   );
 }

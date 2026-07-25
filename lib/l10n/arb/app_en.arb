@@ -2,6 +2,87 @@
     "@@locale": "en",
     "appMenuLabel": "Loopy",
     "settingsMenuItem": "Settings…",
+    "settingsSectionUpdates": "Updates",
+    "updatesIntro": "Keep Loopy current. Checking is read-only — downloading and installing an update is always your choice.",
+    "updatesInstalledVersionLabel": "Installed version",
+    "updatesChannelLabel": "Channel",
+    "updatesVersionValue": "v{version}",
+    "@updatesVersionValue": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesAutoCheckTitle": "Check for updates automatically",
+    "updatesAutoCheckSubtitle": "Looks for a newer version in the background. Never downloads or installs on its own.",
+    "updatesCheckNowTitle": "Check now",
+    "updatesCheckNowSubtitle": "Look for a newer version right now.",
+    "updatesCheckingLabel": "Checking for updates…",
+    "updatesUpToDateTitle": "You're up to date",
+    "updatesUpToDateSubtitle": "This is the latest version on the {channel} channel.",
+    "@updatesUpToDateSubtitle": {
+        "placeholders": {
+            "channel": {
+                "type": "String"
+            }
+        }
+    },
+    "updatesAvailableTitle": "Update available: v{version}",
+    "@updatesAvailableTitle": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesNotesFallback": "A new version is available.",
+    "updatesDownloadTitle": "Download & install",
+    "updatesDownloadSubtitle": "Stage v{version} to the standby system. Nothing restarts until you choose to.",
+    "@updatesDownloadSubtitle": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesDownloadingLabel": "Downloading… {percent}%",
+    "@updatesDownloadingLabel": {
+        "placeholders": {
+            "percent": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesStagedTitle": "Restart to apply",
+    "updatesStagedSubtitle": "v{version} is installed and ready. Restart when you're not mid-session.",
+    "@updatesStagedSubtitle": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "updatesRestartBusySubtitle": "Stop recording and clear your session before restarting.",
+    "updatesErrorTitle": "Update check failed",
+    "updatesSizeMb": "{mb} MB",
+    "@updatesSizeMb": {
+        "placeholders": {
+            "mb": {
+                "type": "String"
+            }
+        }
+    },
+    "updateBannerTitle": "Update available — v{version}",
+    "@updateBannerTitle": {
+        "placeholders": {
+            "version": {
+                "type": "int"
+            }
+        }
+    },
+    "updateBannerUpdateAction": "Update…",
+    "updateBannerDismissAction": "Not now",
     "audioDeviceFallbackName": "Audio device",
     "deviceDisconnectedBanner": "{deviceName} disconnected — trying to reconnect…",
     "@deviceDisconnectedBanner": {
