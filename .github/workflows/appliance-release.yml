@@ -111,10 +111,13 @@ jobs:
       - name: Determine Yocto work dir
         run: |
           if [ "${{ inputs.runner }}" = "self-hosted" ]; then
-            # /build-cache is the homelab-gh-runner template's generic cache
-            # mount (a named volume); persists across builds without touching
-            # the GitHub Actions cache at all.
-            echo "YOCTO_WORK_DIR=/build-cache/yocto" >> "$GITHUB_ENV"
+            # Host bind mount (not a named volume -- Docker-outside-of-Docker
+            # via socket mount needs an identical path on both sides for
+            # kas-container's own nested `docker run` bind mounts to resolve;
+            # see homelab-gh-runner's README). Path is keyed by this
+            # deployment's RUNNER_NAME (proxmox-loopy-yocto); persists across
+            # builds without touching the GitHub Actions cache at all.
+            echo "YOCTO_WORK_DIR=/opt/gh-runner-cache/proxmox-loopy-yocto/build-cache/yocto" >> "$GITHUB_ENV"
           else
             echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
           fi
