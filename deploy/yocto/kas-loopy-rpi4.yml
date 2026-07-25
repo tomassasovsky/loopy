@@ -13,6 +13,14 @@ header:
 distro: poky
 machine: raspberrypi4-64
 
+# Pass the build number through to the loopy-bundle recipe. Without declaring it
+# here, a shell `LOOPY_BUILD_VERSION=N` never reaches bitbake (it is not in
+# BB_ENV_PASSTHROUGH_ADDITIONS), so /etc/loopy/build-version always stamps the
+# recipe default ("0") regardless of the release number — which breaks the OTA
+# version comparison (#308). CI / the build scripts export LOOPY_BUILD_VERSION.
+env:
+  LOOPY_BUILD_VERSION: "0"
+
 target:
   - loopy-kiosk-image
 
