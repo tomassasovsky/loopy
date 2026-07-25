@@ -22,19 +22,13 @@ The Pi OTA client compares `version` to the running build; if newer it downloads
 verifies the bundle's own X.509 signature — the manifest is not the security
 boundary, the signature is).
 
-## Deploy on Portainer (with Nginx Proxy Manager)
-1. Find NPM's Docker network: Portainer → Networks (e.g. `nginxproxymanager_default`).
-   Put that name in `docker-compose.yml` under `networks.npm.name`.
-2. Portainer → Stacks → Add stack. It needs `default.conf` and the `www/` tree next
+## Deploy on Portainer
+1. Portainer → Stacks → Add stack. It needs `default.conf` and the `www/` tree next
    to the compose on the host — clone this `deploy/server/` dir onto the host and
    point the stack at it, or use a Portainer "git repository" stack targeting this
-   path. Deploy.
-3. In **Nginx Proxy Manager** → Proxy Hosts → Add:
-   - Domain: `segno.aquiles.dev`
-   - Forward Hostname/IP: `segno-updates`  ·  Forward Port: `3029`  ·  Scheme: `http`
-   - Enable SSL (Let's Encrypt) as usual.
-   (If you'd rather not share a network, uncomment `ports: ["3029:3029"]` in the
-   compose and point NPM at `<docker-host-ip>:3029` instead.)
+   path. Deploy — it publishes host port **3029**.
+2. Point Nginx Proxy Manager's `segno.aquiles.dev` proxy host at `<docker-host>:3029`
+   (already configured by the user).
 
 Verify: `curl https://segno.aquiles.dev/healthz` → `ok`, and
 `curl https://segno.aquiles.dev/updates/appliance/manifest.json`.

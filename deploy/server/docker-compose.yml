@@ -1,7 +1,6 @@
 # Loopy / segno update server — static host for appliance RAUC bundles + manifest
-# (and desktop appcasts later). Deploy as a Portainer stack. Nginx Proxy Manager
-# (running as another container) reverse-proxies https://segno.aquiles.dev to this
-# container on port 3029 by container name over a shared Docker network.
+# (and desktop appcasts later). Deploy as a Portainer stack. Publishes host port
+# 3029; the user's Nginx Proxy Manager points segno.aquiles.dev at <host>:3029.
 #
 # Publish an update = drop files into ./www/updates/... on the host (see README).
 services:
@@ -9,27 +8,13 @@ services:
     image: nginx:1.27-alpine
     container_name: segno-updates
     restart: unless-stopped
-    expose:
-      - "3029"               # reachable as segno-updates:3029 on the shared network
-    # Optional: also publish on the host if you'd rather point NPM at <host-ip>:3029.
-    # ports:
-    #   - "3029:3029"
+    ports:
+      - "3029:3029"          # host 3029 -> nginx (listens on 3029; see default.conf)
     volumes:
       - ./www:/usr/share/nginx/html:ro
       - ./default.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - npm                  # the network Nginx Proxy Manager is on
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3029/healthz"]
       interval: 30s
       timeout: 3s
       retries: 3
-
-networks:
-  # Join the EXISTING network that Nginx Proxy Manager runs on, so NPM can reach
-  # this container by name. Set the real network name here (find it in Portainer →
-  # Networks, e.g. the NPM stack's default network). Mark it external so compose
-  # attaches to it instead of creating a new one.
-  npm:
-    external: true
-    name: nginxproxymanager_default
