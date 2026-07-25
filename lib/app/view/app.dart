@@ -632,7 +632,9 @@ class _AppViewState extends State<_AppView> {
         home: Builder(
           builder: (context) {
             final page = LooperPage(exportDirectory: widget.exportDirectory);
-            if (!loopyUsesFlutterTitleBar) return page;
+            if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
+              return page;
+            }
             return LoopyWindowChromeShell(
               title: context.l10n.appMenuLabel,
               backgroundColor: Theme.of(context).scaffoldBackgroundColor,
