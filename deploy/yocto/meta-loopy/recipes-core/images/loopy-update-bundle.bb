@@ -6,7 +6,10 @@ inherit bundle
 RAUC_BUNDLE_FORMAT     = "verity"
 # MUST byte-match [system] compatible in recipes-core/rauc/files/system.conf.
 RAUC_BUNDLE_COMPATIBLE = "loopy-raspberrypi4"
-RAUC_BUNDLE_VERSION    = "${DATETIME}"
+# The build number (CI sets it), same value stamped into /etc/loopy/build-version.
+# Deterministic — using ${DATETIME} makes the task basehash non-reproducible.
+LOOPY_BUILD_VERSION   ?= "0"
+RAUC_BUNDLE_VERSION    = "${LOOPY_BUILD_VERSION}"
 
 # Signing material. RAUC_KEYDIR holds development-1.{key,cert}.pem. Default is a
 # gitignored dir INSIDE meta-loopy so it's visible inside the kas container (which
