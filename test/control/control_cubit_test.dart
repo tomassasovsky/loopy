@@ -1019,6 +1019,39 @@ void main() {
         });
       });
 
+      test('keep-alive lights the pedal from the repository snapshot even '
+          'before any LooperState streams (regression: a null _looperState '
+          'left the LEDs dark)', () {
+        fakeAsync((async) {
+          pedal.bind('out');
+          // NB: no setEngine() — this cubit never receives a streamed
+          // LooperState (the broadcast stream emits nothing after it
+          // subscribes), so `_looperState` stays null. Only the synchronous
+          // `looper.state` snapshot (an idle empty set from the outer setUp) is
+          // available. The setUp cubit has keepAliveInterval: zero, so the
+          // heartbeat frames below come only from `idle`.
+          final idle = ControlCubit(
+            looper: looper,
+            pedal: pedal,
+            settings: settings,
+            performance: performance,
+            keepAliveInterval: const Duration(milliseconds: 500),
+          );
+          async.flushMicrotasks();
+          transport.sent.clear();
+
+          // The heartbeat must still project from `looper.state` and push
+          // frames; before the fix the null guard silenced every push and the
+          // pedal stayed dark on an idle engine.
+          async.elapse(const Duration(seconds: 2));
+          expect(transport.sent, isNotEmpty);
+          expect(PedalCodec.decodeFrame(transport.sent.last), isNotNull);
+
+          unawaited(idle.close());
+          async.flushMicrotasks();
+        });
+      });
+
       test('a rebind force-pushes the CURRENT state', () async {
         setEngine(_emptyTracks());
         cubit.toggleMode(); // mode changes while unbound
