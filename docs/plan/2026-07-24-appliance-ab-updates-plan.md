@@ -72,12 +72,29 @@ the desktop phases especially:
 - Establish signing: macOS Developer ID + notarization + Sparkle EdDSA key; Windows
   Authenticode. (Gated on the signing prerequisite above.)
 
-### Phase 3 — Server + unified publish pipeline
-- `segno.aquiles.dev` serves the static layout above.
-- CI release job builds arm64 appliance bundle → signed `.raucb`; macOS → signed+notarized
-  build + appcast; Windows → signed installer + appcast; uploads all + updates manifests.
-- Appliance OTA client: systemd timer polls `/updates/appliance/manifest.json`, streams +
-  installs the signed bundle. (Confirm segno.aquiles.dev static-hosting — assumption A1.)
+### Phase 3 — CI/CD release pipeline + server mirror + OTA client  (decisions locked)
+GitHub-driven, channel-based — no manual publishing.
+- **Triggers → channels:** push to `experimental` branch → **experimental** channel;
+  `v*` tag → **production** channel; `workflow_dispatch` → manual (pick channel).
+- **Build:** GitHub-hosted runners. Yocto/appliance build restores an **sstate +
+  downloads mirror** (hosted on the user's server or ghcr/S3) so it doesn't build cold
+  each run (cold Yocto blows the 6h limit; sstate ~5.7GB exceeds GH Actions cache — a
+  mirror via `SSTATE_MIRRORS`/`PREMIRRORS` is the viable path). Self-hosted-on-Fedora
+  is the fallback if cached GH builds are still too slow. Desktop macOS/Windows builds
+  use their respective GH-hosted OS runners.
+- **Sign in CI:** RAUC X.509 (appliance) + Sparkle EdDSA / OS code-sign (desktop),
+  keys in GitHub Secrets. Signature is the security boundary, not the transport.
+- **Deliver:** CI attaches signed artifacts to a **GitHub Release** (prerelease =
+  experimental, full release = production) with a per-channel `manifest.json`.
+- **Server mirror:** a small sync job on `segno.aquiles.dev` polls the GitHub Releases
+  API and mirrors new artifacts into `www/updates/appliance/<channel>/` (+ desktop
+  appcast dirs). The device only ever talks to `segno.aquiles.dev` (no GitHub at
+  device runtime); GitHub is the source of truth.
+- **OTA client (Pi):** pinned to a channel; systemd timer polls
+  `/updates/appliance/<channel>/manifest.json`, downloads + verifies + `rauc install`s
+  (deferred activation — Phase 4).
+
+Path layout gains a channel segment: `/updates/appliance/{experimental,production}/…`.
 
 ### Phase 4 — Update UX (deferred, session-safe activation, all platforms)
 - Shared principle: download + stage in the background; **never interrupt a session** —
