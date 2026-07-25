@@ -11,10 +11,11 @@
 #                 app Dockerfile (deploy/rpi/build) has no --platform and isn't
 #                 built for QEMU emulation, so this step needs a real arm64 host.
 #   build-image — the heavy ~2h Yocto/RAUC build. Defaults to the same
-#                 GitHub-hosted runner; opt into deploy/ci-runner's self-hosted
-#                 Proxmox runner via workflow_dispatch `runner: self-hosted`
-#                 (#323) for a persistent local sstate cache instead of
-#                 round-tripping through the GitHub Actions cache service.
+#                 GitHub-hosted runner; opt into a self-hosted runner (deployed
+#                 from github.com/tomassasovsky/homelab-gh-runner, labels
+#                 self-hosted,linux,x64,proxmox,yocto) via workflow_dispatch
+#                 `runner: self-hosted` (#323) for a persistent local sstate
+#                 cache instead of round-tripping the GitHub Actions cache.
 #
 # PREREQUISITES (repo settings):
 #   - Secrets: RAUC_SIGNING_KEY (development-1.key.pem), RAUC_SIGNING_CERT
@@ -110,9 +111,10 @@ jobs:
       - name: Determine Yocto work dir
         run: |
           if [ "${{ inputs.runner }}" = "self-hosted" ]; then
-            # Named volume mounted by deploy/ci-runner's compose; persists
-            # across builds without touching the GitHub Actions cache at all.
-            echo "YOCTO_WORK_DIR=/yocto-build" >> "$GITHUB_ENV"
+            # /build-cache is the homelab-gh-runner template's generic cache
+            # mount (a named volume); persists across builds without touching
+            # the GitHub Actions cache at all.
+            echo "YOCTO_WORK_DIR=/build-cache/yocto" >> "$GITHUB_ENV"
           else
             echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
           fi
