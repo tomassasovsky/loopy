@@ -18,7 +18,16 @@ IMAGE_INSTALL:append = " \
     xdg-user-dirs \
     plymouth \
     plymouth-loopy-theme \
+    rauc \
+    rauc-mark-good \
+    rauc-conf \
+    rauc-rpi-backend \
+    raspi-utils \
+    dtc \
     "
+# tryboot-cmdline.bbclass edits cmdline.txt inside the .wic (mtools) and regenerates
+# the bmap (bmaptool) — both are native build tools its task needs.
+do_update_tryboot_cmdline[depends] += "mtools-native:do_populate_sysroot bmaptool-native:do_populate_sysroot"
 # plymouth boot splash (segno mark, breathe + shimmer) covers the black screen from
 # power-on until weston/loopy render. plymouth-loopy-theme sets itself active.
 # Keep psplash (the other splash, pulled in by the base image) out so the two don't
@@ -36,13 +45,18 @@ PACKAGE_EXCLUDE += "psplash psplash-raspberrypi"
 # system-level (performance governor + threadirqs via CMDLINE, PREEMPT_RT kernel
 # on 6.12, SCHED_FIFO audio thread + rtirq) rather than a sound server.
 
-# Custom SD layout with a persistent /data partition that survives OS/app updates
-# (Phase 0 of #300). The wks lives in meta-loopy/wic/ (auto-searched). It seeds a
-# tiny data partition grown to fill the card on first boot (loopy-growdata.service).
-WKS_FILE = "loopy-sdimage.wks"
+# RAUC A/B (tryboot) SD layout: boot selector + bootA/bootB + rootA/rootB + data
+# (Phase 1, #303). See wic/loopy-tryboot.wks. `wic` = the flashable SD image;
+# `ext4` = the bare rootfs artifact the .raucb bundle packages (RAUC_SLOT_rootfs).
+WKS_FILE = "loopy-tryboot.wks"
+IMAGE_FSTYPES = "wic ext4"
 
-# Headroom for the kernel & modules on the rootfs. User/session data no longer
-# lives on the rootfs (it is on /data), so this is just OS headroom now.
+# Rewrite each boot slot's cmdline.txt root= inside the .wic after do_image_wic
+# (bootA->rootA p5, bootB->rootB p6) — see classes/tryboot-cmdline.bbclass.
+# NOTE: recipe-level `inherit` (lowercase); `INHERIT +=` only works at conf level.
+inherit tryboot-cmdline
+
+# Headroom for the kernel & modules on the rootfs. User/session data lives on /data.
 IMAGE_ROOTFS_EXTRA_SPACE = "1048576"
 # xdg-user-dirs provides the `xdg-user-dir` binary. Flutter's path_provider shells
 # out to it for getApplicationDocumentsDirectory; without it the app throws

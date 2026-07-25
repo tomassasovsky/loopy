@@ -1,0 +1,16 @@
+[Unit]
+Description=Loopy tryboot selector partition (/boot, holds autoboot.txt)
+# The RAUC bootloader backend reads/writes /boot/autoboot.txt to select + commit
+# the A/B slot, so /boot must be the tryboot selector (p1), mounted early.
+DefaultDependencies=no
+Conflicts=umount.target
+Before=local-fs.target umount.target rauc-mark-good.service
+
+[Mount]
+What=/dev/disk/by-label/tryboot
+Where=/boot
+Type=vfat
+Options=rw,noatime
+
+[Install]
+WantedBy=local-fs.target
