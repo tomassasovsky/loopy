@@ -1,0 +1,98 @@
+#!/bin/sh
+# loopy-update-ctl — the privileged update helper the Flutter app drives.
+#
+# The app runs as the unprivileged kiosk user and does the read-only manifest
+# check itself over HTTP; the privileged RAUC work happens here, invoked as
+#   pkexec /usr/bin/loopy-update-ctl <verb>
+# A polkit rule (loopy-update-ctl.rules) grants the kiosk user this one action
+# without a password — no setuid.
+#
+# Verbs:
+#   install   Download + verify + stage the newest published bundle to the
+#             INACTIVE A/B slot. Prints "PROGRESS <0-100>" lines on stdout for
+#             the UI, logs detail to stderr, and on success sets the staged +
+#             pending markers. Does NOT reboot.
+#   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
+#
+# Version model matches loopy-ota-check: install only when the manifest advertises
+# a build newer than the running one (/etc/loopy/build-version).
+set -eu
+
+BASE_URL="${LOOPY_UPDATE_BASE:-https://segno.aquiles.dev/updates/appliance}"
+CHANNEL_FILE="${LOOPY_CHANNEL_FILE:-/etc/loopy/update-channel}"
+CUR_FILE="${LOOPY_VERSION_FILE:-/etc/loopy/build-version}"
+STAGED_FILE="/data/.ota-staged-version"   # on /data so it survives OS updates
+PENDING_FLAG="/run/loopy-update-pending"  # tmpfs marker: "reboot to activate"
+
+log() { echo "loopy-update-ctl: $*" >&2; }
+progress() { echo "PROGRESS $1"; }
+
+do_install() {
+    command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
+    channel=$(cat "$CHANNEL_FILE" 2>/dev/null || echo production)
+    current=$(cat "$CUR_FILE" 2>/dev/null || echo 0)
+    case "$current" in ''|*[!0-9]*) current=0 ;; esac
+
+    work=$(mktemp -d /tmp/loopy-update.XXXXXX)
+    trap 'rm -rf "$work"' EXIT
+    progress 0
+
+    if ! curl -fsSL --max-time 30 -o "$work/manifest.json" \
+         "$BASE_URL/$channel/manifest.json"; then
+        log "manifest fetch failed ($channel)"; return 1
+    fi
+    version=$(jq -r '.version // 0' "$work/manifest.json" 2>/dev/null || echo 0)
+    bundle=$(jq -r '.bundle // empty' "$work/manifest.json" 2>/dev/null || echo "")
+    sha=$(jq -r '.sha256 // empty' "$work/manifest.json" 2>/dev/null || echo "")
+    case "$version" in ''|*[!0-9]*) version=0 ;; esac
+
+    if [ -z "$bundle" ] || [ "$version" -le "$current" ]; then
+        log "nothing newer to install (published=$version current=$current)"
+        return 1
+    fi
+
+    log "downloading v$version: $bundle"
+    progress 5
+    if ! curl -fsSL --max-time 1800 -o "$work/$bundle" \
+         "$BASE_URL/$channel/$bundle"; then
+        log "bundle download failed"; return 1
+    fi
+    progress 40
+
+    # Defence in depth: manifest sha256 (RAUC also verifies the bundle's own
+    # X.509 signature against the baked-in keyring — that is the real boundary).
+    if [ -n "$sha" ]; then
+        actual=$(sha256sum "$work/$bundle" | cut -d' ' -f1)
+        if [ "$actual" != "$sha" ]; then
+            log "sha256 mismatch (want $sha got $actual) — refusing"; return 1
+        fi
+    fi
+
+    # Install to the inactive slot, mapping rauc's own "NN% ..." progress into
+    # the 40..100 band. A fifo preserves rauc's exit code (a plain pipe loses it
+    # under busybox sh, which has no reliable pipefail).
+    log "installing v$version to the inactive slot"
+    fifo="$work/rauc.fifo"
+    mkfifo "$fifo"
+    rauc install "$work/$bundle" >"$fifo" 2>&1 &
+    rauc_pid=$!
+    while IFS= read -r line; do
+        pct=$(printf '%s' "$line" | sed -n 's/^ *\([0-9]\{1,3\}\)% .*/\1/p')
+        [ -n "$pct" ] && progress $((40 + pct * 60 / 100))
+        printf '%s\n' "$line" >&2
+    done < "$fifo"
+    if ! wait "$rauc_pid"; then
+        log "rauc install failed"; return 1
+    fi
+
+    echo "$version" > "$STAGED_FILE" 2>/dev/null || true
+    : > "$PENDING_FLAG" 2>/dev/null || true
+    progress 100
+    log "staged v$version to the inactive slot; reboot to apply"
+}
+
+case "${1:-}" in
+    install) do_install ;;
+    reboot)  log "rebooting into the staged slot"; exec systemctl reboot ;;
+    *)       log "usage: loopy-update-ctl {install|reboot}"; exit 2 ;;
+esac
