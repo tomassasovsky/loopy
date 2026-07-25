@@ -20,10 +20,32 @@ import 'package:mocktail/mocktail.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:session_repository/session_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
 
 import '../../helpers/helpers.dart';
 
 class _MockMidiSource extends Mock implements MidiControllerSource {}
+
+/// A supported update backend advertising build 2 (current is 1), so the app's
+/// startup availability check surfaces the update banner.
+class _FakeUpdateBackend implements PlatformUpdateBackend {
+  @override
+  bool get isSupported => true;
+  @override
+  String get channel => 'experimental';
+  @override
+  Future<int> currentVersion() async => 1;
+  @override
+  Future<int> stagedVersion() async => 0;
+  @override
+  Future<UpdateManifest?> fetchManifest() async =>
+      const UpdateManifest(version: 2, bundle: 'b.raucb', notes: 'new stuff');
+  @override
+  Stream<double> downloadAndStage(UpdateManifest manifest) =>
+      Stream.fromIterable(const [1]);
+  @override
+  Future<void> applyAndRestart() async {}
+}
 
 class _RecordingWindowService implements WaveformWindowService {
   _RecordingWindowService({this.openResult = true});
@@ -109,6 +131,51 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+
+    Future<void> pumpAppWithUpdates(
+      WidgetTester tester,
+      UpdateRepository updates,
+    ) async {
+      await tester.pumpWidget(
+        App(
+          repository: repository,
+          controllerRepository: controllerRepository,
+          midiDeviceRepository: midiDeviceRepository,
+          settings: settings,
+          waveformWindow: NoopWaveformWindowService(),
+          sessionRepository: sessionRepository,
+          performanceRepository: performanceRepository,
+          exportDirectory: () async => '.',
+          updates: updates,
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('shows the startup update banner when a build is available', (
+      tester,
+    ) async {
+      await pumpAppWithUpdates(
+        tester,
+        UpdateRepository(backend: _FakeUpdateBackend()),
+      );
+      expect(find.byKey(const Key('app_update_banner')), findsOneWidget);
+    });
+
+    testWidgets('dismissing the update banner hides it', (tester) async {
+      await pumpAppWithUpdates(
+        tester,
+        UpdateRepository(backend: _FakeUpdateBackend()),
+      );
+      await tester.tap(find.byKey(const Key('app_update_banner_dismiss')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('app_update_banner')), findsNothing);
+    });
+
+    testWidgets('no update banner on an unsupported platform', (tester) async {
+      await pumpApp(tester, NoopWaveformWindowService());
+      expect(find.byKey(const Key('app_update_banner')), findsNothing);
+    });
 
     testWidgets('renders the looper as the home page in tracks', (
       tester,

@@ -16,6 +16,7 @@ import 'package:loopy/looper/view/fx_editor/fx_dock.dart';
 import 'package:loopy/looper/view/fx_editor/fx_scope.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/update/cubit/update_cubit.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:midi_device_repository/midi_device_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -23,6 +24,7 @@ import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:routing_graph/routing_graph.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
 
 import '../helpers/helpers.dart';
 
@@ -258,6 +260,14 @@ void main() {
               BlocProvider<LooperBloc>.value(value: looperBloc),
               BlocProvider<TempoCubit>.value(
                 value: TempoCubit(repository: repository, settings: settings),
+              ),
+              BlocProvider<UpdateCubit>.value(
+                value: UpdateCubit(
+                  updates: const UpdateRepository(
+                    backend: UnsupportedPlatformBackend(),
+                  ),
+                  settings: settings,
+                ),
               ),
             ],
             child: const SettingsPage(),
