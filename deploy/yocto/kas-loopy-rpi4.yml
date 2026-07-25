@@ -41,6 +41,13 @@ repos:
     url: https://git.yoctoproject.org/meta-raspberrypi
     branch: walnascar
 
+  # RAUC (A/B atomic updates). The tryboot bits (wks, WIC selector plugin, cmdline
+  # class, bootloader backend, bundle recipe) are vendored INTO meta-loopy rather
+  # than adding Koch's meta-raspberrypi-tryboot (scarthgap-only). See #303.
+  meta-rauc:
+    url: https://github.com/rauc/meta-rauc.git
+    branch: walnascar
+
 local_conf_header:
   standard: |
     CONF_VERSION = "2"
