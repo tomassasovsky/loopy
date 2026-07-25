@@ -25,7 +25,6 @@ enum UpdatePhase {
 }
 
 /// Immutable state of the update feature.
-@immutable
 class UpdateState extends Equatable {
   /// Creates an [UpdateState].
   const UpdateState({
