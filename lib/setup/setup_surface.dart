@@ -676,3 +676,93 @@ class SetupTrackLengthPresetRow extends StatelessWidget {
     );
   }
 }
+
+/// A row toggling track [channel]'s One Shot flag (song-mode-spec.md §2,
+/// B5c): the track plays once and then stops instead of looping. Settable in
+/// any looper mode, but only behaviorally active in Free/Song. Mirrors
+/// [SetupTrackLengthPresetRow]'s per-track-row shape (channel badge + label),
+/// with a [Switch] trailing control instead of a value picker.
+class SetupTrackOneShotRow extends StatelessWidget {
+  /// Creates a [SetupTrackOneShotRow].
+  const SetupTrackOneShotRow({
+    required this.rowKey,
+    required this.channel,
+    required this.oneShot,
+    required this.label,
+    required this.onChanged,
+    super.key,
+  });
+
+  final Key rowKey;
+
+  /// The track this row controls.
+  final int channel;
+
+  /// The current flag value.
+  final bool oneShot;
+
+  /// The row's leading label (e.g. the track's display name).
+  final String label;
+
+  /// Called with the new flag value when the switch is toggled.
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: surface.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: surface.line),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: surface.cardHigh,
+              shape: BoxShape.circle,
+              border: Border.all(color: surface.line),
+            ),
+            child: Text(
+              '${channel + 1}',
+              style: TextStyle(
+                color: surface.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: surface.textPrimary,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+          Switch(
+            key: rowKey,
+            value: oneShot,
+            onChanged: onChanged,
+            activeThumbColor: surface.onAccent,
+            activeTrackColor: surface.accent,
+            inactiveThumbColor: surface.textSecondary,
+            inactiveTrackColor: surface.cardHigh,
+            trackOutlineColor: WidgetStatePropertyAll(surface.line),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1779,6 +1779,60 @@ class LoopyEngineBindings {
   late final _le_engine_toggle_section = _le_engine_toggle_sectionPtr
       .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
 
+  /// Sets track [channel]'s One Shot flag (0/1). Rejects only an out-of-range
+  /// channel; accepted in every looper mode, though inert outside Free/Song
+  /// (see the class doc above). A SETTING, not content: like
+  /// a_length_preset_bars and target_multiple, it is untouched by clear /
+  /// undo-to-empty / mode switches — handle_clear's per-track reset
+  /// (engine_process.c) deliberately does not include it, the same "cleared
+  /// content starts fresh, configured PREFERENCES survive" split every other
+  /// per-track setting in this engine already follows. A cleared-then-re-
+  /// recorded one-shot track is one-shot again on its next take, with no need
+  /// to re-flag it.
+  int le_engine_set_one_shot(
+    ffi.Pointer<le_engine> engine,
+    int channel,
+    int enabled,
+  ) {
+    return _le_engine_set_one_shot(
+      engine,
+      channel,
+      enabled,
+    );
+  }
+
+  late final _le_engine_set_one_shotPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32, ffi.Int32)
+        >
+      >('le_engine_set_one_shot');
+  late final _le_engine_set_one_shot = _le_engine_set_one_shotPtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int, int)>();
+
+  /// Sets the MIDI clock mode (le_clock_mode: 0 off, 1 send). RECEIVE (2) and
+  /// any value outside the enum return LE_ERR_INVALID without posting — receive
+  /// is Phase E's clock follower, not yet implemented; this setter stubs the
+  /// tri-state field now so that part can reuse it without a breaking rename.
+  int le_engine_set_clock_mode(
+    ffi.Pointer<le_engine> engine,
+    int mode,
+  ) {
+    return _le_engine_set_clock_mode(
+      engine,
+      mode,
+    );
+  }
+
+  late final _le_engine_set_clock_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int32 Function(ffi.Pointer<le_engine>, ffi.Int32)
+        >
+      >('le_engine_set_clock_mode');
+  late final _le_engine_set_clock_mode = _le_engine_set_clock_modePtr
+      .asFunction<int Function(ffi.Pointer<le_engine>, int)>();
+
   /// Sets the click audibility mode (le_click_mode, 0..3). Values outside the
   /// enum return LE_ERR_INVALID. Default off.
   int le_engine_set_click_mode(
@@ -3568,6 +3622,13 @@ enum le_command_code {
   /// arg_i = channel
   LE_CMD_CROWN_PRIMARY(46),
 
+  /// arg_i = channel, arg_f = 0/1
+  LE_CMD_SET_ONE_SHOT(47),
+
+  /// arg_i = le_clock_mode. RECEIVE (2) is
+  /// rejected — see le_engine_set_clock_mode.
+  LE_CMD_SET_CLOCK_MODE(48),
+
   /// a completed overdub-pass snapshot. evt arm:
   /// channel, slot, generation.
   LE_EVT_LAYER_RETIRED(100);
@@ -3623,6 +3684,8 @@ enum le_command_code {
     44 => LE_CMD_SET_LENGTH_PRESET,
     45 => LE_CMD_SET_LOOPER_MODE,
     46 => LE_CMD_CROWN_PRIMARY,
+    47 => LE_CMD_SET_ONE_SHOT,
+    48 => LE_CMD_SET_CLOCK_MODE,
     100 => LE_EVT_LAYER_RETIRED,
     _ => throw ArgumentError('Unknown value for le_command_code: $value'),
   };
@@ -3847,6 +3910,11 @@ final class le_track_snapshot extends ffi.Struct {
   /// track. See le_sync_quantize_active (engine_private.h) for how it's set.
   @ffi.Int32()
   external int sync_divisor;
+
+  /// Trailing (B4, One Shot): 0/1, default 0. Settable in any mode; only
+  /// behaviorally active in Free/Song — see LE_CMD_SET_ONE_SHOT's doc.
+  @ffi.Int32()
+  external int one_shot;
 }
 
 /// Lock-free snapshot of engine state, published by the audio thread and read by
@@ -4057,6 +4125,12 @@ final class le_snapshot extends ffi.Struct {
   /// nonzero value in any other mode is inert.
   @ffi.Int32()
   external int primary_track;
+
+  /// ---- MIDI clock (Phase C, D15; trailing for the same offset-stability
+  /// reason as the blocks above). le_clock_mode; default 0 = OFF, so an
+  /// untouched engine emits no clock bytes. See le_engine_set_clock_mode.
+  @ffi.Int32()
+  external int clock_mode;
 }
 
 /// The plugin format a descriptor was discovered in.

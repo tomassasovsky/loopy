@@ -1,12 +1,11 @@
 # Loopy floor-console kiosk — boots straight into the app full-screen under the
 # labwc Wayland compositor (chosen in Part 1), no keyboard/mouse.
 #
-# Install (as the console user, default `pi`):
-#   sudo cp deploy/rpi/loopy-kiosk.service /etc/systemd/system/
-#   sudo systemctl enable loopy-kiosk.service
-# Then drop the compositor config from deploy/rpi/compositor/labwc/ into
-# ~/.config/labwc/ (see deploy/rpi/README.md). labwc's autostart pins the
-# displays and launches the app.
+# Install with deploy/rpi/install-kiosk.sh, which substitutes the current user
+# for the `pi` / `/home/pi` / uid 1000 defaults below (modern Pi OS has no `pi`
+# user), copies the labwc config, and enables the unit. The values here are the
+# documented template the installer rewrites — edit them by hand only if you are
+# not using the installer.
 #
 # UNVERIFIED on hardware — bring up on a real Pi 5 + panels before relying on it.
 

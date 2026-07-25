@@ -355,6 +355,7 @@ class TrackSnapshot {
     this.layerInFlight = false,
     this.pending = false,
     this.lengthPresetBars = 0,
+    this.oneShot = false,
     this.lanes = const <LaneSnapshot>[],
   });
 
@@ -375,6 +376,7 @@ class TrackSnapshot {
       layerInFlight = false,
       pending = false,
       lengthPresetBars = 0,
+      oneShot = false,
       lanes = const <LaneSnapshot>[];
 
   /// Projects a native `le_track_snapshot` into a [TrackSnapshot].
@@ -401,6 +403,7 @@ class TrackSnapshot {
     layerInFlight: native.layer_in_flight != 0,
     pending: native.pending != 0,
     lengthPresetBars: native.length_preset_bars,
+    oneShot: native.one_shot != 0,
     lanes: lanes,
   );
 
@@ -445,6 +448,16 @@ class TrackSnapshot {
   /// next defining recording only. See `TempoControl.setTrackLengthPreset`.
   final int lengthPresetBars;
 
+  /// One Shot (song-mode-spec.md §2, B4/B5c): when `true`, this track plays
+  /// once and then stops instead of looping. Settable in any looper mode via
+  /// `LooperModeControl.setOneShot`, but only behaviorally active in
+  /// Free/Song. A per-track SETTING, not content — survives a clear/
+  /// undo-to-empty and a mode switch, but resets to `false` on a fresh
+  /// (re)start of the engine (unlike [lengthPresetBars]'s live behavior,
+  /// which persists — see `LooperRepository`'s re-apply cache for the
+  /// Dart-side mirror of this reset).
+  final bool oneShot;
+
   /// RMS level for the most recent block, in `0..1`.
   final double rms;
 
@@ -488,6 +501,7 @@ class TrackSnapshot {
           layerInFlight == other.layerInFlight &&
           pending == other.pending &&
           lengthPresetBars == other.lengthPresetBars &&
+          oneShot == other.oneShot &&
           _listEquals(lanes, other.lanes);
 
   @override
@@ -506,6 +520,7 @@ class TrackSnapshot {
     layerInFlight,
     pending,
     lengthPresetBars,
+    oneShot,
     Object.hashAll(lanes),
   );
 }
@@ -557,6 +572,7 @@ class EngineSnapshot {
     this.countingIn = false,
     this.countInBeatsLeft = 0,
     this.looperMode = LooperMode.multi,
+    this.primaryTrack = -1,
     this.tracks = const [],
   });
 
@@ -601,6 +617,7 @@ class EngineSnapshot {
       countingIn = false,
       countInBeatsLeft = 0,
       looperMode = LooperMode.multi,
+      primaryTrack = -1,
       tracks = const [];
 
   /// Projects a native `le_snapshot` struct (scalars) plus the already-read
@@ -651,6 +668,7 @@ class EngineSnapshot {
     countingIn: native.counting_in != 0,
     countInBeatsLeft: native.count_in_beats_left,
     looperMode: LooperMode.fromCode(native.looper_mode),
+    primaryTrack: native.primary_track,
     tracks: tracks,
   );
 
@@ -818,6 +836,16 @@ class EngineSnapshot {
   /// No semantics beyond the field exist yet for the non-multi values.
   final LooperMode looperMode;
 
+  // ---- primary track (B3/B5c, D18) ----
+
+  /// The crowned primary track's channel index, or `-1` when none has ever
+  /// been crowned (default). Set by `LooperModeControl.crownPrimary`; only
+  /// behaviorally meaningful in Sync/Band, but the designation itself
+  /// persists across a clear/undo-to-empty and every mode switch (D18) —
+  /// there is no "un-crown" call, so this only ever moves to another
+  /// in-range channel, never back to `-1`, once first crowned.
+  final int primaryTrack;
+
   /// Per-track snapshots (length == active track count).
   final List<TrackSnapshot> tracks;
 
@@ -892,6 +920,7 @@ class EngineSnapshot {
           countingIn == other.countingIn &&
           countInBeatsLeft == other.countInBeatsLeft &&
           looperMode == other.looperMode &&
+          primaryTrack == other.primaryTrack &&
           _listEquals(tracks, other.tracks);
 
   @override
@@ -935,6 +964,7 @@ class EngineSnapshot {
     countingIn,
     countInBeatsLeft,
     looperMode,
+    primaryTrack,
     ...tracks,
   ]);
 

@@ -28,6 +28,7 @@ class Track extends Equatable {
     this.layerInFlight = false,
     this.pending = false,
     this.lengthPresetBars = 0,
+    this.oneShot = false,
     this.lanes = const [],
   });
 
@@ -83,6 +84,11 @@ class Track extends Equatable {
   /// next defining recording only. See `LooperRepository.setTrackLengthPreset`.
   final int lengthPresetBars;
 
+  /// One Shot (song-mode-spec.md §2, B5c): `true` = this track plays once and
+  /// then stops instead of looping. Settable in any looper mode, but only
+  /// behaviorally active in Free/Song. See `LooperRepository.setOneShot`.
+  final bool oneShot;
+
   /// Lane 0's recorded input as a bitmask (`1 << inputChannel`, or `0` when
   /// lane 0 records no input). Mirrors lane 0; per-lane inputs are in [lanes].
   final int inputMask;
@@ -131,6 +137,7 @@ class Track extends Equatable {
     layerInFlight,
     pending,
     lengthPresetBars,
+    oneShot,
     lanes,
   ];
 }
