@@ -723,4 +723,38 @@ void main() {
       expect((await repository.loadAudioConfig())?.maxLoopMinutes, 0);
     });
   });
+
+  group('update auto-check', () {
+    test('defaults to true when unset', () async {
+      expect(await repository.loadUpdateAutoCheck(), isTrue);
+    });
+
+    test('round-trips a saved value', () async {
+      await repository.saveUpdateAutoCheck(value: false);
+      expect(await repository.loadUpdateAutoCheck(), isFalse);
+      expect(store.values['updates.auto_check'], isFalse);
+    });
+  });
+
+  group('dismissed update versions', () {
+    test('defaults to an empty set', () async {
+      expect(await repository.loadDismissedUpdateVersions(), isEmpty);
+    });
+
+    test('round-trips as a sorted CSV string', () async {
+      await repository.saveDismissedUpdateVersions({3, 1, 2});
+      expect(store.values['updates.dismissed'], '1,2,3');
+      expect(await repository.loadDismissedUpdateVersions(), {1, 2, 3});
+    });
+
+    test('reads an empty stored value as an empty set', () async {
+      await store.setString('updates.dismissed', '');
+      expect(await repository.loadDismissedUpdateVersions(), isEmpty);
+    });
+
+    test('ignores unparseable entries', () async {
+      await store.setString('updates.dismissed', '1,,x,4');
+      expect(await repository.loadDismissedUpdateVersions(), {1, 4});
+    });
+  });
 }
