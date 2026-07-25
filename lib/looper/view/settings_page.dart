@@ -16,10 +16,12 @@ import 'package:loopy/looper/view/rename_track_dialog.dart';
 import 'package:loopy/looper/view/tempo_settings_section.dart';
 import 'package:loopy/setup/setup_surface.dart';
 import 'package:loopy/theme/surface_theme.dart';
+import 'package:loopy/update/cubit/update_cubit.dart';
+import 'package:loopy/update/view/updates_settings_section.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 
 /// A settings section, shown one at a time and selected from the left rail.
-enum _Section { view, audio, tempo, mode, tracks }
+enum _Section { view, audio, tempo, mode, tracks, updates }
 
 /// The app settings page, reachable from the Tracks view via right-click or
 /// the `S` key, and from the system menu bar on macOS.
@@ -116,6 +118,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _Section.tempo => _tempoSection(context),
     _Section.mode => _modeSection(context),
     _Section.tracks => _tracksSection(context),
+    _Section.updates => const [UpdatesSettingsSection()],
   };
 
   List<Widget> _viewSection(BuildContext context) {
@@ -323,11 +326,15 @@ class _SettingsRail extends StatelessWidget {
           Text(l10n.settingsTitle, style: setupTitle),
           const SizedBox(height: 20),
           for (final section in _Section.values)
-            _SectionTab(
-              section: section,
-              selected: section == current,
-              onTap: () => onSelect(section),
-            ),
+            // The Updates tab appears only where in-app updates are supported
+            // (appliance / desktop); it stays hidden on unsupported builds.
+            if (section != _Section.updates ||
+                context.watch<UpdateCubit>().state.supported)
+              _SectionTab(
+                section: section,
+                selected: section == current,
+                onTap: () => onSelect(section),
+              ),
         ],
       ),
     );
@@ -354,6 +361,7 @@ class _SectionTab extends StatelessWidget {
       _Section.tempo => l10n.settingsSectionTempo,
       _Section.mode => l10n.settingsSectionMode,
       _Section.tracks => l10n.settingsSectionTracks,
+      _Section.updates => l10n.settingsSectionUpdates,
     };
     return SizedBox(
       width: double.infinity,

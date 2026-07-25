@@ -10,11 +10,13 @@ import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/looper.dart';
 import 'package:loopy/pedal/pedal.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:loopy/update/cubit/update_cubit.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
 import 'package:settings_repository/settings_repository.dart';
+import 'package:update_repository/update_repository.dart';
 
 import '../../helpers/helpers.dart';
 
@@ -47,6 +49,7 @@ void main() {
   late LooperRepository repository;
   late LooperBloc looperBloc;
   late TempoCubit tempo;
+  late UpdateCubit updates;
 
   setUpAll(() {
     registerFallbackValue(GridDivision.off);
@@ -56,6 +59,10 @@ void main() {
 
   setUp(() {
     settings = SettingsRepository(store: FakeKeyValueStore());
+    updates = UpdateCubit(
+      updates: const UpdateRepository(backend: UnsupportedPlatformBackend()),
+      settings: settings,
+    );
     tracks = TracksCubit(settings: settings);
     waveformWindow = WaveformWindowCubit(settings: settings);
     highContrast = HighContrastCubit(settings: settings);
@@ -189,6 +196,7 @@ void main() {
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
             BlocProvider<LooperBloc>.value(value: looperBloc),
             BlocProvider<TempoCubit>.value(value: tempo),
+            BlocProvider<UpdateCubit>.value(value: updates),
           ],
           child: const SettingsPage(),
         ),
@@ -565,6 +573,7 @@ void main() {
             BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
             BlocProvider<LooperBloc>.value(value: looperBloc),
             BlocProvider<TempoCubit>.value(value: tempo),
+            BlocProvider<UpdateCubit>.value(value: updates),
           ],
           child: MaterialApp(
             theme: AppTheme.neon,
