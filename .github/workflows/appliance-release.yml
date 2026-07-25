@@ -4,17 +4,26 @@
 #
 #   push to `experimental`  -> experimental channel (GitHub prerelease)
 #   push tag `v*`           -> production  channel (GitHub full release)
-#   workflow_dispatch       -> pick the channel
+#   workflow_dispatch       -> pick the channel (and, optionally, the runner)
 #
-# Runs on a native arm64 runner (kas + the app bundle are aarch64; no QEMU).
+# Split into two build jobs with an artifact hand-off:
+#   build-app   — always on GitHub's free native ubuntu-24.04-arm runner. The
+#                 app Dockerfile (deploy/rpi/build) has no --platform and isn't
+#                 built for QEMU emulation, so this step needs a real arm64 host.
+#   build-image — the heavy ~2h Yocto/RAUC build. Defaults to the same
+#                 GitHub-hosted runner; opt into deploy/ci-runner's self-hosted
+#                 Proxmox runner via workflow_dispatch `runner: self-hosted`
+#                 (#323) for a persistent local sstate cache instead of
+#                 round-tripping through the GitHub Actions cache service.
 #
 # PREREQUISITES (repo settings):
 #   - Secrets: RAUC_SIGNING_KEY (development-1.key.pem), RAUC_SIGNING_CERT
 #     (development-1.cert.pem).  NOTE: the CA/keyring is baked into the image; this
 #     signs bundles.
-#   - A full Yocto build is heavy. First run is cold (long); later runs restore the
-#     sstate/downloads cache below. For speed/reliability, point SSTATE_MIRRORS at a
-#     hosted mirror instead of relying only on actions/cache (10 GB repo-cache cap).
+#   - A full Yocto build is heavy. First run on a given runner is cold; later runs
+#     restore sstate/downloads (GitHub Actions cache on the free runner — raise the
+#     repo's cache size limit past ~15GB in Settings > Actions > Caches; a named
+#     volume on the self-hosted runner).
 name: appliance-release
 
 on:
@@ -28,16 +37,22 @@ on:
         type: choice
         options: [experimental, production]
         default: experimental
+      runner:
+        description: Where to run the Yocto/RAUC build
+        type: choice
+        options: [github, self-hosted]
+        default: github
 
 permissions:
   contents: write        # create releases
 
 jobs:
-  build-and-release:
-    runs-on: ubuntu-24.04-arm      # native aarch64
+  determine-meta:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: Determine channel + version
         id: meta
         run: |
@@ -53,13 +68,36 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building channel=$channel version=$version"
 
+  build-app:
+    needs: determine-meta
+    runs-on: ubuntu-24.04-arm      # native aarch64 — always, see header note
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Build the aarch64 app bundle
         run: |
           docker build -t loopy-arm64-build deploy/rpi/build
           docker run --rm -v "$PWD":/workspace loopy-arm64-build --dart-define=LOOPY_CONSOLE=true
-          rm -rf deploy/yocto/prebuilt/bundle
-          mkdir -p deploy/yocto/prebuilt
-          cp -a build/linux/arm64/release/bundle deploy/yocto/prebuilt/bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loopy-app-bundle
+          path: build/linux/arm64/release/bundle
+          retention-days: 1
+
+  build-image:
+    needs: [determine-meta, build-app]
+    # Opt-in self-hosted (#323): a workflow_dispatch explicitly asking for it.
+    # Push-triggered runs have no `inputs` context, so this always resolves to
+    # the free GitHub-hosted runner for them.
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJson('["self-hosted","linux","x64","proxmox","yocto"]') || 'ubuntu-24.04-arm' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: loopy-app-bundle
+          path: deploy/yocto/prebuilt/bundle
 
       - name: Stage RAUC signing material
         run: |
@@ -69,12 +107,23 @@ jobs:
           printf '%s' "${{ secrets.RAUC_SIGNING_CERT }}" > "$kd/development-1.cert.pem"
           chmod 600 "$kd/development-1.key.pem"
 
-      - name: Restore Yocto sstate + downloads
+      - name: Determine Yocto work dir
+        run: |
+          if [ "${{ inputs.runner }}" = "self-hosted" ]; then
+            # Named volume mounted by deploy/ci-runner's compose; persists
+            # across builds without touching the GitHub Actions cache at all.
+            echo "YOCTO_WORK_DIR=/yocto-build" >> "$GITHUB_ENV"
+          else
+            echo "YOCTO_WORK_DIR=$HOME/yocto-build" >> "$GITHUB_ENV"
+          fi
+
+      - name: Restore Yocto sstate + downloads (GitHub-hosted only)
+        if: inputs.runner != 'self-hosted'
         uses: actions/cache@v4
         with:
           path: |
-            ~/yocto-build/sstate-cache
-            ~/yocto-build/downloads
+            ${{ env.YOCTO_WORK_DIR }}/sstate-cache
+            ${{ env.YOCTO_WORK_DIR }}/downloads
           key: yocto-sstate-${{ runner.os }}-${{ hashFiles('deploy/yocto/**') }}
           restore-keys: yocto-sstate-${{ runner.os }}-
 
@@ -82,32 +131,32 @@ jobs:
         run: |
           curl -fsSL -O https://raw.githubusercontent.com/siemens/kas/master/kas-container
           chmod +x kas-container
-          mkdir -p ~/yocto-build
-          KAS_WORK_DIR=~/yocto-build KAS_CONTAINER_ENGINE=docker \
+          mkdir -p "$YOCTO_WORK_DIR"
+          KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
             ./kas-container shell deploy/yocto/kas-loopy-rpi4.yml \
-            -c "LOOPY_BUILD_VERSION=${{ steps.meta.outputs.version }} bitbake loopy-update-bundle"
+            -c "LOOPY_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} bitbake loopy-update-bundle"
 
       - name: Collect bundle + write manifest
         id: artifacts
         run: |
           set -eu
           out=release-artifacts; mkdir -p "$out"
-          raucb=$(readlink -f ~/yocto-build/*/tmp/deploy/images/raspberrypi4-64/loopy-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
-                  || find ~/yocto-build -name 'loopy-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
-          bundle="loopy-appliance-${{ steps.meta.outputs.version }}.raucb"
+          raucb=$(readlink -f "$YOCTO_WORK_DIR"/*/tmp/deploy/images/raspberrypi4-64/loopy-update-bundle-raspberrypi4-64.raucb 2>/dev/null \
+                  || find "$YOCTO_WORK_DIR" -name 'loopy-update-bundle-raspberrypi4-64-*.raucb' | sort | tail -1)
+          bundle="loopy-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
           cat > "$out/manifest.json" <<EOF
-          { "version": ${{ steps.meta.outputs.version }}, "bundle": "$bundle", "sha256": "$sha", "channel": "${{ steps.meta.outputs.channel }}" }
+          { "version": ${{ needs.determine-meta.outputs.version }}, "bundle": "$bundle", "sha256": "$sha", "channel": "${{ needs.determine-meta.outputs.channel }}" }
           EOF
           cat "$out/manifest.json"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: appliance-${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.version }}
-          name: "Appliance ${{ steps.meta.outputs.channel }} #${{ steps.meta.outputs.version }}"
-          prerelease: ${{ steps.meta.outputs.channel == 'experimental' }}
+          tag_name: appliance-${{ needs.determine-meta.outputs.channel }}-${{ needs.determine-meta.outputs.version }}
+          name: "Appliance ${{ needs.determine-meta.outputs.channel }} #${{ needs.determine-meta.outputs.version }}"
+          prerelease: ${{ needs.determine-meta.outputs.channel == 'experimental' }}
           files: |
             release-artifacts/*.raucb
             release-artifacts/manifest.json
