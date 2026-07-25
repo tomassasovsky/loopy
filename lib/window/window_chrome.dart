@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -16,6 +17,16 @@ AppLocalizations get _chromeL10n =>
 /// Enabled on Windows so the chrome matches the dark tracks theme.
 bool get loopyUsesFlutterTitleBar =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+/// Whether Loopy should auto-hide the idle mouse cursor.
+///
+/// Enabled wherever [loopyUsesFlutterTitleBar] draws custom chrome, and also
+/// on the Linux console/kiosk build ([kConsoleMode]) — the RPi floor console
+/// has no title bar (it's driven by foot pedals, not a pointer), but the OS
+/// cursor should still vanish after idle instead of sitting on the touchscreen.
+bool get loopyUsesCursorAutoHide =>
+    loopyUsesFlutterTitleBar ||
+    (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux && kConsoleMode);
 
 /// Hides the native title bar on Windows so Flutter can draw
 /// [LoopyWindowTitleBar].
@@ -109,7 +120,7 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
   @override
   void initState() {
     super.initState();
-    if (loopyUsesFlutterTitleBar) {
+    if (loopyUsesCursorAutoHide) {
       _scheduleCursorHide();
     }
   }
@@ -179,23 +190,30 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
 
   @override
   Widget build(BuildContext context) {
-    if (!loopyUsesFlutterTitleBar) {
+    if (!loopyUsesFlutterTitleBar && !loopyUsesCursorAutoHide) {
       return widget.body;
     }
 
-    final scaffold = Scaffold(
-      backgroundColor: widget.backgroundColor,
-      appBar: _titleBarVisible
-          ? LoopyWindowTitleBar(
-              title: widget.title,
-              onHide: _hideTitleBar,
-            )
-          : LoopyWindowHiddenTitleStrip(
-              revealed: _chromeRevealed,
-              onShow: _showTitleBar,
-            ),
-      body: widget.body,
-    );
+    var content = widget.body;
+    if (loopyUsesFlutterTitleBar) {
+      content = Scaffold(
+        backgroundColor: widget.backgroundColor,
+        appBar: _titleBarVisible
+            ? LoopyWindowTitleBar(
+                title: widget.title,
+                onHide: _hideTitleBar,
+              )
+            : LoopyWindowHiddenTitleStrip(
+                revealed: _chromeRevealed,
+                onShow: _showTitleBar,
+              ),
+        body: widget.body,
+      );
+    }
+
+    if (!loopyUsesCursorAutoHide) {
+      return content;
+    }
 
     return Listener(
       behavior: HitTestBehavior.translucent,
@@ -204,7 +222,7 @@ class _LoopyWindowChromeShellState extends State<LoopyWindowChromeShell> {
       onPointerDown: (_) => _onPointerActivity(),
       child: MouseRegion(
         cursor: _cursorVisible ? MouseCursor.defer : SystemMouseCursors.none,
-        child: scaffold,
+        child: content,
       ),
     );
   }
