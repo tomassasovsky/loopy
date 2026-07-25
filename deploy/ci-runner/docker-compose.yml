@@ -4,9 +4,9 @@
 # pattern as segno-updates: no host-file binds, named volumes only.
 #
 # The runner:
-#   - registers itself to tomassasovsky/loopy using ACCESS_TOKEN (a fine-
-#     grained PAT), which it also uses to silently re-register on every
-#     restart -- no manual token refresh.
+#   - registers itself to REPO_URL using ACCESS_TOKEN (a fine-grained PAT),
+#     which it also uses to silently re-register on every restart -- no
+#     manual token refresh.
 #   - shares the HOST Docker daemon (socket mount, not Docker-in-Docker) so
 #     `kas-container`'s internal `docker run` calls work exactly like they do
 #     on a GitHub-hosted runner.
@@ -20,10 +20,10 @@ services:
     container_name: loopy-yocto-runner
     restart: unless-stopped
     environment:
-      REPO_URL: https://github.com/tomassasovsky/loopy
-      # Fine-grained PAT, repo tomassasovsky/loopy only, Administration:
-      # read-write (+ default Metadata: read-only). Set as a Portainer STACK
-      # environment variable, never committed here. See README.md.
+      # Both set as Portainer STACK environment variables, never committed
+      # here. See README.md. PAT scope: Administration read-write (+ the
+      # default Metadata read-only) on the target repo only.
+      REPO_URL: ${LOOPY_REPO_URL}
       ACCESS_TOKEN: ${GH_RUNNER_PAT}
       RUNNER_NAME: proxmox-yocto
       RUNNER_SCOPE: repo
