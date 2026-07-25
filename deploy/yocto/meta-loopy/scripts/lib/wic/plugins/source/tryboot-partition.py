@@ -18,10 +18,20 @@ class TrybootPartitionPlugin(SourcePlugin):
         install_cmd = f"install -d {hdddir}"
         exec_cmd(install_cmd)
 
+        # A/B tryboot selector. BOTH sections are required:
+        #   [all]     -> the permanent/current boot partition (bootA = p2 at flash)
+        #   [tryboot] -> the OTHER partition, used for a one-shot tryboot reboot
+        #                (bootB = p3). Without [tryboot], a tryboot reboot has no
+        #                target and the firmware falls back to [all], so RAUC's slot
+        #                switch silently always boots A. The rauc rpi custom backend
+        #                swaps these two sections on a successful update to make the
+        #                tried slot permanent, so it must find both here to begin with.
         autoboot = ""
         autoboot += "[all]\n"
         autoboot += "tryboot_a_b=1\n"
         autoboot += "boot_partition=2\n"
+        autoboot += "[tryboot]\n"
+        autoboot += "boot_partition=3\n"
 
         cfg = open(f"{hdddir}/autoboot.txt", "w")
         cfg.write(autoboot)
