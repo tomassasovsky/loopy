@@ -726,8 +726,13 @@ class ControlCubit extends Cubit<ControlState> {
   /// steady state is silent; [force] re-sends unchanged (the keep-alive uses it
   /// so the pedal's link watchdog keeps seeing frames while idle).
   void _pushProjected({bool force = false}) {
-    final looperState = _looperState;
-    if (looperState == null) return;
+    // Project from `_l` — the last streamed state, or the repository's current
+    // snapshot when no LooperState has streamed in yet. Reading `_l` (not the
+    // raw `_looperState`) lets the keep-alive light the pedal on bind even
+    // before the first stream event: an idle engine emits no LooperState, so
+    // gating on a null `_looperState` left the LEDs dark until some audio
+    // activity happened to push a state.
+    final looperState = _l;
     final frame = projectFrame(
       looperState,
       state,
