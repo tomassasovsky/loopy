@@ -130,6 +130,13 @@ jobs:
           restore-keys: yocto-sstate-${{ runner.os }}-
 
       - name: Build the signed RAUC bundle
+        env:
+          # kas-container refuses to run bitbake as root unless told to. The
+          # GitHub-hosted runner's job user isn't root, so this is a no-op
+          # there; the homelab-gh-runner self-hosted runner's job user IS root
+          # (RUN_AS_ROOT, needed to match the mounted host docker.sock's
+          # group), so this opts in explicitly for that path.
+          KAS_ALLOW_ROOT: "yes"
         run: |
           curl -fsSL -O https://raw.githubusercontent.com/siemens/kas/master/kas-container
           chmod +x kas-container
