@@ -15,7 +15,7 @@ runs when a `workflow_dispatch` explicitly selects `runner: self-hosted`.
 GitHub → Settings → Developer settings → **Fine-grained personal access
 tokens** → Generate new token.
 
-- **Resource owner**: your account (`tomassasovsky`)
+- **Resource owner**: your account
 - **Repository access**: Only select repositories → `loopy`
 - **Permissions** → Repository permissions:
   - **Administration**: Read and write (required to register/manage a
@@ -26,11 +26,14 @@ tokens** → Generate new token.
 ## 2. Deploy on Portainer (git-repository stack)
 
 1. Portainer → Stacks → Add stack → **Repository** →
-   `https://github.com/tomassasovsky/loopy`, compose path
+   `https://github.com/<owner>/loopy`, compose path
    `deploy/ci-runner/docker-compose.yml`.
-2. Under **Environment variables**, add `GH_RUNNER_PAT` = the token from
-   step 1. (Set it here, in Portainer's own env store — never in the compose
-   file or git.)
+2. Under **Environment variables**, add:
+   - `GH_RUNNER_PAT` = the token from step 1
+   - `LOOPY_REPO_URL` = `https://github.com/<owner>/loopy`
+
+   (Set both here, in Portainer's own env store — never in the compose file
+   or git.)
 3. Deploy. The container registers itself with GitHub on startup; check
    GitHub → `loopy` repo → Settings → Actions → Runners for
    `proxmox-yocto` to show **Idle**.
@@ -38,13 +41,13 @@ tokens** → Generate new token.
 ## Verify
 
 ```bash
-gh api repos/tomassasovsky/loopy/actions/runners --jq '.runners[] | "\(.name) \(.status) \(.labels[].name)"'
+gh api repos/<owner>/loopy/actions/runners --jq '.runners[] | "\(.name) \(.status) \(.labels[].name)"'
 ```
 
 ## Trigger a self-hosted build
 
 ```bash
-gh workflow run appliance-release.yml --repo tomassasovsky/loopy \
+gh workflow run appliance-release.yml --repo <owner>/loopy \
   -f channel=experimental -f runner=self-hosted
 ```
 
