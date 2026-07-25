@@ -21,10 +21,6 @@ SRC_URI = "file://loopy.service \
            file://loopy-growdata \
            file://loopy-growdata.service"
 
-# Grow tools for the first-boot /data expansion (loopy-growdata): parted extends
-# the partition, resize2fs grows the ext4 filesystem. Not in the base image.
-RDEPENDS:${PN} += "parted e2fsprogs-resize2fs"
-
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
 # files land in ${UNPACKDIR}, which do_install references directly.
 
@@ -43,8 +39,11 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 # Runtime libs the GTK embedder + native engine link against, named explicitly so
 # they're guaranteed in the image. Verify the full set on device with
 # `ldd /opt/loopy/loopy` — this is the ABI-matching risk (plan §Risks).
+# NOTE: this is a hard `=` assignment, so anything appended to RDEPENDS ABOVE this
+# line is clobbered — keep the parted/resize2fs grow tools ON this line.
 RDEPENDS:${PN} = "gtk+3 pango cairo gdk-pixbuf atk harfbuzz libepoxy \
-                  fontconfig freetype glib-2.0 mesa alsa-lib libstdc++"
+                  fontconfig freetype glib-2.0 mesa alsa-lib libstdc++ \
+                  parted e2fsprogs-resize2fs"
 
 inherit systemd
 # Enable the app + the rtirq oneshot (raises the USB sound-card IRQ thread to

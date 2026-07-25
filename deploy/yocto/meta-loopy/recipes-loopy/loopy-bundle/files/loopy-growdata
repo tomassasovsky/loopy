@@ -23,12 +23,13 @@ fi
 
 # Only the last partition can grow into trailing free space. Extend the partition
 # table entry to 100% (parted edits + tells the kernel; online for a mounted ext4),
-# then online-resize the filesystem. Failures are non-fatal: a smaller /data still
-# works, we just don't want a boot loop.
-if parted -s "$DEV" resizepart "$PART" 100%; then
-    resize2fs "${DEV}p${PART}" || echo "loopy-growdata: resize2fs failed (non-fatal)" >&2
+# then online-resize the filesystem. Set the done-flag ONLY on full success, so a
+# transient failure (or a missing tool) retries on the next boot instead of latching
+# a partially-grown /data forever. A smaller /data still works meanwhile — no boot
+# loop (the service is a flag-guarded oneshot, not Restart=).
+if parted -s "$DEV" resizepart "$PART" 100% && resize2fs "${DEV}p${PART}"; then
+    touch "$FLAG"
+    echo "loopy-growdata: /data grown to fill the card" >&2
 else
-    echo "loopy-growdata: parted resizepart failed (non-fatal)" >&2
+    echo "loopy-growdata: grow failed (tools missing / transient) — will retry next boot" >&2
 fi
-
-touch "$FLAG"
