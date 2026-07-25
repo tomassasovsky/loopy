@@ -1,11 +1,23 @@
+import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/audio_setup/cubit/monitor_cubit.dart';
 import 'package:loopy/l10n/l10n.dart';
+import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
+import 'package:loopy/looper/cubit/tracks_cubit.dart';
 import 'package:loopy/looper/view/settings_tray.dart';
 import 'package:loopy/theme/theme.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
+import 'package:settings_repository/settings_repository.dart';
+
+import '../../helpers/helpers.dart';
+
+class _MockLooperBloc extends MockBloc<LooperEvent, LooperState>
+    implements LooperBloc {}
 
 void main() {
   late SettingsTrayCubit cubit;
@@ -178,6 +190,23 @@ void main() {
         },
       );
     }
+
+    testWidgets('the stub dialog also dismisses on tap-outside (barrier)', (
+      tester,
+    ) async {
+      cubit.open();
+      await pump(tester);
+      await tester.pump();
+
+      await tester.tap(find.byKey(const Key('settingsTray_wifi')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('comingSoonStub_dialog')), findsOneWidget);
+
+      // Tap far outside the dialog's content — the modal barrier.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('comingSoonStub_dialog')), findsNothing);
+    });
   });
 
   group('isNavigating guard on Settings/Signal', () {
@@ -229,6 +258,102 @@ void main() {
         expect(cubit.state.dragProgress, 0);
         expect(cubit.state.isNavigating, isFalse);
       },
+    );
+
+    testWidgets(
+      'tapping Signal closes the tray, pushes the Signal surface once, '
+      'holds isNavigating while the page is open, and clears it once the '
+      "page pops — the guard's actual motivating scenario (showSignalPage "
+      'has no re-entrancy guard of its own, unlike openLoopySettings)',
+      (tester) async {
+        // Unlike Settings (openLoopySettings no-ops safely with no navigator
+        // wired), showSignalPage pushes onto THIS test's own Navigator via
+        // Navigator.of(context) — so a real push needs the providers it
+        // reads from context, matching signal_list_view_test.dart's setup.
+        final looperRepository = LooperRepository(
+          engine: FakeAudioEngine(),
+          ticker: const Stream<void>.empty(),
+        );
+        addTearDown(looperRepository.dispose);
+        final settings = SettingsRepository(store: FakeKeyValueStore());
+        final bloc = _MockLooperBloc();
+        when(() => bloc.state).thenReturn(const LooperState());
+        whenListen(
+          bloc,
+          const Stream<LooperState>.empty(),
+          initialState: const LooperState(),
+        );
+        final monitor = MonitorCubit(
+          repository: looperRepository,
+          settings: settings,
+        );
+        addTearDown(monitor.close);
+        final tracks = TracksCubit(settings: settings);
+        addTearDown(tracks.close);
+
+        cubit.open();
+        tester.view
+          ..physicalSize = const Size(1200, 900)
+          ..devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.neon,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: MultiBlocProvider(
+              providers: [
+                BlocProvider<SettingsTrayCubit>.value(value: cubit),
+                BlocProvider<LooperBloc>.value(value: bloc),
+                BlocProvider<MonitorCubit>.value(value: monitor),
+                BlocProvider<TracksCubit>.value(value: tracks),
+              ],
+              child: const Scaffold(
+                body: Stack(children: [SizedBox.expand(), SettingsTray()]),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        await tester.tap(find.byKey(const Key('settingsTray_signal')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        // Pushed exactly once — the signal page's own Scaffold is on screen.
+        expect(find.byKey(const Key('signal_page')), findsOneWidget);
+        expect(cubit.state.dragProgress, 0);
+        // `Navigator.push`'s Future only resolves on pop — the guard
+        // legitimately stays engaged (and the nav buttons disabled) for as
+        // long as the Signal page is on screen, since a second tap while
+        // it's up would otherwise double-push (showSignalPage has no guard
+        // of its own).
+        expect(cubit.state.isNavigating, isTrue);
+
+        Navigator.of(
+          tester.element(find.byKey(const Key('signal_page'))),
+        ).pop();
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('signal_page')), findsNothing);
+        expect(cubit.state.isNavigating, isFalse);
+      },
+    );
+  });
+
+  testWidgets('the brightness slider renders the state default (0.8)', (
+    tester,
+  ) async {
+    cubit.open();
+    await pump(tester);
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<Slider>(find.byKey(const Key('settingsTray_brightness')))
+          .value,
+      0.8,
     );
   });
 

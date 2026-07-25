@@ -81,8 +81,14 @@ class _SettingsTrayState extends State<SettingsTray> {
             children: [
               _TrayHandle(
                 onDragStart: () => setState(() => _dragging = true),
-                onDragUpdate: (dy) =>
-                    cubit.dragTo(state.dragProgress + dy / _kTrayHeight),
+                // Reads `cubit.state` (always current) rather than the
+                // `state` closed over from this build — several pointer-move
+                // events can fire back-to-back before the next rebuild, and
+                // accumulating from a build-time snapshot would drop all but
+                // the last delta in that batch instead of summing them.
+                onDragUpdate: (dy) => cubit.dragTo(
+                  cubit.state.dragProgress + dy / _kTrayHeight,
+                ),
                 onDragEnd: () {
                   cubit.settleFromDrag();
                   setState(() => _dragging = false);
