@@ -18,6 +18,9 @@ class UpdateRepository {
   /// The channel this device follows, for display.
   String get channel => _backend.channel;
 
+  /// Pins the device to [channel] (`experimental` / `production`).
+  Future<void> setChannel(String channel) => _backend.setChannel(channel);
+
   /// The running semantic version ([Version.none] when unknown).
   Future<Version> currentVersion() => _backend.currentVersion();
 

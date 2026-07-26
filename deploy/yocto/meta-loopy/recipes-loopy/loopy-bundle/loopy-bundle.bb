@@ -17,6 +17,11 @@ LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 # version against it. CI sets LOOPY_BUILD_VERSION per release.
 LOOPY_BUILD_VERSION ?= "0.0.0"
 
+# Channel stamped into /etc/loopy/update-channel (`experimental` / `production`).
+# CI sets this to match the release channel so experimental images don't
+# silently poll production (which has no manifests yet).
+LOOPY_UPDATE_CHANNEL ?= "production"
+
 SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch \
            file://loopy-runtime.conf \
@@ -117,9 +122,10 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/loopy-ota-check.service ${D}${systemd_system_unitdir}/loopy-ota-check.service
     install -m 0644 ${UNPACKDIR}/loopy-ota-check.timer ${D}${systemd_system_unitdir}/loopy-ota-check.timer
 
-    # /etc/loopy: update channel (default production) + this build's version number.
+    # /etc/loopy: update channel + this build's version number.
+    # Prefer LOOPY_UPDATE_CHANNEL (set by CI) over the static file default.
     install -d ${D}${sysconfdir}/loopy
-    install -m 0644 ${UNPACKDIR}/update-channel ${D}${sysconfdir}/loopy/update-channel
+    printf '%s\n' "${LOOPY_UPDATE_CHANNEL}" > ${D}${sysconfdir}/loopy/update-channel
     echo "${LOOPY_BUILD_VERSION}" > ${D}${sysconfdir}/loopy/build-version
 
     # tmpfiles.d rule that creates /run/user/1000 for the weston user at boot

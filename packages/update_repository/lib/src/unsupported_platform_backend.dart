@@ -17,6 +17,9 @@ class UnsupportedPlatformBackend implements PlatformUpdateBackend {
   String get channel => '';
 
   @override
+  Future<void> setChannel(String channel) async {}
+
+  @override
   Future<Version> currentVersion() async => Version.none;
 
   @override

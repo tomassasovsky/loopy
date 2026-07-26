@@ -27,6 +27,13 @@ class SystemApplianceEnv implements ApplianceEnv {
   }
 
   @override
+  void writeTextSync(String path, String contents) {
+    final file = File(path);
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(contents);
+  }
+
+  @override
   bool existsSync(String path) => File(path).existsSync();
 
   @override

@@ -8,6 +8,10 @@ abstract interface class ApplianceEnv {
   /// the support check simple.
   String? readTextSync(String path);
 
+  /// Creates parent directories as needed and writes [contents] to [path].
+  /// Used for the user-selected channel override on `/data`.
+  void writeTextSync(String path, String contents);
+
   /// Whether [path] exists.
   bool existsSync(String path);
 

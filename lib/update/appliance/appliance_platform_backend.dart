@@ -5,9 +5,14 @@ import 'package:loopy/update/appliance/system_appliance_env.dart';
 import 'package:update_repository/update_repository.dart';
 
 /// The Raspberry Pi appliance update backend. Reads the running semantic
-/// version and channel from the baked-in marker files, fetches the channel
-/// manifest over HTTPS, and delegates the privileged download/stage and
-/// reboot to the `loopy-update-ctl` helper (via the injected [ApplianceEnv]).
+/// version and channel from marker files, fetches the channel manifest over
+/// HTTPS, and delegates the privileged download/stage and reboot to the
+/// `loopy-update-ctl` helper (via the injected [ApplianceEnv]).
+///
+/// Channel resolution (same order as the shell helpers):
+///   1. [channelOverrideFile] on `/data` (user toggle; survives OS updates)
+///   2. [channelFile] baked into the image (`/etc/loopy/update-channel`)
+///   3. `production`
 ///
 /// [isSupported] additionally requires the helper to be present, so on a build
 /// that hasn't shipped it the update UI stays hidden rather than offering a
@@ -20,6 +25,7 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
     this.baseUrl = 'https://segno.aquiles.dev/updates/appliance',
     this.versionFile = '/etc/loopy/build-version',
     this.channelFile = '/etc/loopy/update-channel',
+    this.channelOverrideFile = '/data/loopy/update-channel',
     this.stagedFile = '/data/.ota-staged-version',
     this.helperPath = '/usr/bin/loopy-update-ctl',
   }) : _env = env ?? const SystemApplianceEnv();
@@ -32,8 +38,11 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// Path to the running semantic version, baked by CI.
   final String versionFile;
 
-  /// Path to the pinned channel (`experimental` / `production`).
+  /// Path to the image-baked channel (`experimental` / `production`).
   final String channelFile;
+
+  /// Writable channel override (Settings toggle). Survives A/B OS updates.
+  final String channelOverrideFile;
 
   /// Path (on `/data`, surviving OS updates) to the staged semantic version.
   final String stagedFile;
@@ -47,8 +56,19 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
 
   @override
   String get channel {
-    final value = _env.readTextSync(channelFile)?.trim();
-    return (value == null || value.isEmpty) ? 'production' : value;
+    final override = _env.readTextSync(channelOverrideFile)?.trim();
+    if (override != null && override.isNotEmpty) {
+      return normalizeUpdateChannel(override);
+    }
+    final baked = _env.readTextSync(channelFile)?.trim();
+    if (baked == null || baked.isEmpty) return 'production';
+    return normalizeUpdateChannel(baked);
+  }
+
+  @override
+  Future<void> setChannel(String channel) async {
+    final normalized = normalizeUpdateChannel(channel);
+    _env.writeTextSync(channelOverrideFile, '$normalized\n');
   }
 
   @override

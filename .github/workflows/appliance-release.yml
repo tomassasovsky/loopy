@@ -172,7 +172,7 @@ jobs:
           mkdir -p "$YOCTO_WORK_DIR"
           KAS_WORK_DIR="$YOCTO_WORK_DIR" KAS_CONTAINER_ENGINE=docker \
             ./kas-container shell deploy/yocto/kas-loopy-rpi4.yml \
-            -c "LOOPY_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} bitbake loopy-update-bundle"
+            -c "LOOPY_BUILD_VERSION=${{ needs.determine-meta.outputs.version }} LOOPY_UPDATE_CHANNEL=${{ needs.determine-meta.outputs.channel }} bitbake loopy-update-bundle"
 
       - name: Collect bundle + write manifest
         id: artifacts

@@ -26,6 +26,11 @@ class _FakeEnv implements ApplianceEnv {
   String? readTextSync(String path) => files[path];
 
   @override
+  void writeTextSync(String path, String contents) {
+    files[path] = contents;
+  }
+
+  @override
   bool existsSync(String path) => files.containsKey(path);
 
   @override
@@ -50,6 +55,7 @@ class _FakeEnv implements ApplianceEnv {
 
 const _version = '/etc/loopy/build-version';
 const _channel = '/etc/loopy/update-channel';
+const _channelOverride = '/data/loopy/update-channel';
 const _staged = '/data/.ota-staged-version';
 const _helper = '/usr/bin/loopy-update-ctl';
 
@@ -73,7 +79,7 @@ void main() {
   });
 
   group('channel', () {
-    test('reads and trims the channel file', () {
+    test('reads and trims the baked channel file', () {
       expect(
         backend(_FakeEnv(files: {_channel: 'experimental\n'})).channel,
         'experimental',
@@ -84,6 +90,36 @@ void main() {
       expect(backend(_FakeEnv()).channel, 'production');
       expect(backend(_FakeEnv(files: {_channel: '  '})).channel, 'production');
     });
+
+    test('prefers the /data override over the baked marker', () {
+      expect(
+        backend(
+          _FakeEnv(
+            files: {
+              _channel: 'production',
+              _channelOverride: 'experimental\n',
+            },
+          ),
+        ).channel,
+        'experimental',
+      );
+    });
+
+    test(
+      'setChannel writes the override and normalizes unknown values',
+      () async {
+        final env = _FakeEnv(files: {_channel: 'production'});
+        final b = backend(env);
+
+        await b.setChannel('experimental');
+        expect(b.channel, 'experimental');
+        expect(env.files[_channelOverride], 'experimental\n');
+
+        await b.setChannel('nightly');
+        expect(b.channel, 'production');
+        expect(env.files[_channelOverride], 'production\n');
+      },
+    );
   });
 
   group('version reads', () {

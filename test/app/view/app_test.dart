@@ -34,6 +34,8 @@ class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   String get channel => 'experimental';
   @override
+  Future<void> setChannel(String channel) async {}
+  @override
   Future<Version> currentVersion() async => Version.parse('0.1.0');
   @override
   Future<Version> stagedVersion() async => Version.none;
