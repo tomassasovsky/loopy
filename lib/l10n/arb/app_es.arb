@@ -923,5 +923,34 @@
     "a11yTrackCrowned": "Nombrada pista principal",
     "@a11yTrackCrowned": {
         "description": "Screen-reader announcement after crowning a track the Sync/Band primary."
+    },
+    "a11yTrayHandle": "Bandeja de ajustes rápidos",
+    "@a11yTrayHandle": {
+        "description": "Accessible label for the settings tray's always-visible pull-tab handle (tap or drag to open/close)."
+    },
+    "trayWifiLabel": "WiFi",
+    "@trayWifiLabel": {
+        "description": "Label for the settings tray's WiFi shortcut button (stub — no real functionality yet)."
+    },
+    "trayBluetoothLabel": "Bluetooth",
+    "@trayBluetoothLabel": {
+        "description": "Label for the settings tray's Bluetooth shortcut button (stub — no real functionality yet)."
+    },
+    "trayTunerLabel": "Afinador",
+    "@trayTunerLabel": {
+        "description": "Label for the settings tray's Tuner shortcut button (stub — no real functionality yet)."
+    },
+    "trayBrightnessLabel": "Brillo",
+    "@trayBrightnessLabel": {
+        "description": "Label for the settings tray's brightness slider (UI-only this round — not persisted, no real display dimming)."
+    },
+    "trayComingSoonMessage": "{feature} — próximamente",
+    "@trayComingSoonMessage": {
+        "description": "Message shown in the settings tray's shared placeholder dialog for a stub feature (WiFi / Bluetooth / Tuner).",
+        "placeholders": {
+            "feature": {
+                "type": "String"
+            }
+        }
     }
 }

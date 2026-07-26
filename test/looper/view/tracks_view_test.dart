@@ -160,6 +160,15 @@ void main() {
     expect(find.byKey(const Key('tracks_tile_1')), findsOneWidget);
   });
 
+  testWidgets('mounts the settings tray with its always-visible handle', (
+    tester,
+  ) async {
+    seed(const LooperState(tracks: [Track()]));
+    await pump(tester);
+
+    expect(find.byKey(const Key('settingsTray_handle')), findsOneWidget);
+  });
+
   testWidgets('exposes a visible entry to the Signal surface', (tester) async {
     seed(const LooperState(tracks: [Track()]));
     await pump(tester);

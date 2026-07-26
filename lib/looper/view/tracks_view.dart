@@ -7,7 +7,9 @@ import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
+import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:loopy/looper/cubit/tracks_cubit.dart';
+import 'package:loopy/looper/view/settings_tray.dart';
 import 'package:loopy/looper/view/track_column.dart';
 import 'package:loopy/looper/view/tracks_chrome.dart';
 import 'package:loopy/looper/view/tracks_commands.dart';
@@ -90,84 +92,97 @@ class _TracksViewState extends State<TracksView> {
             listener: onPerformanceRecorderState,
           ),
         ],
-        child: Focus(
-          autofocus: true,
-          onKeyEvent: commands.handleKey,
-          child: GestureDetector(
-            key: const Key('tracks_settings_secondaryTap'),
-            behavior: HitTestBehavior.translucent,
-            onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
-            child: Scaffold(
-              body: SafeArea(
-                child: Padding(
-                  // Console/kiosk mode hides the on-screen toolbar (the foot
-                  // pedals drive transport/mode/clear) and tightens the layout
-                  // for the fixed panel; desktop builds keep the full chrome.
-                  padding: kConsoleMode
-                      ? const EdgeInsets.symmetric(vertical: 8)
-                      : const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (!kConsoleMode) ...[
-                        TracksToolbar(
-                          mode: mode,
-                          activeBank: overlay.activeBank,
-                          anyActive: anyActive,
-                          playStopEnabled: playStopEnabled,
-                          transportEnabled: transportEnabled,
-                          onToggleMode: commands.toggleMode,
-                          onPlayStopAll: () =>
-                              commands.togglePlayAll(playing: anyActive),
-                          onClearAll: commands.clearAll,
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      // With no first-run gate, a stopped engine lands here; a
-                      // full-width affordance opens settings to (re)start it.
-                      if (!state.status.isConnected) ...[
-                        const AudioNotRunningBanner(),
-                        const SizedBox(height: 14),
-                      ],
-                      Expanded(
-                        child: Row(
+        child: BlocProvider(
+          create: (_) => SettingsTrayCubit(),
+          child: Stack(
+            children: [
+              Focus(
+                autofocus: true,
+                onKeyEvent: commands.handleKey,
+                child: GestureDetector(
+                  key: const Key('tracks_settings_secondaryTap'),
+                  behavior: HitTestBehavior.translucent,
+                  onSecondaryTapUp: (_) => unawaited(openLoopySettings()),
+                  child: Scaffold(
+                    body: SafeArea(
+                      child: Padding(
+                        // Console/kiosk mode hides the on-screen toolbar (the
+                        // foot pedals drive transport/mode/clear) and tightens
+                        // the layout for the fixed panel; desktop builds keep
+                        // the full chrome.
+                        padding: kConsoleMode
+                            ? const EdgeInsets.symmetric(vertical: 8)
+                            : const EdgeInsets.all(18),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            for (final track in tracks)
-                              Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                  ),
-                                  child: Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: TrackColumn(
-                                      track: track,
-                                      name: l10n.displayTrackName(
-                                        tracksState.nameOf(track.channel),
-                                        track.channel,
-                                      ),
-                                      selected: track.channel == overlay.cursor,
-                                      mode: mode,
-                                      onUndo: commands.undo,
-                                      onRedo: commands.redo,
-                                      looperMode: state.transport.looperMode,
-                                      isPrimary:
-                                          track.channel ==
-                                          state.transport.primaryTrack,
-                                      onCrownPrimary: commands.crownPrimary,
-                                    ),
-                                  ),
-                                ),
+                            if (!kConsoleMode) ...[
+                              TracksToolbar(
+                                mode: mode,
+                                activeBank: overlay.activeBank,
+                                anyActive: anyActive,
+                                playStopEnabled: playStopEnabled,
+                                transportEnabled: transportEnabled,
+                                onToggleMode: commands.toggleMode,
+                                onPlayStopAll: () =>
+                                    commands.togglePlayAll(playing: anyActive),
+                                onClearAll: commands.clearAll,
                               ),
+                              const SizedBox(height: 14),
+                            ],
+                            // With no first-run gate, a stopped engine lands
+                            // here; a full-width affordance opens settings to
+                            // (re)start it.
+                            if (!state.status.isConnected) ...[
+                              const AudioNotRunningBanner(),
+                              const SizedBox(height: 14),
+                            ],
+                            Expanded(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  for (final track in tracks)
+                                    Expanded(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: Align(
+                                          alignment: Alignment.bottomCenter,
+                                          child: TrackColumn(
+                                            track: track,
+                                            name: l10n.displayTrackName(
+                                              tracksState.nameOf(track.channel),
+                                              track.channel,
+                                            ),
+                                            selected:
+                                                track.channel == overlay.cursor,
+                                            mode: mode,
+                                            onUndo: commands.undo,
+                                            onRedo: commands.redo,
+                                            looperMode:
+                                                state.transport.looperMode,
+                                            isPrimary:
+                                                track.channel ==
+                                                state.transport.primaryTrack,
+                                            onCrownPrimary:
+                                                commands.crownPrimary,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+              const SettingsTray(),
+            ],
           ),
         ),
       ),
