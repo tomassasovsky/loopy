@@ -92,6 +92,90 @@ void main() {
         expect(await settings.loadAudioConfig(), isNotNull);
       });
 
+      test(
+        'console first-run auto-pins the first non-default duplex device',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine.devices = const [
+            le.AudioDevice(
+              id: 'hdmi',
+              name: 'HDMI',
+              isDefault: true,
+              isInput: false,
+            ),
+            le.AudioDevice(
+              id: 'hdmi',
+              name: 'HDMI',
+              isDefault: true,
+              isInput: true,
+            ),
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: false,
+            ),
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: true,
+            ),
+          ];
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.lastConfig?.playbackDeviceId, 'scarlett');
+          expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, 'scarlett');
+          expect(saved?.captureDeviceId, 'scarlett');
+        },
+      );
+
+      test(
+        'console first-run falls back to system default when pin open fails',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          // Fail the pinned open, succeed on the empty-id fallback.
+          engine
+            ..devices = const [
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: false,
+              ),
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: true,
+              ),
+            ]
+            ..startResults = [EngineResult.device, EngineResult.ok];
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.startCalls, 2);
+          expect(engine.lastConfig?.playbackDeviceId, '');
+          expect(engine.lastConfig?.captureDeviceId, '');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, '');
+          expect(saved?.captureDeviceId, '');
+        },
+      );
+
       test('macOS/Linux lands stopped when the default open fails', () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
         engine.startResult = EngineResult.device;
@@ -153,6 +237,128 @@ void main() {
         // The drivers are still enumerated and returned for the picker cache.
         expect(result.asioDrivers, const [domainAsioDriver]);
       });
+    });
+
+    group('console empty-id heal (saved config)', () {
+      tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      test(
+        'pins a non-default duplex when persisted device ids are empty',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine.devices = const [
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: false,
+            ),
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: true,
+            ),
+          ];
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.lastConfig?.playbackDeviceId, 'scarlett');
+          expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, 'scarlett');
+          expect(saved?.captureDeviceId, 'scarlett');
+        },
+      );
+
+      test(
+        'falls back to system default when heal pin open fails',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine
+            ..devices = const [
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: false,
+              ),
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: true,
+              ),
+            ]
+            ..startResults = [EngineResult.device, EngineResult.ok];
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(result.recoveryConfig, isNull);
+          expect(engine.startCalls, 2);
+          expect(engine.lastConfig?.playbackDeviceId, '');
+          expect(engine.lastConfig?.captureDeviceId, '');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, '');
+          expect(saved?.captureDeviceId, '');
+        },
+      );
+
+      test(
+        'healed pin skips loopback auto-measure even when loopback is routable',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine
+            ..devices = const [
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: false,
+              ),
+              le.AudioDevice(
+                id: 'scarlett',
+                name: 'Scarlett 4i4',
+                isDefault: false,
+                isInput: true,
+              ),
+            ]
+            ..loopback = const le.LoopbackInfo(
+              available: true,
+              kind: le.LoopbackKind.virtualDevice,
+              deviceName: 'Monitor',
+            );
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(engine.lastConfig?.useLoopbackCapture, isFalse);
+          expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          expect(engine.measureLatencyCalls, 0);
+        },
+      );
     });
 
     group('saved config on Windows (auto-finds ASIO)', () {

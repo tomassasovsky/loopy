@@ -40,6 +40,9 @@ Future<void> runLoopy(
     'inject all three repositories together or none',
   );
   WidgetsFlutterBinding.ensureInitialized();
+  // Durable logfile under $HOME/log (→ /data/log on the appliance). Before
+  // audio auto-start so open failures leave a breadcrumb.
+  await initAppLogging();
 
   final windowController = await WindowController.fromCurrentEngine();
   if (WaveformWindowArgs.isWaveformWindow(windowController.arguments)) {

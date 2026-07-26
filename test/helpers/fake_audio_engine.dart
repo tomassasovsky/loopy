@@ -10,6 +10,11 @@ class FakeAudioEngine implements AudioEngine {
   /// Result returned by [start].
   EngineResult startResult = EngineResult.ok;
 
+  /// Optional per-call results consumed in order by [start] (then falls back
+  /// to [startResult]). Lets tests script a failed pin followed by a default
+  /// open without replacing the whole fake.
+  List<EngineResult>? startResults;
+
   /// Snapshot returned by [snapshot].
   EngineSnapshot nextSnapshot = const EngineSnapshot.initial();
 
@@ -50,8 +55,12 @@ class FakeAudioEngine implements AudioEngine {
   EngineResult start(EngineConfig config) {
     startCalls++;
     lastConfig = config;
-    if (startResult.isOk) _running = true;
-    return startResult;
+    final queued = startResults;
+    final result = (queued != null && queued.isNotEmpty)
+        ? queued.removeAt(0)
+        : startResult;
+    if (result.isOk) _running = true;
+    return result;
   }
 
   @override

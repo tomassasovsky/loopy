@@ -1,6 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/app/console_audio_devices.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
+import 'package:loopy/common/console_mode.dart';
+import 'package:loopy/logging/app_log.dart';
 // Settings owns its own AudioBackend; mapped to/from the looper domain backend
 // here. Prefixed only for that enum so the unprefixed one is the domain type.
 import 'package:settings_repository/settings_repository.dart' hide AudioBackend;
@@ -31,13 +34,18 @@ typedef AutoStartResult = ({
 
 /// Loads the last-used audio configuration and starts the engine — from the
 /// saved config when one exists, otherwise from a sensible first-run default
-/// (the first ASIO driver on Windows, the system default elsewhere). The app
-/// always lands on the looper; the returned `started` flag is `false` only when
-/// no device could be opened (e.g. Windows with no ASIO driver), which the
-/// looper surfaces as an "audio not running" affordance.
+/// (the first ASIO driver on Windows, the system default elsewhere; on a
+/// [consoleMode] build, the first non-default duplex interface when ids are
+/// empty). The app always lands on the looper; the returned `started` flag is
+/// `false` only when no device could be opened (e.g. Windows with no ASIO
+/// driver), which the looper surfaces as an "audio not running" affordance.
+///
+/// [consoleMode] defaults to [kConsoleMode]; tests inject `true`/`false`
+/// without a dart-define.
 Future<AutoStartResult> tryAutoStartEngine({
   required LooperRepository repository,
   required SettingsRepository settings,
+  bool consoleMode = kConsoleMode,
 }) async {
   // Enumerate ASIO drivers once, before opening any device (R1), so the cubit
   // can cache them even after the engine auto-starts on ASIO.
@@ -47,11 +55,14 @@ Future<AutoStartResult> tryAutoStartEngine({
 
   final saved = await settings.loadAudioConfig();
   if (saved == null) {
+    AppLog.info('audio auto-start: first run (no saved config)');
     final started = await _firstRunAutoStart(
       repository: repository,
       settings: settings,
       asioDrivers: asioDrivers,
+      consoleMode: consoleMode,
     );
+    AppLog.info('audio auto-start: first run started=$started');
     return (started: started, asioDrivers: asioDrivers, recoveryConfig: null);
   }
   // On Windows (ASIO-only) the engine always runs ASIO, and the driver is found
@@ -70,7 +81,29 @@ Future<AutoStartResult> tryAutoStartEngine({
       ? AudioSetupCubit.resolveAsioDriver(saved.asioDriver, asioDrivers)
       : saved.asioDriver;
   if (platformAsioSelectable && asioDriver.isEmpty) {
+    AppLog.warn('audio auto-start: no ASIO driver available');
     return (started: false, asioDrivers: asioDrivers, recoveryConfig: null);
+  }
+
+  // Console heal: empty persisted ids lock every boot onto the system default.
+  // When both are empty, try the same non-default duplex pick as first-run.
+  var playbackId = saved.playbackDeviceId;
+  var captureId = saved.captureDeviceId;
+  var consolePinned = false;
+  if (consoleMode &&
+      !platformAsioSelectable &&
+      playbackId.isEmpty &&
+      captureId.isEmpty) {
+    final pick = pickConsoleAudioDevices(repository.devices());
+    if (pick != null) {
+      playbackId = pick.playbackId;
+      captureId = pick.captureId;
+      consolePinned = true;
+      AppLog.info(
+        'audio auto-start: console empty-id heal '
+        'playback=$playbackId capture=$captureId',
+      );
+    }
   }
 
   final loopback = repository.detectLoopback();
@@ -86,26 +119,88 @@ Future<AutoStartResult> tryAutoStartEngine({
     // to a detected loopback when no capture device was pinned (otherwise a
     // ubiquitous "monitor" source — e.g. on PipeWire — would commandeer the
     // capture path and ignore the saved interface).
-    useLoopbackCapture:
-        loopback.isAutoRoutable && saved.captureDeviceId.isEmpty,
-    playbackDeviceId: saved.playbackDeviceId,
-    captureDeviceId: saved.captureDeviceId,
+    useLoopbackCapture: loopback.isAutoRoutable && captureId.isEmpty,
+    playbackDeviceId: playbackId,
+    captureDeviceId: captureId,
     // This config assembly is duplicated from the cubit's _engineConfig, so
     // both must carry backend/asioDriver or an auto-start would diverge from
     // an interactive start.
     backend: backend,
     asioDriver: asioDriver,
   );
-  final pinned =
-      config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
-  final result = repository.startEngine(config);
+  AppLog.info(
+    'audio auto-start: opening playback=${config.playbackDeviceId} '
+    'capture=${config.captureDeviceId} rate=${config.sampleRate} '
+    'buffer=${config.bufferFrames}',
+  );
+  var result = repository.startEngine(config);
+  if (!result.isOk && consolePinned) {
+    // Empty-id heal picked a duplex that would not open — fall back to the
+    // system default (same as first-run) so the kiosk still comes up.
+    AppLog.warn(
+      'audio auto-start: console heal open failed result=${result.name}; '
+      'falling back to system default',
+    );
+    playbackId = '';
+    captureId = '';
+    consolePinned = false;
+    final fallback = EngineConfig(
+      sampleRate: saved.sampleRate,
+      bufferFrames: saved.bufferFrames,
+      inputChannels: saved.inputChannels,
+      outputChannels: saved.outputChannels,
+      maxLoopFrames: saved.maxLoopMinutes <= 0
+          ? 0
+          : saved.maxLoopMinutes * 60 * saved.sampleRate,
+      useLoopbackCapture: loopback.isAutoRoutable,
+      backend: backend,
+      asioDriver: asioDriver,
+    );
+    result = repository.startEngine(fallback);
+    if (result.isOk) {
+      // Persist empty ids so we don't retry a broken pin every boot; the next
+      // heal only runs while both ids stay empty, and first-run-style pin
+      // happens again once a duplex is present and openable.
+      await settings.saveAudioConfig(
+        StoredAudioConfig(
+          sampleRate: saved.sampleRate,
+          bufferFrames: saved.bufferFrames,
+          inputChannels: saved.inputChannels,
+          outputChannels: saved.outputChannels,
+          maxLoopMinutes: saved.maxLoopMinutes,
+          backend: saved.backend,
+          asioDriver: saved.asioDriver,
+        ),
+      );
+    }
+  }
   if (!result.isOk) {
-    // A pinned device that could not be opened (e.g. the interface is unplugged
-    // at boot) arms the recovery cubit to auto-start when it reappears.
+    AppLog.error('audio auto-start: open failed result=${result.name}');
+    // A pinned device that could not be opened (e.g. the interface is
+    // unplugged at boot) arms the recovery cubit to auto-start when it
+    // reappears. Prefer the originally attempted pin (including a failed
+    // console heal) so recovery can reopen it when the interface returns.
+    final attemptedPin =
+        config.playbackDeviceId.isNotEmpty || config.captureDeviceId.isNotEmpty;
     return (
       started: false,
       asioDrivers: asioDrivers,
-      recoveryConfig: pinned ? config : null,
+      recoveryConfig: attemptedPin ? config : null,
+    );
+  }
+  if (consolePinned) {
+    await settings.saveAudioConfig(
+      StoredAudioConfig(
+        sampleRate: saved.sampleRate,
+        bufferFrames: saved.bufferFrames,
+        inputChannels: saved.inputChannels,
+        outputChannels: saved.outputChannels,
+        maxLoopMinutes: saved.maxLoopMinutes,
+        playbackDeviceId: playbackId,
+        captureDeviceId: captureId,
+        backend: saved.backend,
+        asioDriver: saved.asioDriver,
+      ),
     );
   }
 
@@ -126,7 +221,7 @@ Future<AutoStartResult> tryAutoStartEngine({
   );
   if (savedOffset != null && savedOffset > 0) {
     repository.setRecordOffset(savedOffset);
-  } else if ((loopback.isAutoRoutable && saved.captureDeviceId.isEmpty) ||
+  } else if ((loopback.isAutoRoutable && captureId.isEmpty) ||
       status.excludedInputMask != 0) {
     repository.measureLatency();
   }
@@ -217,6 +312,8 @@ Future<AutoStartResult> tryAutoStartEngine({
 
   // Per-input live monitors are restored by MonitorCubit.load() (the shell
   // creates and loads it on every launch), so they are not re-applied here.
+  final pinned = playbackId.isNotEmpty || captureId.isNotEmpty;
+  AppLog.info('audio auto-start: started ok pinned=$pinned');
   return (started: true, asioDrivers: asioDrivers, recoveryConfig: null);
 }
 
@@ -224,12 +321,13 @@ Future<AutoStartResult> tryAutoStartEngine({
 /// config so later launches take the normal saved path. On Windows, opens the
 /// first enumerated ASIO driver (returns `false` if none is installed — the
 /// looper then shows the "no audio" affordance). Elsewhere, opens the system
-/// default with a zero-config [EngineConfig]. Returns whether the engine
-/// started.
+/// default — or, when [consoleMode] is on, the first non-default duplex
+/// interface ([pickConsoleAudioDevices]). Returns whether the engine started.
 Future<bool> _firstRunAutoStart({
   required LooperRepository repository,
   required SettingsRepository settings,
   required List<AudioDevice> asioDrivers,
+  required bool consoleMode,
 }) async {
   if (platformAsioSelectable) {
     if (asioDrivers.isEmpty) return false; // no driver: land stopped (D4/PR5).
@@ -256,15 +354,50 @@ Future<bool> _firstRunAutoStart({
     return true;
   }
 
-  // macOS/Linux: open the system default (zero-config), then persist the
-  // negotiated rate/buffer so the next launch takes the saved-config path.
-  final result = repository.startEngine(const EngineConfig());
-  if (!result.isOk) return false;
+  var playbackId = '';
+  var captureId = '';
+  if (consoleMode) {
+    final pick = pickConsoleAudioDevices(repository.devices());
+    if (pick != null) {
+      playbackId = pick.playbackId;
+      captureId = pick.captureId;
+      AppLog.info(
+        'audio first-run: console auto-pin '
+        'playback=$playbackId capture=$captureId',
+      );
+    } else {
+      AppLog.info(
+        'audio first-run: console found no non-default duplex; '
+        'using system default',
+      );
+    }
+  }
+
+  var result = repository.startEngine(
+    EngineConfig(playbackDeviceId: playbackId, captureDeviceId: captureId),
+  );
+  if (!result.isOk && (playbackId.isNotEmpty || captureId.isNotEmpty)) {
+    // Console pin failed (interface busy/absent) — fall back to system default
+    // so the kiosk still comes up, matching pre-auto-pin first-run behavior.
+    AppLog.warn(
+      'audio first-run: console pin open failed result=${result.name}; '
+      'falling back to system default',
+    );
+    playbackId = '';
+    captureId = '';
+    result = repository.startEngine(const EngineConfig());
+  }
+  if (!result.isOk) {
+    AppLog.error('audio first-run: open failed result=${result.name}');
+    return false;
+  }
   final status = repository.state.status;
   await settings.saveAudioConfig(
     StoredAudioConfig(
       sampleRate: status.sampleRate > 0 ? status.sampleRate : 48000,
       bufferFrames: status.bufferFrames > 0 ? status.bufferFrames : 128,
+      playbackDeviceId: playbackId,
+      captureDeviceId: captureId,
     ),
   );
   return true;

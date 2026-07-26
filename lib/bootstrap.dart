@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:developer';
+import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:bloc/bloc.dart';
 import 'package:flutter/widgets.dart';
+import 'package:loopy/common/console_mode.dart';
+import 'package:loopy/logging/app_log.dart';
 
 class AppBlocObserver extends BlocObserver {
   const AppBlocObserver();
@@ -16,18 +20,54 @@ class AppBlocObserver extends BlocObserver {
   @override
   void onError(BlocBase<dynamic> bloc, Object error, StackTrace stackTrace) {
     log('onError(${bloc.runtimeType}, $error, $stackTrace)');
+    AppLog.error(
+      'bloc ${bloc.runtimeType}',
+      error: error,
+      stack: stackTrace,
+    );
     super.onError(bloc, error, stackTrace);
   }
+}
+
+/// Opens the rotating logfile under `$HOME/log` and writes a process-start
+/// breadcrumb. Call once near process entry (before audio auto-start) so early
+/// failures are captured. Idempotent.
+Future<void> initAppLogging() async {
+  await AppLog.init(directory: AppLog.defaultDirectory());
+  final alsaOnly = Platform.environment['LOOPY_ALSA_ONLY'] ?? '';
+  final rtAudio = Platform.environment['LOOPY_RT_AUDIO'] ?? '';
+  AppLog.info(
+    'start pid=$pid console=$kConsoleMode '
+    'os=${Platform.operatingSystem} '
+    'LOOPY_ALSA_ONLY=$alsaOnly LOOPY_RT_AUDIO=$rtAudio',
+  );
 }
 
 Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
   FlutterError.onError = (details) {
     log(details.exceptionAsString(), stackTrace: details.stack);
+    AppLog.error(
+      'FlutterError',
+      error: details.exception,
+      stack: details.stack,
+    );
+  };
+
+  // Return false so fatal isolate errors still tear down the process —
+  // loopy.service Restart=always then brings the kiosk back cleanly.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    AppLog.error('PlatformDispatcher', error: error, stack: stack);
+    return false;
   };
 
   Bloc.observer = const AppBlocObserver();
 
-  // Add cross-flavor configuration here
-
-  runApp(await builder());
+  await runZonedGuarded(
+    () async {
+      runApp(await builder());
+    },
+    (error, stack) {
+      AppLog.error('zone', error: error, stack: stack);
+    },
+  );
 }

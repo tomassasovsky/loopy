@@ -10,6 +10,18 @@ dual-display work in later parts (kiosk rendering target and Wayland compositor)
 This is Part 1 of the floor-console effort. Its job is to de-risk the highest-cost
 unknowns **before** any panels or enclosure work begin.
 
+## Logs (appliance / Yocto kiosk)
+
+On the Yocto image the app writes a rotating logfile under the persistent data
+partition (`HOME=/data` → **`/data/log/loopy.log`**). Stderr is also captured by
+systemd:
+
+```bash
+tail -f /data/log/loopy.log
+journalctl -u loopy.service -b --no-pager
+journalctl -u loopy.service -f
+```
+
 ## Decision 1 — Kiosk rendering target: **GTK-on-Wayland** (the Flutter Linux runner)
 
 **Decision: ship the existing Flutter Linux GTK runner on Wayland. Do not use
