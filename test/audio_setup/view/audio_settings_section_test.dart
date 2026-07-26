@@ -82,7 +82,10 @@ void main() {
     );
   }
 
-  Future<void> pumpSection(WidgetTester tester) => tester.pumpApp(
+  Future<void> pumpSection(
+    WidgetTester tester, {
+    bool consoleMode = false,
+  }) => tester.pumpApp(
     MultiBlocProvider(
       providers: [
         BlocProvider<AudioSetupCubit>.value(value: cubit),
@@ -92,8 +95,10 @@ void main() {
         BlocProvider<QuantizeCubit>.value(value: quantize),
         BlocProvider<RecordOptionsCubit>.value(value: recordOptions),
       ],
-      child: const Material(
-        child: SingleChildScrollView(child: AudioSettingsSection()),
+      child: Material(
+        child: SingleChildScrollView(
+          child: AudioSettingsSection(consoleMode: consoleMode),
+        ),
       ),
     ),
   );
@@ -444,6 +449,34 @@ void main() {
         find.byKey(const Key('midiSettings_section')),
         findsOneWidget,
       );
+    });
+  });
+
+  group('console mode', () {
+    testWidgets('hides MIDI and pedal pickers', (tester) async {
+      seed(runningState);
+      await pumpSection(tester, consoleMode: true);
+
+      expect(find.byKey(const Key('midiSettings_section')), findsNothing);
+      expect(find.byKey(const Key('pedalSettings_section')), findsNothing);
+      expect(
+        find.byKey(const Key('audioSettings_playbackDevice_picker')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('omits System default from audio device menus', (tester) async {
+      seed(runningState);
+      await pumpSection(tester, consoleMode: true);
+
+      await tester.tap(
+        find.byKey(const Key('audioSettings_playbackDevice_picker')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('System default'), findsNothing);
+      expect(find.textContaining('System default ('), findsNothing);
+      expect(find.text('Scarlett 4i4').hitTestable(), findsWidgets);
     });
   });
 
