@@ -27,20 +27,22 @@ have_nmcli() {
 }
 
 # Map nmcli activation failures to a stable stderr token the Flutter UI matches.
+# Use grep (not case…esac with quoted phrases): BusyBox ash rejects
+# *'took too long'* style patterns ("unexpected token `too'").
 map_connect_error() {
     err=$1
     lower=$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')
-    case "$lower" in
-        *'secrets were required'*|*'no secrets'*|*'property is missing'*|*wrong*password*)
-            log "authentication failed (wrong password?)"
-            ;;
-        *'802.1x supplicant took too long'*|*timeout*|*took too long*)
-            log "timed out waiting for association"
-            ;;
-        *)
-            log "connection failed: $err"
-            ;;
-    esac
+    if printf '%s' "$lower" | grep -qE \
+        'secrets were required|no secrets|property is missing|wrong[^[:space:]]*password'
+    then
+        log "authentication failed (wrong password?)"
+    elif printf '%s' "$lower" | grep -qE \
+        '802\.1x|supplicant took too long|timeout|took too long'
+    then
+        log "timed out waiting for association"
+    else
+        log "connection failed: $err"
+    fi
 }
 
 do_status() {
@@ -172,18 +174,35 @@ do_connect() {
         return 1
     }
     nmcli radio wifi on >/dev/null 2>&1 || true
+    # brcmfmac + power-save often fails the 4-way handshake on Pi.
+    command -v iw >/dev/null 2>&1 && iw dev "$IFACE" set power_save off >/dev/null 2>&1 || true
     # Drop stale profiles so a prior wrong PSK cannot poison activation
-    # ("Secrets were required, but not provided").
+    # ("Secrets were required, but not provided" / no agent on appliance).
     do_forget "$ssid" >/dev/null 2>&1 || true
 
     errf=$(mktemp)
     set +e
+    # Build a system-stored profile (psk-flags=none) then activate — more
+    # reliable on headless images than `device wifi connect` alone, which can
+    # fall into need-auth with no secrets agent.
     if [ -n "$psk" ]; then
-        nmcli --wait "$CONNECT_WAIT_SECS" device wifi connect "$ssid" \
-            password "$psk" ifname "$IFACE" >"$errf" 2>&1
+        nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
+            ssid "$ssid" \
+            wifi-sec.key-mgmt wpa-psk \
+            wifi-sec.psk "$psk" \
+            connection.autoconnect yes \
+            802-11-wireless.powersave 2 \
+            >"$errf" 2>&1 \
+            && nmcli --wait "$CONNECT_WAIT_SECS" connection up "$ssid" \
+                >"$errf" 2>&1
     else
-        nmcli --wait "$CONNECT_WAIT_SECS" device wifi connect "$ssid" \
-            ifname "$IFACE" >"$errf" 2>&1
+        nmcli connection add type wifi ifname "$IFACE" con-name "$ssid" \
+            ssid "$ssid" \
+            connection.autoconnect yes \
+            802-11-wireless.powersave 2 \
+            >"$errf" 2>&1 \
+            && nmcli --wait "$CONNECT_WAIT_SECS" connection up "$ssid" \
+                >"$errf" 2>&1
     fi
     rc=$?
     set -e

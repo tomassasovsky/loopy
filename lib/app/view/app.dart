@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:looper_repository/looper_repository.dart';
+import 'package:loopy/appliance/display_brightness_cubit.dart';
+import 'package:loopy/appliance/software_brightness.dart';
 import 'package:loopy/app/audio_bootstrap.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/audio_setup/audio_setup.dart';
@@ -167,6 +169,19 @@ class App extends StatelessWidget {
               final cubit = UpdateCubit(
                 updates: context.read<UpdateRepository>(),
                 settings: context.read<SettingsRepository>(),
+              );
+              unawaited(cubit.load());
+              return cubit;
+            },
+          ),
+          // App-wide brightness: software dim in [MaterialApp.builder] + DDC
+          // when the host helper supports it (LG TVs often do not).
+          BlocProvider(
+            lazy: false,
+            create: (context) {
+              final cubit = DisplayBrightnessCubit(
+                settings: context.read<SettingsRepository>(),
+                client: context.read<BrightnessClient>(),
               );
               unawaited(cubit.load());
               return cubit;
@@ -751,7 +766,13 @@ class _AppViewState extends State<_AppView> {
           if (defaultTargetPlatform == TargetPlatform.macOS) {
             app = PlatformMenuBar(menus: _menus(context), child: app);
           }
-          return app;
+          return BlocBuilder<DisplayBrightnessCubit, double>(
+            buildWhen: (previous, current) => previous != current,
+            builder: (context, brightness) => SoftwareBrightness(
+              brightness: brightness,
+              child: app,
+            ),
+          );
         },
       ),
     );

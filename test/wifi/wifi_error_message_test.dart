@@ -44,7 +44,8 @@ void main() {
     expect(
       wifiErrorMessage(
         l10n,
-        'Error: Connection activation failed: (7) Secrets were required, but not provided.',
+        'Error: Connection activation failed: (7) Secrets were required, '
+        'but not provided.',
       ),
       l10n.wifiConnectFailedPassword,
     );

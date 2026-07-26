@@ -27,4 +27,8 @@ abstract interface class ApplianceEnv {
   /// Runs the privileged helper to reboot into the staged slot. Throws on
   /// failure.
   Future<void> reboot();
+
+  /// Clears a staged-version marker that cannot be applied (failed tryboot /
+  /// already running). No-op when the helper is absent. Never throws.
+  Future<void> reconcileStaged();
 }

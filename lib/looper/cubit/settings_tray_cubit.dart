@@ -1,6 +1,7 @@
 import 'package:bloc/bloc.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:equatable/equatable.dart';
+import 'package:loopy/appliance/display_brightness_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
 part 'settings_tray_state.dart';
@@ -11,19 +12,22 @@ part 'settings_tray_state.dart';
 /// where the on-screen toolbar is hidden entirely.
 ///
 /// Tray open/drag state is ephemeral. Brightness is persisted via
-/// [SettingsRepository] and applied through [BrightnessClient] when the
-/// appliance helper supports DDC/CI.
+/// [SettingsRepository] (or [DisplayBrightnessCubit] when provided) and dimmed
+/// in software app-wide; DDC/CI is applied when the host helper supports it.
 class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Creates a [SettingsTrayCubit].
   SettingsTrayCubit({
     required SettingsRepository settings,
     BrightnessClient brightnessClient = const UnsupportedBrightnessClient(),
+    DisplayBrightnessCubit? displayBrightness,
   }) : _settings = settings,
        _brightnessClient = brightnessClient,
+       _displayBrightness = displayBrightness,
        super(const SettingsTrayState());
 
   final SettingsRepository _settings;
   final BrightnessClient _brightnessClient;
+  final DisplayBrightnessCubit? _displayBrightness;
   Future<void>? _loadFuture;
   bool _brightnessSupported = false;
 
@@ -32,6 +36,13 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   Future<void> load() => _loadFuture ??= _restore();
 
   Future<void> _restore() async {
+    final display = _displayBrightness;
+    if (display != null) {
+      await display.load();
+      if (isClosed) return;
+      emit(state.copyWith(brightness: display.state));
+      return;
+    }
     final saved = await _settings.loadBrightness();
     _brightnessSupported = await _brightnessClient.isSupported();
     if (isClosed) return;
@@ -114,11 +125,16 @@ class SettingsTrayCubit extends Cubit<SettingsTrayState> {
   /// Clears the in-flight navigation guard set by [beginNavigating].
   void endNavigating() => emit(state.copyWith(isNavigating: false));
 
-  /// Sets brightness (`0..1`), persists it, and applies via the host helper
-  /// when supported.
+  /// Sets brightness (`0..1`), persists it, and applies (software + optional
+  /// DDC via [DisplayBrightnessCubit], or the legacy client path).
   Future<void> setBrightness(double value) async {
     final clamped = value.clamp(0.0, 1.0);
     emit(state.copyWith(brightness: clamped));
+    final display = _displayBrightness;
+    if (display != null) {
+      await display.setBrightness(clamped);
+      return;
+    }
     await _settings.saveBrightness(clamped);
     if (_brightnessSupported) {
       try {

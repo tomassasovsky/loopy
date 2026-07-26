@@ -39,6 +39,7 @@ SRC_URI = "file://loopy.service \
            file://loopy-bt-ctl \
            file://loopy-brightness-ctl \
            file://99-loopy-wifi.conf \
+           file://brcmfmac.conf \
            file://update-channel"
 
 # No source tree (prebuilt install). walnascar bans S=${WORKDIR}; SRC_URI local
@@ -86,6 +87,7 @@ FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${bindir}/loopy-bt-ctl \
                 ${bindir}/loopy-brightness-ctl \
                 ${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf \
+                ${sysconfdir}/modprobe.d/brcmfmac.conf \
                 ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
@@ -156,6 +158,12 @@ do_install() {
     install -d ${D}${sysconfdir}/NetworkManager/conf.d
     install -m 0644 ${UNPACKDIR}/99-loopy-wifi.conf \
         ${D}${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf
+
+    # brcmfmac: roamoff=1 — without this, WPA2 associates then never completes
+    # the 4-way handshake on many APs (no EAPOL M1).
+    install -d ${D}${sysconfdir}/modprobe.d
+    install -m 0644 ${UNPACKDIR}/brcmfmac.conf \
+        ${D}${sysconfdir}/modprobe.d/brcmfmac.conf
 
     # /etc/loopy: update channel + this build's version number.
     # Prefer LOOPY_UPDATE_CHANNEL (set by CI) over the static file default.

@@ -13,6 +13,11 @@
 #             the UI, logs detail to stderr, and on success sets the staged +
 #             pending markers. Does NOT reboot.
 #   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
+#   reconcile-staged
+#             Clear /data/.ota-staged-version when it cannot be applied: already
+#             running that version, or the inactive rootfs slot is boot-bad
+#             (failed tryboot / rollback). Without this, Check Now treats the
+#             published build as "already staged" forever after a rollback.
 #
 # Version model matches loopy-ota-check (semver, see its comparator comment):
 # install only when the manifest advertises a version newer than the running
@@ -135,8 +140,49 @@ do_install() {
     log "staged v$version to the inactive slot; reboot to apply"
 }
 
+# True when any inactive rootfs slot is marked boot-bad (failed tryboot).
+inactive_rootfs_bad() {
+    command -v rauc >/dev/null 2>&1 || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    rauc status --output-format=json 2>/dev/null \
+        | jq -e '
+            .slots[] | .[]
+            | select(.class=="rootfs" and .state=="inactive" and .boot_status=="bad")
+          ' >/dev/null 2>&1
+}
+
+do_reconcile_staged() {
+    if [ ! -f "$STAGED_FILE" ]; then
+        echo '{"cleared":false}'
+        return 0
+    fi
+    staged=$(tr -d '[:space:]' <"$STAGED_FILE" 2>/dev/null || true)
+    current=$(tr -d '[:space:]' <"$CUR_FILE" 2>/dev/null || echo "0.0.0")
+    [ -n "$staged" ] || {
+        rm -f "$STAGED_FILE"
+        echo '{"cleared":true,"reason":"empty"}'
+        return 0
+    }
+    # Successfully running the staged build — drop the marker.
+    if [ "$staged" = "$current" ]; then
+        rm -f "$STAGED_FILE"
+        log "cleared staged=$staged (already running)"
+        echo '{"cleared":true,"reason":"already-running"}'
+        return 0
+    fi
+    # Rolled back after tryboot: inactive slot bad + staged still ahead of current.
+    if inactive_rootfs_bad && semver_newer "$current" "$staged"; then
+        rm -f "$STAGED_FILE"
+        log "cleared staged=$staged after failed tryboot (inactive rootfs bad)"
+        echo '{"cleared":true,"reason":"inactive-slot-bad"}'
+        return 0
+    fi
+    echo '{"cleared":false}'
+}
+
 case "${1:-}" in
     install) do_install ;;
     reboot)  log "rebooting into the staged slot"; exec systemctl reboot ;;
-    *)       log "usage: loopy-update-ctl {install|reboot}"; exit 2 ;;
+    reconcile-staged) do_reconcile_staged ;;
+    *)       log "usage: loopy-update-ctl {install|reboot|reconcile-staged}"; exit 2 ;;
 esac

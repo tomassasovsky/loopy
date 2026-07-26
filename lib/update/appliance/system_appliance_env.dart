@@ -93,4 +93,13 @@ class SystemApplianceEnv implements ApplianceEnv {
       );
     }
   }
+
+  @override
+  Future<void> reconcileStaged() async {
+    try {
+      await Process.run(helperPath, const ['reconcile-staged']);
+    } on Exception {
+      // Helper missing / old image — leave the marker alone.
+    }
+  }
 }

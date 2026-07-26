@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:loopy/l10n/l10n.dart';
 
 /// Maps raw helper / [ProcessException] text to a short operator-facing string.

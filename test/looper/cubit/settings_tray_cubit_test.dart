@@ -1,6 +1,7 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:loopy/appliance/display_brightness_cubit.dart';
 import 'package:loopy/looper/cubit/settings_tray_cubit.dart';
 import 'package:settings_repository/settings_repository.dart';
 
@@ -116,6 +117,35 @@ void main() {
         const SettingsTrayState(brightness: 0.4),
       ],
       verify: (_) {
+        expect(brightness.sets, isEmpty);
+      },
+    );
+
+    blocTest<SettingsTrayCubit, SettingsTrayState>(
+      'delegates brightness to DisplayBrightnessCubit when provided',
+      build: () => SettingsTrayCubit(
+        settings: settings,
+        brightnessClient: brightness,
+        displayBrightness: DisplayBrightnessCubit(
+          settings: settings,
+          client: brightness,
+        ),
+      ),
+      setUp: () {
+        brightness.supported = false;
+      },
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.setBrightness(0.35);
+      },
+      expect: () => [
+        const SettingsTrayState(),
+        const SettingsTrayState(brightness: 0.35),
+      ],
+      verify: (_) async {
+        expect(await settings.loadBrightness(), 0.35);
+        // DDC unsupported — DisplayBrightnessCubit still owns persistence;
+        // software dim is applied by App via the cubit state.
         expect(brightness.sets, isEmpty);
       },
     );

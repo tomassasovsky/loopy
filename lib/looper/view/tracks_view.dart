@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:brightness_client/brightness_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:loopy/appliance/display_brightness_cubit.dart';
 import 'package:loopy/app/loopy_navigator.dart';
 import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/control/control.dart';
@@ -102,9 +103,16 @@ class _TracksViewState extends State<TracksView> {
             } on ProviderNotFoundException {
               brightness = const UnsupportedBrightnessClient();
             }
+            DisplayBrightnessCubit? displayBrightness;
+            try {
+              displayBrightness = context.read<DisplayBrightnessCubit>();
+            } on ProviderNotFoundException {
+              displayBrightness = null;
+            }
             final cubit = SettingsTrayCubit(
               settings: context.read<SettingsRepository>(),
               brightnessClient: brightness,
+              displayBrightness: displayBrightness,
             );
             unawaited(cubit.load());
             return cubit;

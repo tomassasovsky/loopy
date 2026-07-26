@@ -51,6 +51,13 @@ class _FakeEnv implements ApplianceEnv {
     rebootCalls++;
     if (rebootError != null) throw rebootError!;
   }
+
+  int reconcileCalls = 0;
+
+  @override
+  Future<void> reconcileStaged() async {
+    reconcileCalls++;
+  }
 }
 
 const _version = '/etc/loopy/build-version';
@@ -126,13 +133,19 @@ void main() {
     test(
       'parses the marker files as semver, defaulting to Version.none',
       () async {
-        final b = backend(
-          _FakeEnv(files: {_version: '0.2.0\n', _staged: '0.3.0'}),
-        );
+        final env = _FakeEnv(files: {_version: '0.2.0\n', _staged: '0.3.0'});
+        final b = backend(env);
         expect(await b.currentVersion(), Version.parse('0.2.0'));
         expect(await b.stagedVersion(), Version.parse('0.3.0'));
+        expect(env.reconcileCalls, 1);
       },
     );
+
+    test('stagedVersion reconciles before reading the marker', () async {
+      final env = _FakeEnv(files: {_staged: '0.3.0'});
+      await backend(env).stagedVersion();
+      expect(env.reconcileCalls, 1);
+    });
 
     test('parses a prerelease (experimental) semver', () async {
       final b = backend(_FakeEnv(files: {_version: '0.2.0-experimental.7'}));
