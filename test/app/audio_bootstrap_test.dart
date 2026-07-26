@@ -82,6 +82,7 @@ void main() {
         final result = await tryAutoStartEngine(
           repository: repository,
           settings: settings,
+          consoleMode: false,
         );
 
         expect(result.started, isTrue);
@@ -91,6 +92,52 @@ void main() {
         // Persisted so the next launch takes the saved-config path.
         expect(await settings.loadAudioConfig(), isNotNull);
       });
+
+      test(
+        'console first-run auto-pins the first non-default duplex device',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine.devices = const [
+            le.AudioDevice(
+              id: 'hdmi',
+              name: 'HDMI',
+              isDefault: true,
+              isInput: false,
+            ),
+            le.AudioDevice(
+              id: 'hdmi',
+              name: 'HDMI',
+              isDefault: true,
+              isInput: true,
+            ),
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: false,
+            ),
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: true,
+            ),
+          ];
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.lastConfig?.playbackDeviceId, 'scarlett');
+          expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, 'scarlett');
+          expect(saved?.captureDeviceId, 'scarlett');
+        },
+      );
 
       test('macOS/Linux lands stopped when the default open fails', () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
@@ -153,6 +200,47 @@ void main() {
         // The drivers are still enumerated and returned for the picker cache.
         expect(result.asioDrivers, const [domainAsioDriver]);
       });
+    });
+
+    group('console empty-id heal (saved config)', () {
+      tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+      test(
+        'pins a non-default duplex when persisted device ids are empty',
+        () async {
+          debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+          engine.devices = const [
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: false,
+            ),
+            le.AudioDevice(
+              id: 'scarlett',
+              name: 'Scarlett 4i4',
+              isDefault: false,
+              isInput: true,
+            ),
+          ];
+          await settings.saveAudioConfig(
+            const StoredAudioConfig(sampleRate: 48000, bufferFrames: 128),
+          );
+
+          final result = await tryAutoStartEngine(
+            repository: repository,
+            settings: settings,
+            consoleMode: true,
+          );
+
+          expect(result.started, isTrue);
+          expect(engine.lastConfig?.playbackDeviceId, 'scarlett');
+          expect(engine.lastConfig?.captureDeviceId, 'scarlett');
+          final saved = await settings.loadAudioConfig();
+          expect(saved?.playbackDeviceId, 'scarlett');
+          expect(saved?.captureDeviceId, 'scarlett');
+        },
+      );
     });
 
     group('saved config on Windows (auto-finds ASIO)', () {
