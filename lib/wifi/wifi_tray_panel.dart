@@ -70,7 +70,13 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
             Expanded(
               child: Center(
                 child: Text(
-                  l10n.wifiUnsupportedBody,
+                  // Helper failures used to leave supported=false with no
+                  // message — operators then saw the "appliance only" copy
+                  // even when the binary was present (e.g. NM helper without
+                  // nmcli on an older image). Prefer the real error.
+                  state.errorMessage != null
+                      ? wifiErrorMessage(l10n, state.errorMessage)
+                      : l10n.wifiUnsupportedBody,
                   textAlign: TextAlign.center,
                   style: setupBody,
                 ),

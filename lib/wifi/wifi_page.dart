@@ -105,7 +105,12 @@ class _WifiPageState extends State<WifiPage> {
                         ? Padding(
                             padding: const EdgeInsets.all(20),
                             child: Text(
-                              l10n.wifiUnsupportedBody,
+                              state.errorMessage != null
+                                  ? wifiErrorMessage(
+                                      l10n,
+                                      state.errorMessage,
+                                    )
+                                  : l10n.wifiUnsupportedBody,
                               style: setupBody,
                             ),
                           )

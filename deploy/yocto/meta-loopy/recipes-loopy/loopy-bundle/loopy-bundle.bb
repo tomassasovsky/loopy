@@ -36,6 +36,11 @@ SRC_URI = "file://loopy.service \
            file://loopy-ota-check.timer \
            file://loopy-update-ctl \
            file://loopy-wifi-ctl \
+           file://loopy-nm-persist \
+           file://loopy-nm-persist.service \
+           file://loopy-ssh-persist \
+           file://loopy-ssh-persist.service \
+           file://dropbear-loopy.conf \
            file://loopy-bt-ctl \
            file://loopy-brightness-ctl \
            file://99-loopy-wifi.conf \
@@ -77,21 +82,27 @@ inherit systemd
 # launch and the user triggers install/reboot from Settings (via loopy-update-ctl).
 # So loopy-ota-check.timer is installed but NOT auto-enabled — no background
 # auto-staging. (Re-enable the timer manually for a headless auto-update device.)
-SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service boot.mount data.mount"
+SYSTEMD_SERVICE:${PN} = "loopy.service loopy-rtirq.service loopy-data-grow.service loopy-nm-persist.service loopy-ssh-persist.service boot.mount data.mount"
 
 FILES:${PN} += "/opt/loopy ${bindir}/loopy-kiosk-launch ${bindir}/loopy-rtirq \
                 ${bindir}/loopy-data-grow \
                 ${bindir}/loopy-ota-check \
                 ${bindir}/loopy-update-ctl \
                 ${bindir}/loopy-wifi-ctl \
+                ${bindir}/loopy-nm-persist \
+                ${bindir}/loopy-ssh-persist \
                 ${bindir}/loopy-bt-ctl \
                 ${bindir}/loopy-brightness-ctl \
                 ${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf \
+                ${sysconfdir}/systemd/system/dropbear@.service.d/loopy.conf \
+                ${sysconfdir}/systemd/system/dropbearkey.service.d/loopy.conf \
                 ${sysconfdir}/modprobe.d/brcmfmac.conf \
                 ${sysconfdir}/loopy/update-channel ${sysconfdir}/loopy/build-version \
                 ${systemd_system_unitdir}/loopy.service \
                 ${systemd_system_unitdir}/loopy-rtirq.service \
                 ${systemd_system_unitdir}/loopy-data-grow.service \
+                ${systemd_system_unitdir}/loopy-nm-persist.service \
+                ${systemd_system_unitdir}/loopy-ssh-persist.service \
                 ${systemd_system_unitdir}/boot.mount \
                 ${systemd_system_unitdir}/data.mount \
                 ${systemd_system_unitdir}/loopy-ota-check.service \
@@ -155,9 +166,25 @@ do_install() {
     install -m 0755 ${UNPACKDIR}/loopy-brightness-ctl ${D}${bindir}/loopy-brightness-ctl
 
     # NetworkManager appliance tweaks (WiFi join reliability on brcmfmac).
+    # loopy-nm-persist: mkdir /data/NetworkManager/system-connections before NM
+    # so keyfile.path (in 99-loopy-wifi.conf) survives A/B OTA.
     install -d ${D}${sysconfdir}/NetworkManager/conf.d
     install -m 0644 ${UNPACKDIR}/99-loopy-wifi.conf \
         ${D}${sysconfdir}/NetworkManager/conf.d/99-loopy-wifi.conf
+    install -m 0755 ${UNPACKDIR}/loopy-nm-persist ${D}${bindir}/loopy-nm-persist
+    install -m 0644 ${UNPACKDIR}/loopy-nm-persist.service \
+        ${D}${systemd_system_unitdir}/loopy-nm-persist.service
+
+    # Dropbear host keys on /data so A/B OTA does not rotate SSH identity (#309).
+    install -m 0755 ${UNPACKDIR}/loopy-ssh-persist ${D}${bindir}/loopy-ssh-persist
+    install -m 0644 ${UNPACKDIR}/loopy-ssh-persist.service \
+        ${D}${systemd_system_unitdir}/loopy-ssh-persist.service
+    install -d ${D}${sysconfdir}/systemd/system/dropbear@.service.d
+    install -d ${D}${sysconfdir}/systemd/system/dropbearkey.service.d
+    install -m 0644 ${UNPACKDIR}/dropbear-loopy.conf \
+        ${D}${sysconfdir}/systemd/system/dropbear@.service.d/loopy.conf
+    install -m 0644 ${UNPACKDIR}/dropbear-loopy.conf \
+        ${D}${sysconfdir}/systemd/system/dropbearkey.service.d/loopy.conf
 
     # brcmfmac: roamoff=1 — without this, WPA2 associates then never completes
     # the 4-way handshake on many APs (no EAPOL M1).
