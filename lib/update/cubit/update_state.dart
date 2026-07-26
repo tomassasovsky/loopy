@@ -27,17 +27,17 @@ enum UpdatePhase {
 /// Immutable state of the update feature.
 class UpdateState extends Equatable {
   /// Creates an [UpdateState].
-  UpdateState({
+  const UpdateState({
     this.phase = UpdatePhase.idle,
     this.supported = false,
     this.channel = '',
-    Version? currentVersion,
+    this.currentVersion,
     this.available,
     this.progress = 0,
     this.autoCheck = true,
     this.dismissed = const {},
     this.errorMessage,
-  }) : currentVersion = currentVersion ?? Version.none;
+  });
 
   /// The current phase of the flow.
   final UpdatePhase phase;
@@ -48,8 +48,10 @@ class UpdateState extends Equatable {
   /// The channel this device follows, for display.
   final String channel;
 
-  /// The running semantic version ([Version.none] when unknown).
-  final Version currentVersion;
+  /// The running semantic version, or `null` before the first load / when
+  /// unknown. Nullable (rather than [Version.none]) so this state can stay
+  /// `const` — `pub_semver`'s [Version] is not const-constructible.
+  final Version? currentVersion;
 
   /// The newer manifest found by the last check, or `null` if none.
   final UpdateManifest? available;

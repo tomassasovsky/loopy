@@ -31,7 +31,7 @@ class UpdatesSettingsSection extends StatelessWidget {
           rows: [
             (
               l10n.updatesInstalledVersionLabel,
-              l10n.updatesVersionValue('${state.currentVersion}'),
+              l10n.updatesVersionValue('${state.currentVersion ?? '—'}'),
             ),
             (l10n.updatesChannelLabel, state.channel),
           ],

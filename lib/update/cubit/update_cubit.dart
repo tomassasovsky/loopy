@@ -18,7 +18,7 @@ class UpdateCubit extends Cubit<UpdateState> {
     required SettingsRepository settings,
   }) : _updates = updates,
        _settings = settings,
-       super(UpdateState());
+       super(const UpdateState());
 
   final UpdateRepository _updates;
   final SettingsRepository _settings;

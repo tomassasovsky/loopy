@@ -68,7 +68,7 @@ void main() {
   testWidgets('toggling auto-check persists via the cubit', (tester) async {
     await pump(
       tester,
-      UpdateState(
+      const UpdateState(
         supported: true,
         phase: UpdatePhase.upToDate,
         autoCheck: false,
@@ -133,7 +133,7 @@ void main() {
     'checking: the check-now row persists (disabled), not hidden or '
     'replaced by a bare label',
     (tester) async {
-      await pump(tester, UpdateState(phase: UpdatePhase.checking));
+      await pump(tester, const UpdateState(phase: UpdatePhase.checking));
 
       final checkNow = find.byKey(const Key('settings_updates_checkNow'));
       expect(checkNow, findsOneWidget);
@@ -147,7 +147,7 @@ void main() {
   testWidgets('idle: shows a check-now row that triggers a check', (
     tester,
   ) async {
-    await pump(tester, UpdateState(supported: true));
+    await pump(tester, const UpdateState(supported: true));
 
     final checkNow = find.byKey(const Key('settings_updates_checkNow'));
     await tester.ensureVisible(checkNow);
@@ -160,7 +160,7 @@ void main() {
   ) async {
     await pump(
       tester,
-      UpdateState(
+      const UpdateState(
         phase: UpdatePhase.upToDate,
         supported: true,
         channel: 'production',
@@ -179,7 +179,7 @@ void main() {
     (tester) async {
       await pump(
         tester,
-        UpdateState(
+        const UpdateState(
           phase: UpdatePhase.error,
           supported: true,
           errorMessage: 'offline',
