@@ -623,7 +623,9 @@ class _AppViewState extends State<_AppView> {
             key: const Key('app_update_banner_update'),
             onPressed: () {
               messenger.clearMaterialBanners();
-              unawaited(openLoopySettings());
+              unawaited(
+                openLoopySettings(section: SettingsSection.updates),
+              );
             },
             child: Text(l10n.updateBannerUpdateAction),
           ),

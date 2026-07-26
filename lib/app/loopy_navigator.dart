@@ -13,14 +13,18 @@ bool _settingsOpen = false;
 
 /// Pushes the [SettingsPage] onto the root navigator, guarding
 /// against stacking duplicates from rapid triggers (menu + key + right-click).
-Future<void> openLoopySettings() async {
+///
+/// [section] selects which left-rail tab is shown first (defaults to View).
+Future<void> openLoopySettings({
+  SettingsSection section = SettingsSection.view,
+}) async {
   final navigator = loopyNavigatorKey.currentState;
   if (navigator == null || _settingsOpen) return;
   _settingsOpen = true;
   try {
     await navigator.push(
       desktopPageRoute<void>(
-        (_) => const SettingsPage(),
+        (_) => SettingsPage(initialSection: section),
         settings: const RouteSettings(name: loopySettingsRouteName),
       ),
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:loopy/wifi/wifi_cubit.dart';
@@ -23,6 +25,7 @@ class _FakeWifiClient implements WifiClient {
   final connects = <(String, String?)>[];
   int disconnectCalls = 0;
   final forgotten = <String>[];
+  Completer<void>? connectGate;
 
   @override
   bool get isSupported => supported;
@@ -36,6 +39,8 @@ class _FakeWifiClient implements WifiClient {
   @override
   Future<void> connect(String ssid, {String? psk}) async {
     connects.add((ssid, psk));
+    final gate = connectGate;
+    if (gate != null) await gate.future;
     statusValue = WifiStatus(
       supported: true,
       enabled: true,
@@ -139,8 +144,27 @@ void main() {
       verify: (cubit) {
         expect(cubit.state.status.connected, isTrue);
         expect(cubit.state.status.ssid, 'Home');
+        expect(cubit.state.connectingSsid, isNull);
+        expect(cubit.state.busy, isFalse);
       },
     );
+
+    test('connect exposes connectingSsid while join is in flight', () async {
+      final client = _FakeWifiClient()..connectGate = Completer<void>();
+      final cubit = WifiCubit(repository: _repo(client));
+      addTearDown(cubit.close);
+
+      await cubit.load();
+      final pending = cubit.connect('Home', psk: 'secret');
+      await pumpEventQueue();
+      expect(cubit.state.connectingSsid, 'Home');
+      expect(cubit.state.busy, isTrue);
+
+      client.connectGate!.complete();
+      await pending;
+      expect(cubit.state.connectingSsid, isNull);
+      expect(cubit.state.status.ssid, 'Home');
+    });
 
     blocTest<WifiCubit, WifiState>(
       'disconnect clears association',

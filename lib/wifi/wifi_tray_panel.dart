@@ -106,8 +106,11 @@ class _WifiTrayPanelState extends State<WifiTrayPanel> {
                             Divider(height: 1, color: surface.line),
                         itemBuilder: (context, index) {
                           final network = state.networks[index];
+                          final connecting =
+                              state.connectingSsid == network.ssid;
                           return _NetworkRow(
                             network: network,
+                            connecting: connecting,
                             onTap: state.busy
                                 ? null
                                 : () => unawaited(
@@ -177,11 +180,19 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final connected = state.status.connected;
-    final ssid = state.status.ssid.isEmpty ? '—' : state.status.ssid;
+    final connectingSsid = state.connectingSsid;
+    final connecting = connectingSsid != null;
+    final disconnecting = state.disconnecting;
+    final connected = state.status.connected && !connecting && !disconnecting;
+    final ssid = connecting
+        ? connectingSsid
+        : (state.status.ssid.isEmpty ? '—' : state.status.ssid);
     final ip = state.status.ip.isEmpty ? '—' : state.status.ip;
-
-    final detail = connected
+    final detail = connecting
+        ? l10n.wifiConnectingLabel
+        : disconnecting
+        ? l10n.wifiStatusDisconnecting
+        : connected
         ? '${l10n.wifiStatusConnected} · $ip'
         : l10n.wifiStatusDisconnected;
 
@@ -198,11 +209,22 @@ class _StatusCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  connected ? Icons.wifi : Icons.wifi_off,
-                  size: 18,
-                  color: connected ? surface.accent : surface.textTertiary,
-                ),
+                if (connecting || disconnecting)
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      key: const Key('wifi_status_spinner'),
+                      strokeWidth: 2,
+                      color: surface.accent,
+                    ),
+                  )
+                else
+                  Icon(
+                    connected ? Icons.wifi : Icons.wifi_off,
+                    size: 18,
+                    color: connected ? surface.accent : surface.textTertiary,
+                  ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text.rich(
@@ -291,17 +313,25 @@ class _StatusCard extends StatelessWidget {
 }
 
 class _NetworkRow extends StatelessWidget {
-  const _NetworkRow({required this.network, required this.onTap});
+  const _NetworkRow({
+    required this.network,
+    required this.connecting,
+    required this.onTap,
+  });
 
   final WifiNetwork network;
+  final bool connecting;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final surface = context.surface;
     return FocusableTapTarget(
       onTap: onTap,
-      semanticLabel: network.ssid,
+      semanticLabel: connecting
+          ? '${network.ssid}, ${l10n.wifiConnectingLabel}'
+          : network.ssid,
       child: InkWell(
         key: Key('wifi_network_${network.ssid}'),
         onTap: onTap,
@@ -327,14 +357,25 @@ class _NetworkRow extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
-                '${network.signal} dBm',
-                style: TextStyle(
-                  color: surface.textTertiary,
-                  fontSize: 11,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              if (connecting)
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    key: Key('wifi_network_spinner_${network.ssid}'),
+                    strokeWidth: 2,
+                    color: surface.accent,
+                  ),
+                )
+              else
+                Text(
+                  '${network.signal} dBm',
+                  style: TextStyle(
+                    color: surface.textTertiary,
+                    fontSize: 11,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
-              ),
             ],
           ),
         ),

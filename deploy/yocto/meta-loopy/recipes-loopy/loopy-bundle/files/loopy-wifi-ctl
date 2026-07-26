@@ -24,12 +24,22 @@ json_escape() {
 }
 
 ensure_conf() {
+    mkdir -p "$(dirname "$CONF")"
+    # Yocto appliance has no Debian-style `netdev` group. GROUP=netdev makes
+    # wpa_supplicant refuse to open the control socket ("Invalid group
+    # 'netdev'") and WiFi scan/connect die. Root-only ctrl_interface is fine
+    # here — helpers run as root via the Flutter Process boundary.
     if [ ! -f "$CONF" ]; then
-        mkdir -p "$(dirname "$CONF")"
         cat >"$CONF" <<EOF
-ctrl_interface=DIR=${CTRL_DIR} GROUP=netdev
+ctrl_interface=DIR=${CTRL_DIR}
 update_config=1
 EOF
+        return 0
+    fi
+    # Repair earlier helper revisions without wiping saved networks.
+    if grep -q 'GROUP=netdev' "$CONF" 2>/dev/null \
+        && ! grep -q '^netdev:' /etc/group 2>/dev/null; then
+        sed -i 's/ GROUP=netdev//' "$CONF"
     fi
 }
 
@@ -61,7 +71,9 @@ iface_ip() {
 
 iface_enabled() {
     # Administratively UP (Control Center "WiFi on"), even without an AP.
-    ip -o link show "$IFACE" 2>/dev/null | grep -q '[^,]UP'
+    # Match IFF_UP inside the <flags> list — `[^,]UP` wrongly misses `,UP`
+    # when other flags precede it (the usual case: NO-CARRIER,...,UP).
+    ip -o link show "$IFACE" 2>/dev/null | grep -Eq '[,<]UP[,>]'
 }
 
 do_status() {
@@ -112,8 +124,13 @@ do_scan() {
         return 1
     }
     wpa_cli -i "$IFACE" scan >/dev/null 2>&1 || true
-    sleep 2
+    # Fresh radio-on needs a beat longer for the first scan to populate.
+    sleep 3
     results=$(wpa_cli -i "$IFACE" scan_results 2>/dev/null | tail -n +2 || true)
+    if [ -z "$results" ]; then
+        sleep 2
+        results=$(wpa_cli -i "$IFACE" scan_results 2>/dev/null | tail -n +2 || true)
+    fi
     tmp=$(mktemp)
     printf '%s\n' "$results" | while IFS= read -r line; do
         [ -n "$line" ] || continue

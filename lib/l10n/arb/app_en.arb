@@ -1177,6 +1177,14 @@
     "@wifiStatusDisconnected": {
         "description": "WiFi disconnected status value."
     },
+    "wifiStatusDisconnecting": "Disconnecting…",
+    "@wifiStatusDisconnecting": {
+        "description": "WiFi status while dropping the current association."
+    },
+    "wifiConnectingLabel": "Connecting…",
+    "@wifiConnectingLabel": {
+        "description": "Shown while joining a WiFi network (status strip and row)."
+    },
     "wifiSsidLabel": "Network",
     "@wifiSsidLabel": {
         "description": "WiFi SSID table label."

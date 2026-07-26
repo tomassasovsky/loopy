@@ -973,6 +973,14 @@
     "@wifiStatusDisconnected": {
         "description": "WiFi disconnected status value."
     },
+    "wifiStatusDisconnecting": "Desconectando…",
+    "@wifiStatusDisconnecting": {
+        "description": "WiFi status while dropping the current association."
+    },
+    "wifiConnectingLabel": "Conectando…",
+    "@wifiConnectingLabel": {
+        "description": "Shown while joining a WiFi network (status strip and row)."
+    },
     "wifiSsidLabel": "Red",
     "@wifiSsidLabel": {
         "description": "WiFi SSID table label."

@@ -157,6 +157,7 @@ do_install() {
 
     # /etc/loopy: update channel + this build's version number.
     # Prefer LOOPY_UPDATE_CHANNEL (set by CI) over the static file default.
+    # vardeps below force a rebuild when CI changes either stamp.
     install -d ${D}${sysconfdir}/loopy
     printf '%s\n' "${LOOPY_UPDATE_CHANNEL}" > ${D}${sysconfdir}/loopy/update-channel
     echo "${LOOPY_BUILD_VERSION}" > ${D}${sysconfdir}/loopy/build-version
@@ -166,3 +167,7 @@ do_install() {
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${UNPACKDIR}/loopy-runtime.conf ${D}${sysconfdir}/tmpfiles.d/loopy-runtime.conf
 }
+
+# Rebuild when CI stamps a new version/channel (otherwise sstate can leave a
+# stale /etc/loopy/* from a prior package).
+do_install[vardeps] += "LOOPY_BUILD_VERSION LOOPY_UPDATE_CHANNEL"

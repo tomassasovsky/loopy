@@ -263,10 +263,19 @@ class _WifiStatusStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final connected = state.status.connected;
-    final ssid = state.status.ssid.isEmpty ? '—' : state.status.ssid;
+    final connectingSsid = state.connectingSsid;
+    final connecting = connectingSsid != null;
+    final disconnecting = state.disconnecting;
+    final connected = state.status.connected && !connecting && !disconnecting;
+    final ssid = connecting
+        ? connectingSsid
+        : (state.status.ssid.isEmpty ? '—' : state.status.ssid);
     final ip = state.status.ip.isEmpty ? '—' : state.status.ip;
-    final detail = connected
+    final detail = connecting
+        ? l10n.wifiConnectingLabel
+        : disconnecting
+        ? l10n.wifiStatusDisconnecting
+        : connected
         ? '${l10n.wifiStatusConnected} · $ip'
         : l10n.wifiStatusDisconnected;
 
@@ -280,11 +289,22 @@ class _WifiStatusStrip extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
         child: Row(
           children: [
-            Icon(
-              connected ? Icons.wifi : Icons.wifi_off,
-              size: 18,
-              color: connected ? surface.accent : surface.textTertiary,
-            ),
+            if (connecting || disconnecting)
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  key: const Key('wifi_status_spinner'),
+                  strokeWidth: 2,
+                  color: surface.accent,
+                ),
+              )
+            else
+              Icon(
+                connected ? Icons.wifi : Icons.wifi_off,
+                size: 18,
+                color: connected ? surface.accent : surface.textTertiary,
+              ),
             const SizedBox(width: 10),
             Expanded(
               child: Text.rich(
@@ -366,6 +386,7 @@ class _WifiNetworkList extends StatelessWidget {
                   if (i > 0) Divider(height: 1, color: surface.line),
                   _NetworkRow(
                     network: state.networks[i],
+                    connecting: state.connectingSsid == state.networks[i].ssid,
                     onTap: state.busy ? null : () => onJoin(state.networks[i]),
                   ),
                 ],
@@ -378,16 +399,23 @@ class _WifiNetworkList extends StatelessWidget {
 }
 
 class _NetworkRow extends StatelessWidget {
-  const _NetworkRow({required this.network, required this.onTap});
+  const _NetworkRow({
+    required this.network,
+    required this.connecting,
+    required this.onTap,
+  });
 
   final WifiNetwork network;
+  final bool connecting;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final surface = context.surface;
-    final meta = network.secured
+    final meta = connecting
+        ? l10n.wifiConnectingLabel
+        : network.secured
         ? '${l10n.wifiSecuredLabel} · ${network.signal}'
         : '${l10n.wifiOpenLabel} · ${network.signal}';
 
@@ -424,14 +452,25 @@ class _NetworkRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '${network.signal} dBm',
-                style: TextStyle(
-                  color: surface.textTertiary,
-                  fontSize: 11,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+              if (connecting)
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    key: Key('wifi_network_spinner_${network.ssid}'),
+                    strokeWidth: 2,
+                    color: surface.accent,
+                  ),
+                )
+              else
+                Text(
+                  '${network.signal} dBm',
+                  style: TextStyle(
+                    color: surface.textTertiary,
+                    fontSize: 11,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
-              ),
             ],
           ),
         ),

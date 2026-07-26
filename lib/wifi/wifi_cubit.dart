@@ -15,7 +15,14 @@ class WifiCubit extends Cubit<WifiState> {
 
   /// Loads status (and whether the stack is supported).
   Future<void> load() async {
-    emit(state.copyWith(busy: true, clearError: true));
+    emit(
+      state.copyWith(
+        busy: true,
+        clearConnectingSsid: true,
+        disconnecting: false,
+        clearError: true,
+      ),
+    );
     try {
       final status = await _repository.status();
       emit(
@@ -63,33 +70,82 @@ class WifiCubit extends Cubit<WifiState> {
   /// Joins [ssid] with optional [psk].
   Future<void> connect(String ssid, {String? psk}) async {
     if (!state.supported) return;
-    emit(state.copyWith(busy: true, clearError: true));
+    emit(
+      state.copyWith(
+        busy: true,
+        connectingSsid: ssid,
+        disconnecting: false,
+        clearError: true,
+      ),
+    );
     try {
       await _repository.connect(ssid, psk: psk);
       final status = await _repository.status();
-      emit(state.copyWith(status: status, busy: false));
+      emit(
+        state.copyWith(
+          status: status,
+          busy: false,
+          clearConnectingSsid: true,
+          disconnecting: false,
+        ),
+      );
     } on Object catch (e) {
-      emit(state.copyWith(busy: false, errorMessage: '$e'));
+      emit(
+        state.copyWith(
+          busy: false,
+          clearConnectingSsid: true,
+          disconnecting: false,
+          errorMessage: '$e',
+        ),
+      );
     }
   }
 
   /// Disconnects the current association.
   Future<void> disconnect() async {
     if (!state.supported) return;
-    emit(state.copyWith(busy: true, clearError: true));
+    emit(
+      state.copyWith(
+        busy: true,
+        disconnecting: true,
+        clearConnectingSsid: true,
+        clearError: true,
+      ),
+    );
     try {
       await _repository.disconnect();
       final status = await _repository.status();
-      emit(state.copyWith(status: status, busy: false));
+      emit(
+        state.copyWith(
+          status: status,
+          busy: false,
+          disconnecting: false,
+        ),
+      );
     } on Object catch (e) {
-      emit(state.copyWith(busy: false, errorMessage: '$e'));
+      emit(
+        state.copyWith(
+          busy: false,
+          disconnecting: false,
+          errorMessage: '$e',
+        ),
+      );
     }
   }
 
   /// Forgets a saved [ssid] and disconnects if it was the active one.
   Future<void> forget(String ssid) async {
     if (!state.supported) return;
-    emit(state.copyWith(busy: true, clearError: true));
+    final forgettingActive =
+        state.status.connected && state.status.ssid == ssid;
+    emit(
+      state.copyWith(
+        busy: true,
+        disconnecting: forgettingActive,
+        clearConnectingSsid: true,
+        clearError: true,
+      ),
+    );
     try {
       await _repository.forget(ssid);
       final status = await _repository.status();
@@ -101,17 +157,31 @@ class WifiCubit extends Cubit<WifiState> {
               if (n.ssid != ssid) n,
           ],
           busy: false,
+          disconnecting: false,
         ),
       );
     } on Object catch (e) {
-      emit(state.copyWith(busy: false, errorMessage: '$e'));
+      emit(
+        state.copyWith(
+          busy: false,
+          disconnecting: false,
+          errorMessage: '$e',
+        ),
+      );
     }
   }
 
   /// Radio on/off — Control Center tile tap.
   Future<void> setEnabled({required bool enabled}) async {
     if (!state.supported) return;
-    emit(state.copyWith(busy: true, clearError: true));
+    emit(
+      state.copyWith(
+        busy: true,
+        clearConnectingSsid: true,
+        disconnecting: false,
+        clearError: true,
+      ),
+    );
     try {
       await _repository.setEnabled(enabled: enabled);
       final status = await _repository.status();

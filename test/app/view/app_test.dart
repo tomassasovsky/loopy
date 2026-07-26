@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/app/app.dart';
 import 'package:loopy/looper/looper.dart';
+import 'package:loopy/update/view/updates_settings_section.dart';
 import 'package:loopy/visualizer/visualizer.dart';
 import 'package:loopy_engine/loopy_engine.dart' show EngineSnapshot;
 import 'package:loopy_engine/loopy_engine.dart'
@@ -175,6 +176,27 @@ void main() {
       await tester.tap(find.byKey(const Key('app_update_banner_dismiss')));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('app_update_banner')), findsNothing);
+    });
+
+    testWidgets('Update on the banner opens Settings on the Updates tab', (
+      tester,
+    ) async {
+      await pumpAppWithUpdates(
+        tester,
+        UpdateRepository(backend: _FakeUpdateBackend()),
+      );
+      await tester.tap(find.byKey(const Key('app_update_banner_update')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(UpdatesSettingsSection), findsOneWidget);
+      expect(
+        find.byKey(const Key('settings_tab_updates')),
+        findsOneWidget,
+      );
+      // Pop so the navigator re-entrancy guard (`_settingsOpen`) clears for
+      // later tests in this file that also open Settings.
+      await tester.tap(find.byKey(const Key('settings_close_button')));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('no update banner on an unsupported platform', (tester) async {
