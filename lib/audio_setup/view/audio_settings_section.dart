@@ -6,6 +6,7 @@ import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/audio_setup/cubit/audio_setup_cubit.dart';
 import 'package:loopy/audio_setup/view/audio_device_picker.dart';
 import 'package:loopy/audio_setup/view/midi_device_picker.dart';
+import 'package:loopy/common/console_mode.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/cubit/quantize_cubit.dart';
 import 'package:loopy/looper/cubit/record_options_cubit.dart';
@@ -17,9 +18,20 @@ import 'package:url_launcher/url_launcher.dart';
 /// driven by the shared [AudioSetupCubit]: pick the playback/capture device
 /// (applied live while running), see the live device/latency status, and
 /// re-run the round-trip latency measurement.
+///
+/// On a [consoleMode] build the MIDI foot-controller and pedal LED pickers are
+/// hidden (the Pro Micro is fixed hardware — see #331), and audio device
+/// pickers omit "System default" so a concrete interface stays pinned.
 class AudioSettingsSection extends StatelessWidget {
   /// Creates an [AudioSettingsSection].
-  const AudioSettingsSection({super.key});
+  const AudioSettingsSection({
+    super.key,
+    this.consoleMode = kConsoleMode,
+  });
+
+  /// Whether this is the floor-console build. Defaults to [kConsoleMode];
+  /// tests inject `true`/`false` without a dart-define.
+  final bool consoleMode;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +81,7 @@ class AudioSettingsSection extends StatelessWidget {
             devices: state.playbackDevices,
             selectedId: state.playbackDeviceId,
             onSelected: cubit.setPlaybackDevice,
+            includeSystemDefault: !consoleMode,
           ),
           const SizedBox(height: 24),
           SetupGroupLabel(l10n.inputDeviceGroupUpper),
@@ -79,16 +92,17 @@ class AudioSettingsSection extends StatelessWidget {
             devices: state.captureDevices,
             selectedId: state.captureDeviceId,
             onSelected: cubit.setCaptureDevice,
+            includeSystemDefault: !consoleMode,
           ),
         ],
-        // The MIDI foot-controller picker is independent of the audio backend,
-        // so it shows in every mode — including Windows ASIO-only, where the
-        // audio device pickers are hidden.
-        const SizedBox(height: 28),
-        const MidiDevicePicker(),
-        // The pedal's LED-feedback output picker, likewise backend-independent.
-        const SizedBox(height: 28),
-        const PedalSettingsSection(),
+        // MIDI foot-controller + pedal LED pickers are desktop-only. On the
+        // console the Pro Micro is fixed hardware (#331) — no chooser UI.
+        if (!consoleMode) ...[
+          const SizedBox(height: 28),
+          const MidiDevicePicker(),
+          const SizedBox(height: 28),
+          const PedalSettingsSection(),
+        ],
         const SizedBox(height: 28),
         SetupGroupLabel(l10n.sampleRateGroup),
         const SizedBox(height: 12),

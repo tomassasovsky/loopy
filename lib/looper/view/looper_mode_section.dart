@@ -7,6 +7,8 @@ import 'package:loopy/control/control.dart';
 import 'package:loopy/l10n/l10n.dart';
 import 'package:loopy/looper/bloc/looper_bloc.dart';
 import 'package:loopy/setup/setup_surface.dart';
+import 'package:loopy/theme/surface_theme.dart';
+import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
 /// The looper feature's own mode-picker settings surface (index plan's UI
 /// conventions — same "lives in the looper feature, not `audio_setup`"
@@ -136,7 +138,7 @@ class LooperModeSection extends StatelessWidget {
   }
 }
 
-/// The five-mode selector (Multi/Sync/Song/Band/Free).
+/// The five-mode selector (Multi/Sync/Song/Band/Free) as a vertical radio list.
 class _ModePicker extends StatelessWidget {
   const _ModePicker({required this.selected, required this.onSelected});
 
@@ -153,18 +155,99 @@ class _ModePicker extends StatelessWidget {
       LooperMode.band: (l10n.looperModeBandLabel, l10n.looperModeBandSub),
       LooperMode.free: (l10n.looperModeFreeLabel, l10n.looperModeFreeSub),
     };
-    return SetupOptionRow<LooperMode>(
-      selected: selected,
-      onSelected: onSelected,
-      options: [
-        for (final mode in LooperMode.values)
-          SetupOption(
-            value: mode,
-            label: labels[mode]!.$1,
-            sub: labels[mode]!.$2,
-            optionKey: Key('looperMode_option_${mode.name}'),
+    return Column(
+      key: const Key('looperMode_list'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < LooperMode.values.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _ModeListTile(
+            mode: LooperMode.values[i],
+            label: labels[LooperMode.values[i]]!.$1,
+            subtitle: labels[LooperMode.values[i]]!.$2,
+            selected: LooperMode.values[i] == selected,
+            onTap: () => onSelected(LooperMode.values[i]),
           ),
+        ],
       ],
+    );
+  }
+}
+
+/// One mode row: title + subtitle + radio indicator, styled like other setup
+/// cards (not a raw Material [ListTile]).
+class _ModeListTile extends StatelessWidget {
+  const _ModeListTile({
+    required this.mode,
+    required this.label,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final LooperMode mode;
+  final String label;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final surface = context.surface;
+    return FocusableTapTarget(
+      key: Key('looperMode_option_${mode.name}'),
+      onTap: onTap,
+      selected: selected,
+      borderRadius: 14,
+      child: AnimatedContainer(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 160),
+        padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: selected ? surface.cardHigh : surface.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? surface.accent : surface.line,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: selected ? surface.accent : surface.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: surface.textSecondary,
+                      fontSize: 12,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              size: 22,
+              color: selected ? surface.accent : surface.textTertiary,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

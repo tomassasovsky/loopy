@@ -110,6 +110,21 @@ void main() {
     }
   });
 
+  testWidgets('lays modes out as a vertical list', (tester) async {
+    seed(const LooperState());
+    await pump(tester);
+
+    expect(find.byKey(const Key('looperMode_list')), findsOneWidget);
+    final multi = tester.getTopLeft(
+      find.byKey(const Key('looperMode_option_multi')),
+    );
+    final sync = tester.getTopLeft(
+      find.byKey(const Key('looperMode_option_sync')),
+    );
+    expect(sync.dy, greaterThan(multi.dy));
+    expect(sync.dx, multi.dx);
+  });
+
   testWidgets(
     'selecting a different mode with NO track content applies '
     'immediately, with no confirmation dialog',
