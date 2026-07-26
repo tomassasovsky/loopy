@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:loopy/looper/view/settings_page.dart';
+import 'package:loopy/theme/page_transitions.dart';
 
 /// The root navigator key, so settings can be opened from outside the widget
 /// tree (e.g. the macOS system menu bar) as well as from in-app gestures.
@@ -18,8 +19,8 @@ Future<void> openLoopySettings() async {
   _settingsOpen = true;
   try {
     await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) => const SettingsPage(),
+      desktopPageRoute<void>(
+        (_) => const SettingsPage(),
         settings: const RouteSettings(name: loopySettingsRouteName),
       ),
     );

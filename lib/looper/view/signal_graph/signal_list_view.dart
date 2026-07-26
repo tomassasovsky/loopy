@@ -15,6 +15,7 @@ import 'package:loopy/looper/view/signal_graph/signal_knob.dart';
 import 'package:loopy/looper/view/signal_graph/signal_routing_chips.dart';
 import 'package:loopy/looper/view/signal_graph/signal_rows.dart';
 import 'package:loopy/looper/view/signal_graph/signal_style.dart';
+import 'package:loopy/theme/page_transitions.dart';
 import 'package:loopy/theme/surface_theme.dart';
 import 'package:routing_graph/routing_graph.dart' show FocusableTapTarget;
 
@@ -33,8 +34,8 @@ Future<void> showSignalPage(BuildContext context) {
   final monitor = context.read<MonitorCubit>();
   final tracks = context.read<TracksCubit>();
   return Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => MultiBlocProvider(
+    desktopPageRoute<void>(
+      (_) => MultiBlocProvider(
         providers: [
           BlocProvider.value(value: bloc),
           BlocProvider.value(value: monitor),
