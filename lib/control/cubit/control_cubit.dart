@@ -5,6 +5,7 @@ import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:looper_repository/looper_repository.dart';
 import 'package:loopy/control/control_projection.dart';
+import 'package:loopy/logging/app_log.dart';
 import 'package:loopy/looper/model/interaction_mode.dart';
 import 'package:pedal_repository/pedal_repository.dart';
 import 'package:performance_repository/performance_repository.dart';
@@ -778,7 +779,13 @@ class ControlCubit extends Cubit<ControlState> {
 
   int get _channelCount => ControlState.tracksPerBank * ControlState.bankCount;
 
-  void _log(String message) => dev.log(message, name: 'control');
+  void _log(String message) {
+    dev.log(message, name: 'control');
+    // Skip high-frequency encoder deltas — they would flood the rotating log.
+    if (!message.startsWith('encoder ')) {
+      AppLog.info('control: $message');
+    }
+  }
 
   @override
   void emit(ControlState state) {

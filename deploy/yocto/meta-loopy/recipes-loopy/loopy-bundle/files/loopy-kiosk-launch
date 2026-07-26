@@ -20,7 +20,9 @@ else
 fi
 export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
-mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+# AppLog writes $HOME/log/loopy.log (rotating); create early so the first
+# process-start line never races a missing directory.
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$HOME/log"
 
 # path_provider's getApplicationDocumentsDirectory shells out to `xdg-user-dir
 # DOCUMENTS` (xdg-user-dirs package). On this minimal image there is no
