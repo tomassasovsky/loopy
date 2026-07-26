@@ -22,6 +22,22 @@ journalctl -u loopy.service -b --no-pager
 journalctl -u loopy.service -f
 ```
 
+## Persistent `/data` size (appliance)
+
+The flashable WIC image seeds the `data` partition at **2 GiB** so the image
+stays small. On first boot (and after an OTA that includes it) the
+`loopy-data-grow` oneshot expands that partition — and its MBR extended
+container — to fill the rest of the SD card, then runs `resize2fs`. No reflash
+is required to claim a larger card: install the update, reboot, and check:
+
+```bash
+df -h /data
+journalctl -u loopy-data-grow.service -b --no-pager
+```
+
+Sessions and exports live under `/data/Documents/{sessions,exports}/` and survive
+both OTA and the grow (the grow never wipes the filesystem).
+
 ## Decision 1 — Kiosk rendering target: **GTK-on-Wayland** (the Flutter Linux runner)
 
 **Decision: ship the existing Flutter Linux GTK runner on Wayland. Do not use
