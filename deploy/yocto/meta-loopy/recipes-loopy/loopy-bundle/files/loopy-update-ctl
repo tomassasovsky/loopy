@@ -14,8 +14,9 @@
 #             pending markers. Does NOT reboot.
 #   reboot    Reboot into the staged slot (the user's explicit "Restart to apply").
 #
-# Version model matches loopy-ota-check: install only when the manifest advertises
-# a build newer than the running one (/etc/loopy/build-version).
+# Version model matches loopy-ota-check (semver, see its comparator comment):
+# install only when the manifest advertises a version newer than the running
+# one (/etc/loopy/build-version).
 set -eu
 
 BASE_URL="${LOOPY_UPDATE_BASE:-https://segno.aquiles.dev/updates/appliance}"
@@ -27,11 +28,42 @@ PENDING_FLAG="/run/loopy-update-pending"  # tmpfs marker: "reboot to activate"
 log() { echo "loopy-update-ctl: $*" >&2; }
 progress() { echo "PROGRESS $1"; }
 
+_int() { case "$1" in ''|*[!0-9]*) echo 0 ;; *) echo "$1" ;; esac; }
+
+# semver_newer OLD NEW — succeeds (exit 0) if NEW is strictly greater than OLD.
+# Accepts "X.Y.Z" and "X.Y.Z-<tag>.<n>" (e.g. "0.2.0-experimental.9"); a plain
+# release outranks its own prerelease at the same X.Y.Z, and among two
+# prereleases sharing a tag the trailing numeric build decides.
+semver_newer() {
+    old=$1 new=$2
+    old_core=${old%%-*}; new_core=${new%%-*}
+    old_maj=$(_int "${old_core%%.*}");   new_maj=$(_int "${new_core%%.*}")
+    old_rest=${old_core#*.};             new_rest=${new_core#*.}
+    old_min=$(_int "${old_rest%%.*}");   new_min=$(_int "${new_rest%%.*}")
+    old_pat=$(_int "${old_rest#*.}");    new_pat=$(_int "${new_rest#*.}")
+
+    [ "$new_maj" -gt "$old_maj" ] && return 0
+    [ "$new_maj" -lt "$old_maj" ] && return 1
+    [ "$new_min" -gt "$old_min" ] && return 0
+    [ "$new_min" -lt "$old_min" ] && return 1
+    [ "$new_pat" -gt "$old_pat" ] && return 0
+    [ "$new_pat" -lt "$old_pat" ] && return 1
+
+    case "$old" in *-*) old_pre=${old#*-} ;; *) old_pre="" ;; esac
+    case "$new" in *-*) new_pre=${new#*-} ;; *) new_pre="" ;; esac
+    if [ -z "$new_pre" ] && [ -n "$old_pre" ]; then return 0; fi
+    if [ -n "$new_pre" ] && [ -z "$old_pre" ]; then return 1; fi
+    if [ -z "$new_pre" ] && [ -z "$old_pre" ]; then return 1; fi
+
+    old_tag=${old_pre%.*}; old_num=$(_int "${old_pre##*.}")
+    new_tag=${new_pre%.*}; new_num=$(_int "${new_pre##*.}")
+    [ "$old_tag" = "$new_tag" ] && [ "$new_num" -gt "$old_num" ]
+}
+
 do_install() {
     command -v rauc >/dev/null 2>&1 || { log "rauc not installed"; return 1; }
     channel=$(cat "$CHANNEL_FILE" 2>/dev/null || echo production)
-    current=$(cat "$CUR_FILE" 2>/dev/null || echo 0)
-    case "$current" in ''|*[!0-9]*) current=0 ;; esac
+    current=$(cat "$CUR_FILE" 2>/dev/null || echo "0.0.0")
 
     work=$(mktemp -d /tmp/loopy-update.XXXXXX)
     trap 'rm -rf "$work"' EXIT
@@ -41,12 +73,11 @@ do_install() {
          "$BASE_URL/$channel/manifest.json"; then
         log "manifest fetch failed ($channel)"; return 1
     fi
-    version=$(jq -r '.version // 0' "$work/manifest.json" 2>/dev/null || echo 0)
+    version=$(jq -r '.version // "0.0.0"' "$work/manifest.json" 2>/dev/null || echo "0.0.0")
     bundle=$(jq -r '.bundle // empty' "$work/manifest.json" 2>/dev/null || echo "")
     sha=$(jq -r '.sha256 // empty' "$work/manifest.json" 2>/dev/null || echo "")
-    case "$version" in ''|*[!0-9]*) version=0 ;; esac
 
-    if [ -z "$bundle" ] || [ "$version" -le "$current" ]; then
+    if [ -z "$bundle" ] || ! semver_newer "$current" "$version"; then
         log "nothing newer to install (published=$version current=$current)"
         return 1
     fi

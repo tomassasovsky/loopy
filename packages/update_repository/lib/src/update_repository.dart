@@ -1,3 +1,4 @@
+import 'package:pub_semver/pub_semver.dart';
 import 'package:update_repository/src/platform_update_backend.dart';
 import 'package:update_repository/src/update_manifest.dart';
 
@@ -17,15 +18,16 @@ class UpdateRepository {
   /// The channel this device follows, for display.
   String get channel => _backend.channel;
 
-  /// The running build number (`0` when unknown).
-  Future<int> currentVersion() => _backend.currentVersion();
+  /// The running semantic version ([Version.none] when unknown).
+  Future<Version> currentVersion() => _backend.currentVersion();
 
-  /// The build number staged and awaiting a restart (`0` if none).
-  Future<int> stagedVersion() => _backend.stagedVersion();
+  /// The version staged and awaiting a restart ([Version.none] if none).
+  Future<Version> stagedVersion() => _backend.stagedVersion();
 
   /// Read-only availability check. Returns the manifest only when it advertises
-  /// a build strictly newer than both the running and any already-staged build;
-  /// otherwise (up to date, already staged, or nothing published) `null`.
+  /// a version with strictly greater semver precedence than both the running
+  /// and any already-staged version; otherwise (up to date, already staged, or
+  /// nothing published) `null`.
   ///
   /// Safe to call automatically — it never downloads or installs.
   Future<UpdateManifest?> checkForUpdate() async {

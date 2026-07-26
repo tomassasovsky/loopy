@@ -10,7 +10,7 @@
     "@updatesVersionValue": {
         "placeholders": {
             "version": {
-                "type": "int"
+                "type": "String"
             }
         }
     },
@@ -32,7 +32,7 @@
     "@updatesAvailableTitle": {
         "placeholders": {
             "version": {
-                "type": "int"
+                "type": "String"
             }
         }
     },
@@ -42,7 +42,7 @@
     "@updatesDownloadSubtitle": {
         "placeholders": {
             "version": {
-                "type": "int"
+                "type": "String"
             }
         }
     },
@@ -59,7 +59,7 @@
     "@updatesStagedSubtitle": {
         "placeholders": {
             "version": {
-                "type": "int"
+                "type": "String"
             }
         }
     },
@@ -77,7 +77,7 @@
     "@updateBannerTitle": {
         "placeholders": {
             "version": {
-                "type": "int"
+                "type": "String"
             }
         }
     },

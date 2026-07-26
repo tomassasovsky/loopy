@@ -4,10 +4,10 @@ import 'package:loopy/update/appliance/appliance_env.dart';
 import 'package:loopy/update/appliance/system_appliance_env.dart';
 import 'package:update_repository/update_repository.dart';
 
-/// The Raspberry Pi appliance update backend. Reads the running build number
-/// and channel from the baked-in marker files, fetches the channel manifest
-/// over HTTPS, and delegates the privileged download/stage and reboot to the
-/// `loopy-update-ctl` helper (via the injected [ApplianceEnv]).
+/// The Raspberry Pi appliance update backend. Reads the running semantic
+/// version and channel from the baked-in marker files, fetches the channel
+/// manifest over HTTPS, and delegates the privileged download/stage and
+/// reboot to the `loopy-update-ctl` helper (via the injected [ApplianceEnv]).
 ///
 /// [isSupported] additionally requires the helper to be present, so on a build
 /// that hasn't shipped it the update UI stays hidden rather than offering a
@@ -29,13 +29,13 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   /// Base URL of the per-channel update tree (`<baseUrl>/<channel>/…`).
   final String baseUrl;
 
-  /// Path to the running build number, baked by CI.
+  /// Path to the running semantic version, baked by CI.
   final String versionFile;
 
   /// Path to the pinned channel (`experimental` / `production`).
   final String channelFile;
 
-  /// Path (on `/data`, surviving OS updates) to the staged build number.
+  /// Path (on `/data`, surviving OS updates) to the staged semantic version.
   final String stagedFile;
 
   /// Path to the privileged update helper; its presence gates [isSupported].
@@ -52,13 +52,20 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
   }
 
   @override
-  Future<int> currentVersion() async => _readInt(versionFile);
+  Future<Version> currentVersion() async => _readVersion(versionFile);
 
   @override
-  Future<int> stagedVersion() async => _readInt(stagedFile);
+  Future<Version> stagedVersion() async => _readVersion(stagedFile);
 
-  int _readInt(String path) =>
-      int.tryParse(_env.readTextSync(path)?.trim() ?? '') ?? 0;
+  Version _readVersion(String path) {
+    final text = _env.readTextSync(path)?.trim();
+    if (text == null || text.isEmpty) return Version.none;
+    try {
+      return Version.parse(text);
+    } on FormatException {
+      return Version.none;
+    }
+  }
 
   @override
   Future<UpdateManifest?> fetchManifest() async {
@@ -78,7 +85,7 @@ class AppliancePlatformBackend implements PlatformUpdateBackend {
 
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
-      _env.stage(manifest.version);
+      _env.stage(manifest.version.toString());
 
   @override
   Future<void> applyAndRestart() => _env.reboot();

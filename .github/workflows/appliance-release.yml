@@ -54,6 +54,8 @@ jobs:
       channel: ${{ steps.meta.outputs.channel }}
       version: ${{ steps.meta.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Determine channel + version
         id: meta
         run: |
@@ -64,7 +66,26 @@ jobs:
           else
             channel="experimental"
           fi
-          version="${{ github.run_number }}"     # monotonic build number
+
+          # VERSION is the human-controlled source of truth for X.Y.Z (kept
+          # below 1.0.0 while unreleased). CI never invents base versions —
+          # only channel-appropriate suffixes:
+          #   production + tag vX.Y.Z  -> X.Y.Z (the tag itself)
+          #   production + dispatch    -> VERSION file as-is
+          #   experimental             -> <VERSION>-experimental.<run_number>
+          # so an unsuffixed production release correctly sorts newer than
+          # any of its own experimental prereleases (semver precedence).
+          base="$(tr -d '[:space:]' < VERSION)"
+          if [ "$channel" = "production" ]; then
+            if [ "${{ github.ref_type }}" = "tag" ]; then
+              version="${GITHUB_REF_NAME#v}"
+            else
+              version="$base"
+            fi
+          else
+            version="${base}-experimental.${{ github.run_number }}"
+          fi
+
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Building channel=$channel version=$version"
@@ -163,8 +184,12 @@ jobs:
           bundle="loopy-appliance-${{ needs.determine-meta.outputs.version }}.raucb"
           cp "$raucb" "$out/$bundle"
           sha=$(sha256sum "$out/$bundle" | cut -d' ' -f1)
+          # version is a semver string (e.g. "0.2.0" / "0.2.0-experimental.9")
+          # — must be JSON-quoted. The int-era unquoted form is no longer valid.
+          version='${{ needs.determine-meta.outputs.version }}'
+          channel='${{ needs.determine-meta.outputs.channel }}'
           cat > "$out/manifest.json" <<EOF
-          { "version": ${{ needs.determine-meta.outputs.version }}, "bundle": "$bundle", "sha256": "$sha", "channel": "${{ needs.determine-meta.outputs.channel }}" }
+          { "version": "$version", "bundle": "$bundle", "sha256": "$sha", "channel": "$channel" }
           EOF
           cat "$out/manifest.json"
 
@@ -172,7 +197,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: appliance-${{ needs.determine-meta.outputs.channel }}-${{ needs.determine-meta.outputs.version }}
-          name: "Appliance ${{ needs.determine-meta.outputs.channel }} #${{ needs.determine-meta.outputs.version }}"
+          name: "Appliance ${{ needs.determine-meta.outputs.channel }} ${{ needs.determine-meta.outputs.version }}"
           prerelease: ${{ needs.determine-meta.outputs.channel == 'experimental' }}
           files: |
             release-artifacts/*.raucb

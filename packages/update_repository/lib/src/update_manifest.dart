@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:pub_semver/pub_semver.dart';
 
 /// A published update descriptor, as served per channel at
 /// `…/updates/appliance/<channel>/manifest.json` (and the desktop appcasts map
@@ -16,13 +17,20 @@ class UpdateManifest {
     this.notes = '',
   });
 
-  /// Parses a manifest from its JSON form, tolerant of string/number drift in
-  /// the numeric fields (a hand-edited manifest may quote them). Returns `null`
-  /// if the required [version] or [bundle] fields are missing or unusable.
+  /// Parses a manifest from its JSON form, tolerant of size-field string/number
+  /// drift (a hand-edited manifest may quote it). Returns `null` if [version]
+  /// isn't a parseable semver string or [bundle] is missing/empty.
   static UpdateManifest? fromJson(Map<String, dynamic> json) {
-    final version = _asInt(json['version']);
+    final rawVersion = json['version'];
+    if (rawVersion is! String) return null;
+    Version version;
+    try {
+      version = Version.parse(rawVersion.trim());
+    } on FormatException {
+      return null;
+    }
     final bundle = json['bundle'];
-    if (version == null || bundle is! String || bundle.isEmpty) return null;
+    if (bundle is! String || bundle.isEmpty) return null;
     return UpdateManifest(
       version: version,
       bundle: bundle,
@@ -33,8 +41,10 @@ class UpdateManifest {
     );
   }
 
-  /// Monotonic build number. A newer update has a strictly greater [version].
-  final int version;
+  /// Semantic version. A newer update has a strictly greater [version], per
+  /// semver precedence (so an unsuffixed `1.2.0` outranks its own
+  /// `1.2.0-experimental.7` prerelease).
+  final Version version;
 
   /// The bundle file name, resolved relative to the manifest's own directory.
   final String bundle;

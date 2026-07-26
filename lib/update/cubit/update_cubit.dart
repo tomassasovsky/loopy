@@ -18,7 +18,7 @@ class UpdateCubit extends Cubit<UpdateState> {
     required SettingsRepository settings,
   }) : _updates = updates,
        _settings = settings,
-       super(const UpdateState());
+       super(UpdateState());
 
   final UpdateRepository _updates;
   final SettingsRepository _settings;
@@ -99,7 +99,7 @@ class UpdateCubit extends Cubit<UpdateState> {
 
   /// Records that the user dismissed the notification for [version], so it will
   /// not be shown again until a newer version appears.
-  Future<void> dismiss(int version) async {
+  Future<void> dismiss(Version version) async {
     if (state.dismissed.contains(version)) return;
     final next = {...state.dismissed, version};
     emit(state.copyWith(dismissed: next));

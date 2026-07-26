@@ -6,17 +6,18 @@ class _FakeBackend implements PlatformUpdateBackend {
   _FakeBackend({
     this.isSupported = true,
     this.channel = 'experimental',
-    this.current = 1,
-    this.staged = 0,
+    Version? current,
+    Version? staged,
     this.manifest,
-  });
+  }) : current = current ?? Version(0, 1, 0),
+       staged = staged ?? Version.none;
 
   @override
   bool isSupported;
   @override
   String channel;
-  int current;
-  int staged;
+  Version current;
+  Version staged;
   UpdateManifest? manifest;
 
   int fetchCount = 0;
@@ -24,10 +25,10 @@ class _FakeBackend implements PlatformUpdateBackend {
   int applyCount = 0;
 
   @override
-  Future<int> currentVersion() async => current;
+  Future<Version> currentVersion() async => current;
 
   @override
-  Future<int> stagedVersion() async => staged;
+  Future<Version> stagedVersion() async => staged;
 
   @override
   Future<UpdateManifest?> fetchManifest() async {
@@ -46,8 +47,14 @@ class _FakeBackend implements PlatformUpdateBackend {
   Future<void> applyAndRestart() async => applyCount++;
 }
 
-UpdateManifest _manifest(int version) =>
-    UpdateManifest(version: version, bundle: 'b$version.raucb', sha256: 's');
+/// Builds a manifest with minor component [minor] (e.g. `_manifest(2)` ==
+/// `0.2.0`), so tests read naturally as small ascending "build numbers" while
+/// exercising real semver precedence underneath.
+UpdateManifest _manifest(int minor) => UpdateManifest(
+  version: Version(0, minor, 0),
+  bundle: 'b$minor.raucb',
+  sha256: 's',
+);
 
 void main() {
   group('UpdateRepository.checkForUpdate', () {
@@ -66,7 +73,10 @@ void main() {
       'returns null when the published build is not newer than current',
       () async {
         final repo = UpdateRepository(
-          backend: _FakeBackend(current: 2, manifest: _manifest(2)),
+          backend: _FakeBackend(
+            current: Version(0, 2, 0),
+            manifest: _manifest(2),
+          ),
         );
         expect(await repo.checkForUpdate(), isNull);
       },
@@ -74,7 +84,7 @@ void main() {
 
     test('returns null when the published build is already staged', () async {
       final repo = UpdateRepository(
-        backend: _FakeBackend(staged: 2, manifest: _manifest(2)),
+        backend: _FakeBackend(staged: Version(0, 2, 0), manifest: _manifest(2)),
       );
       expect(await repo.checkForUpdate(), isNull);
     });
@@ -83,6 +93,22 @@ void main() {
       final repo = UpdateRepository(backend: _FakeBackend());
       expect(await repo.checkForUpdate(), isNull);
     });
+
+    test(
+      'a production release outranks its own experimental prerelease',
+      () async {
+        final repo = UpdateRepository(
+          backend: _FakeBackend(
+            current: Version.parse('0.2.0-experimental.9'),
+            manifest: UpdateManifest(
+              version: Version(0, 2, 0),
+              bundle: 'b.raucb',
+            ),
+          ),
+        );
+        expect(await repo.checkForUpdate(), isNotNull);
+      },
+    );
 
     test(
       'returns null (and never fetches) on an unsupported platform',
@@ -103,15 +129,15 @@ void main() {
     test('exposes backend identity/version members', () async {
       final backend = _FakeBackend(
         channel: 'production',
-        current: 5,
-        staged: 6,
+        current: Version(0, 5, 0),
+        staged: Version(0, 6, 0),
       );
       final repo = UpdateRepository(backend: backend);
 
       expect(repo.isSupported, isTrue);
       expect(repo.channel, 'production');
-      expect(await repo.currentVersion(), 5);
-      expect(await repo.stagedVersion(), 6);
+      expect(await repo.currentVersion(), Version(0, 5, 0));
+      expect(await repo.stagedVersion(), Version(0, 6, 0));
     });
 
     test(

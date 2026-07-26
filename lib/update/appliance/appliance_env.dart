@@ -15,10 +15,10 @@ abstract interface class ApplianceEnv {
   /// (non-200, transport error). Never throws.
   Future<String?> httpGetText(Uri url);
 
-  /// Runs the privileged helper to download + verify + stage build [version]
-  /// to the inactive slot, emitting progress in `[0, 1]`. Throws if the helper
-  /// fails.
-  Stream<double> stage(int version);
+  /// Runs the privileged helper to download + verify + stage semver [version]
+  /// (e.g. `"0.2.0"` or `"0.2.0-experimental.7"`) to the inactive slot,
+  /// emitting progress in `[0, 1]`. Throws if the helper fails.
+  Stream<double> stage(String version);
 
   /// Runs the privileged helper to reboot into the staged slot. Throws on
   /// failure.

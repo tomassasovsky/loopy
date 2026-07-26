@@ -26,20 +26,23 @@ import '../../helpers/helpers.dart';
 
 class _MockMidiSource extends Mock implements MidiControllerSource {}
 
-/// A supported update backend advertising build 2 (current is 1), so the app's
-/// startup availability check surfaces the update banner.
+/// A supported update backend advertising v0.2.0 (current is v0.1.0), so the
+/// app's startup availability check surfaces the update banner.
 class _FakeUpdateBackend implements PlatformUpdateBackend {
   @override
   bool get isSupported => true;
   @override
   String get channel => 'experimental';
   @override
-  Future<int> currentVersion() async => 1;
+  Future<Version> currentVersion() async => Version.parse('0.1.0');
   @override
-  Future<int> stagedVersion() async => 0;
+  Future<Version> stagedVersion() async => Version.none;
   @override
-  Future<UpdateManifest?> fetchManifest() async =>
-      const UpdateManifest(version: 2, bundle: 'b.raucb', notes: 'new stuff');
+  Future<UpdateManifest?> fetchManifest() async => UpdateManifest(
+    version: Version.parse('0.2.0'),
+    bundle: 'b.raucb',
+    notes: 'new stuff',
+  );
   @override
   Stream<double> downloadAndStage(UpdateManifest manifest) =>
       Stream.fromIterable(const [1]);

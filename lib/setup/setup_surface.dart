@@ -356,18 +356,28 @@ class SetupNavRow extends StatelessWidget {
     required this.subtitle,
     required this.onTap,
     this.icon = Icons.chevron_right,
+    this.trailing,
     super.key,
   });
 
   final Key rowKey;
   final String title;
   final String subtitle;
-  final VoidCallback onTap;
+
+  /// `null` renders the row disabled (no tap feedback, dimmed title) without
+  /// removing it — for a row that stays on screen through a busy/in-progress
+  /// state rather than disappearing.
+  final VoidCallback? onTap;
   final IconData icon;
+
+  /// Replaces the trailing [icon] when non-null — e.g. a small busy spinner
+  /// in place of the usual chevron/action icon.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final surface = context.surface;
+    final enabled = onTap != null;
     return Material(
       color: surface.card,
       borderRadius: BorderRadius.circular(14),
@@ -390,7 +400,9 @@ class SetupNavRow extends StatelessWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        color: surface.textPrimary,
+                        color: enabled
+                            ? surface.textPrimary
+                            : surface.textTertiary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -407,7 +419,7 @@ class SetupNavRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(icon, size: 20, color: surface.textTertiary),
+              trailing ?? Icon(icon, size: 20, color: surface.textTertiary),
             ],
           ),
         ),

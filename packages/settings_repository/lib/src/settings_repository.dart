@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:local_storage_client/local_storage_client.dart';
+import 'package:pub_semver/pub_semver.dart';
 
 /// The persisted device-backend intent. A settings-layer domain enum (mirroring
 /// the engine's backend) kept here so this repository holds no data-layer
@@ -836,22 +837,32 @@ class SettingsRepository {
   Future<void> saveUpdateAutoCheck({required bool value}) =>
       _store.setBool(_updateAutoCheckKey, value: value);
 
-  /// Loads the set of update build numbers whose notification the user
-  /// dismissed. Stored as a comma-separated list of ints (the same
+  /// Loads the set of update semantic versions whose notification the user
+  /// dismissed. Stored as a comma-separated list of semver strings (the same
   /// encoded-scalar idiom as [loadLaneEffects]); bad entries are ignored.
-  Future<Set<int>> loadDismissedUpdateVersions() async {
+  Future<Set<Version>> loadDismissedUpdateVersions() async {
     final raw = await _store.getString(_updateDismissedKey);
     if (raw == null || raw.isEmpty) return const {};
     return raw
         .split(',')
-        .map((s) => int.tryParse(s.trim()))
-        .whereType<int>()
+        .map((s) {
+          try {
+            return Version.parse(s.trim());
+          } on FormatException {
+            return null;
+          }
+        })
+        .whereType<Version>()
         .toSet();
   }
 
-  /// Saves the set of dismissed update build numbers (sorted, comma-separated).
-  Future<void> saveDismissedUpdateVersions(Set<int> versions) => _store
-      .setString(_updateDismissedKey, (versions.toList()..sort()).join(','));
+  /// Saves the set of dismissed update semantic versions (sorted,
+  /// comma-separated).
+  Future<void> saveDismissedUpdateVersions(Set<Version> versions) =>
+      _store.setString(
+        _updateDismissedKey,
+        (versions.toList()..sort()).join(','),
+      );
 
   /// Clears all settings.
   Future<void> clear() => _store.clear();

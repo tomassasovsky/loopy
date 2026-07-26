@@ -12,9 +12,10 @@ LICENSE = "CLOSED"
 # override via LOOPY_BUNDLE_DIR in kas/local.conf to point elsewhere.
 LOOPY_BUNDLE_DIR ?= "${THISDIR}/../../../prebuilt/bundle"
 
-# Build number stamped into /etc/loopy/build-version; the OTA client compares the
-# channel manifest's version against it. CI sets LOOPY_BUILD_VERSION per release.
-LOOPY_BUILD_VERSION ?= "0"
+# Semver (e.g. "0.2.0" or "0.2.0-experimental.42") stamped into
+# /etc/loopy/build-version; the OTA client compares the channel manifest's
+# version against it. CI sets LOOPY_BUILD_VERSION per release.
+LOOPY_BUILD_VERSION ?= "0.0.0"
 
 SRC_URI = "file://loopy.service \
            file://loopy-kiosk-launch \
